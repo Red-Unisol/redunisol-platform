@@ -13,8 +13,10 @@ El frontend solo necesita:
 ## Endpoint
 
 ```text
-POST http://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol/bitrix24_form_webhook/bd_webhook_key_20260319_redunisol
+POST http://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol/bitrix24_form_webhook/<WEBHOOK_KEY>
 ```
+
+`<WEBHOOK_KEY>` debe obtenerse desde el secret configurado en Kestra para este flow. No hardcodearlo en frontend ni versionarlo en Git.
 
 ## Headers
 
@@ -145,7 +147,7 @@ Si faltan datos o el payload es invalido, el endpoint responde JSON estable:
 
 ```js
 const response = await fetch(
-  "http://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol/bitrix24_form_webhook/bd_webhook_key_20260319_redunisol",
+  "http://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol/bitrix24_form_webhook/<WEBHOOK_KEY>",
   {
     method: "POST",
     headers: {
