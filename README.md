@@ -1,110 +1,184 @@
-# Kestra Monorepo
+# Guia Corta De Trabajo
 
-Monorepo para automatizaciones de Kestra, con GitHub como fuente de verdad y Kestra como runtime.
+Esta repo guarda automatizaciones de Kestra.
 
-## Estructura
+Reglas base:
+
+- cada proyecto nuevo vive dentro de `automations/`
+- los cambios entran por pull request
+- no se crea un ambiente nuevo por proyecto
+- la configuracion va en variables y secretos de Kestra
+
+## Donde va cada cosa
 
 ```text
-platform/
-  infra/              # Docker Compose, application.yaml, Apache y bootstrap operativo
-  system/flows/       # Flows del namespace system
-
 automations/
-  bitrix24/           # Flows y namespace files del dominio Bitrix24
-  reporting/          # Flows y namespace files del dominio reporting
-  legacy/             # Migraciones de automatizaciones legacy
-
-tools/                # Scripts de validacion y deploy hacia Kestra
-.github/workflows/    # CI y despliegues
+  <dominio>/
+    flows/
+    files/
+    docs/
+    tests/
 ```
 
-## Convenciones
+Que va en cada carpeta:
 
-- Git es la unica fuente de verdad.
-- No editar flows ni namespace files desde la UI de Kestra como flujo normal.
-- Cada dominio debe ser autocontenido: flows, files, tests y dependencias.
-- Los deploys a Kestra se hacen desde GitHub Actions o tooling local controlado.
-- En la primera etapa no se hacen borrados automaticos en Kestra.
+- `automations/<dominio>/flows/`: flows YAML de Kestra
+- `automations/<dominio>/files/`: codigo Python, scripts y namespace files
+- `automations/<dominio>/docs/`: notas de uso, contrato API, decisiones del dominio
+- `automations/<dominio>/tests/`: tests del dominio
 
-## Namespaces sugeridos
+Archivos utiles del repo:
 
-- system
-- redunisol.dev.bitrix24
-- redunisol.prod.bitrix24
-- redunisol.dev.reporting
-- redunisol.prod.reporting
-- redunisol.dev.legacy
-- redunisol.prod.legacy
+- `tools/deploy_kestra.py`: deploy a Kestra
+- `tools/validate_kestra.py`: validacion basica del repo
+- `docs/README.md`: documentacion tecnica transversal
+- `automations/bitrix24/`: ejemplo completo para copiar estructura
 
-## Que es un namespace en Kestra
+## Como crear una automatizacion nueva
 
-Un namespace es el contenedor logico de objetos dentro de Kestra.
+Ejemplo: nuevo dominio `crm`.
 
-- agrupa flows y namespace files relacionados
-- separa ambientes sin mezclar artefactos
-- permite referenciar un mismo flow id en dev y prod sin conflicto, porque cambia el namespace
-- facilita permisos, orden y despliegue por dominio
+### 1. Crear la carpeta
 
-En este esquema, el mismo dominio Bitrix24 se publica en dos namespaces distintos:
+```text
+automations/
+  crm/
+    flows/
+    files/
+    docs/
+    tests/
+```
 
-- `redunisol.dev.bitrix24`
-- `redunisol.prod.bitrix24`
+### 2. Crear el flow
 
-Asi, Git mantiene un solo codigo fuente pero Kestra ejecuta copias separadas por ambiente.
+Archivo:
 
-## Pipeline de deployment
+```text
+automations/crm/flows/alta_cliente.yaml
+```
 
-- `validate.yml`
-  - corre en pull requests
-  - valida estructura
-  - corre tests de Bitrix24
-  - ejecuta dry-run del deploy de Bitrix24
-- `deploy-dev.yml`
-  - corre en push a `main`
-  - detecta dominios cambiados por path
-  - despliega solo esos dominios a dev
-  - tambien puede dispararse manualmente para un dominio o para todos
-- `deploy-prod.yml`
-  - corre manualmente
-  - despliega el dominio elegido a prod usando el estado actual de `main`
-  - debe quedar protegido por el environment `kestra-prod`
+### 3. Agregar codigo si hace falta
 
-## Setup esperado en GitHub
+Si el flow usa Python o archivos auxiliares:
 
-- cuenta owner: la cuenta GitHub de la empresa
-- repo: `redunisol-kestra`
-- environments:
-  - `kestra-dev`
-  - `kestra-prod`
-- secrets por environment:
-  - `KESTRA_URL`
-  - `KESTRA_USERNAME`
-  - `KESTRA_PASSWORD`
-  - `KESTRA_TENANT`
+```text
+automations/crm/files/crm_flow/main.py
+```
 
-## Estado de migracion
+### 4. Documentar lo minimo
 
-Contenido ya copiado desde el workspace original:
+Archivo sugerido:
 
-- `platform/infra/`
-  - `docker-compose.yml`
-  - `application.yaml`
-  - `.env.example`
-  - `apache/**`
-  - `README.md`
-- `automations/bitrix24/`
-  - `flows/bitrix24_form_webhook.yaml`
-  - `files/bitrix24_form_flow/**`
-  - `docs/FORM_WEBHOOK_API.md`
-- `platform/system/flows/redunisol/`
-  - sin flows versionados por ahora
+```text
+automations/crm/docs/README.md
+```
 
-## Notas
+Poner al menos:
 
-- La migracion se hizo por copia, no por movimiento. El material original sigue intacto fuera de la monorepo.
-- Los tres flows de prueba copiados inicialmente fueron eliminados de la monorepo.
-- No se copiaron `.env` ni `credentials.txt` para evitar meter secretos en la nueva repo.
+- que hace
+- que recibe
+- que devuelve
+- que variables o secretos usa
 
-## Proximo paso
+### 5. Agregar tests si hay logica
 
-Conectar la monorepo a GitHub y cargar los secrets de Actions para usar el deploy automatizado hacia Kestra.
+Archivo sugerido:
+
+```text
+automations/crm/tests/test_main.py
+```
+
+### 6. Si es un dominio nuevo, sumarlo al deploy
+
+Hoy el deploy conoce:
+
+- `bitrix24`
+- `reporting`
+- `legacy`
+
+Si agregas otro dominio, hay que tocar:
+
+- `tools/deploy_kestra.py`
+- `.github/workflows/deploy-dev.yml`
+- `.github/workflows/deploy-prod.yml`
+
+## Como hacer un pull request
+
+### 1. Crear una rama
+
+Ejemplos:
+
+- `feat/crm-alta-cliente`
+- `fix/reporting-timeout`
+
+### 2. Hacer cambios y subir la rama
+
+```bash
+git push -u origin <tu-rama>
+```
+
+### 3. Abrir el PR en GitHub
+
+En el PR explicar:
+
+- que cambia
+- como probarlo
+- si necesita variables nuevas en Kestra
+
+### 4. Esperar `Validate`
+
+No mergear directo a `main`.
+
+## Como usar variables de entorno de Kestra
+
+No crear un ambiente nuevo por proyecto.
+
+Ya trabajamos con ambientes compartidos:
+
+- `dev`
+- `prod`
+
+Cada dominio se despliega en su namespace:
+
+- `redunisol.dev.<dominio>`
+- `redunisol.prod.<dominio>`
+
+## Que usar
+
+Usa `envs` para datos no sensibles:
+
+- URLs
+- IDs de campos
+- timeouts
+- estados
+
+Usa `secret(...)` para datos sensibles:
+
+- tokens
+- passwords
+- webhook keys
+
+## Ejemplo simple
+
+```yaml
+env:
+  CRM_API_BASE_URL: "{{ envs.crm_api_base_url }}"
+  CRM_TIMEOUT_SECONDS: "{{ envs.crm_timeout_seconds }}"
+  CRM_API_TOKEN: "{{ secret('CRM_API_TOKEN') }}"
+```
+
+Regla simple:
+
+- si es configuracion, usar `envs`
+- si es secreto, usar `secret(...)`
+- no hardcodear valores en el YAML o en Python
+
+## Resumen rapido
+
+1. crear `automations/<dominio>/`
+2. poner YAML en `flows/`
+3. poner codigo en `files/`
+4. documentar en `docs/`
+5. testear en `tests/`
+6. abrir pull request
+7. usar `envs` y `secret(...)` de Kestra

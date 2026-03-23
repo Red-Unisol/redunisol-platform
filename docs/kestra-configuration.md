@@ -1,0 +1,457 @@
+# Configuracion De Kestra
+
+## Objetivo
+
+Este documento centraliza la configuracion usada por la repo para:
+
+- deploy desde GitHub Actions
+- variables de runtime consumidas por flows
+- secrets de runtime consumidos por flows
+- criterio para agregar configuracion nueva
+
+## Dos Capas Distintas De Configuracion
+
+Es importante no mezclar estas dos capas:
+
+### 1. Configuracion de CI/CD en GitHub
+
+Se usa para que los workflows puedan autenticarse contra Kestra y ejecutar deploys.
+
+Secrets actuales esperados en GitHub environments:
+
+- `KESTRA_URL`
+- `KESTRA_USERNAME`
+- `KESTRA_PASSWORD`
+- `KESTRA_TENANT`
+
+Estos valores viven en GitHub, no en los flows.
+
+### 2. Configuracion de runtime dentro de Kestra
+
+Se usa cuando un flow necesita datos de configuracion o secretos al ejecutarse.
+
+En esta repo hoy se consumen de dos formas:
+
+- `{{ envs.algo }}` para configuracion no sensible
+- `{{ secret('ALGO') }}` para datos sensibles
+
+## Implementacion Actual En Esta Repo
+
+En la infraestructura actual, los flows no inventan su configuracion solos.
+
+El flujo tecnico actual es este:
+
+1. los valores reales viven en `/opt/kestra/.env` en la VPS
+2. Docker Compose lee ese `.env`
+3. `docker-compose.yml` inyecta esas claves al contenedor `kestra`
+4. Kestra recibe esas variables como entorno del proceso
+5. los flows las consumen con `envs.*` y `secret(...)`
+
+En otras palabras:
+
+- Kestra no lee directamente el archivo `.env`
+- Docker Compose lee `.env` y pasa el resultado al contenedor
+
+La definicion versionada de ese mecanismo vive en:
+
+- `platform/infra/.env.example`
+- `platform/infra/docker-compose.yml`
+
+Patron actual:
+
+- variables no sensibles en Docker Compose con prefijo `ENV_`
+- secretos en Docker Compose con prefijo `SECRET_`
+
+Ejemplos reales:
+
+- `ENV_BITRIX24_BASE_URL`
+- `ENV_BITRIX24_TIMEOUT_SECONDS`
+- `SECRET_BITRIX24_WEBHOOK_PATH`
+- `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
+
+## Estado Verificado En VPS
+
+Verificado el 2026-03-23 por SSH en `/opt/kestra`:
+
+- existe archivo `.env` operativo
+- existe `docker-compose.yml` operativo
+- los nombres de variables Bitrix24 esperados por la repo estan cargados en el entorno operativo
+- los nombres de variables Bitrix24 tambien aparecen en la configuracion efectiva de Docker Compose
+
+Importante:
+
+- se verifico presencia y nombres de claves
+- no se exponen valores sensibles en este documento
+- esta verificacion no implica que los valores sean correctos funcionalmente, solo que las claves existen en la VPS
+
+## Camino Correcto Para Agregar O Modificar Variables
+
+En esta instalacion, el camino correcto no es la UI de Kestra como flujo normal de trabajo.
+
+El camino correcto hoy es:
+
+1. cambiar el flow en Git si necesita una clave nueva
+2. declarar la clave en `platform/infra/.env.example`
+3. pasar la clave al servicio `kestra` en `platform/infra/docker-compose.yml`
+4. cargar el valor real en `/opt/kestra/.env` en la VPS
+5. reiniciar o recrear el servicio Kestra
+6. probar en dev
+
+La UI no deberia ser la fuente normal de configuracion persistente, porque rompe el modelo Git-managed de esta repo.
+
+## Opcion Recomendada Para Evitar Doble Actualizacion
+
+Si la prioridad es evitar drift entre repo y VPS, una opcion razonable es versionar la configuracion runtime en Git, pero cifrada.
+
+La idea seria:
+
+1. mantener `docker-compose.yml` y `application.yaml` versionados en Git
+2. mantener un archivo runtime cifrado en Git
+3. descifrarlo localmente solo cuando haga falta editarlo
+4. volver a cifrarlo antes del pull request
+5. dejar que un deploy de infraestructura sincronice la version cifrada ya aprobada hacia la VPS
+
+Archivos concretos usados en esta repo:
+
+- plaintext local no versionado: `platform/infra/kestra-runtime.env`
+- key local no versionada: `platform/infra/kestra-runtime.local.key`
+- archivo cifrado versionado: `platform/infra/kestra-runtime.env.enc`
+
+## Tool Local Para Cifrar Y Descifrar
+
+La repo incluye esta utilidad:
+
+- `tools/manage_encrypted_env.py`
+
+Subcomandos disponibles:
+
+- `generate-key`: genera una key Fernet local
+- `encrypt`: cifra un archivo plaintext
+- `decrypt`: descifra un archivo cifrado
+
+Flujo sugerido:
+
+1. generar una key local no versionada
+2. descifrar el archivo cifrado a `platform/infra/kestra-runtime.env`
+3. editar el plaintext localmente
+4. volver a cifrarlo
+5. mantener el plaintext solo como archivo local ignorado por Git
+6. hacer pull request solo con el archivo cifrado
+
+Esos paths ya estan ignorados por Git cuando corresponde.
+
+Ejemplos de uso:
+
+```bash
+python tools/manage_encrypted_env.py generate-key --output platform/infra/kestra-runtime.local.key
+python tools/manage_encrypted_env.py decrypt --key-file platform/infra/kestra-runtime.local.key --input platform/infra/kestra-runtime.env.enc --output platform/infra/kestra-runtime.env --force
+python tools/manage_encrypted_env.py encrypt --key-file platform/infra/kestra-runtime.local.key --input platform/infra/kestra-runtime.env --output platform/infra/kestra-runtime.env.enc --force
+```
+
+Importante:
+
+- la key local no debe versionarse
+- el archivo plaintext descifrado no debe versionarse
+- el archivo cifrado si puede versionarse
+- si se pierde la key, el archivo cifrado no se puede recuperar
+
+## Tasks De VS Code
+
+La repo incluye tareas versionadas en `.vscode/tasks.json` para correr el flujo sin recordar comandos.
+
+Tareas disponibles:
+
+- `Kestra: Generate Runtime Key`
+- `Kestra: Decrypt Runtime Env`
+- `Kestra: Encrypt Runtime Env`
+
+Flujo recomendado con tasks:
+
+1. correr `Kestra: Generate Runtime Key` una sola vez por maquina local
+2. correr `Kestra: Decrypt Runtime Env`
+3. editar `platform/infra/kestra-runtime.env`
+4. correr `Kestra: Encrypt Runtime Env`
+5. hacer pull request con `platform/infra/kestra-runtime.env.enc`
+
+## Como Se Mapea A Los Flows
+
+### Variables no sensibles
+
+Patron:
+
+- infraestructura: `ENV_<NOMBRE_EN_MAYUSCULAS>`
+- flow: `{{ envs.<nombre_en_minusculas> }}`
+
+Ejemplo:
+
+- infraestructura: `ENV_BITRIX24_BASE_URL`
+- flow: `{{ envs.bitrix24_base_url }}`
+
+### Secrets
+
+Patron:
+
+- infraestructura: `SECRET_<NOMBRE_EN_MAYUSCULAS>`
+- flow: `{{ secret('<NOMBRE_EN_MAYUSCULAS>') }}`
+
+Ejemplo:
+
+- infraestructura: `SECRET_BITRIX24_WEBHOOK_PATH`
+- flow: `{{ secret('BITRIX24_WEBHOOK_PATH') }}`
+
+## Alcance Real De La Configuracion
+
+En el modelo actual, estas claves quedan cargadas a nivel de instancia Kestra.
+
+Eso significa:
+
+- no quedan aisladas por dominio
+- no quedan aisladas por namespace
+- no quedan aisladas por flow
+
+En la practica, si un flow corre en la misma instancia y conoce el nombre de una clave, puede intentar leerla.
+
+Respuesta corta a la pregunta operativa:
+
+- si, hoy las variables de runtime estan potencialmente disponibles para todos los namespaces de esa misma instancia
+
+Los namespaces separan flows y artefactos publicados, pero no separan automaticamente estas variables globales del contenedor.
+
+## Catalogo Actual Verificado
+
+### GitHub Actions
+
+Usados por deploy:
+
+- `KESTRA_URL`
+- `KESTRA_USERNAME`
+- `KESTRA_PASSWORD`
+- `KESTRA_TENANT`
+
+### Runtime Bitrix24: variables no sensibles
+
+Referenciadas hoy desde el flow `automations/bitrix24/flows/bitrix24_form_webhook.yaml`:
+
+- `bitrix24_base_url`
+- `bitrix24_contact_cuil_field`
+- `bitrix24_lead_cuil_field`
+- `bitrix24_lead_employment_status_field`
+- `bitrix24_lead_payment_bank_field`
+- `bitrix24_lead_province_field`
+- `bitrix24_lead_source_field`
+- `bitrix24_lead_rejection_reason_field`
+- `bitrix24_lead_status_qualified`
+- `bitrix24_lead_status_rejected`
+- `bitrix24_timeout_seconds`
+
+En la infraestructura actual corresponden a:
+
+- `ENV_BITRIX24_BASE_URL`
+- `ENV_BITRIX24_CONTACT_CUIL_FIELD`
+- `ENV_BITRIX24_LEAD_CUIL_FIELD`
+- `ENV_BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD`
+- `ENV_BITRIX24_LEAD_PAYMENT_BANK_FIELD`
+- `ENV_BITRIX24_LEAD_PROVINCE_FIELD`
+- `ENV_BITRIX24_LEAD_SOURCE_FIELD`
+- `ENV_BITRIX24_LEAD_REJECTION_REASON_FIELD`
+- `ENV_BITRIX24_LEAD_STATUS_QUALIFIED`
+- `ENV_BITRIX24_LEAD_STATUS_REJECTED`
+- `ENV_BITRIX24_TIMEOUT_SECONDS`
+
+Presencia verificada en VPS:
+
+- si
+
+### Runtime Bitrix24: secrets
+
+Referenciados hoy desde el flow:
+
+- `BITRIX24_WEBHOOK_PATH`
+- `BITRIX24_FORM_WEBHOOK_KEY`
+
+En la infraestructura actual corresponden a:
+
+- `SECRET_BITRIX24_WEBHOOK_PATH`
+- `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
+
+Presencia verificada en VPS:
+
+- si
+
+## Cuando Usar Cada Tipo
+
+Usar `envs` cuando el dato no es sensible:
+
+- URLs base
+- nombres o IDs de campos
+- timeouts
+- codigos funcionales
+- estados de negocio
+
+Usar `secret(...)` cuando el dato es sensible:
+
+- tokens
+- passwords
+- webhook paths privados
+- keys de webhook
+- credenciales de integracion
+
+## Convencion Recomendada De Nombres
+
+### Para variables no sensibles
+
+En flow:
+
+- `{{ envs.crm_api_base_url }}`
+- `{{ envs.crm_timeout_seconds }}`
+
+En infraestructura:
+
+- `ENV_CRM_API_BASE_URL`
+- `ENV_CRM_TIMEOUT_SECONDS`
+
+### Para secrets
+
+En flow:
+
+- `{{ secret('CRM_API_TOKEN') }}`
+
+En infraestructura:
+
+- `SECRET_CRM_API_TOKEN`
+
+Regla practica:
+
+- prefijo del dominio
+- nombre explicito
+- no mezclar mayusculas y minusculas al azar
+- no reutilizar nombres genericos como `TOKEN` o `BASE_URL`
+
+## Como Sumar Una Variable Nueva A Kestra
+
+En la implementacion actual, agregar una variable nueva implica tocar tanto la repo como la configuracion operativa de Kestra.
+
+### Paso 1. Decidir si es `envs` o `secret(...)`
+
+Preguntas utiles:
+
+- si se filtra, genera riesgo de seguridad
+- si cambia entre instalaciones, es solo configuracion funcional
+
+Si no es sensible, usar `envs`.
+
+Si es sensible, usar `secret(...)`.
+
+### Paso 2. Definir el nombre
+
+Ejemplo para dominio `crm`:
+
+- variable no sensible: `crm_api_base_url`
+- secret: `CRM_API_TOKEN`
+
+En infraestructura eso se convierte en:
+
+- `ENV_CRM_API_BASE_URL`
+- `SECRET_CRM_API_TOKEN`
+
+### Paso 3. Referenciarla en el flow
+
+Ejemplo:
+
+```yaml
+env:
+  CRM_API_BASE_URL: "{{ envs.crm_api_base_url }}"
+  CRM_API_TOKEN: "{{ secret('CRM_API_TOKEN') }}"
+```
+
+### Paso 4. Declararla en la infraestructura versionada
+
+Agregar la nueva clave en:
+
+- `platform/infra/.env.example`
+- `platform/infra/docker-compose.yml`
+
+Ejemplo en `.env.example`:
+
+```dotenv
+ENV_CRM_API_BASE_URL=https://api.example.com
+SECRET_CRM_API_TOKEN=change-me
+```
+
+Ejemplo en `docker-compose.yml` dentro del servicio `kestra`:
+
+```yaml
+environment:
+  ENV_CRM_API_BASE_URL: ${ENV_CRM_API_BASE_URL}
+  SECRET_CRM_API_TOKEN: ${SECRET_CRM_API_TOKEN}
+```
+
+### Paso 5. Cargar el valor real en el entorno operativo
+
+Importante:
+
+- el valor real no se commitea en Git
+- se carga en el `.env` operativo o mecanismo equivalente del servidor
+- `platform/infra/.env.example` es solo una referencia de nombres
+- la UI no es el mecanismo principal documentado para este setup
+
+### Paso 6. Reiniciar Kestra para que tome la configuracion
+
+Como la configuracion entra por variables del contenedor, Kestra necesita reiniciarse para leer nuevos valores.
+
+En la implementacion actual esto implica actualizar el servicio desplegado con la nueva configuracion de entorno.
+
+### Paso 7. Probar el flow en dev
+
+Validar al menos:
+
+- que el flow renderiza la expresion sin error
+- que la tarea recibe la variable esperada
+- que el valor nuevo produce el comportamiento esperado
+
+### Paso 8. Documentarla
+
+Actualizar:
+
+- este documento si la variable es transversal o relevante para operar la repo
+- `automations/<dominio>/docs/` si es especifica del dominio
+- el PR, explicando que se agrego configuracion nueva
+
+## Checklist Corto Para Variables Nuevas
+
+1. decidir si es variable o secret
+2. nombrarla con prefijo del dominio
+3. usarla en el flow
+4. agregarla a `.env.example`
+5. agregarla a `docker-compose.yml`
+6. cargar valor real fuera del repo
+7. reiniciar Kestra
+8. probar en dev
+9. documentarla
+
+## Lo Que No Hace Falta Hacer
+
+Agregar una variable nueva no implica automaticamente:
+
+- crear un ambiente nuevo en GitHub
+- crear un tenant nuevo en Kestra
+- crear un namespace nuevo fuera del patron actual
+- crear otra instancia de Kestra
+
+## Limite Importante Del Modelo Actual
+
+La configuracion de runtime cargada por `ENV_` y `SECRET_` vive a nivel de instancia Kestra, no a nivel de namespace dentro de esta repo.
+
+Consecuencia practica:
+
+- si dev y prod comparten la misma instancia, estas variables no quedan aisladas por namespace solo por usar `envs` y `secret(...)`
+- cambiar una variable global de la instancia impacta potencialmente a cualquier flow que la consuma en cualquier namespace de esa instancia
+
+Esto no bloquea el modelo actual, pero si en el futuro dev y prod necesitan valores distintos dentro de la misma instancia, habra que definir una estrategia mas fina.
+
+## Referencias
+
+- `platform/infra/.env.example`
+- `platform/infra/docker-compose.yml`
+- `automations/bitrix24/flows/bitrix24_form_webhook.yaml`
+- `automations/bitrix24/files/bitrix24_form_flow/README.md`

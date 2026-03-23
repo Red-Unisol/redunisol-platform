@@ -1,0 +1,60 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Kestra: Generate Runtime Key",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "tools/manage_encrypted_env.py",
+        "generate-key",
+        "--output",
+        "platform/infra/kestra-runtime.local.key"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Kestra: Decrypt Runtime Env",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "tools/manage_encrypted_env.py",
+        "decrypt",
+        "--key-file",
+        "platform/infra/kestra-runtime.local.key",
+        "--input",
+        "platform/infra/kestra-runtime.env.enc",
+        "--output",
+        "platform/infra/kestra-runtime.env",
+        "--force"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Kestra: Encrypt Runtime Env",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "tools/manage_encrypted_env.py",
+        "encrypt",
+        "--key-file",
+        "platform/infra/kestra-runtime.local.key",
+        "--input",
+        "platform/infra/kestra-runtime.env",
+        "--output",
+        "platform/infra/kestra-runtime.env.enc",
+        "--force"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -8,10 +8,15 @@ venv/
 .env
 .env.*
 !.env.example
+platform/infra/kestra-runtime.local.key
+platform/infra/kestra-runtime.env
 .DS_Store
 Thumbs.db
 *.log
 *.tmp
 *.bak
 .idea/
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+AGENTS.md
+credentials.txt
