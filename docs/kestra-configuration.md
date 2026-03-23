@@ -15,7 +15,7 @@ Es importante no mezclar estas dos capas:
 
 ### 1. Configuracion de CI/CD en GitHub
 
-Se usa para que los workflows puedan autenticarse contra Kestra y ejecutar deploys.
+Se usa para que los workflows puedan autenticarse contra Kestra, descifrar configuracion runtime y ejecutar deploys.
 
 Secrets actuales esperados en GitHub environments:
 
@@ -24,7 +24,19 @@ Secrets actuales esperados en GitHub environments:
 - `KESTRA_PASSWORD`
 - `KESTRA_TENANT`
 
+Secrets adicionales para deploy de infraestructura:
+
+- `KESTRA_RUNTIME_ENV_KEY`
+- `KESTRA_SSH_HOST`
+- `KESTRA_SSH_PORT`
+- `KESTRA_SSH_USER`
+- `KESTRA_SSH_PRIVATE_KEY`
+
 Estos valores viven en GitHub, no en los flows.
+
+Environment recomendado para esos secrets:
+
+- `kestra-infra`
 
 ### 2. Configuracion de runtime dentro de Kestra
 
@@ -110,6 +122,20 @@ La idea seria:
 3. descifrarlo localmente solo cuando haga falta editarlo
 4. volver a cifrarlo antes del pull request
 5. dejar que un deploy de infraestructura sincronice la version cifrada ya aprobada hacia la VPS
+
+Ese deploy ya queda implementado en `.github/workflows/deploy-infra.yml`.
+
+Alcance actual del workflow:
+
+- descifra `platform/infra/kestra-runtime.env.enc` en el runner
+- sube `.env`, `docker-compose.yml` y `application.yaml` a `/opt/kestra`
+- corre `docker compose config`, `docker compose pull` y `docker compose up -d`
+- limpia el plaintext descifrado al terminar
+
+Fuera de alcance en esta version:
+
+- configuracion de Apache del host
+- cambios manuales fuera de `/opt/kestra`
 
 Archivos concretos usados en esta repo:
 

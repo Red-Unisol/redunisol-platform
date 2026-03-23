@@ -6,12 +6,13 @@ Este documento describe como se validan y despliegan cambios desde GitHub hacia 
 
 ## Componentes
 
-La cadena actual tiene cuatro piezas principales:
+La cadena actual tiene cinco piezas principales:
 
 1. pull request
 2. GitHub Actions
 3. scripts de `tools/`
-4. API de Kestra
+4. SSH hacia la VPS
+5. API de Kestra
 
 ## Workflows Actuales
 
@@ -59,6 +60,31 @@ Comportamiento:
 - instala dependencias
 - despliega el dominio elegido al environment `kestra-prod`
 
+### `deploy-infra.yml`
+
+Corre en push a `main` cuando cambian archivos operativos del stack y tambien manualmente.
+
+Alcance de esta primera version:
+
+- `platform/infra/docker-compose.yml`
+- `platform/infra/application.yaml`
+- `platform/infra/kestra-runtime.env.enc`
+
+Comportamiento:
+
+- hace checkout de `main`
+- instala dependencias de `tools/`
+- descifra `platform/infra/kestra-runtime.env.enc` usando un secret de GitHub
+- sube `docker-compose.yml`, `application.yaml` y `.env` a `/opt/kestra` por SSH
+- valida `docker compose config`
+- ejecuta `docker compose pull` y `docker compose up -d`
+
+Importante:
+
+- este workflow no publica flows ni namespace files
+- este workflow no toca Apache en esta version
+- este workflow aplica infraestructura compartida de la instancia
+
 ## Script De Deploy
 
 `tools/deploy_kestra.py` es la pieza central del deploy.
@@ -85,10 +111,19 @@ Los workflows de deploy usan estos secrets de GitHub:
 - `KESTRA_PASSWORD`
 - `KESTRA_TENANT`
 
+El workflow de infraestructura usa ademas:
+
+- `KESTRA_RUNTIME_ENV_KEY`
+- `KESTRA_SSH_HOST`
+- `KESTRA_SSH_PORT`
+- `KESTRA_SSH_USER`
+- `KESTRA_SSH_PRIVATE_KEY`
+
 Environments esperados:
 
 - `kestra-dev`
 - `kestra-prod`
+- `kestra-infra`
 
 ## Que Pasa Cuando Se Hace Merge A Main
 
@@ -96,9 +131,9 @@ Flujo esperado:
 
 1. el PR pasa `Validate`
 2. se mergea a `main`
-3. `deploy-dev.yml` detecta dominios cambiados
-4. se ejecuta el job de deploy del dominio afectado
-5. el script publica flows y namespace files en Kestra dev
+3. si cambiaron flows o namespace files, `deploy-dev.yml` detecta dominios cambiados
+4. si cambio infraestructura operativa, `deploy-infra.yml` sincroniza `/opt/kestra`
+5. el job correspondiente publica flows y namespace files en Kestra dev
 
 ## Que Pasa En Prod
 
@@ -119,6 +154,7 @@ Hoy el pipeline no resuelve automaticamente estos problemas:
 - validar tests de nuevos dominios si `validate.yml` no fue extendido
 - borrar artefactos viejos automaticamente en Kestra
 - resolver promotion rules complejas entre manual/historico y Git-managed
+- desplegar configuracion de Apache del host
 
 ## Agregar Un Dominio Nuevo
 
