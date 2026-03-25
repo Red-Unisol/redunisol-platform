@@ -26,8 +26,8 @@ Hoy hace esto:
 - setup de Python 3.11
 - instalacion de dependencias desde `tools/requirements.txt`
 - validacion basica de estructura con `tools/validate_kestra.py`
-- tests unitarios de Bitrix24
-- dry-run de deploy para Bitrix24
+- tests unitarios de Marketing CRM
+- dry-run de deploy para Marketing CRM
 
 Importante:
 
@@ -46,9 +46,11 @@ Comportamiento:
 
 Hoy contempla:
 
-- `bitrix24`
-- `reporting`
-- `legacy`
+- `marketing-crm`
+- `analisis-credito`
+- `ahorros-amt`
+- `cobranzas`
+- `contabilidad`
 
 ### `deploy-prod.yml`
 
@@ -178,6 +180,6 @@ Si no se hace eso, el dominio puede quedar versionado pero no desplegable por pi
 ## Estado Verificado Al 2026-03-23
 
 - `Validate`: OK
-- `Deploy Dev` para `bitrix24`: OK
-- namespace `redunisol.dev.bitrix24`: verificado
+- `Deploy Dev` para `bitrix24`: OK como checkpoint historico previo al rename a `marketing-crm`
+- namespace `redunisol.dev.bitrix24`: verificado como checkpoint historico
 - deploy prod desde GitHub Actions: no verificado en runtime

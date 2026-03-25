@@ -24,9 +24,11 @@ La capa Git-managed es la que debe crecer de ahora en adelante.
 
 ```text
 automations/
-  bitrix24/
-  reporting/
-  legacy/
+  marketing-crm/
+  analisis-credito/
+  ahorros-amt/
+  cobranzas/
+  contabilidad/
 
 platform/
   infra/
@@ -109,9 +111,11 @@ No es un objeto nativo de Kestra, pero se usa como unidad para:
 
 Dominios presentes hoy:
 
-- `bitrix24`
-- `reporting`
-- `legacy`
+- `marketing-crm`
+- `analisis-credito`
+- `ahorros-amt`
+- `cobranzas`
+- `contabilidad`
 
 ## Modelo De Namespace
 
@@ -124,8 +128,8 @@ La convencion objetivo es:
 
 Ejemplos:
 
-- `redunisol.dev.bitrix24`
-- `redunisol.prod.reporting`
+- `redunisol.dev.marketing-crm`
+- `redunisol.prod.contabilidad`
 
 El YAML del flow no define por si solo el namespace final de ejecucion. El deploy lo reescribe.
 
@@ -186,7 +190,7 @@ Al 2026-03-23 se verifico:
 - instancia Kestra accesible en `http://kestra.redunisol.com.ar`
 - tenant activo `main`
 - flujo manual historico bajo `redunisol`
-- flujo Git-managed validado en `redunisol.dev.bitrix24`
+- flujo Git-managed historico validado en `redunisol.dev.bitrix24` antes del rename a `marketing-crm`
 
 ## Decisiones De Arquitectura Ya Tomadas
 

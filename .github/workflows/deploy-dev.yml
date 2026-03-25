@@ -12,17 +12,21 @@ on:
         type: choice
         options:
           - all
-          - bitrix24
-          - reporting
-          - legacy
+          - marketing-crm
+          - analisis-credito
+          - ahorros-amt
+          - cobranzas
+          - contabilidad
 
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      bitrix24: ${{ steps.filter.outputs.bitrix24 }}
-      reporting: ${{ steps.filter.outputs.reporting }}
-      legacy: ${{ steps.filter.outputs.legacy }}
+      marketing-crm: ${{ steps.filter.outputs.marketing-crm }}
+      analisis-credito: ${{ steps.filter.outputs.analisis-credito }}
+      ahorros-amt: ${{ steps.filter.outputs.ahorros-amt }}
+      cobranzas: ${{ steps.filter.outputs.cobranzas }}
+      contabilidad: ${{ steps.filter.outputs.contabilidad }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,20 +36,24 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            bitrix24:
-              - 'automations/bitrix24/**'
-            reporting:
-              - 'automations/reporting/**'
-            legacy:
-              - 'automations/legacy/**'
+            marketing-crm:
+              - 'automations/marketing-crm/**'
+            analisis-credito:
+              - 'automations/analisis-credito/**'
+            ahorros-amt:
+              - 'automations/ahorros-amt/**'
+            cobranzas:
+              - 'automations/cobranzas/**'
+            contabilidad:
+              - 'automations/contabilidad/**'
 
-  deploy-dev-bitrix24:
+  deploy-dev-marketing-crm:
     runs-on: ubuntu-latest
     environment: kestra-dev
     needs: detect-changes
     if: >-
-      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'bitrix24')) ||
-      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.bitrix24 == 'true')
+      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'marketing-crm')) ||
+      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.marketing-crm == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,22 +68,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tools/requirements.txt
 
-      - name: Deploy Bitrix24 to dev
+      - name: Deploy Marketing CRM to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain bitrix24
+          python tools/deploy_kestra.py --environment dev --domain marketing-crm
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
           KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
           KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
 
-  deploy-dev-reporting:
+  deploy-dev-analisis-credito:
     runs-on: ubuntu-latest
     environment: kestra-dev
     needs: detect-changes
     if: >-
-      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'reporting')) ||
-      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.reporting == 'true')
+      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'analisis-credito')) ||
+      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.analisis-credito == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,22 +98,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tools/requirements.txt
 
-      - name: Deploy Reporting to dev
+      - name: Deploy Analisis Credito to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain reporting
+          python tools/deploy_kestra.py --environment dev --domain analisis-credito
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
           KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
           KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
 
-  deploy-dev-legacy:
+  deploy-dev-ahorros-amt:
     runs-on: ubuntu-latest
     environment: kestra-dev
     needs: detect-changes
     if: >-
-      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'legacy')) ||
-      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.legacy == 'true')
+      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'ahorros-amt')) ||
+      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.ahorros-amt == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,9 +128,69 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tools/requirements.txt
 
-      - name: Deploy Legacy to dev
+      - name: Deploy Ahorros Amt to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain legacy
+          python tools/deploy_kestra.py --environment dev --domain ahorros-amt
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
+  deploy-dev-cobranzas:
+    runs-on: ubuntu-latest
+    environment: kestra-dev
+    needs: detect-changes
+    if: >-
+      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'cobranzas')) ||
+      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.cobranzas == 'true')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/requirements.txt
+
+      - name: Deploy Cobranzas to dev
+        run: |
+          python tools/deploy_kestra.py --environment dev --domain cobranzas
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
+  deploy-dev-contabilidad:
+    runs-on: ubuntu-latest
+    environment: kestra-dev
+    needs: detect-changes
+    if: >-
+      (github.event_name == 'workflow_dispatch' && (inputs.domain == 'all' || inputs.domain == 'contabilidad')) ||
+      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.contabilidad == 'true')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/requirements.txt
+
+      - name: Deploy Contabilidad to dev
+        run: |
+          python tools/deploy_kestra.py --environment dev --domain contabilidad
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}

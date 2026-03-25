@@ -24,10 +24,10 @@ jobs:
       - name: Validate repository structure
         run: python tools/validate_kestra.py
 
-      - name: Run Bitrix24 unit tests
-        run: python -m unittest discover -s automations/bitrix24/files/bitrix24_form_flow/tests -p "test_*.py"
+      - name: Run Marketing CRM unit tests
+        run: python -m unittest discover -s automations/marketing-crm/files/bitrix24_form_flow/tests -p "test_*.py"
         env:
-          PYTHONPATH: automations/bitrix24/files
+          PYTHONPATH: automations/marketing-crm/files
 
-      - name: Dry-run Bitrix24 deploy
-        run: python tools/deploy_kestra.py --environment dev --domain bitrix24 --dry-run
+      - name: Dry-run Marketing CRM deploy
+        run: python tools/deploy_kestra.py --environment dev --domain marketing-crm --dry-run

@@ -11,7 +11,13 @@ from requests.auth import HTTPBasicAuth
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TENANT = "main"
 DOMAIN_ROOT = ROOT / "automations"
-KNOWN_DOMAINS = ("bitrix24", "reporting", "legacy")
+KNOWN_DOMAINS = (
+    "marketing-crm",
+    "analisis-credito",
+    "ahorros-amt",
+    "cobranzas",
+    "contabilidad",
+)
 NAMESPACE_PREFIX = "redunisol"
 
 

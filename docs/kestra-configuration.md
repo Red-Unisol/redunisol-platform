@@ -256,7 +256,7 @@ Usados por deploy:
 
 ### Runtime Bitrix24: variables no sensibles
 
-Referenciadas hoy desde el flow `automations/bitrix24/flows/bitrix24_form_webhook.yaml`:
+Referenciadas hoy desde el flow `automations/marketing-crm/flows/bitrix24_form_webhook.yaml`:
 
 - `bitrix24_base_url`
 - `bitrix24_contact_cuil_field`
@@ -479,5 +479,5 @@ Esto no bloquea el modelo actual, pero si en el futuro dev y prod necesitan valo
 
 - `platform/infra/.env.example`
 - `platform/infra/docker-compose.yml`
-- `automations/bitrix24/flows/bitrix24_form_webhook.yaml`
-- `automations/bitrix24/files/bitrix24_form_flow/README.md`
+- `automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
+- `automations/marketing-crm/files/bitrix24_form_flow/README.md`

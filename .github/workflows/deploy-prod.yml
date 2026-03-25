@@ -8,9 +8,11 @@ on:
         required: true
         type: choice
         options:
-          - bitrix24
-          - reporting
-          - legacy
+          - marketing-crm
+          - analisis-credito
+          - ahorros-amt
+          - cobranzas
+          - contabilidad
 
 jobs:
   deploy-prod:

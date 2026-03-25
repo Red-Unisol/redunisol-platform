@@ -4,6 +4,8 @@
 /tools/ @Nasst
 
 # Dominios
-/automations/bitrix24/ @Nasst
-/automations/reporting/ @Nasst
-/automations/legacy/ @Nasst
+/automations/marketing-crm/ @Nasst
+/automations/analisis-credito/ @Nasst
+/automations/ahorros-amt/ @Nasst
+/automations/cobranzas/ @Nasst
+/automations/contabilidad/ @Nasst
