@@ -23,7 +23,7 @@ tasks:
       - pip install kestra requests > /dev/null
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
-      VIMARX_EVAL_BASE_URL: "{{ secret('SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
       VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
     commands:

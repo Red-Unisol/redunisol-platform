@@ -63,6 +63,7 @@ En otras palabras:
 
 - Kestra no lee directamente el archivo `.env`
 - Docker Compose lee `.env` y pasa el resultado al contenedor
+- para secrets, Kestra espera variables con prefijo `SECRET_` y valores codificados en Base64
 
 La definicion versionada de ese mecanismo vive en:
 
@@ -80,6 +81,7 @@ Ejemplos reales:
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
+- `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
 - `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`
 
 ## Estado Verificado En VPS
@@ -332,9 +334,32 @@ Uso esperado desde un flow:
 
 Importante:
 
+- en `platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`
 - se guarda solo el base URL
 - los paths concretos de la API siguen definidos por la automatizacion que la consuma
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
+
+### Runtime Analisis Credito: webhook secret
+
+Referenciado hoy desde el flow `automations/analisis-credito/flows/renovacion_cruz_del_eje.yaml`.
+
+Secret cargado en runtime:
+
+- `ANALISIS_CREDITO_WEBHOOK_KEY`
+
+En la infraestructura actual corresponde a:
+
+- `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+
+Uso esperado desde un flow:
+
+- `{{ secret('ANALISIS_CREDITO_WEBHOOK_KEY') }}`
+
+Importante:
+
+- en `platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+- el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
+- es la key efectiva del path del webhook, por lo que debe tratarse como secreto
 
 ## Cuando Usar Cada Tipo
 
