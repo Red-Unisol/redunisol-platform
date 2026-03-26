@@ -30,17 +30,52 @@ const icons = {
     ),
 };
 
+const placeholderTool = {
+    id: 'proxima-herramienta',
+    title: 'Proxima herramienta',
+    category: 'Alta manual',
+    status: 'soon',
+    icon: 'plus',
+    actionLabel: 'Proximamente',
+    isPlaceholder: true,
+};
+
 function App({ branding, tools }) {
-    const featuredTool = tools[0] ?? null;
+    const [selectedToolId, setSelectedToolId] = React.useState(null);
     const [cuil, setCuil] = React.useState('');
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
 
+    const selectedTool = tools.find((tool) => tool.id === selectedToolId) ?? null;
+    const catalog = [...tools, placeholderTool];
+
+    const openTool = (tool) => {
+        if (tool.isPlaceholder || tool.status !== 'active') {
+            return;
+        }
+
+        setSelectedToolId(tool.id);
+        setError('');
+        setResult(null);
+    };
+
+    const closeTool = () => {
+        setSelectedToolId(null);
+        setError('');
+        setResult(null);
+    };
+
+    const clearToolState = () => {
+        setCuil('');
+        setError('');
+        setResult(null);
+    };
+
     const handleSubmit = async (event) => {
         event.preventDefault();
 
-        if (!featuredTool?.endpoint) {
+        if (!selectedTool?.endpoint) {
             setError('La herramienta todavia no tiene un endpoint configurado.');
             return;
         }
@@ -50,7 +85,7 @@ function App({ branding, tools }) {
         setResult(null);
 
         try {
-            const response = await fetch(featuredTool.endpoint, {
+            const response = await fetch(selectedTool.endpoint, {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
@@ -91,67 +126,62 @@ function App({ branding, tools }) {
                     </a>
                 </div>
 
-                <div className="hero__body">
-                    <div>
-                        <p className="hero__eyebrow">Hub operativo</p>
-                        <h1 className="hero__title">{branding.headline}</h1>
-                        <p className="hero__description">{branding.description}</p>
-                    </div>
-                    <div className="hero__stats">
-                        <article className="stat-card">
-                            <p className="hero__eyebrow">Disponibles hoy</p>
-                            <strong>{tools.length.toString().padStart(2, '0')} herramienta activa</strong>
-                        </article>
-                        <article className="stat-card">
-                            <p className="hero__eyebrow">Modo de alta</p>
-                            <strong>Catalogo versionado en Git</strong>
-                        </article>
-                    </div>
+                <div className="hero__summary">
+                    <p className="hero__eyebrow">Herramientas</p>
+                    <h1 className="hero__title">{branding.title}</h1>
                 </div>
             </section>
 
-            <div className="content-grid">
-                <section className="panel tool-panel">
-                    <div className="tool-panel__header">
-                        <div>
-                            <p className="section__eyebrow">Primera herramienta</p>
-                            <h2 className="tool-panel__title">{featuredTool?.title}</h2>
-                            <p className="tool-panel__description">{featuredTool?.description}</p>
-                        </div>
-                        <span className="status-chip status-chip--live">Activo</span>
-                    </div>
+            <section className="panel catalog">
+                <div className="catalog__grid">
+                    {catalog.map((tool) => {
+                        const isSelected = selectedTool?.id === tool.id;
+                        const isPlaceholder = tool.isPlaceholder || tool.status !== 'active';
 
-                    <div className="tool-grid">
-                        {tools.map((tool) => (
-                            <article className="tool-card tool-card--active" key={tool.id}>
+                        return (
+                            <article
+                                className={`tool-card ${isSelected ? 'tool-card--selected' : ''} ${isPlaceholder ? 'tool-card--muted' : 'tool-card--active'}`}
+                                key={tool.id}
+                            >
                                 <div className="tool-card__icon">{icons[tool.icon] ?? icons.plus}</div>
-                                <h3 className="tool-card__title">{tool.title}</h3>
-                                <p className="tool-card__description">{tool.helper}</p>
+
+                                <div className="tool-card__body">
+                                    <h2 className="tool-card__title">{tool.title}</h2>
+                                    <p className="tool-card__category">{tool.category}</p>
+                                </div>
+
                                 <div className="tool-card__footer">
-                                    <span className="tool-card__category">{tool.category}</span>
-                                    <span className="status-chip status-chip--live">Listo</span>
+                                    <span className={`status-chip ${isPlaceholder ? 'status-chip--soon' : 'status-chip--live'}`}>
+                                        {isPlaceholder ? 'Proximamente' : 'Activo'}
+                                    </span>
+                                    <button
+                                        className={`button ${isPlaceholder ? 'button--ghost' : 'button--primary'} button--small`}
+                                        type="button"
+                                        disabled={isPlaceholder}
+                                        onClick={() => openTool(tool)}
+                                    >
+                                        {isPlaceholder ? 'Proximamente' : 'Usar'}
+                                    </button>
                                 </div>
                             </article>
-                        ))}
+                        );
+                    })}
+                </div>
+            </section>
 
-                        <article className="tool-card">
-                            <div className="tool-card__icon">{icons.plus}</div>
-                            <h3 className="tool-card__title">Proxima herramienta</h3>
-                            <p className="tool-card__description">Este espacio ya queda preparado para sumar nuevas automatizaciones, reportes o accesos internos.</p>
-                            <div className="tool-card__footer">
-                                <span className="tool-card__category">Alta manual</span>
-                                <span className="status-chip status-chip--soon">Proximamente</span>
-                            </div>
-                        </article>
+            {selectedTool && (
+                <section className="panel workspace">
+                    <div className="workspace__header">
+                        <div>
+                            <p className="section__eyebrow">{selectedTool.category}</p>
+                            <h2 className="workspace__title">{selectedTool.title}</h2>
+                        </div>
+                        <button className="button button--ghost button--small" type="button" onClick={closeTool}>
+                            Cerrar
+                        </button>
                     </div>
-                </section>
 
-                <aside className="panel form-panel">
-                    <p className="section__eyebrow">Consulta online</p>
-                    <h2 className="form-panel__title">Consulta Renovacion Cruz del Eje</h2>
-                    <p className="form-panel__copy">Ingresa el CUIL del socio para consultar el estado actual de renovacion directamente contra el flujo de analisis de credito.</p>
-
-                    <form onSubmit={handleSubmit}>
+                    <form className="workspace__form" onSubmit={handleSubmit}>
                         <div className="field">
                             <label htmlFor="cuil">CUIL</label>
                             <input
@@ -162,14 +192,13 @@ function App({ branding, tools }) {
                                 onChange={(event) => setCuil(event.target.value)}
                                 autoComplete="off"
                             />
-                            <div className="field__hint">Acepta CUIL con o sin guiones. La consulta no guarda datos en base por ahora.</div>
                         </div>
 
                         <div className="actions">
                             <button className="button button--primary" disabled={loading} type="submit">
-                                {loading ? 'Consultando...' : featuredTool?.actionLabel ?? 'Consultar'}
+                                {loading ? 'Consultando...' : selectedTool.actionLabel ?? 'Consultar'}
                             </button>
-                            <button className="button button--ghost" type="button" onClick={() => { setCuil(''); setResult(null); setError(''); }}>
+                            <button className="button button--ghost" type="button" onClick={clearToolState}>
                                 Limpiar
                             </button>
                         </div>
@@ -187,11 +216,11 @@ function App({ branding, tools }) {
                                         <strong>{result.cuil || 'Sin dato'}</strong>
                                     </div>
                                     <div className="result__metric">
-                                        <span>Saldo renovacion</span>
+                                        <span>Saldo</span>
                                         <strong>{typeof result.saldo_renovacion === 'number' ? currencyFormatter.format(result.saldo_renovacion) : 'No informado'}</strong>
                                     </div>
                                     <div className="result__metric">
-                                        <span>Puede renovar</span>
+                                        <span>Renovacion</span>
                                         <strong>{result.puede_renovar ? 'Si' : 'No'}</strong>
                                     </div>
                                     <div className="result__metric">
@@ -202,18 +231,8 @@ function App({ branding, tools }) {
                             )}
                         </section>
                     )}
-                </aside>
-            </div>
-
-            <section className="panel section">
-                <p className="section__eyebrow">Escalable sin complejidad</p>
-                <h2 className="section__title">Un mismo lenguaje visual para todas las herramientas.</h2>
-                <p className="section__copy">La pagina esta preparada para crecer como un catalogo interno de accesos. Cada nueva herramienta puede sumarse manualmente manteniendo la misma identidad institucional, sin forzar una base de datos ni un panel de administracion desde el dia uno.</p>
-                <div className="footer-note">
-                    <span>{branding.support_copy}</span>
-                    <a href={branding.support_url} target="_blank" rel="noreferrer">Coordinar siguiente alta</a>
-                </div>
-            </section>
+                </section>
+            )}
         </div>
     );
 }
@@ -240,14 +259,14 @@ function getResultHeadline(result, error) {
     }
 
     if (result.ok && result.puede_renovar) {
-        return 'El socio puede renovar';
+        return 'Puede renovar';
     }
 
     if (result.ok) {
-        return 'El socio no puede renovar por ahora';
+        return 'No puede renovar';
     }
 
-    return 'La consulta devolvio una validacion';
+    return 'Respuesta de validacion';
 }
 
 function getResultCopy(result, error) {
@@ -260,11 +279,11 @@ function getResultCopy(result, error) {
     }
 
     if (result.ok && result.puede_renovar) {
-        return 'La herramienta recibio una respuesta positiva desde Kestra y devolvio el saldo de renovacion disponible.';
+        return 'Consulta completada correctamente.';
     }
 
     if (result.ok) {
-        return `Motivo informado por el flujo: ${humanizeReason(result.motivo || 'sin detalle')}.`;
+        return humanizeReason(result.motivo || 'sin detalle');
     }
 
     return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';

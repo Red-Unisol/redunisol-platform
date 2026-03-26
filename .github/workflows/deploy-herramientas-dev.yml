@@ -1,0 +1,128 @@
+name: Deploy Herramientas Dev
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/herramientas/**'
+      - '.github/workflows/deploy-herramientas-dev.yml'
+      - '.github/workflows/deploy-herramientas-prod.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-herramientas-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: herramientas-dev
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/redunisol-herramientas
+      IMAGE_TAG: dev-${{ github.sha }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      TARGET_DIR: ${{ secrets.TARGET_DIR }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: web/herramientas
+          file: web/herramientas/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:dev-latest
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Trust target host
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Prepare deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/herramientas.env" <<EOF
+          COMPOSE_PROJECT_NAME=herramientas-dev
+          APP_IMAGE=${IMAGE_NAME}:${IMAGE_TAG}
+          APP_BIND=${{ secrets.APP_BIND }}
+          APP_NAME=${{ secrets.APP_NAME }}
+          APP_ENV=${{ secrets.APP_ENV }}
+          APP_DEBUG=${{ secrets.APP_DEBUG }}
+          APP_URL=${{ secrets.APP_URL }}
+          APP_KEY=${{ secrets.APP_KEY }}
+          ANALISIS_CREDITO_WEBHOOK_URL=${{ secrets.ANALISIS_CREDITO_WEBHOOK_URL }}
+          ANALISIS_CREDITO_TIMEOUT_SECONDS=${{ secrets.ANALISIS_CREDITO_TIMEOUT_SECONDS }}
+          LOG_CHANNEL=${{ secrets.LOG_CHANNEL }}
+          GHCR_USERNAME=${GHCR_USERNAME}
+          GHCR_TOKEN=${GHCR_TOKEN}
+          EOF
+
+      - name: Upload deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_STAGING_DIR="/tmp/herramientas-dev-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR'"
+          scp -P "$SSH_PORT" web/herramientas/deploy/docker-compose.vps.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/herramientas.env" "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+
+      - name: Deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+
+          trap 'rm -rf "$staging_dir"' EXIT
+
+          install -d -m 755 "$target_dir"
+          install -m 600 "$staging_dir/.env" "$target_dir/.env"
+          install -m 644 "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+
+          set -a
+          . "$target_dir/.env"
+          set +a
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+          cd "$target_dir"
+          docker compose --env-file .env config -q
+          docker compose --env-file .env pull
+          docker compose --env-file .env up -d --remove-orphans
+          docker compose --env-file .env ps
+          EOF

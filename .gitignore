@@ -22,3 +22,5 @@ AGENTS.md
 credentials.txt
 temp/*
 untracked/*
+composer
+composer-setup.php

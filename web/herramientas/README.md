@@ -79,6 +79,47 @@ docker compose up --build
 
 Expone la app en `http://127.0.0.1:3010`.
 
+## Deploy Git-managed
+
+La forma recomendada de deploy para esta app es que GitHub Actions construya la imagen Docker desde Git y despliegue en la VPS usando un `docker-compose.yml` de runtime.
+
+Archivos de deploy:
+
+- `.github/workflows/deploy-herramientas-dev.yml`
+- `.github/workflows/deploy-herramientas-prod.yml`
+- `deploy/docker-compose.vps.yml`
+
+Comportamiento esperado:
+
+- `dev`: deploy automatico al hacer push a `main` si hubo cambios en `web/herramientas/`
+- `prod`: deploy manual via `workflow_dispatch`
+
+En GitHub conviene crear dos environments:
+
+- `herramientas-dev`
+- `herramientas-prod`
+
+Secrets esperados en ambos environments:
+
+- `SSH_HOST`
+- `SSH_PORT`
+- `SSH_USER`
+- `SSH_PRIVATE_KEY`
+- `TARGET_DIR`
+- `GHCR_USERNAME`
+- `GHCR_TOKEN`
+- `APP_BIND` ejemplo `127.0.0.1:3011:80` en dev o `127.0.0.1:3010:80` en prod
+- `APP_NAME`
+- `APP_ENV`
+- `APP_DEBUG`
+- `APP_URL`
+- `APP_KEY`
+- `ANALISIS_CREDITO_WEBHOOK_URL`
+- `ANALISIS_CREDITO_TIMEOUT_SECONDS`
+- `LOG_CHANNEL`
+
+Con este esquema, Git queda como fuente de verdad: Actions construye una imagen desde el commit y luego actualiza la instancia remota via Docker Compose.
+
 ## Agregar una nueva herramienta
 
 1. sumar la metadata en `config/tools.php`
