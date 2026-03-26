@@ -14,7 +14,7 @@ La regla principal es simple:
 Hoy conviven dos capas:
 
 1. capa historica/manual fuera de esta monorepo
-2. capa Git-managed dentro de `redunisol-kestra/`
+2. capa Git-managed dentro de esta monorepo
 
 La capa historica sigue existiendo en el workspace raiz `kestra-deploy/`.
 
@@ -23,16 +23,21 @@ La capa Git-managed es la que debe crecer de ahora en adelante.
 ## Estructura Principal
 
 ```text
-automations/
-  marketing-crm/
-  analisis-credito/
-  ahorros-amt/
-  cobranzas/
-  contabilidad/
+kestra/
+  automations/
+    marketing-crm/
+    analisis-credito/
+    ahorros-amt/
+    cobranzas/
+    contabilidad/
+  platform/
+    infra/
+    system/
+  tools/
 
-platform/
-  infra/
-  system/
+web/
+  redunisol-web/
+  shared/
 
 tools/
 
@@ -43,7 +48,7 @@ docs/
 
 ## Responsabilidad De Cada Carpeta
 
-### `automations/`
+### `kestra/automations/`
 
 Agrupa automatizaciones por dominio funcional.
 
@@ -56,11 +61,11 @@ Cada dominio puede contener:
 
 La unidad principal de cambio de negocio vive aca.
 
-### `platform/`
+### `kestra/platform/`
 
 Agrupa componentes de plataforma compartidos.
 
-#### `platform/infra/`
+#### `kestra/platform/infra/`
 
 Contiene infraestructura operativa de la instancia:
 
@@ -69,13 +74,17 @@ Contiene infraestructura operativa de la instancia:
 - configuracion de Apache
 - notas operativas de infraestructura
 
-#### `platform/system/`
+#### `kestra/platform/system/`
 
 Reserva espacio para flows del namespace system.
 
-### `tools/`
+### `kestra/tools/`
 
-Contiene scripts operativos que entienden la estructura de la monorepo.
+Contiene scripts operativos que entienden la estructura de Kestra dentro de la monorepo.
+
+### `web/`
+
+Reserva espacio para sitios web y recursos compartidos de frontend, sin mezclar su ciclo de vida con la infraestructura de Kestra.
 
 Scripts actuales:
 

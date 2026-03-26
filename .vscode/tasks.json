@@ -6,10 +6,10 @@
       "type": "shell",
       "command": "python",
       "args": [
-        "tools/manage_encrypted_env.py",
+        "kestra/tools/manage_encrypted_env.py",
         "generate-key",
         "--output",
-        "platform/infra/kestra-runtime.local.key"
+        "kestra/platform/infra/kestra-runtime.local.key"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -21,14 +21,14 @@
       "type": "shell",
       "command": "python",
       "args": [
-        "tools/manage_encrypted_env.py",
+        "kestra/tools/manage_encrypted_env.py",
         "decrypt",
         "--key-file",
-        "platform/infra/kestra-runtime.local.key",
+        "kestra/platform/infra/kestra-runtime.local.key",
         "--input",
-        "platform/infra/kestra-runtime.env.enc",
+        "kestra/platform/infra/kestra-runtime.env.enc",
         "--output",
-        "platform/infra/kestra-runtime.env",
+        "kestra/platform/infra/kestra-runtime.env",
         "--force"
       ],
       "options": {
@@ -41,14 +41,14 @@
       "type": "shell",
       "command": "python",
       "args": [
-        "tools/manage_encrypted_env.py",
+        "kestra/tools/manage_encrypted_env.py",
         "encrypt",
         "--key-file",
-        "platform/infra/kestra-runtime.local.key",
+        "kestra/platform/infra/kestra-runtime.local.key",
         "--input",
-        "platform/infra/kestra-runtime.env",
+        "kestra/platform/infra/kestra-runtime.env",
         "--output",
-        "platform/infra/kestra-runtime.env.enc",
+        "kestra/platform/infra/kestra-runtime.env.enc",
         "--force"
       ],
       "options": {

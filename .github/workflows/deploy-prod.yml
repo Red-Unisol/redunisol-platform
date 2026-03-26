@@ -32,11 +32,11 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Deploy selected domain to prod
         run: |
-          python tools/deploy_kestra.py --environment prod --domain "${{ inputs.domain }}"
+          python kestra/tools/deploy_kestra.py --environment prod --domain "${{ inputs.domain }}"
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}

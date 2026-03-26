@@ -8,8 +8,8 @@ venv/
 .env
 .env.*
 !.env.example
-platform/infra/kestra-runtime.local.key
-platform/infra/kestra-runtime.env
+kestra/platform/infra/kestra-runtime.local.key
+kestra/platform/infra/kestra-runtime.env
 .DS_Store
 Thumbs.db
 *.log

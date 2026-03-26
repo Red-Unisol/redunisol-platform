@@ -10,7 +10,7 @@ La cadena actual tiene cinco piezas principales:
 
 1. pull request
 2. GitHub Actions
-3. scripts de `tools/`
+3. scripts de `kestra/tools/`
 4. SSH hacia la VPS
 5. API de Kestra
 
@@ -24,8 +24,8 @@ Hoy hace esto:
 
 - checkout del repo
 - setup de Python 3.11
-- instalacion de dependencias desde `tools/requirements.txt`
-- validacion basica de estructura con `tools/validate_kestra.py`
+- instalacion de dependencias desde `kestra/tools/requirements.txt`
+- validacion basica de estructura con `kestra/tools/validate_kestra.py`
 - tests unitarios de Marketing CRM
 - dry-run de deploy para Marketing CRM
 
@@ -68,15 +68,15 @@ Corre en push a `main` cuando cambian archivos operativos del stack y tambien ma
 
 Alcance de esta primera version:
 
-- `platform/infra/docker-compose.yml`
-- `platform/infra/application.yaml`
-- `platform/infra/kestra-runtime.env.enc`
+- `kestra/platform/infra/docker-compose.yml`
+- `kestra/platform/infra/application.yaml`
+- `kestra/platform/infra/kestra-runtime.env.enc`
 
 Comportamiento:
 
 - hace checkout de `main`
-- instala dependencias de `tools/`
-- descifra `platform/infra/kestra-runtime.env.enc` usando un secret de GitHub
+- instala dependencias de `kestra/tools/`
+- descifra `kestra/platform/infra/kestra-runtime.env.enc` usando un secret de GitHub
 - sube `docker-compose.yml`, `application.yaml` y `.env` a `/opt/kestra` por SSH
 - valida `docker compose config`
 - ejecuta `docker compose pull` y `docker compose up -d`
@@ -89,7 +89,7 @@ Importante:
 
 ## Script De Deploy
 
-`tools/deploy_kestra.py` es la pieza central del deploy.
+`kestra/tools/deploy_kestra.py` es la pieza central del deploy.
 
 Responsabilidades:
 
@@ -160,9 +160,9 @@ Hoy el pipeline no resuelve automaticamente estos problemas:
 
 ## Agregar Un Dominio Nuevo
 
-Si se agrega `automations/<dominio>/`, revisar:
+Si se agrega `kestra/automations/<dominio>/`, revisar:
 
-- `tools/deploy_kestra.py`
+- `kestra/tools/deploy_kestra.py`
 - `.github/workflows/deploy-dev.yml`
 - `.github/workflows/deploy-prod.yml`
 - `.github/CODEOWNERS` si aplica

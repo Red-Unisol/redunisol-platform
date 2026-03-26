@@ -1,11 +1,11 @@
 # Infra y pipelines
-/platform/ @Nasst
+/kestra/platform/ @Nasst
 /.github/workflows/ @Nasst
-/tools/ @Nasst
+/kestra/tools/ @Nasst
 
 # Dominios
-/automations/marketing-crm/ @Nasst
-/automations/analisis-credito/ @Nasst
-/automations/ahorros-amt/ @Nasst
-/automations/cobranzas/ @Nasst
-/automations/contabilidad/ @Nasst
+/kestra/automations/marketing-crm/ @Nasst
+/kestra/automations/analisis-credito/ @Nasst
+/kestra/automations/ahorros-amt/ @Nasst
+/kestra/automations/cobranzas/ @Nasst
+/kestra/automations/contabilidad/ @Nasst

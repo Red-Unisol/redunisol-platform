@@ -5,11 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'platform/infra/docker-compose.yml'
-      - 'platform/infra/application.yaml'
-      - 'platform/infra/kestra-runtime.env.enc'
-      - 'tools/manage_encrypted_env.py'
-      - 'tools/requirements.txt'
+      - 'kestra/platform/infra/docker-compose.yml'
+      - 'kestra/platform/infra/application.yaml'
+      - 'kestra/platform/infra/kestra-runtime.env.enc'
+      - 'kestra/tools/manage_encrypted_env.py'
+      - 'kestra/tools/requirements.txt'
       - '.github/workflows/deploy-infra.yml'
   workflow_dispatch:
 
@@ -44,7 +44,7 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Load SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -63,10 +63,10 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/kestra-runtime.key"
-          python tools/manage_encrypted_env.py decrypt \
+          python kestra/tools/manage_encrypted_env.py decrypt \
             --key-file "$RUNNER_TEMP/kestra-runtime.key" \
-            --input platform/infra/kestra-runtime.env.enc \
-            --output platform/infra/kestra-runtime.env \
+            --input kestra/platform/infra/kestra-runtime.env.enc \
+            --output kestra/platform/infra/kestra-runtime.env \
             --force
 
       - name: Upload staged infra files
@@ -76,9 +76,9 @@ jobs:
           REMOTE_STAGING_DIR="/tmp/kestra-infra-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR'"
-          scp -P "$SSH_PORT" platform/infra/docker-compose.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
-          scp -P "$SSH_PORT" platform/infra/application.yaml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/application.yaml"
-          scp -P "$SSH_PORT" platform/infra/kestra-runtime.env "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+          scp -P "$SSH_PORT" kestra/platform/infra/docker-compose.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
+          scp -P "$SSH_PORT" kestra/platform/infra/application.yaml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/application.yaml"
+          scp -P "$SSH_PORT" kestra/platform/infra/kestra-runtime.env "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
 
       - name: Apply infra on VPS
         shell: bash
@@ -116,4 +116,4 @@ jobs:
         shell: bash
         run: |
           rm -f "$RUNNER_TEMP/kestra-runtime.key"
-          rm -f platform/infra/kestra-runtime.env
+          rm -f kestra/platform/infra/kestra-runtime.env

@@ -25,17 +25,17 @@ Configuracion objetivo definida al iniciar la migracion:
 
 Contenido copiado originalmente desde el workspace operativo:
 
-- `platform/infra/`
+- `kestra/platform/infra/`
   - `docker-compose.yml`
   - `application.yaml`
   - `.env.example`
   - `apache/**`
   - `README.md`
-- `automations/bitrix24/`
+- `kestra/automations/bitrix24/`
   - `flows/bitrix24_form_webhook.yaml`
   - `files/bitrix24_form_flow/**`
   - `docs/FORM_WEBHOOK_API.md`
-- `platform/system/flows/redunisol/`
+- `kestra/platform/system/flows/redunisol/`
   - sin flows versionados por ahora
 
 ## Notas Historicas

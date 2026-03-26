@@ -67,8 +67,8 @@ En otras palabras:
 
 La definicion versionada de ese mecanismo vive en:
 
-- `platform/infra/.env.example`
-- `platform/infra/docker-compose.yml`
+- `kestra/platform/infra/.env.example`
+- `kestra/platform/infra/docker-compose.yml`
 
 Patron actual:
 
@@ -108,8 +108,8 @@ En esta instalacion, el camino correcto no es la UI de Kestra como flujo normal 
 El camino correcto hoy es:
 
 1. cambiar el flow en Git si necesita una clave nueva
-2. declarar la clave en `platform/infra/.env.example`
-3. pasar la clave al servicio `kestra` en `platform/infra/docker-compose.yml`
+2. declarar la clave en `kestra/platform/infra/.env.example`
+3. pasar la clave al servicio `kestra` en `kestra/platform/infra/docker-compose.yml`
 4. cargar el valor real en `/opt/kestra/.env` en la VPS
 5. reiniciar o recrear el servicio Kestra
 6. probar en dev
@@ -132,7 +132,7 @@ Ese deploy ya queda implementado en `.github/workflows/deploy-infra.yml`.
 
 Alcance actual del workflow:
 
-- descifra `platform/infra/kestra-runtime.env.enc` en el runner
+- descifra `kestra/platform/infra/kestra-runtime.env.enc` en el runner
 - sube `.env`, `docker-compose.yml` y `application.yaml` a `/opt/kestra`
 - corre `docker compose config`, `docker compose pull` y `docker compose up -d`
 - limpia el plaintext descifrado al terminar
@@ -144,15 +144,15 @@ Fuera de alcance en esta version:
 
 Archivos concretos usados en esta repo:
 
-- plaintext local no versionado: `platform/infra/kestra-runtime.env`
-- key local no versionada: `platform/infra/kestra-runtime.local.key`
-- archivo cifrado versionado: `platform/infra/kestra-runtime.env.enc`
+- plaintext local no versionado: `kestra/platform/infra/kestra-runtime.env`
+- key local no versionada: `kestra/platform/infra/kestra-runtime.local.key`
+- archivo cifrado versionado: `kestra/platform/infra/kestra-runtime.env.enc`
 
 ## Tool Local Para Cifrar Y Descifrar
 
 La repo incluye esta utilidad:
 
-- `tools/manage_encrypted_env.py`
+- `kestra/tools/manage_encrypted_env.py`
 
 Subcomandos disponibles:
 
@@ -163,7 +163,7 @@ Subcomandos disponibles:
 Flujo sugerido:
 
 1. generar una key local no versionada
-2. descifrar el archivo cifrado a `platform/infra/kestra-runtime.env`
+2. descifrar el archivo cifrado a `kestra/platform/infra/kestra-runtime.env`
 3. editar el plaintext localmente
 4. volver a cifrarlo
 5. mantener el plaintext solo como archivo local ignorado por Git
@@ -174,9 +174,9 @@ Esos paths ya estan ignorados por Git cuando corresponde.
 Ejemplos de uso:
 
 ```bash
-python tools/manage_encrypted_env.py generate-key --output platform/infra/kestra-runtime.local.key
-python tools/manage_encrypted_env.py decrypt --key-file platform/infra/kestra-runtime.local.key --input platform/infra/kestra-runtime.env.enc --output platform/infra/kestra-runtime.env --force
-python tools/manage_encrypted_env.py encrypt --key-file platform/infra/kestra-runtime.local.key --input platform/infra/kestra-runtime.env --output platform/infra/kestra-runtime.env.enc --force
+python kestra/tools/manage_encrypted_env.py generate-key --output kestra/platform/infra/kestra-runtime.local.key
+python kestra/tools/manage_encrypted_env.py decrypt --key-file kestra/platform/infra/kestra-runtime.local.key --input kestra/platform/infra/kestra-runtime.env.enc --output kestra/platform/infra/kestra-runtime.env --force
+python kestra/tools/manage_encrypted_env.py encrypt --key-file kestra/platform/infra/kestra-runtime.local.key --input kestra/platform/infra/kestra-runtime.env --output kestra/platform/infra/kestra-runtime.env.enc --force
 ```
 
 Importante:
@@ -200,9 +200,9 @@ Flujo recomendado con tasks:
 
 1. correr `Kestra: Generate Runtime Key` una sola vez por maquina local
 2. correr `Kestra: Decrypt Runtime Env`
-3. editar `platform/infra/kestra-runtime.env`
+3. editar `kestra/platform/infra/kestra-runtime.env`
 4. correr `Kestra: Encrypt Runtime Env`
-5. hacer pull request con `platform/infra/kestra-runtime.env.enc`
+5. hacer pull request con `kestra/platform/infra/kestra-runtime.env.enc`
 
 ## Como Se Mapea A Los Flows
 
@@ -261,7 +261,7 @@ Usados por deploy:
 
 ### Runtime Bitrix24: variables no sensibles
 
-Referenciadas hoy desde el flow `automations/marketing-crm/flows/bitrix24_form_webhook.yaml`:
+Referenciadas hoy desde el flow `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`:
 
 - `bitrix24_base_url`
 - `bitrix24_contact_cuil_field`
@@ -295,7 +295,7 @@ Presencia verificada en VPS:
 
 ### Runtime Analisis Credito: variables no sensibles
 
-Referenciadas hoy desde el flow `automations/analisis-credito/flows/renovacion_cruz_del_eje.yaml`:
+Referenciadas hoy desde el flow `kestra/automations/analisis-credito/flows/renovacion_cruz_del_eje.yaml`:
 
 - `vimarx_timeout_seconds`
 - `vimarx_verify_tls`
@@ -352,14 +352,14 @@ Uso esperado desde un flow:
 
 Importante:
 
-- en `platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`
+- en `kestra/platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`
 - se guarda solo el base URL
 - los paths concretos de la API siguen definidos por la automatizacion que la consuma
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
 
 ### Runtime Analisis Credito: webhook secret
 
-Referenciado hoy desde el flow `automations/analisis-credito/flows/renovacion_cruz_del_eje.yaml`.
+Referenciado hoy desde el flow `kestra/automations/analisis-credito/flows/renovacion_cruz_del_eje.yaml`.
 
 Secret cargado en runtime:
 
@@ -375,7 +375,7 @@ Uso esperado desde un flow:
 
 Importante:
 
-- en `platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+- en `kestra/platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
 - es la key efectiva del path del webhook, por lo que debe tratarse como secreto
 
@@ -469,8 +469,8 @@ env:
 
 Agregar la nueva clave en:
 
-- `platform/infra/.env.example`
-- `platform/infra/docker-compose.yml`
+- `kestra/platform/infra/.env.example`
+- `kestra/platform/infra/docker-compose.yml`
 
 Ejemplo en `.env.example`:
 
@@ -493,7 +493,7 @@ Importante:
 
 - el valor real no se commitea en Git
 - se carga en el `.env` operativo o mecanismo equivalente del servidor
-- `platform/infra/.env.example` es solo una referencia de nombres
+- `kestra/platform/infra/.env.example` es solo una referencia de nombres
 - la UI no es el mecanismo principal documentado para este setup
 
 ### Paso 6. Reiniciar Kestra para que tome la configuracion
@@ -515,7 +515,7 @@ Validar al menos:
 Actualizar:
 
 - este documento si la variable es transversal o relevante para operar la repo
-- `automations/<dominio>/docs/` si es especifica del dominio
+- `kestra/automations/<dominio>/docs/` si es especifica del dominio
 - el PR, explicando que se agrego configuracion nueva
 
 ## Checklist Corto Para Variables Nuevas
@@ -552,7 +552,7 @@ Esto no bloquea el modelo actual, pero si en el futuro dev y prod necesitan valo
 
 ## Referencias
 
-- `platform/infra/.env.example`
-- `platform/infra/docker-compose.yml`
-- `automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
-- `automations/marketing-crm/files/bitrix24_form_flow/README.md`
+- `kestra/platform/infra/.env.example`
+- `kestra/platform/infra/docker-compose.yml`
+- `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
+- `kestra/automations/marketing-crm/files/bitrix24_form_flow/README.md`

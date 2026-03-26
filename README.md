@@ -1,12 +1,12 @@
 # Guia Para Agregar Automatizaciones A Kestra
 
-Este es el documento principal para trabajar en esta repo.
+Este es el documento principal para trabajar en esta monorepo.
 
 Si queres sumar una automatizacion nueva, aca deberia estar el recorrido completo: como decidir el dominio, que archivos crear, donde va cada cosa, como agregar configuracion y como llega el cambio a dev y prod.
 
 ## Que Guarda Esta Repo
 
-Esta monorepo guarda automatizaciones Git-managed para Kestra.
+Esta monorepo guarda automatizaciones Git-managed para Kestra y deja preparado espacio para futuros sitios web.
 
 La idea operativa es esta:
 
@@ -24,27 +24,36 @@ Ambientes actuales:
 
 ## Estructura Base
 
-Todas las automatizaciones viven dentro de `automations/`.
+Todo lo relacionado con Kestra vive dentro de `kestra/`.
 
 ```text
-automations/
-  <dominio>/
-    flows/
-    files/
-    docs/
-    tests/
+kestra/
+  automations/
+    <dominio>/
+      flows/
+      files/
+      docs/
+      tests/
+  platform/
+  tools/
+
+web/
+  redunisol-web/
+  shared/
+
+tools/
 ```
 
 Que va en cada carpeta:
 
-- `automations/<dominio>/flows/`: flows YAML de Kestra
-- `automations/<dominio>/files/`: namespace files, codigo Python y archivos auxiliares
-- `automations/<dominio>/docs/`: documentacion del dominio
-- `automations/<dominio>/tests/`: tests del dominio
+- `kestra/automations/<dominio>/flows/`: flows YAML de Kestra
+- `kestra/automations/<dominio>/files/`: namespace files, codigo Python y archivos auxiliares
+- `kestra/automations/<dominio>/docs/`: documentacion del dominio
+- `kestra/automations/<dominio>/tests/`: tests del dominio
 
 Ejemplo completo actual:
 
-- `automations/marketing-crm/`
+- `kestra/automations/marketing-crm/`
 
 ## Paso 0: Decidir Si Va En Un Dominio Existente O En Uno Nuevo
 
@@ -86,7 +95,7 @@ Si la automatizacion va en un dominio existente, trabaja dentro de esa carpeta.
 Si necesitas un dominio nuevo, crea esto:
 
 ```text
-automations/
+kestra/automations/
   crm/
     flows/
     files/
@@ -101,14 +110,14 @@ Cada automatizacion empieza con un flow dentro de `flows/`.
 Ejemplo:
 
 ```text
-automations/crm/flows/alta_cliente.yaml
+kestra/automations/crm/flows/alta_cliente.yaml
 ```
 
 Puntos importantes:
 
 - el YAML define el flow de Kestra
 - el namespace escrito en el YAML no es el namespace final de runtime
-- `tools/deploy_kestra.py` reescribe el namespace segun ambiente y dominio
+- `kestra/tools/deploy_kestra.py` reescribe el namespace segun ambiente y dominio
 
 Patron final de namespaces:
 
@@ -122,16 +131,16 @@ Si el flow necesita Python, templates o archivos auxiliares, esos archivos van e
 Ejemplo:
 
 ```text
-automations/crm/files/crm_flow/main.py
+kestra/automations/crm/files/crm_flow/main.py
 ```
 
 En Kestra, esos archivos se publican como namespace files.
 
 Ejemplo real en esta repo:
 
-- flow: `automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
-- namespace files: `automations/marketing-crm/files/bitrix24_form_flow/**`
-- entrypoint ejecutado: `automations/marketing-crm/files/bitrix24_form_flow/kestra_webhook_entrypoint.py`
+- flow: `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
+- namespace files: `kestra/automations/marketing-crm/files/bitrix24_form_flow/**`
+- entrypoint ejecutado: `kestra/automations/marketing-crm/files/bitrix24_form_flow/kestra_webhook_entrypoint.py`
 
 Idea simple:
 
@@ -145,7 +154,7 @@ Cada dominio deberia tener documentacion minima en `docs/`.
 Archivo sugerido:
 
 ```text
-automations/crm/docs/README.md
+kestra/automations/crm/docs/README.md
 ```
 
 Contenido minimo recomendado:
@@ -165,7 +174,7 @@ Si hay logica Python o transformaciones relevantes, agregá tests.
 Archivo sugerido:
 
 ```text
-automations/crm/tests/test_main.py
+kestra/automations/crm/tests/test_main.py
 ```
 
 Si el dominio tiene una estructura distinta de tests, mantenela consistente con ese dominio.
@@ -198,17 +207,17 @@ Regla simple:
 El camino correcto hoy es este:
 
 1. cambiar el flow en Git
-2. declarar la clave en `platform/infra/.env.example`
-3. pasar la clave al servicio `kestra` en `platform/infra/docker-compose.yml`
+2. declarar la clave en `kestra/platform/infra/.env.example`
+3. pasar la clave al servicio `kestra` en `kestra/platform/infra/docker-compose.yml`
 4. cargar el valor real en el runtime env de infraestructura
 5. desplegar infraestructura
 6. probar en dev
 
 Sobre el runtime env:
 
-- el archivo versionado es `platform/infra/kestra-runtime.env.enc`
-- el archivo local editable es `platform/infra/kestra-runtime.env`
-- la key local es `platform/infra/kestra-runtime.local.key`
+- el archivo versionado es `kestra/platform/infra/kestra-runtime.env.enc`
+- el archivo local editable es `kestra/platform/infra/kestra-runtime.env`
+- la key local es `kestra/platform/infra/kestra-runtime.local.key`
 
 Si vas a tocar configuracion runtime, mira tambien:
 
@@ -230,7 +239,7 @@ Hoy el deploy conoce:
 
 Si agregas `crm`, revisar:
 
-- `tools/deploy_kestra.py`
+- `kestra/tools/deploy_kestra.py`
 - `.github/workflows/deploy-dev.yml`
 - `.github/workflows/deploy-prod.yml`
 - `.github/CODEOWNERS` si queres ownership por dominio
@@ -321,7 +330,7 @@ Archivo:
 
 Cuando corre:
 
-- automaticamente en push a `main` si cambian archivos de `platform/infra/`
+- automaticamente en push a `main` si cambian archivos de `kestra/platform/infra/`
 - manualmente si alguien lo dispara
 
 Que hace:
@@ -380,4 +389,4 @@ Documentos complementarios:
 
 Ejemplo de referencia para copiar estructura:
 
-- `automations/marketing-crm/`
+- `kestra/automations/marketing-crm/`

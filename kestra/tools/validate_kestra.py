@@ -2,11 +2,12 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = ROOT.parent
 REQUIRED_DIRS = [
     ROOT / 'platform' / 'infra',
     ROOT / 'platform' / 'system' / 'flows',
     ROOT / 'automations',
-    ROOT / '.github' / 'workflows',
+    REPO_ROOT / '.github' / 'workflows',
 ]
 
 

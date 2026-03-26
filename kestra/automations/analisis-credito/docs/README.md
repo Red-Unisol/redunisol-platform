@@ -52,4 +52,4 @@ Secrets:
 
 ### Namespace files
 
-- `automations/analisis-credito/files/analisis_credito_renovacion/**`
+- `kestra/automations/analisis-credito/files/analisis_credito_renovacion/**`

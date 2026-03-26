@@ -37,15 +37,15 @@ jobs:
         with:
           filters: |
             marketing-crm:
-              - 'automations/marketing-crm/**'
+              - 'kestra/automations/marketing-crm/**'
             analisis-credito:
-              - 'automations/analisis-credito/**'
+              - 'kestra/automations/analisis-credito/**'
             ahorros-amt:
-              - 'automations/ahorros-amt/**'
+              - 'kestra/automations/ahorros-amt/**'
             cobranzas:
-              - 'automations/cobranzas/**'
+              - 'kestra/automations/cobranzas/**'
             contabilidad:
-              - 'automations/contabilidad/**'
+              - 'kestra/automations/contabilidad/**'
 
   deploy-dev-marketing-crm:
     runs-on: ubuntu-latest
@@ -66,11 +66,11 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Deploy Marketing CRM to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain marketing-crm
+          python kestra/tools/deploy_kestra.py --environment dev --domain marketing-crm
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
@@ -96,11 +96,11 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Deploy Analisis Credito to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain analisis-credito
+          python kestra/tools/deploy_kestra.py --environment dev --domain analisis-credito
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
@@ -126,11 +126,11 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Deploy Ahorros Amt to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain ahorros-amt
+          python kestra/tools/deploy_kestra.py --environment dev --domain ahorros-amt
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
@@ -156,11 +156,11 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Deploy Cobranzas to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain cobranzas
+          python kestra/tools/deploy_kestra.py --environment dev --domain cobranzas
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
@@ -186,11 +186,11 @@ jobs:
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/requirements.txt
+          pip install -r kestra/tools/requirements.txt
 
       - name: Deploy Contabilidad to dev
         run: |
-          python tools/deploy_kestra.py --environment dev --domain contabilidad
+          python kestra/tools/deploy_kestra.py --environment dev --domain contabilidad
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}

@@ -21,6 +21,6 @@ Agregar documentacion nueva cuando haga falta dejar registrado alguno de estos p
 
 ## Lo que no deberia vivir aca
 
-- documentacion especifica de un dominio particular: va en `automations/<dominio>/docs/`
+- documentacion especifica de un dominio particular: va en `kestra/automations/<dominio>/docs/`
 - contratos de integracion que pertenecen a un dominio puntual: van con ese dominio
 - notas historicas operativas externas a la monorepo: van fuera de esta carpeta
