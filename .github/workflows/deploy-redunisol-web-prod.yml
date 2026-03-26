@@ -1,0 +1,155 @@
+name: Deploy Redunisol Web Prod
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-redunisol-web-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      APP_IMAGE_NAME: ghcr.io/red-unisol/redunisol-web-php-fpm
+      WEB_IMAGE_NAME: ghcr.io/red-unisol/redunisol-web-nginx
+      IMAGE_TAG: prod-${{ github.sha }}
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push php-fpm image
+        uses: docker/build-push-action@v6
+        with:
+          context: web/redunisol-web
+          file: web/redunisol-web/docker/common/php-fpm/Dockerfile
+          target: production
+          push: true
+          tags: |
+            ${{ env.APP_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.APP_IMAGE_NAME }}:prod-latest
+
+      - name: Build and push nginx image
+        uses: docker/build-push-action@v6
+        with:
+          context: web/redunisol-web
+          file: web/redunisol-web/docker/production/nginx/Dockerfile
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.WEB_IMAGE_NAME }}:prod-latest
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Trust target host
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Decrypt runtime env
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
+          python kestra/tools/manage_encrypted_env.py decrypt \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --input web/redunisol-web/deploy/redunisol-web.prod.env.enc \
+            --output web/redunisol-web/deploy/redunisol-web.prod.env \
+            --force
+
+      - name: Prepare deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp web/redunisol-web/deploy/redunisol-web.prod.env "$RUNNER_TEMP/redunisol-web.env"
+          printf 'APP_IMAGE=%s\n' "${APP_IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/redunisol-web.env"
+          printf 'WEB_IMAGE=%s\n' "${WEB_IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/redunisol-web.env"
+          set -a
+          . "$RUNNER_TEMP/redunisol-web.env"
+          set +a
+          printf 'TARGET_DIR=%s\n' "$TARGET_DIR" >> "$GITHUB_ENV"
+
+      - name: Upload deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_STAGING_DIR="/tmp/redunisol-web-prod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR'"
+          scp -P "$SSH_PORT" web/redunisol-web/deploy/docker-compose.vps.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/redunisol-web.env" "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+
+      - name: Deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" "${{ github.actor }}" "${{ secrets.GITHUB_TOKEN }}" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+          ghcr_username="$3"
+          ghcr_token="$4"
+
+          trap 'rm -rf "$staging_dir"' EXIT
+
+          install -d -m 755 "$target_dir"
+          install -m 600 "$staging_dir/.env" "$target_dir/.env"
+          install -m 644 "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+
+          set -a
+          . "$target_dir/.env"
+          set +a
+
+          echo "$ghcr_token" | docker login ghcr.io -u "$ghcr_username" --password-stdin
+
+          cd "$target_dir"
+          docker compose --env-file .env config -q
+          docker compose --env-file .env pull
+          docker compose --env-file .env up -d --remove-orphans
+          docker compose --env-file .env ps
+          EOF
+
+      - name: Clean local decrypted files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f web/redunisol-web/deploy/redunisol-web.prod.env

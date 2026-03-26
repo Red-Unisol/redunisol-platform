@@ -8,6 +8,7 @@ Documentacion tecnica transversal de la repo.
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
 - `migration-notes.md`: contexto historico de la migracion inicial a la monorepo
+- `redunisol-web-operating-model.md`: modelo operativo de `web/redunisol-web` con infraestructura Git-managed y datos runtime persistentes fuera de Git
 
 ## Cuando agregar un documento nuevo
 

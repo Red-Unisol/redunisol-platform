@@ -12,6 +12,10 @@ if [ ! "$(ls -A /var/www/storage)" ]; then
   chown -R www-data:www-data /var/www/storage
 fi
 
+if [ ! -e /var/www/public/storage ]; then
+  php artisan storage:link
+fi
+
 # Remove storage-init directory
 rm -rf /var/www/storage-init
 

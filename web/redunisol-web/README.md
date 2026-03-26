@@ -276,6 +276,52 @@ O mantener Vite ejecutándose en modo desarrollo (recomendado):
 npm run dev
 ```
 
+## Deploy Git-managed
+
+`web/redunisol-web/` adopta escenario B.
+
+Eso significa:
+
+- Git define codigo, imagenes, compose y configuracion declarativa
+- `dev` se despliega automaticamente desde `main`
+- `prod` se despliega manualmente
+- PostgreSQL, Redis y storage son estado runtime persistente y no viven en Git
+
+Archivos agregados para deploy:
+
+- `.github/workflows/deploy-redunisol-web-dev.yml`
+- `.github/workflows/deploy-redunisol-web-prod.yml`
+- `deploy/docker-compose.vps.yml`
+- `deploy/redunisol-web.dev.env.example`
+- `deploy/redunisol-web.prod.env.example`
+
+Variables runtime:
+
+- los plaintext locales esperados son `deploy/redunisol-web.dev.env` y `deploy/redunisol-web.prod.env`
+- esos archivos estan ignorados por Git
+- las versiones a versionar deben ser `deploy/redunisol-web.dev.env.enc` y `deploy/redunisol-web.prod.env.enc`
+- la clave compartida de cifrado queda fuera de Git y se expone al workflow via `vps-infra`
+
+Tareas de VS Code asociadas:
+
+- `Runtime Env: Encrypt Redunisol Web`
+- `Runtime Env: Decrypt Redunisol Web`
+
+Antes del primer deploy hay que completar al menos:
+
+- `APP_KEY`
+- `APP_URL`
+- `TARGET_DIR`
+- `WEB_BIND`
+- credenciales de PostgreSQL
+- configuracion de mail si deja de usarse `log`
+
+Nota operativa:
+
+- el panel admin puede gestionar contenido y datos operativos
+- no debe gestionar infraestructura, secretos, proxy ni configuracion de despliegue
+- para mas contexto ver `../../docs/redunisol-web-operating-model.md`
+
 ### Paso 11: Iniciar el Servidor de Desarrollo
 
 El proyecto incluye un script conveniente que inicia todos los servicios necesarios:

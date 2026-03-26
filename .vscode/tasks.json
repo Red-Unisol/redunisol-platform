@@ -61,6 +61,46 @@
       "problemMatcher": []
     },
     {
+      "label": "Runtime Env: Decrypt Redunisol Web",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "kestra/tools/manage_encrypted_env.py",
+        "decrypt-many",
+        "--key-file",
+        "kestra/platform/infra/kestra-runtime.local.key",
+        "--pair",
+        "web/redunisol-web/deploy/redunisol-web.dev.env.enc=web/redunisol-web/deploy/redunisol-web.dev.env",
+        "--pair",
+        "web/redunisol-web/deploy/redunisol-web.prod.env.enc=web/redunisol-web/deploy/redunisol-web.prod.env",
+        "--force"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Runtime Env: Encrypt Redunisol Web",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "kestra/tools/manage_encrypted_env.py",
+        "encrypt-many",
+        "--key-file",
+        "kestra/platform/infra/kestra-runtime.local.key",
+        "--pair",
+        "web/redunisol-web/deploy/redunisol-web.dev.env=web/redunisol-web/deploy/redunisol-web.dev.env.enc",
+        "--pair",
+        "web/redunisol-web/deploy/redunisol-web.prod.env=web/redunisol-web/deploy/redunisol-web.prod.env.enc",
+        "--force"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Herramientas: Laravel Serve",
       "type": "shell",
       "command": "php",

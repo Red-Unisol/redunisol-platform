@@ -6,13 +6,14 @@ Este documento describe como se validan y despliegan cambios desde GitHub hacia 
 
 ## Componentes
 
-La cadena actual tiene cinco piezas principales:
+La cadena actual tiene seis piezas principales:
 
 1. pull request
 2. GitHub Actions
 3. scripts de `kestra/tools/`
 4. SSH hacia la VPS
 5. API de Kestra
+6. Docker Compose de runtime para la capa web
 
 ## Workflows Actuales
 
@@ -87,6 +88,35 @@ Importante:
 - este workflow no toca Apache en esta version
 - este workflow aplica infraestructura compartida de la instancia
 
+### `deploy-herramientas-dev.yml` y `deploy-herramientas-prod.yml`
+
+Despliegan `web/herramientas/` como aplicacion stateless y Git-managed.
+
+Comportamiento:
+
+- construyen una sola imagen Docker
+- descifran el runtime env correspondiente desde Git
+- suben `docker-compose.vps.yml` y `.env` a la VPS
+- actualizan la app remota via `docker compose pull` y `up -d`
+
+### `deploy-redunisol-web-dev.yml` y `deploy-redunisol-web-prod.yml`
+
+Despliegan `web/redunisol-web/` bajo escenario B.
+
+Comportamiento:
+
+- construyen dos imagenes Docker: `php-fpm` y `nginx`
+- descifran el runtime env correspondiente desde Git
+- suben `docker-compose.vps.yml` y `.env` a la VPS
+- levantan una topologia con `nginx`, `php-fpm`, `postgres` y `redis`
+- preservan estado runtime en volumenes persistentes de base de datos, redis y storage
+
+Importante:
+
+- Git define codigo, imagenes, compose y configuracion declarativa
+- PostgreSQL, Redis y storage mantienen el estado mutable del producto
+- este flujo sigue el modelo operativo documentado en `docs/redunisol-web-operating-model.md`
+
 ## Script De Deploy
 
 `kestra/tools/deploy_kestra.py` es la pieza central del deploy.
@@ -157,6 +187,7 @@ Hoy el pipeline no resuelve automaticamente estos problemas:
 - borrar artefactos viejos automaticamente en Kestra
 - resolver promotion rules complejas entre manual/historico y Git-managed
 - desplegar configuracion de Apache del host
+- promover contenido mutable entre `dev` y `prod` en `web/redunisol-web/`
 
 ## Agregar Un Dominio Nuevo
 

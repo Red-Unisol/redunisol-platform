@@ -33,6 +33,9 @@ COPY ./docker/production/nginx/nginx.conf /etc/nginx/nginx.conf
 # -----------------------------------------------------------
 COPY --from=builder /var/www/public /var/www/public
 
+# Match Laravel's public storage path to the runtime storage volume mounted by Compose.
+RUN if [ ! -e /var/www/public/storage ]; then ln -s /var/www/storage/app/public /var/www/public/storage; fi
+
 # Set the working directory to the public folder
 WORKDIR /var/www/public
 
