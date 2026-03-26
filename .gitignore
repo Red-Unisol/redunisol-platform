@@ -10,6 +10,7 @@ venv/
 !.env.example
 kestra/platform/infra/kestra-runtime.local.key
 kestra/platform/infra/kestra-runtime.env
+web/herramientas/deploy/*.env
 .DS_Store
 Thumbs.db
 *.log

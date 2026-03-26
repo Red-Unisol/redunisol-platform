@@ -26,17 +26,17 @@ Secrets actuales esperados en GitHub environments:
 
 Secrets adicionales para deploy de infraestructura:
 
-- `KESTRA_RUNTIME_ENV_KEY`
-- `KESTRA_SSH_HOST`
-- `KESTRA_SSH_PORT`
-- `KESTRA_SSH_USER`
-- `KESTRA_SSH_PRIVATE_KEY`
+- `RUNTIME_ENV_KEY`
+- `VPS_SSH_HOST`
+- `VPS_SSH_PORT`
+- `VPS_SSH_USER`
+- `VPS_SSH_PRIVATE_KEY`
 
-Estos valores viven en GitHub, no en los flows.
+Estos valores viven en GitHub, no en los flows ni en los runtime env cifrados.
 
 Environment recomendado para esos secrets:
 
-- `kestra-infra`
+- `vps-infra`
 
 ### 2. Configuracion de runtime dentro de Kestra
 
@@ -123,7 +123,7 @@ Si la prioridad es evitar drift entre repo y VPS, una opcion razonable es versio
 La idea seria:
 
 1. mantener `docker-compose.yml` y `application.yaml` versionados en Git
-2. mantener un archivo runtime cifrado en Git
+2. mantener archivos runtime cifrados en Git
 3. descifrarlo localmente solo cuando haga falta editarlo
 4. volver a cifrarlo antes del pull request
 5. dejar que un deploy de infraestructura sincronice la version cifrada ya aprobada hacia la VPS
@@ -147,6 +147,9 @@ Archivos concretos usados en esta repo:
 - plaintext local no versionado: `kestra/platform/infra/kestra-runtime.env`
 - key local no versionada: `kestra/platform/infra/kestra-runtime.local.key`
 - archivo cifrado versionado: `kestra/platform/infra/kestra-runtime.env.enc`
+- plaintext local no versionado: `web/herramientas/deploy/herramientas.dev.env`
+- plaintext local no versionado: `web/herramientas/deploy/herramientas.prod.env`
+- archivos cifrados versionados: `web/herramientas/deploy/herramientas.dev.env.enc` y `web/herramientas/deploy/herramientas.prod.env.enc`
 
 ## Tool Local Para Cifrar Y Descifrar
 
@@ -192,17 +195,17 @@ La repo incluye tareas versionadas en `.vscode/tasks.json` para correr el flujo 
 
 Tareas disponibles:
 
-- `Kestra: Generate Runtime Key`
-- `Kestra: Decrypt Runtime Env`
-- `Kestra: Encrypt Runtime Env`
+- `Runtime Env: Generate Shared Key`
+- `Runtime Env: Decrypt All`
+- `Runtime Env: Encrypt All`
 
 Flujo recomendado con tasks:
 
 1. correr `Kestra: Generate Runtime Key` una sola vez por maquina local
-2. correr `Kestra: Decrypt Runtime Env`
-3. editar `kestra/platform/infra/kestra-runtime.env`
-4. correr `Kestra: Encrypt Runtime Env`
-5. hacer pull request con `kestra/platform/infra/kestra-runtime.env.enc`
+2. correr `Runtime Env: Decrypt All`
+3. editar los plaintext que correspondan
+4. correr `Runtime Env: Encrypt All`
+5. hacer pull request con los archivos `.env.enc` versionados que hayan cambiado
 
 ## Como Se Mapea A Los Flows
 

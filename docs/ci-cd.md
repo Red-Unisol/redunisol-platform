@@ -113,19 +113,19 @@ Los workflows de deploy usan estos secrets de GitHub:
 - `KESTRA_PASSWORD`
 - `KESTRA_TENANT`
 
-El workflow de infraestructura usa ademas:
+El workflow de infraestructura compartida usa ademas:
 
-- `KESTRA_RUNTIME_ENV_KEY`
-- `KESTRA_SSH_HOST`
-- `KESTRA_SSH_PORT`
-- `KESTRA_SSH_USER`
-- `KESTRA_SSH_PRIVATE_KEY`
+- `RUNTIME_ENV_KEY`
+- `VPS_SSH_HOST`
+- `VPS_SSH_PORT`
+- `VPS_SSH_USER`
+- `VPS_SSH_PRIVATE_KEY`
 
 Environments esperados:
 
 - `kestra-dev`
 - `kestra-prod`
-- `kestra-infra`
+- `vps-infra`
 
 ## Que Pasa Cuando Se Hace Merge A Main
 

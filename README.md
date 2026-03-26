@@ -218,6 +218,7 @@ Sobre el runtime env:
 - el archivo versionado es `kestra/platform/infra/kestra-runtime.env.enc`
 - el archivo local editable es `kestra/platform/infra/kestra-runtime.env`
 - la key local es `kestra/platform/infra/kestra-runtime.local.key`
+- la misma key se reutiliza para `web/herramientas/deploy/*.env.enc`
 
 Si vas a tocar configuracion runtime, mira tambien:
 

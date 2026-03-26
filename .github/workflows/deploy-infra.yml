@@ -23,13 +23,13 @@ concurrency:
 jobs:
   deploy-infra:
     runs-on: ubuntu-latest
-    environment: kestra-infra
+    environment: vps-infra
     env:
       TARGET_DIR: /opt/kestra
-      SSH_HOST: ${{ secrets.KESTRA_SSH_HOST }}
-      SSH_PORT: ${{ secrets.KESTRA_SSH_PORT }}
-      SSH_USER: ${{ secrets.KESTRA_SSH_USER }}
-      RUNTIME_ENV_KEY: ${{ secrets.KESTRA_RUNTIME_ENV_KEY }}
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
       - name: Load SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.KESTRA_SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
 
       - name: Trust target host
         shell: bash

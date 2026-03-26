@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Kestra: Generate Runtime Key",
+      "label": "Runtime Env: Generate Shared Key",
       "type": "shell",
       "command": "python",
       "args": [
@@ -17,18 +17,20 @@
       "problemMatcher": []
     },
     {
-      "label": "Kestra: Decrypt Runtime Env",
+      "label": "Runtime Env: Decrypt All",
       "type": "shell",
       "command": "python",
       "args": [
         "kestra/tools/manage_encrypted_env.py",
-        "decrypt",
+        "decrypt-many",
         "--key-file",
         "kestra/platform/infra/kestra-runtime.local.key",
-        "--input",
-        "kestra/platform/infra/kestra-runtime.env.enc",
-        "--output",
-        "kestra/platform/infra/kestra-runtime.env",
+        "--pair",
+        "kestra/platform/infra/kestra-runtime.env.enc=kestra/platform/infra/kestra-runtime.env",
+        "--pair",
+        "web/herramientas/deploy/herramientas.dev.env.enc=web/herramientas/deploy/herramientas.dev.env",
+        "--pair",
+        "web/herramientas/deploy/herramientas.prod.env.enc=web/herramientas/deploy/herramientas.prod.env",
         "--force"
       ],
       "options": {
@@ -37,18 +39,20 @@
       "problemMatcher": []
     },
     {
-      "label": "Kestra: Encrypt Runtime Env",
+      "label": "Runtime Env: Encrypt All",
       "type": "shell",
       "command": "python",
       "args": [
         "kestra/tools/manage_encrypted_env.py",
-        "encrypt",
+        "encrypt-many",
         "--key-file",
         "kestra/platform/infra/kestra-runtime.local.key",
-        "--input",
-        "kestra/platform/infra/kestra-runtime.env",
-        "--output",
-        "kestra/platform/infra/kestra-runtime.env.enc",
+        "--pair",
+        "kestra/platform/infra/kestra-runtime.env=kestra/platform/infra/kestra-runtime.env.enc",
+        "--pair",
+        "web/herramientas/deploy/herramientas.dev.env=web/herramientas/deploy/herramientas.dev.env.enc",
+        "--pair",
+        "web/herramientas/deploy/herramientas.prod.env=web/herramientas/deploy/herramientas.prod.env.enc",
         "--force"
       ],
       "options": {

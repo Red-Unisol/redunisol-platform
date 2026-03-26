@@ -94,31 +94,29 @@ Comportamiento esperado:
 - `dev`: deploy automatico al hacer push a `main` si hubo cambios en `web/herramientas/`
 - `prod`: deploy manual via `workflow_dispatch`
 
-En GitHub conviene crear dos environments:
+El runtime no vive en GitHub secrets. Vive en archivos cifrados versionados en Git:
 
-- `herramientas-dev`
-- `herramientas-prod`
+- `deploy/herramientas.dev.env.enc`
+- `deploy/herramientas.prod.env.enc`
 
-Secrets esperados en ambos environments:
+Sus plaintext locales ignorados son:
 
-- `SSH_HOST`
-- `SSH_PORT`
-- `SSH_USER`
-- `SSH_PRIVATE_KEY`
-- `TARGET_DIR`
-- `GHCR_USERNAME`
-- `GHCR_TOKEN`
-- `APP_BIND` ejemplo `127.0.0.1:3011:80` en dev o `127.0.0.1:3010:80` en prod
-- `APP_NAME`
-- `APP_ENV`
-- `APP_DEBUG`
-- `APP_URL`
-- `APP_KEY`
-- `ANALISIS_CREDITO_WEBHOOK_URL`
-- `ANALISIS_CREDITO_TIMEOUT_SECONDS`
-- `LOG_CHANNEL`
+- `deploy/herramientas.dev.env`
+- `deploy/herramientas.prod.env`
 
-Con este esquema, Git queda como fuente de verdad: Actions construye una imagen desde el commit y luego actualiza la instancia remota via Docker Compose.
+En GitHub solo hace falta un environment operativo compartido:
+
+- `vps-infra`
+
+Secrets operativos esperados en `vps-infra`:
+
+- `VPS_SSH_HOST`
+- `VPS_SSH_PORT`
+- `VPS_SSH_USER`
+- `VPS_SSH_PRIVATE_KEY`
+- `RUNTIME_ENV_KEY`
+
+Con este esquema, Git queda como fuente de verdad para el runtime: Actions construye una imagen desde el commit, descifra el `.env.enc` correspondiente en el runner y luego actualiza la instancia remota via Docker Compose.
 
 ## Agregar una nueva herramienta
 
