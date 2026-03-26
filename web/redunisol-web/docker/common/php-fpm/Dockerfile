@@ -1,11 +1,14 @@
 # Stage 1: Build environment and Composer dependencies
 FROM php:8.4-fpm AS builder
 
-# Install system dependencies and PHP extensions required for Laravel + MySQL/PostgreSQL support
-# Some dependencies are required for PHP extensions only in the build stage
-# We don't need to install Node.js or build assets, as it was done in the Nginx image
+# Install system dependencies and PHP extensions required for Laravel + MySQL/PostgreSQL support.
+# The php-fpm image must also contain the built Vite manifest because Blade resolves
+# assets from this container when rendering the initial HTML response.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
+    nodejs \
+    npm \
     unzip \
     libpq-dev \
     libonig-dev \
@@ -54,9 +57,11 @@ WORKDIR /var/www
 # -----------------------------------------------------------
 COPY . /var/www
 
-# Install Composer and dependencies
+# Install Composer, PHP dependencies, and build frontend assets for production.
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
-    && composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
+    && composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist \
+    && npm install \
+    && npm run build
 
 
 # Stage 2: Production environment
