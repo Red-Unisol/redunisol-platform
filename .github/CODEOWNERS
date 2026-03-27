@@ -1,11 +1,14 @@
 # Infra y pipelines
-/kestra/platform/ @Nasst
+/.github/CODEOWNERS @Nasst
 /.github/workflows/ @Nasst
+/kestra/platform/ @Nasst
 /kestra/tools/ @Nasst
 
-# Dominios
-/kestra/automations/marketing-crm/ @Nasst
-/kestra/automations/analisis-credito/ @Nasst
-/kestra/automations/ahorros-amt/ @Nasst
-/kestra/automations/cobranzas/ @Nasst
-/kestra/automations/contabilidad/ @Nasst
+# Runtime y deploy web
+/web/herramientas/deploy/ @Nasst
+/web/herramientas/docker/ @Nasst
+/web/redunisol-web/deploy/ @Nasst
+/web/redunisol-web/docker/ @Nasst
+
+# Configuracion sensible versionada
+*.env.enc @Nasst
