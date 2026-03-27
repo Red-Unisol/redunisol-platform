@@ -110,6 +110,8 @@ Comportamiento:
 - suben `docker-compose.vps.yml` y `.env` a la VPS
 - levantan una topologia con `nginx`, `php-fpm`, `postgres` y `redis`
 - preservan estado runtime en volumenes persistentes de base de datos, redis y storage
+- validan en la VPS que `php-fpm` tenga `public/build/manifest.json`
+- validan la aplicacion por HTTP usando el `Host` y el bind interno definidos en el runtime env
 
 Importante:
 

@@ -138,6 +138,11 @@ jobs:
           . "$target_dir/.env"
           set +a
 
+          app_host="${APP_URL#*://}"
+          app_host="${app_host%%/*}"
+          bind_host="$(printf '%s' "$WEB_BIND" | cut -d: -f1)"
+          bind_port="$(printf '%s' "$WEB_BIND" | cut -d: -f2)"
+
           echo "$ghcr_token" | docker login ghcr.io -u "$ghcr_username" --password-stdin
 
           cd "$target_dir"
@@ -145,6 +150,22 @@ jobs:
           docker compose --env-file .env pull
           docker compose --env-file .env up -d --remove-orphans
           docker compose --env-file .env ps
+
+          docker compose --env-file .env exec -T php-fpm test -f /var/www/public/build/manifest.json
+
+          status_code=""
+          for attempt in $(seq 1 12); do
+            status_code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Host: $app_host" "http://$bind_host:$bind_port/" || true)"
+            if [ "$status_code" = "200" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$status_code" != "200" ]; then
+            docker compose --env-file .env logs --tail=120 php-fpm web
+            exit 1
+          fi
           EOF
 
       - name: Clean local decrypted files
