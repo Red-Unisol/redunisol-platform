@@ -171,6 +171,7 @@ jobs:
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
 
+          echo "Waiting for built assets and HTTP 200 from $app_host"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json
 
           status_code=""
@@ -187,23 +188,34 @@ jobs:
             exit 1
           fi
 
-          install -m 600 "$staging_dir/.env" "$target_dir/.env"
-          install -m 644 "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+          echo "Persisting deployment files into $target_dir"
+          tmp_env="$target_dir/.env.deploying"
+          tmp_compose="$target_dir/docker-compose.yml.deploying"
+          cp "$staging_dir/.env" "$tmp_env"
+          cp "$staging_dir/docker-compose.yml" "$tmp_compose"
+          mv -f "$tmp_env" "$target_dir/.env"
+          mv -f "$tmp_compose" "$target_dir/docker-compose.yml"
+          cmp -s "$staging_dir/.env" "$target_dir/.env"
+          cmp -s "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+          grep -E '^(APP_IMAGE|WEB_IMAGE)=' "$target_dir/.env"
 
+          echo "Pruning dangling images"
           docker image prune -f >/dev/null
 
           active_images="$(docker ps --format '{{.Image}}' | sort -u)"
-          stale_images=()
-          while IFS= read -r image_ref; do
+          mapfile -t stale_images < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^ghcr.io/red-unisol/redunisol-web-(php-fpm|nginx):' || true)
+          removable_images=()
+          for image_ref in "${stale_images[@]}"; do
             [ -n "$image_ref" ] || continue
             if printf '%s\n' "$active_images" | grep -Fxq "$image_ref"; then
               continue
             fi
-            stale_images+=("$image_ref")
-          done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^ghcr.io/red-unisol/redunisol-web-(php-fpm|nginx):' || true)
+            removable_images+=("$image_ref")
+          done
 
-          if [ "${#stale_images[@]}" -gt 0 ]; then
-            docker image rm "${stale_images[@]}" || true
+          if [ "${#removable_images[@]}" -gt 0 ]; then
+            printf 'Removing stale images:\n%s\n' "${removable_images[@]}"
+            docker image rm "${removable_images[@]}" || true
           fi
           EOF
 
