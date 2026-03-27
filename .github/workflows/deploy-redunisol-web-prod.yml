@@ -149,8 +149,6 @@ jobs:
           ghcr_username="$3"
           ghcr_token="$4"
 
-          trap 'rm -rf "$staging_dir"' EXIT
-
           install -d -m 755 "$target_dir"
 
           set -a
@@ -187,6 +185,16 @@ jobs:
             docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" logs --tail=120 php-fpm web
             exit 1
           fi
+          EOF
+
+      - name: Finalize deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
 
           echo "Persisting deployment files into $target_dir"
           tmp_env="$target_dir/.env.deploying"
@@ -218,6 +226,13 @@ jobs:
             docker image rm "${removable_images[@]}" || true
           fi
           EOF
+
+      - name: Clean remote staging files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf '$REMOTE_STAGING_DIR'"
 
       - name: Clean local decrypted files
         if: always()
