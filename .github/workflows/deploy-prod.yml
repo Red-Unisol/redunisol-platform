@@ -1,6 +1,14 @@
 name: Deploy Prod
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'kestra/automations/**'
+      - 'kestra/tools/deploy_kestra.py'
+      - 'kestra/tools/requirements.txt'
+      - '.github/workflows/deploy-prod.yml'
   workflow_dispatch:
     inputs:
       domain:
@@ -15,9 +23,56 @@ on:
           - contabilidad
 
 jobs:
-  deploy-prod:
+  guard-manual-prod-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Allow manual prod deploy only from main by Nasst
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_ACTOR}" = "Nasst" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ]
+
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      marketing-crm: ${{ steps.filter.outputs.marketing-crm }}
+      analisis-credito: ${{ steps.filter.outputs.analisis-credito }}
+      ahorros-amt: ${{ steps.filter.outputs.ahorros-amt }}
+      cobranzas: ${{ steps.filter.outputs.cobranzas }}
+      contabilidad: ${{ steps.filter.outputs.contabilidad }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed domains
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            marketing-crm:
+              - 'kestra/automations/marketing-crm/**'
+            analisis-credito:
+              - 'kestra/automations/analisis-credito/**'
+            ahorros-amt:
+              - 'kestra/automations/ahorros-amt/**'
+            cobranzas:
+              - 'kestra/automations/cobranzas/**'
+            contabilidad:
+              - 'kestra/automations/contabilidad/**'
+
+  deploy-prod-marketing-crm:
     runs-on: ubuntu-latest
     environment: kestra-prod
+    needs:
+      - guard-manual-prod-dispatch
+      - detect-changes
+    if: >-
+      always() &&
+      (needs.guard-manual-prod-dispatch.result == 'success' || needs.guard-manual-prod-dispatch.result == 'skipped') &&
+      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'marketing-crm') ||
+      (github.event_name == 'push' && needs.detect-changes.outputs.marketing-crm == 'true'))
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,9 +89,148 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r kestra/tools/requirements.txt
 
-      - name: Deploy selected domain to prod
+      - name: Deploy Marketing CRM to prod
+        run: python kestra/tools/deploy_kestra.py --environment prod --domain marketing-crm
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
+  deploy-prod-analisis-credito:
+    runs-on: ubuntu-latest
+    environment: kestra-prod
+    needs:
+      - guard-manual-prod-dispatch
+      - detect-changes
+    if: >-
+      always() &&
+      (needs.guard-manual-prod-dispatch.result == 'success' || needs.guard-manual-prod-dispatch.result == 'skipped') &&
+      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'analisis-credito') ||
+      (github.event_name == 'push' && needs.detect-changes.outputs.analisis-credito == 'true'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
         run: |
-          python kestra/tools/deploy_kestra.py --environment prod --domain "${{ inputs.domain }}"
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Deploy Analisis Credito to prod
+        run: python kestra/tools/deploy_kestra.py --environment prod --domain analisis-credito
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
+  deploy-prod-ahorros-amt:
+    runs-on: ubuntu-latest
+    environment: kestra-prod
+    needs:
+      - guard-manual-prod-dispatch
+      - detect-changes
+    if: >-
+      always() &&
+      (needs.guard-manual-prod-dispatch.result == 'success' || needs.guard-manual-prod-dispatch.result == 'skipped') &&
+      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'ahorros-amt') ||
+      (github.event_name == 'push' && needs.detect-changes.outputs.ahorros-amt == 'true'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Deploy Ahorros Amt to prod
+        run: python kestra/tools/deploy_kestra.py --environment prod --domain ahorros-amt
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
+  deploy-prod-cobranzas:
+    runs-on: ubuntu-latest
+    environment: kestra-prod
+    needs:
+      - guard-manual-prod-dispatch
+      - detect-changes
+    if: >-
+      always() &&
+      (needs.guard-manual-prod-dispatch.result == 'success' || needs.guard-manual-prod-dispatch.result == 'skipped') &&
+      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'cobranzas') ||
+      (github.event_name == 'push' && needs.detect-changes.outputs.cobranzas == 'true'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Deploy Cobranzas to prod
+        run: python kestra/tools/deploy_kestra.py --environment prod --domain cobranzas
+        env:
+          KESTRA_URL: ${{ secrets.KESTRA_URL }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
+          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+
+  deploy-prod-contabilidad:
+    runs-on: ubuntu-latest
+    environment: kestra-prod
+    needs:
+      - guard-manual-prod-dispatch
+      - detect-changes
+    if: >-
+      always() &&
+      (needs.guard-manual-prod-dispatch.result == 'success' || needs.guard-manual-prod-dispatch.result == 'skipped') &&
+      ((github.event_name == 'workflow_dispatch' && inputs.domain == 'contabilidad') ||
+      (github.event_name == 'push' && needs.detect-changes.outputs.contabilidad == 'true'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Deploy Contabilidad to prod
+        run: python kestra/tools/deploy_kestra.py --environment prod --domain contabilidad
         env:
           KESTRA_URL: ${{ secrets.KESTRA_URL }}
           KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}

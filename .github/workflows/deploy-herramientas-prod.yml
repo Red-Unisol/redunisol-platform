@@ -1,6 +1,12 @@
 name: Deploy Herramientas Prod
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/herramientas/**'
+      - '.github/workflows/deploy-herramientas-prod.yml'
   workflow_dispatch:
 
 permissions:
@@ -23,10 +29,18 @@ jobs:
       SSH_USER: ${{ secrets.VPS_SSH_USER }}
       RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
     steps:
+      - name: Allow manual prod deploy only from main by Nasst
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_ACTOR}" = "Nasst" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ]
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
