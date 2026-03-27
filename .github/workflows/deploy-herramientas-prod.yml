@@ -1,13 +1,15 @@
 name: Deploy Herramientas Prod
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'web/herramientas/**'
-      - '.github/workflows/deploy-herramientas-prod.yml'
-  workflow_dispatch:
+  # Disabled until the production environment and bootstrap are ready.
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'web/herramientas/**'
+  #     - '.github/workflows/deploy-herramientas-prod.yml'
+  # workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
