@@ -108,6 +108,9 @@ jobs:
           set -euo pipefail
           cp web/redunisol-web/deploy/redunisol-web.dev.env "$RUNNER_TEMP/redunisol-web.env"
           sed -i 's/\r$//' "$RUNNER_TEMP/redunisol-web.env"
+          if [ -n "$(tail -c 1 "$RUNNER_TEMP/redunisol-web.env")" ]; then
+            printf '\n' >> "$RUNNER_TEMP/redunisol-web.env"
+          fi
           printf 'APP_IMAGE=%s\n' "${APP_IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/redunisol-web.env"
           printf 'WEB_IMAGE=%s\n' "${WEB_IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/redunisol-web.env"
           set -a
