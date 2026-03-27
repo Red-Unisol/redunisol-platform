@@ -159,16 +159,17 @@ jobs:
           app_host="${app_host%%/*}"
           bind_host="$(printf '%s' "$WEB_BIND" | cut -d: -f1)"
           bind_port="$(printf '%s' "$WEB_BIND" | cut -d: -f2)"
+          compose_project_name="${COMPOSE_PROJECT_NAME:-$(basename "$target_dir")}"
 
           echo "$ghcr_token" | docker login ghcr.io -u "$ghcr_username" --password-stdin
 
           cd "$target_dir"
-          docker compose --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
-          docker compose --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull
-          docker compose --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
-          docker compose --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
 
-          docker compose --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json
 
           status_code=""
           for attempt in $(seq 1 12); do
@@ -180,7 +181,7 @@ jobs:
           done
 
           if [ "$status_code" != "200" ]; then
-            docker compose --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" logs --tail=120 php-fpm web
+            docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" logs --tail=120 php-fpm web
             exit 1
           fi
 
