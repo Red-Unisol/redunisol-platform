@@ -22,6 +22,7 @@ Nota importante para la capa web:
 - `web/herramientas/` sigue un modelo Git-managed muy cercano a runtime sin estado propio relevante
 - `web/redunisol-web/` usa un modelo distinto: Git define infraestructura y aplicacion, pero el panel admin y la base de datos guardan estado runtime mutable
 - ver `docs/redunisol-web-operating-model.md` para ese criterio
+- ver `docs/redunisol-web-deploy-runbook.md` para el circuito de deploy, `.env` y responsabilidades operativas
 
 Ambientes actuales:
 

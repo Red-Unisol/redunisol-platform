@@ -302,6 +302,13 @@ Variables runtime:
 - las versiones a versionar deben ser `deploy/redunisol-web.dev.env.enc` y `deploy/redunisol-web.prod.env.enc`
 - la clave compartida de cifrado queda fuera de Git y se expone al workflow via `vps-infra`
 
+Que usa cada contexto:
+
+- desarrollo local Laravel: `.env`
+- deploy dev: `deploy/redunisol-web.dev.env.enc`
+- deploy prod: `deploy/redunisol-web.prod.env.enc`
+- runtime remoto efectivo: `.env` subido por el workflow al directorio target en la VPS
+
 Tareas de VS Code asociadas:
 
 - `Runtime Env: Encrypt Redunisol Web`
@@ -321,6 +328,13 @@ Nota operativa:
 - el panel admin puede gestionar contenido y datos operativos
 - no debe gestionar infraestructura, secretos, proxy ni configuracion de despliegue
 - para mas contexto ver `../../docs/redunisol-web-operating-model.md`
+- para el flujo operativo validado y las responsabilidades entre desarrollo e integracion ver `../../docs/redunisol-web-deploy-runbook.md`
+
+Estado validado al 2026-03-27:
+
+- `dev.redunisol.com.ar` publicado via GitHub Actions
+- workflow dev funcionando end to end desde `main`
+- runtime dev levantado con `nginx`, `php-fpm`, `postgres` y `redis`
 
 ### Paso 11: Iniciar el Servidor de Desarrollo
 

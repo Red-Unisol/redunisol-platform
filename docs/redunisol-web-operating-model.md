@@ -113,3 +113,18 @@ El resultado buscado para `redunisol-web` es este:
 - runtime con estado persistente fuera del contenedor
 - panel admin habilitado para contenido y operacion
 - separacion clara entre configuracion declarativa e informacion mutable
+
+## Limite Entre Desarrollo E Integracion
+
+Para evitar ambiguedad operativa, la separacion actual queda asi:
+
+- desarrollo modifica la aplicacion y propone cambios por pull request
+- integracion administra secretos, workflows, sincronizacion a VPS y validacion operativa del deploy
+
+En la practica:
+
+- el dev puede trabajar sobre codigo, frontend, backend, tests, migraciones y configuracion declarativa dentro de la repo
+- si un cambio necesita tocar `.env` reales, DNS, Apache, SSL, host, secretos o runtime externo, no debe resolverse manualmente por desarrollo
+- esos cambios deben quedar explicitados en el pull request para que integracion los aplique
+
+El detalle operativo del deploy y de los `.env` esta documentado en `docs/redunisol-web-deploy-runbook.md`

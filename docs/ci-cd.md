@@ -118,6 +118,36 @@ Importante:
 - Git define codigo, imagenes, compose y configuracion declarativa
 - PostgreSQL, Redis y storage mantienen el estado mutable del producto
 - este flujo sigue el modelo operativo documentado en `docs/redunisol-web-operating-model.md`
+- el runbook operativo y la separacion entre desarrollo e integracion quedaron documentados en `docs/redunisol-web-deploy-runbook.md`
+
+## Redunisol Web: Flujo Runtime Y `.env`
+
+`web/redunisol-web/` usa tres niveles distintos de configuracion:
+
+- `.env` local de Laravel para desarrollo dentro de `web/redunisol-web/`
+- runtime env cifrado versionado en `web/redunisol-web/deploy/*.env.enc`
+- `.env` efectivo remoto generado por el workflow dentro del target dir de la VPS
+
+Para deploy:
+
+1. el workflow descifra `redunisol-web.dev.env.enc` o `redunisol-web.prod.env.enc`
+2. normaliza line endings
+3. asegura newline final
+4. agrega `APP_IMAGE` y `WEB_IMAGE`
+5. sube el archivo final como `.env` al target remoto
+6. ejecuta `docker compose --env-file .env ...`
+
+Este detalle importa porque ya hubo dos fallas reales resueltas en GitHub Actions:
+
+- CRLF en el `.env` descifrado
+- falta de salto de linea final antes de agregar `APP_IMAGE` y `WEB_IMAGE`
+
+Estado verificado al 2026-03-27 para `redunisol-web`:
+
+- mergeado a `main`
+- workflow dev funcionando end to end
+- validacion HTTP `200 OK` en `dev.redunisol.com.ar`
+- runtime dev operativo en VPS
 
 ## Script De Deploy
 
@@ -190,6 +220,7 @@ Hoy el pipeline no resuelve automaticamente estos problemas:
 - resolver promotion rules complejas entre manual/historico y Git-managed
 - desplegar configuracion de Apache del host
 - promover contenido mutable entre `dev` y `prod` en `web/redunisol-web/`
+- rotar secretos o redefinir valores operativos reales sin intervencion manual
 
 ## Agregar Un Dominio Nuevo
 
