@@ -83,6 +83,11 @@ def write_output(path: Path, content: bytes, force: bool) -> None:
     path.write_bytes(content)
 
 
+def normalize_env_line_endings(content: bytes) -> bytes:
+    # Keep encrypted env payloads portable across Windows and Linux runtimes.
+    return content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def load_fernet(key_file: Path) -> Fernet:
     if not key_file.exists():
         raise FileNotFoundError(f"Key file not found: {key_file}")
@@ -118,7 +123,7 @@ def encrypt_file(key_file: Path, input_path: Path, output_path: Path, force: boo
         fernet = load_fernet(key_file)
         if not input_path.exists():
             return fail(f"Input file not found: {input_path}")
-        plaintext = input_path.read_bytes()
+        plaintext = normalize_env_line_endings(input_path.read_bytes())
         ciphertext = fernet.encrypt(plaintext)
         write_output(output_path, ciphertext + b"\n", force)
     except (FileNotFoundError, ValueError, FileExistsError) as exc:
@@ -159,6 +164,7 @@ def process_many(
 
             input_bytes = input_path.read_bytes()
             if operation == "encrypt":
+                input_bytes = normalize_env_line_endings(input_bytes)
                 output_bytes = fernet.encrypt(input_bytes) + b"\n"
             elif operation == "decrypt":
                 output_bytes = fernet.decrypt(input_bytes.strip())
