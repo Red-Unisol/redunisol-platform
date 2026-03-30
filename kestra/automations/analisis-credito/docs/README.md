@@ -5,6 +5,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 ## Flows
 
 - `renovacion_cruz_del_eje`
+- `tope_descuento_caja`
 
 ## renovacion_cruz_del_eje
 
@@ -53,3 +54,53 @@ Secrets:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/analisis_credito_renovacion/**`
+
+## tope_descuento_caja
+
+Consulta el tope de descuento en Caja Jubilaciones a partir de un CUIL.
+
+### Entrada
+
+Webhook `POST` con JSON:
+
+```json
+{ "cuil": "20-12345678-3" }
+```
+
+Tambien acepta un string con el CUIL como body.
+
+### Salida
+
+- `ok` (bool)
+- `cuil` (string)
+- `nombre` (string)
+- `apellido` (string)
+- `disponible` (float)
+- `tope_descuento` (float)
+- `error` (string | vacio)
+
+### Variables
+
+Config en `envs`:
+
+- `cidi_base_url`
+- `cidi_client_id`
+- `caja_base_url`
+- `caja_id_tipo_usuario`
+
+Secrets:
+
+- `CIDI_USER`
+- `CIDI_PASS`
+- `CIDI_CLIENT_SECRET`
+- `CAJA_ENCRYPT_PASS`
+- `ANALISIS_CREDITO_CAJA_WEBHOOK_KEY`
+
+Notas:
+
+- `CAJA_SEED_TOKEN`, `CAJA_PERMISSIONS_BODY` y `CAJA_PERMISSIONS_PLAINTEXT` son opcionales
+- si no estan cargados, el flow intenta obtener o construir esos valores durante la ejecucion
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
