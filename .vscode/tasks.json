@@ -9,7 +9,7 @@
         "kestra/tools/manage_encrypted_env.py",
         "generate-key",
         "--output",
-        "kestra/platform/infra/kestra-runtime.local.key"
+        ".local-secrets/runtime-env.key"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -24,7 +24,7 @@
         "kestra/tools/manage_encrypted_env.py",
         "decrypt-many",
         "--key-file",
-        "kestra/platform/infra/kestra-runtime.local.key",
+        ".local-secrets/runtime-env.key",
         "--pair",
         "kestra/platform/infra/kestra-runtime.env.enc=kestra/platform/infra/kestra-runtime.env",
         "--pair",
@@ -46,7 +46,7 @@
         "kestra/tools/manage_encrypted_env.py",
         "encrypt-many",
         "--key-file",
-        "kestra/platform/infra/kestra-runtime.local.key",
+        ".local-secrets/runtime-env.key",
         "--pair",
         "kestra/platform/infra/kestra-runtime.env=kestra/platform/infra/kestra-runtime.env.enc",
         "--pair",
@@ -68,7 +68,7 @@
         "kestra/tools/manage_encrypted_env.py",
         "decrypt-many",
         "--key-file",
-        "kestra/platform/infra/kestra-runtime.local.key",
+        ".local-secrets/runtime-env.key",
         "--pair",
         "web/redunisol-web/deploy/redunisol-web.dev.env.enc=web/redunisol-web/deploy/redunisol-web.dev.env",
         "--pair",
@@ -88,7 +88,7 @@
         "kestra/tools/manage_encrypted_env.py",
         "encrypt-many",
         "--key-file",
-        "kestra/platform/infra/kestra-runtime.local.key",
+        ".local-secrets/runtime-env.key",
         "--pair",
         "web/redunisol-web/deploy/redunisol-web.dev.env=web/redunisol-web/deploy/redunisol-web.dev.env.enc",
         "--pair",
