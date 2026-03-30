@@ -152,7 +152,7 @@ Formato actual de los `.env.enc`:
 Archivos concretos usados en esta repo:
 
 - plaintext local no versionado: `kestra/platform/infra/kestra-runtime.env`
-- key local no versionada: `kestra/platform/infra/kestra-runtime.local.key`
+- key local compartida no versionada: `.local-secrets/runtime-env.key`
 - archivo cifrado versionado: `kestra/platform/infra/kestra-runtime.env.enc`
 - plaintext local no versionado: `web/herramientas/deploy/herramientas.dev.env`
 - plaintext local no versionado: `web/herramientas/deploy/herramientas.prod.env`
@@ -181,12 +181,14 @@ Flujo sugerido:
 
 Esos paths ya estan ignorados por Git cuando corresponde.
 
+La key local se guarda en un path neutral del workspace porque hoy cifra varios runtime env del repo, no solo el de Kestra.
+
 Ejemplos de uso:
 
 ```bash
-python kestra/tools/manage_encrypted_env.py generate-key --output kestra/platform/infra/kestra-runtime.local.key
-python kestra/tools/manage_encrypted_env.py decrypt --key-file kestra/platform/infra/kestra-runtime.local.key --input kestra/platform/infra/kestra-runtime.env.enc --output kestra/platform/infra/kestra-runtime.env --force
-python kestra/tools/manage_encrypted_env.py encrypt --key-file kestra/platform/infra/kestra-runtime.local.key --input kestra/platform/infra/kestra-runtime.env --output kestra/platform/infra/kestra-runtime.env.enc --force
+python kestra/tools/manage_encrypted_env.py generate-key --output .local-secrets/runtime-env.key
+python kestra/tools/manage_encrypted_env.py decrypt --key-file .local-secrets/runtime-env.key --input kestra/platform/infra/kestra-runtime.env.enc --output kestra/platform/infra/kestra-runtime.env --force
+python kestra/tools/manage_encrypted_env.py encrypt --key-file .local-secrets/runtime-env.key --input kestra/platform/infra/kestra-runtime.env --output kestra/platform/infra/kestra-runtime.env.enc --force
 ```
 
 Importante:
