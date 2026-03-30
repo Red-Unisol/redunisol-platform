@@ -32,9 +32,6 @@ tasks:
       CAJA_BASE_URL: "{{ envs.caja_base_url }}"
       CAJA_ENCRYPT_PASS: "{{ secret('CAJA_ENCRYPT_PASS') }}"
       CAJA_ID_TIPO_USUARIO: "{{ envs.caja_id_tipo_usuario }}"
-      CAJA_SEED_TOKEN: "{{ secret('CAJA_SEED_TOKEN') }}"
-      CAJA_PERMISSIONS_BODY: "{{ secret('CAJA_PERMISSIONS_BODY') }}"
-      CAJA_PERMISSIONS_PLAINTEXT: "{{ secret('CAJA_PERMISSIONS_PLAINTEXT') }}"
     commands:
       - python -m tope_descuento_caja.kestra_webhook_entrypoint
 
