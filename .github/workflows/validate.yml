@@ -24,6 +24,9 @@ jobs:
       - name: Validate repository structure
         run: python kestra/tools/validate_kestra.py
 
+      - name: Run encrypted env tooling tests
+        run: python -m unittest kestra.tools.tests.test_manage_encrypted_env
+
       - name: Run Marketing CRM unit tests
         run: python -m unittest discover -s kestra/automations/marketing-crm/files/bitrix24_form_flow/tests -p "test_*.py"
         env:

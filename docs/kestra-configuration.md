@@ -142,6 +142,13 @@ Fuera de alcance en esta version:
 - configuracion de Apache del host
 - cambios manuales fuera de `/opt/kestra`
 
+Formato actual de los `.env.enc`:
+
+- nombre de variable en plaintext
+- valor cifrado por linea
+- comentarios y lineas vacias preservados
+- cifrado deterministico autenticado para que dos ramas que no cambian el valor de una variable no regeneren ciphertext distinto
+
 Archivos concretos usados en esta repo:
 
 - plaintext local no versionado: `kestra/platform/infra/kestra-runtime.env`
@@ -160,7 +167,7 @@ La repo incluye esta utilidad:
 Subcomandos disponibles:
 
 - `generate-key`: genera una key Fernet local
-- `encrypt`: cifra un archivo plaintext
+- `encrypt`: cifra un archivo plaintext linea por linea
 - `decrypt`: descifra un archivo cifrado
 
 Flujo sugerido:
@@ -188,6 +195,7 @@ Importante:
 - el archivo plaintext descifrado no debe versionarse
 - el archivo cifrado si puede versionarse
 - si se pierde la key, el archivo cifrado no se puede recuperar
+- el decrypt sigue soportando el formato legacy cifrado como blob completo, para migracion gradual
 
 ## Tasks De VS Code
 

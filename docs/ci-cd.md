@@ -87,6 +87,7 @@ Importante:
 - este workflow no publica flows ni namespace files
 - este workflow no toca Apache en esta version
 - este workflow aplica infraestructura compartida de la instancia
+- el archivo `.env.enc` ya no se guarda como un blob unico: ahora preserva nombres de variables y comments, con valores cifrados por linea para reducir conflictos de merge
 
 ### `deploy-herramientas-dev.yml` y `deploy-herramientas-prod.yml`
 
