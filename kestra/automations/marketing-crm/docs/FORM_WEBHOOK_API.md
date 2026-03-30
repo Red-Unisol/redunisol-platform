@@ -116,7 +116,7 @@ Campos:
   "message": "La provincia \"Buenos Aires\" no califica.",
   "qualified": false,
   "contact_id": "181479",
-  "lead_status": "RESULTADO_RECHAZADO"
+  "lead_status": "UC_1P8I07"
 }
 ```
 

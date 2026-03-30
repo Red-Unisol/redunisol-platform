@@ -103,11 +103,11 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_SOURCE_FIELD=UF_CRM_1722365051`
 - `BITRIX24_LEAD_REJECTION_REASON_FIELD=UF_CRM_REJECTION_REASON`
 - estado de lead para calificados: `UC_64AUC9` (`RESULTADO GANADO`)
-- estado de lead para rechazados: `RESULTADO_RECHAZADO` (`RESULTADO RECHAZADO`)
+- estado de lead para rechazados: `UC_1P8I07` (`RESULTADO PERDIDO`)
 
 Comportamiento esperado al rechazar:
 
-- el lead pasa al estado `RESULTADO RECHAZADO`
+- el lead pasa al estado `RESULTADO PERDIDO`
 - el motivo específico se guarda en `Motivo Rechazo` usando el enum del CRM
 
 ## Integracion con Kestra

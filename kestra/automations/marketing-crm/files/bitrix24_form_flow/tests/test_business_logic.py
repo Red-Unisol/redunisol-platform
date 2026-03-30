@@ -56,7 +56,7 @@ class BusinessLogicTests(unittest.TestCase):
             "BITRIX24_WEBHOOK_PATH": "1/token",
             "BITRIX24_CONTACT_CUIL_FIELD": "UF_CONTACT_CUIL",
             "BITRIX24_LEAD_STATUS_QUALIFIED": "QUALIFIED",
-            "BITRIX24_LEAD_STATUS_REJECTED": "RESULTADO_RECHAZADO",
+            "BITRIX24_LEAD_STATUS_REJECTED": "UC_1P8I07",
             "BITRIX24_LEAD_REJECTION_REASON_FIELD": "UF_CRM_REJECTION_REASON",
         }
 
@@ -180,13 +180,13 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertFalse(result["qualified"])
-        self.assertEqual(result["lead_status"], "RESULTADO_RECHAZADO")
+        self.assertEqual(result["lead_status"], "UC_1P8I07")
         self.assertEqual(result["reason"], "province_not_eligible")
 
         self.assertEqual(client.calls[-2][0], "crm.lead.fields")
         last_method, last_payload = client.calls[-1]
         self.assertEqual(last_method, "crm.lead.update")
-        self.assertEqual(last_payload["fields"]["STATUS_ID"], "RESULTADO_RECHAZADO")
+        self.assertEqual(last_payload["fields"]["STATUS_ID"], "UC_1P8I07")
         self.assertEqual(last_payload["fields"]["UF_CRM_REJECTION_REASON"], "3933")
 
 
