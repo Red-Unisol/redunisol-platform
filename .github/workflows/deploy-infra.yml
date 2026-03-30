@@ -31,13 +31,20 @@ jobs:
       SSH_USER: ${{ secrets.VPS_SSH_USER }}
       RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
     steps:
-      - name: Allow manual infra deploy only from main by Nasst
+      - name: Allow manual infra deploy only from main or dev by Nasst
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
           [ "${GITHUB_ACTOR}" = "Nasst" ]
-          [ "${GITHUB_REF}" = "refs/heads/main" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF}" = "refs/heads/dev" ]
+
+      - name: Warn about shared runtime
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "Manual infra deploy applies to shared runtime at $TARGET_DIR."
+          echo "Branch: $GITHUB_REF"
 
       - name: Checkout
         uses: actions/checkout@v4
