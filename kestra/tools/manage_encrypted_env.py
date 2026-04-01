@@ -11,6 +11,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESSIV
 
 FORMAT_ASSOCIATED_DATA = b"encrypted-env:v1"
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+MAX_ENV_KEY_LENGTH = 64
+SECRET_KEY_PREFIX = "SECRET_"
+ADVISORY_BANNER = "# NO USAR BASE 64 PARA LOS SECRETOS EL TOOLING LO MANEJA POR SI MISMO"
 
 
 @dataclass(frozen=True)
@@ -186,7 +189,12 @@ def is_line_encrypted_env(content: bytes) -> bool:
     if not pair_lines:
         return False
 
-    return all(line.key is not None and ENV_KEY_PATTERN.fullmatch(line.key) for line in pair_lines)
+    return all(
+        line.key is not None
+        and len(line.key) <= MAX_ENV_KEY_LENGTH
+        and ENV_KEY_PATTERN.fullmatch(line.key)
+        for line in pair_lines
+    )
 
 
 def serialize_env_lines(lines: list[EnvLine]) -> bytes:
@@ -199,9 +207,86 @@ def serialize_env_lines(lines: list[EnvLine]) -> bytes:
     return "\n".join(rendered).encode("utf-8")
 
 
+def strip_advisory_banner(lines: list[EnvLine]) -> list[EnvLine]:
+    if not lines:
+        return lines
+
+    index = 0
+    while index < len(lines) and lines[index].kind == "blank":
+        index += 1
+
+    if index < len(lines) and lines[index].kind == "comment" and lines[index].raw == ADVISORY_BANNER:
+        trimmed = lines[:index] + lines[index + 1 :]
+        if index < len(trimmed) and trimmed[index].kind == "blank":
+            trimmed = trimmed[:index] + trimmed[index + 1 :]
+        return trimmed
+
+    return lines
+
+
+def add_advisory_banner(lines: list[EnvLine]) -> list[EnvLine]:
+    stripped_lines = strip_advisory_banner(lines)
+    return [EnvLine(kind="comment", raw=ADVISORY_BANNER), EnvLine(kind="blank", raw=""), *stripped_lines]
+
+
+def is_secret_key(key: str | None) -> bool:
+    return bool(key) and key.startswith(SECRET_KEY_PREFIX)
+
+
+def encode_secret_value(value: str) -> str:
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def decode_secret_value(value: str) -> str:
+    try:
+        decoded = base64.b64decode(value.encode("ascii"), validate=True)
+        return decoded.decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return value
+
+
+def prepare_plaintext_for_runtime(plaintext: bytes) -> bytes:
+    runtime_lines: list[EnvLine] = []
+    for line in strip_advisory_banner(parse_env_lines(plaintext)):
+        if line.kind != "pair" or not is_secret_key(line.key):
+            runtime_lines.append(line)
+            continue
+
+        runtime_lines.append(
+            EnvLine(
+                kind="pair",
+                raw="",
+                key=line.key,
+                value=encode_secret_value(line.value or ""),
+            )
+        )
+
+    return serialize_env_lines(runtime_lines) + b"\n"
+
+
+def prepare_runtime_for_plaintext(runtime_content: bytes) -> bytes:
+    plaintext_lines: list[EnvLine] = []
+    for line in parse_env_lines(runtime_content):
+        if line.kind != "pair" or not is_secret_key(line.key):
+            plaintext_lines.append(line)
+            continue
+
+        plaintext_lines.append(
+            EnvLine(
+                kind="pair",
+                raw="",
+                key=line.key,
+                value=decode_secret_value(line.value or ""),
+            )
+        )
+
+    return serialize_env_lines(add_advisory_banner(plaintext_lines)) + b"\n"
+
+
 def encrypt_env_lines(aessiv: AESSIV, plaintext: bytes) -> bytes:
+    runtime_plaintext = prepare_plaintext_for_runtime(plaintext)
     encrypted_lines: list[EnvLine] = []
-    for line in parse_env_lines(plaintext):
+    for line in parse_env_lines(runtime_plaintext):
         if line.kind != "pair":
             encrypted_lines.append(line)
             continue
@@ -238,11 +323,13 @@ def decrypt_env_lines(aessiv: AESSIV, ciphertext: bytes) -> bytes:
             EnvLine(kind="pair", raw="", key=line.key, value=plaintext.decode("utf-8"))
         )
 
-    return serialize_env_lines(decrypted_lines) + b"\n"
+    runtime_plaintext = serialize_env_lines(decrypted_lines) + b"\n"
+    return prepare_runtime_for_plaintext(runtime_plaintext)
 
 
 def decrypt_legacy_blob(fernet: Fernet, ciphertext: bytes) -> bytes:
-    return fernet.decrypt(ciphertext.strip())
+    runtime_plaintext = fernet.decrypt(ciphertext.strip())
+    return prepare_runtime_for_plaintext(runtime_plaintext)
 
 
 def generate_key(output: Path, force: bool) -> int:

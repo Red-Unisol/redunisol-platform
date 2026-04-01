@@ -84,6 +84,7 @@ Ejemplos reales:
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+- `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
 - `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`
 
 ## Estado Verificado En VPS
@@ -170,6 +171,14 @@ Subcomandos disponibles:
 - `encrypt`: cifra un archivo plaintext linea por linea
 - `decrypt`: descifra un archivo cifrado
 
+Comportamiento actual del tooling:
+
+- al descifrar, las claves `SECRET_*` se escriben en plaintext real para que se puedan revisar y editar como humano
+- al cifrar, las claves `SECRET_*` se convierten automaticamente a Base64 antes de encriptarse
+- el archivo descifrado agrega arriba el comentario `NO USAR BASE 64 PARA LOS SECRETOS EL TOOLING LO MANEJA POR SI MISMO`
+- ese comentario es solo para el archivo plaintext local; el tooling lo remueve antes de generar el archivo cifrado
+- el decrypt sigue soportando el formato legacy cifrado como blob completo, para migracion gradual
+
 Flujo sugerido:
 
 1. generar una key local no versionada
@@ -197,7 +206,7 @@ Importante:
 - el archivo plaintext descifrado no debe versionarse
 - el archivo cifrado si puede versionarse
 - si se pierde la key, el archivo cifrado no se puede recuperar
-- el decrypt sigue soportando el formato legacy cifrado como blob completo, para migracion gradual
+- los `SECRET_*` deben editarse en plaintext real, no en Base64
 
 ## Tasks De VS Code
 
@@ -398,6 +407,28 @@ Uso esperado desde un flow:
 Importante:
 
 - en `kestra/platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+- el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
+- es la key efectiva del path del webhook, por lo que debe tratarse como secreto
+
+### Runtime Analisis Credito: incoming MetaMap webhook secret
+
+Referenciado hoy desde el flow `kestra/automations/analisis-credito/flows/incoming_metamap_bridge.yaml`.
+
+Secret cargado en runtime:
+
+- `ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
+
+En la infraestructura actual corresponde a:
+
+- `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
+
+Uso esperado desde un flow:
+
+- `{{ secret('ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY') }}`
+
+Importante:
+
+- en `kestra/platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
 - es la key efectiva del path del webhook, por lo que debe tratarse como secreto
 
