@@ -108,7 +108,7 @@ function App({ branding, tools }) {
         }
     };
 
-    const resultTone = getResultTone(result, error);
+    const resultTone = getResultTone(selectedTool?.id, result, error);
 
     return (
         <div className="shell">
@@ -206,27 +206,68 @@ function App({ branding, tools }) {
 
                     {(error || result) && (
                         <section className={`result result--${resultTone}`}>
-                            <h3 className="result__headline">{getResultHeadline(result, error)}</h3>
-                            <p className="result__copy">{getResultCopy(result, error)}</p>
+                            <h3 className="result__headline">{getResultHeadline(selectedTool?.id, result, error)}</h3>
+                            <p className="result__copy">{getResultCopy(selectedTool?.id, result, error)}</p>
 
                             {result && (
                                 <div className="result__grid">
-                                    <div className="result__metric">
-                                        <span>CUIL</span>
-                                        <strong>{result.cuil || 'Sin dato'}</strong>
-                                    </div>
-                                    <div className="result__metric">
-                                        <span>Saldo</span>
-                                        <strong>{typeof result.saldo_renovacion === 'number' ? currencyFormatter.format(result.saldo_renovacion) : 'No informado'}</strong>
-                                    </div>
-                                    <div className="result__metric">
-                                        <span>Renovacion</span>
-                                        <strong>{result.puede_renovar ? 'Si' : 'No'}</strong>
-                                    </div>
-                                    <div className="result__metric">
-                                        <span>Motivo</span>
-                                        <strong>{humanizeReason(result.motivo || result.error || 'Sin detalle')}</strong>
-                                    </div>
+                                    {selectedTool?.id === 'consulta-renovacion-cruz-del-eje' && (
+                                        <>
+                                            <div className="result__metric">
+                                                <span>CUIL</span>
+                                                <strong>{result.cuil || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Saldo</span>
+                                                <strong>
+                                                    {typeof result.saldo_renovacion === 'number'
+                                                        ? currencyFormatter.format(result.saldo_renovacion)
+                                                        : 'No informado'}
+                                                </strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Renovacion</span>
+                                                <strong>{result.puede_renovar ? 'Si' : 'No'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Motivo</span>
+                                                <strong>{humanizeReason(result.motivo || result.error || 'Sin detalle')}</strong>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {selectedTool?.id === 'consulta-tope-descuento-caja' && (
+                                        <>
+                                            <div className="result__metric">
+                                                <span>CUIL</span>
+                                                <strong>{result.cuil || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Nombre</span>
+                                                <strong>{result.nombre || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Apellido</span>
+                                                <strong>{result.apellido || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Disponible</span>
+                                                <strong>
+                                                    {typeof result.disponible === 'number'
+                                                        ? currencyFormatter.format(result.disponible)
+                                                        : 'No informado'}
+                                                </strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Tope descuento</span>
+                                                <strong>
+                                                    {typeof result.tope_descuento === 'number'
+                                                        ? currencyFormatter.format(result.tope_descuento)
+                                                        : 'No informado'}
+                                                </strong>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </section>
@@ -237,19 +278,26 @@ function App({ branding, tools }) {
     );
 }
 
-function getResultTone(result, error) {
+function getResultTone(toolId, result, error) {
     if (error || (result && result.ok === false)) {
         return 'error';
     }
 
-    if (result && result.puede_renovar) {
+    if (toolId === 'consulta-renovacion-cruz-del-eje') {
+        if (result && result.puede_renovar) {
+            return 'success';
+        }
+        return 'warning';
+    }
+
+    if (toolId === 'consulta-tope-descuento-caja') {
         return 'success';
     }
 
     return 'warning';
 }
 
-function getResultHeadline(result, error) {
+function getResultHeadline(toolId, result, error) {
     if (error) {
         return 'No se pudo completar la consulta';
     }
@@ -258,18 +306,24 @@ function getResultHeadline(result, error) {
         return '';
     }
 
-    if (result.ok && result.puede_renovar) {
-        return 'Puede renovar';
+    if (toolId === 'consulta-renovacion-cruz-del-eje') {
+        if (result.ok && result.puede_renovar) {
+            return 'Puede renovar';
+        }
+        if (result.ok) {
+            return 'No puede renovar';
+        }
+        return 'Respuesta de validacion';
     }
 
-    if (result.ok) {
-        return 'No puede renovar';
+    if (toolId === 'consulta-tope-descuento-caja') {
+        return result.ok ? 'Consulta completada' : 'Respuesta de validacion';
     }
 
     return 'Respuesta de validacion';
 }
 
-function getResultCopy(result, error) {
+function getResultCopy(toolId, result, error) {
     if (error) {
         return error;
     }
@@ -278,12 +332,21 @@ function getResultCopy(result, error) {
         return '';
     }
 
-    if (result.ok && result.puede_renovar) {
-        return 'Consulta completada correctamente.';
+    if (toolId === 'consulta-renovacion-cruz-del-eje') {
+        if (result.ok && result.puede_renovar) {
+            return 'Consulta completada correctamente.';
+        }
+        if (result.ok) {
+            return humanizeReason(result.motivo || 'sin detalle');
+        }
+        return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';
     }
 
-    if (result.ok) {
-        return humanizeReason(result.motivo || 'sin detalle');
+    if (toolId === 'consulta-tope-descuento-caja') {
+        if (result.ok) {
+            return 'Datos obtenidos correctamente.';
+        }
+        return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';
     }
 
     return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';

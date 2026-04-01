@@ -21,9 +21,20 @@ return [
             'actionLabel' => 'Consultar renovacion',
             'helper' => 'La consulta usa el webhook protegido de Kestra desde el backend Laravel.',
         ],
+        [
+            'id' => 'consulta-tope-descuento-caja',
+            'title' => 'Consulta Tope Descuento Caja',
+            'description' => 'Ingresa un CUIL y consulta el tope de descuento en Caja Jubilaciones.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Consultar caja',
+            'helper' => 'La consulta usa el webhook protegido de Kestra desde el backend Laravel.',
+        ],
     ],
     'proxy' => [
-        'consulta_renovacion_url' => env('ANALISIS_CREDITO_WEBHOOK_URL'),
+        'consulta_renovacion_url' => env('ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL'),
+        'tope_descuento_caja_url' => env('ANALISIS_CREDITO_CONSULTA_CAJA'),
         'timeout_seconds' => (int) env('ANALISIS_CREDITO_TIMEOUT_SECONDS', 30),
     ],
 ];

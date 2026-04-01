@@ -190,6 +190,18 @@
         "cwd": "${workspaceFolder}/web/herramientas"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Kestra: Webhook URLs",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "kestra/tools/list_webhook_urls.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
     }
   ]
 }

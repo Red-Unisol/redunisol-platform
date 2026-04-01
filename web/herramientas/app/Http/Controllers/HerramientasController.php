@@ -16,7 +16,10 @@ class HerramientasController extends Controller
                 if (($tool['id'] ?? null) === 'consulta-renovacion-cruz-del-eje') {
                     $tool['endpoint'] = route('tools.consulta-renovacion-cruz-del-eje');
                 }
-
+                if (($tool['id'] ?? null) === 'consulta-tope-descuento-caja') {
+                    $tool['endpoint'] = route('tools.consulta-tope-descuento-caja');
+                }
+                
                 return $tool;
             })
             ->values();
@@ -73,4 +76,49 @@ class HerramientasController extends Controller
 
         return response()->json($response->json());
     }
+
+    public function consultaTopeDescuentoCaja(Request $request): JsonResponse
+{
+    $validated = $request->validate([
+        'cuil' => ['required', 'string', 'regex:/^(\d{2}-?\d{8}-?\d|\d{11})$/'],
+    ]);
+
+    $targetUrl = (string) config('tools.proxy.tope_descuento_caja_url', '');
+
+    if ($targetUrl === '') {
+        return response()->json([
+            'ok' => false,
+            'message' => 'La herramienta no esta configurada todavia en el servidor.',
+            'error' => 'tool_not_configured',
+        ], 500);
+    }
+
+    try {
+        $response = Http::acceptJson()
+            ->asJson()
+            ->timeout((int) config('tools.proxy.timeout_seconds', 30))
+            ->post($targetUrl, [
+                'cuil' => trim($validated['cuil']),
+            ]);
+    } catch (Throwable $exception) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'No pudimos conectar con el servicio de caja en este momento.',
+            'error' => 'upstream_unavailable',
+            'detail' => $exception->getMessage(),
+        ], 502);
+    }
+
+    if (! $response->successful()) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'El servicio devolvio una respuesta inesperada.',
+            'error' => 'upstream_error',
+            'status' => $response->status(),
+            'body' => $response->json() ?? $response->body(),
+        ], 502);
+    }
+
+    return response()->json($response->json());
+}
 }

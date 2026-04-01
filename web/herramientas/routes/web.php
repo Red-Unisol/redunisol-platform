@@ -9,3 +9,7 @@ Route::get('/', [HerramientasController::class, 'index'])->name('home');
 Route::post('/api/tools/consulta-renovacion-cruz-del-eje', [HerramientasController::class, 'consultaRenovacionCruzDelEje'])
     ->withoutMiddleware([PreventRequestForgery::class])
     ->name('tools.consulta-renovacion-cruz-del-eje');
+
+Route::post('/api/tools/consulta-tope-descuento-caja', [HerramientasController::class, 'consultaTopeDescuentoCaja'])
+    ->withoutMiddleware([PreventRequestForgery::class])
+    ->name('tools.consulta-tope-descuento-caja');
