@@ -22,11 +22,12 @@ QUALIFICATION_RULES = {
             "jubilado_provincial",
             "jubilado_municipal",
             "pensionado",
+            "docente",
+            "salud",
         },
         "bank_optional_for": {"jubilado_provincial"},
         "allowed_banks": {
             "banco_de_la_provincia_de_cordoba_s_a",
-            "banco_de_la_nacion_argentina",
         },
     },
     "catamarca": {

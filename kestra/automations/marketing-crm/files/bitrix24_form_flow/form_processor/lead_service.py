@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from .catalogs import BANCOS, PROVINCIAS, SITUACIONES_LABORALES, CatalogItem, slugify
 from .bitrix_client import BitrixClient
 from .config import AppConfig
-from .input_parser import NormalizedInput, normalize_business_input
+from .input_parser import NormalizedInput
 from .logger import Logger
+from .normalization import normalize_cuil, normalize_email, normalize_full_name, normalize_whatsapp
 
 
 def create_lead(
@@ -75,19 +77,32 @@ def should_process_lead(
 
 
 def build_submission_from_lead(
+    client: BitrixClient,
     lead: dict[str, Any],
     config: AppConfig,
 ) -> NormalizedInput:
-    payload = {
-        "full_name": _lead_full_name(lead),
-        "email": _first_multifield_value(lead.get("EMAIL"), "EMAIL"),
-        "whatsapp": _first_multifield_value(lead.get("PHONE"), "PHONE"),
-        "cuil": _required_lead_value(lead, config.fields.lead_cuil),
-        "province": _required_lead_value(lead, config.fields.lead_province),
-        "employment_status": _required_lead_value(lead, config.fields.lead_employment_status),
-        "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
-    }
-    return normalize_business_input(payload, require_lead_source=False)
+    cuil_digits, cuil_formatted = normalize_cuil(_required_lead_value(lead, config.fields.lead_cuil))
+    return NormalizedInput(
+        full_name=normalize_full_name(_lead_full_name(lead)),
+        email=normalize_email(_first_multifield_value(lead.get("EMAIL"), "EMAIL")),
+        whatsapp=normalize_whatsapp(_first_multifield_value(lead.get("PHONE"), "PHONE")),
+        cuil_digits=cuil_digits,
+        cuil_formatted=cuil_formatted,
+        province=PROVINCIAS.resolve(
+            _required_lead_value(lead, config.fields.lead_province),
+            "province",
+        ),
+        employment_status=resolve_employment_status(
+            client,
+            config.fields.lead_employment_status,
+            _required_lead_value(lead, config.fields.lead_employment_status),
+        ),
+        payment_bank=BANCOS.resolve(
+            _required_lead_value(lead, config.fields.lead_payment_bank),
+            "payment_bank",
+        ),
+        lead_source=None,
+    )
 
 
 def update_lead_status(
@@ -109,11 +124,16 @@ def update_lead_status(
             member_status_label,
         )
     if not qualified and rejection_reason:
-        fields[config.fields.lead_rejection_reason] = _resolve_rejection_reason_enum_id(
-            client,
-            config.fields.lead_rejection_reason,
-            rejection_reason,
-        )
+        try:
+            fields[config.fields.lead_rejection_reason] = _resolve_rejection_reason_enum_id(
+                client,
+                config.fields.lead_rejection_reason,
+                rejection_reason,
+            )
+        except RuntimeError:
+            logger.info(
+                f'No se encontro el motivo de rechazo "{rejection_reason}" en Bitrix; se actualiza solo el estado.'
+            )
     client.call("crm.lead.update", {"id": lead_id, "fields": fields})
     return status_id
 
@@ -196,4 +216,51 @@ def _derive_dni_from_cuil(cuil_digits: str) -> str:
 
     dni = digits[2:10].lstrip("0")
     return dni or "0"
+
+
+def resolve_employment_status(
+    client: BitrixClient,
+    field_name: str,
+    raw_value: Any,
+) -> CatalogItem:
+    try:
+        return SITUACIONES_LABORALES.resolve(raw_value, "employment_status")
+    except ValueError:
+        pass
+
+    item = _find_field_enum_item(client, field_name, raw_value)
+    if item is None:
+        raise ValueError(f'El campo "employment_status" tiene un valor no soportado: "{raw_value}".')
+
+    label = str(item.get("VALUE") or "").strip()
+    if not label:
+        raise ValueError(f'El campo "employment_status" tiene un valor no soportado: "{raw_value}".')
+
+    try:
+        return SITUACIONES_LABORALES.resolve(label, "employment_status")
+    except ValueError:
+        return CatalogItem(
+            key=slugify(label),
+            label=label,
+            bitrix_id=str(item.get("ID") or raw_value),
+        )
+
+
+def _find_field_enum_item(
+    client: BitrixClient,
+    field_name: str,
+    raw_value: Any,
+) -> dict[str, Any] | None:
+    field = client.get_lead_field(field_name)
+    items = field.get("items")
+    if not isinstance(items, list):
+        return None
+
+    raw_text = str(raw_value).strip()
+    for item in items:
+        if str(item.get("ID") or "").strip() == raw_text:
+            return item
+        if str(item.get("VALUE") or "").strip().lower() == raw_text.lower():
+            return item
+    return None
 

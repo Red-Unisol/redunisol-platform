@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -42,6 +43,7 @@ def parse_body(body: str, content_type: str | None = None) -> dict[str, Any]:
 def normalize_business_input(
     payload: dict[str, Any],
     *,
+    employment_status_resolver: Callable[[Any], CatalogItem] | None = None,
     require_lead_source: bool = True,
 ) -> NormalizedInput:
     if not isinstance(payload, dict):
@@ -51,6 +53,9 @@ def normalize_business_input(
     raw_lead_source = _optional_first(
         payload,
         ["lead_source", "origen_lead", "origen_formulario", "origenFormulario"],
+    )
+    resolve_employment_status = employment_status_resolver or (
+        lambda raw_value: SITUACIONES_LABORALES.resolve(raw_value, "employment_status")
     )
 
     return NormalizedInput(
@@ -63,9 +68,8 @@ def normalize_business_input(
             _first(payload, ["province", "provincia", "ProvinciaDeContacto"]),
             "province",
         ),
-        employment_status=SITUACIONES_LABORALES.resolve(
-            _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]),
-            "employment_status",
+        employment_status=resolve_employment_status(
+            _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"])
         ),
         payment_bank=BANCOS.resolve(
             _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]),

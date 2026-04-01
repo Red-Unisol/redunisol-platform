@@ -12,6 +12,7 @@ from .lead_service import (
     build_submission_from_lead,
     create_lead,
     get_lead,
+    resolve_employment_status,
     should_process_lead,
     update_lead_status,
 )
@@ -121,7 +122,14 @@ def ingest_submission(
         active_logger.info("Inicio de intake.")
         config = load_config(env)
         client = bitrix_client or BitrixClient(config, active_logger)
-        submission = normalize_business_input(payload)
+        submission = normalize_business_input(
+            payload,
+            employment_status_resolver=lambda raw_value: resolve_employment_status(
+                client,
+                config.fields.lead_employment_status,
+                raw_value,
+            ),
+        )
         active_logger.info(f"CUIL normalizado: {submission.cuil_formatted}.")
 
         contact_id = upsert_contact(client, config, submission, active_logger)
@@ -179,7 +187,7 @@ def classify_lead(
                 message="El lead no esta marcado para procesamiento automatico.",
             )
 
-        submission = build_submission_from_lead(lead, config)
+        submission = build_submission_from_lead(client, lead, config)
         member_lookup = socio_resolver or resolve_member_status
         member_status = member_lookup(submission.cuil_digits, config, active_logger)
         member_status_label = member_status.bitrix_label
