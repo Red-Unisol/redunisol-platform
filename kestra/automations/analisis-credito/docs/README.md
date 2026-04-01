@@ -6,6 +6,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
+- `incoming_metamap_bridge`
 
 ## renovacion_cruz_del_eje
 
@@ -104,3 +105,56 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
+
+## incoming_metamap_bridge
+
+Recibe payloads arbitrarios por webhook, los registra en logs y trata de reenviarlos a un endpoint HTTP accesible desde la tarea de Kestra. Esta pensado para probar un servicio local expuesto en la VPS por un tunel SSH entrante.
+
+### Entrada
+
+Webhook `POST` con cualquier body JSON. Si el body es un objeto JSON, admite dos claves de control opcionales:
+
+- `_bridge_forward_url`: URL destino a la que se reenvia el payload. Ejemplo sugerido: `http://host.docker.internal:8787/metamap`
+- `_bridge_timeout_seconds`: timeout opcional para el reenvio HTTP
+
+Ejemplo:
+
+```json
+{
+	"_bridge_forward_url": "http://host.docker.internal:8787/metamap",
+	"_bridge_timeout_seconds": 5,
+	"event": "verification.finished",
+	"lead_id": "abc123",
+	"result": {
+		"status": "approved"
+	}
+}
+```
+
+Las claves de control no se incluyen en el body reenviado.
+
+### Salida
+
+- `ok` (bool)
+- `forward_attempted` (bool)
+- `forward_connected` (bool)
+- `forward_target` (string)
+- `forward_status_code` (string | vacio)
+- `forward_error` (string | vacio)
+- `payload_sha256` (string)
+- `payload_preview` (string)
+
+Notas:
+
+- si no se informa `_bridge_forward_url`, el flow no falla; solo deja registro de que no habia destino configurado
+- si el endpoint local no esta disponible por falta de tunel SSH o conexion rechazada, el flow no falla; deja el error registrado en logs y outputs
+
+### Variables
+
+Secrets:
+
+- `ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/incoming_metamap_bridge/**`
