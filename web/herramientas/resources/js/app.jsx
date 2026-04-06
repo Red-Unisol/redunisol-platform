@@ -194,11 +194,11 @@ function App({ branding, tools }) {
                         {selectedTool?.id === 'consulta-quiebra-credix' ? (
                             <div className="form-grid">
                                 <div className="field">
-                                    <label htmlFor="cuit">CUIT</label>
+                                    <label htmlFor="cuit">CUIL o DNI</label>
                                     <input
                                         id="cuit"
                                         name="cuit"
-                                        placeholder="20-12345678-3"
+                                        placeholder="20-12345678-3 o 12345678"
                                         value={formValues.cuit}
                                         onChange={(event) =>
                                             setFormValues((current) => ({
@@ -328,7 +328,7 @@ function App({ branding, tools }) {
                                                 <strong>{humanizeReason(result.status || 'sin_dato')}</strong>
                                             </div>
                                             <div className="result__metric">
-                                                <span>CUIT</span>
+                                                <span>CUIL o DNI</span>
                                                 <strong>{result.cuit || 'Sin dato'}</strong>
                                             </div>
                                             <div className="result__metric">

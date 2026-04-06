@@ -19,6 +19,35 @@ class ConsultaQuiebraCredixTest extends TestCase
             ->assertJsonValidationErrors(['cuit']);
     }
 
+    public function test_it_accepts_dni_in_the_cuit_field(): void
+    {
+        config()->set('tools.proxy.consulta_quiebra_credix_url', 'https://kestra.example.test/webhook');
+        config()->set('tools.proxy.timeout_seconds', 30);
+
+        Http::fake([
+            'https://kestra.example.test/webhook' => Http::response([
+                'ok' => true,
+                'status' => 'none',
+                'cuit' => '12345678',
+                'nombre' => '',
+                'rows_json' => '[]',
+                'data_json' => '[]',
+                'response_json' => '{"status":"none","rows":[]}',
+                'error' => '',
+            ], 200),
+        ]);
+
+        $this->postJson('/api/tools/consulta-quiebra-credix', [
+            'cuit' => '12345678',
+            'nombre' => '',
+        ])->assertOk();
+
+        Http::assertSent(function ($request): bool {
+            return $request->url() === 'https://kestra.example.test/webhook'
+                && $request['cuit'] === '12345678';
+        });
+    }
+
     public function test_it_proxies_the_request_to_kestra_with_filtered_payload(): void
     {
         config()->set('tools.proxy.consulta_quiebra_credix_url', 'https://kestra.example.test/webhook');

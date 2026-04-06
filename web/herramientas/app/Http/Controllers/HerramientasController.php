@@ -129,7 +129,7 @@ class HerramientasController extends Controller
     public function consultaQuiebraCredix(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'cuit' => ['nullable', 'string', 'regex:/^(\d{2}-?\d{8}-?\d|\d{11})$/'],
+            'cuit' => ['nullable', 'string', 'regex:/^(?:\d{7,11}|\d{2}-?\d{8}-?\d)$/'],
             'nombre' => ['nullable', 'string', 'max:160'],
         ]);
 
