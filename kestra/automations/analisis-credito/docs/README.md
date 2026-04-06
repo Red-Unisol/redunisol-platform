@@ -8,6 +8,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `tope_descuento_caja`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
+- `consulta_quiebra_credix_http`
 
 ## renovacion_cruz_del_eje
 
@@ -215,3 +216,59 @@ Configuracion inline en el flow:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
+
+## consulta_quiebra_credix_http
+
+Consulta CredixSA por HTTP directo y devuelve la forma legacy de `consultar_tabla`: `none`, `multiple` o `single`.
+
+### Entrada
+
+Webhook `POST` con JSON:
+
+```json
+{ "cuit": "20-12345678-3", "nombre": "Juan Perez" }
+```
+
+Tambien acepta:
+
+- solo `cuit`
+- solo `nombre`
+- un string simple en el body, tratado como CUIL
+
+Debe venir al menos uno de los dos criterios.
+
+### Salida
+
+Outputs principales:
+
+- `ok` (bool)
+- `status` (`none` | `multiple` | `single` | `error`)
+- `rows_json` (string JSON)
+- `data_json` (string JSON)
+- `response_json` (string JSON con el contrato legacy)
+- `error` (string | vacio)
+
+Contrato legacy serializado en `response_json`:
+
+- `{"status":"none","rows":[]}`
+- `{"status":"multiple","rows":[...]}`
+- `{"status":"single","data":[...]}`
+
+### Variables
+
+Secrets:
+
+- `ANALISIS_CREDITO_QUIEBRA_WEBHOOK_KEY`
+- `CREDIX_CLIENTE`
+- `CREDIX_USER`
+- `CREDIX_PASS`
+
+Configuracion inline en el flow:
+
+- `CREDIX_LOGIN_URL=https://www.credixsa.com/nuevo/login.php`
+- `CREDIX_TIMEOUT_SECONDS=30`
+- `CREDIX_DEBUG=false`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/consulta_quiebra_credix_http/**`
