@@ -184,18 +184,18 @@ Debe venir al menos uno de los dos criterios.
 
 Outputs principales:
 
-- `response` (string)
+- `ok` (bool)
+- `status` (`none` | `multiple` | `single` | `error`)
+- `rows_json` (string JSON)
+- `data_json` (string JSON)
+- `response_json` (string JSON con el contrato legacy)
+- `error` (string | vacio)
 
-Body HTTP devuelto por el webhook:
+Contrato legacy serializado en `response_json`:
 
 - `{"status":"none","rows":[]}`
 - `{"status":"multiple","rows":[...]}`
 - `{"status":"single","data":[...]}`
-- `{"status":"error","error":"..."}`
-
-Nota:
-
-- el webhook usa `responseContentType: text/plain` para que Kestra devuelva exactamente ese body sin envolverlo en outputs extra
 
 ### Variables
 

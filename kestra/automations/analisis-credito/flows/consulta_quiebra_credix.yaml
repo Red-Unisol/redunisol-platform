@@ -34,9 +34,30 @@ tasks:
       - python -m consulta_quiebra_credix.kestra_webhook_entrypoint
 
 outputs:
-  - id: response
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.consultar_quiebra.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.status }}"
+  - id: cuit
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.cuit }}"
+  - id: nombre
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.nombre }}"
+  - id: rows_json
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.rows_json }}"
+  - id: data_json
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.data_json }}"
+  - id: response_json
     type: STRING
     value: "{{ outputs.consultar_quiebra.vars.response_json }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.error }}"
 
 triggers:
   - id: webhook
@@ -44,4 +65,4 @@ triggers:
     key: "{{ secret('ANALISIS_CREDITO_QUIEBRA_WEBHOOK_KEY') }}"
     wait: true
     returnOutputs: true
-    responseContentType: text/plain
+    responseContentType: application/json
