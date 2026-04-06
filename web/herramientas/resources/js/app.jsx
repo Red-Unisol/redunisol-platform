@@ -324,10 +324,6 @@ function App({ branding, tools }) {
                                     {selectedTool?.id === 'consulta-quiebra-credix' && (
                                         <>
                                             <div className="result__metric">
-                                                <span>Estado</span>
-                                                <strong>{humanizeReason(result.status || 'sin_dato')}</strong>
-                                            </div>
-                                            <div className="result__metric">
                                                 <span>CUIL o DNI</span>
                                                 <strong>{result.cuit || 'Sin dato'}</strong>
                                             </div>
@@ -456,13 +452,13 @@ function getResultHeadline(toolId, result, error) {
 
     if (toolId === 'consulta-quiebra-credix') {
         if (result.status === 'single') {
-            return 'Resultado unico encontrado';
+            return 'Resultado';
         }
         if (result.status === 'multiple') {
-            return 'Se encontraron multiples coincidencias';
+            return 'Resultados';
         }
         if (result.status === 'none') {
-            return 'Sin coincidencias';
+            return 'Resultado';
         }
         return 'Respuesta de validacion';
     }
@@ -500,12 +496,12 @@ function getResultCopy(toolId, result, error) {
         if (result.status === 'single') {
             const total = parseJsonArray(result.data_json).length;
             return total > 0
-                ? `Se obtuvo un resultado unico con ${total} fila${total === 1 ? '' : 's'} de edictos.`
-                : 'Se obtuvo un resultado unico sin filas en la tabla de edictos.';
+                ? `Se obtuvo ${total} fila${total === 1 ? '' : 's'} de edictos para la persona encontrada.`
+                : 'Se encontro la persona, pero no hay filas en la tabla de edictos.';
         }
         if (result.status === 'multiple') {
             const total = parseJsonArray(result.rows_json).length;
-            return `Se encontraron ${total} coincidencia${total === 1 ? '' : 's'} y hace falta elegir una manualmente.`;
+            return `Se encontraron ${total} coincidencia${total === 1 ? '' : 's'} para ese criterio.`;
         }
         if (result.status === 'none') {
             return 'No se encontraron coincidencias para los criterios ingresados.';

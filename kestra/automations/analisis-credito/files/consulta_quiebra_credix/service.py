@@ -115,11 +115,12 @@ def consultar_tabla(request: SearchRequest, config: CredixConfig) -> dict[str, A
             if len(candidates) > 1:
                 return build_multiple_result(request, candidates)
 
-            candidates[0].link.click()
+            selected_candidate = candidates[0]
+            selected_candidate.link.click()
             page.wait_for_load_state("networkidle")
             _wait_next_ui_step(page, request)
             data = _extract_edicts(page, config, request)
-            return build_single_result(request, data)
+            return build_single_result(request, data, nombre=selected_candidate.nombre)
         finally:
             browser.close()
 
@@ -143,8 +144,13 @@ def build_multiple_result(
     return _base_result(request, status="multiple", rows=rows, data=[], error="")
 
 
-def build_single_result(request: SearchRequest, data: list[dict[str, str]]) -> dict[str, Any]:
-    return _base_result(request, status="single", rows=[], data=data, error="")
+def build_single_result(
+    request: SearchRequest,
+    data: list[dict[str, str]],
+    *,
+    nombre: str | None = None,
+) -> dict[str, Any]:
+    return _base_result(request, status="single", rows=[], data=data, error="", nombre=nombre)
 
 
 def build_error_result(
@@ -301,12 +307,13 @@ def _base_result(
     data: list[dict[str, str]],
     error: str,
     ok: bool = True,
+    nombre: str | None = None,
 ) -> dict[str, Any]:
     return {
         "ok": ok,
         "status": status,
         "cuit": request.cuit,
-        "nombre": request.nombre,
+        "nombre": request.nombre if nombre is None else nombre,
         "rows": rows,
         "data": data,
         "error": error,

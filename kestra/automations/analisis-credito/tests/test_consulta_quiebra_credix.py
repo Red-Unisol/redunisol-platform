@@ -66,6 +66,17 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
             '{"status":"single","data":[{"fecha":"2026-04-06","fuente":"Boletin","id":"123","resumen":"Sin novedades"}]}',
         )
 
+    def test_build_single_result_prefers_scraped_name_when_provided(self) -> None:
+        request = SearchRequest(cuit="26967652", nombre="")
+
+        result = build_single_result(
+            request,
+            [],
+            nombre="GORONDON MARCELA VIVIANA",
+        )
+
+        self.assertEqual(result["nombre"], "GORONDON MARCELA VIVIANA")
+
     def test_build_output_payload_for_errors_sets_error_response(self) -> None:
         result = build_error_result(None, "boom")
 
