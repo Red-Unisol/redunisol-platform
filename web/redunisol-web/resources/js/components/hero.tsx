@@ -1,10 +1,17 @@
-// resources/js/Components/Hero.jsx
-
 import { motion } from 'framer-motion';
 
-export default function Hero() {
+interface Hero {
+    title: string;
+    highlight: string;
+    description: string;
+    socialProof: {
+        prefix: string;
+        suffix: string;
+    };
+}
+export default function Hero({ data }: { data: Hero }) {
     return (
-        <section className="w-full bg-[#F7F7F7]">
+        <section className="w-full bg-white">
             <div className="mx-auto max-w-5xl px-6 pt-24 pb-20 text-center">
                 {/* TITLE */}
                 <motion.h1
@@ -13,10 +20,10 @@ export default function Hero() {
                     transition={{ duration: 0.6 }}
                     className="text-[42px] leading-[1.1] font-semibold tracking-tight text-[#111] md:text-[64px]"
                 >
-                    Pedí tu préstamo
+                    {data.title}
                     <br />
                     <span className="font-semibold text-[#6BAF92]">
-                        de hasta $1.000.000
+                        {data.highlight}
                     </span>
                 </motion.h1>
 
@@ -25,11 +32,9 @@ export default function Hero() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15, duration: 0.6 }}
-                    className="mx-auto mt-6 max-w-2xl text-[16px] leading-relaxed text-[#6B7280] md:text-[18px]"
+                    className="mx-auto mt-6 max-w-2xl text-[16px] leading-relaxed text-gray-800 md:text-[18px]"
                 >
-                    Trabajamos con convenios activos de Bancos, Mutuales y otros
-                    proveedores no financieros de créditos regulados por el
-                    BCRA, buscando siempre el mejor crédito de nómina para vos.
+                    {data.description}
                 </motion.p>
 
                 {/* SOCIAL PROOF */}
@@ -57,8 +62,9 @@ export default function Hero() {
 
                     {/* TEXT */}
                     <p className="text-sm font-medium text-[#374151]">
-                        <span className="font-semibold">50.000+</span> créditos
-                        otorgados en más de una década
+                        <span className="font-semibold">
+                            {data.socialProof.prefix} {data.socialProof.suffix}
+                        </span>
                     </p>
                 </motion.div>
             </div>

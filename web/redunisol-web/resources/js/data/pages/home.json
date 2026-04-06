@@ -1,0 +1,47 @@
+{
+    "hero": {
+        "title": "Pedí tu préstamo",
+        "highlight": "de hasta $1.000.000",
+        "description": "Trabajamos con convenios activos de Bancos, Mutuales y otros proveedores no financieros de créditos regulados por el BCRA, buscando siempre el mejor crédito de nómina para vos.",
+        "socialProof": {
+            "prefix": "50.000+",
+            "suffix": "créditos otorgados en más de una década"
+        }
+    },
+    "services": {
+        "title": "Nuestros servicios",
+        "description": "Líneas de préstamos disponibles. Encontrá la opción que mejor se adapta a tu perfil laboral.",
+        "items": [
+            {
+                "text": "Jubilados Provinciales",
+                "icon": "eyeglasses"
+            },
+            {
+                "text": "Empleados Públicos Provinciales",
+                "icon": "buildings"
+            },
+            {
+                "text": "Policías Provinciales",
+                "icon": "police-car"
+            },
+            {
+                "text": "Docentes Provinciales",
+                "icon": "chalkboard-teacher"
+            },
+            {
+                "text": "Empleados de la UNC",
+                "icon": "book-open-text"
+            },
+            {
+                "text": "Pensionados Provinciales",
+                "icon": "hand-heart"
+            }
+        ],
+        "note": "El préstamo puede descontarse por haberes o CBU según convenio. Cada línea tiene sus propias condiciones y requisitos bancarios."
+    },
+    "about": {
+        "title": "Sobre Red Unisol",
+        "description": "Agrupamos mutuales y cooperativas que trabajan para facilitar el acceso a préstamos personales a empleados públicos, docentes, policías, empleados universitarios, jubilados y pensionados de las provincias de Córdoba y Catamarca.",
+        "extra": "+12 años, +50.000 créditos otorgados y +12 convenios vigentes"
+    }
+}

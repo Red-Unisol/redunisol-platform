@@ -1,0 +1,76 @@
+import * as Icons from '@phosphor-icons/react';
+import { MoneyIcon } from '@phosphor-icons/react/dist/ssr';
+import { motion } from 'framer-motion';
+
+export interface ServicesData {
+    title: string;
+    description: string;
+    items: { text: string; icon: string }[];
+    note: string;
+}
+
+export const iconMap = {
+    eyeglasses: Icons.EyeglassesIcon,
+    buildings: Icons.BuildingApartmentIcon,
+    'police-car': Icons.PoliceCarIcon,
+    'chalkboard-teacher': Icons.ChalkboardTeacherIcon,
+    'book-open-text': Icons.BookOpenTextIcon,
+    'hand-heart': Icons.HandHeartIcon,
+};
+
+export default function Services({ data }: { data: ServicesData }) {
+    return (
+        <section className="w-full bg-[#F7F7F7] text-gray-800">
+            <div className="mx-auto max-w-5xl px-6 py-20 text-center">
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6 }}
+                    className="m-auto mb-4 flex w-fit items-center gap-4 rounded-xl border p-2"
+                >
+                    <MoneyIcon size={24} />
+                    <p className="text-normal font-bold">{data.title}</p>
+                </motion.div>
+                <motion.p
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15, duration: 0.6 }}
+                    className="mb-10"
+                >
+                    {data.description}
+                </motion.p>
+                <div className="grid gap-6 md:grid-cols-2">
+                    {data.items.map((item, i) => {
+                        const Icon = iconMap[item.icon as keyof typeof iconMap];
+
+                        return (
+                            <motion.div
+                                key={i}
+                                initial={{ opacity: 0, y: 30 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{
+                                    delay: 0.2 + i * 0.08,
+                                    duration: 0.5,
+                                }}
+                                className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-[#97aeaf] bg-[#265c5e0d] p-6 text-center transition hover:shadow-md"
+                            >
+                                <div className="w-fit">
+                                    {Icon && <Icon className="mb-2 h-6 w-6" />}
+                                </div>
+                                <p className="font-bold">{item.text}</p>
+                            </motion.div>
+                        );
+                    })}
+                </div>
+                <motion.p
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4, duration: 0.6 }}
+                    className="my-12"
+                >
+                    {data.note}
+                </motion.p>
+            </div>
+        </section>
+    );
+}
