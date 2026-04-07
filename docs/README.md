@@ -7,6 +7,7 @@ Documentacion tecnica transversal de la repo.
 - `architecture.md`: arquitectura general, capas, carpetas y modelo dominio/namespace
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
+- `metamap-client-server-redesign-plan.md`: plan de reescritura de Notificaciones MetaMap hacia una arquitectura cliente/servidor con cola durable y tunel bancario
 - `migration-notes.md`: contexto historico de la migracion inicial a la monorepo
 - `redunisol-web-operating-model.md`: modelo operativo de `web/redunisol-web` con infraestructura Git-managed y datos runtime persistentes fuera de Git
 - `redunisol-web-deploy-runbook.md`: runbook operativo de `web/redunisol-web`, circuitos de `.env`, limites entre desarrollo e integracion y estado validado del deploy

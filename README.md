@@ -6,7 +6,7 @@ Si queres sumar una automatizacion nueva, aca deberia estar el recorrido complet
 
 ## Que Guarda Esta Repo
 
-Esta monorepo guarda automatizaciones Git-managed para Kestra y deja preparado espacio para futuros sitios web.
+Esta monorepo guarda automatizaciones Git-managed para Kestra y tambien puede versionar aplicaciones auxiliares y sitios web que comparten el mismo ciclo operativo de Git.
 
 La idea operativa es esta:
 
@@ -24,6 +24,11 @@ Nota importante para la capa web:
 - ver `docs/redunisol-web-operating-model.md` para ese criterio
 - ver `docs/redunisol-web-deploy-runbook.md` para el circuito de deploy, `.env` y responsabilidades operativas
 
+Nota importante para aplicaciones no-Kestra:
+
+- `apps/` reserva espacio para servicios y clientes que no deben modelarse como flows
+- ejemplo inicial: `apps/metamap-platform/server/`
+
 Ambientes actuales:
 
 - `dev`
@@ -34,6 +39,9 @@ Ambientes actuales:
 Todo lo relacionado con Kestra vive dentro de `kestra/`.
 
 ```text
+apps/
+  metamap-platform/
+
 kestra/
   automations/
     <dominio>/

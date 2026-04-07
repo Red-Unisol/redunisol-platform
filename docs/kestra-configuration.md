@@ -158,6 +158,9 @@ Archivos concretos usados en esta repo:
 - plaintext local no versionado: `web/herramientas/deploy/herramientas.dev.env`
 - plaintext local no versionado: `web/herramientas/deploy/herramientas.prod.env`
 - archivos cifrados versionados: `web/herramientas/deploy/herramientas.dev.env.enc` y `web/herramientas/deploy/herramientas.prod.env.enc`
+- plaintext local no versionado: `apps/metamap-platform/server/deploy/metamap-platform-server.dev.env`
+- plaintext local no versionado: `apps/metamap-platform/server/deploy/metamap-platform-server.prod.env`
+- archivos cifrados versionados: `apps/metamap-platform/server/deploy/metamap-platform-server.dev.env.enc` y `apps/metamap-platform/server/deploy/metamap-platform-server.prod.env.enc`
 
 ## Tool Local Para Cifrar Y Descifrar
 

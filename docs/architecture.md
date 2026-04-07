@@ -23,6 +23,9 @@ La capa Git-managed es la que debe crecer de ahora en adelante.
 ## Estructura Principal
 
 ```text
+apps/
+  metamap-platform/
+
 kestra/
   automations/
     marketing-crm/
@@ -81,6 +84,14 @@ Reserva espacio para flows del namespace system.
 ### `kestra/tools/`
 
 Contiene scripts operativos que entienden la estructura de Kestra dentro de la monorepo.
+
+### `apps/`
+
+Reserva espacio para aplicaciones o servicios que no corren dentro de Kestra como flows.
+
+Ejemplo actual:
+
+- `apps/metamap-platform/server/`: backend inicial del workflow `validador -> transferencias_celesol`
 
 ### `web/`
 
