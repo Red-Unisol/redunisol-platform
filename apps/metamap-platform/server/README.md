@@ -36,8 +36,8 @@ Copiar `.env.example` y ajustar:
   - tests y desarrollo liviano pueden usar SQLite
 - `METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON`
   - clientes iniciales con `client_id`, `client_secret` y `role`
-- `METAMAP_SERVER_WEBHOOK_TOKEN`
-  - token compartido para MetaMap
+- `METAMAP_SERVER_WEBHOOK_SECRET`
+  - secreto compartido usado para validar el header `x-signature` de MetaMap
 - `METAMAP_SERVER_BANK_CALLBACK_TOKEN`
   - token compartido para callbacks bancarios
 
@@ -79,7 +79,10 @@ Cabeceras requeridas:
 Endpoints publicos protegidos por token compartido:
 
 - `POST /api/v1/metamap/webhooks`
-  - `X-Metamap-Webhook-Token`
+  - body oficial de MetaMap con `eventName`, `resource`, `flowId`, `timestamp` y `metadata`
+  - header `x-signature`
+  - se loguean todos los eventos recibidos
+  - solo `verification_completed` se encola y expone a clientes con `verification_id` + `resource_url`
 - `POST /api/v1/bank/callbacks/...`
   - `X-Bank-Callback-Token`
 

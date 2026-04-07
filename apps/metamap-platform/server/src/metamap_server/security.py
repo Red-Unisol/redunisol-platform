@@ -57,3 +57,21 @@ def verify_client_secret(secret: str, stored_hash: str) -> bool:
         iterations,
     )
     return hmac.compare_digest(computed, expected)
+
+
+def verify_metamap_signature(
+    *,
+    secret: str | None,
+    signature: str | None,
+    payload_body: bytes,
+) -> bool:
+    if secret is None:
+        return True
+    if not signature:
+        return False
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        payload_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature.strip())

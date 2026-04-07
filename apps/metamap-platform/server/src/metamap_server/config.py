@@ -19,7 +19,7 @@ class BootstrapClient:
 class AppSettings:
     database_url: str
     bootstrap_clients: list[BootstrapClient] = field(default_factory=list)
-    webhook_token: str | None = None
+    webhook_secret: str | None = None
     bank_callback_token: str | None = None
 
 
@@ -32,7 +32,10 @@ def load_settings_from_env() -> AppSettings:
         bootstrap_clients=_parse_bootstrap_clients(
             os.environ.get("METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON", "[]")
         ),
-        webhook_token=_empty_to_none(os.environ.get("METAMAP_SERVER_WEBHOOK_TOKEN")),
+        webhook_secret=_empty_to_none(
+            os.environ.get("METAMAP_SERVER_WEBHOOK_SECRET")
+            or os.environ.get("METAMAP_SERVER_WEBHOOK_TOKEN")
+        ),
         bank_callback_token=_empty_to_none(
             os.environ.get("METAMAP_SERVER_BANK_CALLBACK_TOKEN")
         ),

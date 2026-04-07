@@ -1,23 +1,26 @@
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any, Optional
+from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from . import __version__
 from .config import AppSettings, load_settings_from_env
 from .db import create_db_engine
-from .security import AuthenticatedClient, AuthenticationError
+from .security import (
+    AuthenticatedClient,
+    AuthenticationError,
+    verify_metamap_signature,
+)
 from .store_sql import SqlWorkflowStore
 from .workflow import CaseAction, ClientRole, WorkflowError
 
 
-class MetamapWebhookRequest(BaseModel):
-    event_name: str = Field(..., min_length=1)
-    verification_id: str = Field(..., min_length=1)
-    user_id: Optional[str] = None
-    payload: dict = Field(default_factory=dict)
+logger = logging.getLogger(__name__)
 
 
 class CaseActionRequest(BaseModel):
@@ -90,28 +93,136 @@ def create_app(
         }
 
     @app.post("/api/v1/metamap/webhooks")
-    def ingest_metamap_webhook(
-        request: MetamapWebhookRequest,
+    async def ingest_metamap_webhook(
+        request: Request,
         workflow_store: Any = Depends(_store_dependency),
         settings_value: AppSettings = Depends(_settings_dependency),
-        x_metamap_webhook_token: str | None = Header(None, alias="X-Metamap-Webhook-Token"),
+        x_signature: str | None = Header(None, alias="x-signature"),
     ) -> dict:
-        _check_shared_token(
-            expected_token=settings_value.webhook_token,
-            provided_token=x_metamap_webhook_token,
-            missing_detail="Falta X-Metamap-Webhook-Token.",
-            invalid_detail="Token de webhook MetaMap invalido.",
+        raw_body = await request.body()
+        raw_body_text = raw_body.decode("utf-8", errors="replace")
+        headers = {key.lower(): value for key, value in request.headers.items()}
+        signature_valid = verify_metamap_signature(
+            secret=settings_value.webhook_secret,
+            signature=x_signature,
+            payload_body=raw_body,
         )
+        parsed_payload: dict | None = None
+        event_name: str | None = None
+        verification_id: str | None = None
+        resource_url: str | None = None
+        processing_status = "received"
+        processing_error: str | None = None
+        case = None
+
         try:
-            case = workflow_store.ingest_metamap_event(
-                event_name=request.event_name,
-                verification_id=request.verification_id,
-                payload=request.payload,
-                user_id=request.user_id,
-            )
+            parsed_payload = _parse_metamap_webhook_body(raw_body)
+            event_name = _extract_metamap_event_name(parsed_payload)
+            resource_url = _extract_metamap_resource_url(parsed_payload)
+            verification_id = _extract_verification_id_from_resource(resource_url)
+
+            if not signature_valid:
+                processing_status = "invalid_signature"
+                processing_error = "Firma de webhook MetaMap invalida."
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=processing_error,
+                )
+            if not event_name:
+                processing_status = "invalid_payload"
+                processing_error = "eventName es obligatorio."
+                raise WorkflowError(processing_error)
+
+            if event_name.lower() == "verification_completed":
+                if not resource_url:
+                    processing_status = "invalid_payload"
+                    processing_error = "resource es obligatorio para verification_completed."
+                    raise WorkflowError(processing_error)
+                if not verification_id:
+                    processing_status = "invalid_payload"
+                    processing_error = "No se pudo derivar verification_id desde resource."
+                    raise WorkflowError(processing_error)
+
+                case = workflow_store.ingest_metamap_event(
+                    event_name=event_name,
+                    verification_id=verification_id,
+                    resource_url=resource_url,
+                    payload=parsed_payload,
+                    user_id=_extract_metamap_user_id(parsed_payload),
+                )
+                processing_status = "enqueued"
+            else:
+                processing_status = "ignored"
         except WorkflowError as exc:
+            if processing_error is None:
+                processing_status = "invalid_payload"
+                processing_error = str(exc)
+            _record_metamap_webhook_receipt(
+                workflow_store=workflow_store,
+                raw_body=raw_body_text,
+                headers=headers,
+                payload=parsed_payload,
+                event_name=event_name,
+                verification_id=verification_id,
+                resource_url=resource_url,
+                signature_valid=signature_valid,
+                processing_status=processing_status,
+                processing_error=processing_error,
+            )
+            logger.warning(
+                "MetaMap webhook rejected: status=%s event=%s verification_id=%s error=%s",
+                processing_status,
+                event_name,
+                verification_id,
+                processing_error,
+            )
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        return {"case": case.to_dict()}
+        except HTTPException:
+            _record_metamap_webhook_receipt(
+                workflow_store=workflow_store,
+                raw_body=raw_body_text,
+                headers=headers,
+                payload=parsed_payload,
+                event_name=event_name,
+                verification_id=verification_id,
+                resource_url=resource_url,
+                signature_valid=signature_valid,
+                processing_status=processing_status,
+                processing_error=processing_error,
+            )
+            logger.warning(
+                "MetaMap webhook unauthorized: status=%s event=%s verification_id=%s",
+                processing_status,
+                event_name,
+                verification_id,
+            )
+            raise
+
+        _record_metamap_webhook_receipt(
+            workflow_store=workflow_store,
+            raw_body=raw_body_text,
+            headers=headers,
+            payload=parsed_payload,
+            event_name=event_name,
+            verification_id=verification_id,
+            resource_url=resource_url,
+            signature_valid=signature_valid,
+            processing_status=processing_status,
+            processing_error=processing_error,
+        )
+        logger.info(
+            "MetaMap webhook processed: status=%s event=%s verification_id=%s",
+            processing_status,
+            event_name,
+            verification_id,
+        )
+        return {
+            "processing_status": processing_status,
+            "event_name": event_name,
+            "verification_id": verification_id,
+            "resource_url": resource_url,
+            "case": case.to_dict() if case else None,
+        }
 
     @app.get("/api/v1/queues/{role}")
     def list_queue(
@@ -215,6 +326,32 @@ def _register_bank_callback(
     }
 
 
+def _record_metamap_webhook_receipt(
+    *,
+    workflow_store: Any,
+    raw_body: str,
+    headers: dict[str, str],
+    payload: dict | None,
+    event_name: str | None,
+    verification_id: str | None,
+    resource_url: str | None,
+    signature_valid: bool,
+    processing_status: str,
+    processing_error: str | None = None,
+) -> None:
+    workflow_store.record_metamap_webhook_receipt(
+        raw_body=raw_body,
+        headers=headers,
+        payload=payload,
+        event_name=event_name,
+        verification_id=verification_id,
+        resource_url=resource_url,
+        signature_valid=signature_valid,
+        processing_status=processing_status,
+        processing_error=processing_error,
+    )
+
+
 def _ensure_role_access(current_client: AuthenticatedClient, expected_role: ClientRole) -> None:
     if current_client.role != expected_role:
         raise HTTPException(
@@ -236,3 +373,53 @@ def _check_shared_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=missing_detail)
     if provided_token != expected_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=invalid_detail)
+
+
+def _parse_metamap_webhook_body(raw_body: bytes) -> dict:
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise WorkflowError("El body del webhook MetaMap debe ser JSON valido.") from exc
+    if not isinstance(payload, dict):
+        raise WorkflowError("El body del webhook MetaMap debe ser un objeto JSON.")
+    return payload
+
+
+def _extract_metamap_event_name(payload: dict) -> str | None:
+    raw_value = payload.get("eventName")
+    if raw_value is None:
+        return None
+    event_name = str(raw_value).strip()
+    return event_name or None
+
+
+def _extract_metamap_resource_url(payload: dict) -> str | None:
+    raw_value = payload.get("resource")
+    if raw_value is None:
+        return None
+    resource_url = str(raw_value).strip()
+    return resource_url or None
+
+
+def _extract_verification_id_from_resource(resource_url: str | None) -> str | None:
+    if not resource_url:
+        return None
+    path = urlparse(resource_url).path.rstrip("/")
+    if not path:
+        return None
+    verification_id = path.rsplit("/", 1)[-1].strip()
+    return verification_id or None
+
+
+def _extract_metamap_user_id(payload: dict) -> str | None:
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    for key in ("userId", "user_id", "userID"):
+        raw_value = metadata.get(key)
+        if raw_value is None:
+            continue
+        user_id = str(raw_value).strip()
+        if user_id:
+            return user_id
+    return None

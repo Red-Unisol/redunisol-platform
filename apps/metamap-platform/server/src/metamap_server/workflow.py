@@ -11,6 +11,22 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def build_case_payload(*, resource_url: str | None) -> dict:
+    if not resource_url:
+        return {}
+    return {"resource_url": resource_url}
+
+
+def extract_resource_url(payload: dict) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    raw_value = payload.get("resource_url") or payload.get("resource")
+    if raw_value is None:
+        return None
+    resource_url = str(raw_value).strip()
+    return resource_url or None
+
+
 class WorkflowError(Exception):
     """Raised when a workflow transition is invalid."""
 
@@ -106,6 +122,12 @@ class CaseRecord:
 
     def to_dict(self) -> dict:
         data = asdict(self)
+        resource_url = extract_resource_url(self.source_payload)
+        data["resource_url"] = resource_url
+        data["queue_payload"] = {
+            "verification_id": self.verification_id,
+            "resource_url": resource_url,
+        }
         data["pending_roles"] = [
             delivery.role.value
             for delivery in self.deliveries
@@ -121,6 +143,7 @@ class InMemoryWorkflowStore:
         self._lock = Lock()
         self._cases: dict[str, CaseRecord] = {}
         self._callback_dedupe: set[str] = set()
+        self._metamap_webhook_receipts: list[dict] = []
 
     def list_cases_for_role(self, role: ClientRole) -> list[CaseRecord]:
         with self._lock:
@@ -146,6 +169,7 @@ class InMemoryWorkflowStore:
         *,
         event_name: str,
         verification_id: str,
+        resource_url: str | None,
         payload: dict,
         user_id: Optional[str],
     ) -> CaseRecord:
@@ -153,6 +177,8 @@ class InMemoryWorkflowStore:
             raise WorkflowError("verification_id es obligatorio.")
         if not event_name:
             raise WorkflowError("event_name es obligatorio.")
+        if event_name.lower() == "verification_completed" and not resource_url:
+            raise WorkflowError("resource_url es obligatorio para verification_completed.")
         with self._lock:
             case = self._cases.get(verification_id)
             if not case:
@@ -161,24 +187,57 @@ class InMemoryWorkflowStore:
                     verification_id=verification_id,
                     latest_event_name=event_name,
                     current_stage=WorkflowStage.RECEIVED_FROM_METAMAP,
-                    source_payload=payload,
+                    source_payload=build_case_payload(resource_url=resource_url),
                     user_id=user_id,
                 )
                 self._cases[verification_id] = case
             case.latest_event_name = event_name
-            case.source_payload = payload
+            case.source_payload = build_case_payload(resource_url=resource_url)
             case.user_id = user_id or case.user_id
             case.updated_at = _utc_now()
             if event_name.lower() == "verification_completed":
-                case.current_stage = WorkflowStage.PENDING_VALIDADOR_REVIEW
-                case.ensure_pending_delivery(ClientRole.VALIDADOR)
+                if case.current_stage == WorkflowStage.RECEIVED_FROM_METAMAP:
+                    case.current_stage = WorkflowStage.PENDING_VALIDADOR_REVIEW
+                    case.ensure_pending_delivery(ClientRole.VALIDADOR)
+                elif case.current_stage == WorkflowStage.PENDING_VALIDADOR_REVIEW:
+                    case.ensure_pending_delivery(ClientRole.VALIDADOR)
             case.add_audit(
                 "metamap_event_received",
                 actor="metamap",
                 actor_role=None,
                 event_name=event_name,
+                resource_url=resource_url,
             )
             return case
+
+    def record_metamap_webhook_receipt(
+        self,
+        *,
+        raw_body: str,
+        headers: dict[str, str],
+        payload: dict | None,
+        event_name: str | None,
+        verification_id: str | None,
+        resource_url: str | None,
+        signature_valid: bool,
+        processing_status: str,
+        processing_error: str | None = None,
+    ) -> None:
+        with self._lock:
+            self._metamap_webhook_receipts.append(
+                {
+                    "received_at": _utc_now(),
+                    "raw_body": raw_body,
+                    "headers": headers,
+                    "payload": payload,
+                    "event_name": event_name,
+                    "verification_id": verification_id,
+                    "resource_url": resource_url,
+                    "signature_valid": signature_valid,
+                    "processing_status": processing_status,
+                    "processing_error": processing_error,
+                }
+            )
 
     def apply_case_action(
         self,

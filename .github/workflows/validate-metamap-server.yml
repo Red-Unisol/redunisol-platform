@@ -58,7 +58,6 @@ jobs:
               "TARGET_DIR",
               "COMPOSE_PROJECT_NAME",
               "METAMAP_SERVER_DATABASE_URL",
-              "METAMAP_SERVER_WEBHOOK_TOKEN",
               "METAMAP_SERVER_BANK_CALLBACK_TOKEN",
               "METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON",
           ]
@@ -67,6 +66,8 @@ jobs:
               path = temp_dir / f"metamap-platform-server.{env_name}.env"
               values = dotenv_values(path)
               missing = [key for key in required_keys if not values.get(key)]
+              if not values.get("METAMAP_SERVER_WEBHOOK_SECRET") and not values.get("METAMAP_SERVER_WEBHOOK_TOKEN"):
+                  missing.append("METAMAP_SERVER_WEBHOOK_SECRET")
               if missing:
                   raise SystemExit(f"{path} missing keys: {', '.join(missing)}")
               _parse_bootstrap_clients(values["METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON"])
