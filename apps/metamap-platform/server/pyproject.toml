@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metamap-platform-server"
-version = "0.1.0"
+version = "0.2.1"
 description = "Server scaffold for the MetaMap -> validador -> transferencias_celesol workflow."
 readme = "README.md"
 requires-python = ">=3.11"

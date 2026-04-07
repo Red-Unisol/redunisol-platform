@@ -42,7 +42,14 @@ class MetaMapServerApiTests(unittest.TestCase):
     def test_healthcheck(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok"})
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "ok",
+                "service": "metamap-platform-server",
+                "version": "0.2.1",
+            },
+        )
 
     def test_validador_then_transferencias_celesol_flow(self) -> None:
         ingest = self.client.post(

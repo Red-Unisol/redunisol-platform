@@ -5,6 +5,7 @@ from typing import Any, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .config import AppSettings, load_settings_from_env
 from .db import create_db_engine
 from .security import AuthenticatedClient, AuthenticationError
@@ -44,7 +45,7 @@ def create_app(
     store: Any | None = None,
 ) -> FastAPI:
     resolved_settings = settings or load_settings_from_env()
-    app = FastAPI(title="MetaMap Platform Server", version="0.2.0")
+    app = FastAPI(title="MetaMap Platform Server", version=__version__)
     app.state.settings = resolved_settings
 
     if store is None:
@@ -82,7 +83,11 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "service": "metamap-platform-server",
+            "version": __version__,
+        }
 
     @app.post("/api/v1/metamap/webhooks")
     def ingest_metamap_webhook(

@@ -19,12 +19,13 @@ Este scaffold deja resuelto:
 - bootstrap de clientes autenticados por rol
 - tests de workflow
 - CI de validacion y build de imagen
+- deploy automatico a `dev`
 
 Todavia no resuelve:
 
 - WebSockets
 - leasing/reintentos de cola
-- deploy automatico
+- deploy automatico a `prod`
 
 ## Configuracion
 
@@ -54,9 +55,13 @@ Los ejemplos versionados son:
 
 - `deploy/metamap-platform-server.dev.env.example`
 - `deploy/metamap-platform-server.prod.env.example`
+- `deploy/docker-compose.vps.yml`
 
 En GitHub Actions, la validacion de esos `.env.enc` usa `RUNTIME_ENV_KEY`
 desde el environment `vps-infra`.
+
+El deploy automatico `dev` usa el mismo environment `vps-infra`, publica una
+imagen en GHCR y actualiza el runtime remoto en `/opt/metamap-platform-server-dev`.
 
 ## Auth actual
 
