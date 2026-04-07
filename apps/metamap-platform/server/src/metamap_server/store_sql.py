@@ -398,7 +398,6 @@ class SqlWorkflowStore:
         delivery = self._delivery_for_role(case_row, role)
         if delivery is None:
             delivery = DeliveryRow(
-                case=case_row,
                 role=role.value,
                 status=status.value,
                 updated_at=_utc_now(),
