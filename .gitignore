@@ -26,3 +26,5 @@ temp/*
 untracked/*
 composer
 composer-setup.php
+infra/
+local-notes/

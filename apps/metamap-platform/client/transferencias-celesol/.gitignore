@@ -5,4 +5,5 @@ receipts/
 transferencias.env
 transferencias_coinag_seq.txt
 run-transferencias.local.ps1
+run-transferencias.ps1
 transferencias_realizadas.jsonl
