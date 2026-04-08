@@ -21,6 +21,10 @@ class AppSettings:
     bootstrap_clients: list[BootstrapClient] = field(default_factory=list)
     webhook_secret: str | None = None
     bank_callback_token: str | None = None
+    metamap_client_id: str | None = None
+    metamap_client_secret: str | None = None
+    metamap_api_token: str | None = None
+    metamap_auth_scheme: str = "Token"
 
 
 def load_settings_from_env() -> AppSettings:
@@ -39,6 +43,19 @@ def load_settings_from_env() -> AppSettings:
         bank_callback_token=_empty_to_none(
             os.environ.get("METAMAP_SERVER_BANK_CALLBACK_TOKEN")
         ),
+        metamap_client_id=_empty_to_none(
+            os.environ.get("METAMAP_SERVER_METAMAP_CLIENT_ID")
+        ),
+        metamap_client_secret=_empty_to_none(
+            os.environ.get("METAMAP_SERVER_METAMAP_CLIENT_SECRET")
+        ),
+        metamap_api_token=_empty_to_none(
+            os.environ.get("METAMAP_SERVER_METAMAP_API_TOKEN")
+        ),
+        metamap_auth_scheme=_empty_to_none(
+            os.environ.get("METAMAP_SERVER_METAMAP_AUTH_SCHEME")
+        )
+        or "Token",
     )
 
 

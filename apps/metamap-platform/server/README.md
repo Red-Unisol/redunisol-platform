@@ -1,34 +1,48 @@
 # MetaMap Platform Server
 
-Servidor inicial para el flujo:
+Servidor inicial para:
 
-- MetaMap -> `transferencias_celesol`
-- `transferencias_celesol` -> banco
-- callbacks del banco -> servidor
+- recibir webhooks de MetaMap
+- persistir validaciones en SQL
+- exponer una API autenticada para fetchear y buscar esas validaciones
+- conservar receipts recientes del webhook para debugging
 
 ## Alcance actual
 
-Este scaffold deja resuelto:
+Este corte deja resuelto:
 
 - API FastAPI inicial
-- workflow base persistente en SQL
-- colas por rol
-- auto-validacion temporal de `verification_completed` hacia `transferencias_celesol`
-- transiciones `approved`, `rejected` y `transfer_submitted`
-- callbacks bancarios con idempotencia basica
+- persistencia durable en SQL de una proyeccion `validation` por `verification_id`
+- enriquecimiento opcional desde `resource_url` para indexar solicitud, numero de prestamo e importe
+- listado, busqueda y fetch puntual de validaciones
 - bootstrap de clientes autenticados por rol
 - retencion de receipts/logs de MetaMap por 7 dias
-- abandono automatico de trabajos pendientes en cola despues de 24 horas
-- endpoint interno para inspeccionar receipts recientes de MetaMap
-- tests de workflow
+- tests de API y persistencia
 - CI de validacion y build de imagen
 - deploy automatico a `dev`
 
 Todavia no resuelve:
 
-- WebSockets
-- leasing/reintentos de cola
+- logica de colas
+- workflow entre `validador` y `transferencias_celesol`
+- locks operativos como `transfer_initiated`
+- callbacks bancarios
 - deploy automatico a `prod`
+
+## Normalizacion actual de eventos
+
+El server conserva el payload crudo mas reciente, pero ademas mantiene una normalizacion minima para consulta:
+
+- `verification_completed` y `validation_completed` se tratan como alias terminales y se normalizan a `completed`
+- `*_started` se normaliza a `started`
+- `*_completed` que no sea terminal se normaliza a `in_progress`
+- cualquier otro evento se normaliza a `received`
+
+Reglas actuales:
+
+- si se puede derivar `verification_id`, el evento actualiza o crea la validacion consolidada
+- si no se puede derivar `verification_id`, el evento queda solo como receipt
+- si el evento es terminal (`completed`) y no se puede derivar `verification_id`, el webhook se rechaza como payload invalido
 
 ## Configuracion
 
@@ -42,7 +56,15 @@ Copiar `.env.example` y ajustar:
 - `METAMAP_SERVER_WEBHOOK_SECRET`
   - secreto compartido usado para validar el header `x-signature` de MetaMap
 - `METAMAP_SERVER_BANK_CALLBACK_TOKEN`
-  - token compartido para callbacks bancarios
+  - reservado por compatibilidad para alcance futuro; hoy no se usa en la API actual
+- `METAMAP_SERVER_METAMAP_CLIENT_ID`
+  - opcional; si existe junto con `METAMAP_SERVER_METAMAP_CLIENT_SECRET`, el server obtiene un JWT con `POST https://api.prod.metamap.com/oauth/` y `grant_type=client_credentials` antes de leer el `resource_url`
+- `METAMAP_SERVER_METAMAP_CLIENT_SECRET`
+  - secreto MetaMap usado para obtener el JWT de enrichment
+- `METAMAP_SERVER_METAMAP_API_TOKEN`
+  - opcional; fallback legacy si no se configuran credenciales OAuth. Si existe, el server hace fetch best-effort del `resource_url` de MetaMap para extraer `request_number`, `loan_number` e `amount`
+- `METAMAP_SERVER_METAMAP_AUTH_SCHEME`
+  - opcional; default `Token`, usado solo con `METAMAP_SERVER_METAMAP_API_TOKEN`
 
 Para runtime cifrado versionado en Git:
 
@@ -68,11 +90,10 @@ imagen en GHCR y actualiza el runtime remoto en `/opt/metamap-platform-server-de
 
 ## Auth actual
 
-Endpoints de cliente:
+Endpoints autenticados por cliente:
 
-- `GET /api/v1/queues/{role}`
-- `GET /api/v1/cases/{case_id}`
-- `POST /api/v1/cases/{case_id}/actions`
+- `GET /api/v1/validations`
+- `GET /api/v1/validations/{verification_id}`
 - `GET /api/v1/internal/metamap/webhook-receipts`
 
 Cabeceras requeridas:
@@ -80,25 +101,72 @@ Cabeceras requeridas:
 - `X-Client-Id`
 - `X-Client-Secret`
 
-Endpoints publicos protegidos por token compartido:
+Endpoint publico protegido por token compartido:
 
 - `POST /api/v1/metamap/webhooks`
-  - body oficial de MetaMap con `eventName`, `resource`, `flowId`, `timestamp` y `metadata`
+  - body JSON de MetaMap con `eventName`, `resource`, `flowId`, `timestamp` y `metadata`
   - header `x-signature`
-  - se loguean todos los eventos recibidos
-  - solo `verification_completed` se encola y expone a clientes con `verification_id` + `resource_url`
-  - por ahora, `verification_completed` se auto-marca como validado y entra directo a la cola de `transferencias_celesol`
-  - los receipts completos se conservan por 7 dias
-- `GET /api/v1/internal/metamap/webhook-receipts`
-  - endpoint interno autenticado con `X-Client-Id` y `X-Client-Secret`
-  - devuelve receipts recientes de MetaMap para debugging
-- `POST /api/v1/bank/callbacks/...`
-  - `X-Bank-Callback-Token`
+  - todos los eventos quedan logueados como receipts
+  - si se puede resolver `verification_id`, el evento actualiza la validacion consolidada
+  - si estan configuradas las credenciales MetaMap, el server obtiene un JWT y enriquece la validacion desde `resource_url`
+  - si no hay credenciales OAuth pero si `METAMAP_SERVER_METAMAP_API_TOKEN`, usa ese token como fallback legacy
 
-Comportamiento actual de colas:
+## Contrato HTTP actual
 
-- todo trabajo pendiente en una cola se abandona automaticamente a las 24 horas
-- al abandonarse, el case pasa a `manual_intervention_required`
+### `POST /api/v1/metamap/webhooks`
+
+Respuesta tipo:
+
+```json
+{
+  "processing_status": "stored",
+  "event_name": "validation_completed",
+  "normalized_status": "completed",
+  "verification_id": "verif-100",
+  "resource_url": "https://api.getmati.com/v2/verifications/verif-100",
+  "validation": {
+    "verification_id": "verif-100",
+    "latest_event_name": "validation_completed",
+    "normalized_status": "completed",
+    "request_number": "241325",
+    "loan_number": "1010477",
+    "amount_raw": "123.456,78",
+    "amount_value": "123456.78",
+    "event_count": 1
+  }
+}
+```
+
+Valores de `processing_status` actuales:
+
+- `stored`: se persistio o actualizo la validacion
+- `logged_only`: no se pudo proyectar una validacion, pero el evento quedo como receipt
+- `invalid_payload`: faltan campos minimos para procesar
+- `invalid_signature`: firma invalida
+
+### `GET /api/v1/validations`
+
+Filtros soportados:
+
+- `verification_id`
+- `user_id`
+- `flow_id`
+- `request_number`
+- `loan_number`
+- `event_name`
+- `normalized_status`
+- `q`
+- `limit`
+- `offset`
+- `include_payload`
+
+### `GET /api/v1/validations/{verification_id}`
+
+Devuelve la validacion consolidada para un `verification_id`.
+
+### `GET /api/v1/internal/metamap/webhook-receipts`
+
+Devuelve receipts recientes de MetaMap para debugging.
 
 ## Estructura
 

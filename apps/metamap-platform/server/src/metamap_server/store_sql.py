@@ -1,35 +1,31 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, delete, select
+from sqlalchemy import Boolean, Integer, String, Text, delete, func, inspect, or_, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    Mapped,
-    Session,
-    mapped_column,
-    relationship,
-    sessionmaker,
-)
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.types import JSON
 
 from .config import BootstrapClient
-from .security import AuthenticatedClient, AuthenticationError, hash_client_secret, verify_client_secret
+from .security import (
+    AuthenticatedClient,
+    AuthenticationError,
+    hash_client_secret,
+    verify_client_secret,
+)
 from .workflow import (
-    AuditEntry,
-    CaseAction,
-    CaseRecord,
     ClientRole,
-    DeliveryRecord,
-    DeliveryStatus,
     METAMAP_WEBHOOK_RECEIPT_RETENTION,
-    QUEUE_DELIVERY_TIMEOUT,
+    ValidationRecord,
+    ValidationStatus,
     WorkflowError,
-    WorkflowStage,
-    build_case_payload,
-    extract_resource_url,
+    extract_event_timestamp,
+    extract_flow_id,
+    extract_metadata,
+    extract_user_id,
+    normalize_event_name,
+    normalize_validation_status,
 )
 
 
@@ -53,67 +49,26 @@ class ClientRow(Base):
     updated_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
 
 
-class CaseRow(Base):
-    __tablename__ = "cases"
+class ValidationRow(Base):
+    __tablename__ = "validations"
 
-    case_id: Mapped[str] = mapped_column(String(120), primary_key=True)
-    verification_id: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    verification_id: Mapped[str] = mapped_column(String(120), primary_key=True)
     latest_event_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    current_stage: Mapped[str] = mapped_column(String(120), nullable=False)
-    source_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    normalized_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_url: Mapped[str | None] = mapped_column(String(1024))
+    flow_id: Mapped[str | None] = mapped_column(String(255))
     user_id: Mapped[str | None] = mapped_column(String(120))
-    external_transfer_id: Mapped[str | None] = mapped_column(String(120))
-    created_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
-    updated_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
-
-    deliveries: Mapped[list["DeliveryRow"]] = relationship(
-        back_populates="case",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-    audit_entries: Mapped[list["AuditRow"]] = relationship(
-        back_populates="case",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-        order_by="AuditRow.id",
-    )
-
-
-class DeliveryRow(Base):
-    __tablename__ = "deliveries"
-    __table_args__ = (UniqueConstraint("case_id", "role", name="uq_deliveries_case_role"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    case_id: Mapped[str] = mapped_column(ForeignKey("cases.case_id"), nullable=False)
-    role: Mapped[str] = mapped_column(String(120), nullable=False)
-    status: Mapped[str] = mapped_column(String(120), nullable=False)
-    updated_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
-
-    case: Mapped[CaseRow] = relationship(back_populates="deliveries")
-
-
-class AuditRow(Base):
-    __tablename__ = "audit_entries"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    case_id: Mapped[str] = mapped_column(ForeignKey("cases.case_id"), nullable=False)
-    action: Mapped[str] = mapped_column(String(120), nullable=False)
-    actor: Mapped[str] = mapped_column(String(255), nullable=False)
-    actor_role: Mapped[str | None] = mapped_column(String(120))
-    at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
-    details: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-
-    case: Mapped[CaseRow] = relationship(back_populates="audit_entries")
-
-
-class CallbackReceiptRow(Base):
-    __tablename__ = "callback_receipts"
-
-    dedupe_key: Mapped[str] = mapped_column(String(255), primary_key=True)
-    case_id: Mapped[str] = mapped_column(ForeignKey("cases.case_id"), nullable=False)
-    callback_type: Mapped[str] = mapped_column(String(120), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
+    request_number: Mapped[str | None] = mapped_column(String(120))
+    loan_number: Mapped[str | None] = mapped_column(String(120))
+    amount_raw: Mapped[str | None] = mapped_column(String(120))
+    amount_value: Mapped[str | None] = mapped_column(String(64))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    latest_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    first_received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
+    last_received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
+    latest_event_timestamp: Mapped[str | None] = mapped_column(String(64))
+    completed_at: Mapped[str | None] = mapped_column(String(64))
+    event_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class MetamapWebhookReceiptRow(Base):
@@ -132,8 +87,8 @@ class MetamapWebhookReceiptRow(Base):
     received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
 
 
-class SqlWorkflowStore:
-    """Workflow store backed by SQLAlchemy and intended for Postgres."""
+class SqlValidationStore:
+    """Validation store backed by SQLAlchemy and intended for Postgres or SQLite."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -141,6 +96,7 @@ class SqlWorkflowStore:
 
     def init_schema(self) -> None:
         Base.metadata.create_all(self._engine)
+        self._ensure_validation_columns()
 
     def close(self) -> None:
         self._engine.dispose()
@@ -181,77 +137,77 @@ class SqlWorkflowStore:
                 display_name=row.display_name,
             )
 
-    def list_cases_for_role(self, role: ClientRole) -> list[CaseRecord]:
-        with self._session_factory() as session:
-            if self._run_housekeeping(session):
-                session.commit()
-            stmt = (
-                select(CaseRow)
-                .join(DeliveryRow)
-                .where(
-                    DeliveryRow.role == role.value,
-                    DeliveryRow.status == DeliveryStatus.PENDING.value,
-                )
-                .order_by(CaseRow.updated_at)
-            )
-            rows = session.execute(stmt).scalars().unique().all()
-            return [self._to_case_record(row) for row in rows]
-
-    def get_case(self, case_id: str) -> CaseRecord:
-        with self._session_factory() as session:
-            if self._run_housekeeping(session):
-                session.commit()
-            row = session.get(CaseRow, case_id)
-            if row is None:
-                raise WorkflowError(f"Case {case_id} inexistente.")
-            return self._to_case_record(row)
-
-    def ingest_metamap_event(
+    def upsert_validation_from_metamap_event(
         self,
         *,
         event_name: str,
         verification_id: str,
         resource_url: str | None,
         payload: dict,
-        user_id: Optional[str],
-    ) -> CaseRecord:
+        user_id: str | None,
+        request_number: str | None = None,
+        loan_number: str | None = None,
+        amount_raw: str | None = None,
+        amount_value: str | None = None,
+    ) -> ValidationRecord:
+        normalized_event_name = normalize_event_name(event_name)
+        if not normalized_event_name:
+            raise WorkflowError("eventName es obligatorio.")
         if not verification_id:
             raise WorkflowError("verification_id es obligatorio.")
-        if not event_name:
-            raise WorkflowError("event_name es obligatorio.")
-        if event_name.lower() == "verification_completed" and not resource_url:
-            raise WorkflowError("resource_url es obligatorio para verification_completed.")
+
+        now = _utc_now()
+        normalized_status = normalize_validation_status(normalized_event_name)
+        flow_id = extract_flow_id(payload)
+        metadata = extract_metadata(payload)
+        resolved_user_id = user_id or extract_user_id(payload)
+        event_timestamp = extract_event_timestamp(payload)
 
         with self._session_factory() as session:
-            self._run_housekeeping(session)
-            row = session.get(CaseRow, verification_id)
+            self._prune_old_metamap_webhook_receipts(session)
+            row = session.get(ValidationRow, verification_id)
             if row is None:
-                row = CaseRow(
-                    case_id=verification_id,
+                row = ValidationRow(
                     verification_id=verification_id,
-                    latest_event_name=event_name,
-                    current_stage=WorkflowStage.RECEIVED_FROM_METAMAP.value,
-                    source_payload=build_case_payload(resource_url=resource_url),
-                    user_id=user_id,
+                    latest_event_name=normalized_event_name,
+                    normalized_status=normalized_status.value,
+                    resource_url=resource_url,
+                    flow_id=flow_id,
+                    user_id=resolved_user_id,
+                    request_number=request_number,
+                    loan_number=loan_number,
+                    amount_raw=amount_raw,
+                    amount_value=amount_value,
+                    metadata_json=metadata,
+                    latest_payload=payload,
+                    first_received_at=now,
+                    last_received_at=now,
+                    latest_event_timestamp=event_timestamp,
+                    completed_at=event_timestamp or now
+                    if normalized_status == ValidationStatus.COMPLETED
+                    else None,
+                    event_count=1,
                 )
                 session.add(row)
-                session.flush()
-            row.latest_event_name = event_name
-            row.source_payload = build_case_payload(resource_url=resource_url)
-            row.user_id = user_id or row.user_id
-            row.updated_at = _utc_now()
-            if event_name.lower() == "verification_completed":
-                self._auto_validate_case(row)
-            self._append_audit(
-                row,
-                action="metamap_event_received",
-                actor="metamap",
-                actor_role=None,
-                event_name=event_name,
-                resource_url=resource_url,
-            )
+            else:
+                row.latest_event_name = normalized_event_name
+                row.normalized_status = normalized_status.value
+                row.resource_url = resource_url or row.resource_url
+                row.flow_id = flow_id or row.flow_id
+                row.user_id = resolved_user_id or row.user_id
+                row.request_number = request_number or row.request_number
+                row.loan_number = loan_number or row.loan_number
+                row.amount_raw = amount_raw or row.amount_raw
+                row.amount_value = amount_value or row.amount_value
+                row.metadata_json = metadata or row.metadata_json
+                row.latest_payload = payload
+                row.last_received_at = now
+                row.latest_event_timestamp = event_timestamp or row.latest_event_timestamp
+                row.event_count += 1
+                if normalized_status == ValidationStatus.COMPLETED:
+                    row.completed_at = event_timestamp or now
             session.commit()
-            return self._to_case_record(row)
+            return self._to_validation_record(row)
 
     def record_metamap_webhook_receipt(
         self,
@@ -267,7 +223,7 @@ class SqlWorkflowStore:
         processing_error: str | None = None,
     ) -> None:
         with self._session_factory() as session:
-            self._run_housekeeping(session)
+            self._prune_old_metamap_webhook_receipts(session)
             session.add(
                 MetamapWebhookReceiptRow(
                     event_name=event_name,
@@ -285,7 +241,7 @@ class SqlWorkflowStore:
 
     def list_metamap_webhook_receipts(self, limit: int = 50) -> list[dict]:
         with self._session_factory() as session:
-            if self._run_housekeeping(session):
+            if self._prune_old_metamap_webhook_receipts(session):
                 session.commit()
             stmt = (
                 select(MetamapWebhookReceiptRow)
@@ -295,278 +251,130 @@ class SqlWorkflowStore:
             rows = session.execute(stmt).scalars().all()
             return [self._serialize_metamap_webhook_receipt(row) for row in rows]
 
-    def apply_case_action(
-        self,
-        *,
-        case_id: str,
-        role: ClientRole,
-        action: CaseAction,
-        actor: str,
-        notes: Optional[str] = None,
-        external_transfer_id: Optional[str] = None,
-    ) -> CaseRecord:
+    def get_validation(self, verification_id: str) -> ValidationRecord:
         with self._session_factory() as session:
-            self._run_housekeeping(session)
-            row = session.get(CaseRow, case_id)
-            if row is None:
-                raise WorkflowError(f"Case {case_id} inexistente.")
-
-            current_stage = WorkflowStage(row.current_stage)
-            if role == ClientRole.VALIDADOR:
-                if current_stage != WorkflowStage.PENDING_VALIDADOR_REVIEW:
-                    raise WorkflowError("El case no esta esperando revision de validador.")
-                if action == CaseAction.APPROVED:
-                    self._set_delivery_status(row, ClientRole.VALIDADOR, DeliveryStatus.COMPLETED)
-                    row.current_stage = WorkflowStage.APPROVED_BY_VALIDADOR.value
-                    self._ensure_delivery(
-                        row,
-                        ClientRole.TRANSFERENCIAS_CELESOL,
-                        DeliveryStatus.PENDING,
-                    )
-                elif action == CaseAction.REJECTED:
-                    self._set_delivery_status(row, ClientRole.VALIDADOR, DeliveryStatus.COMPLETED)
-                    row.current_stage = WorkflowStage.REJECTED_BY_VALIDADOR.value
-                else:
-                    raise WorkflowError("Accion invalida para el rol validador.")
-            elif role == ClientRole.TRANSFERENCIAS_CELESOL:
-                if current_stage != WorkflowStage.APPROVED_BY_VALIDADOR:
-                    raise WorkflowError(
-                        "El case no esta habilitado para transferencias_celesol."
-                    )
-                if action != CaseAction.TRANSFER_SUBMITTED:
-                    raise WorkflowError("Accion invalida para transferencias_celesol.")
-                self._set_delivery_status(
-                    row,
-                    ClientRole.TRANSFERENCIAS_CELESOL,
-                    DeliveryStatus.COMPLETED,
-                )
-                row.current_stage = WorkflowStage.TRANSFER_SUBMITTED.value
-                row.external_transfer_id = external_transfer_id or row.external_transfer_id
-            else:
-                raise WorkflowError(f"Rol no soportado: {role.value}")
-
-            row.updated_at = _utc_now()
-            self._append_audit(
-                row,
-                action=action.value,
-                actor=actor,
-                actor_role=role,
-                notes=notes,
-                external_transfer_id=external_transfer_id,
-            )
-            session.commit()
-            return self._to_case_record(row)
-
-    def register_bank_callback(self, callback_type: str, payload: dict) -> tuple[CaseRecord, bool]:
-        dedupe_key = self._build_callback_dedupe_key(callback_type, payload)
-        with self._session_factory() as session:
-            self._run_housekeeping(session)
-            receipt = session.get(CallbackReceiptRow, dedupe_key)
-            if receipt is not None:
-                row = session.get(CaseRow, receipt.case_id)
-                if row is None:
-                    raise WorkflowError("El callback duplicado referencia un case inexistente.")
-                self._append_audit(
-                    row,
-                    action="bank_callback_duplicate",
-                    actor="bank",
-                    actor_role=None,
-                    callback_type=callback_type,
-                    dedupe_key=dedupe_key,
-                )
+            if self._prune_old_metamap_webhook_receipts(session):
                 session.commit()
-                return self._to_case_record(row), True
+            row = session.get(ValidationRow, verification_id)
+            if row is None:
+                raise WorkflowError(f"Validacion {verification_id} inexistente.")
+            return self._to_validation_record(row)
 
-            row = self._find_case_for_callback(session, payload)
-            session.add(
-                CallbackReceiptRow(
-                    dedupe_key=dedupe_key,
-                    case_id=row.case_id,
-                    callback_type=callback_type,
-                    payload=payload,
-                )
-            )
-
-            if callback_type == "aviso_transferencia_cbu":
-                row.current_stage = WorkflowStage.BANK_CONFIRMED.value
-            elif callback_type == "aviso_reversa_debito":
-                row.current_stage = WorkflowStage.BANK_REVERSED.value
-            else:
-                raise WorkflowError(f"Callback bancario no soportado: {callback_type}")
-
-            row.updated_at = _utc_now()
-            self._append_audit(
-                row,
-                action="bank_callback_processed",
-                actor="bank",
-                actor_role=None,
-                callback_type=callback_type,
-                dedupe_key=dedupe_key,
-            )
-            session.commit()
-            return self._to_case_record(row), False
-
-    def _ensure_delivery(
+    def search_validations(
         self,
-        case_row: CaseRow,
-        role: ClientRole,
-        status: DeliveryStatus,
-    ) -> DeliveryRow:
-        delivery = self._delivery_for_role(case_row, role)
-        if delivery is None:
-            delivery = DeliveryRow(
-                role=role.value,
-                status=status.value,
-                updated_at=_utc_now(),
-            )
-            case_row.deliveries.append(delivery)
-            return delivery
-        delivery.status = status.value
-        delivery.updated_at = _utc_now()
-        return delivery
-
-    def _set_delivery_status(
-        self,
-        case_row: CaseRow,
-        role: ClientRole,
-        status: DeliveryStatus,
-    ) -> None:
-        delivery = self._delivery_for_role(case_row, role)
-        if delivery is None:
-            raise WorkflowError(f"No existe entrega pendiente para el rol {role.value}.")
-        delivery.status = status.value
-        delivery.updated_at = _utc_now()
-
-    def _delivery_for_role(self, case_row: CaseRow, role: ClientRole) -> DeliveryRow | None:
-        for delivery in case_row.deliveries:
-            if delivery.role == role.value:
-                return delivery
-        return None
-
-    def _append_audit(
-        self,
-        case_row: CaseRow,
         *,
-        action: str,
-        actor: str,
-        actor_role: ClientRole | None,
-        **details: object,
-    ) -> None:
-        case_row.audit_entries.append(
-            AuditRow(
-                action=action,
-                actor=actor,
-                actor_role=actor_role.value if actor_role else None,
-                details={k: v for k, v in details.items() if v is not None},
+        limit: int = 50,
+        offset: int = 0,
+        verification_id: str | None = None,
+        user_id: str | None = None,
+        flow_id: str | None = None,
+        request_number: str | None = None,
+        loan_number: str | None = None,
+        event_name: str | None = None,
+        normalized_status: ValidationStatus | None = None,
+        q: str | None = None,
+    ) -> tuple[list[ValidationRecord], int]:
+        with self._session_factory() as session:
+            if self._prune_old_metamap_webhook_receipts(session):
+                session.commit()
+            conditions = self._build_validation_conditions(
+                verification_id=verification_id,
+                user_id=user_id,
+                flow_id=flow_id,
+                request_number=request_number,
+                loan_number=loan_number,
+                event_name=event_name,
+                normalized_status=normalized_status,
+                q=q,
             )
-        )
-
-    def _auto_validate_case(self, case_row: CaseRow) -> None:
-        previous_stage = WorkflowStage(case_row.current_stage)
-        if previous_stage == WorkflowStage.PENDING_VALIDADOR_REVIEW:
-            validador_delivery = self._delivery_for_role(case_row, ClientRole.VALIDADOR)
-            if validador_delivery and validador_delivery.status == DeliveryStatus.PENDING.value:
-                validador_delivery.status = DeliveryStatus.COMPLETED.value
-                validador_delivery.updated_at = _utc_now()
-
-        if previous_stage in {
-            WorkflowStage.RECEIVED_FROM_METAMAP,
-            WorkflowStage.PENDING_VALIDADOR_REVIEW,
-            WorkflowStage.APPROVED_BY_VALIDADOR,
-        }:
-            case_row.current_stage = WorkflowStage.APPROVED_BY_VALIDADOR.value
-            self._ensure_delivery(
-                case_row,
-                ClientRole.TRANSFERENCIAS_CELESOL,
-                DeliveryStatus.PENDING,
-            )
-            if previous_stage != WorkflowStage.APPROVED_BY_VALIDADOR:
-                self._append_audit(
-                    case_row,
-                    action="metamap_auto_validated",
-                    actor="server",
-                    actor_role=None,
-                    previous_stage=previous_stage.value,
-                    target_role=ClientRole.TRANSFERENCIAS_CELESOL.value,
-                )
-
-    def _build_callback_dedupe_key(self, callback_type: str, payload: dict) -> str:
-        callback_id = (
-            payload.get("IdAviso")
-            or payload.get("idAviso")
-            or payload.get("IdAnulacion")
-            or payload.get("idAnulacion")
-            or payload.get("Id")
-            or payload.get("id")
-            or payload.get("external_transfer_id")
-            or payload.get("case_id")
-        )
-        if not callback_id:
-            raise WorkflowError("El callback bancario necesita un identificador para idempotencia.")
-        return f"{callback_type}:{str(callback_id).strip()}"
-
-    def _find_case_for_callback(self, session: Session, payload: dict) -> CaseRow:
-        case_id = payload.get("case_id")
-        if case_id:
-            row = session.get(CaseRow, str(case_id))
-            if row is not None:
-                return row
-
-        external_transfer_id = payload.get("external_transfer_id")
-        if external_transfer_id:
-            stmt = select(CaseRow).where(CaseRow.external_transfer_id == external_transfer_id)
-            row = session.execute(stmt).scalar_one_or_none()
-            if row is not None:
-                return row
-
-        raise WorkflowError("No se pudo correlacionar el callback bancario con ningun case.")
-
-    def _run_housekeeping(self, session: Session) -> bool:
-        receipts_pruned = self._prune_old_metamap_webhook_receipts(session)
-        deliveries_expired = self._expire_pending_deliveries(session)
-        return receipts_pruned or deliveries_expired
+            stmt = select(ValidationRow)
+            count_stmt = select(func.count()).select_from(ValidationRow)
+            if conditions:
+                stmt = stmt.where(*conditions)
+                count_stmt = count_stmt.where(*conditions)
+            stmt = stmt.order_by(ValidationRow.last_received_at.desc()).limit(limit).offset(offset)
+            rows = session.execute(stmt).scalars().all()
+            total = session.execute(count_stmt).scalar_one()
+            return [self._to_validation_record(row) for row in rows], int(total)
 
     def _prune_old_metamap_webhook_receipts(self, session: Session) -> bool:
-        retention_threshold = (
-            datetime.now(timezone.utc) - METAMAP_WEBHOOK_RECEIPT_RETENTION
-        ).isoformat()
+        threshold = (datetime.now(timezone.utc) - METAMAP_WEBHOOK_RECEIPT_RETENTION).isoformat()
         result = session.execute(
             delete(MetamapWebhookReceiptRow).where(
-                MetamapWebhookReceiptRow.received_at < retention_threshold
+                MetamapWebhookReceiptRow.received_at < threshold
             )
         )
-        return bool(result.rowcount and result.rowcount > 0)
+        return bool(result.rowcount)
 
-    def _expire_pending_deliveries(self, session: Session) -> bool:
-        expiration_threshold = (
-            datetime.now(timezone.utc) - QUEUE_DELIVERY_TIMEOUT
-        ).isoformat()
-        stmt = select(DeliveryRow).where(
-            DeliveryRow.status == DeliveryStatus.PENDING.value,
-            DeliveryRow.updated_at < expiration_threshold,
-        )
-        rows = session.execute(stmt).scalars().all()
-        if not rows:
-            return False
-        for delivery in rows:
-            delivery.status = DeliveryStatus.ABANDONED.value
-            delivery.updated_at = _utc_now()
-            delivery.case.current_stage = WorkflowStage.MANUAL_INTERVENTION_REQUIRED.value
-            delivery.case.updated_at = _utc_now()
-            self._append_audit(
-                delivery.case,
-                action="queue_delivery_abandoned",
-                actor="server",
-                actor_role=None,
-                role=delivery.role,
-                timeout_hours=int(QUEUE_DELIVERY_TIMEOUT.total_seconds() // 3600),
+    def _build_validation_conditions(
+        self,
+        *,
+        verification_id: str | None,
+        user_id: str | None,
+        flow_id: str | None,
+        request_number: str | None,
+        loan_number: str | None,
+        event_name: str | None,
+        normalized_status: ValidationStatus | None,
+        q: str | None,
+    ) -> list:
+        conditions = []
+        if verification_id:
+            conditions.append(ValidationRow.verification_id == verification_id.strip())
+        if user_id:
+            conditions.append(ValidationRow.user_id == user_id.strip())
+        if flow_id:
+            conditions.append(ValidationRow.flow_id == flow_id.strip())
+        if request_number:
+            conditions.append(ValidationRow.request_number == request_number.strip())
+        if loan_number:
+            conditions.append(ValidationRow.loan_number == loan_number.strip())
+        if event_name:
+            normalized_event_name = normalize_event_name(event_name)
+            if normalized_event_name:
+                conditions.append(ValidationRow.latest_event_name == normalized_event_name)
+        if normalized_status is not None:
+            conditions.append(ValidationRow.normalized_status == normalized_status.value)
+        if q and q.strip():
+            pattern = f"%{q.strip().lower()}%"
+            conditions.append(
+                or_(
+                    func.lower(ValidationRow.verification_id).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.user_id, "")).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.flow_id, "")).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.request_number, "")).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.loan_number, "")).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.amount_raw, "")).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.amount_value, "")).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.resource_url, "")).like(pattern),
+                )
             )
-        return True
+        return conditions
+
+    def _to_validation_record(self, row: ValidationRow) -> ValidationRecord:
+        return ValidationRecord(
+            verification_id=row.verification_id,
+            latest_event_name=row.latest_event_name,
+            normalized_status=ValidationStatus(row.normalized_status),
+            resource_url=row.resource_url,
+            flow_id=row.flow_id,
+            user_id=row.user_id,
+            request_number=row.request_number,
+            loan_number=row.loan_number,
+            amount_raw=row.amount_raw,
+            amount_value=row.amount_value,
+            metadata=row.metadata_json or {},
+            latest_payload=row.latest_payload or {},
+            first_received_at=row.first_received_at,
+            last_received_at=row.last_received_at,
+            latest_event_timestamp=row.latest_event_timestamp,
+            completed_at=row.completed_at,
+            event_count=row.event_count,
+        )
 
     def _serialize_metamap_webhook_receipt(self, row: MetamapWebhookReceiptRow) -> dict:
         return {
             "id": row.id,
-            "received_at": row.received_at,
             "event_name": row.event_name,
             "verification_id": row.verification_id,
             "resource_url": row.resource_url,
@@ -574,39 +382,31 @@ class SqlWorkflowStore:
             "processing_status": row.processing_status,
             "processing_error": row.processing_error,
             "raw_body": row.raw_body,
-            "headers": row.headers or {},
+            "headers": row.headers,
             "payload": row.payload,
+            "received_at": row.received_at,
         }
 
-    def _to_case_record(self, row: CaseRow) -> CaseRecord:
-        deliveries = [
-            DeliveryRecord(
-                role=ClientRole(delivery.role),
-                status=DeliveryStatus(delivery.status),
-                updated_at=delivery.updated_at,
-            )
-            for delivery in sorted(row.deliveries, key=lambda item: item.id or 0)
+    def _ensure_validation_columns(self) -> None:
+        inspector = inspect(self._engine)
+        if "validations" not in inspector.get_table_names():
+            return
+        existing_columns = {column["name"] for column in inspector.get_columns("validations")}
+        required_columns = {
+            "request_number": "VARCHAR(120)",
+            "loan_number": "VARCHAR(120)",
+            "amount_raw": "VARCHAR(120)",
+            "amount_value": "VARCHAR(64)",
+        }
+        missing_columns = [
+            (name, ddl)
+            for name, ddl in required_columns.items()
+            if name not in existing_columns
         ]
-        audit_entries = [
-            AuditEntry(
-                action=entry.action,
-                actor=entry.actor,
-                actor_role=ClientRole(entry.actor_role) if entry.actor_role else None,
-                at=entry.at,
-                details=entry.details or {},
-            )
-            for entry in row.audit_entries
-        ]
-        return CaseRecord(
-            case_id=row.case_id,
-            verification_id=row.verification_id,
-            latest_event_name=row.latest_event_name,
-            current_stage=WorkflowStage(row.current_stage),
-            source_payload=row.source_payload or {},
-            user_id=row.user_id,
-            external_transfer_id=row.external_transfer_id,
-            created_at=row.created_at,
-            updated_at=row.updated_at,
-            deliveries=deliveries,
-            audit_log=audit_entries,
-        )
+        if not missing_columns:
+            return
+        with self._engine.begin() as connection:
+            for column_name, ddl in missing_columns:
+                connection.execute(
+                    text(f"ALTER TABLE validations ADD COLUMN {column_name} {ddl}")
+                )

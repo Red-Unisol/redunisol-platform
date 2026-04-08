@@ -2,6 +2,26 @@
 
 Fecha: 2026-04-07
 
+## Update 2026-04-08
+
+Este documento sigue siendo util como norte de arquitectura, pero quedo parcialmente superado por el cambio de alcance del server.
+
+Alcance actual confirmado del backend `apps/metamap-platform/server/`:
+
+- recibir webhooks de MetaMap
+- persistir validaciones en SQL
+- exponer API para fetchear y buscar validaciones
+- conservar receipts recientes para debugging
+
+Queda diferido para una definicion posterior:
+
+- modelo de cola
+- workflow `validador -> transferencias_celesol`
+- locks operativos como `transfer_initiated`
+- callbacks bancarios y reconciliacion
+
+En consecuencia, toda seccion de este documento que describa colas, leases, routing por etapa o callbacks bancarios debe leerse como diseno diferido, no como especificacion vigente del server.
+
 ## 1. Punto De Partida
 
 Blueprint actual relevado en `untracked/Notificaciones Metamap/`.

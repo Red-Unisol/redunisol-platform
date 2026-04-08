@@ -1,0 +1,5 @@
+target/
+receipts/
+*.local.env
+*.env
+transferencias_coinag_seq.txt

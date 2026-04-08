@@ -91,7 +91,7 @@ Reserva espacio para aplicaciones o servicios que no corren dentro de Kestra com
 
 Ejemplo actual:
 
-- `apps/metamap-platform/server/`: backend inicial del workflow `validador -> transferencias_celesol`
+- `apps/metamap-platform/server/`: backend inicial de ingest y consulta de validaciones MetaMap persistidas en SQL
 
 ### `web/`
 

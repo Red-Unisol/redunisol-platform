@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metamap-platform-server"
-version = "0.4.0"
-description = "Server scaffold for the MetaMap -> transferencias_celesol workflow."
+version = "0.5.0"
+description = "MetaMap webhook ingest service with durable validation storage and search APIs."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
