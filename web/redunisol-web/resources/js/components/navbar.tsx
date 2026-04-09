@@ -30,13 +30,14 @@ export const tabs = [
 
 export default function NavTabs({ activeTab, setActiveTab }) {
     return (
-        <nav className="flex w-full items-center justify-between bg-white px-8 py-4">
+        <nav className="absolute flex w-full items-center justify-between bg-transparent px-8 py-4">
             {/* Logo */}
             <div className="flex items-center gap-2">
-                <img src="/images/logo.svg" alt="UNISOL" className="h-8" />
-                <span className="text-2xl font-bold text-[#6BAF92]">
-                    UNISOL
-                </span>
+                <img
+                    src="/images/general/t1JdNn2n4csoI8qGYVfVNKs7w.png"
+                    alt="UNISOL"
+                    className="h-10"
+                />
             </div>
             {/* Tabs */}
             <div className="flex items-center gap-4">

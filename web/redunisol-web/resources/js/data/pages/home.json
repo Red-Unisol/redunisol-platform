@@ -42,7 +42,41 @@
     "about": {
         "title": "Sobre Red Unisol",
         "description": "Agrupamos mutuales y cooperativas que trabajan para facilitar el acceso a préstamos personales a empleados públicos, docentes, policías, empleados universitarios, jubilados y pensionados de las provincias de Córdoba y Catamarca.",
-        "extra": "+12 años, +50.000 créditos otorgados y +12 convenios vigentes"
+        "extra": "+12 años, +50.000 créditos otorgados y +12 convenios vigentes",
+        "mutuales": [
+            {
+                "title": "Mutual 12 de Agosto",
+                "image": "/images/mutuales/1XXN42DoV6bguCVos3O06QGX0oY.avif"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/A2RYsHyhtebQQYeIEVRRssHMWw.png"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/KmljHeC39plbz3drKtS5pDpsM14.avif"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/SreBknG6L3IQRjrNcrqfn2gcko0.avif"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/ZwPY6KSCIvFRbsdT7H57UHxi0U.png"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/dbqBJLvWKZ5sSC4VJ2Cj7jk1cU8.avif"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/sWtNh80jp4yP37UOIGaEYRut3c.png"
+            },
+            {
+                "title": "",
+                "image": "/images/mutuales/sassKwocO4IVnL5kCNUA1pUaY.avif"
+            }
+        ]
     },
     "faqs": {
         "badge": "Preguntas y respuestas frecuentes",

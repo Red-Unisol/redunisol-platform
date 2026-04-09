@@ -6,6 +6,7 @@ import data from '@/data/pages/home.json';
 
 import About from '@/components/about';
 import FAQs from '@/components/faqs';
+import Footer from '@/components/footer';
 import Hero from '@/components/hero';
 import Navbar from '@/components/navbar';
 import Services from '@/components/services';
@@ -19,12 +20,13 @@ export default function Page() {
             <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
             <div className="bg-gradient-custom w-full">
                 <FormSection />
-                <main className="bg-white">
+                <main className="rounded-tl-4xl rounded-tr-4xl bg-white">
                     {activeTab !== 'solicita' && <Hero data={hero} />}
                     {activeTab !== 'creditos' && <Services data={services} />}
                     {activeTab !== 'about' && <About data={about} />}
                     <FAQs data={faqs} />
                 </main>
+                <Footer />
             </div>
         </>
     );
