@@ -39,6 +39,7 @@ pub struct ValidationSnapshot {
 pub struct CoreSnapshot {
     pub request_oid: String,
     pub request_name: Option<String>,
+    pub credit_line_description: Option<String>,
     pub request_status: Option<String>,
     pub request_amount_raw: Option<String>,
     pub request_amount: Option<Decimal>,
@@ -52,16 +53,20 @@ pub struct CoreSnapshot {
 
 #[derive(Clone, Debug, Default)]
 pub struct ValidationReport {
+    pub disabled: bool,
     pub blockers: Vec<String>,
     pub warnings: Vec<String>,
 }
 
 impl ValidationReport {
     pub fn can_transfer(&self) -> bool {
-        self.blockers.is_empty()
+        !self.disabled && self.blockers.is_empty()
     }
 
     pub fn summary(&self) -> String {
+        if self.disabled {
+            return "DESHABILITADO".to_owned();
+        }
         if self.can_transfer() {
             if self.warnings.is_empty() {
                 return "OK".to_owned();

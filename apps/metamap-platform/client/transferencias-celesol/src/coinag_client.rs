@@ -1,13 +1,13 @@
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Instant,
 };
 
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::Utc;
+use chrono::{Local, Utc};
 use http::{Method, StatusCode};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
@@ -16,7 +16,7 @@ use crate::{
     config::CoinagConfig,
     models::HydratedCase,
     ssh_transport::{SshHttpClient, TransportRequest, TransportResponse},
-    validation::{normalize_digits, parse_decimal},
+    validation::{format_money, normalize_digits, parse_decimal},
 };
 
 #[derive(Clone)]
@@ -37,6 +37,13 @@ struct RequestBody {
 struct TokenCache {
     access_token: Option<String>,
     expires_at: Option<Instant>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AvailableBalanceSnapshot {
+    pub amount: Option<rust_decimal::Decimal>,
+    pub source: Option<&'static str>,
+    pub error: Option<String>,
 }
 
 impl CoinagClient {
@@ -111,6 +118,81 @@ impl CoinagClient {
         Ok(coinag_cuil)
     }
 
+    pub fn can_fetch_balance(&self) -> bool {
+        !self.config.balance_api_base.trim().is_empty()
+            && normalize_digits(self.config.cbu_debito.as_str()).is_some()
+    }
+
+    pub fn fetch_available_balance_snapshot(&self) -> AvailableBalanceSnapshot {
+        let Some(cbu) = normalize_digits(self.config.cbu_debito.as_str()) else {
+            return AvailableBalanceSnapshot {
+                error: Some("CBU debito no configurado".to_owned()),
+                ..Default::default()
+            };
+        };
+        if self.config.balance_api_base.trim().is_empty() {
+            return AvailableBalanceSnapshot {
+                error: Some("Base de saldo Coinag no configurada".to_owned()),
+                ..Default::default()
+            };
+        }
+
+        match self.fetch_saldo_actual(&cbu) {
+            Ok(response) => {
+                let amount = response
+                    .get("response")
+                    .and_then(extract_balance_amount)
+                    .or_else(|| extract_balance_amount(&response));
+                if let Some(amount) = amount {
+                    log::debug!(
+                        "SaldoActual Coinag obtenido desde campo Saldo: {} para CBU {}.",
+                        format_money(amount),
+                        mask_value(&cbu, 6)
+                    );
+                    AvailableBalanceSnapshot {
+                        amount: Some(amount),
+                        source: Some("SaldoActual"),
+                        error: None,
+                    }
+                } else {
+                    log::warn!(
+                        "SaldoActual Coinag no devolvio un campo Saldo interpretable para CBU {}.",
+                        mask_value(&cbu, 6)
+                    );
+                    AvailableBalanceSnapshot {
+                        amount: None,
+                        source: None,
+                        error: Some("SaldoActual no devolvio campo Saldo interpretable".to_owned()),
+                    }
+                }
+            }
+            Err(error) => {
+                log::warn!(
+                    "Fallo la consulta de SaldoActual Coinag para CBU {}: {error:#}",
+                    mask_value(&cbu, 6)
+                );
+                AvailableBalanceSnapshot {
+                    amount: None,
+                    source: None,
+                    error: Some(error.to_string()),
+                }
+            }
+        }
+    }
+
+    pub fn build_available_balance_text(&self) -> String {
+        let snapshot = self.fetch_available_balance_snapshot();
+        let suffix = match snapshot.source {
+            Some(source) => format!("{source}, {}", Local::now().format("%H:%M:%S")),
+            None => Local::now().format("%H:%M:%S").to_string(),
+        };
+        if let Some(amount) = snapshot.amount {
+            return format!("Saldo actual: {} ({suffix})", format_money(amount));
+        }
+        let detail = snapshot.error.unwrap_or_else(|| "sin datos".to_owned());
+        format!("Saldo actual: no disponible ({detail}, {suffix})")
+    }
+
     pub fn build_transfer_payload(&self, case: &HydratedCase) -> Result<Value> {
         let cuit_debito = normalize_digits(self.config.cuit_debito.as_str())
             .ok_or_else(|| anyhow!("TRANSFERENCIAS_COINAG_CUIT_DEBITO no es valido."))?;
@@ -158,26 +240,115 @@ impl CoinagClient {
         }))
     }
 
-    pub fn perform_transfer(&self, payload: &Value) -> Result<Value> {
-        log::info!(
-            "Enviando transferencia a Coinag: idTrxCliente={:?}, cbuCredito={}, importe={:?}.",
-            payload.get("idTrxCliente").and_then(value_to_string),
-            payload
-                .get("cbuCredito")
-                .and_then(value_to_string)
-                .map(|value| mask_value(&value, 6))
-                .unwrap_or_else(|| "N/D".to_owned()),
-            payload.get("importe").and_then(value_to_string)
+    fn fetch_saldo_actual(&self, cbu: &str) -> Result<Value> {
+        log::debug!(
+            "Consultando SaldoActual Coinag para CBU {}.",
+            mask_value(cbu, 6)
         );
         self.request_authorized_json(
-            Method::POST,
+            Method::GET,
             format!(
+                "{}/SaldoActual?cbu={}",
+                self.config.balance_api_base.trim_end_matches('/'),
+                cbu
+            ),
+            RequestBody::default(),
+        )
+    }
+
+    pub fn transfer_is_smoke(&self) -> bool {
+        cfg!(debug_assertions)
+    }
+
+    pub fn perform_transfer(&self, payload: &Value) -> Result<Value> {
+        #[cfg(debug_assertions)]
+        {
+            self.perform_smoke_transfer(payload)
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            log::info!(
+                "Enviando transferencia a Coinag: idTrxCliente={:?}, cbuCredito={}, importe={:?}.",
+                payload.get("idTrxCliente").and_then(value_to_string),
+                payload
+                    .get("cbuCredito")
+                    .and_then(value_to_string)
+                    .map(|value| mask_value(&value, 6))
+                    .unwrap_or_else(|| "N/D".to_owned()),
+                payload.get("importe").and_then(value_to_string)
+            );
+            self.request_authorized_json(
+                Method::POST,
+                format!(
+                    "{}{}",
+                    self.config.transfer_api_base.trim_end_matches('/'),
+                    normalize_path(&self.config.endpoint),
+                ),
+                RequestBody::json(payload)?,
+            )
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn perform_smoke_transfer(&self, payload: &Value) -> Result<Value> {
+        let output_path = self.write_smoke_transfer_payload(payload)?;
+        log::info!(
+            "Debug build: transferencia en modo smoke para idTrxCliente={:?}. Archivo={:?}.",
+            payload.get("idTrxCliente").and_then(value_to_string),
+            output_path
+        );
+        Ok(json!({
+            "smoke": true,
+            "smoke_output_path": output_path.display().to_string(),
+            "response": {
+                "debito": {
+                    "idTrx": format!(
+                        "SMOKE-{}",
+                        payload
+                            .get("idTrxCliente")
+                            .and_then(value_to_string)
+                            .unwrap_or_else(|| "SIN-ID".to_owned())
+                    )
+                }
+            }
+        }))
+    }
+
+    #[cfg(debug_assertions)]
+    fn write_smoke_transfer_payload(&self, payload: &Value) -> Result<PathBuf> {
+        fs::create_dir_all(&self.config.smoke_transfers_dir).with_context(|| {
+            format!(
+                "No se pudo crear la carpeta de smoke {:?}",
+                self.config.smoke_transfers_dir
+            )
+        })?;
+
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+        let request_id = payload
+            .get("idTrxCliente")
+            .and_then(value_to_string)
+            .unwrap_or_else(|| "transferencia".to_owned());
+        let file_name = format!("{}-{}.json", timestamp, sanitize_filename(&request_id));
+        let output_path = self.config.smoke_transfers_dir.join(file_name);
+        let contents = serde_json::to_string_pretty(&json!({
+            "mode": "smoke",
+            "generated_at_utc": Utc::now().to_rfc3339(),
+            "url": format!(
                 "{}{}",
                 self.config.transfer_api_base.trim_end_matches('/'),
                 normalize_path(&self.config.endpoint),
             ),
-            RequestBody::json(payload)?,
-        )
+            "body": payload,
+        }))
+        .context("No se pudo serializar el payload smoke de Coinag.")?;
+        fs::write(&output_path, contents).with_context(|| {
+            format!(
+                "No se pudo escribir el archivo smoke de Coinag {:?}",
+                output_path
+            )
+        })?;
+        Ok(output_path)
     }
 
     pub fn extract_external_transfer_id(response: &Value) -> Option<String> {
@@ -375,6 +546,7 @@ impl CoinagClient {
 }
 
 impl RequestBody {
+    #[cfg(not(debug_assertions))]
     fn json(value: &Value) -> Result<Self> {
         Ok(Self {
             bytes: serde_json::to_vec(value)
@@ -454,6 +626,25 @@ fn extract_coinag_cuil(body: &Value) -> Option<String> {
         })
 }
 
+fn extract_balance_amount(body: &Value) -> Option<rust_decimal::Decimal> {
+    match body {
+        Value::Array(items) => items.iter().find_map(extract_balance_amount),
+        Value::Object(map) => {
+            for (key, value) in map {
+                if key.eq_ignore_ascii_case("saldo") {
+                    if let Some(text) = value_to_string(value) {
+                        if let Some(amount) = parse_decimal(&text) {
+                            return Some(amount);
+                        }
+                    }
+                }
+            }
+            map.values().find_map(extract_balance_amount)
+        }
+        _ => None,
+    }
+}
+
 fn normalize_path(path: &str) -> String {
     if path.starts_with('/') {
         path.to_owned()
@@ -503,4 +694,18 @@ fn mask_value(value: &str, visible_suffix: usize) -> String {
         return trimmed.to_owned();
     }
     format!("***{}", &trimmed[trimmed.len() - visible_suffix..])
+}
+
+fn sanitize_filename(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    sanitized.trim_matches('_').to_owned()
 }

@@ -185,5 +185,9 @@ pub fn build_validation_report(
         }
     }
 
-    ValidationReport { blockers, warnings }
+    ValidationReport {
+        disabled: false,
+        blockers,
+        warnings,
+    }
 }

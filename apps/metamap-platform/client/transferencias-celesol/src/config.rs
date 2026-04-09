@@ -17,6 +17,13 @@ pub struct AppConfig {
     pub request_timeout: Duration,
     pub receipts_dir: PathBuf,
     pub completed_log_path: PathBuf,
+    pub enabled_credit_lines: EnabledCreditLinesConfig,
+}
+
+#[derive(Clone)]
+pub struct EnabledCreditLinesConfig {
+    pub path: PathBuf,
+    pub values: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -81,6 +88,8 @@ impl CoinagSshConfig {
 pub struct CoinagConfig {
     pub lookup_api_base: String,
     pub transfer_api_base: String,
+    pub balance_api_base: String,
+    pub smoke_transfers_dir: PathBuf,
     pub token_url: String,
     pub username: String,
     pub password: String,
@@ -117,10 +126,20 @@ impl CoinagConfig {
         let lookup_api_base = optional_value(values, "TRANSFERENCIAS_COINAG_LOOKUP_API_BASE")
             .or_else(|| legacy_api_base)
             .unwrap_or_else(|| transfer_api_base.clone());
+        let balance_api_base = optional_value(values, "TRANSFERENCIAS_COINAG_BALANCE_API_BASE")
+            .or_else(|| optional_value(values, "TRANSFERENCIAS_COINAG_CUENTAVISTA_API_BASE"))
+            .or_else(|| optional_value(values, "TRANSFERENCIAS_COINAG_LOOKUP_API_BASE"))
+            .unwrap_or_default();
 
         Ok(Self {
             lookup_api_base,
             transfer_api_base,
+            balance_api_base,
+            smoke_transfers_dir: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_SMOKE_TRANSFERS_DIR").as_deref(),
+                "smoke-transfers",
+            ),
             token_url: optional_value(values, "TRANSFERENCIAS_COINAG_TOKEN_URL")
                 .unwrap_or_default(),
             username: optional_value(values, "TRANSFERENCIAS_COINAG_USERNAME").unwrap_or_default(),
@@ -254,6 +273,7 @@ impl AppConfig {
                 optional_value(values, "TRANSFERENCIAS_COMPLETED_LOG_PATH").as_deref(),
                 "transferencias_realizadas.jsonl",
             ),
+            enabled_credit_lines: load_enabled_credit_lines(values, base_dir)?,
         })
     }
 }
@@ -362,6 +382,31 @@ fn parse_env_file(path: &Path) -> Result<ConfigValues> {
     Ok(values)
 }
 
+fn load_enabled_credit_lines(
+    values: &ConfigValues,
+    base_dir: &Path,
+) -> Result<EnabledCreditLinesConfig> {
+    let path = resolve_enabled_lines_path(values, base_dir);
+    if !path.exists() {
+        let contents = DEFAULT_ENABLED_CREDIT_LINES.join("\n");
+        fs::write(&path, format!("{contents}\n")).with_context(|| {
+            format!(
+                "No se pudo crear el archivo de lineas habilitadas {:?}",
+                path
+            )
+        })?;
+    }
+    let raw = fs::read_to_string(&path)
+        .with_context(|| format!("No se pudo leer el archivo {:?}", path))?;
+    let values = raw
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    Ok(EnabledCreditLinesConfig { path, values })
+}
+
 fn parse_env_value(raw: &str) -> String {
     if raw.len() >= 2 {
         if (raw.starts_with('"') && raw.ends_with('"'))
@@ -380,6 +425,41 @@ fn default_base_dir() -> PathBuf {
         .or_else(|| env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."))
 }
+
+fn resolve_enabled_lines_path(values: &ConfigValues, base_dir: &Path) -> PathBuf {
+    if let Some(custom_path) = optional_value(values, "TRANSFERENCIAS_LINEAS_HABILITADAS_PATH") {
+        return resolve_path(base_dir, Some(custom_path.as_str()), "lineas_habilitadas");
+    }
+
+    let plain = base_dir.join("lineas_habilitadas");
+    if plain.exists() {
+        return plain;
+    }
+
+    let txt = base_dir.join("lineas_habilitadas.txt");
+    if txt.exists() {
+        return txt;
+    }
+
+    plain
+}
+
+const DEFAULT_ENABLED_CREDIT_LINES: &[&str] = &[
+    "AMEJUCA ESPECIAL",
+    "AMEJUCA PREMIUM",
+    "AMELaR",
+    "CLUB MUTUAL UNC CBU",
+    "COMER RECURRENTE CBU",
+    "CRUZ DEL EJE especial",
+    "CRUZ DEL EJE -premium-",
+    "DASPU HABERES",
+    "MUDON HABERES",
+    "MUDON HABERES SOCIOS NUEVOS",
+    "MUNIC. CARLOS PAZ 1-6",
+    "MUNIC. CARLOS PAZ 7-24",
+    "MUNIC. CARLOS PAZ PERMAN IRREG",
+    "MUNIC. CARLOS PAZ PERMAN SIT 1",
+];
 
 fn resolve_path(base_dir: &Path, value: Option<&str>, default_name: &str) -> PathBuf {
     match value {
@@ -491,5 +571,41 @@ mod tests {
 
         assert_eq!(config.lookup_api_base, "https://coinag-v2");
         assert_eq!(config.transfer_api_base, "https://coinag-v2");
+    }
+
+    #[test]
+    fn coinag_config_supports_explicit_balance_base() {
+        let values = config_values(&[
+            (
+                "TRANSFERENCIAS_COINAG_TRANSFER_API_BASE",
+                "https://coinag-v2",
+            ),
+            ("TRANSFERENCIAS_COINAG_LOOKUP_API_BASE", "https://coinag-v1"),
+            (
+                "TRANSFERENCIAS_COINAG_BALANCE_API_BASE",
+                "https://coinag-cuentavista",
+            ),
+        ]);
+
+        let config = CoinagConfig::from_values(&values, Path::new(".")).unwrap();
+
+        assert_eq!(config.transfer_api_base, "https://coinag-v2");
+        assert_eq!(config.lookup_api_base, "https://coinag-v1");
+        assert_eq!(config.balance_api_base, "https://coinag-cuentavista");
+    }
+
+    #[test]
+    fn coinag_config_falls_back_to_lookup_base_for_balance() {
+        let values = config_values(&[
+            (
+                "TRANSFERENCIAS_COINAG_TRANSFER_API_BASE",
+                "https://coinag-v2",
+            ),
+            ("TRANSFERENCIAS_COINAG_LOOKUP_API_BASE", "https://coinag-v1"),
+        ]);
+
+        let config = CoinagConfig::from_values(&values, Path::new(".")).unwrap();
+
+        assert_eq!(config.balance_api_base, "https://coinag-v1");
     }
 }

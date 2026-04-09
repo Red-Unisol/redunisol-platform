@@ -41,7 +41,7 @@ impl CoreClient {
         let result = self.evaluate_obj(json!({
             "cmd": criteria,
             "tipo": "PreSolicitud.Module.Solicitud",
-            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;CUIT;NroDocumento;Prestamo.[CBU transferencia]",
+            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia]",
         }))?;
         let mut snapshot = parse_core_snapshot(&result);
         if snapshot.request_oid.is_empty() {
@@ -76,7 +76,7 @@ impl CoreClient {
         let result = self.evaluate_list(json!({
             "cmd": "[Estado.Descripcion]='A Transferir'",
             "tipo": "PreSolicitud.Module.Solicitud",
-            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;CUIT;NroDocumento;Prestamo.[CBU transferencia]",
+            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia]",
             "max": 5000,
         }))?;
 
@@ -170,15 +170,24 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
             3,
             &["NombreCompleto", "nombreCompleto", "Socio.NombreCompleto"],
         ),
-        request_cuil: read_indexed_value(value, 4, &["CUIT", "Cuit", "cuit"]),
+        credit_line_description: read_indexed_value(
+            value,
+            4,
+            &[
+                "Prestamo.LineaPrestamo.Descripcion",
+                "LineaPrestamo.Descripcion",
+                "lineaPrestamo.descripcion",
+            ],
+        ),
+        request_cuil: read_indexed_value(value, 5, &["CUIT", "Cuit", "cuit"]),
         request_document: read_indexed_value(
             value,
-            5,
+            6,
             &["NroDocumento", "nroDocumento", "NroDoc", "nroDoc"],
         ),
         transfer_cbu: read_indexed_value(
             value,
-            6,
+            7,
             &[
                 "Prestamo.[CBU transferencia]",
                 "Prestamo.CBU transferencia",

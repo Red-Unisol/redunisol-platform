@@ -1,12 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{
         Arc,
         mpsc::{self, Receiver, Sender},
     },
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::Result;
@@ -19,7 +19,7 @@ use crate::{
     completed_log::CompletedTransferLog,
     config::AppConfig,
     core_client::CoreClient,
-    models::{CoreSnapshot, HydratedCase, MetamapSnapshot},
+    models::{CoreSnapshot, HydratedCase, MetamapSnapshot, ValidationReport},
     receipt,
     server_client::ServerClient,
     validation,
@@ -31,9 +31,15 @@ pub struct TransferenciasApp {
     event_tx: Sender<WorkerEvent>,
     event_rx: Receiver<WorkerEvent>,
     items_loading: bool,
+    balance_loading: bool,
+    balance_text: String,
     next_poll_at: Instant,
+    next_balance_poll_at: Instant,
     notices: Vec<String>,
+    show_disabled_lines: bool,
 }
+
+const BALANCE_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 impl TransferenciasApp {
     pub fn new(config: AppConfig) -> Result<Self> {
@@ -41,15 +47,22 @@ impl TransferenciasApp {
         let (event_tx, event_rx) = mpsc::channel();
         let mut app = Self {
             next_poll_at: Instant::now(),
+            next_balance_poll_at: Instant::now(),
             items: Vec::new(),
+            balance_text: services.initial_balance_text(),
             services,
             event_tx,
             event_rx,
             items_loading: false,
+            balance_loading: false,
             notices: Vec::new(),
+            show_disabled_lines: false,
         };
         log::info!("TransferenciasApp inicializada.");
         app.spawn_items_poll();
+        if app.services.balance_enabled() {
+            app.spawn_balance_poll("inicio");
+        }
         Ok(app)
     }
 
@@ -72,6 +85,20 @@ impl TransferenciasApp {
             Err(error) => {
                 let _ = sender.send(WorkerEvent::ItemsLoadFailed(error.to_string()));
             }
+        });
+    }
+
+    fn spawn_balance_poll(&mut self, reason: &'static str) {
+        if self.balance_loading || !self.services.balance_enabled() {
+            return;
+        }
+        self.balance_loading = true;
+        log::debug!("Disparando refresh de saldo. reason={reason}.");
+        let services = Arc::clone(&self.services);
+        let sender = self.event_tx.clone();
+        thread::spawn(move || {
+            let text = services.load_balance_text();
+            let _ = sender.send(WorkerEvent::BalanceUpdated(text));
         });
     }
 
@@ -114,10 +141,16 @@ impl TransferenciasApp {
                     self.next_poll_at = Instant::now() + self.services.poll_interval;
                     self.push_notice(format!("Error al actualizar la lista: {error}"));
                 }
+                WorkerEvent::BalanceUpdated(text) => {
+                    self.balance_loading = false;
+                    self.balance_text = text;
+                    self.next_balance_poll_at = Instant::now() + BALANCE_POLL_INTERVAL;
+                }
                 WorkerEvent::CaseUpdated {
                     case,
                     message,
                     receipt_path,
+                    refresh_balance,
                 } => {
                     log::debug!("Caso actualizado para solicitud {}.", case.request_oid());
                     if let Some(existing) = self
@@ -136,6 +169,9 @@ impl TransferenciasApp {
                         ));
                     } else {
                         self.push_notice(message);
+                    }
+                    if refresh_balance {
+                        self.spawn_balance_poll("post-transferencia");
                     }
                 }
             }
@@ -157,6 +193,12 @@ impl eframe::App for TransferenciasApp {
         self.process_worker_events();
         if !self.items_loading && Instant::now() >= self.next_poll_at {
             self.spawn_items_poll();
+        }
+        if self.services.balance_enabled()
+            && !self.balance_loading
+            && Instant::now() >= self.next_balance_poll_at
+        {
+            self.spawn_balance_poll("intervalo");
         }
 
         let mut request_to_transfer = None;
@@ -182,12 +224,29 @@ impl eframe::App for TransferenciasApp {
                     }
                 ));
                 ui.separator();
+                let balance_color = if self.balance_loading {
+                    Color32::GRAY
+                } else {
+                    Color32::LIGHT_GRAY
+                };
+                ui.label(RichText::new(&self.balance_text).color(balance_color));
+                ui.separator();
                 if ui
                     .add_enabled(!self.items_loading, egui::Button::new("Recargar lista"))
                     .clicked()
                 {
                     self.spawn_items_poll();
                 }
+                if ui
+                    .add_enabled(
+                        self.services.balance_enabled() && !self.balance_loading,
+                        egui::Button::new("Actualizar saldo"),
+                    )
+                    .clicked()
+                {
+                    self.spawn_balance_poll("manual");
+                }
+                ui.checkbox(&mut self.show_disabled_lines, "Mostrar deshabilitadas");
             });
         });
 
@@ -204,10 +263,21 @@ impl eframe::App for TransferenciasApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if self.items.is_empty() {
+            let visible_items = self
+                .items
+                .iter()
+                .filter(|item| self.show_disabled_lines || !item.validation.disabled)
+                .collect::<Vec<_>>();
+
+            if visible_items.is_empty() {
                 ui.add_space(32.0);
                 ui.vertical_centered(|ui| {
-                    ui.label("No hay solicitudes en 'A Transferir'.");
+                    if self.items.iter().any(|item| item.validation.disabled) {
+                        ui.label("No hay solicitudes habilitadas para transferir.");
+                        ui.small("Activá 'Mostrar deshabilitadas' para ver las excluidas.");
+                    } else {
+                        ui.label("No hay solicitudes en 'A Transferir'.");
+                    }
                 });
                 return;
             }
@@ -216,6 +286,7 @@ impl eframe::App for TransferenciasApp {
                 .striped(true)
                 .resizable(true)
                 .column(Column::initial(170.0).at_least(130.0))
+                .column(Column::initial(145.0).at_least(120.0))
                 .column(Column::initial(95.0))
                 .column(Column::initial(110.0))
                 .column(Column::initial(150.0))
@@ -230,6 +301,9 @@ impl eframe::App for TransferenciasApp {
                 .header(24.0, |mut header| {
                     header.col(|ui| {
                         ui.strong("Titular");
+                    });
+                    header.col(|ui| {
+                        ui.strong("Línea");
                     });
                     header.col(|ui| {
                         ui.strong("Documento");
@@ -260,7 +334,7 @@ impl eframe::App for TransferenciasApp {
                     });
                 })
                 .body(|mut body| {
-                    for item in &self.items {
+                    for item in visible_items {
                         body.row(62.0, |mut row| {
                             row.col(|ui| {
                                 ui.vertical(|ui| {
@@ -269,6 +343,11 @@ impl eframe::App for TransferenciasApp {
                                         ui.small(RichText::new(message).color(Color32::GRAY));
                                     }
                                 });
+                            });
+                            row.col(|ui| {
+                                ui.label(display_credit_line(
+                                    item.core.credit_line_description.as_deref(),
+                                ));
                             });
                             row.col(|ui| {
                                 ui.label(item.document_display());
@@ -360,10 +439,42 @@ struct AppServices {
     server: ServerClient,
     core: CoreClient,
     coinag: Option<CoinagClient>,
+    enabled_credit_lines: EnabledCreditLines,
     operator_name: String,
     poll_interval: std::time::Duration,
     receipts_dir: PathBuf,
     completed_transfers: Arc<CompletedTransferLog>,
+}
+
+#[derive(Clone)]
+struct EnabledCreditLines {
+    path: PathBuf,
+    values: Arc<HashSet<String>>,
+}
+
+impl EnabledCreditLines {
+    fn new(path: PathBuf, values: Vec<String>) -> Self {
+        let values = values
+            .into_iter()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .collect::<HashSet<_>>();
+        Self {
+            path,
+            values: Arc::new(values),
+        }
+    }
+
+    fn is_enabled(&self, line: Option<&str>) -> bool {
+        let Some(line) = line.map(str::trim).filter(|line| !line.is_empty()) else {
+            return false;
+        };
+        self.values.contains(line)
+    }
+
+    fn len(&self) -> usize {
+        self.values.len()
+    }
 }
 
 impl AppServices {
@@ -381,25 +492,58 @@ impl AppServices {
         } else {
             None
         };
+        let enabled_credit_lines = EnabledCreditLines::new(
+            config.enabled_credit_lines.path,
+            config.enabled_credit_lines.values,
+        );
         let completed_transfers = Arc::new(CompletedTransferLog::new(config.completed_log_path)?);
         let services = Self {
             server,
             core,
             coinag,
+            enabled_credit_lines,
             operator_name: config.operator_name,
             poll_interval: config.poll_interval,
             receipts_dir: config.receipts_dir,
             completed_transfers,
         };
         log::info!(
-            "Servicios listos. transfer_enabled={}.",
-            services.transfer_enabled()
+            "Servicios listos. transfer_enabled={}. lineas_habilitadas={} path={:?}.",
+            services.transfer_enabled(),
+            services.enabled_credit_lines.len(),
+            services.enabled_credit_lines.path
         );
         Ok(services)
     }
 
     fn transfer_enabled(&self) -> bool {
         self.coinag.is_some()
+    }
+
+    fn balance_enabled(&self) -> bool {
+        self.coinag
+            .as_ref()
+            .is_some_and(CoinagClient::can_fetch_balance)
+    }
+
+    fn initial_balance_text(&self) -> String {
+        if self.coinag.is_none() {
+            return "Saldo actual: no disponible (Coinag no configurado)".to_owned();
+        }
+        if !self.balance_enabled() {
+            return "Saldo actual: no disponible (consulta de saldo no configurada)".to_owned();
+        }
+        "Saldo actual: actualizando...".to_owned()
+    }
+
+    fn load_balance_text(&self) -> String {
+        let Some(coinag) = &self.coinag else {
+            return "Saldo actual: no disponible (Coinag no configurado)".to_owned();
+        };
+        if !coinag.can_fetch_balance() {
+            return "Saldo actual: no disponible (consulta de saldo no configurada)".to_owned();
+        }
+        coinag.build_available_balance_text()
     }
 
     fn load_candidates(&self, existing_items: Vec<HydratedCase>) -> Result<Vec<HydratedCase>> {
@@ -419,6 +563,13 @@ impl AppServices {
             let existing = existing_map
                 .get(core_snapshot.request_oid.as_str())
                 .cloned();
+            if !self
+                .enabled_credit_lines
+                .is_enabled(core_snapshot.credit_line_description.as_deref())
+            {
+                hydrated.push(self.build_disabled_candidate(core_snapshot, existing));
+                continue;
+            }
             hydrated.push(self.hydrate_candidate(core_snapshot, existing));
         }
         hydrated
@@ -470,6 +621,34 @@ impl AppServices {
         case
     }
 
+    fn build_disabled_candidate(
+        &self,
+        core_snapshot: CoreSnapshot,
+        existing: Option<HydratedCase>,
+    ) -> HydratedCase {
+        let busy = existing.as_ref().is_some_and(|item| item.busy);
+        let busy_message = existing
+            .as_ref()
+            .filter(|item| item.busy)
+            .and_then(|item| item.message.clone());
+
+        let mut case = existing.unwrap_or_else(|| HydratedCase {
+            server_validation: Default::default(),
+            metamap: Default::default(),
+            core: core_snapshot.clone(),
+            validation: Default::default(),
+            already_transferred: false,
+            busy: false,
+            message: None,
+        });
+        case.core = core_snapshot;
+        case.busy = busy;
+        case.message = busy_message;
+        case.already_transferred = self.completed_transfers.contains_loaded(case.request_oid());
+        self.mark_disabled_case(&mut case);
+        case
+    }
+
     fn refresh_case(&self, case: &HydratedCase) -> HydratedCase {
         log::debug!(
             "Refrescando solicitud {} antes de validar/transferir.",
@@ -497,6 +676,14 @@ impl AppServices {
             Err(error) => runtime_errors.push(format!(
                 "No se pudo consultar la solicitud en el core financiero: {error}"
             )),
+        }
+
+        if !self
+            .enabled_credit_lines
+            .is_enabled(refreshed.core.credit_line_description.as_deref())
+        {
+            self.mark_disabled_case(&mut refreshed);
+            return refreshed;
         }
 
         self.apply_validation_snapshot(&mut refreshed, &mut runtime_errors);
@@ -623,6 +810,27 @@ impl AppServices {
         }
     }
 
+    fn mark_disabled_case(&self, case: &mut HydratedCase) {
+        let line = display_credit_line(case.core.credit_line_description.as_deref());
+        case.server_validation = Default::default();
+        case.metamap = Default::default();
+        case.core.document_cuil = None;
+        case.core.coinag_cuil = None;
+        case.validation = ValidationReport {
+            disabled: true,
+            blockers: vec![format!("Línea de crédito deshabilitada: {line}")],
+            warnings: Vec::new(),
+        };
+        if !case.busy {
+            case.message = None;
+        }
+        log::info!(
+            "Solicitud {} marcada como deshabilitada por línea {:?}.",
+            case.request_oid(),
+            case.core.credit_line_description
+        );
+    }
+
     fn execute_transfer(&self, case: HydratedCase) -> WorkerEvent {
         let Some(coinag) = &self.coinag else {
             log::warn!(
@@ -636,6 +844,7 @@ impl AppServices {
                 case: updated,
                 message: "Transferencia bloqueada: Coinag no esta configurado.".to_owned(),
                 receipt_path: None,
+                refresh_balance: false,
             };
         };
 
@@ -657,6 +866,7 @@ impl AppServices {
                         case.request_oid()
                     ),
                     receipt_path: None,
+                    refresh_balance: false,
                 };
             }
             Ok(false) => {}
@@ -675,6 +885,7 @@ impl AppServices {
                         case.request_oid()
                     ),
                     receipt_path: None,
+                    refresh_balance: false,
                 };
             }
         }
@@ -693,6 +904,7 @@ impl AppServices {
                     case.request_oid()
                 ),
                 receipt_path: None,
+                refresh_balance: false,
             };
         }
 
@@ -713,6 +925,7 @@ impl AppServices {
                         case.request_oid()
                     ),
                     receipt_path: None,
+                    refresh_balance: false,
                 };
             }
         };
@@ -735,10 +948,16 @@ impl AppServices {
                         error
                     ),
                     receipt_path: None,
+                    refresh_balance: false,
                 };
             }
         };
 
+        let is_smoke = coinag.transfer_is_smoke();
+        let smoke_output_path = transfer_response
+            .get("smoke_output_path")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
         let external_transfer_id = CoinagClient::extract_external_transfer_id(&transfer_response);
         let receipt_path = receipt::write_receipt(
             &self.receipts_dir,
@@ -750,14 +969,43 @@ impl AppServices {
         )
         .ok();
 
+        let mut updated = refreshed;
+        updated.busy = false;
+        if is_smoke {
+            updated.already_transferred = false;
+            updated.validation = validation::build_validation_report(
+                &updated.server_validation,
+                &updated.metamap,
+                &updated.core,
+                updated.already_transferred,
+            );
+            updated.message =
+                Some("Transferencia smoke generada. No se envio a Coinag.".to_owned());
+            let message = match smoke_output_path.as_deref() {
+                Some(path) => format!(
+                    "Smoke generado para solicitud {}. Payload guardado en {}.",
+                    case.request_oid(),
+                    path
+                ),
+                None => format!(
+                    "Smoke generado para solicitud {}. Payload guardado localmente.",
+                    case.request_oid()
+                ),
+            };
+            log::info!("{message}");
+            return WorkerEvent::CaseUpdated {
+                case: updated,
+                message,
+                receipt_path,
+                refresh_balance: true,
+            };
+        }
+
         let record_result = self.completed_transfers.record(
-            refreshed.request_oid(),
+            updated.request_oid(),
             &self.operator_name,
             external_transfer_id.as_deref(),
         );
-
-        let mut updated = refreshed;
-        updated.busy = false;
         updated.already_transferred = self
             .completed_transfers
             .contains_loaded(updated.request_oid());
@@ -785,6 +1033,7 @@ impl AppServices {
                     error
                 ),
                 receipt_path,
+                refresh_balance: true,
             };
         }
 
@@ -822,6 +1071,7 @@ impl AppServices {
             case: updated,
             message,
             receipt_path,
+            refresh_balance: true,
         }
     }
 }
@@ -829,10 +1079,12 @@ impl AppServices {
 enum WorkerEvent {
     ItemsLoaded(Vec<HydratedCase>),
     ItemsLoadFailed(String),
+    BalanceUpdated(String),
     CaseUpdated {
         case: HydratedCase,
         message: String,
         receipt_path: Option<PathBuf>,
+        refresh_balance: bool,
     },
 }
 
@@ -859,4 +1111,12 @@ fn preserve_metamap_value(current: &mut MetamapSnapshot, previous: &MetamapSnaps
     if current.amount.is_none() {
         current.amount = previous.amount;
     }
+}
+
+fn display_credit_line(value: Option<&str>) -> String {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("N/D")
+        .to_owned()
 }

@@ -7,8 +7,8 @@ use std::{
 use anyhow::{Context, Result};
 use chrono::Local;
 use printpdf::{
-    image_crate::codecs::png::PngDecoder, BuiltinFont, Color, Greyscale, Image, ImageTransform,
-    Line, LineCapStyle, LineJoinStyle, Mm, PdfDocument, Point, Rgb,
+    BuiltinFont, Color, Greyscale, Image, ImageTransform, Line, LineCapStyle, LineJoinStyle, Mm,
+    PdfDocument, Point, Rgb, image_crate::codecs::png::PngDecoder,
 };
 
 use crate::models::HydratedCase;
@@ -112,7 +112,11 @@ pub fn write_receipt(
         ("Documento", case.document_display()),
         (
             "CBU/CVU",
-            case.core.transfer_cbu.as_deref().unwrap_or("N/D").to_owned(),
+            case.core
+                .transfer_cbu
+                .as_deref()
+                .unwrap_or("N/D")
+                .to_owned(),
         ),
         ("Importe", amount),
         ("Estado", "Comprobante generado".to_owned()),

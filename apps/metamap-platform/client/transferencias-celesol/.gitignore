@@ -5,6 +5,9 @@ preview/
 *.env
 transferencias.env
 transferencias_coinag_seq.txt
+smoke-transfers/
+lineas_habilitadas
+lineas_habilitadas.txt
 run-transferencias.local.ps1
 run-transferencias.ps1
 transferencias_realizadas.jsonl

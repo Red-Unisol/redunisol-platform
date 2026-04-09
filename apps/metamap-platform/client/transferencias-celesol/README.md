@@ -51,11 +51,13 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_POLL_INTERVAL_SECONDS` default `20`
 - `TRANSFERENCIAS_RECEIPTS_DIR`
 - `TRANSFERENCIAS_COMPLETED_LOG_PATH`
+- `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
 
 Coinag para habilitar `Transferir`:
 
 - `TRANSFERENCIAS_COINAG_TRANSFER_API_BASE` base `v2` para `Transferencia`
 - `TRANSFERENCIAS_COINAG_LOOKUP_API_BASE` base `v1` para consultas `Consulta/CBU/...`
+- `TRANSFERENCIAS_COINAG_BALANCE_API_BASE` base para consultar `SaldoActual`
 - `TRANSFERENCIAS_COINAG_TOKEN_URL`
 - `TRANSFERENCIAS_COINAG_USERNAME`
 - `TRANSFERENCIAS_COINAG_PASSWORD`
@@ -67,6 +69,7 @@ Compatibilidad:
 
 - `TRANSFERENCIAS_COINAG_API_BASE` sigue funcionando como alias legacy para ambos caminos
 - si no definis `TRANSFERENCIAS_COINAG_LOOKUP_API_BASE`, la app reutiliza la base de transferencia
+- si no definis `TRANSFERENCIAS_COINAG_BALANCE_API_BASE`, la app reutiliza la base de lookup
 
 SSH opcional para llegar a Coinag via la VPS:
 
@@ -95,6 +98,30 @@ En builds `debug`, la app escribe logs descriptivos por defecto en:
 Si queres cambiar la ubicacion, defini:
 
 - `TRANSFERENCIAS_DEBUG_LOG_PATH`
+
+## Smoke en debug
+
+En builds `debug`, el boton `Transferir` no pega al endpoint real de transferencia de Coinag.
+
+En su lugar:
+
+- escribe el body JSON que se habria enviado a Coinag en `smoke-transfers/`
+- genera comprobante igual
+- no registra la solicitud como transferida real en el log local
+
+Si queres cambiar esa carpeta, defini:
+
+- `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR`
+
+## Saldo actual
+
+Si `TRANSFERENCIAS_COINAG_BALANCE_API_BASE` esta configurada, la app consulta `SaldoActual` del banco:
+
+- al iniciar
+- cada 60 segundos
+- despues de cada transferencia o smoke
+
+La UI muestra siempre el valor de `SaldoActual`. No usa fallback a `SaldoDisponible`.
 
 ## Probe SSH
 
