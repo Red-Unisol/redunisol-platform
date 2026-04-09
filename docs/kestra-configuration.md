@@ -38,6 +38,10 @@ Environment recomendado para esos secrets:
 
 - `vps-infra`
 
+El workflow `Validate MetaMap Server` tambien toma `RUNTIME_ENV_KEY`
+desde ese mismo environment para validar los runtime env cifrados de
+`apps/metamap-platform/server/deploy/`.
+
 ### 2. Configuracion de runtime dentro de Kestra
 
 Se usa cuando un flow necesita datos de configuracion o secretos al ejecutarse.
@@ -84,6 +88,7 @@ Ejemplos reales:
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+- `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
 - `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`
 
 ## Estado Verificado En VPS
@@ -142,14 +147,24 @@ Fuera de alcance en esta version:
 - configuracion de Apache del host
 - cambios manuales fuera de `/opt/kestra`
 
+Formato actual de los `.env.enc`:
+
+- nombre de variable en plaintext
+- valor cifrado por linea
+- comentarios y lineas vacias preservados
+- cifrado deterministico autenticado para que dos ramas que no cambian el valor de una variable no regeneren ciphertext distinto
+
 Archivos concretos usados en esta repo:
 
 - plaintext local no versionado: `kestra/platform/infra/kestra-runtime.env`
-- key local no versionada: `kestra/platform/infra/kestra-runtime.local.key`
+- key local compartida no versionada: `.local-secrets/runtime-env.key`
 - archivo cifrado versionado: `kestra/platform/infra/kestra-runtime.env.enc`
 - plaintext local no versionado: `web/herramientas/deploy/herramientas.dev.env`
 - plaintext local no versionado: `web/herramientas/deploy/herramientas.prod.env`
 - archivos cifrados versionados: `web/herramientas/deploy/herramientas.dev.env.enc` y `web/herramientas/deploy/herramientas.prod.env.enc`
+- plaintext local no versionado: `apps/metamap-platform/server/deploy/metamap-platform-server.dev.env`
+- plaintext local no versionado: `apps/metamap-platform/server/deploy/metamap-platform-server.prod.env`
+- archivos cifrados versionados: `apps/metamap-platform/server/deploy/metamap-platform-server.dev.env.enc` y `apps/metamap-platform/server/deploy/metamap-platform-server.prod.env.enc`
 
 ## Tool Local Para Cifrar Y Descifrar
 
@@ -160,8 +175,17 @@ La repo incluye esta utilidad:
 Subcomandos disponibles:
 
 - `generate-key`: genera una key Fernet local
-- `encrypt`: cifra un archivo plaintext
+- `encrypt`: cifra un archivo plaintext linea por linea
 - `decrypt`: descifra un archivo cifrado
+
+Comportamiento actual del tooling:
+
+- al descifrar en modo `human`, las claves `SECRET_*` se escriben en plaintext real para que se puedan revisar y editar como humano
+- al descifrar en modo `runtime`, las claves `SECRET_*` se escriben en el formato esperado por Kestra runtime, o sea Base64-ready dentro del `.env`
+- al cifrar, las claves `SECRET_*` se convierten automaticamente a Base64 antes de encriptarse
+- el archivo descifrado agrega arriba el comentario `NO USAR BASE 64 PARA LOS SECRETOS EL TOOLING LO MANEJA POR SI MISMO`
+- ese comentario es solo para el archivo plaintext local en modo `human`; el tooling lo remueve antes de generar el archivo cifrado
+- el decrypt sigue soportando el formato legacy cifrado como blob completo, para migracion gradual
 
 Flujo sugerido:
 
@@ -174,12 +198,15 @@ Flujo sugerido:
 
 Esos paths ya estan ignorados por Git cuando corresponde.
 
+La key local se guarda en un path neutral del workspace porque hoy cifra varios runtime env del repo, no solo el de Kestra.
+
 Ejemplos de uso:
 
 ```bash
-python kestra/tools/manage_encrypted_env.py generate-key --output kestra/platform/infra/kestra-runtime.local.key
-python kestra/tools/manage_encrypted_env.py decrypt --key-file kestra/platform/infra/kestra-runtime.local.key --input kestra/platform/infra/kestra-runtime.env.enc --output kestra/platform/infra/kestra-runtime.env --force
-python kestra/tools/manage_encrypted_env.py encrypt --key-file kestra/platform/infra/kestra-runtime.local.key --input kestra/platform/infra/kestra-runtime.env --output kestra/platform/infra/kestra-runtime.env.enc --force
+python kestra/tools/manage_encrypted_env.py generate-key --output .local-secrets/runtime-env.key
+python kestra/tools/manage_encrypted_env.py decrypt --key-file .local-secrets/runtime-env.key --input kestra/platform/infra/kestra-runtime.env.enc --output kestra/platform/infra/kestra-runtime.env --force
+python kestra/tools/manage_encrypted_env.py decrypt --key-file .local-secrets/runtime-env.key --input kestra/platform/infra/kestra-runtime.env.enc --output kestra/platform/infra/kestra-runtime.runtime.env --output-format runtime --force
+python kestra/tools/manage_encrypted_env.py encrypt --key-file .local-secrets/runtime-env.key --input kestra/platform/infra/kestra-runtime.env --output kestra/platform/infra/kestra-runtime.env.enc --force
 ```
 
 Importante:
@@ -188,6 +215,9 @@ Importante:
 - el archivo plaintext descifrado no debe versionarse
 - el archivo cifrado si puede versionarse
 - si se pierde la key, el archivo cifrado no se puede recuperar
+- los `SECRET_*` deben editarse en plaintext real, no en Base64
+- las tasks locales de VS Code deben seguir usando el modo `human`
+- los deploys automatizados de infraestructura deben usar el modo `runtime`
 
 ## Tasks De VS Code
 
@@ -264,10 +294,16 @@ Usados por deploy:
 
 ### Runtime Bitrix24: variables no sensibles
 
-Referenciadas hoy desde el flow `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`:
+Referenciadas hoy desde los flows:
+
+- `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
+- `kestra/automations/marketing-crm/flows/bitrix24_lead_classification.yaml`
 
 - `bitrix24_base_url`
 - `bitrix24_contact_cuil_field`
+- `bitrix24_lead_processing_policy_field`
+- `bitrix24_lead_processing_policy_skip`
+- `bitrix24_lead_processing_policy_process`
 - `bitrix24_lead_cuil_field`
 - `bitrix24_lead_employment_status_field`
 - `bitrix24_lead_payment_bank_field`
@@ -282,6 +318,9 @@ En la infraestructura actual corresponden a:
 
 - `ENV_BITRIX24_BASE_URL`
 - `ENV_BITRIX24_CONTACT_CUIL_FIELD`
+- `ENV_BITRIX24_LEAD_PROCESSING_POLICY_FIELD`
+- `ENV_BITRIX24_LEAD_PROCESSING_POLICY_SKIP`
+- `ENV_BITRIX24_LEAD_PROCESSING_POLICY_PROCESS`
 - `ENV_BITRIX24_LEAD_CUIL_FIELD`
 - `ENV_BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD`
 - `ENV_BITRIX24_LEAD_PAYMENT_BANK_FIELD`
@@ -379,6 +418,28 @@ Uso esperado desde un flow:
 Importante:
 
 - en `kestra/platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
+- el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
+- es la key efectiva del path del webhook, por lo que debe tratarse como secreto
+
+### Runtime Analisis Credito: incoming MetaMap webhook secret
+
+Referenciado hoy desde el flow `kestra/automations/analisis-credito/flows/incoming_metamap_bridge.yaml`.
+
+Secret cargado en runtime:
+
+- `ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
+
+En la infraestructura actual corresponde a:
+
+- `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
+
+Uso esperado desde un flow:
+
+- `{{ secret('ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY') }}`
+
+Importante:
+
+- en `kestra/platform/infra/.env` el valor se guarda Base64-encoded bajo `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
 - es la key efectiva del path del webhook, por lo que debe tratarse como secreto
 

@@ -1,0 +1,93 @@
+name: Validate MetaMap Server
+
+on:
+  pull_request:
+    paths:
+      - 'apps/metamap-platform/server/**'
+      - '.github/workflows/validate-metamap-server.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+    defaults:
+      run:
+        working-directory: apps/metamap-platform/server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install server dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Install encrypted env tooling
+        run: pip install -r ../../../kestra/tools/requirements.txt
+
+      - name: Run server unit tests
+        run: python -m unittest discover -s tests -p "test_*.py" -t .
+
+      - name: Validate encrypted runtime env files
+        if: env.RUNTIME_ENV_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
+          python ../../../kestra/tools/manage_encrypted_env.py decrypt-many \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --pair "deploy/metamap-platform-server.dev.env.enc=$RUNNER_TEMP/metamap-platform-server.dev.env" \
+            --pair "deploy/metamap-platform-server.prod.env.enc=$RUNNER_TEMP/metamap-platform-server.prod.env" \
+            --force
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from dotenv import dotenv_values
+          from metamap_server.config import _parse_bootstrap_clients
+
+          temp_dir = Path(os.environ["RUNNER_TEMP"])
+          required_keys = [
+              "TARGET_DIR",
+              "COMPOSE_PROJECT_NAME",
+              "METAMAP_SERVER_DATABASE_URL",
+              "METAMAP_SERVER_BANK_CALLBACK_TOKEN",
+              "METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON",
+          ]
+
+          for env_name in ("dev", "prod"):
+              path = temp_dir / f"metamap-platform-server.{env_name}.env"
+              values = dotenv_values(path)
+              missing = [key for key in required_keys if not values.get(key)]
+              if not values.get("METAMAP_SERVER_WEBHOOK_SECRET") and not values.get("METAMAP_SERVER_WEBHOOK_TOKEN"):
+                  missing.append("METAMAP_SERVER_WEBHOOK_SECRET")
+              if missing:
+                  raise SystemExit(f"{path} missing keys: {', '.join(missing)}")
+              _parse_bootstrap_clients(values["METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON"])
+          print("Encrypted MetaMap server env files decrypted and parsed successfully.")
+          PY
+
+      - name: Clean decrypted runtime env files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f "$RUNNER_TEMP/metamap-platform-server.dev.env"
+          rm -f "$RUNNER_TEMP/metamap-platform-server.prod.env"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build server image
+        run: docker build apps/metamap-platform/server -t metamap-platform-server:test

@@ -1,0 +1,68 @@
+id: consulta_quiebra_credix
+namespace: redunisol
+
+description: Consulta CredixSA y devuelve el estado none, multiple o single segun la tabla intermedia de resultados.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: credixsa
+
+tasks:
+  - id: consultar_quiebra
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - consulta_quiebra_credix/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: mcr.microsoft.com/playwright/python:v1.58.0-noble
+    beforeCommands:
+      - pip install kestra playwright==1.58.0 > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
+      CREDIX_TIMEOUT_SECONDS: "30"
+      CREDIX_DEBUG: "false"
+      CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
+      CREDIX_USER: "{{ secret('CREDIX_USER') }}"
+      CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
+    commands:
+      - python -m consulta_quiebra_credix.kestra_webhook_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.consultar_quiebra.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.status }}"
+  - id: cuit
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.cuit }}"
+  - id: nombre
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.nombre }}"
+  - id: rows_json
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.rows_json }}"
+  - id: data_json
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.data_json }}"
+  - id: response_json
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.response_json }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.error }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_QUIEBRA_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

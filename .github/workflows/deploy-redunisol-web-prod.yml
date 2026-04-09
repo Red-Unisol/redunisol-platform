@@ -9,7 +9,7 @@ on:
   #     - 'web/redunisol-web/**'
   #     - '.github/workflows/deploy-redunisol-web-dev.yml'
   #     - '.github/workflows/deploy-redunisol-web-prod.yml'
-  # workflow_dispatch:
+  workflow_dispatch:
   workflow_call:
 
 permissions:

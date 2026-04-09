@@ -1,6 +1,24 @@
 from __future__ import annotations
 
 
+def intake_success_result(
+    *,
+    contact_id: int,
+    lead_id: int,
+    message: str,
+) -> dict[str, object]:
+    return {
+        "ok": True,
+        "qualified": False,
+        "contact_id": contact_id,
+        "lead_id": lead_id,
+        "lead_status": None,
+        "action": "ingested",
+        "reason": "ingested",
+        "message": message,
+    }
+
+
 def success_result(
     *,
     qualified: bool,
@@ -39,5 +57,24 @@ def failure_result(
         "lead_status": lead_status,
         "action": "error",
         "reason": reason,
+        "message": message,
+    }
+
+
+def skipped_result(
+    *,
+    contact_id: int | None,
+    lead_id: int,
+    lead_status: str | None,
+    message: str,
+) -> dict[str, object]:
+    return {
+        "ok": True,
+        "qualified": False,
+        "contact_id": contact_id,
+        "lead_id": lead_id,
+        "lead_status": lead_status,
+        "action": "skipped",
+        "reason": "processing_disabled",
         "message": message,
     }

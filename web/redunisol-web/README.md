@@ -183,7 +183,7 @@ docker run -it --rm \
   -v $(pwd):/var/www \
   -p 8000:8000 \
   -p 5173:5173 \
-  --network red-unisol_laravel-development \
+  --network redunisol-web_laravel-development \
   red-unisol-workspace bash
 ```
 

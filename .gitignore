@@ -2,13 +2,14 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
 .pytest_cache/
 .venv/
 venv/
 .env
 .env.*
 !.env.example
-kestra/platform/infra/kestra-runtime.local.key
+.local-secrets/
 kestra/platform/infra/kestra-runtime.env
 web/herramientas/deploy/*.env
 .DS_Store
@@ -25,3 +26,5 @@ temp/*
 untracked/*
 composer
 composer-setup.php
+infra/
+local-notes/

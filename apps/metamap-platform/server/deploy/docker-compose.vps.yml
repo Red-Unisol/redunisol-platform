@@ -1,0 +1,14 @@
+services:
+  server:
+    image: ${APP_IMAGE}
+    pull_policy: always
+    ports:
+      - "${APP_BIND:-127.0.0.1:3031:8000}"
+    env_file:
+      - .env
+    volumes:
+      - metamap_platform_server_data:/data
+    restart: unless-stopped
+
+volumes:
+  metamap_platform_server_data:

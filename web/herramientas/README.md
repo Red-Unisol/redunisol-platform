@@ -27,10 +27,12 @@ Copiar `.env.example` a `.env` y completar al menos:
 
 - `APP_KEY`
 - `APP_URL`
-- `ANALISIS_CREDITO_WEBHOOK_URL`
+- `ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL`
+- `ANALISIS_CREDITO_CONSULTA_CAJA`
+- `ANALISIS_CREDITO_QUIEBRA_CREDIX_WEBHOOK_URL`
 - `ANALISIS_CREDITO_TIMEOUT_SECONDS`
 
-`ANALISIS_CREDITO_WEBHOOK_URL` debe apuntar al webhook completo expuesto por Kestra para el flow de analisis de credito. Esa URL queda solo del lado servidor y no se expone al navegador.
+Cada una de esas URLs debe apuntar al webhook completo expuesto por Kestra para el flow correspondiente. Esas URLs quedan solo del lado servidor y no se exponen al navegador.
 
 ## Desarrollo local
 

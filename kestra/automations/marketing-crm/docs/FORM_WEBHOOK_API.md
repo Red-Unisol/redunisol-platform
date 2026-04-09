@@ -3,6 +3,7 @@
 ## Objetivo
 
 Este endpoint recibe los datos del formulario, sincroniza contacto y lead en Bitrix24 y responde si la persona califica o no.
+Internamente el dominio hoy esta partido en un flow publico de intake y un flow interno de clasificacion por `lead_id`, pero el contrato HTTP hacia frontend se mantiene estable.
 
 El frontend solo necesita:
 
@@ -116,7 +117,7 @@ Campos:
   "message": "La provincia \"Buenos Aires\" no califica.",
   "qualified": false,
   "contact_id": "181479",
-  "lead_status": "RESULTADO_RECHAZADO"
+  "lead_status": "UC_1P8I07"
 }
 ```
 

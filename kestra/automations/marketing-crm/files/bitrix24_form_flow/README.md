@@ -2,6 +2,11 @@
 
 Componente de lógica de negocio en Python para procesar el body de un formulario, sincronizar contacto y lead en Bitrix24, evaluar si la persona califica y devolver una respuesta JSON estable.
 
+En runtime, la automatizacion queda partida en dos flows:
+
+- intake del formulario
+- clasificacion por `lead_id`
+
 ## Uso
 
 El script principal es `bitrix24_form_flow/process_form.py`.
@@ -86,6 +91,9 @@ Obligatorias:
 
 Opcionales para override de campos del lead:
 
+- `BITRIX24_LEAD_PROCESSING_POLICY_FIELD`
+- `BITRIX24_LEAD_PROCESSING_POLICY_SKIP`
+- `BITRIX24_LEAD_PROCESSING_POLICY_PROCESS`
 - `BITRIX24_LEAD_CUIL_FIELD`
 - `BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD`
 - `BITRIX24_LEAD_PAYMENT_BANK_FIELD`
@@ -95,6 +103,9 @@ Opcionales para override de campos del lead:
 
 Valores actualmente confirmados en el CRM:
 
+- `BITRIX24_LEAD_PROCESSING_POLICY_FIELD=UF_CRM_PROCESSING_POLICY` (`Politica procesamiento`)
+- `BITRIX24_LEAD_PROCESSING_POLICY_SKIP=No procesar`
+- `BITRIX24_LEAD_PROCESSING_POLICY_PROCESS=Procesar`
 - `BITRIX24_CONTACT_CUIL_FIELD=UF_CRM_65B7E48033FCD`
 - `BITRIX24_LEAD_CUIL_FIELD=UF_CRM_1693840106704`
 - `BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD=UF_CRM_1714071903`
@@ -103,25 +114,33 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_SOURCE_FIELD=UF_CRM_1722365051`
 - `BITRIX24_LEAD_REJECTION_REASON_FIELD=UF_CRM_REJECTION_REASON`
 - estado de lead para calificados: `UC_64AUC9` (`RESULTADO GANADO`)
-- estado de lead para rechazados: `RESULTADO_RECHAZADO` (`RESULTADO RECHAZADO`)
+- estado de lead para rechazados: `UC_1P8I07` (`RESULTADO PERDIDO`)
 
 Comportamiento esperado al rechazar:
 
-- el lead pasa al estado `RESULTADO RECHAZADO`
+- el lead pasa al estado `RESULTADO PERDIDO`
 - el motivo específico se guarda en `Motivo Rechazo` usando el enum del CRM
+
+Comportamiento esperado al crear el lead:
+
+- el intake crea el lead con la politica `No procesar`
+- el flow de clasificacion por `lead_id` puede saltarse el procesamiento si no se lo fuerza y la politica sigue distinta de `Procesar`
+- si otro origen crea el lead sin completar `Politica procesamiento`, el valor vacio tambien se interpreta como `No procesar`
 
 ## Integracion con Kestra
 
 Para usar este paquete dentro de Kestra, el adaptador recomendado es:
 
-- `bitrix24_form_flow/kestra_webhook_entrypoint.py`
+- `bitrix24_form_flow/kestra_form_intake_entrypoint.py`
+- `bitrix24_form_flow/kestra_lead_classification_entrypoint.py`
+- `bitrix24_form_flow/kestra_webhook_entrypoint.py` como wrapper backward-compatible de la ejecucion end-to-end
 
-Ese script:
+Los entrypoints:
 
-- recibe `TRIGGER_BODY_JSON` desde el flow
-- toma la configuracion Bitrix desde variables `BITRIX24_*`
-- emite `outputs` estructurados para Kestra
-- mantiene la logica de negocio separada del runtime
+- reciben `TRIGGER_BODY_JSON` o `LEAD_ID` segun el flow
+- toman la configuracion Bitrix desde variables `BITRIX24_*`
+- emiten `outputs` estructurados para Kestra
+- mantienen la logica de negocio separada del runtime
 
 ## Módulos
 
@@ -129,7 +148,7 @@ Ese script:
   Entry point CLI. Lee el body desde `stdin`, ejecuta la lógica y escribe el JSON final.
 
 - `bitrix24_form_flow/form_processor/business_logic.py`
-  Orquesta el flujo completo: parseo, normalización, upsert de contacto, creación de lead, calificación y cambio de estado.
+  Separa intake, clasificación por `lead_id` y wrapper end-to-end.
 
 - `bitrix24_form_flow/form_processor/input_parser.py`
   Parsea el body recibido. Soporta JSON y `application/x-www-form-urlencoded`. También traduce nombres legacy del formulario al contrato interno.
@@ -153,7 +172,7 @@ Ese script:
   Busca el contacto por CUIL y hace create/update según corresponda.
 
 - `bitrix24_form_flow/form_processor/lead_service.py`
-  Crea el lead y actualiza su estado final en Bitrix24.
+  Crea el lead con la politica `No procesar`, reconstruye un lead por `lead_id` y actualiza su estado final en Bitrix24.
 
 - `bitrix24_form_flow/form_processor/result.py`
   Genera la respuesta JSON final de éxito o error.

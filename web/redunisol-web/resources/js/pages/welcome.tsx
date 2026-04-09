@@ -1,17 +1,19 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 
-import { dashboard, login, register } from '@/routes';
-import { type SharedData } from '@/types';
+import data from '@/data/pages/home.json';
 
-export default function Welcome({
-    canRegister = true,
-}: {
-    canRegister?: boolean;
-}) {
-    const { auth } = usePage<SharedData>().props;
+import About from '@/components/about';
+import Hero from '@/components/hero';
+import Navbar, { tabs } from '@/components/navbar';
+import Services from '@/components/services';
+
+export default function Page() {
+    const { hero, services, about } = data;
+    const [activeTab, setActiveTab] = useState(tabs[0].key);
 
     return (
         <>
+<<<<<<< HEAD
             <Head title="Welcome">
                 <link rel="preconnect" href="https://fonts.bunny.net" />
                 <link
@@ -35,6 +37,14 @@ export default function Welcome({
                     </main>
                 </div>
                 <div className="hidden h-14.5 lg:block"></div>
+=======
+            <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+            <div className="w-full">
+                {activeTab === 'solicita' && <Hero data={hero} />}
+                {activeTab === 'creditos' && <Services data={services} />}
+                {activeTab === 'about' && <About data={about} />}
+                {activeTab === 'faqs' && <div>Contenido de FAQs</div>}
+>>>>>>> 818b193399ff42e849711e9392de102cdfe5832d
             </div>
         </>
     );

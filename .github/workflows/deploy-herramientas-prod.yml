@@ -8,7 +8,7 @@ on:
   #   paths:
   #     - 'web/herramientas/**'
   #     - '.github/workflows/deploy-herramientas-prod.yml'
-  # workflow_dispatch:
+  workflow_dispatch:
   workflow_call:
 
 permissions:

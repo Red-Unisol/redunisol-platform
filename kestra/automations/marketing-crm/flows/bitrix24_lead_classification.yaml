@@ -1,0 +1,78 @@
+id: bitrix24_lead_classification
+namespace: redunisol
+
+description: Clasifica un lead de Bitrix24 por lead_id y actualiza su estado final.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: internal
+  integration: bitrix24
+
+inputs:
+  - id: lead_id
+    type: STRING
+    required: true
+  - id: force_processing
+    type: BOOLEAN
+    required: true
+    defaults: false
+
+tasks:
+  - id: clasificar
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      LEAD_ID: "{{ inputs.lead_id }}"
+      FORCE_PROCESSING: "{{ inputs.force_processing }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_FIELD: "{{ envs.bitrix24_lead_processing_policy_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_SKIP: "{{ envs.bitrix24_lead_processing_policy_skip }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_PROCESS: "{{ envs.bitrix24_lead_processing_policy_process }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
+      BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_lead_classification_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.clasificar.vars.ok }}"
+  - id: qualified
+    type: BOOLEAN
+    value: "{{ outputs.clasificar.vars.qualified }}"
+  - id: contact_id
+    type: STRING
+    value: "{{ outputs.clasificar.vars.contact_id }}"
+  - id: lead_id
+    type: STRING
+    value: "{{ outputs.clasificar.vars.lead_id }}"
+  - id: lead_status
+    type: STRING
+    value: "{{ outputs.clasificar.vars.lead_status }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.clasificar.vars.action }}"
+  - id: reason
+    type: STRING
+    value: "{{ outputs.clasificar.vars.reason }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.clasificar.vars.message }}"

@@ -1,0 +1,62 @@
+id: incoming_metamap_bridge
+namespace: redunisol
+
+description: Recibe payloads arbitrarios por webhook, los registra y los reenvia a un endpoint local expuesto por tunel SSH sin fallar si no hay conexion.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: metamap
+
+tasks:
+  - id: replicar_payload
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - incoming_metamap_bridge/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra requests > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+    commands:
+      - python -m incoming_metamap_bridge.kestra_webhook_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.replicar_payload.vars.ok }}"
+  - id: forward_attempted
+    type: BOOLEAN
+    value: "{{ outputs.replicar_payload.vars.forward_attempted }}"
+  - id: forward_connected
+    type: BOOLEAN
+    value: "{{ outputs.replicar_payload.vars.forward_connected }}"
+  - id: forward_target
+    type: STRING
+    value: "{{ outputs.replicar_payload.vars.forward_target }}"
+  - id: forward_status_code
+    type: STRING
+    value: "{{ outputs.replicar_payload.vars.forward_status_code }}"
+  - id: forward_error
+    type: STRING
+    value: "{{ outputs.replicar_payload.vars.forward_error }}"
+  - id: payload_sha256
+    type: STRING
+    value: "{{ outputs.replicar_payload.vars.payload_sha256 }}"
+  - id: payload_preview
+    type: STRING
+    value: "{{ outputs.replicar_payload.vars.payload_preview }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

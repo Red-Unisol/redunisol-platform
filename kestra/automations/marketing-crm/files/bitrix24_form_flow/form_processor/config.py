@@ -5,6 +5,7 @@ import os
 
 
 DEFAULT_LEAD_FIELDS = {
+    "processing_policy": "UF_CRM_PROCESSING_POLICY",
     "cuil": "UF_CRM_1693840106704",
     "situacion_laboral": "UF_CRM_1714071903",
     "banco_cobro": "UF_CRM_LEAD_1711458190312",
@@ -13,10 +14,16 @@ DEFAULT_LEAD_FIELDS = {
     "rejection_reason": "UF_CRM_REJECTION_REASON",
 }
 
+DEFAULT_PROCESSING_POLICIES = {
+    "skip": "No procesar",
+    "process": "Procesar",
+}
+
 
 @dataclass(frozen=True)
 class BitrixFieldsConfig:
     contact_cuil: str
+    lead_processing_policy: str
     lead_cuil: str
     lead_employment_status: str
     lead_payment_bank: str
@@ -32,11 +39,18 @@ class LeadStatusesConfig:
 
 
 @dataclass(frozen=True)
+class ProcessingPolicyConfig:
+    skip: str
+    process: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     base_url: str
     webhook_path: str
     fields: BitrixFieldsConfig
     lead_statuses: LeadStatusesConfig
+    processing_policy: ProcessingPolicyConfig
     timeout_seconds: int
 
 
@@ -48,6 +62,10 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         webhook_path=_strip_outer_slashes(_required_env(source, "BITRIX24_WEBHOOK_PATH")),
         fields=BitrixFieldsConfig(
             contact_cuil=_required_env(source, "BITRIX24_CONTACT_CUIL_FIELD"),
+            lead_processing_policy=source.get(
+                "BITRIX24_LEAD_PROCESSING_POLICY_FIELD",
+                DEFAULT_LEAD_FIELDS["processing_policy"],
+            ),
             lead_cuil=source.get("BITRIX24_LEAD_CUIL_FIELD", DEFAULT_LEAD_FIELDS["cuil"]),
             lead_employment_status=source.get(
                 "BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD",
@@ -73,6 +91,16 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         lead_statuses=LeadStatusesConfig(
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
+        ),
+        processing_policy=ProcessingPolicyConfig(
+            skip=source.get(
+                "BITRIX24_LEAD_PROCESSING_POLICY_SKIP",
+                DEFAULT_PROCESSING_POLICIES["skip"],
+            ),
+            process=source.get(
+                "BITRIX24_LEAD_PROCESSING_POLICY_PROCESS",
+                DEFAULT_PROCESSING_POLICIES["process"],
+            ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),
     )

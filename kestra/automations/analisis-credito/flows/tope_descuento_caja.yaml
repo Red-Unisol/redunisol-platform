@@ -1,0 +1,67 @@
+id: tope_descuento_caja
+namespace: redunisol
+
+description: Recibe CUIL, consulta CIDI + Caja y devuelve tope de descuento.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: caja-jubilaciones
+
+tasks:
+  - id: consultar_tope
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - tope_descuento_caja/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra requests pycryptodome > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CIDI_USER: "{{ secret('CIDI_USER') }}"
+      CIDI_PASS: "{{ secret('CIDI_PASS') }}"
+      CIDI_BASE_URL: "{{ envs.cidi_base_url }}"
+      CIDI_CLIENT_ID: "{{ envs.cidi_client_id }}"
+      CIDI_CLIENT_SECRET: "{{ secret('CIDI_CLIENT_SECRET') }}"
+      CAJA_BASE_URL: "{{ envs.caja_base_url }}"
+      CAJA_ENCRYPT_PASS: "{{ secret('CAJA_ENCRYPT_PASS') }}"
+      CAJA_ID_TIPO_USUARIO: "{{ envs.caja_id_tipo_usuario }}"
+    commands:
+      - python -m tope_descuento_caja.kestra_webhook_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.consultar_tope.vars.ok }}"
+  - id: cuil
+    type: STRING
+    value: "{{ outputs.consultar_tope.vars.cuil }}"
+  - id: nombre
+    type: STRING
+    value: "{{ outputs.consultar_tope.vars.nombre }}"
+  - id: apellido
+    type: STRING
+    value: "{{ outputs.consultar_tope.vars.apellido }}"
+  - id: disponible
+    type: FLOAT
+    value: "{{ outputs.consultar_tope.vars.disponible }}"
+  - id: tope_descuento
+    type: FLOAT
+    value: "{{ outputs.consultar_tope.vars.tope_descuento }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.consultar_tope.vars.error }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_CAJA_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

@@ -1,14 +1,20 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
-use Laravel\Fortify\Features;
 
-Route::get('/', function () {
+use App\Models\Page;
+use Inertia\Inertia;
+
+Route::get('/{slug?}', function ($slug = '/') {
+
+    $slug = $slug === '/' ? '/' : $slug;
+
+    $page = Page::where('slug', $slug)->firstOrFail();
+
     return Inertia::render('welcome', [
-        'canRegister' => Features::enabled(Features::registration()),
+        'sections' => $page->sections,
+        'title' => $page->title,
     ]);
-})->name('home');
+});
 
 Route::get('/health', function () {
     $status = [];
