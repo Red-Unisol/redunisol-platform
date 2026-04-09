@@ -15,6 +15,10 @@ LINEAS_PRESTAMO = [
     "CRUZ DEL EJE Ren Especial",
     "CRUZ DEL EJE Ren Premium",
 ]
+LINEAS_BONUS_RENOVACION = [
+    "CRUZ DEL EJE -Cance-especia-",
+    "CRUZ DEL EJE -Cancel-Prem",
+]
 
 ESTADO_CUENTA_ACTIVA = 0
 MAX_CUOTAS = 35000
@@ -177,6 +181,19 @@ def filter_lines_exact(cuotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return filtradas
 
 
+def has_bonus_line(cuotas: List[Dict[str, Any]]) -> bool:
+    lineas_bonus = {normalize_line(x) for x in LINEAS_BONUS_RENOVACION}
+    for cuota in cuotas:
+        descripcion = cuota.get("Prestamo.LineaPrestamo.Descripcion") or ""
+        descripcion_sup = cuota.get("Prestamo.LineaPrestamo.Superior.Descripcion") or ""
+        if (
+            normalize_line(descripcion) in lineas_bonus
+            or normalize_line(descripcion_sup) in lineas_bonus
+        ):
+            return True
+    return False
+
+
 def group_by_prestamo(cuotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     por_prestamo: Dict[Any, Dict[str, Any]] = {}
     for cuota in cuotas:
@@ -249,6 +266,7 @@ def compute_metrics(
 def evaluar_socio(cuil: str) -> Dict[str, Any]:
     cuotas = fetch_cuotas_por_cuil(cuil)
     cuotas = filter_lines_exact(cuotas)
+    aplica_bonus = has_bonus_line(cuotas)
 
     if not cuotas:
         return {
@@ -300,8 +318,12 @@ def evaluar_socio(cuil: str) -> Dict[str, Any]:
             "motivo": "menos_del_50_por_ciento",
         }
 
+    saldo_renovacion = metricas["saldo_renovacion"]
+    if aplica_bonus:
+        saldo_renovacion = round(saldo_renovacion * 1.025, 2)
+
     return {
         "puede_renovar": True,
-        "saldo_renovacion": metricas["saldo_renovacion"],
+        "saldo_renovacion": saldo_renovacion,
         "motivo": None,
     }
