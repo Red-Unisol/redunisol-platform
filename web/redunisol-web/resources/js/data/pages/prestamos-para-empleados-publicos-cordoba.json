@@ -1,0 +1,59 @@
+[
+  {
+    "type": "hero",
+    "data": {
+      "title": "Préstamos para Empleados Públicos de Córdoba",
+      "description": "Créditos personales para trabajadores de la administración pública provincial de Córdoba con descuento automático por recibo de haberes."
+    }
+  },
+  {
+    "type": "convenios",
+    "data": {
+      "title": "Convenios disponibles",
+      "items": [
+        { "name": "Asociación Mutual 22 de Septiembre", "detail": "Cobro por: Bancor según convenio", "href": "" },
+        { "name": "Mutual Celesol", "detail": "Cobro por: Bancor según convenio", "href": "" }
+      ]
+    }
+  },
+  {
+    "type": "requisitos",
+    "data": {
+      "title": "Requisitos",
+      "items": [
+        { "text": "Ser empleado público activo de la provincia de Córdoba" },
+        { "text": "DNI vigente" },
+        { "text": "Último recibo de haberes" },
+        { "text": "Cobrar haberes por Bancor (según convenio)" },
+        { "text": "Antigüedad mínima en el cargo" }
+      ]
+    }
+  },
+  {
+    "type": "faqs",
+    "data": {
+      "badge": "Preguntas frecuentes",
+      "description": "Respondemos las dudas más comunes sobre los préstamos para **empleados públicos de Córdoba**.",
+      "cta": "Solicitar préstamo",
+      "categories": [
+        {
+          "title": "Requisitos",
+          "items": [
+            { "q": "¿Necesito cobrar por Bancor?", "a": "Para los convenios con la Mutual 22 de Septiembre y Celesol sí es necesario cobrar los haberes por Bancor. Consultá con nosotros para verificar tu situación." },
+            { "q": "¿Qué documentación necesito?", "a": "DNI vigente, último recibo de haberes y datos de contacto (email y WhatsApp)." }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "testimonios",
+    "data": {
+      "title": "Lo que dicen nuestros clientes",
+      "items": [
+        { "quote": "Excelente servicio. Me ayudaron a gestionar el préstamo de forma rápida y sin complicaciones.", "name": "Nombre Apellido", "role": "Empleado Público de Córdoba" },
+        { "quote": "Muy buenas condiciones y atención personalizada.", "name": "Nombre Apellido", "role": "Empleado del Estado" }
+      ]
+    }
+  }
+]

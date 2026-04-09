@@ -1,3 +1,4 @@
+import MutualesGrid, { type Mutual } from '@/components/mutuales-grid';
 import { InfoIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
@@ -5,6 +6,7 @@ export interface AboutSection {
     title: string;
     description: string;
     extra: string;
+    mutuales?: Mutual[];
 }
 
 export default function About({ data }: { data: AboutSection }) {
@@ -29,6 +31,7 @@ export default function About({ data }: { data: AboutSection }) {
                 >
                     {data.description}
                 </motion.p>
+
                 <motion.div
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -38,11 +41,22 @@ export default function About({ data }: { data: AboutSection }) {
                     {data.extra}
                 </motion.div>
 
+                {data.mutuales && data.mutuales.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4, duration: 0.6 }}
+                        className="my-8 border-t border-b border-gray-200 py-4"
+                    >
+                        <MutualesGrid mutuales={data.mutuales} />
+                    </motion.div>
+                )}
+
                 <motion.button
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.45, duration: 0.6 }}
-                    className="mt-6 rounded-xl bg-[#1F2A37] px-6 py-3 text-white"
+                    transition={{ delay: 0.55, duration: 0.6 }}
+                    className="my-4 rounded-xl bg-[#1F2A37] px-6 py-3 text-white"
                 >
                     Más sobre Unisol
                 </motion.button>

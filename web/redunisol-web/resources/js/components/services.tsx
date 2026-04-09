@@ -1,11 +1,18 @@
+import { Link } from '@inertiajs/react';
 import * as Icons from '@phosphor-icons/react';
 import { MoneyIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
+export interface ServiceItem {
+    text: string;
+    icon: string;
+    href?: string;
+}
+
 export interface ServicesData {
     title: string;
     description: string;
-    items: { text: string; icon: string }[];
+    items: ServiceItem[];
     note: string;
 }
 
@@ -17,6 +24,43 @@ export const iconMap = {
     'book-open-text': Icons.BookOpenTextIcon,
     'hand-heart': Icons.HandHeartIcon,
 };
+
+function ServiceCard({ item, index }: { item: ServiceItem; index: number }) {
+    const Icon = iconMap[item.icon as keyof typeof iconMap];
+
+    const card = (
+        <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 + index * 0.08, duration: 0.5 }}
+            className={[
+                'flex flex-col items-center justify-center gap-4 rounded-2xl border border-[#97aeaf]',
+                'bg-[#265c5e0d] p-6 text-center transition hover:shadow-md',
+                item.href ? 'hover:border-[#6BAF92] hover:bg-[#265c5e18]' : '',
+            ].join(' ')}
+        >
+            <div className="w-fit">
+                {Icon && <Icon className="mb-2 h-6 w-6" />}
+            </div>
+            <p className="font-bold">{item.text}</p>
+            {item.href && (
+                <span className="text-xs font-medium text-[#6BAF92]">
+                    Ver más →
+                </span>
+            )}
+        </motion.div>
+    );
+
+    if (item.href) {
+        return (
+            <Link href={item.href} className="block">
+                {card}
+            </Link>
+        );
+    }
+
+    return card;
+}
 
 export default function Services({ data }: { data: ServicesData }) {
     return (
@@ -31,6 +75,7 @@ export default function Services({ data }: { data: ServicesData }) {
                     <MoneyIcon size={24} />
                     <p className="text-normal font-bold">{data.title}</p>
                 </motion.div>
+
                 <motion.p
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -39,29 +84,13 @@ export default function Services({ data }: { data: ServicesData }) {
                 >
                     {data.description}
                 </motion.p>
-                <div className="grid gap-6 md:grid-cols-2">
-                    {data.items.map((item, i) => {
-                        const Icon = iconMap[item.icon as keyof typeof iconMap];
 
-                        return (
-                            <motion.div
-                                key={i}
-                                initial={{ opacity: 0, y: 30 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{
-                                    delay: 0.2 + i * 0.08,
-                                    duration: 0.5,
-                                }}
-                                className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-[#97aeaf] bg-[#265c5e0d] p-6 text-center transition hover:shadow-md"
-                            >
-                                <div className="w-fit">
-                                    {Icon && <Icon className="mb-2 h-6 w-6" />}
-                                </div>
-                                <p className="font-bold">{item.text}</p>
-                            </motion.div>
-                        );
-                    })}
+                <div className="grid gap-6 md:grid-cols-2">
+                    {data.items.map((item, i) => (
+                        <ServiceCard key={i} item={item} index={i} />
+                    ))}
                 </div>
+
                 <motion.p
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}

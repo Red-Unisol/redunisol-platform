@@ -1,0 +1,64 @@
+[
+  {
+    "type": "hero",
+    "data": {
+      "title": "Préstamos para Empleados Públicos Provinciales",
+      "description": "Créditos personales con descuento por nómina para trabajadores de la administración pública provincial y municipal. En Red Unisol te conectamos con Bancos, Mutuales y entidades reguladas por el BCRA para encontrar el mejor crédito."
+    }
+  },
+  {
+    "type": "convenios",
+    "data": {
+      "title": "Provincias disponibles",
+      "items": [
+        { "name": "Empleados Públicos de Córdoba", "detail": "", "href": "/prestamos-para-empleados-publicos/emp-pub-cordoba" },
+        { "name": "Empleados Públicos de Catamarca", "detail": "", "href": "/prestamos-para-empleados-publicos/emp-pub-catamarca" }
+      ]
+    }
+  },
+  {
+    "type": "requisitos",
+    "data": {
+      "title": "Requisitos",
+      "items": [
+        { "text": "Ser empleado público provincial o municipal activo" },
+        { "text": "DNI vigente" },
+        { "text": "Último recibo de haberes" },
+        { "text": "Antigüedad mínima según convenio" }
+      ]
+    }
+  },
+  {
+    "type": "faqs",
+    "data": {
+      "badge": "Preguntas frecuentes",
+      "description": "Respondemos las dudas más comunes sobre los préstamos para **empleados públicos provinciales**.",
+      "cta": "Solicitar préstamo",
+      "categories": [
+        {
+          "title": "Requisitos",
+          "items": [
+            { "q": "¿Quiénes pueden solicitar este préstamo?", "a": "Pueden solicitarlo empleados activos de la administración pública provincial o municipal con antigüedad suficiente según convenio." },
+            { "q": "¿Qué documentación necesito?", "a": "DNI vigente, último recibo de haberes y datos de contacto (email y WhatsApp)." }
+          ]
+        },
+        {
+          "title": "Proceso",
+          "items": [
+            { "q": "¿Cómo se descuenta el préstamo?", "a": "El préstamo se descuenta automáticamente por recibo de haberes según el convenio al que pertenecés." }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "testimonios",
+    "data": {
+      "title": "Lo que dicen nuestros clientes",
+      "items": [
+        { "quote": "Rápido, sencillo y con buenas condiciones. Lo recomiendo.", "name": "Nombre Apellido", "role": "Empleado Público Provincial" },
+        { "quote": "Muy buena atención. El proceso fue totalmente online y muy ágil.", "name": "Nombre Apellido", "role": "Empleado Municipal" }
+      ]
+    }
+  }
+]

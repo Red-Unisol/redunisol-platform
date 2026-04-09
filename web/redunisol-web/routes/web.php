@@ -1,20 +1,8 @@
 <?php
 
-
 use App\Models\Page;
 use Inertia\Inertia;
 
-Route::get('/{slug?}', function ($slug = '/') {
-
-    $slug = $slug === '/' ? '/' : $slug;
-
-    $page = Page::where('slug', $slug)->firstOrFail();
-
-    return Inertia::render('welcome', [
-        'sections' => $page->sections,
-        'title' => $page->title,
-    ]);
-});
 
 Route::get('/health', function () {
     $status = [];
@@ -22,7 +10,6 @@ Route::get('/health', function () {
     // Check Database Connection
     try {
         DB::connection()->getPdo();
-        // Optionally, run a simple query
         DB::select('SELECT 1');
         $status['database'] = 'OK';
     } catch (\Exception $e) {
@@ -33,11 +20,7 @@ Route::get('/health', function () {
     try {
         Cache::store('redis')->put('health_check', 'OK', 10);
         $value = Cache::store('redis')->get('health_check');
-        if ($value === 'OK') {
-            $status['redis'] = 'OK';
-        } else {
-            $status['redis'] = 'Error';
-        }
+        $status['redis'] = ($value === 'OK') ? 'OK' : 'Error';
     } catch (\Exception $e) {
         $status['redis'] = 'Error';
     }
@@ -48,24 +31,14 @@ Route::get('/health', function () {
         Storage::put($testFile, 'OK');
         $content = Storage::get($testFile);
         Storage::delete($testFile);
-
-        if ($content === 'OK') {
-            $status['storage'] = 'OK';
-        } else {
-            $status['storage'] = 'Error';
-        }
+        $status['storage'] = ($content === 'OK') ? 'OK' : 'Error';
     } catch (\Exception $e) {
         $status['storage'] = 'Error';
     }
 
-    // Determine overall health status
-    $isHealthy = collect($status)->every(function ($value) {
-        return $value === 'OK';
-    });
+    $isHealthy = collect($status)->every(fn($value) => $value === 'OK');
 
-    $httpStatus = $isHealthy ? 200 : 503;
-
-    return response()->json($status, $httpStatus);
+    return response()->json($status, $isHealthy ? 200 : 503);
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -79,3 +52,20 @@ Route::get('/test', function () {
 })->name('test');
 
 require __DIR__.'/settings.php';
+
+// ──────────────────────────────────────────────────────────────
+//   /                                           → slug /
+//   /prestamos-para-policias                    → slug /prestamos-para-policias
+//   /prestamos-para-policias/policia-rio-negro  → slug /prestamos-para-policias/policia-rio-negro
+// ──────────────────────────────────────────────────────────────
+
+Route::get('/{slug?}', function ($slug = null) {
+    $slug = $slug ? '/' . ltrim($slug, '/') : '/';
+
+    $page = Page::where('slug', $slug)->firstOrFail();
+
+    return Inertia::render('welcome', [
+        'sections' => $page->sections,
+        'title'    => $page->title,
+    ]);
+})->where('slug', '.*');

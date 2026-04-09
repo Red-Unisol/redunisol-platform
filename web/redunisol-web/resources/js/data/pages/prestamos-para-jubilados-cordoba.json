@@ -1,0 +1,57 @@
+[
+  {
+    "type": "hero",
+    "data": {
+      "title": "Préstamos para Jubilados de Córdoba",
+      "description": "Créditos personales para jubilados provinciales de Córdoba con descuento por recibo de haberes. Accedé a las mejores condiciones a través de nuestros convenios vigentes."
+    }
+  },
+  {
+    "type": "convenios",
+    "data": {
+      "title": "Convenios disponibles",
+      "items": [
+        { "name": "Mutual Fiat Concord", "detail": "Cobro por: Bancor", "href": "" }
+      ]
+    }
+  },
+  {
+    "type": "requisitos",
+    "data": {
+      "title": "Requisitos",
+      "items": [
+        { "text": "Ser jubilado provincial de Córdoba" },
+        { "text": "DNI vigente" },
+        { "text": "Último recibo de haberes" },
+        { "text": "Cobrar haberes por Bancor" }
+      ]
+    }
+  },
+  {
+    "type": "faqs",
+    "data": {
+      "badge": "Preguntas frecuentes",
+      "description": "Respondemos las dudas más comunes sobre los préstamos para **jubilados de Córdoba**.",
+      "cta": "Solicitar préstamo",
+      "categories": [
+        {
+          "title": "Requisitos",
+          "items": [
+            { "q": "¿Necesito cobrar por Bancor?", "a": "Sí, para el convenio con Mutual Fiat Concord es necesario cobrar la jubilación por Bancor." },
+            { "q": "¿Qué documentación necesito?", "a": "DNI vigente, último recibo de haberes y datos de contacto." }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "testimonios",
+    "data": {
+      "title": "Lo que dicen nuestros clientes",
+      "items": [
+        { "quote": "Muy buena experiencia, me atendieron con mucha paciencia y claridad.", "name": "Nombre Apellido", "role": "Jubilado Provincial de Córdoba" },
+        { "quote": "Excelente servicio y condiciones convenientes para jubilados.", "name": "Nombre Apellido", "role": "Jubilado" }
+      ]
+    }
+  }
+]
