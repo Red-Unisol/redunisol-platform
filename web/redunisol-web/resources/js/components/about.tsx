@@ -9,7 +9,7 @@ export interface AboutSection {
 
 export default function About({ data }: { data: AboutSection }) {
     return (
-        <section className="w-full bg-[#F7F7F7] text-gray-800">
+        <section className="w-full text-gray-800">
             <div className="mx-auto max-w-4xl px-6 py-20 text-center">
                 <motion.div
                     initial={{ opacity: 0, y: 30 }}
@@ -18,8 +18,9 @@ export default function About({ data }: { data: AboutSection }) {
                     className="m-auto mb-4 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <InfoIcon size={24} />
-                    <p className="text-2xl font-semibold">{data.title}</p>
+                    <p className="text-normal font-bold">{data.title}</p>
                 </motion.div>
+
                 <motion.p
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}

@@ -43,5 +43,46 @@
         "title": "Sobre Red Unisol",
         "description": "Agrupamos mutuales y cooperativas que trabajan para facilitar el acceso a préstamos personales a empleados públicos, docentes, policías, empleados universitarios, jubilados y pensionados de las provincias de Córdoba y Catamarca.",
         "extra": "+12 años, +50.000 créditos otorgados y +12 convenios vigentes"
+    },
+    "faqs": {
+        "badge": "Preguntas y respuestas frecuentes",
+        "description": "Encontrá respuestas a las **dudas más comunes** sobre nuestros préstamos ordenados por temática.",
+        "cta": "Comenzar hoy",
+        "categories": [
+            {
+                "title": "Requisitos",
+                "items": [
+                    {
+                        "q": "¿Cuáles son los requisitos para solicitar un préstamo?",
+                        "a": "Los requisitos básicos son: ser empleado público, docente, policía, empleado de la UNC, jubilado o pensionado provincial de Córdoba o Catamarca. Deberás presentar DNI vigente, recibo de haberes actualizado y datos de contacto. Los requisitos específicos pueden variar según la mutual y el convenio aplicable."
+                    },
+                    {
+                        "q": "¿Qué documentación necesito presentar?",
+                        "a": "Necesitás presentar: DNI (frente y dorso), último recibo de haberes, CUIL y datos de contacto (email y teléfono WhatsApp). En algunos casos puede solicitarse documentación adicional según el monto y las condiciones del préstamo."
+                    },
+                    {
+                        "q": "¿Necesito tener cuenta bancaria?",
+                        "a": "Sí, necesitás una cuenta bancaria donde se acreditará el préstamo. En algunos convenios de Córdoba es requisito cobrar por Bancor. Los empleados de la UNC no tienen restricción bancaria."
+                    }
+                ]
+            },
+            {
+                "title": "Proceso de solicitud",
+                "items": [
+                    {
+                        "q": "¿Cómo es el proceso de solicitud del préstamo?",
+                        "a": "El proceso es 100% online. Completás el formulario con tus datos, subís la documentación requerida y en breve te contactamos con una oferta personalizada. No necesitás concurrir a ninguna sucursal."
+                    },
+                    {
+                        "q": "¿Cuánto tiempo demora la aprobación?",
+                        "a": "El tiempo de aprobación varía según la mutual y el convenio, pero generalmente entre 24 y 72 horas hábiles desde que recibimos tu solicitud completa con toda la documentación correcta."
+                    },
+                    {
+                        "q": "¿Cómo se acredita el préstamo?",
+                        "a": "El préstamo se acredita por CBU en tu cuenta bancaria o se descuenta directamente por haberes, según el convenio al que pertenecés. Al momento de la aprobación te informamos cómo será la acreditación en tu caso."
+                    }
+                ]
+            }
+        ]
     }
 }

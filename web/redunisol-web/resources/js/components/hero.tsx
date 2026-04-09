@@ -11,7 +11,7 @@ interface Hero {
 }
 export default function Hero({ data }: { data: Hero }) {
     return (
-        <section className="w-full bg-white">
+        <section className="m-auto w-full max-w-200">
             <div className="mx-auto max-w-5xl px-6 pt-24 pb-20 text-center">
                 {/* TITLE */}
                 <motion.h1
