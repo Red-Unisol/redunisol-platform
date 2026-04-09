@@ -1,0 +1,57 @@
+[
+  {
+    "type": "hero",
+    "data": {
+      "title": "Préstamos para Jubilados Provinciales",
+      "description": "Créditos personales para jubilados de cajas provinciales con descuento por recibo de haberes. En Red Unisol te conectamos con Bancos, Mutuales y entidades reguladas por el BCRA para encontrar el mejor crédito pensado para tu situación."
+    }
+  },
+  {
+    "type": "convenios",
+    "data": {
+      "title": "Provincias disponibles",
+      "items": [
+        { "name": "Jubilados de Córdoba", "detail": "", "href": "/prestamos-para-jubilados/jubilados-cordoba" }
+      ]
+    }
+  },
+  {
+    "type": "requisitos",
+    "data": {
+      "title": "Requisitos",
+      "items": [
+        { "text": "Ser jubilado provincial" },
+        { "text": "DNI vigente" },
+        { "text": "Último recibo de haberes" },
+        { "text": "Cobrar haberes por el banco correspondiente al convenio" }
+      ]
+    }
+  },
+  {
+    "type": "faqs",
+    "data": {
+      "badge": "Preguntas frecuentes",
+      "description": "Respondemos las dudas más comunes sobre los préstamos para **jubilados provinciales**.",
+      "cta": "Solicitar préstamo",
+      "categories": [
+        {
+          "title": "Requisitos",
+          "items": [
+            { "q": "¿Qué jubilados pueden acceder?", "a": "Jubilados de cajas provinciales que cobren sus haberes por el banco correspondiente al convenio vigente." },
+            { "q": "¿Qué documentación necesito?", "a": "DNI vigente, último recibo de haberes y datos de contacto (email y WhatsApp)." }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "testimonios",
+    "data": {
+      "title": "Lo que dicen nuestros clientes",
+      "items": [
+        { "quote": "Excelente trato y condiciones acordes a mis ingresos. Muy recomendable.", "name": "Nombre Apellido", "role": "Jubilado Provincial" },
+        { "quote": "Todo el proceso fue sencillo y rápido. Muy buena atención.", "name": "Nombre Apellido", "role": "Jubilado" }
+      ]
+    }
+  }
+]

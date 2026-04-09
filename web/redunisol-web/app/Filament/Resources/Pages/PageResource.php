@@ -202,6 +202,84 @@ class PageResource extends Resource
                                 ->collapsible(),
                         ]),
 
+                    // ──────────────────────────────────────────
+                    // CONVENIOS
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('convenios')
+                        ->label('Convenios / Provincias')
+                        ->icon('heroicon-o-building-library')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Título')
+                                ->default('Convenios disponibles'),
+                            Repeater::make('items')
+                                ->label('Items')
+                                ->schema([
+                                    TextInput::make('name')
+                                        ->label('Nombre')
+                                        ->required(),
+                                    TextInput::make('detail')
+                                        ->label('Detalle')
+                                        ->helperText('Ej: Cobro por: Bancor según convenio')
+                                        ->nullable(),
+                                    TextInput::make('href')
+                                        ->label('Enlace a subpágina')
+                                        ->helperText('Ej: /prestamos-para-policias/policia-cordoba — Opcional')
+                                        ->nullable(),
+                                ])
+                                ->defaultItems(1)
+                                ->reorderable()
+                                ->collapsible(),
+                        ]),
+
+                    // ──────────────────────────────────────────
+                    // REQUISITOS
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('requisitos')
+                        ->label('Requisitos')
+                        ->icon('heroicon-o-clipboard-document-check')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Título')
+                                ->default('Requisitos'),
+                            Repeater::make('items')
+                                ->label('Requisitos')
+                                ->schema([
+                                    TextInput::make('text')
+                                        ->label('Requisito')
+                                        ->required(),
+                                ])
+                                ->defaultItems(1)
+                                ->reorderable(),
+                        ]),
+
+                    // ──────────────────────────────────────────
+                    // TESTIMONIOS
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('testimonios')
+                        ->label('Testimonios')
+                        ->icon('heroicon-o-chat-bubble-left-right')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Título')
+                                ->default('Lo que dicen nuestros clientes'),
+                            Repeater::make('items')
+                                ->label('Testimonios')
+                                ->schema([
+                                    Textarea::make('quote')
+                                        ->label('Testimonio')
+                                        ->required()
+                                        ->rows(3),
+                                    TextInput::make('name')
+                                        ->label('Nombre y apellido'),
+                                    TextInput::make('role')
+                                        ->label('Cargo / Profesión'),
+                                ])
+                                ->defaultItems(1)
+                                ->reorderable()
+                                ->collapsible(),
+                        ]),
+
                 ])
                 ->columnSpanFull()
                 ->reorderable()

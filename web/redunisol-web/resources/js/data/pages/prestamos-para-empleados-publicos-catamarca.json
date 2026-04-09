@@ -1,0 +1,58 @@
+[
+  {
+    "type": "hero",
+    "data": {
+      "title": "Préstamos para Empleados Públicos de Catamarca",
+      "description": "Créditos personales para trabajadores de la administración pública provincial de Catamarca con descuento automático por recibo de haberes."
+    }
+  },
+  {
+    "type": "convenios",
+    "data": {
+      "title": "Convenios disponibles",
+      "items": [
+        { "name": "Amejuca", "detail": "", "href": "" },
+        { "name": "Mutual 25 de Agosto", "detail": "", "href": "" }
+      ]
+    }
+  },
+  {
+    "type": "requisitos",
+    "data": {
+      "title": "Requisitos",
+      "items": [
+        { "text": "Ser empleado público activo de la provincia de Catamarca" },
+        { "text": "DNI vigente" },
+        { "text": "Último recibo de haberes" },
+        { "text": "Antigüedad mínima en el cargo" }
+      ]
+    }
+  },
+  {
+    "type": "faqs",
+    "data": {
+      "badge": "Preguntas frecuentes",
+      "description": "Respondemos las dudas más comunes sobre los préstamos para **empleados públicos de Catamarca**.",
+      "cta": "Solicitar préstamo",
+      "categories": [
+        {
+          "title": "Requisitos",
+          "items": [
+            { "q": "¿Quiénes pueden acceder al préstamo en Catamarca?", "a": "Empleados públicos activos de la provincia de Catamarca afiliados a Amejuca o Mutual 25 de Agosto." },
+            { "q": "¿Qué documentación necesito?", "a": "DNI vigente, último recibo de haberes y datos de contacto." }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "testimonios",
+    "data": {
+      "title": "Lo que dicen nuestros clientes",
+      "items": [
+        { "quote": "Muy buena experiencia, el trámite fue rápido y sencillo.", "name": "Nombre Apellido", "role": "Empleado Público de Catamarca" },
+        { "quote": "Atención excelente y condiciones muy buenas.", "name": "Nombre Apellido", "role": "Empleado del Estado" }
+      ]
+    }
+  }
+]
