@@ -143,3 +143,13 @@
         @apply h-full bg-white text-foreground;
     }
 }
+
+@layer utilities {
+    .bg-gradient-custom {
+        background: linear-gradient(
+            197deg,
+            rgb(22, 39, 65) 0%,
+            rgb(151, 174, 175) 100%
+        );
+    }
+}

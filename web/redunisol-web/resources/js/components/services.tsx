@@ -20,8 +20,8 @@ export const iconMap = {
 
 export default function Services({ data }: { data: ServicesData }) {
     return (
-        <section className="w-full bg-[#F7F7F7] text-gray-800">
-            <div className="mx-auto max-w-5xl px-6 py-20 text-center">
+        <section className="m-auto w-full max-w-200 text-gray-800">
+            <div className="mx-auto max-w-5xl px-6 py-8 text-center">
                 <motion.div
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
