@@ -23,8 +23,8 @@ tasks:
     beforeCommands:
       - pip install kestra requests > /dev/null
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
-      TRIGGER_BODY_RAW: "{{ trigger.body }}"
+      TRIGGER_BODY_JSON: "{{ (trigger.body is defined) ? (trigger.body | json) : (trigger.parameters | json) }}"
+      TRIGGER_BODY_RAW: "{{ (trigger.body is defined) ? trigger.body : '' }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
