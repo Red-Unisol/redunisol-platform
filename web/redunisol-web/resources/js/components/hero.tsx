@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 
-interface Hero {
+export interface Hero {
     title: string;
     highlight: string;
     description: string;

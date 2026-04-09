@@ -1,6 +1,11 @@
 import { InertiaLinkProps } from '@inertiajs/react';
 import { LucideIcon } from 'lucide-react';
 
+export interface PageSection {
+    type: string;
+    data: Record<string, unknown>;
+}
+
 export interface Auth {
     user: User;
 }
