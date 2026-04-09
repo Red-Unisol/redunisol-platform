@@ -24,13 +24,36 @@ tasks:
       - pip install kestra requests > /dev/null
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_RAW: "{{ trigger.body }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_APP_TOKEN: "{{ secret('BITRIX24_COBRANZAS_PROMESA_APP_TOKEN') }}"
-      EDNA_API_KEY: "{{ secret('EDNA_API_KEY') }}"
+      TARGET_STAGE_ID: "{{ envs.bitrix24_promesa_target_stage_id }}"
+      TARGET_CATEGORY_ID: "{{ envs.bitrix24_promesa_target_category_id }}"
+      PROMISE_DATE_FIELD: "{{ envs.bitrix24_promesa_date_field }}"
+      PROMISE_AMOUNT_FIELD: "{{ envs.bitrix24_promesa_amount_field }}"
+      PROMISE_SEND_HOUR: "{{ envs.bitrix24_promesa_send_hour }}"
+      PROMISE_SEND_MINUTE: "{{ envs.bitrix24_promesa_send_minute }}"
+      BUSINESS_START_HOUR: "{{ envs.business_start_hour }}"
+      BUSINESS_START_MINUTE: "{{ envs.business_start_minute }}"
+      BUSINESS_END_HOUR: "{{ envs.business_end_hour }}"
+      BUSINESS_END_MINUTE: "{{ envs.business_end_minute }}"
+      LOCAL_TZ: "{{ envs.local_tz }}"
     commands:
       - python -m bitrix_deal_promesa.kestra_webhook_entrypoint
+
+  - id: enviar_promesa
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: "{{ flow.namespace }}"
+    flowId: bitrix_deal_promesa_send
+    wait: false
+    transmitFailed: true
+    runIf: "{{ outputs.procesar_webhook.vars.should_send }}"
+    inputs:
+      deal_id: "{{ outputs.procesar_webhook.vars.deal_id }}"
+      expected_promise_value: "{{ outputs.procesar_webhook.vars.expected_promise_value }}"
+      delay_seconds: "{{ outputs.procesar_webhook.vars.delay_seconds }}"
 
 outputs:
   - id: ok
@@ -45,12 +68,18 @@ outputs:
   - id: scheduled_for
     type: STRING
     value: "{{ outputs.procesar_webhook.vars.scheduled_for }}"
+  - id: delay_seconds
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.delay_seconds }}"
   - id: deal_id
     type: STRING
     value: "{{ outputs.procesar_webhook.vars.deal_id }}"
   - id: edna_status
     type: STRING
     value: "{{ outputs.procesar_webhook.vars.edna_status }}"
+  - id: should_send
+    type: BOOLEAN
+    value: "{{ outputs.procesar_webhook.vars.should_send }}"
 
 triggers:
   - id: webhook
