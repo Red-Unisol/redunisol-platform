@@ -88,6 +88,6 @@ triggers:
   - id: webhook
     type: io.kestra.plugin.core.trigger.Webhook
     key: "{{ secret('BITRIX24_COBRANZAS_PROMESA_WEBHOOK_KEY') }}"
-    wait: true
-    returnOutputs: true
+    wait: false
+    returnOutputs: false
     responseContentType: application/json
