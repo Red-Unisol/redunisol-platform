@@ -80,6 +80,9 @@ outputs:
   - id: should_send
     type: BOOLEAN
     value: "{{ outputs.procesar_webhook.vars.should_send }}"
+  - id: payload_preview
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.payload_preview }}"
 
 triggers:
   - id: webhook
