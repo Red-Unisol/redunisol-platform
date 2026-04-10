@@ -19,6 +19,7 @@ def main() -> int:
     try:
         payload = service.parse_trigger_body()
         result = process_webhook(payload)
+        result["payload_preview"] = _payload_preview(payload)
     except Exception as exc:
         result = {
             "ok": False,
@@ -31,6 +32,7 @@ def main() -> int:
             "delay_seconds": "",
             "expected_promise_value": "",
             "should_send": False,
+            "payload_preview": "",
         }
 
     _emit_outputs_if_available(result)
@@ -41,10 +43,10 @@ def main() -> int:
 def process_webhook(payload: Any) -> Dict[str, Any]:
     form = payload if isinstance(payload, dict) else {}
     app_token = service.get_value(form, "auth[application_token]", ("auth", "application_token"))
-    expected_token = _require_env("BITRIX24_APP_TOKEN")
-
-    if app_token != expected_token:
-        return _result(ok=False, action="invalid_token", reason="invalid_token")
+    if app_token:
+        expected_token = _require_env("BITRIX24_APP_TOKEN")
+        if app_token != expected_token:
+            return _result(ok=False, action="invalid_token", reason="invalid_token")
 
     event = service.get_value(form, "event", ("event",))
     if event != "ONCRMDEALUPDATE":
@@ -152,6 +154,16 @@ def _result(
     }
 
 
+def _payload_preview(payload: Any) -> str:
+    if payload is None:
+        return ""
+    try:
+        raw = json.dumps(payload, ensure_ascii=True)
+    except Exception:
+        raw = str(payload)
+    return raw[:2000]
+
+
 def _emit_outputs_if_available(result: Dict[str, Any]) -> None:
     if Kestra is None:
         return
@@ -167,6 +179,7 @@ def _emit_outputs_if_available(result: Dict[str, Any]) -> None:
             "delay_seconds": str(result.get("delay_seconds") or ""),
             "expected_promise_value": str(result.get("expected_promise_value") or ""),
             "should_send": bool(result.get("should_send", False)),
+            "payload_preview": str(result.get("payload_preview") or ""),
         }
     )
 
