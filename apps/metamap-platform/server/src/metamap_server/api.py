@@ -99,6 +99,7 @@ def create_app(
             "status": "ok",
             "service": "metamap-platform-server",
             "version": __version__,
+            "git_sha": resolved_settings.git_sha,
         }
 
     @app.post("/api/v1/metamap/webhooks")

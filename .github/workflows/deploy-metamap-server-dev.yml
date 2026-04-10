@@ -70,6 +70,8 @@ jobs:
           context: apps/metamap-platform/server
           file: apps/metamap-platform/server/Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE_NAME }}:dev-latest

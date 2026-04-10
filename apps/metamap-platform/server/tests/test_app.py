@@ -38,6 +38,7 @@ class MetaMapServerApiTests(unittest.TestCase):
             ],
             webhook_secret="MetaSecret1234Ab",
             bank_callback_token="bank-token",
+            git_sha="test-git-sha",
         )
         self._resource_payloads: dict[str, dict] = {}
         self.client = TestClient(
@@ -61,6 +62,7 @@ class MetaMapServerApiTests(unittest.TestCase):
                 "status": "ok",
                 "service": "metamap-platform-server",
                 "version": __version__,
+                "git_sha": "test-git-sha",
             },
         )
 

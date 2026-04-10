@@ -21,6 +21,7 @@ class MetaMapServerConfigTests(unittest.TestCase):
             "METAMAP_SERVER_DATABASE_URL": "sqlite+pysqlite:///./test.db",
             "METAMAP_SERVER_WEBHOOK_SECRET": "MetaSecret1234Ab",
             "METAMAP_SERVER_BANK_CALLBACK_TOKEN": "bank-token",
+            "METAMAP_SERVER_GIT_SHA": "deadbeef123",
             "METAMAP_SERVER_METAMAP_CLIENT_ID": "meta-client-id",
             "METAMAP_SERVER_METAMAP_CLIENT_SECRET": "meta-client-secret",
             "METAMAP_SERVER_METAMAP_API_TOKEN": "meta-token",
@@ -34,6 +35,7 @@ class MetaMapServerConfigTests(unittest.TestCase):
         self.assertEqual(settings.database_url, "sqlite+pysqlite:///./test.db")
         self.assertEqual(settings.webhook_secret, "MetaSecret1234Ab")
         self.assertEqual(settings.bank_callback_token, "bank-token")
+        self.assertEqual(settings.git_sha, "deadbeef123")
         self.assertEqual(settings.metamap_client_id, "meta-client-id")
         self.assertEqual(settings.metamap_client_secret, "meta-client-secret")
         self.assertEqual(settings.metamap_api_token, "meta-token")
