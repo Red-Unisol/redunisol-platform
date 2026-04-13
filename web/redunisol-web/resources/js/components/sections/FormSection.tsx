@@ -116,8 +116,11 @@ const bancos = [
     'Otros',
 ];
 
+const WEBHOOK_URL =
+    'https://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol.prod.marketing-crm/bitrix24_form_webhook/bd_webhook_key_20260319_redunisol';
+
 interface FormData {
-    dni: string;
+    cuil: string;
     email: string;
     celular: string;
     terminos: boolean;
@@ -128,7 +131,7 @@ interface FormData {
 }
 
 const INITIAL_FORM: FormData = {
-    dni: '',
+    cuil: '',
     email: '',
     celular: '',
     terminos: false,
@@ -172,15 +175,15 @@ function Step1({
             <div className="space-y-5">
                 <div>
                     <label className="mb-1.5 block text-sm text-gray-500">
-                        DNI
+                        CUIL
                     </label>
                     <input
                         type="text"
                         inputMode="numeric"
-                        placeholder="Ej: 12345678"
-                        value={formData.dni}
+                        placeholder="Ej: 20-12345678-3"
+                        value={formData.cuil}
                         onChange={(e) =>
-                            setFormData((p) => ({ ...p, dni: e.target.value }))
+                            setFormData((p) => ({ ...p, cuil: e.target.value }))
                         }
                         className={inputCls}
                     />
@@ -500,14 +503,48 @@ export default function FormSection() {
     const [step, setStep] = useState(1);
     const [submitted, setSubmitted] = useState(false);
     const [formData, setFormData] = useState<FormData>(INITIAL_FORM);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleSubmit = async () => {
+        setIsSubmitting(true);
+        setSubmitError(null);
+
+        const payload: Record<string, string> = {};
+        if (formData.email) payload.email = formData.email;
+        if (formData.celular) payload.whatsapp = formData.celular;
+        if (formData.cuil) payload.cuil = formData.cuil;
+        if (formData.provincia) payload.province = formData.provincia;
+        if (formData.situacionLaboral)
+            payload.employment_status = formData.situacionLaboral;
+        if (formData.banco) payload.payment_bank = formData.banco;
+
+        try {
+            const res = await fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            setSubmitted(true);
+        } catch {
+            setSubmitError(
+                'Ocurrió un error al enviar. Por favor intentá de nuevo.',
+            );
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     const goNext = () => {
         if (step < TOTAL_STEPS) {
             setStep((s) => s + 1);
         } else {
-            setSubmitted(true);
+            void handleSubmit();
         }
     };
 
@@ -519,6 +556,7 @@ export default function FormSection() {
         setStep(1);
         setSubmitted(false);
         setFormData(INITIAL_FORM);
+        setSubmitError(null);
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -610,25 +648,38 @@ export default function FormSection() {
                     </div>
 
                     {!submitted && (
-                        <div
-                            className={`flex items-center px-6 pb-6 ${step > 1 ? 'justify-between' : 'justify-end'}`}
-                        >
-                            {step > 1 && (
+                        <div className="px-6 pb-6">
+                            {submitError && (
+                                <p className="mb-3 text-center text-sm text-red-500">
+                                    {submitError}
+                                </p>
+                            )}
+                            <div
+                                className={`flex items-center ${step > 1 ? 'justify-between' : 'justify-end'}`}
+                            >
+                                {step > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={goBack}
+                                        disabled={isSubmitting}
+                                        className="rounded-full border border-[#1e2d3d] px-6 py-2.5 text-sm font-semibold text-[#1e2d3d] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Volver
+                                    </button>
+                                )}
                                 <button
                                     type="button"
-                                    onClick={goBack}
-                                    className="rounded-full border border-[#1e2d3d] px-6 py-2.5 text-sm font-semibold text-[#1e2d3d] transition hover:bg-gray-50"
+                                    onClick={goNext}
+                                    disabled={isSubmitting}
+                                    className="rounded-full bg-[#1e2d3d] px-7 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d3f54] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    Volver
+                                    {step === TOTAL_STEPS
+                                        ? isSubmitting
+                                            ? 'Enviando...'
+                                            : 'Enviar'
+                                        : 'Continuar'}
                                 </button>
-                            )}
-                            <button
-                                type="button"
-                                onClick={goNext}
-                                className="rounded-full bg-[#1e2d3d] px-7 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
-                            >
-                                Continuar
-                            </button>
+                            </div>
                         </div>
                     )}
                 </div>
