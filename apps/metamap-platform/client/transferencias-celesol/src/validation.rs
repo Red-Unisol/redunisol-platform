@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 
-use crate::models::{CoreSnapshot, MetamapSnapshot, ValidationReport, ValidationSnapshot};
+use crate::models::{
+    CoinagTransferGuard, CoreSnapshot, MetamapSnapshot, ValidationReport, ValidationSnapshot,
+};
 
 pub fn normalize_digits(value: impl AsRef<str>) -> Option<String> {
     let digits: String = value
@@ -68,16 +70,17 @@ pub fn build_validation_report(
     server_validation: &ValidationSnapshot,
     metamap: &MetamapSnapshot,
     core: &CoreSnapshot,
-    already_transferred: bool,
+    transfer_guard: &CoinagTransferGuard,
 ) -> ValidationReport {
     let mut blockers = Vec::new();
     let mut warnings = Vec::new();
     let has_metamap_validation = server_validation.has_completed_validation();
 
-    if already_transferred {
-        blockers.push(
-            "La solicitud ya fue registrada como transferida en esta instalacion.".to_owned(),
-        );
+    match transfer_guard {
+        CoinagTransferGuard::Unknown | CoinagTransferGuard::NotFound => {}
+        CoinagTransferGuard::YaTransferida => blockers.push("YA TRANSFERIDA".to_owned()),
+        CoinagTransferGuard::EnProceso => blockers.push("EN PROCESO".to_owned()),
+        CoinagTransferGuard::Error { .. } => blockers.push("ERROR".to_owned()),
     }
 
     if !has_metamap_validation {
@@ -206,7 +209,9 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::build_validation_report;
-    use crate::models::{CoreSnapshot, MetamapSnapshot, ValidationSnapshot};
+    use crate::models::{
+        CoinagTransferGuard, CoreSnapshot, MetamapSnapshot, ValidationSnapshot,
+    };
 
     fn valid_core_snapshot() -> CoreSnapshot {
         CoreSnapshot {
@@ -237,7 +242,7 @@ mod tests {
             &ValidationSnapshot::default(),
             &MetamapSnapshot::default(),
             &valid_core_snapshot(),
-            false,
+            &CoinagTransferGuard::NotFound,
         );
 
         assert!(report.blockers.is_empty());
@@ -259,7 +264,7 @@ mod tests {
             &ValidationSnapshot::default(),
             &MetamapSnapshot::default(),
             &core,
-            false,
+            &CoinagTransferGuard::NotFound,
         );
 
         assert_eq!(report.warnings.len(), 1);
@@ -293,7 +298,7 @@ mod tests {
                 ..Default::default()
             },
             &valid_core_snapshot(),
-            false,
+            &CoinagTransferGuard::NotFound,
         );
 
         assert!(
@@ -320,6 +325,32 @@ mod tests {
                 .iter()
                 .any(|value| value.contains("Monto no coincide"))
         );
+        assert!(!report.can_transfer());
+    }
+
+    #[test]
+    fn remote_transfer_status_blocks_when_already_transferred() {
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &valid_core_snapshot(),
+            &CoinagTransferGuard::YaTransferida,
+        );
+
+        assert!(report.blockers.iter().any(|value| value == "YA TRANSFERIDA"));
+        assert!(!report.can_transfer());
+    }
+
+    #[test]
+    fn remote_transfer_status_blocks_when_in_progress() {
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &valid_core_snapshot(),
+            &CoinagTransferGuard::EnProceso,
+        );
+
+        assert!(report.blockers.iter().any(|value| value == "EN PROCESO"));
         assert!(!report.can_transfer());
     }
 }

@@ -55,7 +55,6 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_OPERATOR_NAME`
 - `TRANSFERENCIAS_POLL_INTERVAL_SECONDS` default `20`
 - `TRANSFERENCIAS_RECEIPTS_DIR`
-- `TRANSFERENCIAS_COMPLETED_LOG_PATH`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
 
 Coinag para habilitar `Transferir`:
@@ -199,11 +198,9 @@ Este binario no versiona secretos. La configuracion real debe quedar fuera de Gi
 
 En builds no-debug, si la configuracion viene desde archivo, ese archivo debe estar cifrado como `transferencias.env.enc`.
 
-El archivo local de solicitudes ya transferidas bloquea reenvios desde esa misma instalacion. No coordina automaticamente entre PCs distintas.
+Antes de habilitar `Transferir`, la app consulta Coinag por `idTrxCliente` derivado del numero de solicitud:
 
-Ese registro local tambien guarda, para cada transferencia real:
-
-- `external_transfer_id`
-- el JSON completo de respuesta exitosa de Coinag
-
-Con el shape observado en produccion, `external_transfer_id` se toma de `debito.idTrx`.
+- si Coinag responde `SIN_REGISTROS`, permite transferir
+- si Coinag responde estado `1`, bloquea como `YA TRANSFERIDA`
+- si Coinag responde estado `2`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
+- para cualquier otra respuesta, bloquea como `ERROR`

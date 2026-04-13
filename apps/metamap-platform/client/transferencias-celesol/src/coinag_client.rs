@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::{
     config::CoinagConfig,
-    models::HydratedCase,
+    models::{CoinagTransferGuard, HydratedCase},
     ssh_transport::{SshHttpClient, TransportRequest, TransportResponse},
     validation::{format_money, normalize_digits, parse_decimal},
 };
@@ -202,6 +202,26 @@ impl CoinagClient {
         &self,
         request_number: &str,
     ) -> Result<TransferLookupResponse> {
+        match self.request_transfer_lookup(request_number) {
+            Ok(response) => Ok(response),
+            Err(error) if is_transfer_not_found_error(&error) => {
+                Err(anyhow!("No hubo transferencia para esa solicitud en Coinag."))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn fetch_transfer_guard_status(&self, request_number: &str) -> CoinagTransferGuard {
+        match self.request_transfer_lookup(request_number) {
+            Ok(response) => map_transfer_guard_status(&response.body),
+            Err(error) if is_transfer_not_found_error(&error) => CoinagTransferGuard::NotFound,
+            Err(error) => CoinagTransferGuard::Error {
+                detail: error.to_string(),
+            },
+        }
+    }
+
+    fn request_transfer_lookup(&self, request_number: &str) -> Result<TransferLookupResponse> {
         let normalized_request_number = normalize_digits(request_number).ok_or_else(|| {
             anyhow!("Numero de solicitud invalido. Ingresa digitos, con o sin puntos.")
         })?;
@@ -211,7 +231,7 @@ impl CoinagClient {
             normalized_request_number,
             id_trx_cliente
         );
-        let body = match self.request_authorized_json(
+        let body = self.request_authorized_json(
             Method::GET,
             format!(
                 "{}/TransferenciaByIdTrxCliente/{}",
@@ -219,15 +239,7 @@ impl CoinagClient {
                 id_trx_cliente
             ),
             RequestBody::default(),
-        ) {
-            Ok(body) => body,
-            Err(error) if is_transfer_not_found_error(&error) => {
-                return Err(anyhow!(
-                    "No hubo transferencia para esa solicitud en Coinag."
-                ));
-            }
-            Err(error) => return Err(error),
-        };
+        )?;
         Ok(TransferLookupResponse {
             request_number: normalized_request_number,
             id_trx_cliente,
@@ -759,6 +771,29 @@ fn is_transfer_not_found_error(error: &anyhow::Error) -> bool {
     error
         .chain()
         .any(|cause| cause.to_string().contains("SIN_REGISTROS"))
+}
+
+fn map_transfer_guard_status(body: &Value) -> CoinagTransferGuard {
+    match extract_transfer_status_code(body).as_deref() {
+        Some("1") => CoinagTransferGuard::YaTransferida,
+        Some("2") => CoinagTransferGuard::EnProceso,
+        Some("3") => CoinagTransferGuard::Error {
+            detail: "Coinag devolvio estado 3 para la solicitud.".to_owned(),
+        },
+        Some(other) => CoinagTransferGuard::Error {
+            detail: format!("Coinag devolvio un estado no esperado: {other}."),
+        },
+        None => CoinagTransferGuard::Error {
+            detail: "Coinag no devolvio un estado interpretable para la solicitud.".to_owned(),
+        },
+    }
+}
+
+fn extract_transfer_status_code(body: &Value) -> Option<String> {
+    body.get("response")
+        .unwrap_or(body)
+        .get("estado")
+        .and_then(value_to_string)
 }
 
 #[cfg(test)]
