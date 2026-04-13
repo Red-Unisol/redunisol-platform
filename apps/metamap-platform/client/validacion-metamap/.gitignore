@@ -1,4 +1,6 @@
 target/
+dist/
+package-input/
 *.local.env
 *.env
 validacion-metamap.env

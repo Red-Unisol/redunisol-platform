@@ -44,3 +44,33 @@ cargo build --release
 ```
 
 El ejecutable espera `validacion-metamap.env` en el mismo directorio, salvo que se defina `VALIDACION_METAMAP_CONFIG_PATH`.
+
+## Build local de paquete
+
+Para armar un zip local con el `.exe` y su entorno listo para distribuir:
+
+```powershell
+.\build-package.ps1
+```
+
+El script busca el entorno en este orden:
+
+- `package-input/validacion-metamap.env`
+- `validacion-metamap.env`
+
+Si queres usar otro archivo:
+
+```powershell
+.\build-package.ps1 -EnvPath .\alguna-ruta\validacion-metamap.env
+```
+
+El empaquetado genera:
+
+- una carpeta en `dist/staging/`
+- un zip final en `dist/`
+
+El paquete incluye:
+
+- `validacion-metamap.exe`
+- `validacion-metamap.env`
+- `README.md`
