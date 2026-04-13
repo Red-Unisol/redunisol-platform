@@ -132,11 +132,12 @@ Recomendacion importante para que el paquete funcione sin tocar rutas por instal
 
 Asi las rutas quedan relativas al archivo `transferencias.env.enc` que viaja dentro del mismo zip.
 
-## Logs de debug
+## Logs
 
-En builds `debug`, la app escribe logs descriptivos por defecto en:
+La app escribe logs descriptivos por defecto en:
 
-- `target/debug/logs/transferencias-debug.log`
+- en builds `debug`: `target/debug/logs/transferencias-debug.log`
+- en builds no-debug: `logs/transferencias.log` al lado del `.exe`
 
 Si queres cambiar la ubicacion, defini:
 

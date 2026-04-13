@@ -1,6 +1,6 @@
 pub const APP_NAME: &str = "Transferencias Celesol";
-pub const BUILD_TAG: &str = "1.01";
-pub const APP_NAME_WITH_TAG: &str = "Transferencias Celesol 1.01";
+pub const BUILD_TAG: &str = env!("CARGO_PKG_VERSION");
+pub const APP_NAME_WITH_TAG: &str = concat!("Transferencias Celesol ", env!("CARGO_PKG_VERSION"));
 
 pub mod app;
 pub mod coinag_client;

@@ -5416,7 +5416,7 @@ dependencies = [
 
 [[package]]
 name = "transferencias-celesol"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
