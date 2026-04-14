@@ -1,4 +1,6 @@
+import useTracking from '@/hooks/useTracking';
 import { usePage } from '@inertiajs/react';
+
 import { useState } from 'react';
 
 import About, { type AboutSection } from '@/components/about';
@@ -42,6 +44,7 @@ export default function Page() {
     const requisitos = useSection<RequisitosData>(sections, 'requisitos');
     const testimonios = useSection<TestimoniosData>(sections, 'testimonios');
     const formConfig = useSection<FormSectionConfig>(sections, 'form');
+    useTracking();
 
     return (
         <>
