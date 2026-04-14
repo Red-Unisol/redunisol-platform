@@ -11,7 +11,7 @@ import requests
 
 
 DEFAULT_BASE_URL = "https://servicioscf.afip.gob.ar/publico/crmcit/"
-DEFAULT_TIMEOUT_SECONDS = 20.0
+DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 DEFAULT_TIPO_DOC = "96"
 

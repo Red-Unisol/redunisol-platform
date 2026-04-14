@@ -26,7 +26,7 @@ tasks:
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
       AFIP_CRM_BASE_URL: "https://servicioscf.afip.gob.ar/publico/crmcit/"
-      AFIP_TIMEOUT_SECONDS: "20"
+      AFIP_TIMEOUT_SECONDS: "60"
       AFIP_USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
     commands:
       - python -m afip_contacto_por_dni.kestra_webhook_entrypoint
