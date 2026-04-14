@@ -21,9 +21,9 @@ export interface FormSectionConfig {
     celular: FormFieldConfig;
     terminos: FormFieldConfig;
     recibo: { enabled: boolean; label: string };
-    provincia: { enabled: boolean };
-    situacionLaboral: FormFieldConfig;
-    banco: FormFieldConfig;
+    provincia: { enabled: boolean; defaultValue?: string };
+    situacionLaboral: FormFieldConfig & { defaultValue?: string };
+    banco: FormFieldConfig & { defaultValue?: string };
 }
 
 const DEFAULT_CONFIG: FormSectionConfig = {
@@ -543,14 +543,17 @@ function Step4({
 
 function ResultModal({
     result,
+    errorMessage,
     onClose,
     onReset,
 }: {
-    result: 'success' | 'error';
+    result: 'success' | 'error' | 'not_qualified';
+    errorMessage: string | null;
     onClose: () => void;
     onReset: () => void;
 }) {
     const isSuccess = result === 'success';
+    const isNotQualified = result === 'not_qualified';
 
     return (
         <motion.div
@@ -589,7 +592,11 @@ function ResultModal({
                         duration: 0.5,
                     }}
                     className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full ${
-                        isSuccess ? 'bg-[#6BAF9220]' : 'bg-red-50'
+                        isSuccess
+                            ? 'bg-[#6BAF9220]'
+                            : isNotQualified
+                              ? 'bg-amber-50'
+                              : 'bg-red-50'
                     }`}
                 >
                     {isSuccess ? (
@@ -602,7 +609,11 @@ function ResultModal({
                         <WarningCircleIcon
                             size={38}
                             weight="fill"
-                            className="text-red-500"
+                            className={
+                                isNotQualified
+                                    ? 'text-amber-500'
+                                    : 'text-red-500'
+                            }
                         />
                     )}
                 </motion.div>
@@ -614,7 +625,11 @@ function ResultModal({
                     transition={{ delay: 0.2 }}
                     className="mb-2 text-xl font-bold text-[#1e2d3d]"
                 >
-                    {isSuccess ? '¡Solicitud enviada!' : 'Algo salió mal'}
+                    {isSuccess
+                        ? '¡Solicitud enviada!'
+                        : isNotQualified
+                          ? 'No precalificás'
+                          : 'Algo salió mal'}
                 </motion.h3>
 
                 {/* Description */}
@@ -626,7 +641,11 @@ function ResultModal({
                 >
                     {isSuccess
                         ? 'Hemos enviado tu solicitud a las entidades. Te contactaremos con la mejor oferta disponible.'
-                        : 'Ocurrió un error al enviar tu solicitud. Revisá tu conexión y volvé a intentarlo.'}
+                        : isNotQualified
+                          ? (errorMessage ??
+                            'Tu situación no califica para esta solicitud.')
+                          : (errorMessage ??
+                            'Ocurrió un error al enviar tu solicitud. Revisá tu conexión y volvé a intentarlo.')}
                 </motion.p>
 
                 {/* Actions */}
@@ -647,6 +666,26 @@ function ResultModal({
                         >
                             Listo
                         </button>
+                    ) : isNotQualified ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
+                            >
+                                Entendido
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onReset();
+                                    onClose();
+                                }}
+                                className="text-sm text-gray-400 transition hover:text-gray-600 hover:underline"
+                            >
+                                Empezar de nuevo
+                            </button>
+                        </>
                     ) : (
                         <>
                             <button
@@ -705,7 +744,10 @@ export default function FormSection({
     );
 
     const [step, setStep] = useState(1); // always starts at 1, which is always enabled
-    const [result, setResult] = useState<'success' | 'error' | null>(null);
+    const [result, setResult] = useState<
+        'success' | 'error' | 'not_qualified' | null
+    >(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [formData, setFormData] = useState<LeadFormData>(INITIAL_FORM);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [reciboUrl, setReciboUrl] = useState<string | null>(null);
@@ -741,10 +783,24 @@ export default function FormSection({
         if (formData.email) payload.email = formData.email;
         if (formData.celular) payload.celular = formData.celular;
         if (formData.cuil) payload.cuil = formData.cuil;
-        if (formData.provincia) payload.provincia = formData.provincia;
-        if (formData.situacionLaboral)
-            payload.situacion_laboral = formData.situacionLaboral;
-        if (formData.banco) payload.banco = formData.banco;
+        if (cfg.provincia.enabled) {
+            if (formData.provincia) payload.provincia = formData.provincia;
+        } else if (cfg.provincia.defaultValue) {
+            payload.provincia = cfg.provincia.defaultValue;
+        }
+
+        if (cfg.situacionLaboral.enabled) {
+            if (formData.situacionLaboral)
+                payload.situacion_laboral = formData.situacionLaboral;
+        } else if (cfg.situacionLaboral.defaultValue) {
+            payload.situacion_laboral = cfg.situacionLaboral.defaultValue;
+        }
+
+        if (cfg.banco.enabled) {
+            if (formData.banco) payload.banco = formData.banco;
+        } else if (cfg.banco.defaultValue) {
+            payload.banco = cfg.banco.defaultValue;
+        }
         if (reciboUrl) payload.recibo_url = reciboUrl;
 
         for (const key of [
@@ -765,14 +821,28 @@ export default function FormSection({
                 body: JSON.stringify(payload),
             });
 
-            const data = (await res.json()) as { ok?: boolean };
+            const data = (await res.json()) as {
+                ok?: boolean;
+                message?: string;
+                qualified?: boolean;
+            };
 
             if (!res.ok || data.ok === false) {
-                throw new Error(`HTTP ${res.status}`);
+                setErrorMessage(data.message ?? null);
+                setResult('error');
+                return;
             }
 
+            if (data.qualified === false) {
+                setErrorMessage(data.message ?? null);
+                setResult('not_qualified');
+                return;
+            }
+
+            setErrorMessage(null);
             setResult('success');
         } catch {
+            setErrorMessage(null);
             setResult('error');
         } finally {
             setIsSubmitting(false);
@@ -948,7 +1018,11 @@ export default function FormSection({
                 {result !== null && (
                     <ResultModal
                         result={result}
-                        onClose={() => setResult(null)}
+                        errorMessage={errorMessage}
+                        onClose={() => {
+                            setResult(null);
+                            setErrorMessage(null);
+                        }}
                         onReset={handleReset}
                     />
                 )}
