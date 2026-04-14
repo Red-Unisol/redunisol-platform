@@ -9,10 +9,12 @@ use App\Filament\Resources\Pages\Tables\PagesTable;
 use App\Models\Page;
 use BackedEnum;
 use Filament\Forms\Components\Builder;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -107,7 +109,6 @@ class PageResource extends Resource
                                     TextInput::make('href')
                                         ->label('Enlace (href)')
                                         ->helperText('Ej: /prestamos-para-policias — dejalo vacío si todavía no tiene página.')
-                                        ->url()
                                         ->nullable(),
                                 ])
                                 ->defaultItems(1)
@@ -146,8 +147,7 @@ class PageResource extends Resource
 
                                     TextInput::make('image')
                                         ->label('URL de imagen')
-                                        ->helperText('Ruta relativa o URL absoluta. Ej: /images/mutuales/logo.avif')
-                                        ->url(),
+                                        ->helperText('Ruta relativa o URL absoluta. Ej: /images/mutuales/logo.avif'),
                                 ])
                                 ->defaultItems(0)
                                 ->reorderable()
@@ -278,6 +278,93 @@ class PageResource extends Resource
                                 ->defaultItems(1)
                                 ->reorderable()
                                 ->collapsible(),
+                        ]),
+
+                    // ──────────────────────────────────────────
+                    // FORM
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('form')
+                        ->label('Formulario de solicitud')
+                        ->icon('heroicon-o-document-text')
+                        ->schema([
+
+                            Fieldset::make('Paso 1 — Datos personales')
+                                ->schema([
+                                    Toggle::make('cuil.enabled')
+                                        ->label('CUIL habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('cuil.label')
+                                        ->label('Label del campo')
+                                        ->default('CUIL'),
+
+                                    Toggle::make('email.enabled')
+                                        ->label('Email habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('email.label')
+                                        ->label('Label del campo')
+                                        ->default('Email'),
+
+                                    Toggle::make('celular.enabled')
+                                        ->label('Celular habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('celular.label')
+                                        ->label('Label del campo')
+                                        ->default('Celular / WhatsApp'),
+
+                                    Toggle::make('terminos.enabled')
+                                        ->label('Términos y Condiciones habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('terminos.label')
+                                        ->label('Texto del checkbox')
+                                        ->default('Acepto los Términos y Condiciones y la Política de Privacidad'),
+                                ])
+                                ->columns(2),
+
+                            Fieldset::make('Paso 2 — Recibo de sueldo')
+                                ->schema([
+                                    Toggle::make('recibo.enabled')
+                                        ->label('Paso habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('recibo.label')
+                                        ->label('Título del paso')
+                                        ->default('Subí tu recibo de sueldo'),
+                                ])
+                                ->columns(2),
+
+                            Fieldset::make('Paso 3 — Provincia')
+                                ->schema([
+                                    Toggle::make('provincia.enabled')
+                                        ->label('Paso habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                ])
+                                ->columns(1),
+
+                            Fieldset::make('Paso 4 — Situación laboral y banco')
+                                ->schema([
+                                    Toggle::make('situacionLaboral.enabled')
+                                        ->label('Situación laboral habilitada')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('situacionLaboral.label')
+                                        ->label('Label del campo')
+                                        ->default('¿Cuál es su situación laboral?'),
+
+                                    Toggle::make('banco.enabled')
+                                        ->label('Banco habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('banco.label')
+                                        ->label('Label del campo')
+                                        ->default('¿Cuál es su banco de cobro?'),
+                                ])
+                                ->columns(2),
+
                         ]),
 
                 ])
