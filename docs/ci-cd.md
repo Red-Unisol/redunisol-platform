@@ -113,6 +113,7 @@ Comportamiento:
 - suben `docker-compose.vps.yml` y `.env` a la VPS
 - levantan una topologia con `nginx`, `php-fpm`, `postgres` y `redis`
 - preservan estado runtime en volumenes persistentes de base de datos, redis y storage
+- exponen al contenedor `php-fpm` una whitelist explicita de variables runtime desde `deploy/docker-compose.vps.yml`
 - validan en la VPS que `php-fpm` tenga `public/build/manifest.json`
 - validan la aplicacion por HTTP usando el `Host` y el bind interno definidos en el runtime env
 
@@ -122,6 +123,7 @@ Importante:
 - PostgreSQL, Redis y storage mantienen el estado mutable del producto
 - este flujo sigue el modelo operativo documentado en `docs/redunisol-web-operating-model.md`
 - el runbook operativo y la separacion entre desarrollo e integracion quedaron documentados en `docs/redunisol-web-deploy-runbook.md`
+- si una clave nueva la consume Laravel/PHP en runtime, no alcanza con agregarla al `.env.enc`; tambien hay que mapearla en `environment:` de `php-fpm`
 
 ## Redunisol Web: Flujo Runtime Y `.env`
 
@@ -140,10 +142,19 @@ Para deploy:
 5. sube el archivo final como `.env` al target remoto
 6. ejecuta `docker compose --env-file .env ...`
 
+Importante en la topologia actual:
+
+- el `.env` remoto no se monta como `/var/www/.env` dentro de `php-fpm`
+- `php-fpm` recibe una lista explicita de variables desde `web/redunisol-web/deploy/docker-compose.vps.yml`
+- si Laravel/PHP necesita una clave nueva en runtime, hay que tocar tanto `deploy/*.env.enc` como `deploy/docker-compose.vps.yml`
+- hoy ese contrato incluye el bridge de formularios (`KESTRA_FORM_*`) y el bloque GTM renderizado desde Blade (`GTM_*`)
+- las flags `VITE_TRACKING_DEBUG` y `VITE_GA4_DEBUG` pertenecen al build frontend y deben existir en el contexto donde se compilan assets
+
 Este detalle importa porque ya hubo dos fallas reales resueltas en GitHub Actions:
 
 - CRLF en el `.env` descifrado
 - falta de salto de linea final antes de agregar `APP_IMAGE` y `WEB_IMAGE`
+- `php-fpm` sin acceso a `KESTRA_FORM_*` aunque el `.env` remoto ya tenia las claves, porque el compose no las exportaba al contenedor
 
 Estado verificado al 2026-03-27 para `redunisol-web`:
 
@@ -151,6 +162,12 @@ Estado verificado al 2026-03-27 para `redunisol-web`:
 - workflow dev funcionando end to end
 - validacion HTTP `200 OK` en `dev.redunisol.com.ar`
 - runtime dev operativo en VPS
+
+Actualizacion verificada al 2026-04-14 para `redunisol-web`:
+
+- el endpoint `POST /api/form-submissions` quedo operativo para reenviar leads a Kestra desde Laravel
+- `KESTRA_FORM_WEBHOOK_URL`, `KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS` y `KESTRA_FORM_DEFAULT_LEAD_SOURCE` quedaron mapeadas al `php-fpm` remoto
+- el frontend sumo tracking con GTM y flags de debug; `GTM_*` afecta runtime web y `VITE_*` afecta build frontend
 
 ## Script De Deploy
 
@@ -161,7 +178,8 @@ Responsabilidades:
 - resolver dominios objetivo
 - construir namespace final por ambiente
 - reescribir el namespace dentro del YAML antes de publicar
-- subir flows por API
+- consultar si el flow ya existe antes de publicarlo
+- actualizar flows existentes con `PUT` al recurso puntual o crearlos con `POST /flows` cuando faltan
 - subir namespace files por API
 
 Patron actual de namespace:

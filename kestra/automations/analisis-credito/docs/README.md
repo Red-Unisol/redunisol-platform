@@ -6,6 +6,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
+- `afip_contacto_por_dni`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
 - `consulta_quiebra_credix_http`
@@ -107,6 +108,62 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
+
+## afip_contacto_por_dni
+
+Consulta AFIP/ARCA por tipo y numero de documento y devuelve nombre mas CUIL normalizados.
+
+### Entrada
+
+Webhook `POST` con JSON:
+
+```json
+{ "dni": "34.838.205", "tipo_doc": 96 }
+```
+
+Tambien acepta:
+
+- `dni`, `nro_doc` o `documento` dentro de un objeto JSON
+- un numero o string simple en el body, tratado como DNI
+- si no se informa `tipo_doc`, usa `96`
+
+### Salida
+
+Outputs principales:
+
+- `ok` (bool)
+- `found` (bool)
+- `dni` (string)
+- `tipo_doc` (string)
+- `cuil` (string)
+- `nombre` (string)
+- `response_json` (string JSON con el contrato minimo)
+- `raw_response_json` (string JSON con el payload bruto de AFIP)
+- `error` (string | vacio)
+
+Contrato serializado en `response_json`:
+
+- `{"ok":true,"found":true,"dni":"34838205","tipo_doc":"96","cuil":"27348382050","nombre":"...","error":"","source":"afip_crmcit"}`
+- `{"ok":true,"found":false,...}` si AFIP no devuelve filas
+- `{"ok":false,...}` si el request es invalido o la consulta falla
+
+### Variables
+
+Configuracion inline en el flow:
+
+- `AFIP_CRM_BASE_URL=https://servicioscf.afip.gob.ar/publico/crmcit/`
+- `AFIP_TIMEOUT_SECONDS=60`
+- `AFIP_USER_AGENT=Mozilla/5.0 (...) Chrome/147.0.0.0 Safari/537.36`
+
+Notas:
+
+- el flow primero carga `consulta.aspx` y despues consulta `data/apis/Contactos.aspx/GetContactoPorTipoDocumento`
+- `AFIP_TIMEOUT_SECONDS` quedo en `60` para absorber latencia observada en runtime
+- hoy el trigger usa una key literal de desarrollo en el YAML; antes de promotion a un circuito mas estable conviene moverla a `secret(...)` para alinearlo con la politica general del repo
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/afip_contacto_por_dni/**`
 
 ## incoming_metamap_bridge
 

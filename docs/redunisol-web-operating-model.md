@@ -67,6 +67,17 @@ Modelo esperado:
 
 GitHub Actions se usa como mecanismo de ejecucion, no como fuente primaria de configuracion funcional.
 
+En la topologia actual hay dos capas tecnicas distintas:
+
+- variables de runtime PHP/Laravel que entran al contenedor `php-fpm` via `web/redunisol-web/deploy/docker-compose.vps.yml`
+- variables de build frontend consumidas por Vite durante la construccion de assets
+
+Consecuencias practicas:
+
+- agregar una clave a `deploy/*.env.enc` no alcanza si Laravel/PHP la necesita en runtime; tambien hay que mapearla en `environment:` del compose remoto
+- si la clave es `VITE_*`, debe estar disponible en el contexto donde se construyen los assets
+- hoy esto aplica, por ejemplo, al bridge de formularios hacia Kestra y al tracking GTM/debug de la web
+
 ## Storage Y Persistencia
 
 Como el panel admin va a estar activo, hay que asumir persistencia real fuera del contenedor.
@@ -124,6 +135,7 @@ Para evitar ambiguedad operativa, la separacion actual queda asi:
 En la practica:
 
 - el dev puede trabajar sobre codigo, frontend, backend, tests, migraciones y configuracion declarativa dentro de la repo
+- si un cambio de codigo agrega consumo de nuevas variables de entorno, webhooks externos o tracking, tiene que marcarlo en el PR aunque el cambio principal viva en `app/`, `config/`, `routes/` o `resources/`
 - si un cambio necesita tocar `.env` reales, DNS, Apache, SSL, host, secretos o runtime externo, no debe resolverse manualmente por desarrollo
 - esos cambios deben quedar explicitados en el pull request para que integracion los aplique
 
