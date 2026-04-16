@@ -84,6 +84,9 @@ Ejemplos reales:
 - `ENV_VIMARX_TIMEOUT_SECONDS`
 - `ENV_VIMARX_VERIFY_TLS`
 - `ENV_BITRIX24_BASE_URL`
+- `ENV_BITRIX24_LEAD_BCRA_STATUS_FIELD`
+- `ENV_BITRIX24_LEAD_BCRA_RESULT_FIELD`
+- `ENV_BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
@@ -120,6 +123,26 @@ El camino correcto hoy es:
 6. probar en dev
 
 La UI no deberia ser la fuente normal de configuracion persistente, porque rompe el modelo Git-managed de esta repo.
+
+## Variables Nuevas Para Snapshot BCRA En Marketing CRM
+
+La integracion de `marketing-crm` con Central de Deudores agrega tres variables no sensibles nuevas para persistir el snapshot en Bitrix24:
+
+- `ENV_BITRIX24_LEAD_BCRA_STATUS_FIELD`
+- `ENV_BITRIX24_LEAD_BCRA_RESULT_FIELD`
+- `ENV_BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD`
+
+Uso previsto:
+
+- `status`: texto corto para estados como `OK`, `SIN_DATOS`, `NEGATIVO` o `IDENTIFICACION_INVALIDA`
+- `result`: payload JSON compacto con el resumen de la consulta
+- `checked_at`: timestamp ISO UTC de la ultima consulta
+
+Importante:
+
+- los IDs reales de esos campos deben existir previamente en Bitrix24
+- si esos campos no estan configurados, la clasificacion puede seguir consultando BCRA para decidir rechazo, pero no persistira snapshot
+- el flow programado `bitrix24_bcra_backfill` se auto-omite hasta que esas tres variables esten configuradas
 
 ## Opcion Recomendada Para Evitar Doble Actualizacion
 

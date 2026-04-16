@@ -14,7 +14,7 @@ class BitrixClient:
         self.config = config
         self.logger = logger
 
-    def call(self, method: str, payload: dict[str, Any]) -> Any:
+    def call_full(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.config.base_url}/{self.config.webhook_path}/{method}.json"
         self.logger.info(f"Invocando {method} en Bitrix24.")
         data = json.dumps(payload).encode("utf-8")
@@ -38,7 +38,10 @@ class BitrixClient:
             description = response_payload.get("error_description") or f"Bitrix24 devolvio un error en {method}."
             raise RuntimeError(description)
 
-        return response_payload.get("result")
+        return response_payload
+
+    def call(self, method: str, payload: dict[str, Any]) -> Any:
+        return self.call_full(method, payload).get("result")
 
     def get_lead_field(self, field_name: str) -> dict[str, Any]:
         fields = self.call("crm.lead.fields", {})

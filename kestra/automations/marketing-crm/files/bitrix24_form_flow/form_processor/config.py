@@ -35,11 +35,24 @@ class BitrixFieldsConfig:
     lead_province: str
     lead_source: str
     lead_rejection_reason: str
+    lead_bcra_status: str | None
+    lead_bcra_result: str | None
+    lead_bcra_checked_at: str | None
     lead_utm_source: str
     lead_utm_medium: str
     lead_utm_campaign: str
     lead_utm_term: str
     lead_utm_content: str
+
+    def has_bcra_storage_fields(self) -> bool:
+        return all(
+            field_name
+            for field_name in (
+                self.lead_bcra_status,
+                self.lead_bcra_result,
+                self.lead_bcra_checked_at,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -97,6 +110,9 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 "BITRIX24_LEAD_REJECTION_REASON_FIELD",
                 DEFAULT_LEAD_FIELDS["rejection_reason"],
             ),
+            lead_bcra_status=_optional_env(source, "BITRIX24_LEAD_BCRA_STATUS_FIELD"),
+            lead_bcra_result=_optional_env(source, "BITRIX24_LEAD_BCRA_RESULT_FIELD"),
+            lead_bcra_checked_at=_optional_env(source, "BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD"),
             lead_utm_source=source.get(
                 "BITRIX24_LEAD_UTM_SOURCE_FIELD",
                 DEFAULT_LEAD_FIELDS["utm_source"],
@@ -141,6 +157,11 @@ def _required_env(env: dict[str, str], key: str) -> str:
     if not value:
         raise ValueError(f"Falta la variable de entorno requerida: {key}.")
     return value
+
+
+def _optional_env(env: dict[str, str], key: str) -> str | None:
+    value = env.get(key, "").strip()
+    return value or None
 
 
 def _optional_int(env: dict[str, str], key: str, *, default: int) -> int:

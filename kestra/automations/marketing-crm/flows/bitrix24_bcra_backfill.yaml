@@ -1,25 +1,16 @@
-id: bitrix24_lead_classification
+id: bitrix24_bcra_backfill
 namespace: redunisol
 
-description: Clasifica un lead de Bitrix24 por lead_id y actualiza su estado final.
+description: Consulta BCRA para leads del dia sin snapshot previo y corta el lote si el upstream rate-limita.
 
 labels:
   env: prod
   team: redunisol
-  kind: internal
+  kind: scheduled
   integration: bitrix24
 
-inputs:
-  - id: lead_id
-    type: STRING
-    required: true
-  - id: force_processing
-    type: BOOLEAN
-    required: true
-    defaults: false
-
 tasks:
-  - id: clasificar
+  - id: sincronizar_bcra
     type: io.kestra.plugin.scripts.python.Commands
     namespaceFiles:
       enabled: true
@@ -31,8 +22,6 @@ tasks:
     beforeCommands:
       - pip install kestra > /dev/null
     env:
-      LEAD_ID: "{{ inputs.lead_id }}"
-      FORCE_PROCESSING: "{{ inputs.force_processing }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
@@ -52,30 +41,41 @@ tasks:
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
-      - python -m bitrix24_form_flow.kestra_lead_classification_entrypoint
+      - python -m bitrix24_form_flow.kestra_bcra_backfill_entrypoint
 
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ outputs.clasificar.vars.ok }}"
-  - id: qualified
-    type: BOOLEAN
-    value: "{{ outputs.clasificar.vars.qualified }}"
-  - id: contact_id
-    type: STRING
-    value: "{{ outputs.clasificar.vars.contact_id }}"
-  - id: lead_id
-    type: STRING
-    value: "{{ outputs.clasificar.vars.lead_id }}"
-  - id: lead_status
-    type: STRING
-    value: "{{ outputs.clasificar.vars.lead_status }}"
+    value: "{{ outputs.sincronizar_bcra.vars.ok }}"
   - id: action
     type: STRING
-    value: "{{ outputs.clasificar.vars.action }}"
-  - id: reason
+    value: "{{ outputs.sincronizar_bcra.vars.action }}"
+  - id: processed_count
     type: STRING
-    value: "{{ outputs.clasificar.vars.reason }}"
+    value: "{{ outputs.sincronizar_bcra.vars.processed_count }}"
+  - id: populated_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.populated_count }}"
+  - id: rejected_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.rejected_count }}"
+  - id: skipped_populated_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.skipped_populated_count }}"
+  - id: skipped_missing_cuil_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.skipped_missing_cuil_count }}"
+  - id: temporary_error_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.temporary_error_count }}"
+  - id: rate_limited
+    type: BOOLEAN
+    value: "{{ outputs.sincronizar_bcra.vars.rate_limited }}"
   - id: message
     type: STRING
-    value: "{{ outputs.clasificar.vars.message }}"
+    value: "{{ outputs.sincronizar_bcra.vars.message }}"
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .input_parser import NormalizedInput, normalize_business_input
@@ -110,6 +112,73 @@ def update_lead_status(
         )
     client.call("crm.lead.update", {"id": lead_id, "fields": fields})
     return status_id
+
+
+def update_lead_bcra_snapshot(
+    client: BitrixClient,
+    config: AppConfig,
+    lead_id: int,
+    bcra_result: BcraConsultationResult,
+    logger: Logger,
+) -> None:
+    if not config.fields.has_bcra_storage_fields():
+        raise RuntimeError("La configuracion no incluye los campos de storage BCRA.")
+
+    logger.info(f"Persistiendo snapshot BCRA en el lead {lead_id}.")
+    fields = {
+        config.fields.lead_bcra_status: bcra_result.status_field_value,
+        config.fields.lead_bcra_result: json.dumps(
+            bcra_result.summary,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ),
+        config.fields.lead_bcra_checked_at: bcra_result.checked_at,
+    }
+    update_lead_fields(client, lead_id, fields)
+
+
+def update_lead_fields(
+    client: BitrixClient,
+    lead_id: int,
+    fields: dict[str, Any],
+) -> None:
+    client.call("crm.lead.update", {"id": lead_id, "fields": fields})
+
+
+def list_leads_created_between(
+    client: BitrixClient,
+    *,
+    date_from: str,
+    date_to: str,
+    field_names: list[str],
+    logger: Logger,
+) -> list[dict[str, Any]]:
+    logger.info(f"Listando leads entre {date_from} y {date_to}.")
+    leads: list[dict[str, Any]] = []
+    start = 0
+
+    while True:
+        payload = {
+            "filter": {
+                ">=DATE_CREATE": date_from,
+                "<=DATE_CREATE": date_to,
+            },
+            "order": {"ID": "ASC"},
+            "select": field_names,
+            "start": start,
+        }
+        response = client.call_full("crm.lead.list", payload)
+        result = response.get("result") or []
+        if not isinstance(result, list):
+            raise RuntimeError("crm.lead.list devolvio un payload invalido.")
+        leads.extend(result)
+
+        next_page = response.get("next")
+        if next_page is None:
+            break
+        start = int(next_page)
+
+    return leads
 
 
 def _resolve_rejection_reason_enum_id(
