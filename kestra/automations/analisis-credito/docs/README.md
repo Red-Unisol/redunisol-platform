@@ -10,6 +10,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
 - `consulta_quiebra_credix_http`
+- `consulta_padron_a13`
 
 ## renovacion_cruz_del_eje
 
@@ -329,3 +330,58 @@ Configuracion inline en el flow:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_quiebra_credix_http/**`
+
+## consulta_padron_a13
+
+Consulta ARCA Padron A13 por CUIT o CUIL y devuelve los datos basicos de la persona.
+
+### Entrada
+
+Webhook `POST` con JSON:
+
+```json
+{ "cuit_cuil": "20-35966130-5" }
+```
+
+Tambien acepta:
+
+- `cuit`
+- `cuil`
+- un string simple en el body, tratado como CUIT/CUIL
+
+Debe venir un identificador de 11 digitos.
+
+### Salida
+
+- `ok` (bool)
+- `cuit_cuil` (string)
+- `cuit_representada` (string)
+- `id_persona` (string)
+- `nombre` (string)
+- `apellido` (string)
+- `razon_social` (string)
+- `estado_clave` (string)
+- `tipo_persona` (string)
+- `tipo_clave` (string)
+- `numero_documento` (string)
+- `ta_expiration_time` (string)
+- `persona_json` (string JSON)
+- `response_json` (string JSON)
+- `error` (string | vacio)
+
+### Variables
+
+Config en `envs`:
+
+- `arca_padron_a13_cuit_representada`
+- `arca_padron_a13_timeout_seconds`
+
+Secrets:
+
+- `ARCA_PADRON_A13_CERT_PEM_B64`
+- `ARCA_PADRON_A13_KEY_PEM_B64`
+- `ANALISIS_CREDITO_ARCA_PADRON_A13_WEBHOOK_KEY`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/arca_padron_a13/**`
