@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from datetime import datetime, time as dtime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -14,6 +13,21 @@ import requests
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
+
+
+class ActionError(Exception):
+    def __init__(self, reason: str, message: str = "") -> None:
+        super().__init__(message or reason)
+        self.reason = reason
+        self.message = message or reason
+
+
+class RetryableActionError(ActionError):
+    pass
+
+
+class TerminalActionError(ActionError):
+    pass
 
 
 def get_env(name: str, default: str = "") -> str:
@@ -97,7 +111,10 @@ def _build_bitrix_url(method: str) -> str:
     base_url = get_env("BITRIX24_BASE_URL", "").strip()
     webhook_path = get_env("BITRIX24_WEBHOOK_PATH", "").strip().strip("/")
     if not base_url or not webhook_path:
-        raise ValueError("Missing BITRIX24_BASE_URL or BITRIX24_WEBHOOK_PATH.")
+        raise TerminalActionError(
+            "missing_bitrix_config",
+            "Missing BITRIX24_BASE_URL or BITRIX24_WEBHOOK_PATH.",
+        )
 
     return f"{base_url.rstrip('/')}/{webhook_path}/{method}.json"
 
@@ -105,13 +122,24 @@ def _build_bitrix_url(method: str) -> str:
 def bitrix_call(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
     url = _build_bitrix_url(method)
     timeout = max(float(get_env_int("BITRIX24_TIMEOUT_SECONDS", 10)), 1.0)
-    response = requests.post(url, json=params, timeout=timeout)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.post(url, json=params, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        raise RetryableActionError("bitrix_request_failed", str(exc)) from exc
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 0
+        reason = "bitrix_http_error"
+        if status_code == 429 or status_code >= 500:
+            raise RetryableActionError(reason, str(exc)) from exc
+        raise TerminalActionError(reason, str(exc)) from exc
+    except ValueError as exc:
+        raise RetryableActionError("bitrix_invalid_response", str(exc)) from exc
 
     if "error" in data:
         description = data.get("error_description") or f"Bitrix24 error on {method}."
-        raise RuntimeError(description)
+        raise TerminalActionError("bitrix_api_error", description)
 
     return data.get("result", {})
 
@@ -137,6 +165,11 @@ def build_action_key(deal_id: str, stage_id: str, order: int) -> str:
     return f"bitrix_crm_negociaciones/deal/{deal_id}/stage/{safe_stage}/action_{order}"
 
 
+def build_plan_key(deal_id: str, stage_id: str) -> str:
+    safe_stage = str(stage_id or "").replace(":", "_")
+    return f"bitrix_crm_negociaciones/deal/{deal_id}/stage/{safe_stage}/plan"
+
+
 def build_pending_action(
     *,
     deal_id: str,
@@ -147,11 +180,12 @@ def build_pending_action(
     due_at: datetime,
     template_id: str = "",
     next_stage: str = "",
-    depends_on_key: str = "",
+    depends_on_order: int = 0,
 ) -> Dict[str, Any]:
     now = get_now().isoformat()
+    key = build_action_key(deal_id, expected_stage, order)
     return {
-        "key": build_action_key(deal_id, expected_stage, order),
+        "action_key": key,
         "deal_id": deal_id,
         "expected_stage": expected_stage,
         "stage_name": stage_name,
@@ -159,7 +193,7 @@ def build_pending_action(
         "action_kind": action_kind,
         "template_id": template_id,
         "next_stage": next_stage,
-        "depends_on_key": depends_on_key,
+        "depends_on_order": depends_on_order,
         "previous_sent_at": "",
         "due_at": due_at.isoformat(),
         "status": "pending",
@@ -168,7 +202,73 @@ def build_pending_action(
         "updated_at": now,
         "processed_at": "",
         "edna_status": "",
+        "message_id": key.replace("/", "-"),
     }
+
+
+def build_plan(
+    *,
+    deal_id: str,
+    expected_stage: str,
+    stage_name: str,
+    plan_kind: str,
+    actions: list[Dict[str, Any]],
+    status: str = "draft",
+) -> Dict[str, Any]:
+    now = get_now().isoformat()
+    return {
+        "key": build_plan_key(deal_id, expected_stage),
+        "deal_id": deal_id,
+        "expected_stage": expected_stage,
+        "stage_name": stage_name,
+        "plan_kind": plan_kind,
+        "status": status,
+        "created_at": now,
+        "updated_at": now,
+        "actions": actions,
+    }
+
+
+def finalize_plan(plan: Dict[str, Any], *, status: str | None = None, updated_at: str) -> Dict[str, Any]:
+    updated = dict(plan)
+    updated["updated_at"] = updated_at
+    if status:
+        updated["status"] = status
+    return updated
+
+
+def replace_plan_action(plan: Dict[str, Any], updated_action: Dict[str, Any], *, updated_at: str) -> Dict[str, Any]:
+    updated = dict(plan)
+    actions = []
+    target_order = int(updated_action.get("order") or 0)
+    replaced = False
+    for action in plan.get("actions") or []:
+        current_order = int(action.get("order") or 0)
+        if current_order == target_order:
+            actions.append(updated_action)
+            replaced = True
+        else:
+            actions.append(action)
+    if not replaced:
+        raise TerminalActionError(
+            "missing_action_in_plan",
+            f"Action order {target_order} not found in plan {plan.get('key')}.",
+        )
+    updated["actions"] = actions
+    updated["updated_at"] = updated_at
+    if all(str(action.get("status") or "") in {"completed", "cancelled", "error"} for action in actions):
+        updated["status"] = "completed"
+    return updated
+
+
+def get_plan_action(plan: Dict[str, Any], action_order: int) -> Dict[str, Any]:
+    for action in plan.get("actions") or []:
+        if int(action.get("order") or 0) == int(action_order):
+            return dict(action)
+    raise TerminalActionError(
+        "missing_action_in_plan",
+        f"Action order {action_order} not found in plan {plan.get('key')}.",
+    )
 
 
 def finalize_action(
@@ -399,12 +499,28 @@ def get_template_variables(template_id: int, deal: Dict[str, Any], contact_data:
 
 
 def send_to_edna(template_id: int, deal: Dict[str, Any], contact_data: Dict[str, Any] | None) -> Dict[str, Any]:
+    return send_to_edna_with_message_id(
+        template_id=template_id,
+        deal=deal,
+        contact_data=contact_data,
+        message_id="",
+    )
+
+
+def send_to_edna_with_message_id(
+    *,
+    template_id: int,
+    deal: Dict[str, Any],
+    contact_data: Dict[str, Any] | None,
+    message_id: str,
+) -> Dict[str, Any]:
     contact_phone = extract_contact_phone(contact_data)
     if not contact_phone:
-        raise ValueError("Missing contact phone.")
+        raise TerminalActionError("missing_contact_phone", "Missing contact phone.")
 
+    resolved_message_id = message_id.strip() or f"negociaciones-{deal.get('ID')}-{template_id}"
     payload = {
-        "messageId": f"negociaciones-{deal.get('ID')}-{template_id}-{int(time.time())}",
+        "messageId": resolved_message_id,
         "sender": get_env("EDNA_SENDER", ""),
         "phone": contact_phone,
         "templateId": int(template_id),
@@ -422,9 +538,21 @@ def send_to_edna(template_id: int, deal: Dict[str, Any], contact_data: Dict[str,
     url = get_env("EDNA_URL", "")
     timeout = max(float(get_env_int("EDNA_TIMEOUT_SECONDS", 15)), 1.0)
     if not payload["sender"] or not headers["X-API-KEY"] or not url:
-        raise ValueError("Missing EDNA_SENDER, EDNA_API_KEY or EDNA_URL.")
-    response = requests.post(url, json=payload, headers=headers, timeout=timeout)
-    response.raise_for_status()
+        raise TerminalActionError(
+            "missing_edna_config",
+            "Missing EDNA_SENDER, EDNA_API_KEY or EDNA_URL.",
+        )
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        response.raise_for_status()
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        raise RetryableActionError("edna_request_failed", str(exc)) from exc
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 0
+        reason = "edna_http_error"
+        if status_code == 429 or status_code >= 500:
+            raise RetryableActionError(reason, str(exc)) from exc
+        raise TerminalActionError(reason, str(exc)) from exc
 
     try:
         body = response.json()

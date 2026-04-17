@@ -1,0 +1,91 @@
+id: bitrix_crm_negociaciones_execute
+namespace: redunisol
+
+description: Ejecuta una accion puntual del embudo de negociaciones ya programada por el webhook principal.
+
+retry:
+  type: constant
+  interval: PT1M
+  maxAttempts: 10
+  behavior: CREATE_NEW_EXECUTION
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: subflow
+  domain: cobranzas
+  integration: bitrix24
+
+inputs:
+  - id: plan_key
+    type: STRING
+  - id: action_order
+    type: STRING
+
+tasks:
+  - id: leer_plan
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ inputs.plan_key }}"
+    errorOnMissing: false
+
+  - id: procesar_accion
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix_crm_negociaciones/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra requests > /dev/null
+    env:
+      PLAN_JSON: "{{ outputs.leer_plan.value | json }}"
+      ACTION_ORDER: "{{ inputs.action_order }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      PROMISE_AMOUNT_FIELD: "{{ envs.bitrix24_promesa_amount_field }}"
+      EDNA_API_KEY: "{{ secret('EDNA_API_KEY') }}"
+      EDNA_URL: "{{ envs.edna_url }}"
+      EDNA_SENDER: "{{ envs.edna_sender }}"
+      EDNA_TIMEOUT_SECONDS: "{{ envs.edna_timeout_seconds }}"
+      LOCAL_TZ: "{{ envs.local_tz }}"
+    commands:
+      - python -m bitrix_crm_negociaciones.kestra_pending_entrypoint
+
+  - id: actualizar_accion
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.procesar_accion.vars.should_update }}"
+    key: "{{ outputs.procesar_accion.vars.plan_key }}"
+    value: "{{ outputs.procesar_accion.vars.updated_plan_json }}"
+    kvType: JSON
+    overwrite: true
+    ttl: "{{ outputs.procesar_accion.vars.action_ttl }}"
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.procesar_accion.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.procesar_accion.vars.action }}"
+  - id: reason
+    type: STRING
+    value: "{{ outputs.procesar_accion.vars.reason }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.procesar_accion.vars.message }}"
+  - id: action_key
+    type: STRING
+    value: "{{ outputs.procesar_accion.vars.action_key }}"
+  - id: plan_key
+    type: STRING
+    value: "{{ outputs.procesar_accion.vars.plan_key }}"
+  - id: edna_status
+    type: STRING
+    value: "{{ outputs.procesar_accion.vars.edna_status }}"

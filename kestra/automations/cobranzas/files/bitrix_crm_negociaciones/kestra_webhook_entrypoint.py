@@ -42,7 +42,7 @@ def process_webhook(payload: Any) -> Dict[str, Any]:
         ("auth", "application_token"),
     )
     expected_token = service.get_env("BITRIX24_APP_TOKEN", "").strip()
-    if expected_token and app_token and app_token != expected_token:
+    if expected_token and (not app_token or app_token != expected_token):
         return _result(ok=False, action="invalid_token", reason="invalid_token")
 
     event = service.get_value(form, "event", ("event",))
@@ -91,15 +91,18 @@ def process_webhook(payload: Any) -> Dict[str, Any]:
         stage_id=stage_id,
         stage_name=str(stage_cfg.get("name") or ""),
         planned_action_count=str(len(plan["actions"])),
+        plan_key=plan["plan"]["key"],
+        plan_json_draft=json.dumps(plan["plan"], ensure_ascii=True),
+        plan_json_ready=json.dumps(plan["plan_ready"], ensure_ascii=True),
         action_1_enabled=bool(len(plan["actions"]) >= 1),
-        action_1_key=plan["actions"][0]["key"] if len(plan["actions"]) >= 1 else "",
-        action_1_json=json.dumps(plan["actions"][0], ensure_ascii=True) if len(plan["actions"]) >= 1 else "",
+        action_1_order=str(plan["actions"][0]["order"]) if len(plan["actions"]) >= 1 else "",
+        action_1_due_at=plan["actions"][0]["due_at"] if len(plan["actions"]) >= 1 else "",
         action_2_enabled=bool(len(plan["actions"]) >= 2),
-        action_2_key=plan["actions"][1]["key"] if len(plan["actions"]) >= 2 else "",
-        action_2_json=json.dumps(plan["actions"][1], ensure_ascii=True) if len(plan["actions"]) >= 2 else "",
+        action_2_order=str(plan["actions"][1]["order"]) if len(plan["actions"]) >= 2 else "",
+        action_2_due_at=plan["actions"][1]["due_at"] if len(plan["actions"]) >= 2 else "",
         action_3_enabled=bool(len(plan["actions"]) >= 3),
-        action_3_key=plan["actions"][2]["key"] if len(plan["actions"]) >= 3 else "",
-        action_3_json=json.dumps(plan["actions"][2], ensure_ascii=True) if len(plan["actions"]) >= 3 else "",
+        action_3_order=str(plan["actions"][2]["order"]) if len(plan["actions"]) >= 3 else "",
+        action_3_due_at=plan["actions"][2]["due_at"] if len(plan["actions"]) >= 3 else "",
         planned_first_action_at=plan["planned_first_action_at"],
         planned_second_action_at=plan["planned_second_action_at"],
         planned_move_at=plan["planned_move_at"],
@@ -155,7 +158,7 @@ def build_stage_plan(deal_data: Dict[str, Any], stage_id: str, stage_cfg: Dict[s
         raise ValueError(f"Unsupported stage config for {stage_id}.")
 
     actions: list[Dict[str, Any]] = []
-    previous_key = ""
+    previous_order = 0
 
     if template_id and first_action_at:
         action = service.build_pending_action(
@@ -166,10 +169,10 @@ def build_stage_plan(deal_data: Dict[str, Any], stage_id: str, stage_cfg: Dict[s
             action_kind="send_or_noop",
             due_at=first_action_at,
             template_id=str(template_id),
-            depends_on_key="",
+            depends_on_order=0,
         )
         actions.append(action)
-        previous_key = action["key"]
+        previous_order = int(action["order"])
 
     if second_template_id and second_action_at:
         action = service.build_pending_action(
@@ -180,10 +183,10 @@ def build_stage_plan(deal_data: Dict[str, Any], stage_id: str, stage_cfg: Dict[s
             action_kind="send_or_noop",
             due_at=second_action_at,
             template_id=str(second_template_id),
-            depends_on_key=previous_key,
+            depends_on_order=previous_order,
         )
         actions.append(action)
-        previous_key = action["key"]
+        previous_order = int(action["order"])
 
     if next_stage and move_at:
         action = service.build_pending_action(
@@ -194,12 +197,24 @@ def build_stage_plan(deal_data: Dict[str, Any], stage_id: str, stage_cfg: Dict[s
             action_kind="move_or_noop",
             due_at=move_at,
             next_stage=next_stage,
-            depends_on_key=previous_key,
+            depends_on_order=previous_order,
         )
         actions.append(action)
 
+    plan = service.build_plan(
+        deal_id=str(deal_data.get("ID") or ""),
+        expected_stage=stage_id,
+        stage_name=str(stage_cfg.get("name") or ""),
+        plan_kind=plan_kind,
+        actions=actions,
+        status="draft",
+    )
+    plan_ready = service.finalize_plan(plan, status="ready", updated_at=service.get_now().isoformat())
+
     return {
         "plan_kind": plan_kind,
+        "plan": plan,
+        "plan_ready": plan_ready,
         "actions": actions,
         "planned_first_action_at": first_action_at.isoformat() if first_action_at else "",
         "planned_second_action_at": second_action_at.isoformat() if second_action_at else "",
@@ -217,15 +232,18 @@ def _result(
     stage_id: str = "",
     stage_name: str = "",
     planned_action_count: str = "0",
+    plan_key: str = "",
+    plan_json_draft: str = "",
+    plan_json_ready: str = "",
     action_1_enabled: bool = False,
-    action_1_key: str = "",
-    action_1_json: str = "",
+    action_1_order: str = "",
+    action_1_due_at: str = "",
     action_2_enabled: bool = False,
-    action_2_key: str = "",
-    action_2_json: str = "",
+    action_2_order: str = "",
+    action_2_due_at: str = "",
     action_3_enabled: bool = False,
-    action_3_key: str = "",
-    action_3_json: str = "",
+    action_3_order: str = "",
+    action_3_due_at: str = "",
     planned_first_action_at: str = "",
     planned_second_action_at: str = "",
     planned_move_at: str = "",
@@ -239,15 +257,18 @@ def _result(
         "stage_id": stage_id,
         "stage_name": stage_name,
         "planned_action_count": planned_action_count,
+        "plan_key": plan_key,
+        "plan_json_draft": plan_json_draft,
+        "plan_json_ready": plan_json_ready,
         "action_1_enabled": action_1_enabled,
-        "action_1_key": action_1_key,
-        "action_1_json": action_1_json,
+        "action_1_order": action_1_order,
+        "action_1_due_at": action_1_due_at,
         "action_2_enabled": action_2_enabled,
-        "action_2_key": action_2_key,
-        "action_2_json": action_2_json,
+        "action_2_order": action_2_order,
+        "action_2_due_at": action_2_due_at,
         "action_3_enabled": action_3_enabled,
-        "action_3_key": action_3_key,
-        "action_3_json": action_3_json,
+        "action_3_order": action_3_order,
+        "action_3_due_at": action_3_due_at,
         "planned_first_action_at": planned_first_action_at,
         "planned_second_action_at": planned_second_action_at,
         "planned_move_at": planned_move_at,
