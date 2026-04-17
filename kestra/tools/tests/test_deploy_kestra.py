@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -103,6 +104,68 @@ tasks: []
         )
         self.assertIn(b"namespace: redunisol.dev.analisis-credito", session.calls[1][2]["data"])
         self.assertIn(b"env: dev", session.calls[1][2]["data"])
+
+    def test_normalize_flow_source_removes_prod_only_triggers_in_dev(self) -> None:
+        flow_path = self.root / "bitrix24_bcra_backfill.yaml"
+        flow_path.write_text(
+            """
+id: bitrix24_bcra_backfill
+namespace: redunisol
+labels:
+  env: prod
+  kind: scheduled
+  schedule_scope: prod_only
+tasks: []
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"
+""".lstrip(),
+            encoding="utf-8",
+        )
+
+        normalized = yaml.safe_load(
+            deploy_kestra.normalize_flow_source(
+                flow_path,
+                "redunisol.dev.marketing-crm",
+                "dev",
+            )
+        )
+
+        self.assertEqual(normalized["namespace"], "redunisol.dev.marketing-crm")
+        self.assertEqual(normalized["labels"]["env"], "dev")
+        self.assertNotIn("triggers", normalized)
+
+    def test_normalize_flow_source_keeps_prod_only_triggers_in_prod(self) -> None:
+        flow_path = self.root / "bitrix24_bcra_backfill.yaml"
+        flow_path.write_text(
+            """
+id: bitrix24_bcra_backfill
+namespace: redunisol
+labels:
+  env: prod
+  kind: scheduled
+  schedule_scope: prod_only
+tasks: []
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"
+""".lstrip(),
+            encoding="utf-8",
+        )
+
+        normalized = yaml.safe_load(
+            deploy_kestra.normalize_flow_source(
+                flow_path,
+                "redunisol.prod.marketing-crm",
+                "prod",
+            )
+        )
+
+        self.assertEqual(normalized["namespace"], "redunisol.prod.marketing-crm")
+        self.assertEqual(normalized["labels"]["env"], "prod")
+        self.assertEqual(normalized["triggers"][0]["id"], "cada_minuto")
 
 
 if __name__ == "__main__":

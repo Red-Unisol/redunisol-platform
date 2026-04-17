@@ -57,8 +57,15 @@ def normalize_flow_source(flow_path: Path, target_namespace: str, environment: s
         raise ValueError(f"Invalid labels block in {flow_path}")
     labels["env"] = environment
     payload["labels"] = labels
+    _normalize_triggers(payload, labels, environment)
 
     return yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
+
+
+def _normalize_triggers(payload: dict, labels: dict, environment: str) -> None:
+    schedule_scope = str(labels.get("schedule_scope") or "").strip().lower()
+    if environment != "prod" and schedule_scope == "prod_only":
+        payload.pop("triggers", None)
 
 
 def build_session(kestra_url: str, username: str, password: str) -> requests.Session:

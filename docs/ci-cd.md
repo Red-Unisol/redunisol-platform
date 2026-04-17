@@ -178,6 +178,7 @@ Responsabilidades:
 - resolver dominios objetivo
 - construir namespace final por ambiente
 - reescribir el namespace dentro del YAML antes de publicar
+- quitar `triggers` en ambientes no prod para flows marcados con `labels.schedule_scope = prod_only`
 - consultar si el flow ya existe antes de publicarlo
 - actualizar flows existentes con `PUT` al recurso puntual o crearlos con `POST /flows` cuando faltan
 - subir namespace files por API
@@ -186,6 +187,12 @@ Patron actual de namespace:
 
 - `redunisol.dev.<dominio>`
 - `redunisol.prod.<dominio>`
+
+Regla actual para schedulers:
+
+- un flow con `labels.schedule_scope: prod_only` mantiene sus `triggers` en `prod`
+- ese mismo flow se publica sin `triggers` en `dev`
+- esto permite probarlo manualmente en `dev` sin duplicar ejecuciones automaticas contra el mismo runtime compartido
 
 ## Variables Esperadas En CI
 
