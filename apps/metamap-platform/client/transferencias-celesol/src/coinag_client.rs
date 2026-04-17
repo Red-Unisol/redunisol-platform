@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::{
     config::CoinagConfig,
-    models::HydratedCase,
+    models::{CoinagTransferGuard, HydratedCase},
     ssh_transport::{SshHttpClient, TransportRequest, TransportResponse},
     validation::{format_money, normalize_digits, parse_decimal},
 };
@@ -42,6 +42,13 @@ pub struct AvailableBalanceSnapshot {
     pub amount: Option<rust_decimal::Decimal>,
     pub source: Option<&'static str>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TransferLookupResponse {
+    pub request_number: String,
+    pub id_trx_cliente: String,
+    pub body: Value,
 }
 
 impl CoinagClient {
@@ -189,6 +196,55 @@ impl CoinagClient {
         }
         let detail = snapshot.error.unwrap_or_else(|| "sin datos".to_owned());
         format!("Saldo actual: no disponible ({detail}, {suffix})")
+    }
+
+    pub fn lookup_transfer_by_request_number(
+        &self,
+        request_number: &str,
+    ) -> Result<TransferLookupResponse> {
+        match self.request_transfer_lookup(request_number) {
+            Ok(response) => Ok(response),
+            Err(error) if is_transfer_not_found_error(&error) => {
+                Err(anyhow!("No hubo transferencia para esa solicitud en Coinag."))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn fetch_transfer_guard_status(&self, request_number: &str) -> CoinagTransferGuard {
+        match self.request_transfer_lookup(request_number) {
+            Ok(response) => map_transfer_guard_status(&response.body),
+            Err(error) if is_transfer_not_found_error(&error) => CoinagTransferGuard::NotFound,
+            Err(error) => CoinagTransferGuard::Error {
+                detail: error.to_string(),
+            },
+        }
+    }
+
+    fn request_transfer_lookup(&self, request_number: &str) -> Result<TransferLookupResponse> {
+        let normalized_request_number = normalize_digits(request_number).ok_or_else(|| {
+            anyhow!("Numero de solicitud invalido. Ingresa digitos, con o sin puntos.")
+        })?;
+        let id_trx_cliente = self.build_request_lookup_id_trx_cliente(&normalized_request_number)?;
+        log::info!(
+            "Consultando transferencia Coinag para solicitud {} con idTrxCliente {}.",
+            normalized_request_number,
+            id_trx_cliente
+        );
+        let body = self.request_authorized_json(
+            Method::GET,
+            format!(
+                "{}/TransferenciaByIdTrxCliente/{}",
+                self.config.lookup_api_base.trim_end_matches('/'),
+                id_trx_cliente
+            ),
+            RequestBody::default(),
+        )?;
+        Ok(TransferLookupResponse {
+            request_number: normalized_request_number,
+            id_trx_cliente,
+            body,
+        })
     }
 
     pub fn build_transfer_payload(&self, case: &HydratedCase) -> Result<Value> {
@@ -517,18 +573,28 @@ impl CoinagClient {
         Ok(access_token)
     }
 
+    pub fn build_request_lookup_id_trx_cliente(&self, request_number: &str) -> Result<String> {
+        let empresa = normalize_digits(self.config.id_empresa.as_str()).ok_or_else(|| {
+            anyhow!(
+                "TRANSFERENCIAS_COINAG_ID_EMPRESA es obligatorio para consultar una transferencia por numero de solicitud."
+            )
+        })?;
+        let request_number = normalize_digits(request_number)
+            .ok_or_else(|| anyhow!("Numero de solicitud invalido. Ingresa solo digitos."))?;
+        let suffix = build_request_based_transaction_suffix(&request_number)?;
+        Ok(format!("{empresa}{suffix}"))
+    }
+
     fn build_id_trx_cliente(
         &self,
         request_number: Option<&str>,
         verification_id: Option<&str>,
     ) -> Result<String> {
-        let empresa = normalize_digits(self.config.id_empresa.as_str());
-        if let Some(empresa) = empresa {
-            let request_number = request_number.and_then(normalize_digits).ok_or_else(|| {
+        if !self.config.id_empresa.trim().is_empty() {
+            let request_number = request_number.ok_or_else(|| {
                 anyhow!("No se pudo generar idTrxCliente: falta numero de solicitud numerico.")
             })?;
-            let suffix = build_request_based_transaction_suffix(&request_number)?;
-            return Ok(format!("{empresa}{suffix}"));
+            return self.build_request_lookup_id_trx_cliente(request_number);
         }
         let request = request_number
             .and_then(normalize_digits)
@@ -699,6 +765,35 @@ fn build_request_based_transaction_suffix(request_number: &str) -> Result<String
     }
 
     Ok(format!("{suffix:0>15}"))
+}
+
+fn is_transfer_not_found_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("SIN_REGISTROS"))
+}
+
+fn map_transfer_guard_status(body: &Value) -> CoinagTransferGuard {
+    match extract_transfer_status_code(body).as_deref() {
+        Some("1") => CoinagTransferGuard::YaTransferida,
+        Some("2") => CoinagTransferGuard::EnProceso,
+        Some("3") => CoinagTransferGuard::Error {
+            detail: "Coinag devolvio estado 3 para la solicitud.".to_owned(),
+        },
+        Some(other) => CoinagTransferGuard::Error {
+            detail: format!("Coinag devolvio un estado no esperado: {other}."),
+        },
+        None => CoinagTransferGuard::Error {
+            detail: "Coinag no devolvio un estado interpretable para la solicitud.".to_owned(),
+        },
+    }
+}
+
+fn extract_transfer_status_code(body: &Value) -> Option<String> {
+    body.get("response")
+        .unwrap_or(body)
+        .get("estado")
+        .and_then(value_to_string)
 }
 
 #[cfg(test)]

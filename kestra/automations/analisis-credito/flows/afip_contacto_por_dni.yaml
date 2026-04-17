@@ -1,0 +1,69 @@
+id: afip_contacto_por_dni
+namespace: redunisol
+
+description: Recibe un DNI por webhook, bootstrappea la sesion minima de AFIP/ARCA y devuelve nombre mas CUIL.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: afip
+  transport: http
+
+tasks:
+  - id: consultar_contacto
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - afip_contacto_por_dni/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra requests > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      AFIP_CRM_BASE_URL: "https://servicioscf.afip.gob.ar/publico/crmcit/"
+      AFIP_TIMEOUT_SECONDS: "60"
+      AFIP_USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+    commands:
+      - python -m afip_contacto_por_dni.kestra_webhook_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.consultar_contacto.vars.ok }}"
+  - id: found
+    type: BOOLEAN
+    value: "{{ outputs.consultar_contacto.vars.found }}"
+  - id: dni
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.dni }}"
+  - id: tipo_doc
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.tipo_doc }}"
+  - id: cuil
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.cuil }}"
+  - id: nombre
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.nombre }}"
+  - id: response_json
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.response_json }}"
+  - id: raw_response_json
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.raw_response_json }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.error }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: afip_contacto_por_dni_dev_20260414
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

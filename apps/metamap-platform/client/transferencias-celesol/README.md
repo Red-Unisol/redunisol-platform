@@ -55,7 +55,6 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_OPERATOR_NAME`
 - `TRANSFERENCIAS_POLL_INTERVAL_SECONDS` default `20`
 - `TRANSFERENCIAS_RECEIPTS_DIR`
-- `TRANSFERENCIAS_COMPLETED_LOG_PATH`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
 
 Coinag para habilitar `Transferir`:
@@ -109,11 +108,35 @@ Herramienta incluida para cifrar:
 cargo run --bin encrypt_transferencias_env -- --input transferencias.env --output transferencias.env.enc
 ```
 
-## Logs de debug
+## Build local de paquete
 
-En builds `debug`, la app escribe logs descriptivos por defecto en:
+Para armar un zip local con el `.exe`, el entorno encriptado y las keys SSH, usa:
 
-- `target/debug/logs/transferencias-debug.log`
+```powershell
+.\build-package.ps1
+```
+
+El script busca estos archivos locales dentro de `package-input/`:
+
+- `package-input/transferencias.env.enc`
+- `package-input/ssh/coinag_tunnel_key`
+- `package-input/ssh/vps_host_key.pub`
+
+El zip se genera en `dist/`.
+
+Recomendacion importante para que el paquete funcione sin tocar rutas por instalacion:
+
+- en `transferencias.env.enc`, defini `TRANSFERENCIAS_COINAG_SSH_PRIVATE_KEY_PATH=ssh/coinag_tunnel_key`
+- en `transferencias.env.enc`, defini `TRANSFERENCIAS_COINAG_SSH_HOST_PUBLIC_KEY_PATH=ssh/vps_host_key.pub`
+
+Asi las rutas quedan relativas al archivo `transferencias.env.enc` que viaja dentro del mismo zip.
+
+## Logs
+
+La app escribe logs descriptivos por defecto en:
+
+- en builds `debug`: `target/debug/logs/transferencias-debug.log`
+- en builds no-debug: `logs/transferencias.log` al lado del `.exe`
 
 Si queres cambiar la ubicacion, defini:
 
@@ -175,11 +198,9 @@ Este binario no versiona secretos. La configuracion real debe quedar fuera de Gi
 
 En builds no-debug, si la configuracion viene desde archivo, ese archivo debe estar cifrado como `transferencias.env.enc`.
 
-El archivo local de solicitudes ya transferidas bloquea reenvios desde esa misma instalacion. No coordina automaticamente entre PCs distintas.
+Antes de habilitar `Transferir`, la app consulta Coinag por `idTrxCliente` derivado del numero de solicitud:
 
-Ese registro local tambien guarda, para cada transferencia real:
-
-- `external_transfer_id`
-- el JSON completo de respuesta exitosa de Coinag
-
-Con el shape observado en produccion, `external_transfer_id` se toma de `debito.idTrx`.
+- si Coinag responde `SIN_REGISTROS`, permite transferir
+- si Coinag responde estado `1`, bloquea como `YA TRANSFERIDA`
+- si Coinag responde estado `2`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
+- para cualquier otra respuesta, bloquea como `ERROR`

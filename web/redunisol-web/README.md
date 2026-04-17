@@ -2,6 +2,8 @@
 
 Aplicación web desarrollada con **Laravel 12**, **FilamentPHP 4**, **React 19** e **Inertia.js 2**.
 
+Para una guia de onboarding tecnico mas orientada a arquitectura y extension del sistema, ver `../../docs/redunisol-web-overview.md`.
+
 ## Stack Tecnológico
 
 | Categoría | Tecnología | Versión |
@@ -141,6 +143,19 @@ REDIS_HOST=redis        # Nombre del servicio Docker
 REDIS_PASSWORD=null
 REDIS_PORT=6379
 ```
+
+Variables adicionales del flujo actual:
+
+```env
+KESTRA_FORM_WEBHOOK_URL=
+KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS=15
+KESTRA_FORM_DEFAULT_LEAD_SOURCE=Google
+```
+
+Notas:
+
+- `/api/form-submissions` usa esas variables para reenviar leads a Kestra desde Laravel
+- si no vas a probar ese circuito localmente, `KESTRA_FORM_WEBHOOK_URL` puede quedar vacia
 
 ### Paso 3: Iniciar los Contenedores de Docker
 
@@ -308,6 +323,11 @@ Que usa cada contexto:
 - deploy dev: `deploy/redunisol-web.dev.env.enc`
 - deploy prod: `deploy/redunisol-web.prod.env.enc`
 - runtime remoto efectivo: `.env` subido por el workflow al directorio target en la VPS
+
+Importante para deploy:
+
+- si una variable nueva la consume Laravel/PHP en runtime, no alcanza con `deploy/redunisol-web.*.env.enc`; tambien debe exponerse en `deploy/docker-compose.vps.yml`
+- el caso ya validado en esta repo es el bridge de formularios hacia Kestra con `KESTRA_FORM_*`
 
 Tareas de VS Code asociadas:
 

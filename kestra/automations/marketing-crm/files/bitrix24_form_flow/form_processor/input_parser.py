@@ -20,6 +20,11 @@ class NormalizedInput:
     employment_status: CatalogItem
     payment_bank: CatalogItem
     lead_source: CatalogItem
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    utm_term: str | None = None
+    utm_content: str | None = None
 
 
 def parse_body(body: str, content_type: str | None = None) -> dict[str, Any]:
@@ -67,6 +72,11 @@ def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
             _first(payload, ["lead_source", "origen_lead", "origen_formulario", "origenFormulario"]),
             "lead_source",
         ),
+        utm_source=_optional_string(payload.get("utm_source")),
+        utm_medium=_optional_string(payload.get("utm_medium")),
+        utm_campaign=_optional_string(payload.get("utm_campaign")),
+        utm_term=_optional_string(payload.get("utm_term")),
+        utm_content=_optional_string(payload.get("utm_content")),
     )
 
 
@@ -91,3 +101,11 @@ def _first(payload: dict[str, Any], keys: list[str]) -> Any:
         if key in payload and str(payload[key]).strip():
             return payload[key]
     raise ValueError(f"Falta el campo requerido: {keys[0]}.")
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    return text or None

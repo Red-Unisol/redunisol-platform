@@ -8,6 +8,8 @@ Este documento deja registrado el estado operativo validado para `web/redunisol-
 
 Al 2026-03-27, el deploy `dev` quedo validado end to end.
 
+Al 2026-04-14 tambien quedo validado el bridge de formularios Laravel -> Kestra y se cerro un incidente real de propagacion de variables runtime dentro de `php-fpm`.
+
 ## Estado Verificado Al 2026-03-27
 
 Quedo verificado lo siguiente:
@@ -26,6 +28,13 @@ Run de referencia validado:
 
 - GitHub Actions run `23647542487`
 - commit: `3107ef4`
+
+## Actualizacion Verificada Al 2026-04-14
+
+- el endpoint interno `POST /api/form-submissions` quedo conectado con la accion backend que reenvia leads a Kestra
+- las variables `KESTRA_FORM_WEBHOOK_URL`, `KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS` y `KESTRA_FORM_DEFAULT_LEAD_SOURCE` quedaron incorporadas al runtime efectivo de `php-fpm`
+- el fix requirio tocar `web/redunisol-web/deploy/docker-compose.vps.yml` ademas del `.env` remoto
+- el frontend sumo tracking con Google Tag Manager y flags de debug; eso agrega variables runtime `GTM_*` y variables de build `VITE_*`
 
 ## Modelo Operativo
 
@@ -82,6 +91,14 @@ El `.env` efectivo en la VPS queda dentro de:
 - `/opt/redunisol-web-dev/.env`
 - `/opt/redunisol-web-prod/.env`
 
+Importante:
+
+- el `.env` remoto no se consume como archivo `/var/www/.env` dentro de `php-fpm`
+- `php-fpm` recibe una whitelist explicita via `environment:` en `web/redunisol-web/deploy/docker-compose.vps.yml`
+- por eso, agregar una clave nueva a `deploy/*.env.enc` no alcanza si Laravel/PHP la necesita en runtime
+- hoy esto aplica al bridge de formularios (`KESTRA_FORM_*`) y al bloque GTM renderizado desde Blade (`GTM_*`)
+- las flags `VITE_TRACKING_DEBUG` y `VITE_GA4_DEBUG` pertenecen al build frontend, no al runtime de `php-fpm`
+
 ## Archivos Clave Del Deploy
 
 Los archivos principales del circuito son estos:
@@ -120,6 +137,7 @@ Durante la puesta en marcha aparecieron estos problemas:
 - `php-fpm` no tenia `public/build/manifest.json`
 - el workflow fallaba si el `.env` descifrado venia con CRLF
 - el workflow fallaba si el `.env` no terminaba con salto de linea antes de agregar `APP_IMAGE` y `WEB_IMAGE`
+- el bridge de formularios devolvio `503` porque el `.env` remoto tenia `KESTRA_FORM_*` pero `docker-compose.vps.yml` no las exportaba al contenedor `php-fpm`
 
 Por eso hoy los workflows ya incluyen:
 
@@ -149,12 +167,17 @@ En general, si el cambio vive entero en Git y la infraestructura actual ya sabe 
 Ejemplos:
 
 - `web/redunisol-web/app/**`
+- `web/redunisol-web/config/**`
 - `web/redunisol-web/resources/**`
 - `web/redunisol-web/routes/**`
 - `web/redunisol-web/tests/**`
 - `web/redunisol-web/database/**`
 - `web/redunisol-web/composer.json`
 - `web/redunisol-web/package.json`
+
+Excepcion importante:
+
+- si el cambio en `app/**`, `config/**`, `routes/**`, `resources/**` o `resources/views/**` agrega consumo de nuevas variables runtime, webhooks externos, tags o tracking, deja de ser un cambio puramente de codigo y debe marcarse para coordinacion operativa
 
 ## Que Debe Marcar En El PR Porque Puede Requerir Intervencion
 
@@ -164,6 +187,8 @@ Estos cambios no deberian entrar silenciosamente:
 - cambios en `deploy/*.env.enc`
 - cambios en `.github/workflows/deploy-redunisol-web-*.yml`
 - cambios en `deploy/docker-compose.vps.yml`
+- cambios en `config/**` o `resources/views/**` que agreguen nuevas variables runtime
+- cambios que sumen o cambien integraciones externas de formularios, webhooks o tracking
 - cambios en `docker/` que agreguen dependencias de sistema o servicios nuevos
 - migraciones delicadas o cambios que impliquen operacion sobre datos existentes
 - necesidades de Apache, DNS, SSL, puertos o cambios del host

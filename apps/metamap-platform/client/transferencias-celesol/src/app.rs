@@ -11,16 +11,16 @@ use std::{
 
 use anyhow::Result;
 use chrono::Local;
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, Color32, Key, RichText, TextEdit};
 use egui_extras::{Column, TableBuilder};
+use serde_json::Value;
 
 use crate::{
     APP_NAME_WITH_TAG,
-    coinag_client::CoinagClient,
-    completed_log::CompletedTransferLog,
+    coinag_client::{CoinagClient, TransferLookupResponse},
     config::AppConfig,
     core_client::CoreClient,
-    models::{CoreSnapshot, HydratedCase, MetamapSnapshot, ValidationReport},
+    models::{CoinagTransferGuard, CoreSnapshot, HydratedCase, MetamapSnapshot, ValidationReport},
     receipt,
     server_client::ServerClient,
     validation,
@@ -39,9 +39,11 @@ pub struct TransferenciasApp {
     notices: Vec<String>,
     show_disabled_lines: bool,
     pending_transfer_confirmation: Option<TransferConfirmation>,
+    transfer_lookup: TransferLookupDialog,
 }
 
 const BALANCE_POLL_INTERVAL: Duration = Duration::from_secs(60);
+const TRANSFER_PROCESSING_MESSAGE: &str = "Procesando transferencia...";
 
 impl TransferenciasApp {
     pub fn new(config: AppConfig) -> Result<Self> {
@@ -60,6 +62,7 @@ impl TransferenciasApp {
             notices: Vec::new(),
             show_disabled_lines: false,
             pending_transfer_confirmation: None,
+            transfer_lookup: TransferLookupDialog::default(),
         };
         log::info!("TransferenciasApp inicializada.");
         app.spawn_items_poll();
@@ -118,7 +121,7 @@ impl TransferenciasApp {
         }
         log::info!("Iniciando transferencia para solicitud {}.", request_oid);
         self.items[position].busy = true;
-        self.items[position].message = Some("Procesando transferencia...".to_owned());
+        self.items[position].message = Some(TRANSFER_PROCESSING_MESSAGE.to_owned());
         let item = self.items[position].clone();
         let services = Arc::clone(&self.services);
         let sender = self.event_tx.clone();
@@ -126,6 +129,27 @@ impl TransferenciasApp {
             let result = services.execute_transfer(item);
             let _ = sender.send(result);
         });
+    }
+
+    fn spawn_transfer_lookup(&mut self, request_number: String) {
+        if self.transfer_lookup.loading {
+            return;
+        }
+        self.transfer_lookup.loading = true;
+        self.transfer_lookup.error = None;
+        self.transfer_lookup.result = None;
+        let services = Arc::clone(&self.services);
+        let sender = self.event_tx.clone();
+        thread::spawn(
+            move || match services.lookup_transfer_by_request_number(&request_number) {
+                Ok(result) => {
+                    let _ = sender.send(WorkerEvent::TransferLookupCompleted(result));
+                }
+                Err(error) => {
+                    let _ = sender.send(WorkerEvent::TransferLookupFailed(error.to_string()));
+                }
+            },
+        );
     }
 
     fn render_transfer_confirmation(
@@ -138,19 +162,34 @@ impl TransferenciasApp {
         };
 
         let mut keep_open = true;
-        egui::Window::new("Advertencia MetaMap")
+        egui::Window::new("Confirmar transferencia")
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.set_min_width(430.0);
+                ui.set_min_width(480.0);
                 ui.label(&confirmation.message);
+                ui.add_space(10.0);
+                egui::Grid::new("transfer_confirmation_details")
+                    .num_columns(2)
+                    .spacing([18.0, 8.0])
+                    .show(ui, |ui| {
+                        for (label, value) in &confirmation.summary_fields {
+                            ui.strong(label);
+                            ui.label(value);
+                            ui.end_row();
+                        }
+                    });
+                if let Some(warning) = confirmation.warning_message.as_deref() {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new(warning).color(Color32::from_rgb(176, 113, 0)));
+                }
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     if ui.button("Cancelar").clicked() {
                         keep_open = false;
                     }
-                    if ui.button("Transferir igual").clicked() {
+                    if ui.button("Confirmar transferencia").clicked() {
                         *request_to_transfer = Some(confirmation.request_oid.clone());
                         keep_open = false;
                     }
@@ -162,13 +201,93 @@ impl TransferenciasApp {
         }
     }
 
+    fn render_transfer_lookup_window(&mut self, ctx: &egui::Context) {
+        if !self.transfer_lookup.open {
+            return;
+        }
+
+        let mut open = self.transfer_lookup.open;
+        let mut request_to_lookup = None;
+        egui::Window::new("Consulta de transferencia")
+            .collapsible(false)
+            .movable(true)
+            .resizable(true)
+            .default_width(760.0)
+            .default_height(420.0)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label("Numero de solicitud");
+                let response = ui.add(
+                    TextEdit::singleline(&mut self.transfer_lookup.request_number)
+                        .desired_width(240.0)
+                        .hint_text("Ej: 234567"),
+                );
+                let can_lookup = self.services.transfer_enabled()
+                    && !self.transfer_lookup.loading
+                    && !self.transfer_lookup.request_number.trim().is_empty();
+                let submit = response.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let button =
+                        ui.add_enabled(can_lookup, egui::Button::new("Consultar"));
+                    if button.clicked() || (can_lookup && submit) {
+                        request_to_lookup =
+                            Some(self.transfer_lookup.request_number.trim().to_owned());
+                    }
+                    if !self.services.transfer_enabled() {
+                        button.on_hover_text("Coinag no esta configurado en este runtime.");
+                    }
+                    if self.transfer_lookup.loading {
+                        ui.spinner();
+                        ui.label("Consultando Coinag...");
+                    }
+                });
+
+                if let Some(error) = self.transfer_lookup.error.as_deref() {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new(error).color(Color32::from_rgb(170, 30, 30)));
+                }
+
+                if let Some(result) = &mut self.transfer_lookup.result {
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    egui::Grid::new("transfer_lookup_summary")
+                        .num_columns(2)
+                        .spacing([18.0, 6.0])
+                        .show(ui, |ui| {
+                            for (label, value) in &result.summary_fields {
+                                ui.strong(label);
+                                ui.label(value);
+                                ui.end_row();
+                            }
+                        });
+                    ui.add_space(10.0);
+                    ui.collapsing("JSON completo", |ui| {
+                        ui.add(
+                            TextEdit::multiline(&mut result.raw_json)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(14)
+                                .interactive(false),
+                        );
+                    });
+                }
+            });
+
+        self.transfer_lookup.open = open;
+        if let Some(request_number) = request_to_lookup {
+            self.spawn_transfer_lookup(request_number);
+        }
+    }
+
     fn process_worker_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 WorkerEvent::ItemsLoaded(items) => {
                     self.items_loading = false;
                     log::info!("Polling completado. items_cargados={}.", items.len());
-                    self.items = items;
+                    self.items = preserve_busy_items(&self.items, items);
                     self.next_poll_at = Instant::now() + self.services.poll_interval;
                     self.push_notice("Lista actualizada desde el core financiero.");
                 }
@@ -182,6 +301,23 @@ impl TransferenciasApp {
                     self.balance_loading = false;
                     self.balance_text = text;
                     self.next_balance_poll_at = Instant::now() + BALANCE_POLL_INTERVAL;
+                }
+                WorkerEvent::TransferLookupCompleted(result) => {
+                    self.transfer_lookup.loading = false;
+                    self.transfer_lookup.error = None;
+                    self.transfer_lookup.result = Some(result.clone());
+                    self.transfer_lookup.open = true;
+                    self.push_notice(format!(
+                        "Consulta Coinag lista para solicitud {}.",
+                        result.request_number
+                    ));
+                }
+                WorkerEvent::TransferLookupFailed(error) => {
+                    self.transfer_lookup.loading = false;
+                    self.transfer_lookup.error = Some(error.clone());
+                    self.transfer_lookup.result = None;
+                    self.transfer_lookup.open = true;
+                    self.push_notice(format!("Error en consulta de transferencia: {error}"));
                 }
                 WorkerEvent::CaseUpdated {
                     case,
@@ -284,9 +420,22 @@ impl eframe::App for TransferenciasApp {
                 {
                     self.spawn_balance_poll("manual");
                 }
+                let lookup_button = ui.add_enabled(
+                    self.services.transfer_enabled() && !self.transfer_lookup.loading,
+                    egui::Button::new("Consulta de transferencia"),
+                );
+                if lookup_button.clicked() {
+                    self.transfer_lookup.open = true;
+                }
+                if !self.services.transfer_enabled() {
+                    lookup_button
+                        .on_hover_text("Coinag no esta configurado en este runtime.");
+                }
                 ui.checkbox(&mut self.show_disabled_lines, "Mostrar deshabilitadas");
             });
         });
+
+        self.render_transfer_lookup_window(ctx);
 
         egui::TopBottomPanel::bottom("notices")
             .resizable(true)
@@ -453,12 +602,8 @@ impl eframe::App for TransferenciasApp {
                                 let response =
                                     ui.add_enabled(button_enabled, egui::Button::new("Transferir"));
                                 if response.clicked() {
-                                    if item.server_validation.has_completed_validation() {
-                                        request_to_transfer = Some(item.request_oid().to_owned());
-                                    } else {
-                                        transfer_confirmation =
-                                            Some(TransferConfirmation::for_case(item));
-                                    }
+                                    transfer_confirmation =
+                                        Some(TransferConfirmation::for_case(item));
                                 }
                                 if !self.services.transfer_enabled() {
                                     response.on_hover_text(
@@ -489,18 +634,49 @@ impl eframe::App for TransferenciasApp {
 struct TransferConfirmation {
     request_oid: String,
     message: String,
+    summary_fields: Vec<(String, String)>,
+    warning_message: Option<String>,
+}
+
+#[derive(Default)]
+struct TransferLookupDialog {
+    open: bool,
+    request_number: String,
+    loading: bool,
+    error: Option<String>,
+    result: Option<TransferLookupResult>,
+}
+
+#[derive(Clone)]
+struct TransferLookupResult {
+    request_number: String,
+    summary_fields: Vec<(String, String)>,
+    raw_json: String,
 }
 
 impl TransferConfirmation {
     fn for_case(item: &HydratedCase) -> Self {
         Self {
             request_oid: item.request_oid().to_owned(),
-            message: format!(
-                "No existe validacion en MetaMap para la solicitud numero {} del socio {} (linea {}).\n\nQuiere transferir?",
-                item.request_oid(),
-                item.display_name(),
-                display_credit_line(item.core.credit_line_description.as_deref())
-            ),
+            message: "Desea transferir esta solicitud?".to_owned(),
+            summary_fields: vec![
+                ("NOMBRE".to_owned(), item.display_name()),
+                ("CUIL".to_owned(), item.cuil_display()),
+                (
+                    "LINEA".to_owned(),
+                    display_credit_line(item.core.credit_line_description.as_deref()),
+                ),
+                ("MONTO".to_owned(), item.amount_display()),
+                ("CBU".to_owned(), item.cbu_display()),
+            ],
+            warning_message: if item.server_validation.has_completed_validation() {
+                None
+            } else {
+                Some(
+                    "Advertencia: no existe validacion MetaMap completed asociada en el server."
+                        .to_owned(),
+                )
+            },
         }
     }
 }
@@ -514,7 +690,6 @@ struct AppServices {
     operator_name: String,
     poll_interval: std::time::Duration,
     receipts_dir: PathBuf,
-    completed_transfers: Arc<CompletedTransferLog>,
 }
 
 #[derive(Clone)]
@@ -567,7 +742,6 @@ impl AppServices {
             config.enabled_credit_lines.path,
             config.enabled_credit_lines.values,
         );
-        let completed_transfers = Arc::new(CompletedTransferLog::new(config.completed_log_path)?);
         let services = Self {
             server,
             core,
@@ -576,7 +750,6 @@ impl AppServices {
             operator_name: config.operator_name,
             poll_interval: config.poll_interval,
             receipts_dir: config.receipts_dir,
-            completed_transfers,
         };
         log::info!(
             "Servicios listos. transfer_enabled={}. lineas_habilitadas={} path={:?}.",
@@ -617,6 +790,20 @@ impl AppServices {
         coinag.build_available_balance_text()
     }
 
+    fn lookup_transfer_by_request_number(&self, request_number: &str) -> Result<TransferLookupResult> {
+        let coinag = self
+            .coinag
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Coinag no esta configurado en este runtime."))?;
+        let response = coinag.lookup_transfer_by_request_number(request_number)?;
+        Ok(TransferLookupResult {
+            request_number: response.request_number.clone(),
+            summary_fields: build_transfer_lookup_summary_fields(&response),
+            raw_json: serde_json::to_string_pretty(&response.body)
+                .unwrap_or_else(|_| response.body.to_string()),
+        })
+    }
+
     fn load_candidates(&self, existing_items: Vec<HydratedCase>) -> Result<Vec<HydratedCase>> {
         let candidates = self.core.fetch_transfer_candidates()?;
         log::debug!(
@@ -654,31 +841,22 @@ impl AppServices {
         core_snapshot: CoreSnapshot,
         existing: Option<HydratedCase>,
     ) -> HydratedCase {
-        let busy = existing.as_ref().is_some_and(|item| item.busy);
-        let busy_message = existing
-            .as_ref()
-            .filter(|item| item.busy)
-            .and_then(|item| item.message.clone());
         let previous_core = existing.as_ref().map(|item| item.core.clone());
 
         let mut case = existing.unwrap_or_else(|| HydratedCase {
             server_validation: Default::default(),
             metamap: Default::default(),
             core: core_snapshot.clone(),
+            transfer_guard: Default::default(),
             validation: Default::default(),
-            already_transferred: false,
             busy: false,
             message: None,
         });
         case.core = core_snapshot;
-        case.busy = busy;
-        case.message = busy_message;
-        case.already_transferred = self.completed_transfers.contains_loaded(case.request_oid());
-        log::debug!(
-            "Hidratando solicitud {}. already_transferred={}.",
-            case.request_oid(),
-            case.already_transferred
-        );
+        case.busy = false;
+        case.message = None;
+        case.transfer_guard = CoinagTransferGuard::Unknown;
+        log::debug!("Hidratando solicitud {}.", case.request_oid());
 
         let mut runtime_errors = Vec::new();
         self.apply_validation_snapshot(&mut case, &mut runtime_errors);
@@ -697,25 +875,19 @@ impl AppServices {
         core_snapshot: CoreSnapshot,
         existing: Option<HydratedCase>,
     ) -> HydratedCase {
-        let busy = existing.as_ref().is_some_and(|item| item.busy);
-        let busy_message = existing
-            .as_ref()
-            .filter(|item| item.busy)
-            .and_then(|item| item.message.clone());
-
         let mut case = existing.unwrap_or_else(|| HydratedCase {
             server_validation: Default::default(),
             metamap: Default::default(),
             core: core_snapshot.clone(),
+            transfer_guard: Default::default(),
             validation: Default::default(),
-            already_transferred: false,
             busy: false,
             message: None,
         });
         case.core = core_snapshot;
-        case.busy = busy;
-        case.message = busy_message;
-        case.already_transferred = self.completed_transfers.contains_loaded(case.request_oid());
+        case.busy = false;
+        case.message = None;
+        case.transfer_guard = CoinagTransferGuard::Unknown;
         self.mark_disabled_case(&mut case);
         case
     }
@@ -730,14 +902,6 @@ impl AppServices {
         refreshed.message = None;
 
         let mut runtime_errors = Vec::new();
-        match self.completed_transfers.contains_fresh(case.request_oid()) {
-            Ok(already_transferred) => {
-                refreshed.already_transferred = already_transferred;
-            }
-            Err(error) => runtime_errors.push(format!(
-                "No se pudo validar el registro local de transferencias: {error}"
-            )),
-        }
 
         match self
             .core
@@ -860,6 +1024,12 @@ impl AppServices {
                 }
             }
         }
+
+        case.transfer_guard = if let Some(coinag) = &self.coinag {
+            coinag.fetch_transfer_guard_status(case.request_oid())
+        } else {
+            CoinagTransferGuard::Unknown
+        };
     }
 
     fn finalize_case(&self, case: &mut HydratedCase, runtime_errors: Vec<String>) {
@@ -867,7 +1037,7 @@ impl AppServices {
             &case.server_validation,
             &case.metamap,
             &case.core,
-            case.already_transferred,
+            &case.transfer_guard,
         );
         case.validation.blockers.extend(runtime_errors.clone());
         log::debug!(
@@ -876,8 +1046,17 @@ impl AppServices {
             case.validation.blockers.len(),
             case.validation.warnings.len()
         );
-        if !runtime_errors.is_empty() {
-            case.message = Some(runtime_errors.join(" | "));
+        if !case.busy {
+            if !runtime_errors.is_empty() {
+                case.message = Some(runtime_errors.join(" | "));
+            } else {
+                case.message = match &case.transfer_guard {
+                    CoinagTransferGuard::YaTransferida => Some("YA TRANSFERIDA".to_owned()),
+                    CoinagTransferGuard::EnProceso => Some("EN PROCESO".to_owned()),
+                    CoinagTransferGuard::Error { .. } => Some("ERROR".to_owned()),
+                    CoinagTransferGuard::Unknown | CoinagTransferGuard::NotFound => None,
+                };
+            }
         }
     }
 
@@ -885,6 +1064,7 @@ impl AppServices {
         let line = display_credit_line(case.core.credit_line_description.as_deref());
         case.server_validation = Default::default();
         case.metamap = Default::default();
+        case.transfer_guard = CoinagTransferGuard::Unknown;
         case.core.document_cuil = None;
         case.core.coinag_cuil = None;
         case.validation = ValidationReport {
@@ -918,48 +1098,6 @@ impl AppServices {
                 refresh_balance: false,
             };
         };
-
-        match self.completed_transfers.contains_fresh(case.request_oid()) {
-            Ok(true) => {
-                log::warn!(
-                    "Transferencia bloqueada para solicitud {}: ya transferida localmente.",
-                    case.request_oid()
-                );
-                let mut updated = self.refresh_case(&case);
-                updated.busy = false;
-                updated.message = Some(
-                    "La solicitud ya figura como transferida en el registro local.".to_owned(),
-                );
-                return WorkerEvent::CaseUpdated {
-                    case: updated,
-                    message: format!(
-                        "La solicitud {} ya estaba registrada como transferida localmente.",
-                        case.request_oid()
-                    ),
-                    receipt_path: None,
-                    refresh_balance: false,
-                };
-            }
-            Ok(false) => {}
-            Err(error) => {
-                log::error!(
-                    "No se pudo validar completed log para solicitud {}: {error:#}",
-                    case.request_oid()
-                );
-                let mut updated = case.clone();
-                updated.busy = false;
-                updated.message = Some(error.to_string());
-                return WorkerEvent::CaseUpdated {
-                    case: updated,
-                    message: format!(
-                        "No se pudo validar el registro local antes de transferir {}: {error}",
-                        case.request_oid()
-                    ),
-                    receipt_path: None,
-                    refresh_balance: false,
-                };
-            }
-        }
 
         let refreshed = self.refresh_case(&case);
         if !refreshed.validation.can_transfer() {
@@ -1043,12 +1181,11 @@ impl AppServices {
         let mut updated = refreshed;
         updated.busy = false;
         if is_smoke {
-            updated.already_transferred = false;
             updated.validation = validation::build_validation_report(
                 &updated.server_validation,
                 &updated.metamap,
                 &updated.core,
-                updated.already_transferred,
+                &updated.transfer_guard,
             );
             updated.message =
                 Some("Transferencia smoke generada. No se envio a Coinag.".to_owned());
@@ -1071,51 +1208,15 @@ impl AppServices {
                 refresh_balance: true,
             };
         }
-
-        let record_result = self.completed_transfers.record(
-            updated.request_oid(),
-            &self.operator_name,
-            external_transfer_id.as_deref(),
-            Some(&transfer_response),
-        );
-        updated.already_transferred = self
-            .completed_transfers
-            .contains_loaded(updated.request_oid());
-        if let Err(error) = record_result {
-            log::error!(
-                "Coinag acepto transferencia para solicitud {} pero fallo el registro local: {error:#}",
-                case.request_oid()
-            );
-            updated.validation = validation::build_validation_report(
-                &updated.server_validation,
-                &updated.metamap,
-                &updated.core,
-                updated.already_transferred,
-            );
-            updated.validation.blockers.push(format!(
-                "Coinag acepto la transferencia pero no se pudo registrar localmente: {error}"
-            ));
-            updated.message =
-                Some("Coinag acepto la transferencia, pero fallo el registro local.".to_owned());
-            return WorkerEvent::CaseUpdated {
-                case: updated,
-                message: format!(
-                    "La solicitud {} fue aceptada por Coinag pero no se pudo registrar localmente: {}",
-                    case.request_oid(),
-                    error
-                ),
-                receipt_path,
-                refresh_balance: true,
-            };
-        }
+        updated.transfer_guard = CoinagTransferGuard::EnProceso;
 
         updated.validation = validation::build_validation_report(
             &updated.server_validation,
             &updated.metamap,
             &updated.core,
-            updated.already_transferred,
+            &updated.transfer_guard,
         );
-        updated.message = Some("Transferencia registrada localmente.".to_owned());
+        updated.message = Some("EN PROCESO".to_owned());
 
         let message = if let Some(external_transfer_id) = external_transfer_id.as_deref() {
             log::info!(
@@ -1152,12 +1253,89 @@ enum WorkerEvent {
     ItemsLoaded(Vec<HydratedCase>),
     ItemsLoadFailed(String),
     BalanceUpdated(String),
+    TransferLookupCompleted(TransferLookupResult),
+    TransferLookupFailed(String),
     CaseUpdated {
         case: HydratedCase,
         message: String,
         receipt_path: Option<PathBuf>,
         refresh_balance: bool,
     },
+}
+
+fn preserve_busy_items(
+    current_items: &[HydratedCase],
+    mut loaded_items: Vec<HydratedCase>,
+) -> Vec<HydratedCase> {
+    let busy_items = current_items
+        .iter()
+        .filter(|item| item.busy)
+        .map(|item| (item.request_oid().to_owned(), item.message.clone()))
+        .collect::<HashMap<_, _>>();
+
+    for item in &mut loaded_items {
+        if let Some(message) = busy_items.get(item.request_oid()) {
+            item.busy = true;
+            item.message = message.clone();
+        } else if item.busy {
+            item.busy = false;
+            if item.message.as_deref() == Some(TRANSFER_PROCESSING_MESSAGE) {
+                item.message = None;
+            }
+        }
+    }
+
+    loaded_items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_case(request_oid: &str, busy: bool, message: Option<&str>) -> HydratedCase {
+        HydratedCase {
+            server_validation: Default::default(),
+            metamap: Default::default(),
+            core: CoreSnapshot {
+                request_oid: request_oid.to_owned(),
+                ..Default::default()
+            },
+            transfer_guard: Default::default(),
+            validation: Default::default(),
+            busy,
+            message: message.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn preserve_busy_items_keeps_current_inflight_state() {
+        let current_items = vec![build_case(
+            "241705",
+            true,
+            Some(TRANSFER_PROCESSING_MESSAGE),
+        )];
+        let loaded_items = vec![build_case("241705", false, Some("ERROR"))];
+
+        let merged = preserve_busy_items(&current_items, loaded_items);
+
+        assert!(merged[0].busy);
+        assert_eq!(merged[0].message.as_deref(), Some(TRANSFER_PROCESSING_MESSAGE));
+    }
+
+    #[test]
+    fn preserve_busy_items_clears_stale_processing_state() {
+        let current_items = vec![build_case("241705", false, Some("ERROR"))];
+        let loaded_items = vec![build_case(
+            "241705",
+            true,
+            Some(TRANSFER_PROCESSING_MESSAGE),
+        )];
+
+        let merged = preserve_busy_items(&current_items, loaded_items);
+
+        assert!(!merged[0].busy);
+        assert_eq!(merged[0].message, None);
+    }
 }
 
 fn compare_request_oids(left: &str, right: &str) -> std::cmp::Ordering {
@@ -1191,4 +1369,44 @@ fn display_credit_line(value: Option<&str>) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or("N/D")
         .to_owned()
+}
+
+fn build_transfer_lookup_summary_fields(response: &TransferLookupResponse) -> Vec<(String, String)> {
+    let root = response.body.get("response").unwrap_or(&response.body);
+    let mut fields = vec![
+        ("Solicitud".to_owned(), response.request_number.clone()),
+        ("idTrxCliente".to_owned(), response.id_trx_cliente.clone()),
+    ];
+
+    for (label, key) in [
+        ("Id banco", "id"),
+        ("Id trx original", "idTrxOriginal"),
+        ("Tipo", "tipo"),
+        ("Fecha y hora", "fechaHora"),
+        ("Cuit debito", "cuitDebito"),
+        ("Cuenta debito", "cuentaDebito"),
+        ("Cuit credito", "cuitCredito"),
+        ("Cuenta credito", "cuentaCredito"),
+        ("Importe", "importe"),
+        ("Concepto", "concepto"),
+        ("Estado", "estado"),
+        ("Descripcion", "descripcionTrx"),
+        ("Id anulacion", "idAnulacion"),
+    ] {
+        if let Some(value) = root.get(key).and_then(value_to_display) {
+            fields.push((label.to_owned(), value));
+        }
+    }
+
+    fields
+}
+
+fn value_to_display(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(text) => Some(text.trim().to_owned()).filter(|text| !text.is_empty()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        _ => Some(value.to_string()),
+    }
 }

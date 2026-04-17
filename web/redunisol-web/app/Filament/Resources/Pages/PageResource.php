@@ -9,10 +9,13 @@ use App\Filament\Resources\Pages\Tables\PagesTable;
 use App\Models\Page;
 use BackedEnum;
 use Filament\Forms\Components\Builder;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -107,7 +110,6 @@ class PageResource extends Resource
                                     TextInput::make('href')
                                         ->label('Enlace (href)')
                                         ->helperText('Ej: /prestamos-para-policias — dejalo vacío si todavía no tiene página.')
-                                        ->url()
                                         ->nullable(),
                                 ])
                                 ->defaultItems(1)
@@ -146,8 +148,7 @@ class PageResource extends Resource
 
                                     TextInput::make('image')
                                         ->label('URL de imagen')
-                                        ->helperText('Ruta relativa o URL absoluta. Ej: /images/mutuales/logo.avif')
-                                        ->url(),
+                                        ->helperText('Ruta relativa o URL absoluta. Ej: /images/mutuales/logo.avif'),
                                 ])
                                 ->defaultItems(0)
                                 ->reorderable()
@@ -278,6 +279,163 @@ class PageResource extends Resource
                                 ->defaultItems(1)
                                 ->reorderable()
                                 ->collapsible(),
+                        ]),
+
+                    // ──────────────────────────────────────────
+                    // FORM
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('form')
+                        ->label('Formulario de solicitud')
+                        ->icon('heroicon-o-document-text')
+                        ->schema([
+
+                            Fieldset::make('Paso 1 — Datos personales')
+                                ->schema([
+                                    Toggle::make('cuil.enabled')
+                                        ->label('CUIL habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('cuil.label')
+                                        ->label('Label del campo')
+                                        ->default('CUIL'),
+
+                                    Toggle::make('email.enabled')
+                                        ->label('Email habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('email.label')
+                                        ->label('Label del campo')
+                                        ->default('Email'),
+
+                                    Toggle::make('celular.enabled')
+                                        ->label('Celular habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('celular.label')
+                                        ->label('Label del campo')
+                                        ->default('Celular / WhatsApp'),
+
+                                    Toggle::make('terminos.enabled')
+                                        ->label('Términos y Condiciones habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('terminos.label')
+                                        ->label('Texto del checkbox')
+                                        ->default('Acepto los Términos y Condiciones y la Política de Privacidad'),
+                                ])
+                                ->columns(2),
+
+                            Fieldset::make('Paso 2 — Recibo de sueldo')
+                                ->schema([
+                                    Toggle::make('recibo.enabled')
+                                        ->label('Paso habilitado')
+                                        ->default(true)
+                                        ->inline(false),
+                                    TextInput::make('recibo.label')
+                                        ->label('Título del paso')
+                                        ->default('Subí tu recibo de sueldo'),
+                                ])
+                                ->columns(2),
+
+                            Fieldset::make('Paso 3 — Provincia')
+                                ->schema([
+                                    Toggle::make('provincia.enabled')
+                                        ->label('Paso habilitado')
+                                        ->default(true)
+                                        ->live()
+                                        ->inline(false),
+                                    Select::make('provincia.defaultValue')
+                                        ->label('Provincia por defecto')
+                                        ->helperText('Se envía automáticamente cuando el paso está deshabilitado.')
+                                        ->options([
+                                            'Córdoba'    => 'Córdoba',
+                                            'Catamarca'  => 'Catamarca',
+                                            'La Rioja'   => 'La Rioja',
+                                            'Santa Fe'   => 'Santa Fe',
+                                            'Jujuy'      => 'Jujuy',
+                                            'Especifica' => 'Especifica',
+                                        ])
+                                        ->placeholder('Seleccioná una provincia')
+                                        ->hidden(fn (Get $get): bool => (bool) $get('provincia.enabled'))
+                                        ->columnSpanFull(),
+                                ])
+                                ->columns(2),
+
+                            Fieldset::make('Paso 4 — Situación laboral y banco')
+                                ->schema([
+                                    Toggle::make('situacionLaboral.enabled')
+                                        ->label('Situación laboral habilitada')
+                                        ->default(true)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('situacionLaboral.label')
+                                        ->label('Label del campo')
+                                        ->default('¿Cuál es su situación laboral?')
+                                        ->hidden(fn (Get $get): bool => ! (bool) $get('situacionLaboral.enabled')),
+                                    Select::make('situacionLaboral.defaultValue')
+                                        ->label('Situación laboral por defecto')
+                                        ->helperText('Se envía automáticamente cuando el campo está deshabilitado.')
+                                        ->options([
+                                            'Empleado Publico Provincial'      => 'Empleado Público Provincial',
+                                            'Empleado Publico Municipal'       => 'Empleado Público Municipal',
+                                            'Empleado publico Nacional'        => 'Empleado Público Nacional',
+                                            'Empleado Privado'                 => 'Empleado Privado',
+                                            'Policia'                          => 'Policía',
+                                            'Jubilado Nacional'                => 'Jubilado Nacional',
+                                            'Jubilado Provincial'              => 'Jubilado Provincial',
+                                            'Jubilado Municipal'               => 'Jubilado Municipal',
+                                            'Autonomo/Independiente'           => 'Autónomo / Independiente',
+                                            'Monotributista'                   => 'Monotributista',
+                                            'Pensionado'                       => 'Pensionado',
+                                            'Beneficiario de Plan Social'      => 'Beneficiario de Plan Social',
+                                            'Jubilado/Pensionado FUERA DE USO' => 'Jubilado/Pensionado (fuera de uso)',
+                                            'Docente'                          => 'Docente',
+                                        ])
+                                        ->placeholder('Seleccioná una situación laboral')
+                                        ->hidden(fn (Get $get): bool => (bool) $get('situacionLaboral.enabled'))
+                                        ->columnSpanFull(),
+
+                                    Toggle::make('banco.enabled')
+                                        ->label('Banco habilitado')
+                                        ->default(true)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('banco.label')
+                                        ->label('Label del campo')
+                                        ->default('¿Cuál es su banco de cobro?')
+                                        ->hidden(fn (Get $get): bool => ! (bool) $get('banco.enabled')),
+                                    Select::make('banco.defaultValue')
+                                        ->label('Banco por defecto')
+                                        ->helperText('Se envía automáticamente cuando el campo está deshabilitado.')
+                                        ->options([
+                                            'BANCO DE LA PROVINCIA DE CORDOBA S.A.'        => 'Bancor',
+                                            'BANCO DE LA NACION ARGENTINA'                 => 'Banco Nación',
+                                            'BANCO DE LA PAMPA SOCIEDAD DE ECONOMÍA'       => 'Banco de La Pampa',
+                                            'BANCO PROVINCIA DEL NEUQUÉN SOCIEDAD ANÓNIMA' => 'Banco Neuquén',
+                                            'BANCO PATAGONIA S.A.'                         => 'Banco Patagonia',
+                                            'BBVA BANCO FRANCES S.A.'                      => 'BBVA Frances',
+                                            'BANCO SANTANDER RIO S.A.'                     => 'Santander Río',
+                                            'BANCO DEL CHUBUT S.A.'                        => 'Banco Chubut',
+                                            'HSBC BANK ARGENTINA S.A.'                     => 'HSBC',
+                                            'BANCO ITAU ARGENTINA S.A.'                    => 'Itaú',
+                                            'BANCO MACRO S.A.'                             => 'Macro',
+                                            'BANCO DE GALICIA Y BUENOS AIRES S.A.U.'       => 'Galicia',
+                                            'BANCO DE LA PROVINCIA DE BUENOS AIRES'        => 'Banco Provincia',
+                                            'BRUBANK S.A.U.'                               => 'Brubank',
+                                            'BANCO CREDICOOP COOPERATIVO LIMITADO'         => 'Credicoop',
+                                            'BANCO SUPERVIELLE S.A.'                       => 'Supervielle',
+                                            'BANCO DE LA CIUDAD DE BUENOS AIRES'           => 'Banco Ciudad',
+                                            'BANCO HIPOTECARIO S.A.'                       => 'Hipotecario',
+                                            'NARANJA DIGITAL COMPAÑÍA FINANCIERA S.A.'     => 'Naranja Digital',
+                                            'Otros'                                         => 'Otros',
+                                        ])
+                                        ->searchable()
+                                        ->placeholder('Seleccioná un banco')
+                                        ->hidden(fn (Get $get): bool => (bool) $get('banco.enabled'))
+                                        ->columnSpanFull(),
+                                ])
+                                ->columns(2),
+
                         ]),
 
                 ])

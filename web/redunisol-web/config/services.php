@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    'gtm' => [
+        'id'      => env('GTM_ID'),
+        'auth'    => env('GTM_AUTH'),
+        'preview' => env('GTM_PREVIEW'),
+    ],
+
+    'kestra' => [
+        'form_webhook_url' => env('KESTRA_FORM_WEBHOOK_URL'),
+        'form_webhook_timeout_seconds' => (int) env('KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS', 15),
+        'default_lead_source' => env('KESTRA_FORM_DEFAULT_LEAD_SOURCE', 'Google'),
+    ],
+
 ];

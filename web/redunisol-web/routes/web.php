@@ -65,6 +65,7 @@ Route::get('/{slug?}', function ($slug = null) {
     $page = Page::where('slug', $slug)->firstOrFail();
 
     return Inertia::render('welcome', [
+        'landingSlug' => $slug,
         'sections' => $page->sections,
         'title'    => $page->title,
     ]);

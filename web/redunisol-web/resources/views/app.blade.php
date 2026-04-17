@@ -3,7 +3,23 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-
+        @if(config('services.gtm.id'))
+        @php
+            $gtmDebugParams = (config('services.gtm.auth') && config('services.gtm.preview'))
+                ? '&gtm_auth='.config('services.gtm.auth').'&gtm_preview='.config('services.gtm.preview').'&gtm_cookies_win=x'
+                : '';
+        @endphp
+        <script>
+        (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});
+        var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
+        j.async=true;j.src=
+        'https://www.googletagmanager.com/gtm.js?id='+i+dl+'{{ $gtmDebugParams }}';
+        f.parentNode.insertBefore(j,f);
+        })(window,document,'script','dataLayer','{{ config('services.gtm.id') }}');
+        </script>
+        @endif
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>
             (function() {
@@ -44,6 +60,12 @@
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
+        @if(config('services.gtm.id'))
+        <noscript>
+        <iframe src="https://www.googletagmanager.com/ns.html?id={{ config('services.gtm.id') }}{{ $gtmDebugParams }}"
+        height="0" width="0" style="display:none;visibility:hidden"></iframe>
+        </noscript>
+        @endif
         @inertia
     </body>
 </html>

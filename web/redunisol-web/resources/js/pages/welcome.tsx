@@ -1,4 +1,6 @@
+import useTracking from '@/hooks/useTracking';
 import { usePage } from '@inertiajs/react';
+
 import { useState } from 'react';
 
 import About, { type AboutSection } from '@/components/about';
@@ -8,7 +10,9 @@ import Footer from '@/components/footer';
 import Hero, { type Hero as HeroData } from '@/components/hero';
 import Navbar from '@/components/navbar';
 import Requisitos, { type RequisitosData } from '@/components/requisitos';
-import FormSection from '@/components/sections/FormSection';
+import FormSection, {
+    type FormSectionConfig,
+} from '@/components/sections/FormSection';
 import Services, { type ServicesData } from '@/components/services';
 import Testimonios, { type TestimoniosData } from '@/components/testimonios';
 
@@ -18,6 +22,7 @@ interface PageSection {
 }
 
 interface HomePageProps {
+    landingSlug: string;
     sections: PageSection[];
     title: string;
     [key: string]: unknown;
@@ -28,7 +33,7 @@ function useSection<T>(sections: PageSection[], type: string): T | undefined {
 }
 
 export default function Page() {
-    const { sections } = usePage<HomePageProps>().props;
+    const { landingSlug, sections, title } = usePage<HomePageProps>().props;
     const [activeTab, setActiveTab] = useState('unset');
 
     const hero = useSection<HeroData>(sections, 'hero');
@@ -38,12 +43,18 @@ export default function Page() {
     const convenios = useSection<ConveniosData>(sections, 'convenios');
     const requisitos = useSection<RequisitosData>(sections, 'requisitos');
     const testimonios = useSection<TestimoniosData>(sections, 'testimonios');
+    const formConfig = useSection<FormSectionConfig>(sections, 'form');
+    useTracking();
 
     return (
         <>
             <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
             <div className="bg-gradient-custom w-full">
-                <FormSection />
+                <FormSection
+                    config={formConfig}
+                    landingSlug={landingSlug}
+                    landingTitle={title}
+                />
                 <main className="rounded-tl-4xl rounded-tr-4xl bg-white">
                     {activeTab !== 'solicita' && hero && <Hero data={hero} />}
                     {activeTab !== 'creditos' && services && (

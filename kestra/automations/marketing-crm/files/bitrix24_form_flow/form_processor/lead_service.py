@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .input_parser import NormalizedInput, normalize_business_input
@@ -16,26 +17,30 @@ def create_lead(
     logger: Logger,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
+    fields = {
+        "TITLE": submission.full_name,
+        "NAME": submission.full_name,
+        "EMAIL": [{"VALUE": submission.email, "VALUE_TYPE": "WORK"}],
+        "PHONE": [{"VALUE": submission.whatsapp, "VALUE_TYPE": "WORK"}],
+        "CONTACT_ID": contact_id,
+        config.fields.lead_processing_policy: _resolve_enum_id(
+            client,
+            config.fields.lead_processing_policy,
+            config.processing_policy.skip,
+        ),
+        config.fields.lead_cuil: submission.cuil_digits,
+        config.fields.lead_employment_status: submission.employment_status.bitrix_id,
+        config.fields.lead_payment_bank: [submission.payment_bank.bitrix_id],
+        config.fields.lead_province: submission.province.bitrix_id,
+        config.fields.lead_source: submission.lead_source.bitrix_id,
+    }
+
+    fields.update(_build_optional_tracking_fields(config, submission))
+
     lead_id = client.call(
         "crm.lead.add",
         {
-            "fields": {
-                "TITLE": submission.full_name,
-                "NAME": submission.full_name,
-                "EMAIL": [{"VALUE": submission.email, "VALUE_TYPE": "WORK"}],
-                "PHONE": [{"VALUE": submission.whatsapp, "VALUE_TYPE": "WORK"}],
-                "CONTACT_ID": contact_id,
-                config.fields.lead_processing_policy: _resolve_enum_id(
-                    client,
-                    config.fields.lead_processing_policy,
-                    config.processing_policy.skip,
-                ),
-                config.fields.lead_cuil: submission.cuil_digits,
-                config.fields.lead_employment_status: submission.employment_status.bitrix_id,
-                config.fields.lead_payment_bank: [submission.payment_bank.bitrix_id],
-                config.fields.lead_province: submission.province.bitrix_id,
-                config.fields.lead_source: submission.lead_source.bitrix_id,
-            }
+            "fields": fields
         },
     )
     return int(lead_id)
@@ -108,6 +113,71 @@ def update_lead_status(
     return status_id
 
 
+def update_lead_bcra_snapshot(
+    client: BitrixClient,
+    config: AppConfig,
+    lead_id: int,
+    bcra_result: BcraConsultationResult,
+    logger: Logger,
+) -> None:
+    if not config.fields.has_bcra_storage_fields():
+        raise RuntimeError("La configuracion no incluye los campos de storage BCRA.")
+
+    logger.info(f"Persistiendo snapshot BCRA en el lead {lead_id}.")
+    fields = {
+        config.fields.lead_bcra_status: bcra_result.formatted_field_value,
+        config.fields.lead_bcra_data_raw: bcra_result.raw_field_value,
+        config.fields.lead_bcra_checked_at: bcra_result.checked_at,
+    }
+    if config.fields.lead_bcra_result and bcra_result.summary_field_value is not None:
+        fields[config.fields.lead_bcra_result] = bcra_result.summary_field_value
+    update_lead_fields(client, lead_id, fields)
+
+
+def update_lead_fields(
+    client: BitrixClient,
+    lead_id: int,
+    fields: dict[str, Any],
+) -> None:
+    client.call("crm.lead.update", {"id": lead_id, "fields": fields})
+
+
+def list_leads_created_between(
+    client: BitrixClient,
+    *,
+    date_from: str,
+    date_to: str,
+    field_names: list[str],
+    logger: Logger,
+) -> list[dict[str, Any]]:
+    logger.info(f"Listando leads entre {date_from} y {date_to}.")
+    leads: list[dict[str, Any]] = []
+    start = 0
+
+    while True:
+        payload = {
+            "filter": {
+                ">=DATE_CREATE": date_from,
+                "<=DATE_CREATE": date_to,
+            },
+            "order": {"ID": "ASC"},
+            "select": field_names,
+            "start": start,
+        }
+        response = client.call_full("crm.lead.list", payload)
+        result = response.get("result") or []
+        if not isinstance(result, list):
+            raise RuntimeError("crm.lead.list devolvio un payload invalido.")
+        leads.extend(result)
+
+        next_page = response.get("next")
+        if next_page is None:
+            break
+        start = int(next_page)
+
+    return leads
+
+
 def _resolve_rejection_reason_enum_id(
     client: BitrixClient,
     field_name: str,
@@ -133,6 +203,24 @@ def _resolve_enum_id(
     raise RuntimeError(
         f'No se encontro el valor "{target_label}" en la enumeracion del campo "{field_name}".'
     )
+
+
+def _build_optional_tracking_fields(
+    config: AppConfig,
+    submission: NormalizedInput,
+) -> dict[str, str]:
+    optional_fields = {
+        config.fields.lead_utm_source: submission.utm_source,
+        config.fields.lead_utm_medium: submission.utm_medium,
+        config.fields.lead_utm_campaign: submission.utm_campaign,
+        config.fields.lead_utm_term: submission.utm_term,
+        config.fields.lead_utm_content: submission.utm_content,
+    }
+    return {
+        field_name: value
+        for field_name, value in optional_fields.items()
+        if value is not None and value != ""
+    }
 
 
 def _lead_full_name(lead: dict[str, Any]) -> str:

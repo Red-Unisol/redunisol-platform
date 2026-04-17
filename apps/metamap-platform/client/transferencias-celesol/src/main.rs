@@ -1,3 +1,5 @@
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
@@ -17,8 +19,8 @@ fn main() -> eframe::Result<()> {
         Ok(config) => config,
         Err(error) => {
             log::error!("Error de configuracion: {error:#}");
-            eprintln!("Error de configuracion: {error}");
-            std::process::exit(1);
+            show_startup_error("Error de configuracion", &error);
+            return Ok(());
         }
     };
 
@@ -26,8 +28,8 @@ fn main() -> eframe::Result<()> {
         Ok(app) => app,
         Err(error) => {
             log::error!("No se pudo iniciar la app: {error:#}");
-            eprintln!("No se pudo iniciar la app: {error}");
-            std::process::exit(1);
+            show_startup_error("No se pudo iniciar la app", &error);
+            return Ok(());
         }
     };
 
@@ -44,6 +46,37 @@ fn main() -> eframe::Result<()> {
         native_options,
         Box::new(move |_creation_context| Ok(Box::new(app))),
     )
+}
+
+fn show_startup_error(title: &str, error: &anyhow::Error) {
+    eprintln!("{title}: {error}");
+
+    let mut details = String::new();
+    for cause in error.chain() {
+        if !details.is_empty() {
+            details.push_str("\n\n");
+        }
+        details.push_str(cause.to_string().as_str());
+    }
+
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title(title)
+            .with_inner_size([640.0, 260.0])
+            .with_resizable(false),
+        ..Default::default()
+    };
+
+    let _ = eframe::run_native(
+        title,
+        native_options,
+        Box::new(move |_creation_context| {
+            Ok(Box::new(StartupErrorApp {
+                title: title.to_owned(),
+                details,
+            }))
+        }),
+    );
 }
 
 fn load_runtime_config() -> Result<AppConfig> {
@@ -180,6 +213,38 @@ impl eframe::App for PassphrasePromptApp {
                         ctx.send_viewport_cmd(ViewportCommand::Close);
                     }
                 });
+            });
+        });
+    }
+}
+
+struct StartupErrorApp {
+    title: String,
+    details: String,
+}
+
+impl eframe::App for StartupErrorApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical(|ui| {
+                ui.heading(self.title.as_str());
+                ui.add_space(8.0);
+                ui.label("La aplicacion no pudo continuar.");
+                ui.add_space(8.0);
+                egui::ScrollArea::vertical()
+                    .max_height(140.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            TextEdit::multiline(&mut self.details)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(8)
+                                .interactive(false),
+                        );
+                    });
+                ui.add_space(10.0);
+                if ui.button("Cerrar").clicked() {
+                    ctx.send_viewport_cmd(ViewportCommand::Close);
+                }
             });
         });
     }

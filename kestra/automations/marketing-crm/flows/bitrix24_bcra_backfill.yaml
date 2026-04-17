@@ -1,0 +1,83 @@
+id: bitrix24_bcra_backfill
+namespace: redunisol
+
+description: Consulta BCRA para leads del dia sin snapshot previo y corta el lote si el upstream rate-limita.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  integration: bitrix24
+
+tasks:
+  - id: sincronizar_bcra
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_FIELD: "{{ envs.bitrix24_lead_processing_policy_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_SKIP: "{{ envs.bitrix24_lead_processing_policy_skip }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_PROCESS: "{{ envs.bitrix24_lead_processing_policy_process }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
+      BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_BCRA_STATUS_FIELD: "{{ envs.bitrix24_lead_bcra_status_field }}"
+      BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
+      BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
+      BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_bcra_backfill_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.sincronizar_bcra.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.action }}"
+  - id: processed_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.processed_count }}"
+  - id: populated_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.populated_count }}"
+  - id: rejected_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.rejected_count }}"
+  - id: skipped_populated_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.skipped_populated_count }}"
+  - id: skipped_missing_cuil_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.skipped_missing_cuil_count }}"
+  - id: temporary_error_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.temporary_error_count }}"
+  - id: rate_limited
+    type: BOOLEAN
+    value: "{{ outputs.sincronizar_bcra.vars.rate_limited }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.message }}"
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"

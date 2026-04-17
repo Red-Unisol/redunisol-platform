@@ -1,4 +1,6 @@
 target/
+dist/
+package-input/
 receipts/
 receipts-example/
 preview/

@@ -33,12 +33,10 @@ pub fn init_logging() -> Result<()> {
         )
     });
 
-    if cfg!(debug_assertions) {
-        let path = resolve_debug_log_path();
-        let file = open_debug_log_file(&path)?;
-        eprintln!("Debug log activo en {}", path.display());
-        builder.target(Target::Pipe(Box::new(file)));
-    }
+    let path = resolve_log_path();
+    let file = open_log_file(&path)?;
+    eprintln!("Log activo en {}", path.display());
+    builder.target(Target::Pipe(Box::new(file)));
 
     builder
         .try_init()
@@ -55,7 +53,7 @@ fn debug_level() -> LevelFilter {
     }
 }
 
-fn resolve_debug_log_path() -> PathBuf {
+fn resolve_log_path() -> PathBuf {
     if let Some(path) = env::var_os("TRANSFERENCIAS_DEBUG_LOG_PATH")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
@@ -69,18 +67,29 @@ fn resolve_debug_log_path() -> PathBuf {
     }
     default_base_dir()
         .join("logs")
-        .join("transferencias-debug.log")
+        .join(default_log_file_name())
 }
 
-fn open_debug_log_file(path: &Path) -> Result<std::fs::File> {
+fn open_log_file(path: &Path) -> Result<std::fs::File> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("No se pudo crear la carpeta de logs {:?}", parent))?;
         }
     }
-    std::fs::File::create(path)
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
         .with_context(|| format!("No se pudo abrir el archivo de log {:?}", path))
+}
+
+fn default_log_file_name() -> &'static str {
+    if cfg!(debug_assertions) {
+        "transferencias-debug.log"
+    } else {
+        "transferencias.log"
+    }
 }
 
 fn default_base_dir() -> PathBuf {

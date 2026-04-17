@@ -1,0 +1,87 @@
+id: consulta_padron_a13
+namespace: redunisol
+
+description: Consulta ARCA Padron A13 por CUIT o CUIL y devuelve los datos basicos de la persona.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: arca
+
+tasks:
+  - id: consultar_padron
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - arca_padron_a13/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra cryptography > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      ARCA_CUIT_REPRESENTADA: "{{ envs.arca_padron_a13_cuit_representada }}"
+      ARCA_TIMEOUT_SECONDS: "{{ envs.arca_padron_a13_timeout_seconds }}"
+      ARCA_CERT_PEM_B64: "{{ secret('ARCA_PADRON_A13_CERT_PEM_B64') }}"
+      ARCA_KEY_PEM_B64: "{{ secret('ARCA_PADRON_A13_KEY_PEM_B64') }}"
+    commands:
+      - python -m arca_padron_a13.kestra_webhook_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.consultar_padron.vars.ok }}"
+  - id: cuit_cuil
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.cuit_cuil }}"
+  - id: cuit_representada
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.cuit_representada }}"
+  - id: id_persona
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.id_persona }}"
+  - id: nombre
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.nombre }}"
+  - id: apellido
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.apellido }}"
+  - id: razon_social
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.razon_social }}"
+  - id: estado_clave
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.estado_clave }}"
+  - id: tipo_persona
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.tipo_persona }}"
+  - id: tipo_clave
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.tipo_clave }}"
+  - id: numero_documento
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.numero_documento }}"
+  - id: ta_expiration_time
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.ta_expiration_time }}"
+  - id: persona_json
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.persona_json }}"
+  - id: response_json
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.response_json }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.error }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_ARCA_PADRON_A13_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

@@ -58,6 +58,25 @@ pub struct ValidationReport {
     pub warnings: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum CoinagTransferGuard {
+    #[default]
+    Unknown,
+    NotFound,
+    YaTransferida,
+    EnProceso,
+    Error { detail: String },
+}
+
+impl CoinagTransferGuard {
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            Self::Error { detail } => Some(detail.as_str()),
+            _ => None,
+        }
+    }
+}
+
 impl ValidationReport {
     pub fn can_transfer(&self) -> bool {
         !self.disabled && self.blockers.is_empty()
@@ -67,11 +86,19 @@ impl ValidationReport {
         if self.disabled {
             return "DESHABILITADO".to_owned();
         }
+        for status in ["YA TRANSFERIDA", "EN PROCESO", "ERROR"] {
+            if self.blockers.iter().any(|blocker| blocker == status) {
+                return status.to_owned();
+            }
+        }
         if self.can_transfer() {
             if self.warnings.is_empty() {
                 return "OK".to_owned();
             }
             return format!("OK con {} advertencias", self.warnings.len());
+        }
+        if self.blockers.len() == 1 {
+            return "1 bloqueo".to_owned();
         }
         format!("{} bloqueos", self.blockers.len())
     }
@@ -82,8 +109,8 @@ pub struct HydratedCase {
     pub server_validation: ValidationSnapshot,
     pub metamap: MetamapSnapshot,
     pub core: CoreSnapshot,
+    pub transfer_guard: CoinagTransferGuard,
     pub validation: ValidationReport,
-    pub already_transferred: bool,
     pub busy: bool,
     pub message: Option<String>,
 }
@@ -177,6 +204,22 @@ impl HydratedCase {
             .or_else(|| self.server_validation.requested_amount_value.clone())
             .or_else(|| self.server_validation.amount_raw.clone())
             .or_else(|| self.server_validation.amount_value.clone())
+            .unwrap_or_else(|| "N/D".to_owned())
+    }
+
+    pub fn cuil_display(&self) -> String {
+        self.core
+            .request_cuil
+            .clone()
+            .or_else(|| self.core.document_cuil.clone())
+            .or_else(|| self.core.coinag_cuil.clone())
+            .unwrap_or_else(|| "N/D".to_owned())
+    }
+
+    pub fn cbu_display(&self) -> String {
+        self.core
+            .transfer_cbu
+            .clone()
             .unwrap_or_else(|| "N/D".to_owned())
     }
 

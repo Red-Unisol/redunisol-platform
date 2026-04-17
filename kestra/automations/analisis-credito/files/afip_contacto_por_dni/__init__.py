@@ -1,0 +1,1 @@
+"""AFIP contacto por DNI namespace package for Kestra."""
