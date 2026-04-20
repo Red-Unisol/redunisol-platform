@@ -19,10 +19,6 @@ tasks:
 
   - id: consultar_padron
     type: io.kestra.plugin.scripts.python.Commands
-    packageManager: PIP
-    dependencies:
-      - cryptography
-    dependencyCacheEnabled: true
     targetOS: LINUX
     namespaceFiles:
       enabled: true
@@ -40,6 +36,7 @@ tasks:
       ARCA_CERT_PEM_B64: "{{ secret('ARCA_PADRON_A13_CERT_PEM_B64') }}"
       ARCA_KEY_PEM_B64: "{{ secret('ARCA_PADRON_A13_KEY_PEM_B64') }}"
     commands:
+      - pip install kestra cryptography > /dev/null
       - python -m arca_padron_a13.kestra_webhook_entrypoint
 
   - id: guardar_ta_cache
