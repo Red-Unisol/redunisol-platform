@@ -27,7 +27,7 @@ tasks:
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       pullPolicy: IF_NOT_PRESENT
-    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    containerImage: ghcr.io/red-unisol/analisis-credito-arca-padron-a13:latest
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
       ARCA_TA_CACHE_JSON: "{{ (outputs.leer_ta_cache.value ?? null) | json }}"
@@ -36,7 +36,6 @@ tasks:
       ARCA_CERT_PEM_B64: "{{ secret('ARCA_PADRON_A13_CERT_PEM_B64') }}"
       ARCA_KEY_PEM_B64: "{{ secret('ARCA_PADRON_A13_KEY_PEM_B64') }}"
     commands:
-      - pip install kestra cryptography > /dev/null
       - python -m arca_padron_a13.kestra_webhook_entrypoint
 
   - id: guardar_ta_cache
