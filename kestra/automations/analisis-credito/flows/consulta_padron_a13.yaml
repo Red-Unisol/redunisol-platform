@@ -13,8 +13,9 @@ labels:
 tasks:
   - id: leer_ta_cache
     type: io.kestra.plugin.core.kv.Get
-    key: "arca/padron-a13/wsaa/{{ envs.arca_padron_a13_cuit_representada }}"
+    key: "arca.padron-a13.wsaa.{{ envs.arca_padron_a13_cuit_representada }}"
     errorOnMissing: false
+    allowFailure: true
 
   - id: consultar_padron
     type: io.kestra.plugin.scripts.python.Commands
@@ -33,7 +34,7 @@ tasks:
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
-      ARCA_TA_CACHE_JSON: "{{ outputs.leer_ta_cache.value | json }}"
+      ARCA_TA_CACHE_JSON: "{{ (outputs.leer_ta_cache.value ?? null) | json }}"
       ARCA_CUIT_REPRESENTADA: "{{ envs.arca_padron_a13_cuit_representada }}"
       ARCA_TIMEOUT_SECONDS: "{{ envs.arca_padron_a13_timeout_seconds }}"
       ARCA_CERT_PEM_B64: "{{ secret('ARCA_PADRON_A13_CERT_PEM_B64') }}"
@@ -44,7 +45,7 @@ tasks:
   - id: guardar_ta_cache
     type: io.kestra.plugin.core.kv.Set
     runIf: "{{ outputs.consultar_padron.vars.ta_cache_should_persist }}"
-    key: "arca/padron-a13/wsaa/{{ envs.arca_padron_a13_cuit_representada }}"
+    key: "arca.padron-a13.wsaa.{{ envs.arca_padron_a13_cuit_representada }}"
     value: "{{ outputs.consultar_padron.vars.ta_cache_json }}"
     kvType: JSON
     overwrite: true
