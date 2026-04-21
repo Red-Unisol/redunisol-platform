@@ -1,0 +1,164 @@
+id: bitrix_crm_negociaciones
+namespace: redunisol
+
+description: Recibe webhooks de Bitrix por cambio de estado, persiste las acciones futuras y programa un subflow exacto para cada una.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: cobranzas
+  integration: bitrix24
+
+tasks:
+  - id: procesar_webhook
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix_crm_negociaciones/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra requests > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ (trigger.body is defined) ? (trigger.body | json) : (trigger.parameters | json) }}"
+      TRIGGER_BODY_RAW: "{{ (trigger.body is defined) ? trigger.body : '' }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_APP_TOKEN: "{{ secret('BITRIX24_CRM_NEGOCIACIONES_APP_TOKEN') }}"
+      PROMISE_DATE_FIELD: "{{ envs.bitrix24_promesa_date_field }}"
+      PROMISE_AMOUNT_FIELD: "{{ envs.bitrix24_promesa_amount_field }}"
+      BUSINESS_START_HOUR: "{{ envs.business_start_hour }}"
+      BUSINESS_START_MINUTE: "{{ envs.business_start_minute }}"
+      BUSINESS_END_HOUR: "{{ envs.business_end_hour }}"
+      BUSINESS_END_MINUTE: "{{ envs.business_end_minute }}"
+      LOCAL_TZ: "{{ envs.local_tz }}"
+    commands:
+      - python -m bitrix_crm_negociaciones.kestra_webhook_entrypoint
+
+  - id: leer_plan_existente
+    runIf: "{{ outputs.procesar_webhook.vars.plan_key != '' }}"
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ outputs.procesar_webhook.vars.plan_key }}"
+    errorOnMissing: false
+
+  - id: guardar_plan_borrador
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.procesar_webhook.vars.plan_key != '' and (outputs.leer_plan_existente.value == null or outputs.leer_plan_existente.value.status != 'ready') }}"
+    key: "{{ outputs.procesar_webhook.vars.plan_key }}"
+    value: "{{ outputs.procesar_webhook.vars.plan_json_draft }}"
+    kvType: JSON
+    overwrite: true
+    ttl: P45D
+
+  - id: programar_accion_1
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.procesar_webhook.vars.action_1_enabled and (outputs.leer_plan_existente.value == null or outputs.leer_plan_existente.value.status != 'ready') }}"
+    namespace: "{{ flow.namespace }}"
+    flowId: bitrix_crm_negociaciones_execute
+    scheduleDate: "{{ outputs.procesar_webhook.vars.action_1_due_at }}"
+    inputs:
+      plan_key: "{{ outputs.procesar_webhook.vars.plan_key }}"
+      action_order: "{{ outputs.procesar_webhook.vars.action_1_order }}"
+    wait: false
+
+  - id: programar_accion_2
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.procesar_webhook.vars.action_2_enabled and (outputs.leer_plan_existente.value == null or outputs.leer_plan_existente.value.status != 'ready') }}"
+    namespace: "{{ flow.namespace }}"
+    flowId: bitrix_crm_negociaciones_execute
+    scheduleDate: "{{ outputs.procesar_webhook.vars.action_2_due_at }}"
+    inputs:
+      plan_key: "{{ outputs.procesar_webhook.vars.plan_key }}"
+      action_order: "{{ outputs.procesar_webhook.vars.action_2_order }}"
+    wait: false
+
+  - id: programar_accion_3
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.procesar_webhook.vars.action_3_enabled and (outputs.leer_plan_existente.value == null or outputs.leer_plan_existente.value.status != 'ready') }}"
+    namespace: "{{ flow.namespace }}"
+    flowId: bitrix_crm_negociaciones_execute
+    scheduleDate: "{{ outputs.procesar_webhook.vars.action_3_due_at }}"
+    inputs:
+      plan_key: "{{ outputs.procesar_webhook.vars.plan_key }}"
+      action_order: "{{ outputs.procesar_webhook.vars.action_3_order }}"
+    wait: false
+
+  - id: marcar_plan_listo
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.procesar_webhook.vars.plan_key != '' and (outputs.leer_plan_existente.value == null or outputs.leer_plan_existente.value.status != 'ready') }}"
+    key: "{{ outputs.procesar_webhook.vars.plan_key }}"
+    value: "{{ outputs.procesar_webhook.vars.plan_json_ready }}"
+    kvType: JSON
+    overwrite: true
+    ttl: P45D
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.procesar_webhook.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action }}"
+  - id: reason
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.reason }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.message }}"
+  - id: deal_id
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.deal_id }}"
+  - id: stage_id
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.stage_id }}"
+  - id: stage_name
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.stage_name }}"
+  - id: plan_key
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.plan_key }}"
+  - id: action_1_order
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action_1_order }}"
+  - id: action_2_order
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action_2_order }}"
+  - id: action_3_order
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action_3_order }}"
+  - id: action_1_due_at
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action_1_due_at }}"
+  - id: action_2_due_at
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action_2_due_at }}"
+  - id: action_3_due_at
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.action_3_due_at }}"
+  - id: planned_first_action_at
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.planned_first_action_at }}"
+  - id: planned_second_action_at
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.planned_second_action_at }}"
+  - id: planned_move_at
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.planned_move_at }}"
+  - id: planned_action_count
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.planned_action_count }}"
+  - id: payload_preview
+    type: STRING
+    value: "{{ outputs.procesar_webhook.vars.payload_preview }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('BITRIX24_CRM_NEGOCIACIONES_WEBHOOK_KEY') }}"
+    wait: false
+    returnOutputs: false
+    responseContentType: application/json
