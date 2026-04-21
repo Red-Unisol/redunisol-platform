@@ -69,14 +69,14 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
         self.assertEqual(plan["actions"][0]["action_kind"], "send_or_noop")
         self.assertEqual(
             plan["actions"][0]["message_id"],
-            plan["actions"][0]["action_key"].replace("/", "-"),
+            plan["actions"][0]["action_key"],
         )
         self.assertEqual(plan["actions"][1]["depends_on_order"], 1)
         self.assertEqual(plan["actions"][2]["depends_on_order"], 2)
 
     def test_pending_entrypoint_waits_if_dependency_is_pending(self) -> None:
         plan = {
-            "key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/plan",
+            "key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.plan",
             "status": "ready",
             "actions": [
                 {
@@ -84,7 +84,7 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
                     "status": "pending",
                 },
                 {
-                    "action_key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/action_2",
+                    "action_key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.action_2",
                     "deal_id": "1",
                     "expected_stage": "C11:PREPARATION",
                     "action_kind": "send_or_noop",
@@ -110,7 +110,7 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
 
     def test_pending_entrypoint_cancels_when_dependency_failed(self) -> None:
         plan = {
-            "key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/plan",
+            "key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.plan",
             "status": "ready",
             "actions": [
                 {
@@ -118,7 +118,7 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
                     "status": "cancelled",
                 },
                 {
-                    "action_key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/action_2",
+                    "action_key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.action_2",
                     "deal_id": "1",
                     "expected_stage": "C11:PREPARATION",
                     "action_kind": "send_or_noop",
@@ -147,11 +147,11 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
 
     def test_pending_entrypoint_marks_terminal_errors(self) -> None:
         plan = {
-            "key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/plan",
+            "key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.plan",
             "status": "ready",
             "actions": [
                 {
-                    "action_key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/action_1",
+                    "action_key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.action_1",
                     "deal_id": "1",
                     "expected_stage": "C11:PREPARATION",
                     "action_kind": "send_or_noop",
@@ -184,7 +184,7 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
 
     def test_pending_entrypoint_retries_if_plan_is_draft(self) -> None:
         plan = {
-            "key": "bitrix_crm_negociaciones/deal/1/stage/C11_PREPARATION/plan",
+            "key": "bitrix_crm_negociaciones.deal.1.stage.C11_PREPARATION.plan",
             "status": "draft",
             "actions": [],
         }

@@ -162,12 +162,12 @@ def update_deal_stage(deal_id: str, next_stage: str) -> Dict[str, Any]:
 
 def build_action_key(deal_id: str, stage_id: str, order: int) -> str:
     safe_stage = str(stage_id or "").replace(":", "_")
-    return f"bitrix_crm_negociaciones/deal/{deal_id}/stage/{safe_stage}/action_{order}"
+    return f"bitrix_crm_negociaciones.deal.{deal_id}.stage.{safe_stage}.action_{order}"
 
 
 def build_plan_key(deal_id: str, stage_id: str) -> str:
     safe_stage = str(stage_id or "").replace(":", "_")
-    return f"bitrix_crm_negociaciones/deal/{deal_id}/stage/{safe_stage}/plan"
+    return f"bitrix_crm_negociaciones.deal.{deal_id}.stage.{safe_stage}.plan"
 
 
 def build_pending_action(
@@ -202,7 +202,7 @@ def build_pending_action(
         "updated_at": now,
         "processed_at": "",
         "edna_status": "",
-        "message_id": key.replace("/", "-"),
+        "message_id": key,
     }
 
 
