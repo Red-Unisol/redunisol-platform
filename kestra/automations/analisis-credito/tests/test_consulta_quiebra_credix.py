@@ -12,6 +12,7 @@ if str(FILES_ROOT) not in sys.path:
 
 from consulta_quiebra_credix.service import (  # noqa: E402
     SearchRequest,
+    _find_detail_next_control,
     build_error_result,
     build_output_payload,
     build_single_result,
@@ -105,6 +106,26 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
                 return BodyLocator()
 
         self.assertTrue(_is_detail_summary_page(StubPage()))
+
+    def test_find_detail_next_control_accepts_visible_button_with_text(self) -> None:
+        class StubLocator:
+            def __init__(self, visible):
+                self.visible = visible
+                self.first = self
+
+            def count(self):
+                return 1 if self.visible else 0
+
+            def is_visible(self):
+                return self.visible
+
+        class StubPage:
+            def locator(self, selector, has_text=None):
+                if selector == "button" and has_text == "Siguiente":
+                    return StubLocator(True)
+                return StubLocator(False)
+
+        self.assertIsNotNone(_find_detail_next_control(StubPage()))
 
 
 if __name__ == "__main__":

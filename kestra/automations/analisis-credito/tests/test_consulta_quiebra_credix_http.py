@@ -13,6 +13,7 @@ if str(FILES_ROOT) not in sys.path:
 from consulta_quiebra_credix_http.service import (  # noqa: E402
     CredixConfig,
     SearchRequest,
+    _build_detail_next_request,
     _build_login_payload,
     _extract_candidates,
     _extract_edicts,
@@ -127,6 +128,55 @@ class ConsultaQuiebraCredixHttpTests(unittest.TestCase):
     def test_is_detail_summary_page_detects_credix_detail_view(self) -> None:
         html = "<html><body>Resumen (*) Datos Filiatorios Datos Fiscales</body></html>"
         self.assertTrue(_is_detail_summary_page(html, "https://www.credixsa.com/nuevo/con_cuit3.php"))
+
+    def test_build_detail_next_request_reads_form_action_and_hidden_fields(self) -> None:
+        html = """
+        <html>
+          <body>
+            <form action="con_cuit3.php?step=2" method="post">
+              <input type="hidden" name="token" value="abc123" />
+              <input type="hidden" name="persona" value="27121796843" />
+              <input id="btn_siguiente" type="submit" name="continuar" value="Siguiente" />
+            </form>
+          </body>
+        </html>
+        """
+
+        request = _build_detail_next_request(
+            html,
+            "https://www.credixsa.com/nuevo/con_cuit_pde_ajax.php?tipo=Rg==",
+        )
+
+        self.assertEqual(
+            request,
+            (
+                "post",
+                "https://www.credixsa.com/nuevo/con_cuit3.php?step=2",
+                {
+                    "token": "abc123",
+                    "persona": "27121796843",
+                    "continuar": "Siguiente",
+                    "siguiente": "",
+                },
+            ),
+        )
+
+    def test_build_detail_next_request_falls_back_to_plain_post_when_text_is_present(self) -> None:
+        html = "<html><body><div>Paso intermedio</div><span>Siguiente</span></body></html>"
+
+        request = _build_detail_next_request(
+            html,
+            "https://www.credixsa.com/nuevo/con_cuit_pde_ajax.php?tipo=Rg==",
+        )
+
+        self.assertEqual(
+            request,
+            (
+                "post",
+                "https://www.credixsa.com/nuevo/con_cuit_pde_ajax.php",
+                {"siguiente": ""},
+            ),
+        )
 
     def test_build_output_payload_for_single_result_preserves_legacy_shape(self) -> None:
         request = SearchRequest(cuit="20123456783", nombre="Juan Perez")

@@ -13,6 +13,8 @@ from bs4 import BeautifulSoup, Tag
 
 NO_RESULTS_SELECTOR = "No se encontraron"
 EDICTS_TABLE_TEXT = "Edictos judiciales"
+DETAIL_NEXT_TEXT = "Siguiente"
+NEXT_BUTTON_SELECTOR = "#btn_siguiente"
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 
 
@@ -278,15 +280,27 @@ def _advance_detail_step(
     detail_entry: requests.Response,
     timeout_seconds: float,
 ) -> requests.Response:
-    if "con_cuit3.php" in detail_entry.url or _extract_edicts(detail_entry.text):
-        return detail_entry
+    current_response = detail_entry
 
-    next_url = _strip_query(detail_entry.url)
-    response = session.post(next_url, data={"siguiente": ""}, timeout=timeout_seconds, allow_redirects=False)
-    if response.status_code in {301, 302, 303}:
-        redirect_url = urljoin(next_url, response.headers.get("Location", ""))
-        return session.get(redirect_url, timeout=timeout_seconds)
-    return response
+    for _ in range(4):
+        if _extract_edicts(current_response.text) or _is_detail_summary_page(
+            current_response.text,
+            current_response.url,
+        ):
+            return current_response
+
+        next_request = _build_detail_next_request(current_response.text, current_response.url)
+        if next_request is None:
+            return current_response
+
+        method, target_url, payload = next_request
+        if method == "get":
+            response = session.get(target_url, timeout=timeout_seconds, allow_redirects=False)
+        else:
+            response = session.post(target_url, data=payload, timeout=timeout_seconds, allow_redirects=False)
+        current_response = _follow_possible_redirect(session, response, target_url, timeout_seconds)
+
+    return current_response
 
 
 def _extract_edicts(html: str) -> list[dict[str, str]]:
@@ -317,6 +331,80 @@ def _find_edicts_table(soup: BeautifulSoup) -> Tag | None:
         if EDICTS_TABLE_TEXT in text:
             return table
     return None
+
+
+def _build_detail_next_request(
+    html: str,
+    current_url: str,
+) -> tuple[str, str, dict[str, str]] | None:
+    soup = BeautifulSoup(html, "html.parser")
+    form = _find_next_form(soup)
+    if form is not None:
+        payload = _extract_form_payload(form)
+        payload.setdefault("siguiente", "")
+        action = (form.get("action") or "").strip()
+        method = (form.get("method") or "post").strip().lower()
+        return method, urljoin(current_url, action or _strip_query(current_url)), payload
+
+    next_link = _find_next_link(soup)
+    if next_link is not None:
+        href = (next_link.get("href") or next_link.get("data-href") or "").strip()
+        if href:
+            return "get", urljoin(current_url, href), {}
+
+    if DETAIL_NEXT_TEXT in soup.get_text(" ", strip=True):
+        return "post", _strip_query(current_url), {"siguiente": ""}
+
+    return None
+
+
+def _find_next_form(soup: BeautifulSoup) -> Tag | None:
+    for form in soup.select("form"):
+        if not isinstance(form, Tag):
+            continue
+
+        if form.select_one(f"#{NEXT_BUTTON_SELECTOR[1:]}") is not None:
+            return form
+
+        submit = form.select_one("button, input[type='submit'], input[type='button']")
+        if submit is None or not isinstance(submit, Tag):
+            continue
+
+        submit_text = normalize_name(submit.get_text(" ", strip=True) or submit.get("value", ""))
+        if DETAIL_NEXT_TEXT.lower() in submit_text.lower():
+            return form
+
+    return None
+
+
+def _find_next_link(soup: BeautifulSoup) -> Tag | None:
+    for link in soup.select("a[href], a[data-href]"):
+        if not isinstance(link, Tag):
+            continue
+        link_text = normalize_name(link.get_text(" ", strip=True))
+        if DETAIL_NEXT_TEXT.lower() in link_text.lower():
+            return link
+    return None
+
+
+def _extract_form_payload(form: Tag) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for field in form.select("input[name], textarea[name], select[name]"):
+        if not isinstance(field, Tag):
+            continue
+        name = (field.get("name") or "").strip()
+        if not name:
+            continue
+
+        tag_name = field.name.lower()
+        if tag_name == "select":
+            selected = field.select_one("option[selected]")
+            payload[name] = (selected.get("value", "") if isinstance(selected, Tag) else "")
+            continue
+
+        payload[name] = field.get("value", "")
+
+    return payload
 
 
 def _is_detail_summary_page(html: str, url: str) -> bool:

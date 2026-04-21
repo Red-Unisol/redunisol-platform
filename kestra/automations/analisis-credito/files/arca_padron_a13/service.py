@@ -36,6 +36,7 @@ class ArcaConfig:
     cert_pem: bytes
     key_pem: bytes
     timeout_seconds: float
+    cached_ta: dict[str, str] | None
 
 
 def parse_search_request(payload: Any) -> SearchRequest:
@@ -60,6 +61,7 @@ def load_config_from_env() -> ArcaConfig:
     cuit_representada = normalize_identifier(os.getenv("ARCA_CUIT_REPRESENTADA", ""))
     cert_pem = decode_pem_secret(os.getenv("ARCA_CERT_PEM_B64", ""), "ARCA_CERT_PEM_B64")
     key_pem = decode_pem_secret(os.getenv("ARCA_KEY_PEM_B64", ""), "ARCA_KEY_PEM_B64")
+    cached_ta = decode_ta_cache(os.getenv("ARCA_TA_CACHE_JSON", ""))
     timeout_raw = (os.getenv("ARCA_TIMEOUT_SECONDS", "") or "").strip()
     timeout_seconds = float(timeout_raw or DEFAULT_TIMEOUT_SECONDS)
 
@@ -73,11 +75,12 @@ def load_config_from_env() -> ArcaConfig:
         cert_pem=cert_pem,
         key_pem=key_pem,
         timeout_seconds=timeout_seconds,
+        cached_ta=cached_ta,
     )
 
 
 def consultar_padron(request: SearchRequest, config: ArcaConfig) -> dict[str, Any]:
-    ta = get_ta(config)
+    ta, ta_source, ta_cache_should_persist, ta_cache_ttl = get_ta(config)
     response = call_get_persona(
         token=ta["token"],
         sign=ta["sign"],
@@ -92,6 +95,10 @@ def consultar_padron(request: SearchRequest, config: ArcaConfig) -> dict[str, An
         "cuit_cuil": request.cuit_cuil,
         "cuit_representada": config.cuit_representada,
         "ta_expiration_time": ta["expirationTime"],
+        "ta_source": ta_source,
+        "ta_cache_should_persist": ta_cache_should_persist,
+        "ta_cache_ttl": ta_cache_ttl,
+        "ta_cache_json": json.dumps(ta, ensure_ascii=True, separators=(",", ":")),
         "response": response,
         "persona": persona,
         "error": "",
@@ -104,6 +111,10 @@ def build_error_result(request: SearchRequest | None, error: str) -> dict[str, A
         "cuit_cuil": request.cuit_cuil if request else "",
         "cuit_representada": "",
         "ta_expiration_time": "",
+        "ta_source": "",
+        "ta_cache_should_persist": False,
+        "ta_cache_ttl": "",
+        "ta_cache_json": "",
         "response": {},
         "persona": {},
         "error": error,
@@ -127,6 +138,10 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
         "tipo_clave": str(persona.get("tipoClave") or ""),
         "numero_documento": str(persona.get("numeroDocumento") or ""),
         "ta_expiration_time": str(result.get("ta_expiration_time") or ""),
+        "ta_source": str(result.get("ta_source") or ""),
+        "ta_cache_should_persist": bool(result.get("ta_cache_should_persist", False)),
+        "ta_cache_ttl": str(result.get("ta_cache_ttl") or ""),
+        "ta_cache_json": str(result.get("ta_cache_json") or ""),
         "persona_json": json.dumps(persona, ensure_ascii=True, separators=(",", ":")),
         "response_json": json.dumps(response, ensure_ascii=True, separators=(",", ":")),
         "error": str(result.get("error") or ""),
@@ -176,11 +191,15 @@ def sign_tra(cert_pem: bytes, key_pem: bytes, tra_xml: bytes) -> bytes:
     )
 
 
-def get_ta(config: ArcaConfig) -> dict[str, str]:
+def get_ta(config: ArcaConfig) -> tuple[dict[str, str], str, bool, str]:
+    if is_ta_valid(config.cached_ta):
+        return config.cached_ta, "cache", False, ""
+
     tra_xml = build_login_ticket_request(SERVICE_NAME)
     signed_tra = sign_tra(config.cert_pem, config.key_pem, tra_xml)
     signed_tra_b64 = base64.b64encode(signed_tra).decode("ascii")
-    return request_ta(signed_tra_b64, timeout_seconds=config.timeout_seconds)
+    ta = request_ta(signed_tra_b64, timeout_seconds=config.timeout_seconds)
+    return ta, "wsaa", True, build_ta_cache_ttl(ta["expirationTime"])
 
 
 def request_ta(signed_tra_b64: str, *, timeout_seconds: float) -> dict[str, str]:
@@ -352,3 +371,67 @@ def decode_pem_secret(value: str, variable_name: str) -> bytes:
         return base64.b64decode(raw_value.encode("ascii"), validate=True)
     except ValueError as exc:
         raise ValueError(f"{variable_name} is not valid Base64.") from exc
+
+
+def decode_ta_cache(value: str) -> dict[str, str] | None:
+    raw_value = (value or "").strip()
+    if not raw_value or raw_value == "null":
+        return None
+
+    payload = json.loads(raw_value)
+    if not isinstance(payload, dict):
+        raise ValueError("ARCA_TA_CACHE_JSON must be a JSON object.")
+
+    token = str(payload.get("token") or "").strip()
+    sign = str(payload.get("sign") or "").strip()
+    expiration_time = str(payload.get("expirationTime") or "").strip()
+    if not token or not sign or not expiration_time:
+        return None
+
+    return {
+        "token": token,
+        "sign": sign,
+        "expirationTime": expiration_time,
+    }
+
+
+def is_ta_valid(
+    ta: dict[str, str] | None,
+    *,
+    now: datetime | None = None,
+    min_remaining: timedelta = timedelta(minutes=2),
+) -> bool:
+    if not ta:
+        return False
+
+    try:
+        expiration_time = datetime.fromisoformat(ta["expirationTime"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    current_time = now or datetime.now(expiration_time.tzinfo or timezone.utc)
+    return expiration_time - current_time > min_remaining
+
+
+def build_ta_cache_ttl(expiration_time: str, *, now: datetime | None = None) -> str:
+    expiration_dt = datetime.fromisoformat(expiration_time)
+    current_time = now or datetime.now(expiration_dt.tzinfo or timezone.utc)
+    remaining = expiration_dt - current_time - timedelta(minutes=1)
+    if remaining.total_seconds() <= 0:
+        return "PT1S"
+    return format_duration_iso8601(remaining)
+
+
+def format_duration_iso8601(duration: timedelta) -> str:
+    total_seconds = max(1, int(duration.total_seconds()))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    parts = ["PT"]
+    if hours:
+        parts.append(f"{hours}H")
+    if minutes:
+        parts.append(f"{minutes}M")
+    if seconds or len(parts) == 1:
+        parts.append(f"{seconds}S")
+    return "".join(parts)

@@ -18,6 +18,7 @@ NEXT_BUTTON_SELECTOR = "#btn_siguiente"
 EDICTS_TABLE_SELECTOR = "table.table.table-sm.table-striped.table-bordered"
 NO_RESULTS_SELECTOR = "text=No se encontraron"
 EDICTS_TABLE_TEXT = "Edictos judiciales"
+DETAIL_NEXT_TEXT = "Siguiente"
 
 
 @dataclass(frozen=True)
@@ -245,25 +246,30 @@ def _extract_candidates(page: "Page") -> list[CandidateRow]:
 
 
 def _wait_next_ui_step(page: "Page", request: SearchRequest) -> None:
-    deadline = time.monotonic() + 8.0
-    button = page.locator(NEXT_BUTTON_SELECTOR)
-    table = page.locator(EDICTS_TABLE_SELECTOR).filter(has_text=EDICTS_TABLE_TEXT)
+    deadline = time.monotonic() + 30.0
 
     while time.monotonic() < deadline:
         try:
-            if table.count() > 0 and table.first.is_visible():
+            if _is_final_detail_step(page):
                 return
         except Exception:
             pass
         try:
-            if button.count() > 0 and button.first.is_visible():
-                button.first.click()
+            next_control = _find_detail_next_control(page)
+            if next_control is not None:
+                next_control.click()
                 page.wait_for_load_state("networkidle")
-                return
+                continue
         except Exception:
             pass
         time.sleep(0.2)
 
+    _log_event(
+        "consulta_quiebra_wait_next_timeout",
+        cuit=request.cuit,
+        nombre=request.nombre,
+        url=page.url,
+    )
     raise TimeoutError(
         f"Timed out waiting for '{NEXT_BUTTON_SELECTOR}' or the final edicts table. "
         f"cuit={request.cuit!r} nombre={request.nombre!r}"
@@ -312,6 +318,33 @@ def _is_detail_summary_page(page: "Page") -> bool:
     if "Resumen (*)" in body_text:
         return True
     return "con_cuit3.php" in page.url
+
+
+def _is_final_detail_step(page: "Page") -> bool:
+    table = page.locator(EDICTS_TABLE_SELECTOR).filter(has_text=EDICTS_TABLE_TEXT)
+    if table.count() > 0 and table.first.is_visible():
+        return True
+    return _is_detail_summary_page(page)
+
+
+def _find_detail_next_control(page: "Page") -> "Locator | None":
+    candidates = [
+        page.locator(NEXT_BUTTON_SELECTOR),
+        page.locator("button", has_text=DETAIL_NEXT_TEXT),
+        page.locator("input[type='submit'][value='Siguiente']"),
+        page.locator("input[type='button'][value='Siguiente']"),
+        page.locator("a", has_text=DETAIL_NEXT_TEXT),
+        page.locator("text=Siguiente"),
+    ]
+
+    for locator in candidates:
+        try:
+            if locator.count() > 0 and locator.first.is_visible():
+                return locator.first
+        except Exception:
+            continue
+
+    return None
 
 
 def _base_result(

@@ -1,0 +1,66 @@
+{
+  "stages": {
+    "C11:NEW": {
+      "name": "PRESENTACION/INFORME DE DEUDA",
+      "template_id": 0,
+      "wait_hours_no_response": 8,
+      "next_stage_if_no_response": "C11:APOLOGY"
+    },
+    "C11:UC_VO2IJO": {
+      "name": "CLIENTE CON INTENCION DE DIALOGO",
+      "template_id": 52885,
+      "wait_hours_no_response": 8,
+      "next_stage_if_no_response": "C11:APOLOGY"
+    },
+    "C11:PREPARATION": {
+      "name": "PROMESA DE PAGO",
+      "template_id": 51764,
+      "send_on_promise_date": true,
+      "wait_hours_no_response": 8,
+      "next_stage_if_no_response": "C11:UC_6KG2Z3"
+    },
+    "C11:EXECUTING": {
+      "name": "PROMESA POSPONE",
+      "template_id": 52443,
+      "wait_hours_no_response": 8,
+      "next_stage_if_no_response": "C11:LOSE"
+    },
+    "C11:UC_6KG2Z3": {
+      "name": "RECORDATORIO DE PROMESA",
+      "template_id": 51765,
+      "second_template_id": 51770,
+      "second_wait_hours": 8,
+      "final_wait_hours": 8,
+      "next_stage_if_no_response": "C11:LOSE"
+    }
+  },
+  "templates": {
+    "52885": {
+      "text_variables": [
+        "deal_title"
+      ]
+    },
+    "51764": {
+      "text_variables": [
+        "deal_title",
+        "promise_amount"
+      ]
+    },
+    "51765": {
+      "text_variables": [
+        "deal_title",
+        "promise_amount"
+      ]
+    },
+    "51770": {
+      "text_variables": [
+        "deal_title"
+      ]
+    },
+    "52443": {
+      "text_variables": [
+        "deal_title"
+      ]
+    }
+  }
+}

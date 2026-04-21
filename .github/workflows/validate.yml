@@ -43,3 +43,6 @@ jobs:
 
       - name: Dry-run Analisis Credito deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain analisis-credito --dry-run
+
+      - name: Build ARCA Padron A13 image
+        run: docker build kestra/automations/analisis-credito/docker/arca-padron-a13 -t analisis-credito-arca-padron-a13:test
