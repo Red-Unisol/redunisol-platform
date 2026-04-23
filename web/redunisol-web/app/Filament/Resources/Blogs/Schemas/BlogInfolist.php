@@ -17,17 +17,33 @@ class BlogInfolist
                     ->schema([
                         ImageEntry::make('image')
                             ->label('Imagen')
-                            ->height(200),
+                            ->height(200)
+                            ->columnSpanFull(),
 
                         TextEntry::make('title')
                             ->label('Título'),
 
-                        TextEntry::make('author.name')
+                        TextEntry::make('slug')
+                            ->label('Slug')
+                            ->fontFamily('mono')
+                            ->color('gray'),
+
+                        TextEntry::make('author_display')
                             ->label('Autor'),
+
+                        TextEntry::make('published_at')
+                            ->label('Publicado')
+                            ->dateTime('d/m/Y H:i')
+                            ->placeholder('Borrador'),
 
                         TextEntry::make('categories.name')
                             ->label('Categorías')
                             ->badge(),
+
+                        TextEntry::make('excerpt')
+                            ->label('Resumen')
+                            ->placeholder('Sin resumen')
+                            ->columnSpanFull(),
 
                         TextEntry::make('created_at')
                             ->label('Fecha de creación')

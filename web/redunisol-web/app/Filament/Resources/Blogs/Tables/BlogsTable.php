@@ -19,14 +19,23 @@ class BlogsTable
             ->columns([
                 ImageColumn::make('image')
                     ->label('Imagen')
-                    ->circular(),
+                    ->circular()
+                    ->defaultImageUrl('/images/blog-placeholder.png'),
 
                 TextColumn::make('title')
                     ->label('Título')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->limit(50),
 
-                TextColumn::make('author.name')
+                TextColumn::make('slug')
+                    ->label('Slug')
+                    ->searchable()
+                    ->fontFamily('mono')
+                    ->color('gray')
+                    ->toggleable(),
+
+                TextColumn::make('author_display')
                     ->label('Autor')
                     ->searchable()
                     ->sortable(),
@@ -36,24 +45,19 @@ class BlogsTable
                     ->badge()
                     ->separator(','),
 
-                TextColumn::make('created_at')
-                    ->label('Creado')
-                    ->dateTime('d/m/Y H:i')
+                TextColumn::make('published_at')
+                    ->label('Publicado')
+                    ->dateTime('d/m/Y')
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->placeholder('Borrador'),
 
                 TextColumn::make('updated_at')
                     ->label('Actualizado')
-                    ->dateTime('d/m/Y H:i')
+                    ->since()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('author')
-                    ->label('Autor')
-                    ->relationship('author', 'name')
-                    ->searchable()
-                    ->preload(),
                 SelectFilter::make('categories')
                     ->label('Categorías')
                     ->relationship('categories', 'name')
@@ -70,6 +74,6 @@ class BlogsTable
                     DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('published_at', 'desc');
     }
 }

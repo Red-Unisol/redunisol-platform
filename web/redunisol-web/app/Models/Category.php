@@ -7,18 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Category extends Model
 {
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
-    protected $fillable = [
-        'name',
-    ];
+    protected $fillable = ['name', 'slug'];
 
-    /**
-     * Get the blogs that belong to this category.
-     */
+    public function getRouteKeyName(): string
+    {
+        return 'slug';
+    }
+
     public function blogs(): BelongsToMany
     {
         return $this->belongsToMany(Blog::class, 'blog_category');

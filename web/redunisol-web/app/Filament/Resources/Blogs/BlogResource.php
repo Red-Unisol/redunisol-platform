@@ -11,6 +11,7 @@ use App\Filament\Resources\Blogs\Schemas\BlogInfolist;
 use App\Filament\Resources\Blogs\Tables\BlogsTable;
 use App\Models\Blog;
 use BackedEnum;
+use UnitEnum; // Asegúrate de importar esto
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -22,6 +23,10 @@ class BlogResource extends Resource
     protected static ?string $model = Blog::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+
+    protected static UnitEnum|string|null $navigationGroup = 'Blog';
+
+    protected static ?string $navigationLabel = 'Entradas';
 
     protected static ?string $recordTitleAttribute = 'title';
 
@@ -61,5 +66,12 @@ class BlogResource extends Resource
     {
         return parent::getRecordRouteBindingEloquentQuery()
             ->withoutGlobalScopes();
+    }
+
+    public static function mutateFormDataBeforeCreate(array $data): array
+    {
+        // Asigna el ID del usuario logueado al campo 'author_id'
+        $data['author_id'] = $data['author_id'] ?? auth()->id();
+        return $data;
     }
 }
