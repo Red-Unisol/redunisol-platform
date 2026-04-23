@@ -11,6 +11,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `consulta_quiebra_credix`
 - `consulta_quiebra_credix_http`
 - `consulta_padron_a13`
+- `consulta_empleador`
 
 ## renovacion_cruz_del_eje
 
@@ -385,3 +386,65 @@ Secrets:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/arca_padron_a13/**`
+
+## consulta_empleador
+
+Consulta PYPDatos por DNI o CUIT/CUIL. El servicio externo requiere login previo para obtener un token y luego una consulta POST con header `x-token`.
+
+### Entrada
+
+Webhook `POST` con JSON:
+
+```json
+{ "dni": "32.786.693" }
+```
+
+Tambien acepta:
+
+- `cuit`, `cuil` o `cuit_cuil`
+- `documento` o `nro_doc`
+- un string simple en el body
+- `tipo` opcional: `M` para DNI o `S` para CUIT/CUIL
+
+Si no se informa `tipo`, el flow usa `S` para identificadores de 11 digitos y `M` para DNI de 7/8 digitos.
+
+### Salida
+
+- `ok` (bool)
+- `found` (bool)
+- `identifier` (string)
+- `tipo` (string)
+- `token_source` (`cache` | `login` | vacio)
+- `data_json` (string JSON con el payload bruto de PYPDatos)
+- `response_json` (string JSON con contrato minimo)
+- `error` (string | vacio)
+
+Contrato serializado en `response_json`:
+
+- `{"ok":true,"found":true,"identifier":"32786693","tipo":"M","data":{...},"error":"","source":"pypdatos_persona"}`
+- `{"ok":true,"found":false,...}` si PYPDatos responde `No se pudo encontrar cuil/documento`
+- `{"ok":false,...}` si el request es invalido o la consulta falla
+
+### Variables
+
+Configuracion inline en el flow:
+
+- `PYPDATOS_LOGIN_URL=https://www.pypdatos.com.ar:8444/apiuser/usuario/login`
+- `PYPDATOS_PERSONA_URL=https://www.pypdatos.com.ar:469/ascocco/rest/serviciospyp/persona/json`
+- `PYPDATOS_TIMEOUT_SECONDS=30`
+
+Secrets:
+
+- `PYPDATOS_USUARIO`
+- `PYPDATOS_PASSWORD`
+- `ANALISIS_CREDITO_CONSULTA_EMPLEADOR_WEBHOOK_KEY`
+
+Notas:
+
+- el token de PYPDatos dura 2 horas segun el instructivo; el flow lo cachea en KV por `PT1H55M`
+- si el token cacheado vence y PYPDatos responde `401`, el flow hace login de nuevo y reintenta una vez
+- el proveedor valida por direccion IP, por lo que hay que autorizar la IP saliente de la VPS/Kestra antes de probar en runtime
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/consulta_empleador/**`

@@ -1,0 +1,84 @@
+id: consulta_empleador
+namespace: redunisol
+
+description: Consulta PYPDatos por DNI o CUIT/CUIL para obtener informacion de persona/empleador.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: pypdatos
+  transport: http
+
+tasks:
+  - id: leer_token_cache
+    type: io.kestra.plugin.core.kv.Get
+    key: "pypdatos.consulta-empleador.token"
+    errorOnMissing: false
+    allowFailure: true
+
+  - id: consultar_empleador
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - consulta_empleador/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra requests > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      PYPDATOS_TOKEN_CACHE_JSON: "{{ (outputs.leer_token_cache.value ?? null) | json }}"
+      PYPDATOS_LOGIN_URL: "https://www.pypdatos.com.ar:8444/apiuser/usuario/login"
+      PYPDATOS_PERSONA_URL: "https://www.pypdatos.com.ar:469/ascocco/rest/serviciospyp/persona/json"
+      PYPDATOS_TIMEOUT_SECONDS: "30"
+      PYPDATOS_USUARIO: "{{ secret('PYPDATOS_USUARIO') }}"
+      PYPDATOS_PASSWORD: "{{ secret('PYPDATOS_PASSWORD') }}"
+    commands:
+      - python -m consulta_empleador.kestra_webhook_entrypoint
+
+  - id: guardar_token_cache
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.consultar_empleador.vars.token_cache_should_persist }}"
+    key: "pypdatos.consulta-empleador.token"
+    value: "{{ outputs.consultar_empleador.vars.token_cache_json }}"
+    kvType: JSON
+    overwrite: true
+    ttl: "{{ outputs.consultar_empleador.vars.token_cache_ttl }}"
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.consultar_empleador.vars.ok }}"
+  - id: found
+    type: BOOLEAN
+    value: "{{ outputs.consultar_empleador.vars.found }}"
+  - id: identifier
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.identifier }}"
+  - id: tipo
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.tipo }}"
+  - id: token_source
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.token_source }}"
+  - id: data_json
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.data_json }}"
+  - id: response_json
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.response_json }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.error }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_CONSULTA_EMPLEADOR_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json
