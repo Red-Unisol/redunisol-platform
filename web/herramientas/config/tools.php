@@ -41,11 +41,22 @@ return [
             'actionLabel' => 'Consultar quiebras',
             'helper' => 'La consulta usa el webhook protegido de Kestra desde el backend Laravel.',
         ],
+        [
+            'id' => 'consulta-empleador',
+            'title' => 'Consulta Datos de Empleador por CUIL o DNI',
+            'description' => 'Ingresa un CUIL o DNI y consulta los datos de persona y empleador devueltos por el flujo de analisis de credito.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Consultar empleador',
+            'helper' => 'Ingresa el CUIL o DNI y el backend Laravel consulta el webhook protegido de Kestra.',
+        ],
     ],
     'proxy' => [
         'consulta_renovacion_url' => env('ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL'),
         'tope_descuento_caja_url' => env('ANALISIS_CREDITO_CONSULTA_CAJA'),
         'consulta_quiebra_credix_url' => env('ANALISIS_CREDITO_QUIEBRA_CREDIX_WEBHOOK_URL'),
+        'consulta_empleador_url' => env('ANALISIS_CREDITO_CONSULTA_EMPLEADOR_WEBHOOK_URL'),
         'timeout_seconds' => (int) env('ANALISIS_CREDITO_TIMEOUT_SECONDS', 30),
     ],
 ];

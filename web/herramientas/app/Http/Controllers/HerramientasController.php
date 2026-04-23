@@ -23,6 +23,9 @@ class HerramientasController extends Controller
                 if (($tool['id'] ?? null) === 'consulta-quiebra-credix') {
                     $tool['endpoint'] = route('tools.consulta-quiebra-credix');
                 }
+                if (($tool['id'] ?? null) === 'consulta-empleador') {
+                    $tool['endpoint'] = route('tools.consulta-empleador');
+                }
                 
                 return $tool;
             })
@@ -168,6 +171,55 @@ class HerramientasController extends Controller
             return response()->json([
                 'ok' => false,
                 'message' => 'No pudimos conectar con el servicio de quiebra en este momento.',
+                'error' => 'upstream_unavailable',
+                'detail' => $exception->getMessage(),
+            ], 502);
+        }
+
+        if (! $response->successful()) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'El servicio devolvio una respuesta inesperada.',
+                'error' => 'upstream_error',
+                'status' => $response->status(),
+                'body' => $response->json() ?? $response->body(),
+            ], 502);
+        }
+
+        return response()->json($response->json());
+    }
+
+    public function consultaEmpleador(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'identificador' => ['required', 'string', 'regex:/^(?:\d{7,11}|\d{2}-?\d{8}-?\d)$/'],
+        ]);
+
+        $targetUrl = (string) config('tools.proxy.consulta_empleador_url', '');
+
+        if ($targetUrl === '') {
+            return response()->json([
+                'ok' => false,
+                'message' => 'La herramienta no esta configurada todavia en el servidor.',
+                'error' => 'tool_not_configured',
+            ], 500);
+        }
+
+        $identifier = trim($validated['identificador']);
+        $digits = preg_replace('/\D+/', '', $identifier) ?? '';
+        $payload = strlen($digits) === 11
+            ? ['cuil' => $identifier]
+            : ['dni' => $identifier];
+
+        try {
+            $response = Http::acceptJson()
+                ->asJson()
+                ->timeout((int) config('tools.proxy.timeout_seconds', 30))
+                ->post($targetUrl, $payload);
+        } catch (Throwable $exception) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'No pudimos conectar con el servicio de empleador en este momento.',
                 'error' => 'upstream_unavailable',
                 'detail' => $exception->getMessage(),
             ], 502);

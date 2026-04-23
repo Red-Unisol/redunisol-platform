@@ -46,6 +46,7 @@ function App({ branding, tools }) {
         cuil: '',
         cuit: '',
         nombre: '',
+        identificador: '',
     });
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
@@ -75,6 +76,7 @@ function App({ branding, tools }) {
             cuil: '',
             cuit: '',
             nombre: '',
+            identificador: '',
         });
         setError('');
         setResult(null);
@@ -227,6 +229,23 @@ function App({ branding, tools }) {
                                     />
                                 </div>
                             </div>
+                        ) : selectedTool?.id === 'consulta-empleador' ? (
+                            <div className="field">
+                                <label htmlFor="identificador">CUIL o DNI</label>
+                                <input
+                                    id="identificador"
+                                    name="identificador"
+                                    placeholder="Ingresa el CUIL o DNI"
+                                    value={formValues.identificador}
+                                    onChange={(event) =>
+                                        setFormValues((current) => ({
+                                            ...current,
+                                            identificador: event.target.value,
+                                        }))
+                                    }
+                                    autoComplete="off"
+                                />
+                            </div>
                         ) : (
                             <div className="field">
                                 <label htmlFor="cuil">CUIL</label>
@@ -337,6 +356,35 @@ function App({ branding, tools }) {
                                             </div>
                                         </>
                                     )}
+
+                                    {selectedTool?.id === 'consulta-empleador' && (
+                                        <>
+                                            <div className="result__metric">
+                                                <span>Identificador</span>
+                                                <strong>{result.identifier || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Tipo</span>
+                                                <strong>{result.tipo || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Persona</span>
+                                                <strong>{getEmpleadorField(result, 'apenom') || getEmpleadorField(result, 'nombre') || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>CUIL</span>
+                                                <strong>{getEmpleadorField(result, 'cuil') || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>Empleador</span>
+                                                <strong>{getEmpleadorField(result, 'razon_social_empleador') || 'Sin dato'}</strong>
+                                            </div>
+                                            <div className="result__metric">
+                                                <span>CUIT empleador</span>
+                                                <strong>{getEmpleadorField(result, 'cuit_empleador') || 'Sin dato'}</strong>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             )}
 
@@ -424,6 +472,13 @@ function getResultTone(toolId, result, error) {
         return 'warning';
     }
 
+    if (toolId === 'consulta-empleador') {
+        if (result?.ok && result?.found) {
+            return 'success';
+        }
+        return 'warning';
+    }
+
     return 'warning';
 }
 
@@ -459,6 +514,16 @@ function getResultHeadline(toolId, result, error) {
         }
         if (result.status === 'none') {
             return 'Resultado';
+        }
+        return 'Respuesta de validacion';
+    }
+
+    if (toolId === 'consulta-empleador') {
+        if (result.ok && result.found) {
+            return 'Consulta completada';
+        }
+        if (result.ok) {
+            return 'Sin coincidencias';
         }
         return 'Respuesta de validacion';
     }
@@ -509,6 +574,16 @@ function getResultCopy(toolId, result, error) {
         return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';
     }
 
+    if (toolId === 'consulta-empleador') {
+        if (result.ok && result.found) {
+            return 'Datos obtenidos correctamente.';
+        }
+        if (result.ok && !result.found) {
+            return 'No se encontraron datos para el identificador ingresado.';
+        }
+        return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';
+    }
+
     return result.message || result.error || 'La consulta devolvio una respuesta no esperada.';
 }
 
@@ -517,6 +592,12 @@ function buildRequestBody(toolId, formValues) {
         return {
             cuit: formValues.cuit,
             nombre: formValues.nombre,
+        };
+    }
+
+    if (toolId === 'consulta-empleador') {
+        return {
+            identificador: formValues.identificador,
         };
     }
 
@@ -573,6 +654,19 @@ function humanizeReason(value) {
     return String(value)
         .replaceAll('_', ' ')
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getEmpleadorField(result, field) {
+    if (!result?.data_json || typeof result.data_json !== 'string') {
+        return '';
+    }
+
+    try {
+        const parsed = JSON.parse(result.data_json);
+        return String(parsed?.RESULTADO?.persona?.row?.[field] ?? '');
+    } catch {
+        return '';
+    }
 }
 
 if (rootElement) {
