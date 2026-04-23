@@ -8,6 +8,8 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 
@@ -23,6 +25,12 @@ class BlogForm
                             ->label('Título')
                             ->required()
                             ->maxLength(255),
+
+                        TextInput::make('slug')
+                            ->label('Slug (URL)')
+                            ->helperText('Identificador único en URL. Ej: mi-articulo-seo')
+                            ->unique(ignoreRecord: true)
+                            ->nullable(),
 
                         Select::make('author_id')
                             ->label('Autor')
@@ -55,6 +63,31 @@ class BlogForm
                             ->label('Contenido')
                             ->required()
                             ->columnSpanFull(),
+                    ])
+                    ->columns(2),
+
+                Section::make('SEO')
+                    ->label('Configuración SEO')
+                    ->schema([
+                        TextInput::make('meta_title')
+                            ->label('Meta Title')
+                            ->helperText('Título que aparece en buscadores (máx 60 caracteres)')
+                            ->maxLength(60),
+
+                        Textarea::make('meta_description')
+                            ->label('Meta Description')
+                            ->helperText('Descripción que aparece en buscadores (máx 160 caracteres)')
+                            ->maxLength(160)
+                            ->rows(2),
+
+                        TextInput::make('keyword')
+                            ->label('Keyword Principal')
+                            ->helperText('Palabra clave objetivo para este artículo'),
+
+                        Toggle::make('index')
+                            ->label('Indexar en buscadores')
+                            ->helperText('Permitir que Google indexe este artículo')
+                            ->default(true),
                     ])
                     ->columns(2),
             ]);

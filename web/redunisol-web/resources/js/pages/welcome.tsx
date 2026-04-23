@@ -1,6 +1,5 @@
 import useTracking from '@/hooks/useTracking';
 import { usePage } from '@inertiajs/react';
-
 import { useState } from 'react';
 
 import About, { type AboutSection } from '@/components/about';
@@ -13,6 +12,7 @@ import Requisitos, { type RequisitosData } from '@/components/requisitos';
 import FormSection, {
     type FormSectionConfig,
 } from '@/components/sections/FormSection';
+import SeoHead from '@/components/seo-head';
 import Services, { type ServicesData } from '@/components/services';
 import Testimonios, { type TestimoniosData } from '@/components/testimonios';
 
@@ -25,6 +25,10 @@ interface HomePageProps {
     landingSlug: string;
     sections: PageSection[];
     title: string;
+    meta_title?: string;
+    meta_description?: string;
+    keyword?: string;
+    index?: boolean;
     [key: string]: unknown;
 }
 
@@ -33,7 +37,15 @@ function useSection<T>(sections: PageSection[], type: string): T | undefined {
 }
 
 export default function Page() {
-    const { landingSlug, sections, title } = usePage<HomePageProps>().props;
+    const {
+        landingSlug,
+        sections,
+        title,
+        meta_title,
+        meta_description,
+        keyword,
+        index,
+    } = usePage<HomePageProps>().props;
     const [activeTab, setActiveTab] = useState('unset');
 
     const hero = useSection<HeroData>(sections, 'hero');
@@ -46,8 +58,26 @@ export default function Page() {
     const formConfig = useSection<FormSectionConfig>(sections, 'form');
     useTracking();
 
+    const seoTitle = meta_title || title;
+    const seoDescription =
+        meta_description || `${title} - Soluciones de crédito personalizadas`;
+    const robots = index === false ? 'noindex, nofollow' : 'index, follow';
+
     return (
         <>
+            <SeoHead
+                title={seoTitle}
+                description={seoDescription}
+                keyword={keyword}
+                robots={robots}
+                canonical={
+                    typeof window !== 'undefined'
+                        ? window.location.href
+                        : undefined
+                }
+                ogTitle={seoTitle}
+                ogDescription={seoDescription}
+            />
             <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
             <div className="bg-gradient-custom w-full">
                 <FormSection

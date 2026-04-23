@@ -40,6 +40,31 @@ class PageResource extends Resource
                 ->required()
                 ->unique(ignoreRecord: true),
 
+            Fieldset::make('SEO')
+                ->label('Configuración SEO')
+                ->schema([
+                    TextInput::make('meta_title')
+                        ->label('Meta Title')
+                        ->helperText('Título que aparece en buscadores (máx 60 caracteres)')
+                        ->maxLength(60),
+
+                    Textarea::make('meta_description')
+                        ->label('Meta Description')
+                        ->helperText('Descripción que aparece en buscadores (máx 160 caracteres)')
+                        ->maxLength(160)
+                        ->rows(2),
+
+                    TextInput::make('keyword')
+                        ->label('Keyword Principal')
+                        ->helperText('Palabra clave objetivo para esta página'),
+
+                    Toggle::make('index')
+                        ->label('Indexar en buscadores')
+                        ->helperText('Permitir que Google indexe esta página')
+                        ->default(true),
+                ])
+                ->columns(2),
+
             Builder::make('sections')
                 ->label('Secciones')
                 ->blocks([

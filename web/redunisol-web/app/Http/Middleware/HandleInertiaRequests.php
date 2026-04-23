@@ -35,6 +35,8 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $seo = $this->getSeoData($request);
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -42,6 +44,25 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'seo' => $seo,
+        ];
+    }
+
+    /**
+     * Get SEO data for the current page.
+     */
+    protected function getSeoData(Request $request): array
+    {
+        $appName = config('app.name', 'RedúniSol');
+        $currentUrl = $request->url();
+        $defaultDescription = 'Soluciones de crédito personalizadas para jubilados y policías';
+
+        return [
+            'metaTitle' => $appName,
+            'metaDescription' => $defaultDescription,
+            'keyword' => null,
+            'robots' => 'index, follow',
+            'canonical' => $currentUrl,
         ];
     }
 }

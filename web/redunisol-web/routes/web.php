@@ -1,6 +1,9 @@
 <?php
 
 use App\Models\Page;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 
@@ -41,6 +44,10 @@ Route::get('/health', function () {
     return response()->json($status, $isHealthy ? 200 : 503);
 });
 
+Route::get('/sitemap.xml', [\App\Http\Controllers\SitemapController::class, 'index'])->name('sitemap');
+
+Route::get('/robots.txt', [\App\Http\Controllers\RobotsController::class, 'show'])->name('robots');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', function () {
         return Inertia::render('dashboard');
@@ -68,5 +75,9 @@ Route::get('/{slug?}', function ($slug = null) {
         'landingSlug' => $slug,
         'sections' => $page->sections,
         'title'    => $page->title,
+        'meta_title' => $page->meta_title,
+        'meta_description' => $page->meta_description,
+        'keyword' => $page->keyword,
+        'index' => $page->index,
     ]);
 })->where('slug', '.*');
