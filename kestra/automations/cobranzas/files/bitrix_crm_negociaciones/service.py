@@ -308,7 +308,10 @@ def parse_bitrix_datetime(value: str | None) -> datetime | None:
     )
 
     try:
-        return datetime.fromisoformat(raw).astimezone(local_tz)
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(local_tz)
+        return parsed.replace(tzinfo=local_tz)
     except ValueError:
         pass
 
@@ -396,7 +399,19 @@ def add_business_hours(start_dt: datetime, hours: float) -> datetime:
 
 
 def promise_send_time(raw_value: str | None) -> datetime | None:
-    parsed = parse_bitrix_datetime(raw_value)
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return None
+
+    # Bitrix date custom fields can arrive serialized as midnight with a foreign
+    # offset (for example 2026-05-01T03:00:00+03:00) even when the business
+    # meaning is "calendar date in local timezone". Preserve the calendar day.
+    date_match = re.match(r"^(\d{4}-\d{2}-\d{2})", raw)
+    if date_match:
+        parsed = parse_bitrix_datetime(date_match.group(1))
+    else:
+        parsed = parse_bitrix_datetime(raw)
+
     if not parsed:
         return None
 

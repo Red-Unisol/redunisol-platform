@@ -43,6 +43,19 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
 
         self.assertEqual(result.isoformat(), "2026-04-20T09:00:00-03:00")
 
+    def test_promise_send_time_preserves_calendar_day_from_bitrix_offset_datetime(self) -> None:
+        with patch.dict(os.environ, self.env, clear=False):
+            result = service.promise_send_time("2026-05-01T03:00:00+03:00")
+
+        self.assertEqual(result.isoformat(), "2026-05-01T09:00:00-03:00")
+
+    def test_parse_bitrix_date_without_timezone_uses_local_timezone(self) -> None:
+        with patch.dict(os.environ, self.env, clear=False):
+            result = service.parse_bitrix_datetime("2026-04-25")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.isoformat(), "2026-04-25T00:00:00-03:00")
+
     def test_build_stage_plan_creates_three_dependent_actions(self) -> None:
         stage_cfg = {
             "name": "RECORDATORIO DE PROMESA",
