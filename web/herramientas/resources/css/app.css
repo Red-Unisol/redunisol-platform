@@ -183,6 +183,7 @@ input {
     display: flex;
     align-items: center;
     gap: 16px;
+    margin-top: 12px;
 }
 
 .status-chip {
@@ -337,19 +338,19 @@ input {
 .workspace__chip {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
+    gap: 8px;
+    padding: 6px 10px;
     border-radius: 999px;
     background: var(--teal-soft);
     border: 1px solid rgba(115, 193, 180, 0.52);
     color: var(--navy);
-    font-size: 0.86rem;
+    font-size: 0.78rem;
     font-weight: 700;
 }
 
 .workspace__chipIcon {
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     border-radius: 999px;
 }
 
@@ -417,7 +418,7 @@ input {
 }
 
 .field__hint {
-    margin: -2px 0 0;
+    margin: 0;
     color: var(--muted);
     font-size: 0.92rem;
     line-height: 1.5;

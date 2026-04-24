@@ -134,13 +134,9 @@ function App({ branding, tools }) {
                             <p className="brand__title">{branding.title}</p>
                         </div>
                     </div>
-                    <a className="hero__cta" href={branding.support_url} target="_blank" rel="noreferrer">
-                        {branding.support_label}
-                    </a>
                 </div>
 
                 <div className="hero__summary">
-                    <p className="hero__eyebrow">Herramientas</p>
                     <h1 className="hero__title">Consultas internas listas para usar</h1>
                     <p className="hero__description">{branding.description}</p>
                 </div>
@@ -150,7 +146,7 @@ function App({ branding, tools }) {
                 <div className="catalog__header">
                     <div>
                         <p className="section__eyebrow">Catalogo</p>
-                        <h2 className="catalog__title">Elegi una herramienta y abrila en un modal</h2>
+                        <h2 className="catalog__title">Elije la herramienta que quieras utilizar</h2>
                     </div>
                 </div>
                 <div className="catalog__grid">
