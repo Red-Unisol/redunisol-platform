@@ -307,6 +307,86 @@ class PageResource extends Resource
                         ]),
 
                     // ──────────────────────────────────────────
+                    // YOUTUBE
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('youtube')
+                        ->label('Video YouTube')
+                        ->icon('heroicon-o-play-circle')
+                        ->schema([
+                            TextInput::make('url')
+                                ->label('URL del video')
+                                ->helperText('Ej: https://www.youtube.com/watch?v=FoS6ptFWXDQ')
+                                ->required()
+                                ->url(),
+                            TextInput::make('title')
+                                ->label('Título (opcional)')
+                                ->nullable(),
+                            Textarea::make('description')
+                                ->label('Descripción (opcional)')
+                                ->rows(2)
+                                ->nullable(),
+                        ]),
+
+                    // ──────────────────────────────────────────
+                    // LEGAL TEXT
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('legal_text')
+                        ->label('Texto Legal / Informativo')
+                        ->icon('heroicon-o-document-text')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Título')
+                                ->required(),
+                            Textarea::make('content')
+                                ->label('Contenido')
+                                ->rows(12)
+                                ->helperText('Podés usar HTML básico: <strong>, <em>, <h2>, <ul>, <li>, <p>.')
+                                ->columnSpanFull(),
+                        ]),
+
+                    // ──────────────────────────────────────────
+                    // CONTACT
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('contact')
+                        ->label('Sección de Contacto')
+                        ->icon('heroicon-o-envelope')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Título')
+                                ->default('Contacto')
+                                ->required(),
+                            Textarea::make('description')
+                                ->label('Descripción')
+                                ->rows(2),
+                            TextInput::make('email')
+                                ->label('Email visible')
+                                ->email(),
+                            TextInput::make('phone')
+                                ->label('Teléfono visible'),
+                            TextInput::make('address')
+                                ->label('Dirección')
+                                ->columnSpanFull(),
+                            Textarea::make('hours')
+                                ->label('Horarios de atención')
+                                ->rows(2)
+                                ->columnSpanFull(),
+                        ])
+                        ->columns(2),
+
+                    // ──────────────────────────────────────────
+                    // REGULATORY
+                    // ──────────────────────────────────────────
+                    Builder\Block::make('regulatory')
+                        ->label('Entes Reguladores')
+                        ->icon('heroicon-o-building-office')
+                        ->schema([
+                            TextInput::make('title')
+                                ->label('Título de la sección')
+                                ->default('Respaldados por')
+                                ->required(),
+                        ]),
+
+                    // ──────────────────────────────────────────
                     // FORM
                     // ──────────────────────────────────────────
                     Builder\Block::make('form')

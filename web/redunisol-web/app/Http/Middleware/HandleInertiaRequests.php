@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Regulator;
+use App\Models\SiteSetting;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -45,6 +47,16 @@ class HandleInertiaRequests extends Middleware
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'seo' => $seo,
+            'siteData' => function () {
+                try {
+                    return [
+                        'regulators' => Regulator::active()->orderBy('sort_order')->get()->toArray(),
+                        'settings'   => SiteSetting::allAsArray(),
+                    ];
+                } catch (\Throwable $e) {
+                    return ['regulators' => [], 'settings' => []];
+                }
+            },
         ];
     }
 
@@ -58,11 +70,11 @@ class HandleInertiaRequests extends Middleware
         $defaultDescription = 'Soluciones de crédito personalizadas para jubilados y policías';
 
         return [
-            'metaTitle' => $appName,
+            'metaTitle'       => $appName,
             'metaDescription' => $defaultDescription,
-            'keyword' => null,
-            'robots' => 'index, follow',
-            'canonical' => $currentUrl,
+            'keyword'         => null,
+            'robots'          => 'index, follow',
+            'canonical'       => $currentUrl,
         ];
     }
 }

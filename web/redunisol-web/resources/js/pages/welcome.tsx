@@ -1,24 +1,34 @@
 import useTracking from '@/hooks/useTracking';
 import { usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import About, { type AboutSection } from '@/components/about';
-import Convenios, { type ConveniosData } from '@/components/convenios';
-import FAQs, { type FAQsData } from '@/components/faqs';
+import About from '@/components/about';
+import Convenios from '@/components/convenios';
+import FAQs from '@/components/faqs';
 import Footer from '@/components/footer';
-import Hero, { type Hero as HeroData } from '@/components/hero';
+import Hero from '@/components/hero';
 import Navbar from '@/components/navbar';
-import Requisitos, { type RequisitosData } from '@/components/requisitos';
+import Requisitos from '@/components/requisitos';
+import ContactSection from '@/components/sections/ContactSection';
 import FormSection, {
     type FormSectionConfig,
 } from '@/components/sections/FormSection';
+import LegalTextSection from '@/components/sections/LegalTextSection';
+import RegulatorySection from '@/components/sections/RegulatorySection';
+import YouTubeSection from '@/components/sections/YouTubeSection';
 import SeoHead from '@/components/seo-head';
-import Services, { type ServicesData } from '@/components/services';
-import Testimonios, { type TestimoniosData } from '@/components/testimonios';
+import Services from '@/components/services';
+import Testimonios from '@/components/testimonios';
+import { faqSchema, organizationSchema, serviceSchema } from '@/utils/schemas';
+
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
 
 interface PageSection {
     type: string;
-    data: Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: Record<string, any>;
 }
 
 interface HomePageProps {
@@ -32,32 +42,82 @@ interface HomePageProps {
     [key: string]: unknown;
 }
 
-function useSection<T>(sections: PageSection[], type: string): T | undefined {
-    return sections?.find((s) => s.type === type)?.data as T | undefined;
-}
+// ─────────────────────────────────────────────────────────────
+// Section component map
+// Sections are rendered in the order they appear in the DB.
+// ─────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const SECTION_COMPONENTS: Record<string, React.ComponentType<{ data: any }>> = {
+    hero: Hero,
+    services: Services,
+    about: About,
+    faqs: FAQs,
+    convenios: Convenios,
+    requisitos: Requisitos,
+    testimonios: Testimonios,
+    youtube: YouTubeSection,
+    legal_text: LegalTextSection,
+    contact: ContactSection,
+    regulatory: RegulatorySection,
+};
+
+/**
+ * Maps a section type to the activeTab key that hides it.
+ * e.g. hero is hidden when activeTab === 'solicita'
+ */
+const TAB_HIDDEN_MAP: Record<string, string> = {
+    hero: 'solicita',
+    services: 'creditos',
+    about: 'about',
+};
+
+// ─────────────────────────────────────────────────────────────
+// Page component
+// ─────────────────────────────────────────────────────────────
 
 export default function Page() {
     const {
         landingSlug,
-        sections,
+        sections = [],
         title,
         meta_title,
         meta_description,
         keyword,
         index,
     } = usePage<HomePageProps>().props;
+
     const [activeTab, setActiveTab] = useState('unset');
 
-    const hero = useSection<HeroData>(sections, 'hero');
-    const services = useSection<ServicesData>(sections, 'services');
-    const about = useSection<AboutSection>(sections, 'about');
-    const faqs = useSection<FAQsData>(sections, 'faqs');
-    const convenios = useSection<ConveniosData>(sections, 'convenios');
-    const requisitos = useSection<RequisitosData>(sections, 'requisitos');
-    const testimonios = useSection<TestimoniosData>(sections, 'testimonios');
-    const formConfig = useSection<FormSectionConfig>(sections, 'form');
     useTracking();
 
+    // ── Form section is special: rendered outside <main> ──
+    const formSection = sections.find((s) => s.type === 'form');
+    const formConfig = formSection?.data as FormSectionConfig | undefined;
+
+    // All non-form sections rendered in order
+    const mainSections = sections.filter((s) => s.type !== 'form');
+
+    // ── JSON-LD schemas ──
+    const schemas = useMemo(() => {
+        const result: object[] = [organizationSchema()];
+
+        const servicesData = sections.find((s) => s.type === 'services')?.data;
+        const faqsData = sections.find((s) => s.type === 'faqs')?.data;
+
+        if (servicesData) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            result.push(serviceSchema(servicesData as any));
+        }
+        if (faqsData) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            result.push(faqSchema(faqsData as any));
+        }
+
+        return result;
+    }, [sections]);
+
+    // ── SEO ──
     const seoTitle = meta_title || title;
     const seoDescription =
         meta_description || `${title} - Soluciones de crédito personalizadas`;
@@ -77,25 +137,34 @@ export default function Page() {
                 }
                 ogTitle={seoTitle}
                 ogDescription={seoDescription}
+                schemas={schemas}
             />
+
             <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+
             <div className="bg-gradient-custom w-full">
-                <FormSection
-                    config={formConfig}
-                    landingSlug={landingSlug}
-                    landingTitle={title}
-                />
+                {/* Form section sits above the white card when present */}
+                {formConfig && (
+                    <FormSection
+                        config={formConfig}
+                        landingSlug={landingSlug}
+                        landingTitle={title}
+                    />
+                )}
+
                 <main className="rounded-tl-4xl rounded-tr-4xl bg-white">
-                    {activeTab !== 'solicita' && hero && <Hero data={hero} />}
-                    {activeTab !== 'creditos' && services && (
-                        <Services data={services} />
-                    )}
-                    {activeTab !== 'about' && about && <About data={about} />}
-                    {faqs && <FAQs data={faqs} />}
-                    {convenios && <Convenios data={convenios} />}
-                    {requisitos && <Requisitos data={requisitos} />}
-                    {testimonios && <Testimonios data={testimonios} />}
+                    {mainSections.map((section, i) => {
+                        const Component = SECTION_COMPONENTS[section.type];
+                        if (!Component) return null;
+
+                        // Tab-based visibility (for landing pages)
+                        const hiddenTab = TAB_HIDDEN_MAP[section.type];
+                        if (hiddenTab && activeTab === hiddenTab) return null;
+
+                        return <Component key={i} data={section.data} />;
+                    })}
                 </main>
+
                 <Footer />
             </div>
         </>
