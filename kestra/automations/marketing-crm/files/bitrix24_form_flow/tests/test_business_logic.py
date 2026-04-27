@@ -327,6 +327,23 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(submission.payment_bank.key, "banco_de_la_nacion_argentina")
         self.assertEqual(submission.lead_source.key, "google")
 
+    def test_normalize_docente_payload(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Cordoba",
+                "employment_status": "Docente",
+                "payment_bank": "Banco de la Provincia de Cordoba S.A.",
+                "lead_source": "Google",
+            }
+        )
+
+        self.assertEqual(submission.employment_status.key, "docente")
+        self.assertEqual(submission.employment_status.bitrix_id, "3745")
+
     def test_qualification_rejects_non_eligible_province(self) -> None:
         submission = normalize_business_input(
             {
@@ -345,6 +362,82 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertFalse(result.qualified)
         self.assertEqual(result.reason, "province_not_eligible")
+
+    def test_qualification_derives_external_referral_province(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Ana Gomez",
+                "email": "ana@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Rio Negro",
+                "employment_status": "Policia",
+                "payment_bank": "Banco Patagonia S.A.",
+                "lead_source": "Instagram",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "external_referral")
+
+    def test_qualification_rejects_cordoba_policia_without_bancor(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Policia",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "payment_bank_not_eligible")
+
+    def test_qualification_accepts_cordoba_docente_with_bancor(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Cordoba",
+                "employment_status": "Docente",
+                "payment_bank": "Banco de la Provincia de Cordoba S.A.",
+                "lead_source": "Google",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertTrue(result.qualified)
+        self.assertEqual(result.reason, "qualified")
+
+    def test_qualification_rejects_la_rioja_pensionado(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Pedro Gomez",
+                "email": "pedro@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-87654321-9",
+                "province": "La Rioja",
+                "employment_status": "Pensionado",
+                "payment_bank": "Banco Rioja Sociedad Anonima Unipersonal",
+                "lead_source": "Facebook",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "employment_status_not_eligible")
 
     def test_process_submission_orchestrates_contact_lead_and_status(self) -> None:
         client = FakeBitrixClient()
@@ -457,8 +550,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["lead_status"], "UC_1P8I07")
         self.assertEqual(result["reason"], "province_not_eligible")
 
-        self.assertEqual(client.calls[-4][0], "crm.lead.get")
-        self.assertEqual(client.calls[-3][0], "crm.lead.update")
+        self.assertEqual(client.calls[-3][0], "crm.lead.get")
         self.assertEqual(client.calls[-2][0], "crm.lead.fields")
         last_method, last_payload = client.calls[-1]
         self.assertEqual(last_method, "crm.lead.update")
@@ -502,6 +594,29 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["payload"]["full_name"], "Luis Diaz")
         self.assertEqual(result["payload"]["utm_source"], "google")
         self.assertEqual(result["bcra_result"]["identification"], "20876543219")
+
+    def test_prequalify_submission_skips_bcra_for_la_rioja(self) -> None:
+        bcra_client = FakeBcraClient({})
+
+        result = prequalify_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-87654321-9",
+                "province": "La Rioja",
+                "employment_status": "Policia",
+                "payment_bank": "Banco Rioja Sociedad Anonima Unipersonal",
+                "lead_source": "Facebook",
+            },
+            bcra_client=bcra_client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["bcra_result"]["outcome"], "skipped")
+        self.assertEqual(bcra_client.calls, [])
 
     def test_persist_submission_uses_prequalified_result_without_reconsulting_bcra(self) -> None:
         client = FakeBitrixClient()

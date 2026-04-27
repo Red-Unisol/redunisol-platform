@@ -271,20 +271,22 @@ def classify_lead(
         submission = build_submission_from_lead(lead, config)
         qualification = evaluate_qualification(submission)
 
-        stored_bcra_rejection = _stored_bcra_should_reject(lead, config, active_logger, lead_id_int)
+        should_reject_by_bcra = False
+        if _should_consult_bcra(submission, qualification):
+            stored_bcra_rejection = _stored_bcra_should_reject(lead, config, active_logger, lead_id_int)
 
-        if stored_bcra_rejection is None:
-            bcra_result = sync_lead_bcra(
-                client,
-                config,
-                lead_id_int,
-                submission.cuil_digits,
-                active_logger,
-                bcra_client=bcra_client,
-            )
-            should_reject_by_bcra = bcra_result.should_reject
-        else:
-            should_reject_by_bcra = stored_bcra_rejection
+            if stored_bcra_rejection is None:
+                bcra_result = sync_lead_bcra(
+                    client,
+                    config,
+                    lead_id_int,
+                    submission.cuil_digits,
+                    active_logger,
+                    bcra_client=bcra_client,
+                )
+                should_reject_by_bcra = bcra_result.should_reject
+            else:
+                should_reject_by_bcra = stored_bcra_rejection
 
         if should_reject_by_bcra:
             qualification = QualificationResult(
@@ -403,6 +405,12 @@ def _evaluate_submission_with_bcra(
     bcra_client: Any | None = None,
 ) -> tuple[QualificationResult, BcraConsultationResult]:
     qualification = evaluate_qualification(submission)
+    if not _should_consult_bcra(submission, qualification):
+        return qualification, _skipped_bcra_result(
+            identification=submission.cuil_digits,
+            message="La politica actual no requiere consulta BCRA automatica en esta etapa.",
+        )
+
     active_bcra_client = bcra_client or BcraClient(logger)
     bcra_result = active_bcra_client.consult_snapshot(submission.cuil_digits)
 
@@ -438,3 +446,27 @@ def submission_payload_with_original_tracking(
             normalized_payload[key] = str(value).strip()
 
     return normalized_payload
+
+
+def _should_consult_bcra(submission: Any, qualification: QualificationResult) -> bool:
+    if not qualification.qualified:
+        return False
+    if submission.province.key == "la_rioja":
+        return False
+    return True
+
+
+def _skipped_bcra_result(*, identification: str, message: str) -> BcraConsultationResult:
+    return BcraConsultationResult(
+        outcome="skipped",
+        checked_at="",
+        identification=identification,
+        http_status=None,
+        formatted_field_value=None,
+        summary_field_value=None,
+        raw_field_value=None,
+        should_reject=False,
+        negative_entity_count=0,
+        negative_entities=(),
+        message=message,
+    )

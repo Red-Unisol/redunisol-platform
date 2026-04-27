@@ -94,6 +94,7 @@ SITUACIONES_LABORALES = Catalog(
         ("Monotributista", "3131"),
         ("Pensionado", "2569"),
         ("Beneficiario de Plan Social", "1279"),
+        ("Docente", "3745"),
     ]
 )
 

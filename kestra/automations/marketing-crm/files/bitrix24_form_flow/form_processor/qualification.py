@@ -13,54 +13,39 @@ class QualificationResult:
     rejection_label: str | None = None
 
 
+EXTERNAL_REFERRAL_PROVINCES = {
+    "neuquen",
+    "rio_negro",
+    "santa_fe",
+}
+
+
 QUALIFICATION_RULES = {
     "cordoba": {
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
             "empleado_publico_municipal",
             "policia",
+            "docente",
             "jubilado_provincial",
-            "jubilado_municipal",
+            "jubilado_nacional",
             "pensionado",
         },
         "bank_optional_for": {"jubilado_provincial"},
-        "allowed_banks": {
-            "banco_de_la_provincia_de_cordoba_s_a",
-            "banco_de_la_nacion_argentina",
+        "allowed_banks_by_status": {
+            "empleado_publico_provincial": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "empleado_publico_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "policia": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "docente": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "jubilado_nacional": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "pensionado": {"banco_de_la_provincia_de_cordoba_s_a"},
         },
     },
     "catamarca": {
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
             "policia",
-        }
-    },
-    "rio_negro": {
-        "allowed_employment_statuses": {
-            "empleado_publico_provincial",
-            "policia",
-            "jubilado_provincial",
-            "pensionado",
-        },
-        "allowed_banks": {
-            "banco_de_la_nacion_argentina",
-            "banco_patagonia_s_a",
-        },
-    },
-    "santa_fe": {
-        "allowed_employment_statuses": {
-            "empleado_publico_provincial",
-            "policia",
-            "jubilado_provincial",
-            "pensionado",
-        }
-    },
-    "neuquen": {
-        "allowed_employment_statuses": {
-            "policia",
-            "empleado_publico_provincial",
-            "jubilado_provincial",
-            "empleado_publico_municipal",
+            "docente",
         }
     },
     "la_rioja": {
@@ -68,12 +53,23 @@ QUALIFICATION_RULES = {
             "empleado_publico_provincial",
             "empleado_publico_municipal",
             "policia",
-        }
+            "docente",
+        },
     },
 }
 
 
 def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
+    if submission.province.key in EXTERNAL_REFERRAL_PROVINCES:
+        return QualificationResult(
+            qualified=False,
+            reason="external_referral",
+            message=(
+                f'La provincia "{submission.province.label}" se deriva a vendedor externo y no se procesa automaticamente.'
+            ),
+            rejection_label="OTRA PROVINCIA",
+        )
+
     rule = QUALIFICATION_RULES.get(submission.province.key)
     if not rule:
         return QualificationResult(
@@ -103,7 +99,8 @@ def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
             message=f"La persona califica para {submission.province.label}.",
         )
 
-    allowed_banks = rule.get("allowed_banks")
+    allowed_banks_by_status = rule.get("allowed_banks_by_status", {})
+    allowed_banks = allowed_banks_by_status.get(submission.employment_status.key)
     if allowed_banks and submission.payment_bank.key not in allowed_banks:
         return QualificationResult(
             qualified=False,
