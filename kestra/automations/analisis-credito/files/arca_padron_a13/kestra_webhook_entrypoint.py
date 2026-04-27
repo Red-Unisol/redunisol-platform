@@ -24,7 +24,7 @@ from .service import (
 def main() -> int:
     request = None
     try:
-        payload = _load_trigger_body()
+        payload = _load_payload()
         request = parse_search_request(payload)
         config = load_config_from_env()
         result = consultar_padron(request, config)
@@ -35,6 +35,14 @@ def main() -> int:
     _emit_outputs_if_available(output_payload)
     sys.stdout.write(output_payload["response_json"] + "\n")
     return 0
+
+
+def _load_payload() -> Any:
+    input_cuit_cuil = os.environ.get("ARCA_INPUT_CUIT_CUIL", "").strip()
+    if input_cuit_cuil:
+        return {"cuit_cuil": input_cuit_cuil}
+
+    return _load_trigger_body()
 
 
 def _load_trigger_body() -> Any:

@@ -10,6 +10,11 @@ labels:
   domain: analisis-credito
   integration: arca
 
+inputs:
+  - id: cuit_cuil
+    type: STRING
+    required: false
+
 tasks:
   - id: leer_ta_cache
     type: io.kestra.plugin.core.kv.Get
@@ -29,6 +34,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/red-unisol/analisis-credito-arca-padron-a13:latest
     env:
+      ARCA_INPUT_CUIT_CUIL: "{{ inputs.cuit_cuil }}"
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
       ARCA_TA_CACHE_JSON: "{{ (outputs.leer_ta_cache.value ?? null) | json }}"
       ARCA_CUIT_REPRESENTADA: "{{ envs.arca_padron_a13_cuit_representada }}"
