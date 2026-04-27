@@ -19,7 +19,7 @@ class SubmitFormToKestra
 
         return Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('services.kestra.form_webhook_timeout_seconds', 15))
+            ->timeout((int) config('services.kestra.form_webhook_timeout_seconds', 60))
             ->post($url, $this->buildPayload($input));
     }
 
