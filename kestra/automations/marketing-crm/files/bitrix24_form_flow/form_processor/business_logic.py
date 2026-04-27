@@ -8,6 +8,10 @@ from .bcra_client import (
     BCRA_STATUS_NEGATIVE,
     BCRA_STATUS_NOT_FOUND,
     BCRA_STATUS_OK,
+    BcraClient,
+    BcraConsultationResult,
+    deserialize_bcra_result,
+    serialize_bcra_result,
 )
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
@@ -19,6 +23,7 @@ from .lead_service import (
     create_lead,
     get_lead,
     should_process_lead,
+    update_lead_bcra_snapshot,
     update_lead_status,
 )
 from .logger import create_logger, Logger
@@ -128,6 +133,100 @@ def ingest_submission(
             message=str(exc),
             contact_id=contact_id,
             lead_id=lead_id,
+        )
+
+
+def prequalify_submission(
+    payload: dict[str, object],
+    *,
+    bcra_client: Any | None = None,
+    logger: Logger | None = None,
+) -> dict[str, object]:
+    active_logger = logger or create_logger()
+
+    try:
+        active_logger.info("Inicio de preclasificacion.")
+        submission = normalize_business_input(payload)
+        qualification, bcra_result = _evaluate_submission_with_bcra(
+            submission,
+            logger=active_logger,
+            bcra_client=bcra_client,
+        )
+        active_logger.info(f"Resultado de preclasificacion: {qualification.reason}.")
+        return {
+            "ok": True,
+            "qualified": qualification.qualified,
+            "contact_id": None,
+            "lead_id": None,
+            "lead_status": None,
+            "action": "qualified" if qualification.qualified else "rejected",
+            "reason": qualification.reason,
+            "message": qualification.message,
+            "rejection_label": qualification.rejection_label,
+            "bcra_result": serialize_bcra_result(bcra_result),
+            "payload": submission_payload_with_original_tracking(payload, submission),
+        }
+    except Exception as exc:
+        active_logger.error(str(exc))
+        return failure_result(message=str(exc))
+
+
+def persist_submission(
+    payload: dict[str, object],
+    *,
+    qualified: bool,
+    reason: str,
+    message: str,
+    rejection_label: str | None = None,
+    bcra_result_payload: dict[str, object] | None = None,
+    env: dict[str, str] | None = None,
+    bitrix_client: Any | None = None,
+    logger: Logger | None = None,
+) -> dict[str, object]:
+    active_logger = logger or create_logger()
+    contact_id: int | None = None
+    lead_id: int | None = None
+    lead_status: str | None = None
+
+    try:
+        active_logger.info("Inicio de persistencia asincronica en Bitrix.")
+        config = load_config(env)
+        client = bitrix_client or BitrixClient(config, active_logger)
+        submission = normalize_business_input(payload)
+
+        contact_id = upsert_contact(client, config, submission, active_logger)
+        lead_id = create_lead(client, config, submission, contact_id, active_logger)
+
+        if bcra_result_payload:
+            bcra_result = deserialize_bcra_result(bcra_result_payload)
+            if bcra_result.is_persistable and config.fields.has_bcra_storage_fields():
+                update_lead_bcra_snapshot(client, config, lead_id, bcra_result, active_logger)
+
+        lead_status = update_lead_status(
+            client,
+            config,
+            lead_id,
+            qualified,
+            None if qualified else rejection_label,
+            active_logger,
+        )
+        return success_result(
+            qualified=qualified,
+            contact_id=contact_id,
+            lead_id=lead_id,
+            lead_status=lead_status,
+            message=message,
+            reason=reason,
+        )
+    except Exception as exc:
+        active_logger.error(str(exc))
+        return failure_result(
+            message=str(exc),
+            qualified=qualified,
+            contact_id=contact_id,
+            lead_id=lead_id,
+            lead_status=lead_status,
+            reason=reason or "error",
         )
 
 
@@ -295,3 +394,47 @@ def _extract_should_reject_from_raw(raw_payload: str) -> bool | None:
         return bool(payload["should_reject"])
 
     return None
+
+
+def _evaluate_submission_with_bcra(
+    submission: Any,
+    *,
+    logger: Logger,
+    bcra_client: Any | None = None,
+) -> tuple[QualificationResult, BcraConsultationResult]:
+    qualification = evaluate_qualification(submission)
+    active_bcra_client = bcra_client or BcraClient(logger)
+    bcra_result = active_bcra_client.consult_snapshot(submission.cuil_digits)
+
+    if bcra_result.should_reject:
+        qualification = QualificationResult(
+            qualified=False,
+            reason="bcra_negative_situation",
+            message="El snapshot actual del BCRA supera el umbral permitido de situaciones 5.",
+            rejection_label="SIT NEG BCRA",
+        )
+
+    return qualification, bcra_result
+
+
+def submission_payload_with_original_tracking(
+    payload: dict[str, object],
+    submission: Any,
+) -> dict[str, object]:
+    normalized_payload = {
+        "full_name": submission.full_name,
+        "email": submission.email,
+        "whatsapp": submission.whatsapp,
+        "cuil": submission.cuil_formatted,
+        "province": submission.province.label,
+        "employment_status": submission.employment_status.label,
+        "payment_bank": submission.payment_bank.label,
+        "lead_source": submission.lead_source.label,
+    }
+
+    for key in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"):
+        value = payload.get(key)
+        if value is not None and str(value).strip():
+            normalized_payload[key] = str(value).strip()
+
+    return normalized_payload

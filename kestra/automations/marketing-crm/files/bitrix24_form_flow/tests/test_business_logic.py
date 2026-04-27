@@ -2,15 +2,27 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from pathlib import Path
+import sys
 import unittest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from bitrix24_form_flow.form_processor.business_logic import (
     classify_lead,
     ingest_submission,
+    persist_submission,
+    prequalify_submission,
     process_form_body,
     process_submission,
 )
-from bitrix24_form_flow.form_processor.bcra_client import BcraConsultationResult, _argentina_timestamp
+from bitrix24_form_flow.form_processor.bcra_client import (
+    BcraConsultationResult,
+    _argentina_timestamp,
+    serialize_bcra_result,
+)
 from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
 from bitrix24_form_flow.form_processor.input_parser import normalize_business_input, parse_body
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
@@ -360,6 +372,91 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(last_method, "crm.lead.update")
         self.assertEqual(last_payload["fields"]["STATUS_ID"], "UC_1P8I07")
         self.assertEqual(last_payload["fields"]["UF_CRM_REJECTION_REASON"], "3933")
+
+    def test_prequalify_submission_returns_fast_result_without_bitrix(self) -> None:
+        bcra_client = FakeBcraClient(
+            {
+                "20876543219": self.make_bcra_result(
+                    identification="20876543219",
+                    status_field_value="OK",
+                    should_reject=False,
+                )
+            }
+        )
+
+        result = prequalify_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+                "utm_source": "google",
+            },
+            bcra_client=bcra_client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["action"], "qualified")
+        self.assertEqual(result["reason"], "qualified")
+        self.assertIsNone(result["contact_id"])
+        self.assertIsNone(result["lead_id"])
+        self.assertEqual(bcra_client.calls, ["20876543219"])
+        self.assertEqual(result["payload"]["full_name"], "Luis Diaz")
+        self.assertEqual(result["payload"]["utm_source"], "google")
+        self.assertEqual(result["bcra_result"]["identification"], "20876543219")
+
+    def test_persist_submission_uses_prequalified_result_without_reconsulting_bcra(self) -> None:
+        client = FakeBitrixClient()
+        bcra_result = self.make_bcra_result(
+            identification="20876543219",
+            status_field_value="NEGATIVO",
+            should_reject=True,
+        )
+
+        result = persist_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "+5493511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            qualified=False,
+            reason="bcra_negative_situation",
+            message="El snapshot actual del BCRA supera el umbral permitido de situaciones 5.",
+            rejection_label="SIT NEG BCRA",
+            bcra_result_payload=serialize_bcra_result(bcra_result),
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["lead_status"], "UC_1P8I07")
+        self.assertEqual(
+            [method for method, _ in client.calls],
+            [
+                "crm.contact.list",
+                "crm.contact.add",
+                "crm.lead.fields",
+                "crm.lead.add",
+                "crm.lead.update",
+                "crm.lead.fields",
+                "crm.lead.update",
+            ],
+        )
+        self.assertIn("Estado: NEGATIVO", client.leads[202]["UF_CRM_BCRA_STATUS"])
+        self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_REJECTION_REASON"], "3935")
 
     def test_ingest_submission_sets_processing_policy_to_skip(self) -> None:
         client = FakeBitrixClient()

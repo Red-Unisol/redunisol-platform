@@ -48,6 +48,42 @@ class BcraConsultationResult:
         return self.outcome == "rate_limited"
 
 
+def serialize_bcra_result(result: BcraConsultationResult) -> dict[str, Any]:
+    return {
+        "outcome": result.outcome,
+        "checked_at": result.checked_at,
+        "identification": result.identification,
+        "http_status": result.http_status,
+        "formatted_field_value": result.formatted_field_value,
+        "summary_field_value": result.summary_field_value,
+        "raw_field_value": result.raw_field_value,
+        "should_reject": result.should_reject,
+        "negative_entity_count": result.negative_entity_count,
+        "negative_entities": list(result.negative_entities),
+        "message": result.message,
+    }
+
+
+def deserialize_bcra_result(payload: dict[str, Any]) -> BcraConsultationResult:
+    return BcraConsultationResult(
+        outcome=str(payload.get("outcome") or ""),
+        checked_at=str(payload.get("checked_at") or ""),
+        identification=str(payload.get("identification") or ""),
+        http_status=_optional_int(payload.get("http_status")),
+        formatted_field_value=_optional_str(payload.get("formatted_field_value")),
+        summary_field_value=_optional_str(payload.get("summary_field_value")),
+        raw_field_value=_optional_str(payload.get("raw_field_value")),
+        should_reject=bool(payload.get("should_reject", False)),
+        negative_entity_count=int(payload.get("negative_entity_count") or 0),
+        negative_entities=tuple(
+            str(item).strip()
+            for item in (payload.get("negative_entities") or [])
+            if str(item).strip()
+        ),
+        message=_optional_str(payload.get("message")),
+    )
+
+
 class BcraClient:
     def __init__(self, logger: Logger | None = None):
         self.logger = logger
@@ -492,6 +528,13 @@ def _optional_int(raw_value: Any) -> int | None:
     if raw_value is None or str(raw_value).strip() == "":
         return None
     return int(str(raw_value))
+
+
+def _optional_str(raw_value: Any) -> str | None:
+    if raw_value is None:
+        return None
+    value = str(raw_value).strip()
+    return value or None
 
 
 def _argentina_timestamp(now: datetime | None = None) -> str:
