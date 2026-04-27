@@ -47,7 +47,7 @@ def _process_payload(payload: Any) -> dict[str, object]:
     content_type = os.environ.get("TRIGGER_CONTENT_TYPE")
 
     if isinstance(payload, dict):
-        return ingest_submission(payload)
+        return ingest_submission(_apply_full_name_override(payload))
 
     if payload is None:
         return ingest_form_body("", content_type=content_type)
@@ -56,6 +56,23 @@ def _process_payload(payload: Any) -> dict[str, object]:
         raise ValueError("El body del webhook debe ser un objeto JSON o una cadena.")
 
     return ingest_form_body(str(payload), content_type=content_type)
+
+
+def _apply_full_name_override(payload: dict[str, Any]) -> dict[str, Any]:
+    nombre = os.environ.get("ARCA_RESOLVED_NOMBRE", "").strip()
+    apellido = os.environ.get("ARCA_RESOLVED_APELLIDO", "").strip()
+    razon_social = os.environ.get("ARCA_RESOLVED_RAZON_SOCIAL", "").strip()
+
+    resolved_full_name = " ".join(part for part in (nombre, apellido) if part)
+    if not resolved_full_name and razon_social:
+        resolved_full_name = razon_social
+
+    if not resolved_full_name:
+        return payload
+
+    enriched_payload = dict(payload)
+    enriched_payload["full_name"] = resolved_full_name
+    return enriched_payload
 
 
 def _emit_outputs_if_available(result: dict[str, object]) -> None:

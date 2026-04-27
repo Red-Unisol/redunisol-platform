@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
+from pathlib import Path
+import sys
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from bitrix24_form_flow.kestra_form_intake_entrypoint import _apply_full_name_override
 from bitrix24_form_flow.form_processor.business_logic import (
     classify_lead,
     ingest_submission,
@@ -183,6 +189,96 @@ class BusinessLogicTests(unittest.TestCase):
             negative_entities=("BANCO A", "BANCO B") if should_reject else (),
             message=None,
         )
+
+    def test_apply_full_name_override_uses_nombre_y_apellido_from_arca(self) -> None:
+        payload = {"full_name": "Lead Web Redunisol", "email": "juan@example.com"}
+        original_env = {key: os.environ.get(key) for key in (
+            "ARCA_RESOLVED_NOMBRE",
+            "ARCA_RESOLVED_APELLIDO",
+            "ARCA_RESOLVED_RAZON_SOCIAL",
+        )}
+        try:
+            os.environ["ARCA_RESOLVED_NOMBRE"] = "JUAN"
+            os.environ["ARCA_RESOLVED_APELLIDO"] = "PEREZ"
+            os.environ["ARCA_RESOLVED_RAZON_SOCIAL"] = ""
+
+            result = _apply_full_name_override(payload)
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(result["full_name"], "JUAN PEREZ")
+        self.assertEqual(payload["full_name"], "Lead Web Redunisol")
+
+    def test_apply_full_name_override_keeps_existing_name_when_arca_is_empty(self) -> None:
+        payload = {"full_name": "Lead Web Redunisol", "email": "juan@example.com"}
+        original_env = {key: os.environ.get(key) for key in (
+            "ARCA_RESOLVED_NOMBRE",
+            "ARCA_RESOLVED_APELLIDO",
+            "ARCA_RESOLVED_RAZON_SOCIAL",
+        )}
+        try:
+            os.environ["ARCA_RESOLVED_NOMBRE"] = ""
+            os.environ["ARCA_RESOLVED_APELLIDO"] = ""
+            os.environ["ARCA_RESOLVED_RAZON_SOCIAL"] = ""
+
+            result = _apply_full_name_override(payload)
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertIs(result, payload)
+        self.assertEqual(result["full_name"], "Lead Web Redunisol")
+
+    def test_ingest_submission_uses_arca_name_for_contact_and_lead(self) -> None:
+        payload = {
+            "full_name": "Lead Web Redunisol",
+            "email": "juan@example.com",
+            "whatsapp": "3511234567",
+            "cuil": "20-12345678-3",
+            "province": "Cordoba",
+            "employment_status": "Policia",
+            "payment_bank": "Banco de la Nacion Argentina",
+            "lead_source": "Google",
+        }
+        original_env = {key: os.environ.get(key) for key in (
+            "ARCA_RESOLVED_NOMBRE",
+            "ARCA_RESOLVED_APELLIDO",
+            "ARCA_RESOLVED_RAZON_SOCIAL",
+        )}
+        try:
+            os.environ["ARCA_RESOLVED_NOMBRE"] = "JUAN"
+            os.environ["ARCA_RESOLVED_APELLIDO"] = "PEREZ"
+            os.environ["ARCA_RESOLVED_RAZON_SOCIAL"] = ""
+
+            enriched_payload = _apply_full_name_override(payload)
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        client = FakeBitrixClient()
+        result = ingest_submission(
+            enriched_payload,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.calls[1][0], "crm.contact.add")
+        self.assertEqual(client.calls[1][1]["fields"]["NAME"], "JUAN PEREZ")
+        self.assertEqual(client.calls[3][0], "crm.lead.add")
+        self.assertEqual(client.calls[3][1]["fields"]["TITLE"], "JUAN PEREZ")
+        self.assertEqual(client.calls[3][1]["fields"]["NAME"], "JUAN PEREZ")
 
     def test_argentina_timestamp_converts_from_utc(self) -> None:
         checked_at = _argentina_timestamp(datetime(2026, 4, 15, 20, 30, 0, tzinfo=timezone.utc))
