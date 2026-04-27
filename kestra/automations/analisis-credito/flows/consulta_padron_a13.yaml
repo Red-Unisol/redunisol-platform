@@ -35,7 +35,7 @@ tasks:
     containerImage: ghcr.io/red-unisol/analisis-credito-arca-padron-a13:latest
     env:
       ARCA_INPUT_CUIT_CUIL: "{{ inputs.cuit_cuil }}"
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ inputs.cuit_cuil ? ({'cuit_cuil': inputs.cuit_cuil} | toJson) : (trigger.body | json) }}"
       ARCA_TA_CACHE_JSON: "{{ (outputs.leer_ta_cache.value ?? null) | json }}"
       ARCA_CUIT_REPRESENTADA: "{{ envs.arca_padron_a13_cuit_representada }}"
       ARCA_TIMEOUT_SECONDS: "{{ envs.arca_padron_a13_timeout_seconds }}"
