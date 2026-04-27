@@ -7,6 +7,7 @@ import os
 import sys
 
 from .form_processor.business_logic import persist_submission
+from .kestra_form_intake_entrypoint import _apply_full_name_override
 
 try:
     from kestra import Kestra
@@ -17,6 +18,7 @@ except ImportError:  # pragma: no cover - optional outside Kestra
 def main() -> int:
     try:
         payload = _load_json_env("SUBMISSION_PAYLOAD_JSON", required=True)
+        payload = _apply_full_name_override(payload)
         qualified = _load_bool("QUALIFIED", default=False)
         reason = _load_string("REASON", required=True)
         message = _load_string("MESSAGE", required=True)

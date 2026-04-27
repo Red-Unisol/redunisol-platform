@@ -10,15 +10,6 @@ labels:
   integration: bitrix24
 
 tasks:
-  - id: consultar_identidad
-    type: io.kestra.plugin.core.flow.Subflow
-    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
-    flowId: consulta_padron_a13
-    inputs:
-      cuit_cuil: "{{ trigger.body.cuil }}"
-    wait: true
-    transmitFailed: false
-
   - id: preclasificar_formulario
     type: io.kestra.plugin.scripts.python.Commands
     namespaceFiles:
@@ -31,9 +22,6 @@ tasks:
     beforeCommands:
       - pip install kestra > /dev/null
     env:
-      ARCA_RESOLVED_NOMBRE: "{{ outputs.consultar_identidad.outputs.nombre ?? '' }}"
-      ARCA_RESOLVED_APELLIDO: "{{ outputs.consultar_identidad.outputs.apellido ?? '' }}"
-      ARCA_RESOLVED_RAZON_SOCIAL: "{{ outputs.consultar_identidad.outputs.razon_social ?? '' }}"
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
     commands:
       - python -m bitrix24_form_flow.kestra_form_prequalification_entrypoint
@@ -44,6 +32,7 @@ tasks:
     flowId: bitrix24_form_persistence
     inputs:
       submission_payload_json: "{{ outputs.preclasificar_formulario.vars.payload_json }}"
+      submission_cuil: "{{ trigger.body.cuil }}"
       qualified: "{{ outputs.preclasificar_formulario.vars.qualified }}"
       reason: "{{ outputs.preclasificar_formulario.vars.reason }}"
       message: "{{ outputs.preclasificar_formulario.vars.message }}"

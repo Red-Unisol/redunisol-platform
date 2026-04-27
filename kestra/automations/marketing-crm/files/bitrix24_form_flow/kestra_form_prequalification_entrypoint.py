@@ -50,25 +50,7 @@ def _process_payload(payload: Any) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("El body del webhook debe ser un objeto JSON.")
 
-    enriched_payload = dict(payload)
-    _apply_full_name_override(enriched_payload)
-    return prequalify_submission(enriched_payload)
-
-
-def _apply_full_name_override(payload: dict[str, object]) -> None:
-    first_name = os.environ.get("ARCA_RESOLVED_NOMBRE", "").strip()
-    last_name = os.environ.get("ARCA_RESOLVED_APELLIDO", "").strip()
-    business_name = os.environ.get("ARCA_RESOLVED_RAZON_SOCIAL", "").strip()
-
-    resolved_full_name = " ".join(part for part in (first_name, last_name) if part).strip()
-    if resolved_full_name:
-        payload["full_name"] = resolved_full_name
-        payload["full_name_inferred"] = False
-        return
-
-    if business_name:
-        payload["full_name"] = business_name
-        payload["full_name_inferred"] = False
+    return prequalify_submission(dict(payload))
 
 
 def _emit_outputs_if_available(result: dict[str, object]) -> None:

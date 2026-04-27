@@ -13,6 +13,9 @@ inputs:
   - id: submission_payload_json
     type: STRING
     required: true
+  - id: submission_cuil
+    type: STRING
+    required: true
   - id: qualified
     type: BOOLEAN
     required: true
@@ -30,6 +33,15 @@ inputs:
     required: false
 
 tasks:
+  - id: consultar_identidad
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
+    flowId: consulta_padron_a13
+    inputs:
+      cuit_cuil: "{{ inputs.submission_cuil }}"
+    wait: true
+    transmitFailed: false
+
   - id: persistir
     type: io.kestra.plugin.scripts.python.Commands
     namespaceFiles:
@@ -48,6 +60,9 @@ tasks:
       MESSAGE: "{{ inputs.message }}"
       REJECTION_LABEL: "{{ inputs.rejection_label }}"
       BCRA_RESULT_JSON: "{{ inputs.bcra_result_json }}"
+      ARCA_RESOLVED_NOMBRE: "{{ outputs.consultar_identidad.outputs.nombre ?? '' }}"
+      ARCA_RESOLVED_APELLIDO: "{{ outputs.consultar_identidad.outputs.apellido ?? '' }}"
+      ARCA_RESOLVED_RAZON_SOCIAL: "{{ outputs.consultar_identidad.outputs.razon_social ?? '' }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
