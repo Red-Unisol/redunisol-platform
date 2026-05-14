@@ -1,6 +1,5 @@
 import {
     CheckCircleIcon,
-    MouseScrollIcon,
     UploadSimple,
     WarningCircleIcon,
     XIcon,
@@ -895,9 +894,9 @@ export default function FormSection({
     };
 
     return (
-        <section className="w-full py-16">
+        <section className="w-full py-4">
             <div className="mx-auto max-w-lg px-4">
-                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div className="h-[calc(100vh-11.5rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     {/* Step header */}
                     <div className="flex items-center justify-between px-6 pt-5 pb-3">
                         {enabledSteps.map((stepN, idx) => {
@@ -1002,14 +1001,6 @@ export default function FormSection({
                             </button>
                         </div>
                     </div>
-                </div>
-
-                {/* Scroll hint */}
-                <div className="mt-8 flex items-center justify-center gap-3 pb-8">
-                    <MouseScrollIcon size={24} className="text-[#8a9bb5]" />
-                    <span className="text-normal font-bold text-[#8a9bb5]">
-                        Scroll para seguir viendo
-                    </span>
                 </div>
             </div>
 

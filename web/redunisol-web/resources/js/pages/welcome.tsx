@@ -1,12 +1,13 @@
-import useTracking from '@/hooks/useTracking';
+/* eslint-disable import/order */
 import { usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import About from '@/components/about';
 import Convenios from '@/components/convenios';
 import FAQs from '@/components/faqs';
 import Footer from '@/components/footer';
 import Hero from '@/components/hero';
+
 import Navbar from '@/components/navbar';
 import Requisitos from '@/components/requisitos';
 import ContactSection from '@/components/sections/ContactSection';
@@ -19,7 +20,10 @@ import YouTubeSection from '@/components/sections/YouTubeSection';
 import SeoHead from '@/components/seo-head';
 import Services from '@/components/services';
 import Testimonios from '@/components/testimonios';
+import useActiveSection from '@/hooks/useActiveSection';
+import useTracking from '@/hooks/useTracking';
 import { faqSchema, organizationSchema, serviceSchema } from '@/utils/schemas';
+import { MouseScrollIcon } from '@phosphor-icons/react';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -72,6 +76,11 @@ const TAB_HIDDEN_MAP: Record<string, string> = {
     about: 'about',
 };
 
+// Helper to find a section by type
+function useSection<T>(sections: PageSection[], type: string): T | undefined {
+    return sections?.find((s) => s.type === type)?.data as T | undefined;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Page component
 // ─────────────────────────────────────────────────────────────
@@ -91,11 +100,113 @@ export default function Page() {
 
     useTracking();
 
-    // ── Form section is special: rendered outside <main> ──
+    // ── Form section is special: used to decide split layout ──
     const formSection = sections.find((s) => s.type === 'form');
     const formConfig = formSection?.data as FormSectionConfig | undefined;
 
-    // All non-form sections rendered in order
+    const formSectionData = useSection<FormSectionConfig>(sections, 'form');
+
+    const sectionDescriptors = sections.map((s, idx) => ({
+        id: `section-${idx}-${s.type}`,
+        type: s.type,
+        data: s.data,
+    }));
+
+    const hasForm = !!formSectionData;
+    const leftSections = hasForm
+        ? sectionDescriptors.filter((s) => s.type !== 'form')
+        : sectionDescriptors;
+
+    const leftRef = useRef<HTMLDivElement | null>(null);
+
+    const { activeId, scrollToSection } = useActiveSection(leftRef);
+
+    // When we have the split layout (form present on desktop), implement "scroll
+    // chaining": scrolls within the left column while the pointer is over it.
+    // Once the left column reaches its end, allow the document/page to continue
+    // scrolling (revealing the footer). This avoids hiding the document scrollbar
+    // completely and keeps the footer reachable.
+    useEffect(() => {
+        const el = leftRef.current;
+        if (typeof window === 'undefined' || !el) return;
+
+        const mql = window.matchMedia('(min-width: 768px)');
+        if (!mql.matches) return; // only on desktop
+
+        let touchStartY = 0;
+
+        const onWheel = (e: WheelEvent) => {
+            if (!hasForm) return;
+            const delta = e.deltaY;
+            const scrollTop = el.scrollTop;
+            const maxScroll = el.scrollHeight - el.clientHeight;
+
+            if (delta > 0) {
+                // scrolling down
+                if (scrollTop >= maxScroll - 1) {
+                    // at bottom: allow page scroll (do not prevent)
+                    return;
+                }
+                e.preventDefault();
+                el.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+            } else if (delta < 0) {
+                // scrolling up
+                if (scrollTop <= 1) {
+                    // at top: allow page scroll
+                    return;
+                }
+                e.preventDefault();
+                el.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+            }
+        };
+
+        const onTouchStart = (e: TouchEvent) => {
+            touchStartY = e.touches[0]?.clientY ?? 0;
+        };
+
+        const onTouchMove = (e: TouchEvent) => {
+            if (!hasForm) return;
+            const currentY = e.touches[0]?.clientY ?? 0;
+            let delta = touchStartY - currentY; // positive -> scroll down
+            // small threshold to avoid jitter
+            if (Math.abs(delta) < 2) return;
+
+            const scrollTop = el.scrollTop;
+            const maxScroll = el.scrollHeight - el.clientHeight;
+
+            if (delta > 0) {
+                // swipe up -> scroll down
+                if (scrollTop >= maxScroll - 1) {
+                    // at bottom: allow page scroll
+                    return;
+                }
+                e.preventDefault();
+                el.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+            } else if (delta < 0) {
+                // swipe down -> scroll up
+                if (scrollTop <= 1) {
+                    // at top: allow page scroll
+                    return;
+                }
+                e.preventDefault();
+                el.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+            }
+
+            touchStartY = currentY;
+        };
+
+        el.addEventListener('wheel', onWheel, { passive: false });
+        el.addEventListener('touchstart', onTouchStart, { passive: true });
+        el.addEventListener('touchmove', onTouchMove, { passive: false });
+
+        return () => {
+            el.removeEventListener('wheel', onWheel as EventListener);
+            el.removeEventListener('touchstart', onTouchStart as EventListener);
+            el.removeEventListener('touchmove', onTouchMove as EventListener);
+        };
+    }, [hasForm, leftRef]);
+
+    // All non-form sections rendered in order (for JSON-LD etc.)
     const mainSections = sections.filter((s) => s.type !== 'form');
 
     // ── JSON-LD schemas ──
@@ -140,30 +251,178 @@ export default function Page() {
                 schemas={schemas}
             />
 
-            <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+            <Navbar
+                sections={sectionDescriptors}
+                activeId={activeId}
+                onNavigate={(id: string) => {
+                    scrollToSection(id);
+                }}
+            />
 
             <div className="bg-gradient-custom w-full">
-                {/* Form section sits above the white card when present */}
-                {formConfig && (
-                    <FormSection
-                        config={formConfig}
-                        landingSlug={landingSlug}
-                        landingTitle={title}
-                    />
-                )}
+                <div
+                    className={`mx-auto max-w-[1350px] px-6 ${hasForm ? 'max-h-[calc(100vh-4rem)] md:grid md:grid-cols-[1fr_420px] md:gap-8' : 'pt-18'}`}
+                >
+                    <div
+                        ref={leftRef}
+                        className={`${hasForm ? 'rounded-2xl bg-white md:my-27 md:max-h-[calc(100vh-11rem)] md:overflow-y-auto' : 'rounded-2xl bg-white'}`}
+                    >
+                        {leftSections.map((s) => {
+                            const id = s.id;
+                            const key = `${id}`;
 
-                <main className="rounded-tl-4xl rounded-tr-4xl bg-white">
-                    {mainSections.map((section, i) => {
-                        const Component = SECTION_COMPONENTS[section.type];
-                        if (!Component) return null;
+                            const sectionClass = 'py-12';
 
-                        // Tab-based visibility (for landing pages)
-                        const hiddenTab = TAB_HIDDEN_MAP[section.type];
-                        if (hiddenTab && activeTab === hiddenTab) return null;
+                            // Tab-based visibility (for landing pages)
+                            const hiddenTab = TAB_HIDDEN_MAP[s.type];
+                            if (hiddenTab && activeTab === hiddenTab)
+                                return null;
 
-                        return <Component key={i} data={section.data} />;
-                    })}
-                </main>
+                            switch (s.type) {
+                                case 'hero':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <Hero data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'services':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <Services data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'about':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <About data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'faqs':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <FAQs data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'convenios':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <Convenios data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'requisitos':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <Requisitos data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'testimonios':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <Testimonios data={s.data as any} />
+                                        </section>
+                                    );
+                                case 'form':
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={`${sectionClass} md:hidden`}
+                                        >
+                                            <FormSection
+                                                config={s.data as any}
+                                                landingSlug={landingSlug}
+                                                landingTitle={title}
+                                            />
+                                        </section>
+                                    );
+                                default: {
+                                    // Fallback: render via SECTION_COMPONENTS if available
+                                    const Component =
+                                        SECTION_COMPONENTS[s.type];
+                                    if (Component) {
+                                        return (
+                                            <section
+                                                id={id}
+                                                data-section-id={id}
+                                                key={key}
+                                                className={sectionClass}
+                                            >
+                                                <Component data={s.data} />
+                                            </section>
+                                        );
+                                    }
+
+                                    return (
+                                        <section
+                                            id={id}
+                                            data-section-id={id}
+                                            key={key}
+                                            className={sectionClass}
+                                        >
+                                            <div className="p-6 text-gray-600">
+                                                Sección: {s.type}
+                                            </div>
+                                        </section>
+                                    );
+                                }
+                            }
+                        })}
+                    </div>
+
+                    {hasForm && (
+                        <aside className="hidden md:block">
+                            <div className="absolute top-24">
+                                <FormSection
+                                    config={formSectionData}
+                                    landingSlug={landingSlug}
+                                    landingTitle={title}
+                                />
+                            </div>
+                        </aside>
+                    )}
+                </div>
+                <div className="mt-8 flex items-center justify-center gap-3 pb-8">
+                    <MouseScrollIcon size={24} className="text-[#8a9bb5]" />
+                    <span className="text-normal font-bold text-[#8a9bb5]">
+                        Scroll para seguir viendo
+                    </span>
+                </div>
 
                 <Footer />
             </div>

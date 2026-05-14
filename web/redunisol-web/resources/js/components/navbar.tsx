@@ -5,56 +5,71 @@ import {
     UserCheckIcon,
 } from '@phosphor-icons/react';
 
-export const tabs = [
-    {
-        label: 'Solicitá hoy',
-        icon: <UserCheckIcon size={24} />,
-        key: 'solicita',
-    },
-    {
-        label: 'Créditos',
-        icon: <MoneyIcon size={24} />,
-        key: 'creditos',
-    },
-    {
-        label: 'Sobre nosotros',
-        icon: <InfoIcon size={24} />,
-        key: 'about',
-    },
-    {
-        label: 'FAQs',
-        icon: <QuestionIcon size={24} />,
-        key: 'faqs',
-    },
-];
+export const defaultSectionLabel = (type: string, data?: any) => {
+    if (data?.title) return data.title as string;
+    const map: Record<string, string> = {
+        form: 'Solicitá hoy',
+        services: 'Créditos',
+        about: 'Sobre nosotros',
+        faqs: 'FAQs',
+        hero: 'Inicio',
+        testimonios: 'Testimonios',
+        convenios: 'Convenios',
+        requisitos: 'Requisitos',
+    };
+    return map[type] ?? 'Sección';
+};
 
-export default function NavTabs({ activeTab, setActiveTab }) {
+import { Link } from '@inertiajs/react';
+
+export default function NavTabs({
+    sections = [],
+    activeId,
+    onNavigate,
+}: {
+    sections: { id: string; type: string; data?: any }[];
+    activeId: string | null;
+    onNavigate: (id: string) => void;
+}) {
     return (
-        <nav className="absolute flex w-full items-center justify-between bg-transparent px-8 py-4">
-            {/* Logo */}
+        <nav className="absolute z-30 flex w-full items-center justify-between bg-transparent px-8 py-4">
             <div className="flex items-center gap-2">
-                <img
-                    src="/images/general/t1JdNn2n4csoI8qGYVfVNKs7w.png"
-                    alt="UNISOL"
-                    className="h-10"
-                />
+                <Link href="/">
+                    <img
+                        src="/images/general/t1JdNn2n4csoI8qGYVfVNKs7w.png"
+                        alt="UNISOL"
+                        className="h-10 cursor-pointer"
+                    />
+                </Link>
             </div>
-            {/* Tabs */}
-            <div className="flex items-center gap-4">
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`text-normal flex items-center gap-2 rounded-xl px-2 py-2 font-semibold transition ${
-                            activeTab === tab.key
-                                ? 'bg-[#cbd5e1] text-[#1F2A37]'
-                                : 'bg-transparent text-[#1F2A37] opacity-70 hover:opacity-100'
-                        }`}
-                    >
-                        {tab.icon}
-                        {activeTab === tab.key && <span>{tab.label}</span>}
-                    </button>
-                ))}
+
+            <div className="flex items-center gap-3 rounded-2xl bg-white">
+                {sections.map((s) => {
+                    const label = defaultSectionLabel(s.type, s.data);
+                    const isActive = activeId === s.id;
+                    return (
+                        <button
+                            key={s.id}
+                            onClick={() => onNavigate(s.id)}
+                            aria-current={isActive ? 'true' : undefined}
+                            className={`text-normal flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 font-semibold transition ${
+                                isActive
+                                    ? 'bg-[#cbd5e1] text-[#1F2A37]'
+                                    : 'bg-transparent text-[#1F2A37] opacity-70 hover:opacity-100'
+                            } ${s.type === 'form' ? 'md:hidden' : ''}`}
+                        >
+                            {s.type === 'form' && <UserCheckIcon size={18} />}
+                            {s.type === 'services' && <MoneyIcon size={18} />}
+                            {s.type === 'about' && <InfoIcon size={18} />}
+                            {s.type === 'faqs' && <QuestionIcon size={18} />}
+                            <span
+                                className={`${isActive ? 'inline' : 'hidden md:inline'}`}
+                            >
+                                {label}
+                            </span>
+                        </button>
+                    );
+                })}
             </div>
         </nav>
     );
