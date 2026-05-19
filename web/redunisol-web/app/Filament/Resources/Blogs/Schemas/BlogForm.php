@@ -46,6 +46,15 @@ class BlogForm
                             ->required()
                             ->maxLength(255),
 
+                        Select::make('author_entity_id')
+                            ->label('Perfil de autor')
+                            ->helperText('Opcional. Si se selecciona, enlaza al perfil público del autor en /autores/slug.')
+                            ->relationship('authorProfile', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder('Sin perfil vinculado'),
+
                         Select::make('categories')
                             ->label('Categorías')
                             ->relationship('categories', 'name')

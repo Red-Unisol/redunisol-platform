@@ -32,7 +32,7 @@ export default function NavTabs({
     onNavigate: (id: string) => void;
 }) {
     return (
-        <nav className="absolute z-30 flex w-full items-center justify-between bg-transparent px-8 py-4">
+        <nav className="absolute z-30 flex w-full items-center justify-between bg-transparent px-8 py-4 text-xs">
             <div className="flex items-center gap-2">
                 <Link href="/">
                     <img

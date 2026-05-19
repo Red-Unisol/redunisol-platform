@@ -261,7 +261,7 @@ export default function Page() {
 
             <div className="bg-gradient-custom w-full">
                 <div
-                    className={`mx-auto max-w-[1350px] px-6 ${hasForm ? 'max-h-[calc(100vh-4rem)] md:grid md:grid-cols-[1fr_420px] md:gap-8' : 'pt-18'}`}
+                    className={`mx-auto max-w-[1350px] px-6 ${hasForm ? 'md:grid md:max-h-[calc(100vh-4rem)] md:grid-cols-[1fr_420px] md:gap-8' : 'pt-18'}`}
                 >
                     <div
                         ref={leftRef}

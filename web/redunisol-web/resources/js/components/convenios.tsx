@@ -59,7 +59,7 @@ export default function Convenios({ data }: { data: ConveniosData }) {
                     className="m-auto mb-8 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <HandshakeIcon size={24} />
-                    <p className="text-normal font-bold">{data.title}</p>
+                    <h2 className="text-normal font-bold">{data.title}</h2>
                 </motion.div>
 
                 <div className="grid gap-6 md:grid-cols-2">

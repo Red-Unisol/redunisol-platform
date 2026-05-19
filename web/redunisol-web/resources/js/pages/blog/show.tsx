@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
 
 import BlogCard, { type BlogPost } from '@/components/blog/BlogCard';
@@ -78,7 +78,16 @@ export default function BlogShow() {
                     >
                         <span>{formatDate(post.published_at)}</span>
                         <span className="text-white/40">·</span>
-                        <span>{post.author_name}</span>
+                        {post.author_slug ? (
+                            <Link
+                                href={`/autores/${post.author_slug}`}
+                                className="transition hover:text-white"
+                            >
+                                {post.author_name}
+                            </Link>
+                        ) : (
+                            <span>{post.author_name}</span>
+                        )}
                     </motion.div>
                 </div>
             </div>

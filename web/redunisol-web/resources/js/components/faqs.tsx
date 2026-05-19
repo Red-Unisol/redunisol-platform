@@ -1,3 +1,4 @@
+import { usePage } from '@inertiajs/react';
 import { CaretDownIcon, QuestionIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
@@ -15,7 +16,7 @@ interface FAQCategory {
 export interface FAQsData {
     badge: string;
     description: string;
-    cta?: string | { enabled?: boolean; label?: string; text?: string };
+    cta: string;
     categories: FAQCategory[];
 }
 
@@ -88,14 +89,24 @@ function AccordionItem({ q, a }: FAQItem) {
     );
 }
 
-export default function FAQs({ data }: { data: FAQsData }) {
-    const ctaLabel =
-        typeof data.cta === 'string'
-            ? data.cta
-            : data.cta?.enabled === false
-              ? null
-              : (data.cta?.label ?? data.cta?.text ?? null);
+interface SharedProps {
+    siteData?: { settings?: Record<string, string> };
+    [key: string]: unknown;
+}
 
+function useWaUrl() {
+    const { siteData } = usePage<SharedProps>().props;
+    const settings = siteData?.settings ?? {};
+    const phoneDigits = (settings['whatsapp_phone'] ?? '').replace(/\D+/g, '');
+    const message =
+        (settings['whatsapp_message'] ?? '').trim() ||
+        'Hola, quisiera recibir información sobre los préstamos.';
+    if (!phoneDigits) return '#';
+    return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`;
+}
+
+export default function FAQs({ data }: { data: FAQsData }) {
+    const waUrl = useWaUrl();
     return (
         <section className="w-full bg-white py-20 text-gray-800">
             <div className="mx-auto max-w-3xl px-6">
@@ -106,7 +117,7 @@ export default function FAQs({ data }: { data: FAQsData }) {
                     className="m-auto mb-4 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <QuestionIcon size={24} />
-                    <p className="text-normal font-bold">{data.badge}</p>
+                    <h2 className="text-normal font-bold">{data.badge}</h2>
                 </motion.div>
 
                 <p className="mb-14 text-center text-base leading-relaxed text-gray-700">
@@ -132,16 +143,16 @@ export default function FAQs({ data }: { data: FAQsData }) {
                     ))}
                 </div>
 
-                {ctaLabel && (
-                    <div className="mt-14 flex justify-center">
-                        <button
-                            type="button"
-                            className="rounded-2xl bg-[#1e2d3d] px-10 py-4 text-base font-bold text-white transition hover:bg-[#2d3f54] active:scale-95"
-                        >
-                            {ctaLabel}
-                        </button>
-                    </div>
-                )}
+                <div className="mt-14 flex justify-center">
+                    <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-2xl bg-[#1e2d3d] px-10 py-4 text-base font-bold text-white transition hover:bg-[#2d3f54] active:scale-95"
+                    >
+                        {data.cta}
+                    </a>
+                </div>
             </div>
         </section>
     );

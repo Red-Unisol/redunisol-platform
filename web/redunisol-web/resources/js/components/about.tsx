@@ -20,7 +20,7 @@ export default function About({ data }: { data: AboutSection }) {
                     className="m-auto mb-4 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <InfoIcon size={24} />
-                    <p className="text-normal font-bold">{data.title}</p>
+                    <h2 className="text-normal font-bold">{data.title}</h2>
                 </motion.div>
 
                 <motion.p
@@ -52,14 +52,15 @@ export default function About({ data }: { data: AboutSection }) {
                     </motion.div>
                 )}
 
-                <motion.button
+                <motion.a
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.55, duration: 0.6 }}
-                    className="my-4 rounded-xl bg-[#1F2A37] px-6 py-3 text-white"
+                    className="mt-8 rounded-xl bg-[#1F2A37] px-6 py-3 text-white"
+                    href="/sobre-nosotros"
                 >
                     Más sobre Unisol
-                </motion.button>
+                </motion.a>
             </div>
         </section>
     );

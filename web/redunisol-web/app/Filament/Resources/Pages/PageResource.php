@@ -424,9 +424,11 @@ class PageResource extends Resource
                                         ->label('Términos y Condiciones habilitado')
                                         ->default(true)
                                         ->inline(false),
-                                    TextInput::make('terminos.label')
-                                        ->label('Texto del checkbox')
-                                        ->default('Acepto los Términos y Condiciones y la Política de Privacidad'),
+                                    Textarea::make('terminos.label')
+                                        ->label('Texto del checkbox (admite HTML, ej: <a href="...">enlace</a>)')
+                                        ->rows(3)
+                                        ->default('Acepto los <a href="/terminos" target="_blank" class="underline">Términos y Condiciones</a> y la <a href="/privacidad" target="_blank" class="underline">Política de Privacidad</a>')
+                                        ->columnSpanFull(),
                                 ])
                                 ->columns(2),
 

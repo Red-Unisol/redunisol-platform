@@ -291,9 +291,12 @@ function Step1({
                                 className="h-4.5 w-4.5 cursor-pointer rounded border-gray-300 accent-[#6BAF92]"
                             />
                         </div>
-                        <span className="text-sm leading-snug text-gray-500">
-                            {cfg.terminos.label}
-                        </span>
+                        <span
+                            className="text-sm leading-snug text-gray-500"
+                            dangerouslySetInnerHTML={{
+                                __html: cfg.terminos.label,
+                            }}
+                        />
                     </label>
                 )}
             </div>

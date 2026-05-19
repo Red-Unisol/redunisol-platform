@@ -42,7 +42,7 @@ function ServiceCard({ item, index }: { item: ServiceItem; index: number }) {
             <div className="w-fit">
                 {Icon && <Icon className="mb-2 h-6 w-6" />}
             </div>
-            <p className="font-bold">{item.text}</p>
+            <h3 className="font-bold">{item.text}</h3>
             {item.href && (
                 <span className="text-xs font-medium text-[#6BAF92]">
                     Ver más →
@@ -73,7 +73,7 @@ export default function Services({ data }: { data: ServicesData }) {
                     className="m-auto mb-4 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <MoneyIcon size={24} />
-                    <p className="text-normal font-bold">{data.title}</p>
+                    <h2 className="text-normal font-bold">{data.title}</h2>
                 </motion.div>
 
                 <motion.p
