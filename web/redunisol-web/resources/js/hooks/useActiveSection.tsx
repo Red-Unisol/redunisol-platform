@@ -5,6 +5,13 @@ type UseActiveSectionOptions = {
     threshold?: number | number[];
 };
 
+/** Returns true when `el` has its own scrollable overflow axis. */
+function isScrollable(el: HTMLElement): boolean {
+    const { overflowY } = window.getComputedStyle(el);
+    const scrollable = overflowY === 'auto' || overflowY === 'scroll';
+    return scrollable && el.scrollHeight > el.clientHeight;
+}
+
 export default function useActiveSection(
     containerRef?: React.RefObject<HTMLElement | null>,
     options: UseActiveSectionOptions = {},
@@ -18,12 +25,17 @@ export default function useActiveSection(
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
-        const root = containerRef?.current ?? null;
-        const container = root ?? document;
+        const containerEl = containerRef?.current ?? null;
 
-        const selector = '[data-section-id]';
+        // Use the container as IntersectionObserver root only when it actually
+        // scrolls on its own (desktop split layout). On mobile the page scrolls,
+        // so we must observe against the viewport (root: null).
+        const observerRoot =
+            containerEl && isScrollable(containerEl) ? containerEl : null;
+
+        const searchRoot = observerRoot ?? document;
         const nodes = Array.from(
-            (container as HTMLElement).querySelectorAll(selector),
+            (searchRoot as HTMLElement).querySelectorAll('[data-section-id]'),
         );
 
         nodesRef.current = nodes;
@@ -60,7 +72,7 @@ export default function useActiveSection(
                 }
             },
             {
-                root: root ?? null,
+                root: observerRoot,
                 rootMargin,
                 threshold,
             },
@@ -74,26 +86,30 @@ export default function useActiveSection(
     const scrollToSection = (id: string) => {
         if (typeof window === 'undefined') return;
 
-        const root = containerRef?.current ?? document;
-        const target = (root as HTMLElement).querySelector<HTMLElement>(
+        // Search in the container when available, otherwise in the whole document.
+        const searchRoot = containerRef?.current ?? document;
+        const target = (searchRoot as HTMLElement).querySelector<HTMLElement>(
             `[data-section-id="${id}"]`,
-        ) as HTMLElement | null;
+        );
         if (!target) return;
 
         const containerEl = containerRef?.current;
-        if (containerEl) {
-            // compute relative top within container
-            const top = target.offsetTop;
-            containerEl.scrollTo({ top: top - 12, behavior: 'smooth' });
-            // move focus for a11y
-            try {
-                target.focus({ preventScroll: true });
-            } catch (e) {}
+
+        if (containerEl && isScrollable(containerEl)) {
+            // Desktop: container has its own scroll — scroll within it.
+            containerEl.scrollTo({
+                top: target.offsetTop - 12,
+                behavior: 'smooth',
+            });
         } else {
+            // Mobile / no-scroll container: scroll the window to the element.
             target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            try {
-                target.focus({ preventScroll: true });
-            } catch (e) {}
+        }
+
+        try {
+            target.focus({ preventScroll: true });
+        } catch (_) {
+            // focus() can throw on non-focusable elements — safe to ignore.
         }
     };
 
