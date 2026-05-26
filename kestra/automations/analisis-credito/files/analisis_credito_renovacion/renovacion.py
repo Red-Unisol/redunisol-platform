@@ -23,6 +23,7 @@ LINEAS_BONUS_RENOVACION = [
 ESTADO_CUENTA_ACTIVA = 0
 MAX_CUOTAS = 35000
 MESES_CORTE_DEUDA = 2
+SALDO_CUOTA_MINIMO_DEUDA = 100.0
 
 
 def normalize_line(texto: str) -> str:
@@ -242,7 +243,7 @@ def compute_metrics(
         saldo_cuota = float(cuota.get("SaldoCuota") or 0)
         capital = float(cuota.get("Capital") or 0)
 
-        if saldo_cuota > 0 and fecha and fecha <= corte_deuda:
+        if saldo_cuota > SALDO_CUOTA_MINIMO_DEUDA and fecha and fecha <= corte_deuda:
             tiene_deuda_vencida = True
 
         if fecha_cobro is not None and nro_cuota > max_nro_cuota_pagada:
