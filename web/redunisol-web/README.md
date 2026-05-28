@@ -150,12 +150,23 @@ Variables adicionales del flujo actual:
 KESTRA_FORM_WEBHOOK_URL=
 KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS=15
 KESTRA_FORM_DEFAULT_LEAD_SOURCE=Google
+
+FINALIZAR_METAMAP_CLIENT_ID=
+FINALIZAR_CAJA_API_BASE_URL=
+FINALIZAR_FIAT_API_BASE_URL=
+FINALIZAR_API_TIMEOUT_SECONDS=30
+FINALIZAR_ITS_API_BASE_URL=
+FINALIZAR_ITS_API_KEY=
+FINALIZAR_ITS_API_USER=
+FINALIZAR_ITS_API_PASSWORD=
+FINALIZAR_ITS_API_TIMEOUT_SECONDS=25
 ```
 
 Notas:
 
 - `/api/form-submissions` usa esas variables para reenviar leads a Kestra desde Laravel
 - si no vas a probar ese circuito localmente, `KESTRA_FORM_WEBHOOK_URL` puede quedar vacia
+- `/finalizar` y `/finalizar.php` usan `FINALIZAR_*` para consultar los datos del prestamo y renderizar MetaMap
 
 ### Paso 3: Iniciar los Contenedores de Docker
 

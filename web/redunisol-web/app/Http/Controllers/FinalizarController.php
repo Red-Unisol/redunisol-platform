@@ -3,20 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\SiteSetting;
+use App\Services\FinalizarSolicitudService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class FinalizarController extends Controller
 {
-    public function show(Request $request): Response
+    public function show(Request $request, FinalizarSolicitudService $finalizarSolicitud): Response
     {
-        $solicitud = [
-            'monto'  => $request->query('monto', ''),
-            'cuotas' => $request->query('cuotas', ''),
-            'nro'    => $request->query('nro', ''),
-        ];
-
         $getSettingOrEnv = function (string $settingKey, string $envKey, $default = '') {
             $setting = SiteSetting::get($settingKey, null);
 
@@ -45,14 +40,25 @@ class FinalizarController extends Controller
             'contact_email'    => $getSettingOrEnv('finalizar_contact_email', 'FINALIZAR_CONTACT_EMAIL', SiteSetting::get('contact_email', 'contacto@redunisol.com.ar')),
             'whatsapp_url'     => $getSettingOrEnv('finalizar_whatsapp_url', 'FINALIZAR_WHATSAPP_URL', ''),
             'facebook_url'     => $getSettingOrEnv('finalizar_facebook_url', 'FINALIZAR_FACEBOOK_URL', ''),
-            'external_api_url' => $getSettingOrEnv('finalizar_api_url', 'FINALIZAR_API_URL', ''),
-            'external_api_user'=> $getSettingOrEnv('finalizar_api_user', 'FINALIZAR_API_USER', ''),
-            'external_api_pass'=> $getSettingOrEnv('finalizar_api_pass', 'FINALIZAR_API_PASS', ''),
         ];
+
+        $finalizar = $finalizarSolicitud->resolve(
+            $request->query('sol'),
+            $request->query('ntrans'),
+            $request->query('linea'),
+        );
+
+        if ($finalizar['loan'] === null) {
+            $finalizar['loan'] = $finalizarSolicitud->fallbackLoanFromQuery(
+                $request->query('monto'),
+                $request->query('cuotas'),
+                $request->query('nro'),
+            );
+        }
 
         return Inertia::render('finalizar', [
             'settings'  => $settings,
-            'solicitud' => $solicitud,
+            'finalizar' => $finalizar,
         ]);
     }
 }

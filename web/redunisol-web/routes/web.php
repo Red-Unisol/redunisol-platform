@@ -66,6 +66,7 @@ Route::get('/category/{slug}', [BlogController::class, 'category'])->name('blog.
 Route::get('/autores/{slug}', [BlogController::class, 'author'])->name('author.show');
 
 Route::get('/finalizar', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar');
+Route::get('/finalizar.php', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar.legacy');
 
 require __DIR__.'/settings.php';
 
