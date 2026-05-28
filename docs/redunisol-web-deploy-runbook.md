@@ -121,7 +121,7 @@ El flujo real que quedo funcionando para `dev` es este:
 4. el workflow agrega `APP_IMAGE` y `WEB_IMAGE`
 5. sube `.env` y `docker-compose.yml` a la VPS
 6. actualiza `/opt/redunisol-web-dev`
-7. ejecuta `docker compose config`, `pull` y `up -d`
+7. ejecuta `docker compose config`, `pull php-fpm web` y `up -d`
 8. valida que exista `public/build/manifest.json` dentro de `php-fpm`
 9. valida HTTP usando el `Host` del ambiente y el bind interno
 

@@ -163,7 +163,7 @@ jobs:
 
           cd "$target_dir"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm web
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
 

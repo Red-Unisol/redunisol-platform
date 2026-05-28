@@ -151,6 +151,7 @@ Para deploy:
 4. agrega `APP_IMAGE` y `WEB_IMAGE`
 5. sube el archivo final como `.env` al target remoto
 6. ejecuta `docker compose --env-file .env ...`
+7. repullea solo `php-fpm` y `web`; `postgres` y `redis` son servicios stateful de runtime y no se repullean en cada deploy
 
 Importante en la topologia actual:
 
