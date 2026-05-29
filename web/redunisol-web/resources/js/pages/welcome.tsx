@@ -265,7 +265,7 @@ export default function Page() {
                 >
                     <div
                         ref={leftRef}
-                        className={`${hasForm ? 'rounded-2xl bg-white md:mt-27 md:max-h-[calc(100vh-11rem)] md:overflow-y-auto' : 'rounded-2xl bg-white'}`}
+                        className={`${hasForm ? 'rounded-2xl bg-white md:mt-27 md:max-h-[39.3rem] md:overflow-y-auto' : 'rounded-2xl bg-white'}`}
                     >
                         {leftSections.map((s) => {
                             const id = s.id;

@@ -53,7 +53,7 @@ export default function Hero({ data }: { data: Hero }) {
                         className="mt-8 flex items-center justify-center gap-4"
                     >
                         {/* AVATARS */}
-                        <div className="flex -space-x-3">
+                        <div className="flex hidden -space-x-3">
                             <img
                                 src="/images/user1.jpg"
                                 className="h-9 w-9 rounded-full border-2 border-white"

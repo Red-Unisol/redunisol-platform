@@ -79,7 +79,7 @@ export default function NavTabs({
                                     isActive
                                         ? 'bg-[#cbd5e1] text-[#1F2A37]'
                                         : 'bg-transparent text-[#1F2A37] opacity-70 hover:opacity-100'
-                                }`}
+                                } ${s.type == 'form' ? 'md:hidden' : ''} `}
                             >
                                 <SectionIcon type={s.type} />
                                 <span>{label}</span>
