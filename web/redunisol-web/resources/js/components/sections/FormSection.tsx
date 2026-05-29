@@ -899,7 +899,7 @@ export default function FormSection({
     return (
         <section className="w-full py-4">
             <div className="mx-auto max-w-lg px-4">
-                <div className="h-[calc(100vh-11.5rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     {/* Step header */}
                     <div className="flex items-center justify-between px-6 pt-5 pb-3">
                         {enabledSteps.map((stepN, idx) => {

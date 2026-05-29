@@ -113,9 +113,9 @@ export default function Page() {
     }));
 
     const hasForm = !!formSectionData;
-    const leftSections = hasForm
+    const leftSections = /*hasForm
         ? sectionDescriptors.filter((s) => s.type !== 'form')
-        : sectionDescriptors;
+        : */ sectionDescriptors;
 
     const leftRef = useRef<HTMLDivElement | null>(null);
 
@@ -261,11 +261,11 @@ export default function Page() {
 
             <div className="bg-gradient-custom w-full">
                 <div
-                    className={`mx-auto max-w-[1350px] px-2 md:px-6 ${hasForm ? 'md:grid md:max-h-[calc(100vh-4rem)] md:grid-cols-[1fr_420px] md:gap-8' : 'pt-18'}`}
+                    className={`mx-auto max-w-[1350px] px-2 md:px-6 ${hasForm ? 'md:grid md:grid-cols-[1fr_420px] md:gap-8' : 'pt-18'}`}
                 >
                     <div
                         ref={leftRef}
-                        className={`${hasForm ? 'rounded-2xl bg-white md:my-27 md:max-h-[calc(100vh-11rem)] md:overflow-y-auto' : 'rounded-2xl bg-white'}`}
+                        className={`${hasForm ? 'rounded-2xl bg-white md:mt-27 md:max-h-[calc(100vh-11rem)] md:overflow-y-auto' : 'rounded-2xl bg-white'}`}
                     >
                         {leftSections.map((s) => {
                             const id = s.id;
@@ -362,7 +362,7 @@ export default function Page() {
                                             id={id}
                                             data-section-id={id}
                                             key={key}
-                                            className={`${sectionClass} md:hidden`}
+                                            className={`${sectionClass} block bg-[#1c273b] md:hidden`}
                                         >
                                             <FormSection
                                                 config={s.data as any}
@@ -406,8 +406,8 @@ export default function Page() {
                     </div>
 
                     {hasForm && (
-                        <aside className="hidden md:block">
-                            <div className="absolute top-24">
+                        <aside className="mt-25 hidden items-center md:flex">
+                            <div className="relative">
                                 <FormSection
                                     config={formSectionData}
                                     landingSlug={landingSlug}
