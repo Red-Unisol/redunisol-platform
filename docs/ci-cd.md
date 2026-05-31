@@ -135,6 +135,21 @@ Importante:
 - el runbook operativo y la separacion entre desarrollo e integracion quedaron documentados en `docs/redunisol-web-deploy-runbook.md`
 - si una clave nueva la consume Laravel/PHP en runtime, no alcanza con agregarla al `.env.enc`; tambien hay que mapearla en `environment:` de `php-fpm`
 
+### `deploy-mutual-celesol-prod.yml`
+
+Despliega `web/mutual-celesol/` como sitio publico prod-only para `mutualcelesol.com`.
+
+Comportamiento:
+
+- corre manualmente desde `main` o via `workflow_call`
+- construye una imagen Docker Apache/PHP
+- valida que el artefacto no incluya zips, metadata de macOS ni el viejo `grav-admin`
+- valida sintaxis PHP de los endpoints dinamicos incluidos en el export
+- genera un `.env` no sensible en el workflow
+- sube `docker-compose.vps.yml` y `.env` a la VPS
+- actualiza el contenedor remoto via `docker compose pull` y `up -d`
+- valida `/health.php`, `/celesol-web/` y el redirect `/` -> `/celesol-web/` contra el bind interno
+
 ## Redunisol Web: Flujo Runtime Y `.env`
 
 `web/redunisol-web/` usa tres niveles distintos de configuracion:
