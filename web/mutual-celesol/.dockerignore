@@ -1,0 +1,11 @@
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+**/__MACOSX
+**/*.zip
+**/*.tar
+**/*.gz
+**/*.rar
+deploy
+README.md

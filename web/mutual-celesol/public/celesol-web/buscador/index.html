@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador de Empleados - Córdoba</title>
+    <style>
+        /* Estilos modernos y limpios */
+        :root {
+            --primary-color: #1E3A8A;
+            --bg-color: #f5f7f9;
+            --text-color: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        h1 {
+            color: var(--primary-color);
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .search-box {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            width: 100%;
+            max-width: 500px;
+            padding: 12px 15px;
+            font-size: 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+        }
+        .loading {
+            display: none;
+            color: #64748b;
+            font-style: italic;
+            margin-top: 10px;
+        }
+        /* Estilos de la tabla */
+        .table-responsive {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        th, td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #f8fafc;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: #f1f5f9;
+        }
+        .no-results {
+            color: #ef4444;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔍 Buscador de empleados públicos - Provincia de Córdoba</h1>
+    
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Ingrese Apellido y Nombre del empleado (Mínimo 3 letras)...">
+        <div id="loading" class="loading">Buscando en los registros...</div>
+    </div>
+
+    <div id="mensaje" class="no-results"></div>
+
+    <div class="table-responsive">
+        <table id="tablaResultados">
+            <thead>
+                <tr>
+                    <th>Empleado</th>
+                    <th>Jurisdicción</th>
+                    <th>Unidad de Servicio</th>
+                    <th>Cargo</th>
+                    <th>Revista</th>
+                    <th>Antigüedad</th>
+                    <th>ID Anonimizado</th>
+                </tr>
+            </thead>
+            <tbody id="cuerpoTabla">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const searchInput = document.getElementById('searchInput');
+    const cuerpoTabla = document.getElementById('cuerpoTabla');
+    const loading = document.getElementById('loading');
+    const mensaje = document.getElementById('mensaje');
+    
+    // Usamos un 'temporizador' para no buscar en cada letra que el usuario teclea, 
+    // sino esperar a que termine de escribir (esto salva recursos del servidor).
+    let temporizador;
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(temporizador);
+        const query = this.value.trim();
+
+        // Limpiamos la tabla
+        cuerpoTabla.innerHTML = '';
+        mensaje.textContent = '';
+
+        if (query.length >= 3) {
+            loading.style.display = 'block';
+            
+            temporizador = setTimeout(() => {
+                // Llamamos a nuestro archivo PHP
+                fetch('buscar.php?q=' + encodeURIComponent(query))
+                    .then(response => response.json())
+                    .then(data => {
+                        loading.style.display = 'none';
+                        
+                        if (data.length === 0) {
+                            mensaje.textContent = 'No se encontraron resultados para "' + query + '".';
+                            return;
+                        }
+
+                        // Llenamos la tabla con los datos devueltos por PHP
+                        data.forEach(empleado => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td><strong>${empleado.APELLIDO_NOMBRE || ''}</strong></td>
+                                <td>${empleado.JURISDICCION || ''}</td>
+                                <td>${empleado.UNIDAD_ORG_SERV || ''}</td>
+                                <td>${empleado.CARGO || ''} <br><small>${empleado.ESCALAFON || ''}</small></td>
+                                <td>${empleado.SIT_REVISTA || ''}</td>
+                                <td>${empleado.ANTIGUEDAD || ''}</td>
+                                <td>${empleado.COD_IDENTIFICADOR || ''}</td>
+                            `;
+                            cuerpoTabla.appendChild(tr);
+                        });
+                    })
+                    .catch(error => {
+                        loading.style.display = 'none';
+                        mensaje.textContent = 'Error de conexión con el servidor.';
+                        console.error('Error:', error);
+                    });
+            }, 500); // Espera medio segundo después de dejar de escribir
+        }
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Ahorros - Mutual Celesol</title>
+    <!-- Para probarlo en el server VPS poner esto en el href: ./imagenes/DAebrXxHctd3iAYuJq0xDLx2tA.png -->
+    <link rel="icon" href="./images/DAebrXxHctd3iAYuJq0xDLx2tA.png" type="image/png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Outfit:wght@600&family=Plus+Jakarta+Sans:wght@700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        /* --- ESTILOS VISUALES (Igual que antes) --- */
+        :root {
+            --color-fondo: #FFFFFF;
+            --color-nav: #FFFFFF;
+            --color-texto: #1D1F13;
+            --color-verde: #A9ED42;
+            --color-gris-claro: #f5f5f5;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-fondo);
+            color: var(--color-texto);
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            background-color: var(--color-nav);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .btn-volver {
+            text-decoration: none;
+            color: var(--color-texto);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 700;
+            font-size: 14px;
+            padding: 10px 20px;
+            border-radius: 30px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-volver:hover { background-color: var(--color-gris-claro); }
+
+        .main-container {
+            max-width: 900px;
+            margin: 60px auto;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+            border-radius: 24px;
+            background: white;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        h1 { font-family: 'Outfit', sans-serif; font-size: 32px; margin-bottom: 20px; color: var(--color-texto); }
+
+        /* Estilos Inputs */
+        label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+        
+        input {
+            width: 100%;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            font-family: 'Inter', sans-serif;
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+        input:focus { outline: none; border-color: var(--color-verde); }
+
+        /* Botón Genérico */
+        .btn-enviar {
+            padding: 15px 30px;
+            background-color: var(--color-verde);
+            color: var(--color-texto);
+            border: none;
+            border-radius: 12px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            text-align: center;
+        }
+        .btn-enviar:hover { transform: scale(1.02); filter: brightness(0.95); }
+        .btn-enviar:disabled { background-color: #ccc; cursor: not-allowed; transform: none; }
+
+        /* Quitar Spinners */
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+
+        /* TABLA */
+        #resultados { display: none; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { text-align: left; padding: 12px; background-color: var(--color-gris-claro); color: #555; font-weight: 600; }
+        td { padding: 12px; border-bottom: 1px solid #eee; }
+        
+        /* Mensajes */
+        .loading { display: none; text-align: center; color: #666; margin-top: 20px; }
+        .error-msg { color: red; margin-top: 15px; text-align: center; font-weight: bold; background: #ffeaea; padding: 10px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <!-- Para probarlo en el server VPS poner esto en el src: ./images/AopSWVTmBXbzMtqi95JPGYYUFK4.png -->
+        <a href="index.html" class="logo">
+            <img src="./images/AopSWVTmBXbzMtqi95JPGYYUFK4.png" alt="Mutual Celesol" style="height: 150px; width: auto"></img>
+        </a>
+        
+        <!-- ESTO NO SÉ QUÉ TAL SE VERÁ, PROBARLO LUEGO
+            <a href="index.html" class="btn-volver">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Volver al Inicio
+        </a>-->
+        
+    </header>
+
+    <div class="main-container">
+        <h1>Consulta tus Ahorros</h1>
+        <p id="texto-instrucciones">Ingresa tus datos para validar tu identidad.</p>
+
+        <form id="form-login">
+            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label for="dni">Número de Documento (DNI)</label>
+                    <input type="number" id="dni" placeholder="Ej: 20123456" required>
+                </div>
+                <div style="flex: 1; min-width: 200px;">
+                    <label for="email">Correo Electrónico Registrado</label>
+                    <input type="email" id="email" placeholder="ejemplo@email.com" required>
+                </div>
+            </div>
+            <button type="submit" id="btn-login" class="btn-enviar" style="width: 100%; margin-top: 20px;">
+                Validar e Iniciar Sesión
+            </button>
+        </form>
+
+        <div id="otp-section" style="display:none; margin-top: 20px; background: #fdfdfd; padding: 25px; border-radius: 12px; border: 1px solid #e0e0e0;">
+            <h3 style="margin-top: 0; color: #1D1F13;">🔐 Código de Seguridad</h3>
+            <p style="font-size: 14px; margin-bottom: 15px;">
+                Hemos enviado un código de 6 dígitos a <strong id="email-mostrado"></strong>. <br>
+                Revísalo (busca en Spam si no llega).
+            </p>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="otp-input" placeholder="000000" maxlength="8" 
+                       style="letter-spacing: 5px; font-weight: bold; text-align: center; font-size: 18px;">
+                <button type="button" id="btn-verificar" class="btn-enviar" style="background-color: #1D1F13; color: white;">
+                    Verificar
+                </button>
+            </div>
+            <p id="reenviar-msg" style="font-size: 12px; color: #888; margin-top: 10px; cursor: pointer; text-decoration: underline;">No recibí el código</p>
+        </div>
+
+        <div id="loading" class="loading"><p>Procesando...</p></div>
+        <div id="mensaje-error" style="display: none;" class="error-msg"></div>
+
+        <div id="resultados">
+            <h3>Bienvenido/a, <span id="nombre-socio" style="color:var(--color-verde)"></span></h3>
+            <p style="font-size: 14px; color: #666; margin-bottom: 20px;">DNI: <span id="dni-resultado"></span></p>
+            
+            <div id="sin-datos-msg" style="display: none; padding: 30px; text-align: center; background-color: #f9f9f9; border-radius: 12px; margin-bottom: 20px;">
+                <p style="font-size: 18px; color: #555; font-weight: 500;">📂 El socio no tiene Ahorros vigentes en este momento.</p>
+            </div>
+
+            <table id="tabla-prestamos">
+                <thead>
+                    <tr>
+                        <th>Número</th>
+                        <th>Fecha Emisión</th>
+                        <th>Plazo</th>
+                        <th>Vencimiento</th>
+                        <th>TNA</th>
+                        <th>Capital</th>
+                        <th>Interés</th>
+                        <th>Monto al Vencimiento</th>
+                    </tr>
+                </thead>
+                <tbody id="tabla-body">
+                    </tbody>
+            </table>
+
+            <!-- SAQUÉ ESTE BOTÓN PORQUE NO PERMITÍA LA RECARGA DE LA PÁGINA, 
+            <div style="text-align: center; margin-top: 30px;">
+                <button type="button" class="btn-enviar" onclick="window.location.reload()" 
+                        style="background-color: #1D1F13; color: white; width: auto; padding: 10px 25px;">
+                    Realizar Nueva Consulta
+                </button>
+            </div>
+            -->
+        </div>
+        
+
+    </div>
+
+    <script>
+        // ---------------------------------------------------------
+        // 1. CONFIGURACIÓN
+        // ---------------------------------------------------------
+        const SUPABASE_URL = 'https://lgcksbzqrktncvljtnek.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxnY2tzYnpxcmt0bmN2bGp0bmVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTA3MDUsImV4cCI6MjA4NTM2NjcwNX0.IwWNBtvBzCaulVPD31o9ZEPASu_TkJG0kz-jKQ6vTuI';
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const CELESOL_API = "https://celesol.dyndns.org:5050/api/Empresa/EvaluateList";
+        const MY_URL = window.location.href.split('?')[0]; 
+
+        // Variables de estado
+        let userDni = "";
+        let userId = "";    
+        let userNombre = ""; 
+
+        // Elementos DOM
+        const formLogin = document.getElementById('form-login');
+        const otpSection = document.getElementById('otp-section');
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('mensaje-error');
+        const resultadosDiv = document.getElementById('resultados');
+
+        // ---------------------------------------------------------
+        // 2. DETECTOR DE MAGIC LINK
+        // ---------------------------------------------------------
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                formLogin.style.display = 'none';
+                otpSection.style.display = 'none';
+                setLoading(true, "Verificando identidad...");
+                await recuperarIdentidadPorEmail(session.user.email);
+            }
+        });
+
+        // ---------------------------------------------------------
+        // 3. LOGIN MANUAL 
+        // ---------------------------------------------------------
+        formLogin.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            ocultarError();
+            
+            const dniInput = document.getElementById('dni').value.trim();
+            const emailInput = document.getElementById('email').value.trim();
+
+            if(!dniInput || !emailInput) return;
+
+            setLoading(true, "Verificando socio...");
+
+            try {
+                const respuesta = await fetch(CELESOL_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: `[NroDoc] = ${dniInput}`,
+                        tipo: "F.Module.SocioMutual",
+                        campos: "Email", 
+                        max: 1
+                    })
+                });
+
+                if (!respuesta.ok) throw new Error("Error de conexión con la base de datos.");
+                
+                const datos = await respuesta.json();
+
+                if (!datos || datos.length === 0) {
+                    throw new Error("El DNI ingresado no está registrado como socio.");
+                }
+
+                const emailRegistrado = datos[0][0];
+                if (!emailRegistrado || emailRegistrado.toLowerCase().trim() !== emailInput.toLowerCase()) {
+                    throw new Error("El correo ingresado no coincide con nuestros registros.");
+                }
+
+                await enviarMagicLink(emailInput);
+
+            } catch (error) {
+                if (error.message.includes("Failed to fetch")) {
+                    mostrarError("Fallo de red. Por favor, acepta el certificado de seguridad de la API.");
+                } else {
+                    mostrarError(error.message);
+                }
+                setLoading(false);
+            }
+        });
+
+        async function enviarMagicLink(email) {
+            setLoading(true, "Enviando enlace de acceso...");
+            try {
+                const { error } = await supabaseClient.auth.signInWithOtp({
+                    email: email,
+                    options: { emailRedirectTo: MY_URL }
+                });
+
+                if (error) throw error; 
+
+                setLoading(false);
+                formLogin.style.display = 'none';
+                otpSection.style.display = 'block';
+                otpSection.innerHTML = `
+                    <h3 style="margin-top: 0; color: #1D1F13;">📧 ¡Enlace enviado!</h3>
+                    <p>Hemos enviado un enlace a <strong>${email}</strong>.</p>
+                    <p>Por favor revisa tu bandeja de entrada o la carpeta de Spam.</p>
+                `;
+            } catch (error) {
+                let msjError = error.message;
+                if (msjError.includes("Failed to fetch") || msjError.includes("rate_limit")) {
+                    msjError = "Error de conexión. Es posible que hayas superado el límite de intentos o tu navegador esté bloqueando la petición.";
+                }
+                mostrarError("Error enviando correo: " + msjError);
+                setLoading(false);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 4. RECUPERACIÓN DE IDENTIDAD 
+        // ---------------------------------------------------------
+        async function recuperarIdentidadPorEmail(email) {
+            try {
+                const respuesta = await fetch(CELESOL_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: `[Email]='${email}'`, 
+                        tipo: "F.Module.SocioMutual", 
+                        campos: "NroDoc;ID;NombreCompleto", 
+                        max: 1
+                    })
+                });
+                
+                const datos = await respuesta.json();
+
+                if (!datos || datos.length === 0) throw new Error("No se encontró ficha de socio para este email.");
+                
+                userDni = datos[0][0];      
+                userId = datos[0][1];       
+                userNombre = datos[0][2];   
+                
+                await cargarTablaDeAhorros();
+
+            } catch (error) {
+                setLoading(false);
+                mostrarError(error.message);
+                formLogin.style.display = 'block'; 
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 5. CARGA DE DATOS (Estrategia de 2 Pasos / Frankenstein)
+        // ---------------------------------------------------------
+        async function cargarTablaDeAhorros() {
+            setLoading(true, "Obteniendo cartera y cotitulares...");
+            
+            try {
+                // PASO A: Buscamos las cuentas (Propias o como Productor)
+                // Ya NO pedimos Integrantes.Max aquí, dejamos la consulta limpia
+                const filtro = `[Estado]=0 AND ( [Integrantes][NroDocumento = ${userDni}] OR [Integrantes][Socio.Productor.ID = ${userId}] )`;
+
+                const respuestaCuentas = await fetch(CELESOL_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: filtro,
+                        tipo: "F.Module.Cuentas.amt.AMT",
+                        // 0:ID, 1:F.Emision, 2:Plazo, 3:Venc, 4:TNA, 5:Cap, 6:Int
+                        campos: "ID;FechaEmision;Plazo;Vencimiento;TNA;Capital;Interes",
+                        max: 200 
+                    })
+                });
+                
+                const cuentas = await respuestaCuentas.json();
+
+                if (!cuentas || cuentas.length === 0) {
+                    mostrarResultados([], {}); // Enviamos vacío
+                    return;
+                }
+
+                // PASO B: Extraemos los IDs de las cuentas y buscamos los cotitulares
+                const ids = cuentas.map(c => c[0]).filter(id => id).join(",");
+
+                const respuestaDueños = await fetch(CELESOL_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: `[Cuenta.ID] In (${ids})`,
+                        tipo: "F.Module.Cuentas.CuentaPorSocio",
+                        campos: "Cuenta.ID;Socio.NombreCompleto",
+                        max: 500
+                    })
+                });
+                
+                const dueñosData = await respuestaDueños.json();
+
+                // PASO C: Armamos un diccionario con los dueños de cada cuenta
+                // Ej: { "100": ["Beto", "Zulma"], "101": ["Juan Pérez"] }
+                const mapaDueños = {};
+                if (dueñosData) {
+                    dueñosData.forEach(fila => {
+                        const cuentaId = fila[0];
+                        const nombreDueño = fila[1];
+                        if (!mapaDueños[cuentaId]) mapaDueños[cuentaId] = [];
+                        mapaDueños[cuentaId].push(nombreDueño);
+                    });
+                }
+
+                // Llamamos al renderizado con toda la información cruzada
+                mostrarResultados(cuentas, mapaDueños);
+
+            } catch (error) {
+                mostrarError("Error cargando datos: " + error.message);
+                setLoading(false);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 6. RENDERIZADO (Clasificando con los Cotitulares)
+        // ---------------------------------------------------------
+        function mostrarResultados(cuentas, mapaDueños) {
+            const textoInstrucciones = document.getElementById('texto-instrucciones');
+            if (textoInstrucciones) textoInstrucciones.style.display = 'none';
+            
+            setLoading(false);
+            resultadosDiv.style.display = 'block';
+
+            // Actualizamos cabecera estática
+            const elNombre = document.getElementById('nombre-socio');
+            if (elNombre) elNombre.innerText = userNombre;
+            const elDni = document.getElementById('dni-resultado');
+            if (elDni) elDni.innerText = userDni;
+
+            let htmlContent = "";
+
+            if (!cuentas || cuentas.length === 0) {
+                htmlContent = `<div class="card" style="text-align:center; padding: 2rem;">📂 No hay ahorros vigentes.</div>`;
+            } else {
+                const misAhorros = [];
+                const carteraDesignados = {};
+
+                // CLASIFICAMOS CADA CUENTA
+                cuentas.forEach(fila => {
+                    const idCuenta = fila[0];
+                    const titulares = mapaDueños[idCuenta] || ["Socio Desconocido"];
+                    
+                    // Unimos los nombres: "Beto & Zulma"
+                    const nombresUnidos = titulares.join(" & ");
+
+                    // ¿El usuario que inició sesión es UNO de los dueños?
+                    if (titulares.includes(userNombre)) {
+                        misAhorros.push(fila);
+                    } else {
+                        // Es cuenta de sus clientes
+                        if (!carteraDesignados[nombresUnidos]) carteraDesignados[nombresUnidos] = [];
+                        carteraDesignados[nombresUnidos].push(fila);
+                    }
+                });
+
+                // RENDERIZAR MIS AHORROS
+                if (misAhorros.length > 0) {
+                    htmlContent += `
+                        <h3 style="color:#2E7D32; margin-bottom:10px;">👤 Mis Ahorros</h3>
+                        <div class="card-table">
+                            <table style="width:100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background:#f5f5f5; text-align:left; font-size:0.9rem;">
+                                        <th style="padding:10px;">Número</th>
+                                        <th>F. Emisión</th>
+                                        <th>Plazo</th>
+                                        <th>Vencimiento</th>
+                                        <th>TNA</th>
+                                        <th>Capital</th>
+                                        <th>Interés</th>
+                                        <th>Total Venc.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${generarFilasTabla(misAhorros)}
+                                </tbody>
+                            </table>
+                        </div>
+                        <br>`;
+                }
+
+                // RENDERIZAR CARTERA (Designados con cotitulares)
+                const clientesGrupos = Object.keys(carteraDesignados);
+                if (clientesGrupos.length > 0) {
+                    htmlContent += `<h3 style="color:#1565C0; margin-bottom:10px; margin-top:20px;">💼 Mi Cartera de Clientes</h3>`;
+                    
+                    clientesGrupos.forEach(grupo => {
+                        const cuentasCliente = carteraDesignados[grupo];
+                        htmlContent += `
+                            <details style="background: white; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden;">
+                                <summary style="padding: 15px; cursor: pointer; font-weight: bold; background: #E3F2FD; color: #1565C0; display:flex; justify-content:space-between;">
+                                    <span>${grupo}</span>
+                                    <span style="font-size:0.8rem; background:white; padding:2px 8px; border-radius:10px;">${cuentasCliente.length} cuenta(s)</span>
+                                </summary>
+                                <div style="padding: 0;">
+                                    <table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">
+                                        <thead>
+                                            <tr style="background:#fafafa; border-bottom:1px solid #eee; color:#666; font-size:0.85rem;">
+                                                <th style="padding:10px; text-align:left;">Número</th>
+                                                <th style="text-align:left;">F. Emisión</th>
+                                                <th style="text-align:left;">Plazo</th>
+                                                <th style="text-align:left;">Vencimiento</th>
+                                                <th style="text-align:left;">TNA</th>
+                                                <th style="text-align:left;">Capital</th>
+                                                <th style="text-align:left;">Interés</th>
+                                                <th style="text-align:left;">Total Venc.</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${generarFilasTabla(cuentasCliente)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        `;
+                    });
+                }
+            }
+
+            // Inyección Segura
+            let contenedorSeguro = document.getElementById('contenedor-tablas-dinamico');
+            if (!contenedorSeguro) {
+                contenedorSeguro = document.createElement('div');
+                contenedorSeguro.id = 'contenedor-tablas-dinamico';
+                resultadosDiv.appendChild(contenedorSeguro);
+                
+                const tablaVieja = document.getElementById('tabla-prestamos');
+                if (tablaVieja) tablaVieja.style.display = 'none';
+            }
+            contenedorSeguro.innerHTML = htmlContent;
+        }
+
+        // =========================================================
+        // Helper para generar filas HTML
+        // =========================================================
+        function generarFilasTabla(datos) {
+            const fmtMoneda = (v) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(v);
+            const fmtFecha = (f) => f ? new Date(f).toLocaleDateString('es-AR') : "-";
+            const fmtPorcentaje = (p) => p ? (parseFloat(p) * 100).toFixed(2) + "%" : "-";
+            
+            return datos.map(fila => {
+                // Índices actualizados (quitamos el Nombre del array original)
+                // 0:ID, 1:F.Emision, 2:Plazo, 3:Venc, 4:TNA, 5:Cap, 6:Int
+                const capital = parseFloat(fila[5]) || 0;
+                const interes = parseFloat(fila[6]) || 0;
+                const total = capital + interes;
+                
+                return `
+                    <tr style="border-bottom: 1px solid #eee; font-size: 0.9rem;">
+                        <td style="padding:10px; color:#555;"><strong>#${fila[0]}</strong></td>
+                        <td>${fmtFecha(fila[1])}</td>
+                        <td>${fila[2]} días</td>
+                        <td>${fmtFecha(fila[3])}</td>
+                        <td>${fmtPorcentaje(fila[4])}</td>
+                        <td>${fmtMoneda(capital)}</td>
+                        <td>${fmtMoneda(interes)}</td>
+                        <td style="font-weight:bold; color:#2E7D32;">${fmtMoneda(total)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ---------------------------------------------------------
+        // 7. CIERRE DE SESIÓN
+        // ---------------------------------------------------------
+        async function cerrarSesion() {
+            setLoading(true, "Cerrando sesión...");
+            await supabaseClient.auth.signOut();
+            window.location.href = window.location.pathname;
+        }
+
+        function setLoading(estado, texto) {
+            loading.style.display = estado ? 'block' : 'none';
+            if(texto) loading.querySelector('p').innerText = texto;
+        }
+        function mostrarError(msg) {
+            errorDiv.style.display = 'block';
+            errorDiv.innerText = "⚠️ " + msg;
+            setTimeout(() => errorDiv.style.display = 'none', 5000);
+        }
+        function ocultarError() { errorDiv.style.display = 'none'; }
+    </script>
+
+    <div style="margin-top: 30px; padding: 20px; background-color: #f0f7ff; border-left: 4px solid #1565C0; border-radius: 8px; text-align: center; max-width: 600px; margin-left: auto; margin-right: auto;">
+        <h4 style="color: #1565C0; margin-top: 0; margin-bottom: 10px; font-family: 'Outfit', sans-serif;">📣 ¡Ayúdenos a mejorar!</h4>
+        <p style="font-size: 14px; color: #555; margin-bottom: 15px; line-height: 1.5;">
+            ¿Encontró algún detalle o tiene una sugerencia para esta nueva plataforma? Su opinión como usuario es fundamental para nosotros.
+        </p>
+        <a href="https://forms.gle/9heSDGyAUFKjCUUV6" target="_blank" style="display: inline-block; padding: 10px 24px; background-color: #1565C0; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 600; border-radius: 6px; box-shadow: 0 2px 4px rgba(21, 101, 192, 0.2); transition: all 0.3s ease;">
+            📝 Dejar mi comentario
+        </a>
+    </div>
+
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center;">
+
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center;">
+        <p style="font-size: 13px; color: #888; margin-bottom: 15px;">Mutual Celesol - Sistema de Autogestión</p>
+        <a href="#" onclick="cerrarSesion(); return false;" style="display: inline-block; padding: 10px 20px; background-color: #fff0f0; color: #d32f2f; text-decoration: none; font-size: 14px; font-weight: 600; border: 1px solid #ffcdd2; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            🚪 Cerrar sesión en este dispositivo
+        </a>
+    </div>
+
+</body>
+</html>
