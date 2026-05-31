@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html xml:lang="es" lang="es" class="">
+<head>
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="user-scalable=no, initial-scale=1.0, maximum-scale=1.0, width=device-width">
+	<meta name="HandheldFriendly" content="true" >
+	<meta name="MobileOptimized" content="width">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<title>Datos de contacto del 29 de Abril</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<script data-skip-moving="true">(function() {const canvas = document.createElement('canvas');let gl;try{gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');}catch (e){return;}if (!gl){return;}const result = {vendor: gl.getParameter(gl.VENDOR),renderer: gl.getParameter(gl.RENDERER),};const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');if (debugInfo){result.unmaskedVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);result.unmaskedRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);}function isLikelyIntegratedGPU(gpuInfo){const renderer = (gpuInfo.unmaskedRenderer || gpuInfo.renderer || '').toLowerCase();const vendor = (gpuInfo.unmaskedVendor || gpuInfo.vendor || '').toLowerCase();const integratedPatterns = ['intel','hd graphics','uhd graphics','iris','apple gpu','adreno','mali','powervr','llvmpipe','swiftshader',];return integratedPatterns.some(pattern => renderer.includes(pattern) || vendor.includes(pattern));}const isLikelyIntegrated = isLikelyIntegratedGPU(result);if (isLikelyIntegrated){const html = document.documentElement;html.classList.add('bx-integrated-gpu', '--ui-reset-bg-blur');}})();</script>
+<style type="text/css">
+				:root {
+					--primary: #34bcf2 !important;
+					--primary-darken-1: hsl(197.05, 88%, 56%);
+					--primary-darken-2: hsl(197.05, 88%, 53%);
+					--primary-darken-3: hsl(197.05, 88%, 48%);
+					--primary-lighten-1: hsl(197.05, 88%, 68%);
+					--primary-opacity-0: rgba(52, 188, 242, 0);
+					--primary-opacity-0_05: rgba(52, 188, 242, 0.05);
+					--primary-opacity-0_1: rgba(52, 188, 242, 0.1);
+					--primary-opacity-0_15: rgba(52, 188, 242, 0.15);
+					--primary-opacity-0_2: rgba(52, 188, 242, 0.2);
+					--primary-opacity-0_25: rgba(52, 188, 242, 0.25);
+					--primary-opacity-0_3: rgba(52, 188, 242, 0.3);
+					--primary-opacity-0_35: rgba(52, 188, 242, 0.35);
+					--primary-opacity-0_4: rgba(52, 188, 242, 0.4);
+					--primary-opacity-0_45: rgba(52, 188, 242, 0.45);
+					--primary-opacity-0_5: rgba(52, 188, 242, 0.5);
+					--primary-opacity-0_55: rgba(52, 188, 242, 0.55);
+					--primary-opacity-0_6: rgba(52, 188, 242, 0.6);
+					--primary-opacity-0_65: rgba(52, 188, 242, 0.65);
+					--primary-opacity-0_7: rgba(52, 188, 242, 0.7);
+					--primary-opacity-0_75: rgba(52, 188, 242, 0.75);
+					--primary-opacity-0_8: rgba(52, 188, 242, 0.8);
+					--primary-opacity-0_85: rgba(52, 188, 242, 0.85);
+					--primary-opacity-0_9: rgba(52, 188, 242, 0.9);
+					--primary-opacity-0_95: rgba(52, 188, 242, 0.95);
+					--theme-color-main: hsl(197.05, 20%, 20%);
+					--theme-color-secondary: hsl(197.05, 20%, 80%);
+					--theme-color-title: hsl(197.05, 20%, 20%);
+					--theme-color-strict-inverse: #ffffff;
+				}
+			</style>
+<script data-skip-moving="true">(function(w, d, n) {var cl = "bx-core";var ht = d.documentElement;var htc = ht ? ht.className : undefined;if (htc === undefined || htc.indexOf(cl) !== -1){return;}var ua = n.userAgent;if (/(iPad;)|(iPhone;)/i.test(ua)){cl += " bx-ios";}else if (/Windows/i.test(ua)){cl += ' bx-win';}else if (/Macintosh/i.test(ua)){cl += " bx-mac";}else if (/Linux/i.test(ua) && !/Android/i.test(ua)){cl += " bx-linux";}else if (/Android/i.test(ua)){cl += " bx-android";}cl += (/(ipad|iphone|android|mobile|touch)/i.test(ua) ? " bx-touch" : " bx-no-touch");cl += w.devicePixelRatio && w.devicePixelRatio >= 2? " bx-retina": " bx-no-retina";if (/AppleWebKit/.test(ua)){cl += " bx-chrome";}else if (/Opera/.test(ua)){cl += " bx-opera";}else if (/Firefox/.test(ua)){cl += " bx-firefox";}ht.className = htc ? htc + " " + cl : cl;})(window, document, navigator);</script>
+
+
+<link href="/bitrix/js/intranet/intranet-common.min.css?166151605361199" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/design-tokens/dist/ui.design-tokens.min.css?171327662823463" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/intranet/design-tokens/bitrix24/air-design-tokens.min.css?17473803702875" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/fonts/opensans/ui.font.opensans.min.css?16620208132320" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/main/popup/dist/main.popup.bundle.min.css?174532104928056" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/icon-base.min.css?17473213841604" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/actions/style.min.css?174732138419578" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/main/style.min.css?174732138474857" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/main/sidepanel/dist/side-panel.bundle.min.css?174896409023496" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/main/core/css/core_date.min.css?16607515339928" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/landing/css/landing_public.min.css?1567508327250" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/components/bitrix/landing.pub/templates/.default/style.min.css?174592214243289" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/panel/main/popup.min.css?167109653420774" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/panel/catalog/catalog_cond.min.css?15549945847248" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/templates/landing24/assets/vendor/bootstrap/bootstrap.min.css?1694617665177088" type="text/css"  data-template-style="true"  rel="stylesheet" />
+<link href="/bitrix/templates/landing24/theme.min.css?1745922142535568" type="text/css"  data-template-style="true"  rel="stylesheet" />
+<link href="/bitrix/templates/landing24/template_styles.min.css?16843044572401" type="text/css"  data-template-style="true"  rel="stylesheet" />
+
+
+
+
+<script type="extension/settings" data-extension="main.date">{"formats":{"FORMAT_DATE":"DD\/MM\/YYYY","FORMAT_DATETIME":"DD\/MM\/YYYY HH:MI:SS","SHORT_DATE_FORMAT":"j\/n\/Y","MEDIUM_DATE_FORMAT":"M j, Y","LONG_DATE_FORMAT":"j \\d\\e F Y","DAY_MONTH_FORMAT":"j \\d\\e F","DAY_SHORT_MONTH_FORMAT":"j \\d\\e M","SHORT_DAY_OF_WEEK_MONTH_FORMAT":"D, j \\d\\e F","SHORT_DAY_OF_WEEK_SHORT_MONTH_FORMAT":"D, j \\d\\e M","DAY_OF_WEEK_MONTH_FORMAT":"l, j \\d\\e F","FULL_DATE_FORMAT":"l, j \\d\\e F Y","SHORT_TIME_FORMAT":"G:i","LONG_TIME_FORMAT":"G:i:s"}}</script>
+
+
+
+<style type="text/css">
+					body {
+						background-color: #182540!important;
+					}
+				</style>
+<meta name="robots" content="all" />
+<style>
+					@keyframes page-transition {
+						0% {
+							opacity: 1;
+						}
+						100% {
+							opacity: 0;
+						}
+					}
+					body.landing-page-transition::after {
+						opacity: 1;
+						background: #fff;
+						animation: page-transition 2s 1s forwards;
+					}
+				</style>
+<link rel="stylesheet" href="https://fonts.bitrix24.es/css2?family=Open+Sans:wght@100;200;300;400;500;600;700;800;900">
+<style>
+				body {
+					font-weight: 400;
+					font-family: Open Sans;
+					-webkit-font-smoothing: antialiased;
+					-moz-osx-font-smoothing: grayscale;
+					-moz-font-feature-settings: "liga", "kern";
+					text-rendering: optimizelegibility;
+				}
+			</style>
+<style>
+				h1, h2, h3, h4, h5, h6 {
+					font-family: Open Sans;
+				}
+			</style>
+<style>
+				html {font-size: 14px;}
+				body {font-size: 1rem;}
+				.g-font-size-default {font-size: 1rem;}
+			</style>
+<style>
+				main.landing-public-mode {
+					line-height: 1.6;
+					font-weight: 400;
+				}
+				
+				.landing-public-mode .h1, .landing-public-mode .h2, .landing-public-mode .h3, .landing-public-mode .h4, 
+				.landing-public-mode .h5, .landing-public-mode .h6, .landing-public-mode .h7,
+				.landing-public-mode h1, .landing-public-mode h2, .landing-public-mode h3, .landing-public-mode h4, 
+				.landing-public-mode h5, .landing-public-mode h6 {
+					font-weight: 400;
+				}
+			</style>
+<meta property="og:title" content="Contacto AMT" /><meta property="og:image" content="https://cdn.bitrix24.es/b23133187/landing/55f/55fc72a0a3cee9814cc5090b44ead145/formulario_btx_amt_1_1x.png" /><meta property="og:image:width" content="1080" /><meta property="og:image:height" content="1080" /><meta property="og:type" content="website" /><meta property="twitter:title" content="Contacto AMT" /><meta property="twitter:image" content="https://cdn.bitrix24.es/b23133187/landing/55f/55fc72a0a3cee9814cc5090b44ead145/formulario_btx_amt_1_1x.png" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:type" content="website" /> <meta property="Bitrix24SiteType" content="page" /> <meta property="og:url" content="https://b24-nh2s2f.bitrix24.site/crm_form_otokd/" />
+<link rel="canonical" href="https://b24-nh2s2f.bitrix24.site/crm_form_otokd/"/><link rel="icon" type="image/x-icon" href="/favicon.ico"></head>
+<body class="landing-page-transition" >
+<main class="w-100 landing-public-mode" >
+<div id="b1173" class="block-wrapper block-66-90-form-new-default"><section class="landing-block g-pt-50 g-pb-50">
+
+	<div class="container g-z-index-1 g-pos-rel">
+		<div class="row">
+			<div class="col-12 col-md-10 col-lg-8 mx-auto">
+				<div class="landing-node-form-container g-py-15 g-py-20--sm g-py-60--lg g-px-20 g-px-40--sm g-px-80--lg">
+					<div class="bitrix24forms g-brd-white-opacity-0_6 u-form-alert-v4" data-b24form-use-style="N" data-b24form-design="{&quot;dark&quot;:false,&quot;shadow&quot;:true,&quot;style&quot;:&quot;classic&quot;,&quot;shadow&quot;:false,&quot;compact&quot;:false,&quot;color&quot;:{&quot;primary&quot;:&quot;#00aeef&quot;,&quot;primaryText&quot;:&quot;#fff&quot;,&quot;text&quot;:&quot;#000&quot;,&quot;background&quot;:&quot;#ffffff&quot;,&quot;fieldBorder&quot;:&quot;#00000012&quot;,&quot;fieldBackground&quot;:&quot;#0000000d&quot;,&quot;fieldFocusBackground&quot;:&quot;#fff&quot;},&quot;border&quot;:{&quot;top&quot;:false,&quot;bottom&quot;:true,&quot;left&quot;:false,&quot;right&quot;:false}}" data-b24form="157|518611|https://cdn.bitrix24.es/b23133187/crm/form/loader_157.js"><div class="g-landing-alert">El formulario CRM se cargará aquí</div></div>
+				</div>
+			</div>
+
+		</div>
+	</div>
+</section></div>
+</main>
+
+
+<script>if(!window.BX)window.BX={};if(!window.BX.message)window.BX.message=function(mess){if(typeof mess==='object'){for(let i in mess) {BX.message[i]=mess[i];} return true;}};</script>
+<script>(window.BX||top.BX).message({"JS_CORE_LOADING":"Cargando...","JS_CORE_WINDOW_CLOSE":"Cerrar","JS_CORE_WINDOW_EXPAND":"Expandir","JS_CORE_WINDOW_NARROW":"Restaurar","JS_CORE_WINDOW_SAVE":"Guardar","JS_CORE_WINDOW_CANCEL":"Cancelar","JS_CORE_H":"h","JS_CORE_M":"m","JS_CORE_S":"s","JS_CORE_NO_DATA":"-No hay datos-","JSADM_AI_HIDE_EXTRA":"Ocultar elementos extras","JSADM_AI_ALL_NOTIF":"Todas las notificaciones","JSADM_AUTH_REQ":"Se requiere autenticación!","JS_CORE_WINDOW_AUTH":"Inicia sesión","JS_CORE_IMAGE_FULL":"Tamaño completo","JS_CORE_WINDOW_CONTINUE":"Continuar"});</script><script src="/bitrix/js/main/core/core.min.js?1748341561230432"></script><script>BX.Runtime.registerExtension({"name":"main.core","namespace":"BX","loaded":true});</script>
+<script>BX.setJSList(["\/bitrix\/js\/main\/core\/core_ajax.js","\/bitrix\/js\/main\/core\/core_promise.js","\/bitrix\/js\/main\/polyfill\/promise\/js\/promise.js","\/bitrix\/js\/main\/loadext\/loadext.js","\/bitrix\/js\/main\/loadext\/extension.js","\/bitrix\/js\/main\/polyfill\/promise\/js\/promise.js","\/bitrix\/js\/main\/polyfill\/find\/js\/find.js","\/bitrix\/js\/main\/polyfill\/includes\/js\/includes.js","\/bitrix\/js\/main\/polyfill\/matches\/js\/matches.js","\/bitrix\/js\/ui\/polyfill\/closest\/js\/closest.js","\/bitrix\/js\/main\/polyfill\/fill\/main.polyfill.fill.js","\/bitrix\/js\/main\/polyfill\/find\/js\/find.js","\/bitrix\/js\/main\/polyfill\/matches\/js\/matches.js","\/bitrix\/js\/main\/polyfill\/core\/dist\/polyfill.bundle.js","\/bitrix\/js\/main\/core\/core.js","\/bitrix\/js\/main\/polyfill\/intersectionobserver\/js\/intersectionobserver.js","\/bitrix\/js\/main\/lazyload\/dist\/lazyload.bundle.js","\/bitrix\/js\/main\/polyfill\/core\/dist\/polyfill.bundle.js","\/bitrix\/js\/main\/parambag\/dist\/parambag.bundle.js"]);
+</script>
+<script>BX.Runtime.registerExtension({"name":"ui.dexie","namespace":"BX.DexieExport","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ls","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"fx","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"fc","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"pull.protobuf","namespace":"BX","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"rest.client","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"pull_server_enabled":"Y","pull_config_timestamp":1748362706,"shared_worker_allowed":"Y","pull_guest_mode":"N","pull_guest_user_id":0,"pull_worker_mtime":1743166765});(window.BX||top.BX).message({"PULL_OLD_REVISION":"This page must be reloaded to ensure proper site functioning and to continue work."});</script>
+<script>BX.Runtime.registerExtension({"name":"pull.client","namespace":"BX","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"pull","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"intranet.design-tokens.bitrix24","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.design-tokens","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.fonts.opensans","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"landing.metrika","namespace":"BX.Landing","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"main.pageobject","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"main.popup","namespace":"BX.Main","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"popup","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"CORE_CLIPBOARD_COPY_SUCCESS":"Copia lista","CORE_CLIPBOARD_COPY_FAILURE":"Error en la copia"});</script>
+<script>BX.Runtime.registerExtension({"name":"clipboard","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set.actions","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set.main","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"MAIN_SIDEPANEL_CLOSE":"Close","MAIN_SIDEPANEL_COPY_LINK":"Copy link","MAIN_SIDEPANEL_MINIMIZE":"Minimize","MAIN_SIDEPANEL_NEW_WINDOW":"Open in a new window","MAIN_SIDEPANEL_PRINT":"Print","MAIN_SIDEPANEL_REMOVE_ALL":"Empty page bar"});</script>
+<script>BX.Runtime.registerExtension({"name":"main.sidepanel","namespace":"BX.SidePanel","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"sidepanel","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"AMPM_MODE":false});(window.BX||top.BX).message({"CAL_BUTTON":"Seleccione","CAL_TIME":"Hora","CAL_TIME_SET":"Programacion de tiempos","DAY_OF_WEEK_0":"Domingo","DAY_OF_WEEK_1":"Lunes","DAY_OF_WEEK_2":"Martes","DAY_OF_WEEK_3":"Miercoles","DAY_OF_WEEK_4":"Jueves","DAY_OF_WEEK_5":"Viernes","DAY_OF_WEEK_6":"Sábado","DOW_0":"Dom","DOW_1":"Lun","DOW_2":"Mar","DOW_3":"Mié","DOW_4":"Jue","DOW_5":"Vie","DOW_6":"Sáb","FD_DAY_AGO_0":"hace #VALUE# días","FD_DAY_AGO_1":"hace #VALUE# días","FD_DAY_AGO_10_20":"hace #VALUE# días","FD_DAY_AGO_MOD_1":"hace #VALUE# días","FD_DAY_AGO_MOD_2_4":"hace #VALUE# días","FD_DAY_AGO_MOD_OTHER":"hace #VALUE# días","FD_DAY_AT_TIME":"#DAY# a las #TIME#","FD_DAY_DIFF_0":"#VALUE# días","FD_DAY_DIFF_1":"#VALUE# día","FD_DAY_DIFF_10_20":"#VALUE# días","FD_DAY_DIFF_MOD_1":"#VALUE# días","FD_DAY_DIFF_MOD_2_4":"#VALUE# días","FD_DAY_DIFF_MOD_OTHER":"#VALUE# días","FD_DAY_SHORT":"#VALUE# d","FD_HOUR_AGO_0":"hace #VALUE# horas atrás","FD_HOUR_AGO_1":"hace #VALUE# horas atrás","FD_HOUR_AGO_10_20":"hace #VALUE# horas atrás","FD_HOUR_AGO_MOD_1":"hace #VALUE# horas atrás","FD_HOUR_AGO_MOD_2_4":"hace #VALUE# horas atrás","FD_HOUR_AGO_MOD_OTHER":"hace #VALUE# horas atrás","FD_HOUR_DIFF_0":"#VALUE# horas","FD_HOUR_DIFF_1":"#VALUE# hora","FD_HOUR_DIFF_10_20":"#VALUE# horas","FD_HOUR_DIFF_MOD_1":"#VALUE# horas","FD_HOUR_DIFF_MOD_2_4":"#VALUE# horas","FD_HOUR_DIFF_MOD_OTHER":"#VALUE# horas","FD_HOUR_SHORT":"#VALUE# h","FD_LAST_SEEN_MORE_YEAR":"hace más de un año","FD_LAST_SEEN_NOW":"justo ahora","FD_LAST_SEEN_TODAY":"hoy en #TIME#","FD_LAST_SEEN_TOMORROW":"mañana a #TIME#","FD_LAST_SEEN_YESTERDAY":"ayer a las #TIME#","FD_MINUTE_0":"#VALUE# minutos","FD_MINUTE_1":"#VALUE# minuto","FD_MINUTE_10_20":"#VALUE# minutos","FD_MINUTE_AGO_0":"hace #VALUE# minutos atrás","FD_MINUTE_AGO_1":"hace #VALUE# minutos atrás","FD_MINUTE_AGO_10_20":"hace #VALUE# minutos atrás","FD_MINUTE_AGO_MOD_1":"hace #VALUE# minutos atrás","FD_MINUTE_AGO_MOD_2_4":"hace #VALUE# minutos atrás","FD_MINUTE_AGO_MOD_OTHER":"hace #VALUE# minutos atrás","FD_MINUTE_DIFF_0":"#VALUE# minutos","FD_MINUTE_DIFF_1":"#VALUE# minuto","FD_MINUTE_DIFF_10_20":"#VALUE# minutos","FD_MINUTE_DIFF_MOD_1":"#VALUE# minutos","FD_MINUTE_DIFF_MOD_2_4":"#VALUE# minutos","FD_MINUTE_DIFF_MOD_OTHER":"#VALUE# minutos","FD_MINUTE_MOD_1":"#VALUE# minutos","FD_MINUTE_MOD_2_4":"#VALUE# minutos","FD_MINUTE_MOD_OTHER":"#VALUE# minutos","FD_MINUTE_SHORT":"#VALUE# m","FD_MONTH_AGO_0":"hace #VALUE# meses atrás","FD_MONTH_AGO_1":"hace #VALUE# meses atrás","FD_MONTH_AGO_10_20":"hace #VALUE# meses atrás","FD_MONTH_AGO_MOD_1":"hace #VALUE# meses atrás","FD_MONTH_AGO_MOD_2_4":"hace #VALUE# meses atrás","FD_MONTH_AGO_MOD_OTHER":"hace #VALUE# meses atrás","FD_MONTH_DIFF_0":"#VALUE# meses","FD_MONTH_DIFF_1":"#VALUE# meses","FD_MONTH_DIFF_10_20":"#VALUE# meses","FD_MONTH_DIFF_MOD_1":"#VALUE# meses","FD_MONTH_DIFF_MOD_2_4":"#VALUE# meses","FD_MONTH_DIFF_MOD_OTHER":"#VALUE# meses","FD_MONTH_SHORT":"#VALUE# mes","FD_SECOND_AGO_0":"hace #VALUE# segundos atrás","FD_SECOND_AGO_1":"hace #VALUE# segundos atrás","FD_SECOND_AGO_10_20":"hace #VALUE# segundos atrás","FD_SECOND_AGO_MOD_1":"hace #VALUE# segundos atrás","FD_SECOND_AGO_MOD_2_4":"hace #VALUE# segundos atrás","FD_SECOND_AGO_MOD_OTHER":"hace #VALUE# segundos atrás","FD_SECOND_DIFF_0":"#VALUE# segundos","FD_SECOND_DIFF_1":"#VALUE# segundo","FD_SECOND_DIFF_10_20":"#VALUE# segundos","FD_SECOND_DIFF_MOD_1":"#VALUE# segundos","FD_SECOND_DIFF_MOD_2_4":"#VALUE# segundos","FD_SECOND_DIFF_MOD_OTHER":"#VALUE# segundos","FD_SECOND_SHORT":"#VALUE# s","FD_SEPARATOR":"\u0026#32;","FD_SEPARATOR_SHORT":"\u0026#32;","FD_TODAY":"hoy","FD_TOMORROW":"mañana","FD_UNIT_ORDER":"Y m d H i s","FD_YEARS_AGO_0":"hace #VALUE# años atrás","FD_YEARS_AGO_1":"hace #VALUE# años atrás","FD_YEARS_AGO_10_20":"hace #VALUE# años atrás","FD_YEARS_AGO_MOD_1":"hace #VALUE# años atrás","FD_YEARS_AGO_MOD_2_4":"hace #VALUE# años atrás","FD_YEARS_AGO_MOD_OTHER":"hace #VALUE# años atrás","FD_YEARS_DIFF_0":"#VALUE# años","FD_YEARS_DIFF_1":"#VALUE# años","FD_YEARS_DIFF_10_20":"#VALUE# años","FD_YEARS_DIFF_MOD_1":"#VALUE# años","FD_YEARS_DIFF_MOD_2_4":"#VALUE# años","FD_YEARS_DIFF_MOD_OTHER":"#VALUE# años","FD_YEARS_SHORT_0":"#VALUE# a","FD_YEARS_SHORT_1":"#VALUE# a","FD_YEARS_SHORT_10_20":"#VALUE# a","FD_YEARS_SHORT_MOD_1":"#VALUE# a","FD_YEARS_SHORT_MOD_2_4":"#VALUE# a","FD_YEARS_SHORT_MOD_OTHER":"#VALUE# a","FD_YESTERDAY":"ayer","MONTH_1":"Enero","MONTH_1_S":"Enero","MONTH_2":"Febrero","MONTH_2_S":"Febrero","MONTH_3":"Marzo","MONTH_3_S":"Marzo","MONTH_4":"Abril","MONTH_4_S":"Abril","MONTH_5":"Mayo","MONTH_5_S":"Mayo","MONTH_6":"Junio","MONTH_6_S":"Junio","MONTH_7":"Julio","MONTH_7_S":"Julio","MONTH_8":"Agosto","MONTH_8_S":"Agosto","MONTH_9":"Septiembre","MONTH_9_S":"Septiembre","MONTH_10":"Octubre","MONTH_10_S":"Octubre","MONTH_11":"Noviembre","MONTH_11_S":"Noviembre","MONTH_12":"Diciembre","MONTH_12_S":"Diciembre","MON_1":"Ene","MON_2":"Feb","MON_3":"Mar","MON_4":"Abr","MON_5":"May","MON_6":"Jun","MON_7":"Jul","MON_8":"Ago","MON_9":"Sep","MON_10":"Oct","MON_11":"Nov","MON_12":"Dic"});</script>
+<script>BX.Runtime.registerExtension({"name":"main.date","namespace":"BX.Main","loaded":true});</script>
+<script>(window.BX||top.BX).message({"WEEK_START":1});</script>
+<script>BX.Runtime.registerExtension({"name":"date","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"JS_CORE_LOADING":"Cargando...","JS_CORE_WINDOW_CLOSE":"Cerrar","JS_CORE_WINDOW_EXPAND":"Expandir","JS_CORE_WINDOW_NARROW":"Restaurar","JS_CORE_WINDOW_SAVE":"Guardar","JS_CORE_WINDOW_CANCEL":"Cancelar","JS_CORE_H":"h","JS_CORE_M":"m","JS_CORE_S":"s","JS_CORE_NO_DATA":"-No hay datos-","JSADM_AI_HIDE_EXTRA":"Ocultar elementos extras","JSADM_AI_ALL_NOTIF":"Todas las notificaciones","JSADM_AUTH_REQ":"Se requiere autenticación!","JS_CORE_WINDOW_AUTH":"Inicia sesión","JS_CORE_IMAGE_FULL":"Tamaño completo","JS_CORE_WINDOW_CONTINUE":"Continuar"});</script>
+<script>BX.Runtime.registerExtension({"name":"window","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"JC_CORE_TREE_SELECT_CONTROL":"Seleccione la condición","JC_CORE_TREE_ADD_CONTROL":"Agregar condición","JC_CORE_TREE_DELETE_CONTROL":"Eliminar condiciones","JC_CORE_TREE_CONTROL_DATETIME_ICON":"Haga clic para seleccionar la fecha","JC_CORE_TREE_CONDITION_ERROR":"Error de condición","JC_CORE_TREE_CONDITION_FATAL_ERROR":"Error irrecuperable de condición. Se recomienda eliminar la condición."});</script>
+<script>BX.Runtime.registerExtension({"name":"core_condtree","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"landing_grid","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"LANGUAGE_ID":"la","FORMAT_DATE":"DD\/MM\/YYYY","FORMAT_DATETIME":"DD\/MM\/YYYY HH:MI:SS","COOKIE_PREFIX":"BITRIX_SM","SERVER_TZ_OFFSET":"10800","UTF_MODE":"Y","SITE_ID":"s1","SITE_DIR":"\/","USER_ID":"","SERVER_TIME":1749492310,"USER_TZ_OFFSET":0,"USER_TZ_AUTO":"Y","bitrix_sessid":"95eea913cd4f592de2a6341cc2e526ae"});</script><script src="/bitrix/js/ui/dexie/dist/dexie.bundle.min.js?1744124719102530"></script>
+<script src="/bitrix/js/main/core/core_ls.min.js?17339298272683"></script>
+<script src="/bitrix/js/main/core/core_fx.min.js?14909536449768"></script>
+<script src="/bitrix/js/main/core/core_frame_cache.min.js?174740118610481"></script>
+<script src="/bitrix/js/pull/protobuf/protobuf.min.js?159231549176433"></script>
+<script src="/bitrix/js/pull/protobuf/model.min.js?159231549114190"></script>
+<script src="/bitrix/js/rest/client/rest.client.min.js?16015491189240"></script>
+<script src="/bitrix/js/pull/client/pull.client.min.js?174471771449849"></script>
+<script src="/bitrix/js/landing/metrika/dist/metrika.bundle.min.js?17472976543641"></script>
+<script src="/bitrix/js/main/pageobject/pageobject.min.js?1584117434570"></script>
+<script src="/bitrix/js/main/popup/dist/main.popup.bundle.min.js?174740118666962"></script>
+<script src="/bitrix/js/main/core/core_clipboard.min.js?16572140002246"></script>
+<script src="/bitrix/js/main/sidepanel/dist/side-panel.bundle.min.js?174896409088337"></script>
+<script src="/bitrix/js/main/date/main.date.min.js?174161463721981"></script>
+<script src="/bitrix/js/main/core/core_date.min.js?161286731026661"></script>
+<script src="/bitrix/js/main/core/core_window.min.js?170185523776324"></script>
+<script src="/bitrix/js/catalog/core_tree.min.js?172546552845402"></script>
+<script src="/bitrix/js/main/polyfill/intersectionobserver/js/intersectionobserver.min.js?15362428577124"></script>
+<script>if (Intl && Intl.DateTimeFormat) document.cookie="BITRIX_SM_TZ="+Intl.DateTimeFormat().resolvedOptions().timeZone+"; path=/; expires=Mon, 01 Jun 2026 00:00:00 +0300";</script>
+<script>
+	(function(w,d,u){
+		var s=d.createElement('script');s.async=true;s.src=u+'?'+(Date.now()/86400000|0);
+		var h=d.getElementsByTagName('script')[0];h.parentNode.insertBefore(s,h);
+	})(window,document,'https://cdn.bitrix24.es/b23133187/landing/assets/assets_webpack_29c972b2a5_1740602107.js');
+</script>
+
+
+
+<script src="/bitrix/templates/landing24/assets/js/helpers/lazyload.min.js?16989351202187"></script>
+<script src="/bitrix/components/bitrix/landing.pub/templates/.default/script.min.js?17126771928487"></script>
+<script>
+	BX.namespace("BX.Landing");
+	BX.Landing.getMode = () => "view";
+</script>
+
+
+<script>
+	(function()
+	{
+		new BX.Landing.Metrika();
+	})();
+</script>
+
+<script>
+	BX.ready(function() {
+		void new BX.Landing.Pub.PageTransition();
+	});
+</script>
+
+<script>
+	(function(w,d,u){
+		var s=d.createElement('script');s.async=true;s.src=u+'?'+(Date.now()/60000|0);
+		var h=d.getElementsByTagName('script')[0];h.parentNode.insertBefore(s,h);
+	})(window,document,'https://cdn.bitrix24.es/b23133187/crm/tag/call.tracker.js');
+</script>
+</body>
+</html>

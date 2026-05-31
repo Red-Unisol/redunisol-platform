@@ -1,0 +1,13 @@
+services:
+  mutual-celesol:
+    image: ${APP_IMAGE}
+    pull_policy: always
+    ports:
+      - "${APP_BIND}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/health.php >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s

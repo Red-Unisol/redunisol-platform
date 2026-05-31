@@ -1,0 +1,225 @@
+name: Deploy Mutual Celesol Prod
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-mutual-celesol-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      IMAGE_NAME: ghcr.io/red-unisol/mutual-celesol
+      IMAGE_TAG: prod-${{ github.sha }}
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      COMPOSE_PROJECT_NAME: mutual-celesol-prod
+      TARGET_DIR: /opt/mutual-celesol-prod
+      APP_BIND: 127.0.0.1:3032:80
+      APP_URL: https://mutualcelesol.com
+    steps:
+      - name: Allow manual prod deploy only from main by Nasst
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_ACTOR}" = "Nasst" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ]
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate site artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f web/mutual-celesol/public/celesol-web/index.html
+          test -d web/mutual-celesol/public/celesol-web/cms
+          test -d web/mutual-celesol/public/celesol-web/bitrix
+          test -d web/mutual-celesol/public/celesol-web/b23133187
+
+          disallowed="$(
+            find web/mutual-celesol/public \
+              \( \
+                \( -type d \( -name __MACOSX -o -name grav-admin \) \) -o \
+                \( -type f \( -name '.DS_Store' -o -name '*.zip' -o -name '*.tar' -o -name '*.gz' -o -name '*.rar' \) \) \
+              \) \
+              -print
+          )"
+
+          if [ -n "$disallowed" ]; then
+            printf 'Disallowed files in deploy artifact:\n%s\n' "$disallowed"
+            exit 1
+          fi
+
+      - name: Check PHP syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find web/mutual-celesol/public -name '*.php' -print -quit | grep -q .; then
+            docker run --rm \
+              -v "$PWD/web/mutual-celesol/public:/site:ro" \
+              php:8.3-cli \
+              sh -lc 'find /site -name "*.php" -print0 | xargs -0 -n1 php -l'
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: web/mutual-celesol
+          file: web/mutual-celesol/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:prod-latest
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Trust target host
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Prepare deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/mutual-celesol.env" <<EOF
+          COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
+          TARGET_DIR=${TARGET_DIR}
+          APP_BIND=${APP_BIND}
+          APP_URL=${APP_URL}
+          APP_IMAGE=${IMAGE_NAME}:${IMAGE_TAG}
+          EOF
+          sed -i 's/^[[:space:]]*//' "$RUNNER_TEMP/mutual-celesol.env"
+
+      - name: Upload deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_STAGING_DIR="/tmp/mutual-celesol-prod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR'"
+          scp -P "$SSH_PORT" web/mutual-celesol/deploy/docker-compose.vps.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/mutual-celesol.env" "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+
+      - name: Deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" "${{ github.actor }}" "${{ secrets.GITHUB_TOKEN }}" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+          ghcr_username="$3"
+          ghcr_token="$4"
+
+          install -d -m 755 "$target_dir"
+
+          set -a
+          . "$staging_dir/.env"
+          set +a
+
+          app_host="${APP_URL#*://}"
+          app_host="${app_host%%/*}"
+          bind_host="$(printf '%s' "$APP_BIND" | cut -d: -f1)"
+          bind_port="$(printf '%s' "$APP_BIND" | cut -d: -f2)"
+          compose_project_name="${COMPOSE_PROJECT_NAME:-$(basename "$target_dir")}"
+
+          echo "$ghcr_token" | docker login ghcr.io -u "$ghcr_username" --password-stdin
+
+          cd "$target_dir"
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
+
+          health_status=""
+          site_status=""
+          root_status=""
+          for attempt in $(seq 1 12); do
+            health_status="$(curl -sS -o /dev/null -w '%{http_code}' "http://$bind_host:$bind_port/health.php" || true)"
+            site_status="$(curl -sS -o /dev/null -w '%{http_code}' -H "Host: $app_host" "http://$bind_host:$bind_port/celesol-web/" || true)"
+            root_status="$(curl -sS -o /dev/null -w '%{http_code}' -H "Host: $app_host" "http://$bind_host:$bind_port/" || true)"
+            if [ "$health_status" = "200" ] && [ "$site_status" = "200" ] && [ "$root_status" = "302" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$health_status" != "200" ] || [ "$site_status" != "200" ] || [ "$root_status" != "302" ]; then
+            echo "Unexpected status codes: health=$health_status site=$site_status root=$root_status"
+            docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" logs --tail=120
+            exit 1
+          fi
+          EOF
+
+      - name: Finalize deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+
+          tmp_env="$target_dir/.env.deploying"
+          tmp_compose="$target_dir/docker-compose.yml.deploying"
+          cp "$staging_dir/.env" "$tmp_env"
+          cp "$staging_dir/docker-compose.yml" "$tmp_compose"
+          mv -f "$tmp_env" "$target_dir/.env"
+          mv -f "$tmp_compose" "$target_dir/docker-compose.yml"
+          cmp -s "$staging_dir/.env" "$target_dir/.env"
+          cmp -s "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+
+          docker image prune -f >/dev/null
+
+          active_images="$(docker ps --format '{{.Image}}' | sort -u)"
+          mapfile -t stale_images < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^ghcr.io/red-unisol/mutual-celesol:' || true)
+          removable_images=()
+          for image_ref in "${stale_images[@]}"; do
+            [ -n "$image_ref" ] || continue
+            if printf '%s\n' "$active_images" | grep -Fxq "$image_ref"; then
+              continue
+            fi
+            removable_images+=("$image_ref")
+          done
+
+          if [ "${#removable_images[@]}" -gt 0 ]; then
+            printf 'Removing stale images:\n%s\n' "${removable_images[@]}"
+            docker image rm "${removable_images[@]}" || true
+          fi
+          EOF
+
+      - name: Clean remote staging files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf '$REMOTE_STAGING_DIR'"

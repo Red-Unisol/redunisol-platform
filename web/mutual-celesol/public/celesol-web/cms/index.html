@@ -1,0 +1,335 @@
+<!-- index.html (Admin Panel) -->
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Panel de Tasas</title>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            body {
+                font-family: "Montserrat", sans-serif;
+                background-color: rgb(23, 36, 61);
+                color: white;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                max-width: 800px;
+                margin: 40px auto;
+                background-color: white;
+                color: black;
+                padding: 20px;
+                border-radius: 10px;
+            }
+
+            h1,
+            h2 {
+                color: rgb(100, 176, 159);
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+
+            th,
+            td {
+                border: 1px solid #ccc;
+                padding: 10px;
+                text-align: center;
+            }
+
+            thead {
+                background-color: rgb(100, 176, 159);
+                color: white;
+            }
+
+            form {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                gap: 10px;
+            }
+
+            input,
+            select,
+            button {
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                font-size: 1em;
+            }
+
+            button {
+                background-color: rgb(100, 176, 159);
+                color: white;
+                cursor: pointer;
+            }
+
+            .hidden {
+                display: none;
+            }
+
+            #logout {
+                float: right;
+                margin-top: -40px;
+            }
+
+            #fecha-actualizacion {
+                text-align: right;
+                font-style: italic;
+                color: #666;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Panel de Administración de Tasas</h1>
+            <button id="logout" class="hidden">Cerrar sesión</button>
+
+            <div id="login-section">
+                <h2>Iniciar Sesión</h2>
+                <form id="login-form">
+                    <input
+                        type="email"
+                        id="email"
+                        placeholder="Correo"
+                        required
+                    />
+                    <input
+                        type="password"
+                        id="password"
+                        placeholder="Contraseña"
+                        required
+                    />
+                    <button type="submit">Ingresar</button>
+                </form>
+            </div>
+
+            <div id="admin-section" class="hidden">
+                <h2>Editar video</h2>
+                <form id="home-form">
+                    <input
+                        type="text"
+                        id="video"
+                        placeholder="Video Youtube"
+                        required
+                    />
+                    <button type="submit">Guardar Cambios</button>
+                </form>
+                <h2>Editar Tasas</h2>
+                <form id="edit-form">
+                    <select id="entidad-select" required></select>
+                    <input
+                        type="text"
+                        id="dias30"
+                        placeholder="30 Días (%)"
+                        required
+                    />
+                    <input
+                        type="text"
+                        id="dias60"
+                        placeholder="60 Días (%)"
+                        required
+                    />
+                    <input
+                        type="text"
+                        id="dias90"
+                        placeholder="90 Días (%)"
+                        required
+                    />
+                    <button type="submit">Guardar Cambios</button>
+                </form>
+
+                <p id="fecha-actualizacion">Tasas actualizadas: ...</p>
+
+                <h2>Tasas actuales</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Entidad</th>
+                            <th>30 Días</th>
+                            <th>60 Días</th>
+                            <th>90 Días</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-tasas"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <script type="module">
+            import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+            import {
+                getFirestore,
+                collection,
+                getDocs,
+                getDoc,
+                doc,
+                updateDoc,
+                Timestamp,
+            } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+            import {
+                getAuth,
+                signInWithEmailAndPassword,
+                onAuthStateChanged,
+                signOut,
+            } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+            const firebaseConfig = {
+                apiKey: "AIzaSyDUGuPMSy6z7XPFAf4heLGEe8mBmICLvJ8",
+                authDomain: "mutual-celesol.firebaseapp.com",
+                projectId: "mutual-celesol",
+                storageBucket: "mutual-celesol.firebasestorage.app",
+                messagingSenderId: "1083639504859",
+                appId: "1:1083639504859:web:c7ec09552281f804b611fe",
+            };
+
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            const auth = getAuth(app);
+
+            const loginSection = document.getElementById("login-section");
+            const adminSection = document.getElementById("admin-section");
+            const tablaTasas = document.getElementById("tabla-tasas");
+            const entidadSelect = document.getElementById("entidad-select");
+            const logoutBtn = document.getElementById("logout");
+            const fechaActualizacion = document.getElementById(
+                "fecha-actualizacion",
+            );
+
+            const formLogin = document.getElementById("login-form");
+            const formEdit = document.getElementById("edit-form");
+            const homeEdit = document.getElementById("home-form");
+
+            async function cargarHome() {
+                const snapshot = await getDoc(doc(db, "sections", "home"));
+                const data = snapshot.data();
+                console.log("data: ", data);
+                if (data?.video) {
+                    document.getElementById("video").value = data?.video;
+                }
+                return data;
+            }
+            async function cargarTasas() {
+                const snapshot = await getDocs(collection(db, "tasas"));
+                tablaTasas.innerHTML = "";
+                entidadSelect.innerHTML =
+                    '<option value="">Seleccionar entidad</option>';
+
+                let ultimaFecha = null;
+
+                snapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    const id = docSnap.id;
+
+                    if (data.fechaActualizacion?.toDate) {
+                        const fecha = data.fechaActualizacion.toDate();
+                        if (!ultimaFecha || fecha > ultimaFecha)
+                            ultimaFecha = fecha;
+                    }
+
+                    tablaTasas.innerHTML += `
+          <tr>
+            <td>${data.entidad}</td>
+            <td>${data.dias30}</td>
+            <td>${data.dias60}</td>
+            <td>${data.dias90}</td>
+          </tr>
+        `;
+
+                    entidadSelect.innerHTML += `<option value="${id}">${data.entidad}</option>`;
+                });
+
+                if (ultimaFecha) {
+                    const fStr = ultimaFecha.toLocaleDateString("es-AR", {
+                        month: "long",
+                        year: "numeric",
+                    });
+                    fechaActualizacion.textContent = `Tasas actualizadas: ${fStr.charAt(0).toUpperCase() + fStr.slice(1)}`;
+                } else {
+                    fechaActualizacion.textContent = `Tasas actualizadas: -`;
+                }
+            }
+
+            homeEdit.addEventListener("submit", async (e) => {
+                console.log("Home edit form submitted");
+                e.preventDefault();
+                const ref = doc(db, "sections", "home");
+                await updateDoc(ref, {
+                    video: document.getElementById("video").value.trim(),
+                });
+
+                homeEdit.reset();
+                await cargarHome();
+                alert("Home actualizado correctamente.");
+            });
+
+            formEdit.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                const id = entidadSelect.value;
+                if (!id) return;
+
+                const ref = doc(db, "tasas", id);
+                await updateDoc(ref, {
+                    dias30: document.getElementById("dias30").value,
+                    dias60: document.getElementById("dias60").value,
+                    dias90: document.getElementById("dias90").value,
+                    fechaActualizacion: Timestamp.now(),
+                });
+
+                formEdit.reset();
+                await cargarTasas();
+                alert("Tasa actualizada correctamente.");
+            });
+
+            entidadSelect.addEventListener("change", async () => {
+                const id = entidadSelect.value;
+                if (!id) return;
+
+                const snapshot = await getDocs(collection(db, "tasas"));
+                const entidad = snapshot.docs.find((d) => d.id === id)?.data();
+                if (entidad) {
+                    document.getElementById("dias30").value = entidad.dias30;
+                    document.getElementById("dias60").value = entidad.dias60;
+                    document.getElementById("dias90").value = entidad.dias90;
+                }
+            });
+
+            formLogin.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                const email = document.getElementById("email").value;
+                const pass = document.getElementById("password").value;
+
+                try {
+                    await signInWithEmailAndPassword(auth, email, pass);
+                } catch (error) {
+                    alert("Error de login: " + error.message);
+                }
+            });
+
+            logoutBtn.addEventListener("click", async () => {
+                await signOut(auth);
+            });
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    loginSection.classList.add("hidden");
+                    adminSection.classList.remove("hidden");
+                    logoutBtn.classList.remove("hidden");
+                    cargarTasas();
+                    cargarHome();
+                } else {
+                    loginSection.classList.remove("hidden");
+                    adminSection.classList.add("hidden");
+                    logoutBtn.classList.add("hidden");
+                }
+            });
+        </script>
+    </body>
+</html>
