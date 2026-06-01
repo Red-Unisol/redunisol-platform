@@ -12,6 +12,7 @@ Documentacion tecnica transversal de la repo.
 - `redunisol-web-operating-model.md`: modelo operativo de `web/redunisol-web` con infraestructura Git-managed y datos runtime persistentes fuera de Git
 - `redunisol-web-deploy-runbook.md`: runbook operativo de `web/redunisol-web`, circuitos de `.env`, limites entre desarrollo e integracion y estado validado del deploy
 - `redunisol-web-overview.md`: guia de onboarding tecnico para entender como funciona `web/redunisol-web`, como se modifica y por donde ampliarla
+- `redunisol-web-production-cutover.md`: runbook de corte productivo de `redunisol.com.ar`, preservando mail en la VPS anterior
 
 ## Cuando agregar un documento nuevo
 
