@@ -96,6 +96,25 @@ class PageResource extends Resource
                             TextInput::make('socialProof.suffix')
                                 ->label('Prueba social — texto')
                                 ->helperText('Ej: créditos otorgados en más de una década'),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -144,6 +163,25 @@ class PageResource extends Resource
                             Textarea::make('note')
                                 ->label('Nota al pie')
                                 ->rows(2),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -178,6 +216,25 @@ class PageResource extends Resource
                                 ->defaultItems(0)
                                 ->reorderable()
                                 ->collapsible(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -196,8 +253,8 @@ class PageResource extends Resource
                                 ->helperText('Podés usar **texto** para negrita.')
                                 ->rows(2),
 
-                            TextInput::make('cta')
-                                ->label('Texto del botón CTA')
+                            TextInput::make('wa_cta')
+                                ->label('Texto del botón WhatsApp')
                                 ->helperText('Ej: Comenzar hoy'),
 
                             Repeater::make('categories')
@@ -226,6 +283,25 @@ class PageResource extends Resource
                                 ->defaultItems(1)
                                 ->reorderable()
                                 ->collapsible(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -256,6 +332,25 @@ class PageResource extends Resource
                                 ->defaultItems(1)
                                 ->reorderable()
                                 ->collapsible(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -277,6 +372,25 @@ class PageResource extends Resource
                                 ])
                                 ->defaultItems(1)
                                 ->reorderable(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -304,6 +418,25 @@ class PageResource extends Resource
                                 ->defaultItems(1)
                                 ->reorderable()
                                 ->collapsible(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -325,6 +458,25 @@ class PageResource extends Resource
                                 ->label('Descripción (opcional)')
                                 ->rows(2)
                                 ->nullable(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -342,6 +494,25 @@ class PageResource extends Resource
                                 ->rows(12)
                                 ->helperText('Podés usar HTML básico: <strong>, <em>, <h2>, <ul>, <li>, <p>.')
                                 ->columnSpanFull(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -370,6 +541,25 @@ class PageResource extends Resource
                                 ->label('Horarios de atención')
                                 ->rows(2)
                                 ->columnSpanFull(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ])
                         ->columns(2),
 
@@ -384,6 +574,25 @@ class PageResource extends Resource
                                 ->label('Título de la sección')
                                 ->default('Respaldados por')
                                 ->required(),
+
+                            Fieldset::make('cta_section')
+                                ->label('Botón de acción (CTA)')
+                                ->schema([
+                                    Toggle::make('cta.enabled')
+                                        ->label('Mostrar botón')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Ej: Ver más')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                    TextInput::make('cta.link')
+                                        ->label('Enlace')
+                                        ->placeholder('Ej: /sobre-nosotros')
+                                        ->visible(fn (Get $get): bool => (bool) $get('cta.enabled')),
+                                ])
+                                ->columns(3),
                         ]),
 
                     // ──────────────────────────────────────────
@@ -542,6 +751,28 @@ class PageResource extends Resource
                                         ->columnSpanFull(),
                                 ])
                                 ->columns(2),
+
+                            Fieldset::make('success_cta_section')
+                                ->label('Botón al completar el formulario')
+                                ->schema([
+                                    Toggle::make('success_cta.enabled')
+                                        ->label('Activar botón personalizado')
+                                        ->helperText('Si está apagado, el botón muestra "Listo" por defecto.')
+                                        ->default(false)
+                                        ->live()
+                                        ->inline(false),
+                                    TextInput::make('success_cta.text')
+                                        ->label('Texto del botón')
+                                        ->placeholder('Listo')
+                                        ->helperText('Por defecto: "Listo"')
+                                        ->visible(fn (Get $get): bool => (bool) $get('success_cta.enabled')),
+                                    TextInput::make('success_cta.link')
+                                        ->label('Enlace (opcional)')
+                                        ->placeholder('Ej: /gracias')
+                                        ->helperText('Si se completa, el botón navega a esta URL en vez de cerrar el modal.')
+                                        ->visible(fn (Get $get): bool => (bool) $get('success_cta.enabled')),
+                                ])
+                                ->columns(3),
 
                         ]),
 

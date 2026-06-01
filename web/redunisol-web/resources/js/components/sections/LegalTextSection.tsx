@@ -1,12 +1,19 @@
-import { motion } from 'framer-motion';
 import { FileTextIcon } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
+
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
 
 export interface LegalTextSectionData {
     title: string;
     content: string;
+    cta?: SectionCta;
 }
 
-export default function LegalTextSection({ data }: { data: LegalTextSectionData }) {
+export default function LegalTextSection({
+    data,
+}: {
+    data: LegalTextSectionData;
+}) {
     return (
         <section className="w-full bg-white py-16">
             <div className="mx-auto max-w-3xl px-6">
@@ -18,7 +25,9 @@ export default function LegalTextSection({ data }: { data: LegalTextSectionData 
                 >
                     <div className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 p-3">
                         <FileTextIcon size={22} />
-                        <h1 className="text-lg font-bold text-gray-900">{data.title}</h1>
+                        <h1 className="text-lg font-bold text-gray-900">
+                            {data.title}
+                        </h1>
                     </div>
 
                     <div
@@ -26,6 +35,7 @@ export default function LegalTextSection({ data }: { data: LegalTextSectionData 
                         dangerouslySetInnerHTML={{ __html: data.content }}
                     />
                 </motion.div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

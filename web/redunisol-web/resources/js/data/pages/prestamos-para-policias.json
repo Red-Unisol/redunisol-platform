@@ -1,64 +1,81 @@
 [
-  {
-    "type": "hero",
-    "data": {
-      "title": "Préstamos para Policías Provinciales",
-      "description": "Créditos personales con descuento por nómina para personal policial activo y fuerzas de seguridad provinciales. En Red Unisol conectamos al personal policial provincial con Bancos, Mutuales y entidades reguladas por el BCRA para encontrar el mejor crédito de nómina."
-    }
-  },
-  {
-    "type": "convenios",
-    "data": {
-      "title": "Provincias disponibles",
-      "items": [
-        { "name": "Policía de Córdoba", "detail": "", "href": "" },
-        { "name": "Policía de Catamarca", "detail": "", "href": "" }
-      ]
-    }
-  },
-  {
-    "type": "requisitos",
-    "data": {
-      "title": "Requisitos",
-      "items": [
-        { "text": "Ser personal activo de la policía provincial" },
-        { "text": "DNI vigente" },
-        { "text": "Último recibo de haberes" },
-        { "text": "Antigüedad mínima según convenio" }
-      ]
-    }
-  },
-  {
-    "type": "faqs",
-    "data": {
-      "badge": "Preguntas frecuentes",
-      "description": "Respondemos las dudas más comunes sobre los préstamos para **policías provinciales**.",
-      "cta": "Solicitar préstamo",
-      "categories": [
-        {
-          "title": "Requisitos",
-          "items": [
-            { "q": "¿Quiénes pueden solicitar este préstamo?", "a": "Pueden solicitarlo los efectivos activos de las fuerzas policiales provinciales que cuenten con antigüedad suficiente según el convenio vigente." },
-            { "q": "¿Qué documentación necesito?", "a": "Necesitás presentar DNI vigente, último recibo de haberes y datos de contacto (email y WhatsApp)." }
-          ]
-        },
-        {
-          "title": "Proceso",
-          "items": [
-            { "q": "¿Cómo es el proceso de solicitud?", "a": "El proceso es 100% online. Completás el formulario, subís la documentación y te contactamos con una oferta personalizada. No necesitás concurrir a ninguna sucursal." }
-          ]
+    {
+        "type": "hero",
+        "data": {
+            "title": "Préstamos para Policías Provinciales",
+            "description": "Créditos personales con descuento por nómina para personal policial activo y fuerzas de seguridad provinciales. En Red Unisol conectamos al personal policial provincial con Bancos, Mutuales y entidades reguladas por el BCRA para encontrar el mejor crédito de nómina."
         }
-      ]
+    },
+    {
+        "type": "convenios",
+        "data": {
+            "title": "Provincias disponibles",
+            "items": [
+                { "name": "Policía de Córdoba", "detail": "", "href": "" },
+                { "name": "Policía de Catamarca", "detail": "", "href": "" }
+            ]
+        }
+    },
+    {
+        "type": "requisitos",
+        "data": {
+            "title": "Requisitos",
+            "items": [
+                { "text": "Ser personal activo de la policía provincial" },
+                { "text": "DNI vigente" },
+                { "text": "Último recibo de haberes" },
+                { "text": "Antigüedad mínima según convenio" }
+            ]
+        }
+    },
+    {
+        "type": "faqs",
+        "data": {
+            "badge": "Preguntas frecuentes",
+            "description": "Respondemos las dudas más comunes sobre los préstamos para **policías provinciales**.",
+            "wa_cta": "Solicitar préstamo",
+            "categories": [
+                {
+                    "title": "Requisitos",
+                    "items": [
+                        {
+                            "q": "¿Quiénes pueden solicitar este préstamo?",
+                            "a": "Pueden solicitarlo los efectivos activos de las fuerzas policiales provinciales que cuenten con antigüedad suficiente según el convenio vigente."
+                        },
+                        {
+                            "q": "¿Qué documentación necesito?",
+                            "a": "Necesitás presentar DNI vigente, último recibo de haberes y datos de contacto (email y WhatsApp)."
+                        }
+                    ]
+                },
+                {
+                    "title": "Proceso",
+                    "items": [
+                        {
+                            "q": "¿Cómo es el proceso de solicitud?",
+                            "a": "El proceso es 100% online. Completás el formulario, subís la documentación y te contactamos con una oferta personalizada. No necesitás concurrir a ninguna sucursal."
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    {
+        "type": "testimonios",
+        "data": {
+            "title": "Lo que dicen nuestros clientes",
+            "items": [
+                {
+                    "quote": "Muy buen servicio, me ayudaron a conseguir el préstamo en poco tiempo y con muy buenas condiciones.",
+                    "name": "Nombre Apellido",
+                    "role": "Policía Provincial"
+                },
+                {
+                    "quote": "Excelente atención y condiciones muy convenientes. Todo el proceso fue muy sencillo.",
+                    "name": "Nombre Apellido",
+                    "role": "Personal de Seguridad"
+                }
+            ]
+        }
     }
-  },
-  {
-    "type": "testimonios",
-    "data": {
-      "title": "Lo que dicen nuestros clientes",
-      "items": [
-        { "quote": "Muy buen servicio, me ayudaron a conseguir el préstamo en poco tiempo y con muy buenas condiciones.", "name": "Nombre Apellido", "role": "Policía Provincial" },
-        { "quote": "Excelente atención y condiciones muy convenientes. Todo el proceso fue muy sencillo.", "name": "Nombre Apellido", "role": "Personal de Seguridad" }
-      ]
-    }
-  }
 ]
