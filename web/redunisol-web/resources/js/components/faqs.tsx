@@ -15,7 +15,7 @@ interface FAQCategory {
 export interface FAQsData {
     badge: string;
     description: string;
-    cta: string;
+    cta?: string | { enabled?: boolean; label?: string; text?: string };
     categories: FAQCategory[];
 }
 
@@ -89,6 +89,13 @@ function AccordionItem({ q, a }: FAQItem) {
 }
 
 export default function FAQs({ data }: { data: FAQsData }) {
+    const ctaLabel =
+        typeof data.cta === 'string'
+            ? data.cta
+            : data.cta?.enabled === false
+              ? null
+              : (data.cta?.label ?? data.cta?.text ?? null);
+
     return (
         <section className="w-full bg-white py-20 text-gray-800">
             <div className="mx-auto max-w-3xl px-6">
@@ -125,14 +132,16 @@ export default function FAQs({ data }: { data: FAQsData }) {
                     ))}
                 </div>
 
-                <div className="mt-14 flex justify-center">
-                    <button
-                        type="button"
-                        className="rounded-2xl bg-[#1e2d3d] px-10 py-4 text-base font-bold text-white transition hover:bg-[#2d3f54] active:scale-95"
-                    >
-                        {data.cta}
-                    </button>
-                </div>
+                {ctaLabel && (
+                    <div className="mt-14 flex justify-center">
+                        <button
+                            type="button"
+                            className="rounded-2xl bg-[#1e2d3d] px-10 py-4 text-base font-bold text-white transition hover:bg-[#2d3f54] active:scale-95"
+                        >
+                            {ctaLabel}
+                        </button>
+                    </div>
+                )}
             </div>
         </section>
     );
