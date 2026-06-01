@@ -3,6 +3,8 @@ import { CaretDownIcon, QuestionIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 interface FAQItem {
     q: string;
     a: string;
@@ -16,7 +18,8 @@ interface FAQCategory {
 export interface FAQsData {
     badge: string;
     description: string;
-    cta: string;
+    wa_cta?: string;
+    cta?: SectionCta;
     categories: FAQCategory[];
 }
 
@@ -143,16 +146,7 @@ export default function FAQs({ data }: { data: FAQsData }) {
                     ))}
                 </div>
 
-                <div className="mt-14 flex justify-center">
-                    <a
-                        href={waUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-2xl bg-[#1e2d3d] px-10 py-4 text-base font-bold text-white transition hover:bg-[#2d3f54] active:scale-95"
-                    >
-                        {data.cta}
-                    </a>
-                </div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

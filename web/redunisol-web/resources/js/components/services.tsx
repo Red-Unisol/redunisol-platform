@@ -3,6 +3,8 @@ import * as Icons from '@phosphor-icons/react';
 import { MoneyIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface ServiceItem {
     text: string;
     icon: string;
@@ -14,6 +16,7 @@ export interface ServicesData {
     description: string;
     items: ServiceItem[];
     note: string;
+    cta?: SectionCta;
 }
 
 export const iconMap = {
@@ -99,6 +102,7 @@ export default function Services({ data }: { data: ServicesData }) {
                 >
                     {data.note}
                 </motion.p>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

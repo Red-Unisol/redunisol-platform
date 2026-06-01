@@ -84,7 +84,7 @@
     "faqs": {
         "badge": "Preguntas y respuestas frecuentes",
         "description": "Encontrá respuestas a las **dudas más comunes** sobre nuestros préstamos ordenados por temática.",
-        "cta": "Comenzar hoy",
+        "wa_cta": "Comenzar hoy",
         "categories": [
             {
                 "title": "Requisitos",

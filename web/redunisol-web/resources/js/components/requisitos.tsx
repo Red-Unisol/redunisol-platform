@@ -4,9 +4,12 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface RequisitosData {
     title: string;
     items: { text: string }[];
+    cta?: SectionCta;
 }
 
 export default function Requisitos({ data }: { data: RequisitosData }) {
@@ -46,6 +49,7 @@ export default function Requisitos({ data }: { data: RequisitosData }) {
                         </motion.li>
                     ))}
                 </ul>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

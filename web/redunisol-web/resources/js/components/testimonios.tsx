@@ -1,6 +1,8 @@
 import { ChatCircleTextIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface TestimonioItem {
     quote: string;
     name: string;
@@ -10,6 +12,7 @@ export interface TestimonioItem {
 export interface TestimoniosData {
     title: string;
     items: TestimonioItem[];
+    cta?: SectionCta;
 }
 
 function TestimonioCard({
@@ -59,6 +62,7 @@ export default function Testimonios({ data }: { data: TestimoniosData }) {
                         <TestimonioCard key={i} item={item} index={i} />
                     ))}
                 </div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

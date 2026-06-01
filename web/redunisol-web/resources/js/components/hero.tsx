@@ -1,9 +1,12 @@
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface Hero {
     title: string;
     highlight?: string;
     description?: string;
+    cta?: SectionCta;
     socialProof?: {
         prefix: string;
         suffix: string;
@@ -77,6 +80,7 @@ export default function Hero({ data }: { data: Hero }) {
                         </p>
                     </motion.div>
                 )}
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );
