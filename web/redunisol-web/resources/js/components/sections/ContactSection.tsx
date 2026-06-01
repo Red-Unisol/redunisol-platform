@@ -1,10 +1,12 @@
-import { motion } from 'framer-motion';
 import {
     ClockIcon,
     EnvelopeIcon,
     MapPinIcon,
     PhoneIcon,
 } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
+
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
 
 export interface ContactSectionData {
     title: string;
@@ -13,6 +15,7 @@ export interface ContactSectionData {
     phone?: string;
     address?: string;
     hours?: string;
+    cta?: SectionCta;
 }
 
 interface ContactItemProps {
@@ -29,8 +32,12 @@ function ContactItem({ icon, label, value, href }: ContactItemProps) {
                 {icon}
             </div>
             <div>
-                <p className="text-xs font-semibold tracking-wide text-gray-500 uppercase">{label}</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-800">{value}</p>
+                <p className="text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                    {label}
+                </p>
+                <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {value}
+                </p>
             </div>
         </div>
     );
@@ -51,9 +58,13 @@ export default function ContactSection({ data }: { data: ContactSectionData }) {
                     transition={{ duration: 0.5 }}
                     className="mb-10 text-center"
                 >
-                    <h1 className="text-3xl font-bold text-gray-900">{data.title}</h1>
+                    <h1 className="text-3xl font-bold text-gray-900">
+                        {data.title}
+                    </h1>
                     {data.description && (
-                        <p className="mt-3 text-base text-gray-600">{data.description}</p>
+                        <p className="mt-3 text-base text-gray-600">
+                            {data.description}
+                        </p>
                     )}
                 </motion.div>
 
@@ -94,6 +105,7 @@ export default function ContactSection({ data }: { data: ContactSectionData }) {
                         />
                     )}
                 </motion.div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

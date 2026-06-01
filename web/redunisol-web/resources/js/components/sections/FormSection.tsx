@@ -1,3 +1,4 @@
+import { type SectionCta } from '@/components/section-cta';
 import {
     CheckCircleIcon,
     UploadSimple,
@@ -23,6 +24,7 @@ export interface FormSectionConfig {
     provincia: { enabled: boolean; defaultValue?: string };
     situacionLaboral: FormFieldConfig & { defaultValue?: string };
     banco: FormFieldConfig & { defaultValue?: string };
+    success_cta?: SectionCta;
 }
 
 const DEFAULT_CONFIG: FormSectionConfig = {
@@ -548,11 +550,13 @@ function ResultModal({
     errorMessage,
     onClose,
     onReset,
+    successCta,
 }: {
     result: 'success' | 'error' | 'not_qualified';
     errorMessage: string | null;
     onClose: () => void;
     onReset: () => void;
+    successCta?: SectionCta;
 }) {
     const isSuccess = result === 'success';
     const isNotQualified = result === 'not_qualified';
@@ -658,16 +662,27 @@ function ResultModal({
                     className="flex flex-col gap-3"
                 >
                     {isSuccess ? (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onReset();
-                                onClose();
-                            }}
-                            className="w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
-                        >
-                            Listo
-                        </button>
+                        successCta?.enabled && successCta.link ? (
+                            <a
+                                href={successCta.link}
+                                className="block w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
+                            >
+                                {successCta.text || 'Listo'}
+                            </a>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onReset();
+                                    onClose();
+                                }}
+                                className="w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
+                            >
+                                {successCta?.enabled
+                                    ? successCta.text || 'Listo'
+                                    : 'Listo'}
+                            </button>
+                        )
                     ) : isNotQualified ? (
                         <>
                             <button
@@ -1018,6 +1033,7 @@ export default function FormSection({
                             setErrorMessage(null);
                         }}
                         onReset={handleReset}
+                        successCta={cfg.success_cta}
                     />
                 )}
             </AnimatePresence>

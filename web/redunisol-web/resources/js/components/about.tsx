@@ -1,12 +1,15 @@
-import MutualesGrid, { type Mutual } from '@/components/mutuales-grid';
 import { InfoIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
+
+import MutualesGrid, { type Mutual } from '@/components/mutuales-grid';
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
 
 export interface AboutSection {
     title: string;
     description: string;
     extra: string;
     mutuales?: Mutual[];
+    cta?: SectionCta;
 }
 
 export default function About({ data }: { data: AboutSection }) {
@@ -52,15 +55,7 @@ export default function About({ data }: { data: AboutSection }) {
                     </motion.div>
                 )}
 
-                <motion.a
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.55, duration: 0.6 }}
-                    className="mt-8 rounded-xl bg-[#1F2A37] px-6 py-3 text-white"
-                    href="/sobre-nosotros"
-                >
-                    Más sobre Unisol
-                </motion.a>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

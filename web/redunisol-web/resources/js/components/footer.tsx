@@ -43,28 +43,12 @@ const navLinks = [
     { label: 'Blog', href: '/blog' },
 ];
 
-const socialLinks = [
-    {
-        label: 'Facebook',
-        href: 'https://www.facebook.com/redunisol',
-        icon: FacebookLogo,
-    },
-    {
-        label: 'LinkedIn',
-        href: 'https://www.linkedin.com/company/redunisol/',
-        icon: LinkedinLogo,
-    },
-    {
-        label: 'Instagram',
-        href: 'https://www.instagram.com/redunisol_prestamos/',
-        icon: InstagramLogo,
-    },
-    {
-        label: 'YouTube',
-        href: 'https://www.youtube.com/@redunisol5007',
-        icon: YoutubeLogo,
-    },
-];
+const SOCIAL_FALLBACKS = {
+    facebook_url: 'https://www.facebook.com/redunisol',
+    linkedin_url: 'https://www.linkedin.com/company/redunisol/',
+    instagram_url: 'https://www.instagram.com/redunisol_prestamos/',
+    youtube_url: 'https://www.youtube.com/@redunisol5007',
+};
 
 // Fallback regulator data if DB is not yet seeded
 const FALLBACK_REGULATORS: Regulator[] = [
@@ -162,6 +146,29 @@ export default function Footer() {
             : FALLBACK_REGULATORS;
     const settings = siteData?.settings ?? {};
 
+    const socialLinks = [
+        {
+            label: 'Facebook',
+            href: settings['facebook_url'] || SOCIAL_FALLBACKS.facebook_url,
+            icon: FacebookLogo,
+        },
+        {
+            label: 'LinkedIn',
+            href: settings['linkedin_url'] || SOCIAL_FALLBACKS.linkedin_url,
+            icon: LinkedinLogo,
+        },
+        {
+            label: 'Instagram',
+            href: settings['instagram_url'] || SOCIAL_FALLBACKS.instagram_url,
+            icon: InstagramLogo,
+        },
+        {
+            label: 'YouTube',
+            href: settings['youtube_url'] || SOCIAL_FALLBACKS.youtube_url,
+            icon: YoutubeLogo,
+        },
+    ];
+
     // Build BCRA statement dynamically from regulator data
     const bcraStatement =
         regulators
@@ -185,11 +192,16 @@ export default function Footer() {
                     <div className="grid gap-12 md:grid-cols-12 lg:gap-16">
                         {/* Col 1: Brand & Info (3 cols) */}
                         <div className="md:col-span-3">
-                            <img
-                                src="/images/general/t1JdNn2n4csoI8qGYVfVNKs7w.png"
-                                alt="UNISOL"
-                                className="mb-6 h-12 w-auto"
-                            />
+                            <Link
+                                href="/"
+                                className="mb-4 block w-fit rounded-2xl bg-[#1c273b] pt-0.5"
+                            >
+                                <img
+                                    src="/images/general/t1JdNn2n4csoI8qGYVfVNKs7w.png"
+                                    alt="UNISOL"
+                                    className="h-10 cursor-pointer"
+                                />
+                            </Link>
                             <p className="mb-6 text-sm leading-relaxed text-gray-600">
                                 UNISOL y el logo de UNISOL son marcas
                                 registradas. Todos los derechos reservados.
