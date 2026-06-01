@@ -25,9 +25,9 @@ export default function LegalTextSection({
                 >
                     <div className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 p-3">
                         <FileTextIcon size={22} />
-                        <h1 className="text-lg font-bold text-gray-900">
+                        <h2 className="text-lg font-bold text-gray-900">
                             {data.title}
-                        </h1>
+                        </h2>
                     </div>
 
                     <div
