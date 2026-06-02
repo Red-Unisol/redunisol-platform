@@ -15,6 +15,10 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'recibos_disk' => env('RECIBOS_DISK', 'public'),
+
+    'recibos_temporary_url_minutes' => env('RECIBOS_TEMPORARY_URL_MINUTES', 10080),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
