@@ -12,6 +12,7 @@ No reemplaza el runbook operativo ni el operating model. Su objetivo es acortar 
 - permitir administrar contenido desde Filament
 - capturar leads desde formularios multi-step
 - reenviar esos leads a Kestra en vez de persistirlos como CRM local
+- mostrar la pantalla de finalizacion de credito compatible con `/finalizar.php`
 
 La idea importante es esta:
 
@@ -20,6 +21,7 @@ La idea importante es esta:
 - una sola pagina React renderiza esas secciones segun su `type`
 - el formulario arma un payload y lo envia al backend Laravel
 - Laravel valida y reenvia la solicitud a Kestra
+- `/finalizar` consulta la solicitud en las APIs legacy configuradas y renderiza MetaMap con metadata de firma
 
 ## Stack Tecnologico
 

@@ -96,8 +96,26 @@ Importante:
 - el `.env` remoto no se consume como archivo `/var/www/.env` dentro de `php-fpm`
 - `php-fpm` recibe una whitelist explicita via `environment:` en `web/redunisol-web/deploy/docker-compose.vps.yml`
 - por eso, agregar una clave nueva a `deploy/*.env.enc` no alcanza si Laravel/PHP la necesita en runtime
-- hoy esto aplica al bridge de formularios (`KESTRA_FORM_*`) y al bloque GTM renderizado desde Blade (`GTM_*`)
+- hoy esto aplica al bridge de formularios (`KESTRA_FORM_*`), al bloque GTM renderizado desde Blade (`GTM_*`) y a finalizar (`FINALIZAR_*`)
 - las flags `VITE_TRACKING_DEBUG` y `VITE_GA4_DEBUG` pertenecen al build frontend, no al runtime de `php-fpm`
+
+### Variables runtime de finalizar
+
+La pantalla `/finalizar` y la ruta compatible `/finalizar.php` consultan datos de solicitud desde Laravel antes de renderizar el boton de MetaMap. Para deploy, estas claves tienen que existir en el runtime env cifrado correspondiente y tambien estar expuestas en `web/redunisol-web/deploy/docker-compose.vps.yml`:
+
+```env
+FINALIZAR_METAMAP_CLIENT_ID=
+FINALIZAR_CAJA_API_BASE_URL=
+FINALIZAR_FIAT_API_BASE_URL=
+FINALIZAR_API_TIMEOUT_SECONDS=30
+FINALIZAR_ITS_API_BASE_URL=
+FINALIZAR_ITS_API_KEY=
+FINALIZAR_ITS_API_USER=
+FINALIZAR_ITS_API_PASSWORD=
+FINALIZAR_ITS_API_TIMEOUT_SECONDS=25
+```
+
+`FINALIZAR_ITS_*` solo es necesario si se usa `linea=its`. La integracion actual no replica `premati.php` ni agrega webhooks de MetaMap; al finalizar la validacion, el frontend muestra una pantalla de agradecimiento dentro de la misma pagina.
 
 ## Archivos Clave Del Deploy
 
