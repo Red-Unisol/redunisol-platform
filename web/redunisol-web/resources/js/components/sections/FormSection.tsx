@@ -314,6 +314,7 @@ function Step2({
     label,
     uploading,
     reciboUrl,
+    uploadError,
 }: {
     formData: LeadFormData;
     fileInputRef: React.RefObject<HTMLInputElement>;
@@ -322,6 +323,7 @@ function Step2({
     label: string;
     uploading: boolean;
     reciboUrl: string | null;
+    uploadError: string | null;
 }) {
     const [dragging, setDragging] = useState(false);
 
@@ -391,6 +393,11 @@ function Step2({
                         ✓ Subido correctamente
                     </p>
                 )}
+                {uploadError && !uploading && (
+                    <p className="text-center text-xs font-semibold text-red-500">
+                        {uploadError}
+                    </p>
+                )}
             </div>
 
             <input
@@ -405,7 +412,8 @@ function Step2({
                 <button
                     type="button"
                     onClick={onSkip}
-                    className="rounded-full border border-[#1e2d3d] px-6 py-2.5 text-sm font-semibold text-[#1e2d3d] transition hover:bg-gray-50"
+                    disabled={uploading}
+                    className="rounded-full border border-[#1e2d3d] px-6 py-2.5 text-sm font-semibold text-[#1e2d3d] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     Omitir por ahora
                 </button>
@@ -768,6 +776,9 @@ export default function FormSection({
     const [formData, setFormData] = useState<LeadFormData>(INITIAL_FORM);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [reciboUrl, setReciboUrl] = useState<string | null>(null);
+    const [reciboUploadError, setReciboUploadError] = useState<string | null>(
+        null,
+    );
     const [uploading, setUploading] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -884,12 +895,24 @@ export default function FormSection({
         setStep(1);
         setFormData(INITIAL_FORM);
         setReciboUrl(null);
+        setReciboUploadError(null);
+    };
+
+    const handleSkipRecibo = () => {
+        setFormData((prev) => ({ ...prev, recibo: null }));
+        setReciboUrl(null);
+        setReciboUploadError(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+        goNext();
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
         setFormData((prev) => ({ ...prev, recibo: file }));
         setReciboUrl(null);
+        setReciboUploadError(null);
         if (!file) return;
 
         setUploading(true);
@@ -902,10 +925,17 @@ export default function FormSection({
             });
             if (res.ok) {
                 const data = (await res.json()) as { url: string };
+                if (!data.url) {
+                    throw new Error('missing_url');
+                }
                 setReciboUrl(data.url);
+            } else {
+                throw new Error('upload_failed');
             }
         } catch {
-            // Upload failed silently — form still submits without file URL
+            setReciboUploadError(
+                'No pudimos subir el archivo. Reintentá u omití este paso.',
+            );
         } finally {
             setUploading(false);
         }
@@ -966,10 +996,11 @@ export default function FormSection({
                                         fileInputRef as React.RefObject<HTMLInputElement>
                                     }
                                     onFileChange={handleFileChange}
-                                    onSkip={goNext}
+                                    onSkip={handleSkipRecibo}
                                     label={cfg.recibo.label}
                                     uploading={uploading}
                                     reciboUrl={reciboUrl}
+                                    uploadError={reciboUploadError}
                                 />
                             ) : step === 3 ? (
                                 <Step3
@@ -1007,7 +1038,10 @@ export default function FormSection({
                                 type="button"
                                 onClick={goNext}
                                 disabled={
-                                    isSubmitting || (step === 2 && uploading)
+                                    isSubmitting ||
+                                    (step === 2 &&
+                                        (uploading ||
+                                            (!!formData.recibo && !reciboUrl)))
                                 }
                                 className="rounded-full bg-[#1e2d3d] px-7 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d3f54] disabled:cursor-not-allowed disabled:opacity-60"
                             >
