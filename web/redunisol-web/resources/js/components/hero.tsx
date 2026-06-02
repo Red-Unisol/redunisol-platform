@@ -1,9 +1,12 @@
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface Hero {
     title: string;
     highlight?: string;
     description?: string;
+    cta?: SectionCta;
     socialProof?: {
         prefix: string;
         suffix: string;
@@ -53,7 +56,7 @@ export default function Hero({ data }: { data: Hero }) {
                         className="mt-8 flex items-center justify-center gap-4"
                     >
                         {/* AVATARS */}
-                        <div className="flex -space-x-3">
+                        <div className="flex hidden -space-x-3">
                             <img
                                 src="/images/user1.jpg"
                                 className="h-9 w-9 rounded-full border-2 border-white"
@@ -77,6 +80,7 @@ export default function Hero({ data }: { data: Hero }) {
                         </p>
                     </motion.div>
                 )}
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

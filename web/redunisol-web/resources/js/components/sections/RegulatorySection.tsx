@@ -1,9 +1,12 @@
 import { usePage } from '@inertiajs/react';
-import { motion } from 'framer-motion';
 import { ShieldCheckIcon } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
+
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
 
 export interface RegulatoryData {
     title?: string;
+    cta?: SectionCta;
 }
 
 interface Regulator {
@@ -44,7 +47,9 @@ export default function RegulatorySection({ data }: { data: RegulatoryData }) {
                 >
                     <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2">
                         <ShieldCheckIcon size={20} className="text-[#6BAF92]" />
-                        <p className="font-bold text-gray-800">{data.title ?? 'Respaldados por'}</p>
+                        <p className="font-bold text-gray-800">
+                            {data.title ?? 'Respaldados por'}
+                        </p>
                     </div>
                 </motion.div>
 
@@ -67,22 +72,34 @@ export default function RegulatorySection({ data }: { data: RegulatoryData }) {
                             <p className="font-bold text-gray-900">
                                 {reg.short_name ?? reg.name}
                             </p>
-                            <p className="mt-1 text-xs text-gray-500">{reg.name}</p>
+                            <p className="mt-1 text-xs text-gray-500">
+                                {reg.name}
+                            </p>
 
                             <div className="mt-4 space-y-1 text-sm text-gray-600">
                                 {reg.cuit && (
                                     <p>
-                                        <span className="font-medium">CUIT:</span> {reg.cuit}
+                                        <span className="font-medium">
+                                            CUIT:
+                                        </span>{' '}
+                                        {reg.cuit}
                                     </p>
                                 )}
                                 {reg.inaes_mat && (
                                     <p>
-                                        <span className="font-medium">Regulada por el INAES,</span> Mat. N° {reg.inaes_mat}
+                                        <span className="font-medium">
+                                            Regulada por el INAES,
+                                        </span>{' '}
+                                        Mat. N° {reg.inaes_mat}
                                     </p>
                                 )}
                                 {reg.bcra_code && (
                                     <p>
-                                        <span className="font-medium">Proveedor No Financiero regulado por BCRA,</span> Cód. N° {reg.bcra_code}
+                                        <span className="font-medium">
+                                            Proveedor No Financiero regulado por
+                                            BCRA,
+                                        </span>{' '}
+                                        Cód. N° {reg.bcra_code}
                                     </p>
                                 )}
                             </div>
@@ -100,6 +117,7 @@ export default function RegulatorySection({ data }: { data: RegulatoryData }) {
                         </motion.div>
                     ))}
                 </div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

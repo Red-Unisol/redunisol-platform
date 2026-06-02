@@ -1,10 +1,13 @@
-import { motion } from 'framer-motion';
 import { PlayCircleIcon } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
+
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
 
 export interface YouTubeSectionData {
     url: string;
     title?: string;
     description?: string;
+    cta?: SectionCta;
 }
 
 function extractYouTubeId(url: string): string | null {
@@ -57,7 +60,10 @@ export default function YouTubeSection({ data }: { data: YouTubeSectionData }) {
                     transition={{ delay: 0.1, duration: 0.5 }}
                     className="overflow-hidden rounded-2xl shadow-lg"
                 >
-                    <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+                    <div
+                        className="relative w-full"
+                        style={{ paddingBottom: '56.25%' }}
+                    >
                         <iframe
                             className="absolute inset-0 h-full w-full"
                             src={`https://www.youtube.com/embed/${videoId}`}
@@ -67,6 +73,7 @@ export default function YouTubeSection({ data }: { data: YouTubeSectionData }) {
                         />
                     </div>
                 </motion.div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

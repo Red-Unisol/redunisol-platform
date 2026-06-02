@@ -1,6 +1,8 @@
 import { ChatCircleTextIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface TestimonioItem {
     quote: string;
     name: string;
@@ -10,6 +12,7 @@ export interface TestimonioItem {
 export interface TestimoniosData {
     title: string;
     items: TestimonioItem[];
+    cta?: SectionCta;
 }
 
 function TestimonioCard({
@@ -26,7 +29,7 @@ function TestimonioCard({
             transition={{ delay: 0.2 + index * 0.08, duration: 0.5 }}
             className="flex flex-col gap-4 rounded-2xl border border-[#97aeaf] bg-[#265c5e0d] p-6 transition hover:shadow-md"
         >
-            <span className="text-5xl font-serif leading-none text-[#6BAF92]">
+            <span className="font-serif text-5xl leading-none text-[#6BAF92]">
                 &ldquo;
             </span>
             <p className="flex-1 text-sm leading-relaxed text-gray-600">
@@ -51,7 +54,7 @@ export default function Testimonios({ data }: { data: TestimoniosData }) {
                     className="m-auto mb-10 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <ChatCircleTextIcon size={24} />
-                    <p className="text-normal font-bold">{data.title}</p>
+                    <h2 className="text-normal font-bold">{data.title}</h2>
                 </motion.div>
 
                 <div className="grid gap-6 md:grid-cols-2">
@@ -59,6 +62,7 @@ export default function Testimonios({ data }: { data: TestimoniosData }) {
                         <TestimonioCard key={i} item={item} index={i} />
                     ))}
                 </div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

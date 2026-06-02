@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { motion } from 'framer-motion';
 
 export interface BlogCategory {
@@ -15,6 +15,7 @@ export interface BlogPost {
     content: string;
     image_url: string | null;
     author_name: string;
+    author_slug: string | null;
     published_at: string;
     categories: BlogCategory[];
 }
@@ -49,9 +50,9 @@ export default function BlogCard({
             transition={{ delay: 0.1 + index * 0.08, duration: 0.5 }}
             className="h-full"
         >
-            <Link
-                href={`/blog/${post.slug}`}
-                className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[#97aeaf] bg-white transition hover:shadow-md"
+            <div
+                onClick={() => router.visit(`/blog/${post.slug}`)}
+                className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-[#97aeaf] bg-white transition hover:shadow-md"
             >
                 {/* Image */}
                 <div className="aspect-video w-full overflow-hidden">
@@ -99,9 +100,19 @@ export default function BlogCard({
                         <span className="text-xs text-gray-400">
                             {formatDate(post.published_at)}
                         </span>
-                        <span className="text-xs text-gray-400">
-                            {post.author_name}
-                        </span>
+                        {post.author_slug ? (
+                            <Link
+                                href={`/autores/${post.author_slug}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-[#6BAF92] transition hover:text-[#4a8a6e]"
+                            >
+                                {post.author_name}
+                            </Link>
+                        ) : (
+                            <span className="text-xs text-gray-400">
+                                {post.author_name}
+                            </span>
+                        )}
                     </div>
 
                     {/* Read more */}
@@ -109,7 +120,7 @@ export default function BlogCard({
                         Leer más →
                     </span>
                 </div>
-            </Link>
+            </div>
         </motion.div>
     );
 }

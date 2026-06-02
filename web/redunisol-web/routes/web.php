@@ -63,6 +63,8 @@ Route::get('/blog', [BlogController::class, 'index'])->name('blog.index');
 Route::get('/blog/{slug}', [BlogController::class, 'show'])->name('blog.show');
 Route::get('/category/{slug}', [BlogController::class, 'category'])->name('blog.category');
 
+Route::get('/autores/{slug}', [BlogController::class, 'author'])->name('author.show');
+
 Route::get('/finalizar', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar');
 Route::get('/finalizar.php', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar.legacy');
 

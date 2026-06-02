@@ -18,6 +18,7 @@ class Blog extends Model
         'excerpt',
         'image',
         'author_id',
+        'author_entity_id',
         'meta_title',
         'meta_description',
         'keyword',
@@ -30,7 +31,7 @@ class Blog extends Model
         'published_at' => 'datetime',
     ];
 
-    protected $appends = ['image_url'];
+    protected $appends = ['image_url', 'author_slug'];
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
@@ -42,7 +43,14 @@ class Blog extends Model
 
     public function getAuthorNameAttribute(): string
     {
-        return $this->author_display ?: ($this->author?->name ?? 'Red Unisol');
+        return $this->authorProfile?->name
+            ?: $this->author_display
+            ?: ($this->author?->name ?? 'Red Unisol');
+    }
+
+    public function getAuthorSlugAttribute(): ?string
+    {
+        return $this->authorProfile?->slug;
     }
 
     // ── Scopes ───────────────────────────────────────────────────────────────
@@ -58,6 +66,11 @@ class Blog extends Model
     public function author(): BelongsTo
     {
         return $this->belongsTo(User::class, 'author_id');
+    }
+
+    public function authorProfile(): BelongsTo
+    {
+        return $this->belongsTo(Author::class, 'author_entity_id');
     }
 
     public function categories(): BelongsToMany

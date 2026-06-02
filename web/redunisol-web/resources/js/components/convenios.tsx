@@ -2,6 +2,8 @@ import { Link } from '@inertiajs/react';
 import { HandshakeIcon } from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
 
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+
 export interface ConvenioItem {
     name: string;
     detail?: string;
@@ -11,6 +13,7 @@ export interface ConvenioItem {
 export interface ConveniosData {
     title: string;
     items: ConvenioItem[];
+    cta?: SectionCta;
 }
 
 function ConvenioCard({ item, index }: { item: ConvenioItem; index: number }) {
@@ -59,7 +62,7 @@ export default function Convenios({ data }: { data: ConveniosData }) {
                     className="m-auto mb-8 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <HandshakeIcon size={24} />
-                    <p className="text-normal font-bold">{data.title}</p>
+                    <h2 className="text-normal font-bold">{data.title}</h2>
                 </motion.div>
 
                 <div className="grid gap-6 md:grid-cols-2">
@@ -67,6 +70,7 @@ export default function Convenios({ data }: { data: ConveniosData }) {
                         <ConvenioCard key={i} item={item} index={i} />
                     ))}
                 </div>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

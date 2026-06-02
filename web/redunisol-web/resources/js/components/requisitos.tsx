@@ -1,9 +1,15 @@
-import { CheckCircleIcon, ClipboardTextIcon } from '@phosphor-icons/react/dist/ssr';
+import {
+    CheckCircleIcon,
+    ClipboardTextIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import { motion } from 'framer-motion';
+
+import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
 
 export interface RequisitosData {
     title: string;
     items: { text: string }[];
+    cta?: SectionCta;
 }
 
 export default function Requisitos({ data }: { data: RequisitosData }) {
@@ -17,7 +23,7 @@ export default function Requisitos({ data }: { data: RequisitosData }) {
                     className="m-auto mb-8 flex w-fit items-center gap-4 rounded-xl border p-2"
                 >
                     <ClipboardTextIcon size={24} />
-                    <p className="text-normal font-bold">{data.title}</p>
+                    <h2 className="text-normal font-bold">{data.title}</h2>
                 </motion.div>
 
                 <ul className="space-y-4 text-left">
@@ -26,7 +32,10 @@ export default function Requisitos({ data }: { data: RequisitosData }) {
                             key={i}
                             initial={{ opacity: 0, y: 30 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.15 + i * 0.07, duration: 0.5 }}
+                            transition={{
+                                delay: 0.15 + i * 0.07,
+                                duration: 0.5,
+                            }}
                             className="flex items-start gap-3"
                         >
                             <CheckCircleIcon
@@ -40,6 +49,7 @@ export default function Requisitos({ data }: { data: RequisitosData }) {
                         </motion.li>
                     ))}
                 </ul>
+                <SectionCtaButton cta={data.cta} />
             </div>
         </section>
     );

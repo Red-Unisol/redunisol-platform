@@ -1,6 +1,6 @@
+import { type SectionCta } from '@/components/section-cta';
 import {
     CheckCircleIcon,
-    MouseScrollIcon,
     UploadSimple,
     WarningCircleIcon,
     XIcon,
@@ -24,6 +24,7 @@ export interface FormSectionConfig {
     provincia: { enabled: boolean; defaultValue?: string };
     situacionLaboral: FormFieldConfig & { defaultValue?: string };
     banco: FormFieldConfig & { defaultValue?: string };
+    success_cta?: SectionCta;
 }
 
 const DEFAULT_CONFIG: FormSectionConfig = {
@@ -292,9 +293,12 @@ function Step1({
                                 className="h-4.5 w-4.5 cursor-pointer rounded border-gray-300 accent-[#6BAF92]"
                             />
                         </div>
-                        <span className="text-sm leading-snug text-gray-500">
-                            {cfg.terminos.label}
-                        </span>
+                        <span
+                            className="text-sm leading-snug text-gray-500"
+                            dangerouslySetInnerHTML={{
+                                __html: cfg.terminos.label,
+                            }}
+                        />
                     </label>
                 )}
             </div>
@@ -546,11 +550,13 @@ function ResultModal({
     errorMessage,
     onClose,
     onReset,
+    successCta,
 }: {
     result: 'success' | 'error' | 'not_qualified';
     errorMessage: string | null;
     onClose: () => void;
     onReset: () => void;
+    successCta?: SectionCta;
 }) {
     const isSuccess = result === 'success';
     const isNotQualified = result === 'not_qualified';
@@ -656,16 +662,27 @@ function ResultModal({
                     className="flex flex-col gap-3"
                 >
                     {isSuccess ? (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onReset();
-                                onClose();
-                            }}
-                            className="w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
-                        >
-                            Listo
-                        </button>
+                        successCta?.enabled && successCta.link ? (
+                            <a
+                                href={successCta.link}
+                                className="block w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
+                            >
+                                {successCta.text || 'Listo'}
+                            </a>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onReset();
+                                    onClose();
+                                }}
+                                className="w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
+                            >
+                                {successCta?.enabled
+                                    ? successCta.text || 'Listo'
+                                    : 'Listo'}
+                            </button>
+                        )
                     ) : isNotQualified ? (
                         <>
                             <button
@@ -895,7 +912,7 @@ export default function FormSection({
     };
 
     return (
-        <section className="w-full py-16">
+        <section className="w-full py-4">
             <div className="mx-auto max-w-lg px-4">
                 <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     {/* Step header */}
@@ -1003,14 +1020,6 @@ export default function FormSection({
                         </div>
                     </div>
                 </div>
-
-                {/* Scroll hint */}
-                <div className="mt-8 flex items-center justify-center gap-3 pb-8">
-                    <MouseScrollIcon size={24} className="text-[#8a9bb5]" />
-                    <span className="text-normal font-bold text-[#8a9bb5]">
-                        Scroll para seguir viendo
-                    </span>
-                </div>
             </div>
 
             {/* Result modal — rendered outside the card, fixed overlay */}
@@ -1024,6 +1033,7 @@ export default function FormSection({
                             setErrorMessage(null);
                         }}
                         onReset={handleReset}
+                        successCta={cfg.success_cta}
                     />
                 )}
             </AnimatePresence>
