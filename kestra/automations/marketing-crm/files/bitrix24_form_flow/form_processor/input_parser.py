@@ -25,6 +25,7 @@ class NormalizedInput:
     utm_campaign: str | None = None
     utm_term: str | None = None
     utm_content: str | None = None
+    recibo_url: str | None = None
 
 
 def parse_body(body: str, content_type: str | None = None) -> dict[str, Any]:
@@ -77,6 +78,7 @@ def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
         utm_campaign=_optional_string(payload.get("utm_campaign")),
         utm_term=_optional_string(payload.get("utm_term")),
         utm_content=_optional_string(payload.get("utm_content")),
+        recibo_url=_optional_string(payload.get("recibo_url")),
     )
 
 

@@ -440,7 +440,7 @@ def submission_payload_with_original_tracking(
         "lead_source": submission.lead_source.label,
     }
 
-    for key in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"):
+    for key in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "recibo_url"):
         value = payload.get(key)
         if value is not None and str(value).strip():
             normalized_payload[key] = str(value).strip()

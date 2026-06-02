@@ -57,7 +57,8 @@ Formato canónico recomendado:
   "utm_medium": "cpc",
   "utm_campaign": "policias-abril",
   "utm_term": "prestamo policia cordoba",
-  "utm_content": "anuncio-a"
+  "utm_content": "anuncio-a",
+  "recibo_url": "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf"
 }
 ```
 
@@ -67,6 +68,7 @@ Compatibilidad legacy:
 - acepta también IDs de Bitrix24 para provincia, situación laboral, banco y origen
 - si llegan `utm_source`, `utm_medium`, `utm_campaign`, `utm_term` y `utm_content`, se reenvian al lead de Bitrix en los campos estandar `UTM_*`
 - si no llegan campos UTM, no se envian a Bitrix
+- si llega `recibo_url`, se descarga el archivo y se adjunta al lead en el campo de tipo archivo `recibo`
 - por ahora `landing_url`, `landing_slug` y `landing_title` no se usan en el flow de Kestra
 
 ## Salida
@@ -117,6 +119,7 @@ Opcionales para override de campos del lead:
 - `BITRIX24_LEAD_UTM_CAMPAIGN_FIELD`
 - `BITRIX24_LEAD_UTM_TERM_FIELD`
 - `BITRIX24_LEAD_UTM_CONTENT_FIELD`
+- `BITRIX24_LEAD_RECIBO_FILE_FIELD`
 
 Valores actualmente confirmados en el CRM:
 
@@ -139,6 +142,7 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_UTM_CAMPAIGN_FIELD=UTM_CAMPAIGN`
 - `BITRIX24_LEAD_UTM_TERM_FIELD=UTM_TERM`
 - `BITRIX24_LEAD_UTM_CONTENT_FIELD=UTM_CONTENT`
+- `BITRIX24_LEAD_RECIBO_FILE_FIELD=UF_CRM_64F9E8DA4DD9B` (`recibo`)
 - estado de lead para calificados: `UC_64AUC9` (`RESULTADO GANADO`)
 - estado de lead para rechazados: `UC_1P8I07` (`RESULTADO PERDIDO`)
 

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -327,6 +328,26 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(submission.payment_bank.key, "banco_de_la_nacion_argentina")
         self.assertEqual(submission.lead_source.key, "google")
 
+    def test_normalize_payload_keeps_recibo_url(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Cordoba",
+                "employment_status": "Docente",
+                "payment_bank": "Banco de la Provincia de Cordoba S.A.",
+                "lead_source": "Google",
+                "recibo_url": "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf",
+            }
+        )
+
+        self.assertEqual(
+            submission.recibo_url,
+            "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf",
+        )
+
     def test_normalize_docente_payload(self) -> None:
         submission = normalize_business_input(
             {
@@ -579,6 +600,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "payment_bank": "Banco Santander Rio S.A.",
                 "lead_source": "Facebook",
                 "utm_source": "google",
+                "recibo_url": "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf",
             },
             bcra_client=bcra_client,
             logger=SilentLogger(),
@@ -593,6 +615,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(bcra_client.calls, ["20876543219"])
         self.assertEqual(result["payload"]["full_name"], "Luis Diaz")
         self.assertEqual(result["payload"]["utm_source"], "google")
+        self.assertEqual(
+            result["payload"]["recibo_url"],
+            "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf",
+        )
         self.assertEqual(result["bcra_result"]["identification"], "20876543219")
 
     def test_prequalify_submission_skips_bcra_for_la_rioja(self) -> None:
@@ -694,6 +720,38 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertNotIn("UTM_CAMPAIGN", client.calls[-1][1]["fields"])
         self.assertNotIn("UTM_TERM", client.calls[-1][1]["fields"])
         self.assertNotIn("UTM_CONTENT", client.calls[-1][1]["fields"])
+
+    def test_ingest_submission_attaches_recibo_file_to_lead(self) -> None:
+        client = FakeBitrixClient()
+        recibo_url = "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf"
+
+        with patch(
+            "bitrix24_form_flow.form_processor.lead_service.build_bitrix_file_data",
+            return_value={"fileData": ["abc.pdf", "BASE64"]},
+        ) as build_file_data:
+            result = ingest_submission(
+                {
+                    "full_name": "Luis Diaz",
+                    "email": "luis@example.com",
+                    "whatsapp": "3511234567",
+                    "cuil": "20-87654321-9",
+                    "province": "Cordoba",
+                    "employment_status": "Jubilado Provincial",
+                    "payment_bank": "Banco Santander Rio S.A.",
+                    "lead_source": "Facebook",
+                    "recibo_url": recibo_url,
+                },
+                env=self.env,
+                bitrix_client=client,
+                logger=SilentLogger(),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            client.calls[-1][1]["fields"]["UF_CRM_64F9E8DA4DD9B"],
+            {"fileData": ["abc.pdf", "BASE64"]},
+        )
+        build_file_data.assert_called_once_with(recibo_url, timeout_seconds=30)
 
     def test_classify_lead_skips_when_processing_policy_is_not_process(self) -> None:
         client = FakeBitrixClient()
