@@ -43,6 +43,43 @@ it('loads legacy finalizar urls and resolves caja loan data server side', functi
         && $request->method() === 'POST');
 });
 
+it('uses the default metamap flow when the requested line does not match', function () {
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/245756' => Http::response([
+            'montoAfinanciar' => '$ 80.000,00',
+            'cuotaResultante' => '12000,00',
+            'nombreSocio' => 'Maria Lopez',
+            'cuotas' => '8',
+            'prestamoCFT' => '2.50',
+            'prestamoTEM' => '0.08',
+            'prestamoTNA' => '2.10',
+            'prestamoTEA' => '15.50',
+            'NumeroPrestamo' => '8001',
+            'CapitalOriginal' => '80000.00',
+            'MontoPrestamo' => '96000.00',
+            'PrimerVencimiento' => '2026-07-10T00:00:00',
+            'Vencimiento' => '2027-02-10T00:00:00',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=245756&ntrans=0&linea=Celesol')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.linea', 'caja')
+            ->where('finalizar.loan.solicitud', '245756')
+            ->where('finalizar.metamap.flow_id', '6453e19ef6fa8c001c7af03e')
+            ->where('finalizar.metamap.doc_id', 'e51bc831-5b64-417b-9f9d-ac9167317590')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey.value', '245756')
+        );
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://caja.example.test/api/redunisol/finSolicitud/0/245756'
+        && $request->method() === 'POST');
+});
+
 it('maps its solicitudes and infers the metamap line', function () {
     config()->set('finalizar.metamap.client_id', 'public-client-id');
     config()->set('finalizar.its.base_url', 'https://its.example.test');
