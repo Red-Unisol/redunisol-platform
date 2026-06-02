@@ -17,6 +17,7 @@ DEFAULT_LEAD_FIELDS = {
     "utm_campaign": "UTM_CAMPAIGN",
     "utm_term": "UTM_TERM",
     "utm_content": "UTM_CONTENT",
+    "recibo": "UF_CRM_64F9E8DA4DD9B",
 }
 
 DEFAULT_PROCESSING_POLICIES = {
@@ -44,6 +45,7 @@ class BitrixFieldsConfig:
     lead_utm_campaign: str
     lead_utm_term: str
     lead_utm_content: str
+    lead_recibo_file: str | None
 
     def has_bcra_storage_fields(self) -> bool:
         return all(
@@ -135,6 +137,10 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             lead_utm_content=source.get(
                 "BITRIX24_LEAD_UTM_CONTENT_FIELD",
                 DEFAULT_LEAD_FIELDS["utm_content"],
+            ),
+            lead_recibo_file=source.get(
+                "BITRIX24_LEAD_RECIBO_FILE_FIELD",
+                DEFAULT_LEAD_FIELDS["recibo"],
             ),
         ),
         lead_statuses=LeadStatusesConfig(
