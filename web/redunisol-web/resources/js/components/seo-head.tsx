@@ -32,8 +32,8 @@ export default function SeoHead({
     const fullTitle = title.includes(appName) ? title : `${title} | ${appName}`;
     const defaultOgImage =
         typeof window !== 'undefined'
-            ? `${window.location.origin}/og-image.png`
-            : 'https://redunisol.com.ar/og-image.png';
+            ? `${window.location.origin}/logo.jpeg`
+            : 'https://redunisol.com.ar/logo.jpeg';
     const socialImage = ogImage || defaultOgImage;
 
     return (
@@ -51,8 +51,8 @@ export default function SeoHead({
                 <meta property="og:description" content={ogDescription} />
             )}
             <meta property="og:image" content={socialImage} />
-            <meta property="og:image:width" content="1200" />
-            <meta property="og:image:height" content="630" />
+            <meta property="og:image:width" content="400" />
+            <meta property="og:image:height" content="400" />
 
             {/* Twitter */}
             <meta name="twitter:card" content="summary_large_image" />
