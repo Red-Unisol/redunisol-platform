@@ -29,7 +29,8 @@ NOVEDAD_FIELDS = (
 CLOSED_STATES = {"pagada", "abandonada", "rechazada"}
 TRANSFER_START_STATE = "a transferir"
 TRANSFER_END_STATE = "pagada"
-EXCLUDED_LINE_KEYWORDS = ("medica", "carlos paz")
+FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS = ("carlos paz",)
+TRANSFER_EXCLUDED_LINE_KEYWORDS = ("medica", "carlos paz")
 LOCAL_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
@@ -311,7 +312,7 @@ def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float
         if first_rr_index is None:
             continue
         first_rr_event = state_events[first_rr_index]
-        if is_excluded_line(first_rr_event.linea_descripcion):
+        if is_excluded_line(first_rr_event.linea_descripcion, FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS):
             continue
         response_event = next(
             (
@@ -327,9 +328,9 @@ def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float
     return values
 
 
-def is_excluded_line(linea: Optional[str]) -> bool:
+def is_excluded_line(linea: Optional[str], keywords: Sequence[str]) -> bool:
     normalized = normalize_text(linea)
-    return any(keyword in normalized for keyword in EXCLUDED_LINE_KEYWORDS)
+    return any(keyword in normalized for keyword in keywords)
 
 
 def compute_transfer_minutes(events: Sequence[NovedadEvent]) -> list[float]:
@@ -345,7 +346,7 @@ def compute_transfer_minutes(events: Sequence[NovedadEvent]) -> list[float]:
         if not paid_currently:
             continue
         linea = next((event.linea_descripcion for event in with_datetime if event.linea_descripcion), None)
-        if is_excluded_line(linea):
+        if is_excluded_line(linea, TRANSFER_EXCLUDED_LINE_KEYWORDS):
             continue
         transfer_events = [
             event for event in with_datetime if normalize_text(event.parsed_state) == TRANSFER_START_STATE
@@ -477,8 +478,8 @@ def build_snapshot() -> tuple[Path, dict[str, Any]]:
         "reglas": {
             "primera_respuesta": "desde primera RevisionRiesgo hasta primer cambio de estado posterior, solo horario laboral lunes a viernes 08:00-17:00",
             "transferencia": "ultimo Pagada y A Transferir inmediatamente anterior, solo horario laboral lunes a viernes 08:00-17:00",
-            "lineas_excluidas_primera_respuesta": list(EXCLUDED_LINE_KEYWORDS),
-            "lineas_excluidas_transferencia": list(EXCLUDED_LINE_KEYWORDS),
+            "lineas_excluidas_primera_respuesta": list(FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS),
+            "lineas_excluidas_transferencia": list(TRANSFER_EXCLUDED_LINE_KEYWORDS),
         },
         "thresholds": {
             "verde": "actual <= objetivo",

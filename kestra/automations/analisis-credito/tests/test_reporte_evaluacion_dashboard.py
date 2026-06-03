@@ -59,20 +59,34 @@ class ReporteEvaluacionDashboardTests(unittest.TestCase):
             make_event(
                 event_id=3,
                 solicitud_oid=200,
-                linea="PROPIA RECURRENTE CBU",
+                linea="LINEA MEDICA ESPECIAL",
                 state="RevisionRiesgo",
                 created_at=datetime(2026, 6, 1, 9, 0, 0),
             ),
             make_event(
                 event_id=4,
                 solicitud_oid=200,
+                linea="LINEA MEDICA ESPECIAL",
+                state="Confirmada",
+                created_at=datetime(2026, 6, 1, 9, 15, 0),
+            ),
+            make_event(
+                event_id=5,
+                solicitud_oid=300,
+                linea="PROPIA RECURRENTE CBU",
+                state="RevisionRiesgo",
+                created_at=datetime(2026, 6, 1, 9, 0, 0),
+            ),
+            make_event(
+                event_id=6,
+                solicitud_oid=300,
                 linea="PROPIA RECURRENTE CBU",
                 state="Confirmada",
                 created_at=datetime(2026, 6, 1, 9, 30, 0),
             ),
         ]
 
-        self.assertEqual(compute_first_response_minutes(events), [30.0])
+        self.assertEqual(compute_first_response_minutes(events), [15.0, 30.0])
 
 
 if __name__ == "__main__":
