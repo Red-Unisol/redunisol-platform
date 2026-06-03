@@ -30,6 +30,11 @@ export default function SeoHead({
 }: SeoHeadProps) {
     const appName = 'Red Unisol';
     const fullTitle = title.includes(appName) ? title : `${title} | ${appName}`;
+    const defaultOgImage =
+        typeof window !== 'undefined'
+            ? `${window.location.origin}/og-image.png`
+            : 'https://redunisol.com.ar/og-image.png';
+    const socialImage = ogImage || defaultOgImage;
 
     return (
         <Head>
@@ -45,7 +50,9 @@ export default function SeoHead({
             {ogDescription && (
                 <meta property="og:description" content={ogDescription} />
             )}
-            {ogImage && <meta property="og:image" content={ogImage} />}
+            <meta property="og:image" content={socialImage} />
+            <meta property="og:image:width" content="1200" />
+            <meta property="og:image:height" content="630" />
 
             {/* Twitter */}
             <meta name="twitter:card" content="summary_large_image" />
@@ -53,7 +60,7 @@ export default function SeoHead({
             {ogDescription && (
                 <meta name="twitter:description" content={ogDescription} />
             )}
-            {ogImage && <meta name="twitter:image" content={ogImage} />}
+            <meta name="twitter:image" content={socialImage} />
 
             {/* Additional meta tags */}
             <meta

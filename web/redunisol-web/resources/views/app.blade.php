@@ -47,6 +47,18 @@
         </style>
 
         <title inertia>{{ config('app.name', 'Red Unisol') }}</title>
+        <meta name="description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
+        <meta property="og:site_name" content="{{ config('app.name', 'Red Unisol') }}">
+        <meta property="og:type" content="website">
+        <meta property="og:title" content="{{ config('app.name', 'Red Unisol') }}">
+        <meta property="og:description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
+        <meta property="og:image" content="{{ asset('og-image.png') }}">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="630">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="{{ config('app.name', 'Red Unisol') }}">
+        <meta name="twitter:description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
+        <meta name="twitter:image" content="{{ asset('og-image.png') }}">
 
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
