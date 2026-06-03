@@ -23,9 +23,13 @@ services:
       ANALISIS_CREDITO_CACHE_TIMEOUT_SECONDS: 3
       CONTABILIDAD_TRANSFER_PRIVATE_SLUG: ${CONTABILIDAD_TRANSFER_PRIVATE_SLUG}
       CONTABILIDAD_TRANSFER_OUTPUT_ROOT: /data/contabilidad-transfer
+      OBJECTIVES_DASHBOARD_PRIVATE_SLUG: ${OBJECTIVES_DASHBOARD_PRIVATE_SLUG:-oficina}
+      OBJECTIVES_DASHBOARD_SNAPSHOT_PATH: /data/reporte-evaluacion/dashboard/latest.json
+      OBJECTIVES_DASHBOARD_REFRESH_SECONDS: ${OBJECTIVES_DASHBOARD_REFRESH_SECONDS:-60}
       LOG_CHANNEL: ${LOG_CHANNEL}
     volumes:
       - /opt/kestra/data/contabilidad-transfer:/data/contabilidad-transfer:ro
+      - /opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion:ro
     restart: unless-stopped
 
   credixsa-cache-api:

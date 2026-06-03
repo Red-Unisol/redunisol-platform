@@ -72,7 +72,8 @@ tasks:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "30"
-      CREDIX_DEBUG: "false"
+      CREDIX_DEBUG: "{{ envs.credix_debug ?? 'true' }}"
+      CREDIX_DEBUG_DIR: "/data/credixsa-cache/debug"
       CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
       CREDIX_USER: "{{ secret('CREDIX_USER') }}"
       CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
@@ -120,6 +121,9 @@ outputs:
   - id: data_json
     type: STRING
     value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.data_json : outputs.responder_cache.vars.data_json }}"
+  - id: normalized_json
+    type: STRING
+    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.normalized_json : outputs.responder_cache.vars.normalized_json }}"
   - id: response_json
     type: STRING
     value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.response_json : outputs.responder_cache.vars.response_json }}"

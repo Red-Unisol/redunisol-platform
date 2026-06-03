@@ -8,7 +8,7 @@ from pathlib import Path
 
 from coinag_balance_guard.coinag import extract_balance_amount, sanitize_headers, sanitize_url
 from coinag_balance_guard.config import AppConfig, BalanceGuardConfig, CoinagConfig
-from coinag_balance_guard.guard import _run_guard_locked
+from coinag_balance_guard.guard import _run_guard_locked, build_id_trx_cliente
 
 
 class FakeClient:
@@ -50,7 +50,9 @@ def make_config(tmp_path: Path, *, dry_run: bool = False) -> AppConfig:
             source_titular="Fondeadora",
             minimum_balance=Decimal("30000000"),
             description="Fondeo automatico",
-            id_prefix="FONDEO",
+            id_prefix="9036",
+            id_sequence_start=10000000,
+            id_sequence_path=tmp_path / "id_sequence.txt",
             dry_run=dry_run,
             cooldown_seconds=900,
             stale_lock_seconds=900,
@@ -94,6 +96,7 @@ class CoinagBalanceGuardTests(unittest.TestCase):
         self.assertEqual(client.transfers[0]["importe"], "5000000.00")
         self.assertEqual(client.transfers[0]["cbuDebito"], "222222")
         self.assertEqual(client.transfers[0]["cbuCredito"], "111111")
+        self.assertEqual(client.transfers[0]["idTrxCliente"], "9036000000010000000")
 
     def test_guard_transfers_even_when_source_balance_is_negative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,6 +136,18 @@ class CoinagBalanceGuardTests(unittest.TestCase):
 
         self.assertEqual(result.event, "cooldown_active")
         self.assertEqual(client.transfers, [])
+
+    def test_id_trx_cliente_uses_persistent_incremental_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "id_sequence.txt"
+
+            first = build_id_trx_cliente("9036", path, 10000000)
+            second = build_id_trx_cliente("9036", path, 10000000)
+            third = build_id_trx_cliente("9036", path, 10000000)
+
+        self.assertEqual(first, "9036000000010000000")
+        self.assertEqual(second, "9036000000010000001")
+        self.assertEqual(third, "9036000000010000002")
 
 
 if __name__ == "__main__":

@@ -77,4 +77,9 @@ return [
         'path' => 'contabilidad/'.env('CONTABILIDAD_TRANSFER_PRIVATE_SLUG', '77q330j56z'),
         'output_root' => env('CONTABILIDAD_TRANSFER_OUTPUT_ROOT', '/data/contabilidad-transfer'),
     ],
+    'objectives' => [
+        'path' => 'objetivos/'.env('OBJECTIVES_DASHBOARD_PRIVATE_SLUG', 'oficina'),
+        'snapshot_path' => env('OBJECTIVES_DASHBOARD_SNAPSHOT_PATH', storage_path('app/private/objetivos/latest.json')),
+        'refresh_seconds' => (int) env('OBJECTIVES_DASHBOARD_REFRESH_SECONDS', 60),
+    ],
 ];

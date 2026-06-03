@@ -7,6 +7,16 @@ use Tests\TestCase;
 
 class ConsultaQuiebraCredixTest extends TestCase
 {
+    public function test_credixsa_page_renders_with_dedicated_payload(): void
+    {
+        $response = $this->get('/credixsa');
+
+        $response
+            ->assertOk()
+            ->assertSee('"page":"credixsa"', false)
+            ->assertSee('/api/tools/consulta-quiebra-credix', false);
+    }
+
     public function test_it_requires_at_least_one_search_criterion(): void
     {
         $response = $this->postJson('/api/tools/consulta-quiebra-credix', [

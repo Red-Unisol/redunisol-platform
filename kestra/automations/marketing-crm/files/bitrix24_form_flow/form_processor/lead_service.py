@@ -7,6 +7,7 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .input_parser import NormalizedInput, normalize_business_input
 from .logger import Logger
+from .receipt_file import build_bitrix_file_data
 
 
 def create_lead(
@@ -36,6 +37,12 @@ def create_lead(
     }
 
     fields.update(_build_optional_tracking_fields(config, submission))
+    if config.fields.lead_recibo_file and submission.recibo_url:
+        logger.info("Adjuntando recibo al lead.")
+        fields[config.fields.lead_recibo_file] = build_bitrix_file_data(
+            submission.recibo_url,
+            timeout_seconds=config.timeout_seconds,
+        )
 
     lead_id = client.call(
         "crm.lead.add",

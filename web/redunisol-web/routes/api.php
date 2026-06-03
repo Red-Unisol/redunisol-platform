@@ -14,9 +14,18 @@ Route::post('/recibos/upload', function (Request $request) {
         'recibo' => 'required|file|mimes:jpg,jpeg,png,gif,pdf|max:10240',
     ]);
 
-    $path = $request->file('recibo')->store('recibos', 'public');
+    $diskName = (string) config('filesystems.recibos_disk', 'public');
+    $disk = Storage::disk($diskName);
+    $path = $request->file('recibo')->store('recibos', $diskName);
+    $expiresAt = now()->addMinutes((int) config('filesystems.recibos_temporary_url_minutes', 10080));
+
+    try {
+        $url = $disk->temporaryUrl($path, $expiresAt);
+    } catch (Throwable) {
+        $url = $disk->url($path);
+    }
 
     return response()->json([
-        'url' => Storage::disk('public')->url($path),
+        'url' => $url,
     ]);
 })->name('api.recibos.upload');

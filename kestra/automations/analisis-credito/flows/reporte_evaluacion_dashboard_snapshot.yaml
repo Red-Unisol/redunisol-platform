@@ -1,0 +1,63 @@
+id: reporte_evaluacion_dashboard_snapshot
+namespace: redunisol
+
+description: Genera el snapshot JSON para la pantalla de objetivos de tiempos de evaluacion.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: schedule
+  domain: analisis-credito
+  integration: devexpress-evaluate
+  schedule_scope: prod_only
+
+inputs:
+  - id: run_month
+    type: STRING
+    required: false
+    description: Mes objetivo en formato YYYY-MM. Si se omite, usa el mes local actual.
+
+tasks:
+  - id: generar_snapshot
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - reporte_evaluacion_dashboard/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra requests urllib3 > /dev/null
+    env:
+      OBJECTIVES_RUN_MONTH: "{{ inputs.run_month ?? '' }}"
+      OBJECTIVES_DASHBOARD_SNAPSHOT_PATH: "/data/reporte-evaluacion/dashboard/latest.json"
+      OBJECTIVES_YELLOW_THRESHOLD_PCT: "{{ envs.objectives_yellow_threshold_pct ?? '15' }}"
+      REPORTE_EVALUACION_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      REPORTE_EVALUACION_TIMEOUT_SECONDS: "{{ envs.reporte_evaluacion_timeout_seconds ?? '60' }}"
+      REPORTE_EVALUACION_PER_DAY_MAX: "{{ envs.reporte_evaluacion_per_day_max ?? '20000' }}"
+      REPORTE_EVALUACION_VERIFY_SSL: "false"
+    commands:
+      - python -m reporte_evaluacion_dashboard.generate_snapshot
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.generar_snapshot.vars.ok }}"
+  - id: snapshot_path
+    type: STRING
+    value: "{{ outputs.generar_snapshot.vars.snapshot_path }}"
+  - id: periodo_actual
+    type: STRING
+    value: "{{ outputs.generar_snapshot.vars.periodo_actual }}"
+  - id: metricas_json
+    type: STRING
+    value: "{{ outputs.generar_snapshot.vars.metricas_json }}"
+
+triggers:
+  - id: horario_oficina
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/30 8-18 * * 1-5"
+    timezone: America/Argentina/Buenos_Aires

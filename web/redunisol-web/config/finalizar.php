@@ -3,6 +3,9 @@
 return [
     'metamap' => [
         'client_id' => env('FINALIZAR_METAMAP_CLIENT_ID'),
+        'default_flow_id' => '6453e19ef6fa8c001c7af03e',
+        'default_doc_id' => 'e51bc831-5b64-417b-9f9d-ac9167317590',
+        'default_extra_html' => '',
     ],
 
     'legacy_clients' => [

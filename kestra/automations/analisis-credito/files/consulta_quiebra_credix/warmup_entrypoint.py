@@ -151,6 +151,7 @@ def load_credix_config() -> CredixConfig:
         login_url=os.getenv("CREDIX_LOGIN_URL", "https://www.credixsa.com/nuevo/login.php").strip(),
         timeout_ms=timeout_seconds * 1000,
         debug_enabled=os.getenv("CREDIX_DEBUG", "").strip().lower() in {"1", "true", "yes"},
+        debug_dir=os.getenv("CREDIX_DEBUG_DIR", "").strip(),
     )
 
 

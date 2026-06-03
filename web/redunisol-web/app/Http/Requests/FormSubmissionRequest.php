@@ -55,7 +55,7 @@ class FormSubmissionRequest extends FormRequest
             'landing_slug' => ['required', 'string', 'max:255'],
             'landing_title' => ['nullable', 'string', 'max:255'],
             'landing_url' => ['nullable', 'url', 'max:2048'],
-            'recibo_url' => ['nullable', 'url', 'max:2048'],
+            'recibo_url' => ['nullable', 'url', 'max:4096'],
             'utm_source' => ['nullable', 'string', 'max:120'],
             'utm_medium' => ['nullable', 'string', 'max:120'],
             'utm_campaign' => ['nullable', 'string', 'max:150'],

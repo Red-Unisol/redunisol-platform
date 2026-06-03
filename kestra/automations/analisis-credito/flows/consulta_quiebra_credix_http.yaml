@@ -53,6 +53,9 @@ outputs:
   - id: data_json
     type: STRING
     value: "{{ outputs.consultar_quiebra.vars.data_json }}"
+  - id: normalized_json
+    type: STRING
+    value: "{{ outputs.consultar_quiebra.vars.normalized_json }}"
   - id: response_json
     type: STRING
     value: "{{ outputs.consultar_quiebra.vars.response_json }}"

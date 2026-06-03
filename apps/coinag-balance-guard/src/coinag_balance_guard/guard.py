@@ -129,7 +129,11 @@ def _run_guard_locked(config: AppConfig, client: CoinagClient) -> GuardResult:
 
 def build_transfer_payload(config: AppConfig, amount: Decimal) -> dict[str, str]:
     return {
-        "idTrxCliente": build_id_trx_cliente(config.guard.id_prefix),
+        "idTrxCliente": build_id_trx_cliente(
+            config.guard.id_prefix,
+            config.guard.id_sequence_path,
+            config.guard.id_sequence_start,
+        ),
         "cuitDebito": config.guard.source_cuit,
         "cbuDebito": config.guard.source_cbu,
         "titularDebito": config.guard.source_titular,
@@ -141,9 +145,33 @@ def build_transfer_payload(config: AppConfig, amount: Decimal) -> dict[str, str]
     }
 
 
-def build_id_trx_cliente(prefix: str) -> str:
-    clean_prefix = "".join(ch for ch in prefix if ch.isalnum() or ch == "-") or "FONDEO"
-    return f"{clean_prefix}-{utc_now().strftime('%Y%m%d%H%M%S')}"
+def build_id_trx_cliente(prefix: str, sequence_path: Path, sequence_start: int) -> str:
+    clean_prefix = "".join(ch for ch in prefix if ch.isdigit())
+    if not clean_prefix:
+        raise ValueError("BALANCE_GUARD_ID_PREFIX debe contener digitos.")
+    if len(clean_prefix) > 4:
+        raise ValueError("BALANCE_GUARD_ID_PREFIX debe tener entre 1 y 4 digitos.")
+    if sequence_start < 0:
+        raise ValueError("BALANCE_GUARD_ID_SEQUENCE_START debe ser mayor o igual a 0.")
+
+    sequence_path.parent.mkdir(parents=True, exist_ok=True)
+    sequence = read_next_id_sequence(sequence_path, sequence_start)
+    if sequence > 999_999_999_999_999:
+        raise ValueError("BALANCE_GUARD_ID_SEQUENCE excede los 15 digitos.")
+    sequence_path.write_text(f"{sequence + 1}\n", encoding="utf-8")
+    return f"{clean_prefix}{sequence:015d}"
+
+
+def read_next_id_sequence(path: Path, sequence_start: int) -> int:
+    if not path.exists():
+        return sequence_start
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return sequence_start
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"Secuencia invalida en {path}: {raw}") from exc
 
 
 def read_last_transfer(path: Path) -> Optional[dict[str, Any]]:

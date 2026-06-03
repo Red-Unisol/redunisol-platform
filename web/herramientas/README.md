@@ -33,8 +33,46 @@ Copiar `.env.example` a `.env` y completar al menos:
 - `ANALISIS_CREDITO_CONSULTA_EMPLEADOR_WEBHOOK_URL`
 - `ANALISIS_CREDITO_CONSULTA_CUAD_WEBHOOK_URL`
 - `ANALISIS_CREDITO_TIMEOUT_SECONDS`
+- `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH`
 
 Cada una de esas URLs debe apuntar al webhook completo expuesto por Kestra para el flow correspondiente. Esas URLs quedan solo del lado servidor y no se exponen al navegador.
+
+## Dashboard de objetivos
+
+La pantalla interna de objetivos vive en:
+
+```text
+/objetivos/{OBJECTIVES_DASHBOARD_PRIVATE_SLUG}
+```
+
+El backend lee un snapshot JSON desde `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH` y lo expone al frontend sin cache. Kestra debe publicar ese archivo con este contrato minimo:
+
+```json
+{
+  "periodo_actual": "2026-05",
+  "actualizado_en": "2026-05-21T10:30:00-03:00",
+  "metricas": [
+    {
+      "id": "first_response",
+      "nombre": "Tiempo de Primera Respuesta",
+      "actual_min": 20.4,
+      "objetivo_min": 21.95,
+      "casos": 850,
+      "estado": "verde"
+    },
+    {
+      "id": "transfer",
+      "nombre": "Tiempo de Transferencia",
+      "actual_min": 27.6,
+      "objetivo_min": 26.19,
+      "casos": 420,
+      "estado": "amarillo"
+    }
+  ]
+}
+```
+
+Estados esperados: `verde`, `amarillo`, `rojo`. Si `estado` no viene, el frontend calcula una clasificacion provisoria contra el objetivo.
 
 ## Desarrollo local
 

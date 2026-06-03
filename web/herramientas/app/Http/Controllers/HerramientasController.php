@@ -15,6 +15,21 @@ class HerramientasController extends Controller
         if (! $this->isEnabled()) {
             return $this->renderDisabledPage();
         }
+
+        return $this->renderApp();
+    }
+
+    public function credixsa()
+    {
+        if (! $this->isEnabled()) {
+            return $this->renderDisabledPage();
+        }
+
+        return $this->renderApp('credixsa');
+    }
+
+    private function renderApp(string $page = 'home')
+    {
         $tools = collect(config('tools.catalog', []))
             ->map(function (array $tool): array {
                 if (($tool['id'] ?? null) === 'consulta-renovacion-cruz-del-eje') {
@@ -25,6 +40,7 @@ class HerramientasController extends Controller
                 }
                 if (($tool['id'] ?? null) === 'consulta-quiebra-credix') {
                     $tool['endpoint'] = route('tools.consulta-quiebra-credix');
+                    $tool['href'] = route('credixsa');
                 }
                 if (($tool['id'] ?? null) === 'consulta-empleador') {
                     $tool['endpoint'] = route('tools.consulta-empleador');
@@ -41,6 +57,7 @@ class HerramientasController extends Controller
             'payload' => [
                 'branding' => config('tools.branding', []),
                 'tools' => $tools,
+                'page' => $page,
             ],
         ]);
     }

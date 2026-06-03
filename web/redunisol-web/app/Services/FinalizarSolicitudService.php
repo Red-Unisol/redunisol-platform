@@ -11,8 +11,9 @@ class FinalizarSolicitudService
 {
     public function resolve(?string $sol, ?string $ntrans, ?string $linea): array
     {
-        $linea = $this->normalizeLine($linea);
-        $lineConfig = $this->lineConfig($linea);
+        $requestedLinea = $linea;
+        $linea = $this->normalizeLine($requestedLinea);
+        $lineConfig = $this->requestedLineConfig($requestedLinea) ?? $this->defaultMetamapConfig();
 
         $result = [
             'linea' => $linea,
@@ -264,6 +265,15 @@ class FinalizarSolicitudService
         ];
     }
 
+    private function defaultMetamapConfig(): array
+    {
+        return [
+            'flow_id' => (string) config('finalizar.metamap.default_flow_id', ''),
+            'doc_id' => (string) config('finalizar.metamap.default_doc_id', ''),
+            'extra_html' => (string) config('finalizar.metamap.default_extra_html', ''),
+        ];
+    }
+
     private function buildMetamapMetadata(array $loan, string $docId): array
     {
         return [
@@ -289,19 +299,39 @@ class FinalizarSolicitudService
 
     private function normalizeLine(?string $linea): string
     {
+        return $this->matchedLineKey($linea) ?? (string) config('finalizar.default_line', 'caja');
+    }
+
+    private function requestedLineConfig(?string $linea): ?array
+    {
+        $matchedLine = $this->matchedLineKey($linea);
+
+        if ($matchedLine === null || $matchedLine === 'its') {
+            return null;
+        }
+
+        return $this->lineConfig($matchedLine);
+    }
+
+    private function matchedLineKey(?string $linea): ?string
+    {
         $linea = trim((string) $linea);
 
         if ($linea === '') {
-            return (string) config('finalizar.default_line', 'caja');
+            return null;
         }
 
-        if ($linea === 'its') {
+        if (Str::lower($linea) === 'its') {
             return 'its';
         }
 
-        return array_key_exists($linea, config('finalizar.lines', []))
-            ? $linea
-            : (string) config('finalizar.default_line', 'caja');
+        foreach (array_keys(config('finalizar.lines', [])) as $lineKey) {
+            if (Str::lower($lineKey) === Str::lower($linea)) {
+                return (string) $lineKey;
+            }
+        }
+
+        return null;
     }
 
     private function lineConfig(string $linea): array

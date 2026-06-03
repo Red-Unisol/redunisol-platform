@@ -35,6 +35,8 @@ class BalanceGuardConfig:
     minimum_balance: Decimal
     description: str
     id_prefix: str
+    id_sequence_start: int
+    id_sequence_path: Path
     dry_run: bool
     cooldown_seconds: int
     stale_lock_seconds: int
@@ -80,7 +82,18 @@ def load_config(env_file: Optional[Path] = None) -> AppConfig:
             "BALANCE_GUARD_MINIMUM_BALANCE",
         ),
         description=optional(values, "BALANCE_GUARD_DESCRIPTION", "Fondeo automatico por saldo minimo"),
-        id_prefix=optional(values, "BALANCE_GUARD_ID_PREFIX", "FONDEO"),
+        id_prefix=optional(values, "BALANCE_GUARD_ID_PREFIX", "9036"),
+        id_sequence_start=parse_int(
+            optional(values, "BALANCE_GUARD_ID_SEQUENCE_START", "10000000"),
+            "BALANCE_GUARD_ID_SEQUENCE_START",
+        ),
+        id_sequence_path=Path(
+            optional(
+                values,
+                "BALANCE_GUARD_ID_SEQUENCE_PATH",
+                "/var/lib/coinag-balance-guard/id_sequence.txt",
+            )
+        ),
         dry_run=parse_bool(optional(values, "BALANCE_GUARD_DRY_RUN", "true")),
         cooldown_seconds=parse_int(optional(values, "BALANCE_GUARD_COOLDOWN_SECONDS", "900"), "BALANCE_GUARD_COOLDOWN_SECONDS"),
         stale_lock_seconds=parse_int(optional(values, "BALANCE_GUARD_STALE_LOCK_SECONDS", "900"), "BALANCE_GUARD_STALE_LOCK_SECONDS"),
