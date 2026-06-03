@@ -311,6 +311,8 @@ def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float
         if first_rr_index is None:
             continue
         first_rr_event = state_events[first_rr_index]
+        if is_excluded_line(first_rr_event.linea_descripcion):
+            continue
         response_event = next(
             (
                 event
@@ -475,6 +477,7 @@ def build_snapshot() -> tuple[Path, dict[str, Any]]:
         "reglas": {
             "primera_respuesta": "desde primera RevisionRiesgo hasta primer cambio de estado posterior, solo horario laboral lunes a viernes 08:00-17:00",
             "transferencia": "ultimo Pagada y A Transferir inmediatamente anterior, solo horario laboral lunes a viernes 08:00-17:00",
+            "lineas_excluidas_primera_respuesta": list(EXCLUDED_LINE_KEYWORDS),
             "lineas_excluidas_transferencia": list(EXCLUDED_LINE_KEYWORDS),
         },
         "thresholds": {
