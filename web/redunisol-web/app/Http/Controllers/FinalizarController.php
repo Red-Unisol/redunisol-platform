@@ -12,6 +12,12 @@ class FinalizarController extends Controller
 {
     public function show(Request $request, FinalizarSolicitudService $finalizarSolicitud): Response
     {
+        $normalizeTermsUrl = static function (string $url): string {
+            return $url === '/terminos-y-condiciones'
+                ? '/terminos-y-condiciones.pdf'
+                : $url;
+        };
+
         $getSettingOrEnv = function (string $settingKey, string $envKey, $default = '') {
             $setting = SiteSetting::get($settingKey, null);
 
@@ -36,7 +42,7 @@ class FinalizarController extends Controller
             'tea'              => $getSettingOrEnv('finalizar_tea', 'FINALIZAR_TEA', ''),
             'tnm'              => $getSettingOrEnv('finalizar_tnm', 'FINALIZAR_TNM', ''),
             'cft'              => $getSettingOrEnv('finalizar_cft', 'FINALIZAR_CFT', ''),
-            'terms_url'        => $getSettingOrEnv('finalizar_terms_url', 'FINALIZAR_TERMS_URL', '/terminos-y-condiciones'),
+            'terms_url'        => $normalizeTermsUrl($getSettingOrEnv('finalizar_terms_url', 'FINALIZAR_TERMS_URL', '/terminos-y-condiciones.pdf')),
             'contact_email'    => $getSettingOrEnv('finalizar_contact_email', 'FINALIZAR_CONTACT_EMAIL', SiteSetting::get('contact_email', 'contacto@redunisol.com.ar')),
             'whatsapp_url'     => $getSettingOrEnv('finalizar_whatsapp_url', 'FINALIZAR_WHATSAPP_URL', ''),
             'facebook_url'     => $getSettingOrEnv('finalizar_facebook_url', 'FINALIZAR_FACEBOOK_URL', ''),

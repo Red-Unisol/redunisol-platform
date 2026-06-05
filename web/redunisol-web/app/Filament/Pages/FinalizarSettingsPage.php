@@ -32,6 +32,12 @@ class FinalizarSettingsPage extends Page
 
     public function mount(): void
     {
+        $normalizeTermsUrl = static function (string $url): string {
+            return $url === '/terminos-y-condiciones'
+                ? '/terminos-y-condiciones.pdf'
+                : $url;
+        };
+
         $this->data = [
             // Tasas
             'finalizar_tna'          => SiteSetting::get('finalizar_tna', ''),
@@ -40,7 +46,7 @@ class FinalizarSettingsPage extends Page
             'finalizar_cft'          => SiteSetting::get('finalizar_cft', ''),
 
             // Links legales y contacto
-            'finalizar_terms_url'    => SiteSetting::get('finalizar_terms_url', '/terminos-y-condiciones'),
+            'finalizar_terms_url'    => $normalizeTermsUrl(SiteSetting::get('finalizar_terms_url', '/terminos-y-condiciones.pdf')),
             'finalizar_contact_email'=> SiteSetting::get('finalizar_contact_email', ''),
             'finalizar_whatsapp_url' => SiteSetting::get('finalizar_whatsapp_url', ''),
             'finalizar_facebook_url' => SiteSetting::get('finalizar_facebook_url', ''),
@@ -111,7 +117,7 @@ class FinalizarSettingsPage extends Page
                 ->schema([
                     TextInput::make('finalizar_terms_url')
                         ->label('URL de Términos y Condiciones')
-                        ->placeholder('/terminos-y-condiciones')
+                        ->placeholder('/terminos-y-condiciones.pdf')
                         ->columnSpanFull(),
 
                     TextInput::make('finalizar_contact_email')

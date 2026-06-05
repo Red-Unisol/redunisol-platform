@@ -28,6 +28,7 @@ class SiteSettingSeeder extends Seeder
             ['key' => 'instagram_url',             'value' => 'https://www.instagram.com/redunisol_prestamos/'],
             ['key' => 'linkedin_url',              'value' => 'https://www.linkedin.com/company/redunisol/'],
             ['key' => 'youtube_url',               'value' => 'https://www.youtube.com/@redunisol5007'],
+            ['key' => 'finalizar_terms_url',       'value' => '/terminos-y-condiciones.pdf'],
         ];
 
         foreach ($settings as $setting) {
