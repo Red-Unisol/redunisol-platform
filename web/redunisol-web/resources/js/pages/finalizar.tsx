@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { usePage } from '@inertiajs/react';
 import {
     CheckCircle,
     EnvelopeSimple,
@@ -338,12 +338,12 @@ export default function Finalizar() {
                                 Condiciones Financieras
                             </p>
                             {settings.terms_url && (
-                                <Link
+                                <a
                                     href={settings.terms_url}
                                     className="text-xs font-semibold text-emerald-600 underline underline-offset-2 transition-colors hover:text-emerald-700"
                                 >
                                     Terminos y condiciones
-                                </Link>
+                                </a>
                             )}
                         </div>
 
