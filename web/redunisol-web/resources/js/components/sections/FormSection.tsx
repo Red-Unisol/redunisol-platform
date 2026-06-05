@@ -1,4 +1,3 @@
-import { type SectionCta } from '@/components/section-cta';
 import {
     CheckCircleIcon,
     UploadSimple,
@@ -7,6 +6,9 @@ import {
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMemo, useRef, useState } from 'react';
+
+import { type SectionCta } from '@/components/section-cta';
+import { trackEvent } from '@/utils/tracking';
 
 // ── Config interfaces ─────────────────────────────────────────────────────────
 
@@ -842,6 +844,25 @@ export default function FormSection({
             if (value) payload[key] = value;
         }
 
+        const trackingPayload: Record<string, string | boolean> = {
+            form_name: 'lead_form',
+            landing_slug: landingSlug,
+            landing_title: landingTitle,
+            page_location: window.location.href,
+            has_recibo: Boolean(reciboUrl),
+        };
+
+        for (const key of [
+            'utm_source',
+            'utm_medium',
+            'utm_campaign',
+            'utm_term',
+            'utm_content',
+        ]) {
+            const value = params.get(key);
+            if (value) trackingPayload[key] = value;
+        }
+
         try {
             const res = await fetch('/api/form-submissions', {
                 method: 'POST',
@@ -868,6 +889,7 @@ export default function FormSection({
             }
 
             setErrorMessage(null);
+            trackEvent('generate_lead', trackingPayload);
             setResult('success');
         } catch {
             setErrorMessage(null);
