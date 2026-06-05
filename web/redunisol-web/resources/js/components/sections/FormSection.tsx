@@ -46,15 +46,35 @@ const DEFAULT_CONFIG: FormSectionConfig = {
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
-const provincias = [
+const provinciasPrincipales = [
     'Córdoba',
     'Catamarca',
     'La Rioja',
     'Santa Fe',
     'Jujuy',
-    'Especifica',
 ];
 
+const otrasProvincias = [
+    'Buenos Aires',
+    'Ciudad Autónoma de Buenos Aires',
+    'Chaco',
+    'Chubut',
+    'Corrientes',
+    'Entre Ríos',
+    'Formosa',
+    'La Pampa',
+    'Mendoza',
+    'Misiones',
+    'Neuquén',
+    'Río Negro',
+    'Salta',
+    'San Juan',
+    'San Luis',
+    'Santa Cruz',
+    'Santiago del Estero',
+    'Tierra del Fuego',
+    'Tucumán',
+];
 const situacionesLaborales = [
     'Empleado Publico Provincial',
     'Empleado Publico Municipal',
@@ -429,21 +449,31 @@ function Step3({
     formData: LeadFormData;
     setFormData: React.Dispatch<React.SetStateAction<LeadFormData>>;
 }) {
+    const [showOtherProvinces, setShowOtherProvinces] = useState(
+        otrasProvincias.includes(formData.provincia),
+    );
+
     return (
         <motion.div {...stepAnim} key="s3">
             <h2 className="mb-6 text-xl font-semibold text-[#1e2d3d]">
                 ¿En qué provincia trabajás?
             </h2>
+
             <div className="grid grid-cols-3 gap-3">
-                {provincias.map((prov) => {
+                {provinciasPrincipales.map((prov) => {
                     const selected = formData.provincia === prov;
+
                     return (
                         <button
                             key={prov}
                             type="button"
-                            onClick={() =>
-                                setFormData((p) => ({ ...p, provincia: prov }))
-                            }
+                            onClick={() => {
+                                setShowOtherProvinces(false);
+                                setFormData((p) => ({
+                                    ...p,
+                                    provincia: prov,
+                                }));
+                            }}
                             className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
                                 selected
                                     ? 'border-[#1e2d3d] bg-[#1e2d3d] text-white'
@@ -454,7 +484,50 @@ function Step3({
                         </button>
                     );
                 })}
+
+                <button
+                    type="button"
+                    onClick={() => {
+                        setShowOtherProvinces(true);
+                        if (!otrasProvincias.includes(formData.provincia)) {
+                            setFormData((p) => ({ ...p, provincia: '' }));
+                        }
+                    }}
+                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                        showOtherProvinces
+                            ? 'border-[#1e2d3d] bg-[#1e2d3d] text-white'
+                            : 'border-gray-200 text-[#1e2d3d] hover:border-[#1e2d3d] hover:bg-gray-50'
+                    }`}
+                >
+                    Otra provincia
+                </button>
             </div>
+
+            {showOtherProvinces && (
+                <div className="relative mt-5">
+                    <select
+                        value={formData.provincia}
+                        onChange={(e) =>
+                            setFormData((p) => ({
+                                ...p,
+                                provincia: e.target.value,
+                            }))
+                        }
+                        className={selectCls}
+                    >
+                        <option value="" disabled>
+                            Seleccione una provincia
+                        </option>
+
+                        {otrasProvincias.map((prov) => (
+                            <option key={prov} value={prov}>
+                                {prov}
+                            </option>
+                        ))}
+                    </select>
+                    <ChevronDown />
+                </div>
+            )}
         </motion.div>
     );
 }
