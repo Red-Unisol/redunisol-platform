@@ -69,9 +69,27 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.isoformat(), "2026-04-25T00:00:00-03:00")
 
-    def test_template_variables_use_contact_last_name_then_name(self) -> None:
+    def test_extract_contact_name_uses_deal_title_before_contact(self) -> None:
+        deal = {"TITLE": "Negociacion #"}
+        contact_data = {
+            "NAME": "GISELLA PAULA",
+            "LAST_NAME": "CONTRERA",
+        }
+
+        self.assertEqual(service.extract_contact_name(contact_data, deal), "Negociacion #")
+
+    def test_extract_contact_name_falls_back_to_contact_if_title_missing(self) -> None:
+        deal = {"TITLE": ""}
+        contact_data = {
+            "NAME": "GISELLA PAULA",
+            "LAST_NAME": "CONTRERA",
+        }
+
+        self.assertEqual(service.extract_contact_name(contact_data, deal), "CONTRERA GISELLA PAULA")
+
+    def test_template_variables_use_deal_title_before_contact_name(self) -> None:
         deal = {
-            "TITLE": "CONTRERA G.",
+            "TITLE": "Negociacion #",
             "UF_CRM_1724429048": "125245,57",
         }
         contact_data = {
@@ -82,21 +100,26 @@ class BitrixCrmNegociacionesTests(unittest.TestCase):
         with patch.dict(os.environ, self.env, clear=False):
             variables = service.get_template_variables(51765, deal, contact_data)
 
-        self.assertEqual(variables, ["CONTRERA GISELLA PAULA", "$125.245,57"])
+        self.assertEqual(variables, ["Negociacion #", "$125.245,57"])
 
-    def test_extract_contact_name_does_not_fallback_to_deal_title(self) -> None:
+    def test_extract_contact_name_falls_back_to_deal_title(self) -> None:
         deal = {"TITLE": "CONTRERA G."}
 
-        self.assertEqual(service.extract_contact_name(None, deal), "cliente")
+        self.assertEqual(service.extract_contact_name(None, deal), "CONTRERA G.")
 
     def test_extract_contact_name_uses_partial_contact_without_deal_title(self) -> None:
-        deal = {"TITLE": "CONTRERA G."}
+        deal = {"TITLE": ""}
         contact_data = {
             "NAME": "",
             "LAST_NAME": "CONTRERA",
         }
 
         self.assertEqual(service.extract_contact_name(contact_data, deal), "CONTRERA")
+
+    def test_extract_contact_name_falls_back_to_cliente_without_deal_or_contact(self) -> None:
+        deal = {"TITLE": ""}
+
+        self.assertEqual(service.extract_contact_name(None, deal), "cliente")
 
     def test_format_amount_preserves_dot_decimal_values(self) -> None:
         self.assertEqual(service.format_amount("323067.93|ARS"), "$323.067,93")
