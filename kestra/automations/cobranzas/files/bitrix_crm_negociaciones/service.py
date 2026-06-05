@@ -544,6 +544,10 @@ def format_amount(value: Any) -> str | None:
 
 
 def extract_contact_name(contact_data: Dict[str, Any] | None, deal: Dict[str, Any]) -> str:
+    title = str(deal.get("TITLE") or "").strip()
+    if title:
+        return title
+
     if contact_data:
         name = str(contact_data.get("NAME") or "").strip()
         last_name = str(contact_data.get("LAST_NAME") or "").strip()
