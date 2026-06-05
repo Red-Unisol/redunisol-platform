@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SiteSetting;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -129,4 +130,27 @@ it('does not expose legacy api credentials in inertia props', function () {
     $response->assertOk();
     $response->assertDontSee('FINALIZAR_API_USER');
     $response->assertDontSee('test-password');
+});
+
+it('uses a hosted pdf as the default terms url', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', '');
+
+    $this->get('/finalizar')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
+        );
+});
+
+it('normalizes the old finalizar terms url to the hosted pdf path', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', '');
+    SiteSetting::set('finalizar_terms_url', '/terminos-y-condiciones');
+
+    $this->get('/finalizar')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
+        );
 });
