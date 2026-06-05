@@ -58,6 +58,8 @@ WORKDIR /var/www
 COPY . /var/www
 
 # Install Composer, PHP dependencies, and build frontend assets for production.
+ARG VITE_TRACKING_DEBUG=
+ARG VITE_GA4_DEBUG=
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
     && composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist \
     && npm config set fetch-retries 5 \

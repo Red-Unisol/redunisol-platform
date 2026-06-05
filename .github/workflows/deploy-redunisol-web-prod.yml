@@ -58,6 +58,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r kestra/tools/requirements.txt
 
+      - name: Decrypt runtime env
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
+          python kestra/tools/manage_encrypted_env.py decrypt \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --input web/redunisol-web/deploy/redunisol-web.prod.env.enc \
+            --output web/redunisol-web/deploy/redunisol-web.prod.env \
+            --force
+
+      - name: Load frontend build env
+        id: frontend-env
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . web/redunisol-web/deploy/redunisol-web.prod.env
+          set +a
+          printf 'vite_tracking_debug=%s\n' "${VITE_TRACKING_DEBUG:-}" >> "$GITHUB_OUTPUT"
+          printf 'vite_ga4_debug=%s\n' "${VITE_GA4_DEBUG:-}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -75,6 +97,9 @@ jobs:
           file: web/redunisol-web/docker/common/php-fpm/Dockerfile
           target: production
           push: true
+          build-args: |
+            VITE_TRACKING_DEBUG=${{ steps.frontend-env.outputs.vite_tracking_debug }}
+            VITE_GA4_DEBUG=${{ steps.frontend-env.outputs.vite_ga4_debug }}
           tags: |
             ${{ env.APP_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
             ${{ env.APP_IMAGE_NAME }}:prod-latest
@@ -85,6 +110,9 @@ jobs:
           context: web/redunisol-web
           file: web/redunisol-web/docker/production/nginx/Dockerfile
           push: true
+          build-args: |
+            VITE_TRACKING_DEBUG=${{ steps.frontend-env.outputs.vite_tracking_debug }}
+            VITE_GA4_DEBUG=${{ steps.frontend-env.outputs.vite_ga4_debug }}
           tags: |
             ${{ env.WEB_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
             ${{ env.WEB_IMAGE_NAME }}:prod-latest
@@ -100,17 +128,6 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
-
-      - name: Decrypt runtime env
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
-          python kestra/tools/manage_encrypted_env.py decrypt \
-            --key-file "$RUNNER_TEMP/runtime-env.key" \
-            --input web/redunisol-web/deploy/redunisol-web.prod.env.enc \
-            --output web/redunisol-web/deploy/redunisol-web.prod.env \
-            --force
 
       - name: Prepare deployment files
         shell: bash
