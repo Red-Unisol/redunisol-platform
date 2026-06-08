@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\SubmitFormToKestra;
 use App\Http\Requests\FormSubmissionRequest;
+use App\Services\MetaConversionsApiService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +15,7 @@ class FormSubmissionController extends Controller
 {
     public function __construct(
         private readonly SubmitFormToKestra $submitFormToKestra,
+        private readonly MetaConversionsApiService $metaConversionsApi,
     ) {
     }
 
@@ -24,6 +26,12 @@ class FormSubmissionController extends Controller
 
             if ($response->failed()) {
                 return $this->forwardKestraFailure($response->status(), $response->json());
+            }
+
+            $body = $response->json();
+
+            if (is_array($body) && ($body['qualified'] ?? true) !== false) {
+                $this->metaConversionsApi->sendLead($request, $request->validated());
             }
 
             return response()->json($response->json(), $response->status());

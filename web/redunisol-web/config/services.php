@@ -41,6 +41,13 @@ return [
         'preview' => env('GTM_PREVIEW'),
     ],
 
+    'meta' => [
+        'pixel_id' => env('META_PIXEL_ID'),
+        'capi_access_token' => env('META_CAPI_ACCESS_TOKEN'),
+        'capi_graph_version' => env('META_CAPI_GRAPH_VERSION', 'v23.0'),
+        'capi_test_event_code' => env('META_CAPI_TEST_EVENT_CODE'),
+    ],
+
     'kestra' => [
         'form_webhook_url' => env('KESTRA_FORM_WEBHOOK_URL'),
         'form_webhook_timeout_seconds' => (int) env('KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS', 60),

@@ -8,7 +8,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useMemo, useRef, useState } from 'react';
 
 import { type SectionCta } from '@/components/section-cta';
-import { trackEvent } from '@/utils/tracking';
+import { trackEvent, trackMetaLead } from '@/utils/tracking';
 
 // ── Config interfaces ─────────────────────────────────────────────────────────
 
@@ -180,6 +180,14 @@ const INITIAL_FORM: LeadFormData = {
     situacionLaboral: '',
     banco: '',
 };
+
+function createLeadEventId() {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+        return `lead_${crypto.randomUUID()}`;
+    }
+
+    return `lead_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
 
 // ── Shared style constants ────────────────────────────────────────────────────
 
@@ -807,6 +815,7 @@ export default function FormSection({
             landing_slug: landingSlug,
             landing_title: landingTitle,
             landing_url: window.location.href,
+            meta_event_id: createLeadEventId(),
             terminos: formData.terminos,
         };
 
@@ -849,6 +858,7 @@ export default function FormSection({
             landing_slug: landingSlug,
             landing_title: landingTitle,
             page_location: window.location.href,
+            event_id: payload.meta_event_id,
             has_recibo: Boolean(reciboUrl),
         };
 
@@ -890,6 +900,11 @@ export default function FormSection({
 
             setErrorMessage(null);
             trackEvent('generate_lead', trackingPayload);
+            trackMetaLead(String(payload.meta_event_id), {
+                content_name: 'lead_form',
+                landing_slug: landingSlug,
+                landing_title: landingTitle,
+            });
             setResult('success');
         } catch {
             setErrorMessage(null);
