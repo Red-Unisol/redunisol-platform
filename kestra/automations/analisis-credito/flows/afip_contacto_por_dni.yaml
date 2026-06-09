@@ -75,6 +75,12 @@ triggers:
 errors:
   - id: notificar_fallo
     type: io.kestra.plugin.notifications.mail.MailSend
+    host: vps-3028748-x.dattaweb.com
+    port: 465
+    username: sistemas@redunisol.com.ar
+    password: "{{ secret('SMTP_PASSWORD') }}"
+    sslEnabled: true
+    auth: true
     from: sistemas@redunisol.com.ar
     to: nicosallitto@gmail.com
     subject: "Flow fallido: {{ flow.id }}"
