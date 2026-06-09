@@ -79,8 +79,7 @@ errors:
     port: 465
     username: sistemas@redunisol.com.ar
     password: "{{ secret('SMTP_PASSWORD') }}"
-    sslEnabled: true
-    auth: true
+    transportStrategy: SMTPS
     from: sistemas@redunisol.com.ar
     to: nicosallitto@gmail.com
     subject: "Flow fallido: {{ flow.id }}"
