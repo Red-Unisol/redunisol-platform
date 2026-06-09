@@ -26,7 +26,7 @@ NO_RESULTS_SELECTOR = "text=No se encontraron"
 EDICTS_TABLE_TEXT = "Edictos judiciales"
 DETAIL_NEXT_TEXT = "Siguiente"
 PROCESSING_TEXT = "Procesando"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 CACHE_TTL = "P8D"
 CACHE_MAX_AGE_DAYS = 7
 CACHE_DUMMY_KEY = "credixsa.cache.lookup.none"
@@ -902,7 +902,7 @@ def _normalize_alerts(raw_alerts: Any) -> list[dict[str, str]]:
             continue
 
         normalized_message = _normalized_label(raw_message)
-        if "fallecimiento" in normalized_message or "fallecido" in normalized_message:
+        if "fallecimiento" in normalized_message or "fallecid" in normalized_message:
             code = "persona_fallecida"
             if code in seen_codes:
                 continue

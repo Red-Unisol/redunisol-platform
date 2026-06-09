@@ -170,6 +170,21 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
 
         self.assertEqual(_extract_report_alerts(StubPage()), [])
 
+    def test_normalize_alerts_preserves_structured_deceased_alert(self) -> None:
+        alerts = _normalize_alerts(
+            [
+                {
+                    "codigo": "persona_fallecida",
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                }
+            ]
+        )
+
+        self.assertEqual(alerts[0]["codigo"], "persona_fallecida")
+        self.assertEqual(alerts[0]["nivel"], "error")
+
     def test_build_output_payload_normalizes_priority_sections(self) -> None:
         request = SearchRequest(cuit="27364371980", nombre="")
         result = build_single_result(
@@ -631,7 +646,7 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         )
         entry = build_cache_entry(result)
         self.assertIsNotNone(entry)
-        entry["version"] = 2
+        entry["version"] = 3
 
         self.assertIsNone(cached_result_if_fresh(entry))
 

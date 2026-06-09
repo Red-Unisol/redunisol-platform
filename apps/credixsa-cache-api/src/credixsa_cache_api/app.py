@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 DEFAULT_DB_PATH = "/data/credixsa-cache/credixsa.sqlite"
 DEFAULT_MAX_AGE_DAYS = 7
 
@@ -325,7 +325,7 @@ def _normalize_alerts(raw_alerts: Any) -> list[dict[str, str]]:
             continue
 
         normalized_message = _normalized_label(raw_message)
-        if "fallecimiento" in normalized_message or "fallecido" in normalized_message:
+        if "fallecimiento" in normalized_message or "fallecid" in normalized_message:
             code = "persona_fallecida"
             if code in seen_codes:
                 continue
