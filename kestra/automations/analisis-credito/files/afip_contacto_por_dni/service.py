@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import os
 import re
 from typing import Any
 from urllib.parse import urljoin
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_BASE_URL = "https://servicioscf.afip.gob.ar/publico/crmcit/"
@@ -70,6 +73,8 @@ def consultar_contacto(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
+    logger.info("Iniciando consulta AFIP para DNI %s (tipo_doc=%s)", request.dni, request.tipo_doc)
+
     http = session or requests.Session()
     http.headers.update({
         "User-Agent": config.user_agent,
@@ -77,10 +82,13 @@ def consultar_contacto(
     })
 
     consulta_url = urljoin(config.base_url, "consulta.aspx")
+    logger.info("Bootstrappeando sesión AFIP: %s", consulta_url)
     consulta_response = http.get(consulta_url, timeout=config.timeout_seconds)
     _ensure_success(consulta_response, "Load AFIP consulta.aspx")
+    logger.info("Sesión AFIP iniciada (status %s)", consulta_response.status_code)
 
     api_url = urljoin(config.base_url, "data/apis/Contactos.aspx/GetContactoPorTipoDocumento")
+    logger.info("Consultando API de contactos AFIP para DNI %s", request.dni)
     api_response = http.get(
         api_url,
         params={"tipoDoc": request.tipo_doc, "nroDoc": request.dni},
@@ -92,6 +100,7 @@ def consultar_contacto(
         timeout=config.timeout_seconds,
     )
     _ensure_success(api_response, "Query AFIP contact API")
+    logger.info("Respuesta API de contactos recibida (status %s)", api_response.status_code)
 
     payload = _parse_api_payload(api_response)
     rows = payload.get("valor") or []
@@ -99,6 +108,7 @@ def consultar_contacto(
         raise RuntimeError("AFIP response field 'valor' is not a list.")
 
     if not rows:
+        logger.info("DNI %s no encontrado en AFIP", request.dni)
         return _build_result(
             ok=True,
             found=False,
@@ -113,6 +123,7 @@ def consultar_contacto(
     first_row = rows[0] if isinstance(rows[0], dict) else {}
     cuil = _normalize_digits(first_row.get("cuil"))
     nombre = _normalize_name(first_row.get("denominacion"))
+    logger.info("DNI %s encontrado. CUIL: %s | Nombre: %s", request.dni, cuil, nombre)
     return _build_result(
         ok=True,
         found=True,

@@ -36,3 +36,11 @@ kestra:
       - type: io.kestra.plugin.scripts.runner.docker.Docker
         values:
           volumeEnabled: true
+      - type: io.kestra.plugin.notifications.mail.MailSend
+        values:
+          host: vps-3028748-x.dattaweb.com
+          port: "465"
+          username: sistemas@redunisol.com.ar
+          password: ${SMTP_PASSWORD}
+          sslEnabled: true
+          auth: true
