@@ -9,5 +9,6 @@ declare global {
     interface Window {
         dataLayer: DataLayerEvent[];
         gtag?: (...args: unknown[]) => void;
+        fbq?: (...args: unknown[]) => void;
     }
 }

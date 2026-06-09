@@ -40,6 +40,8 @@ WORKDIR /var/www
 COPY . /var/www
 
 # Install PHP and Node.js dependencies, then build assets.
+ARG VITE_TRACKING_DEBUG=
+ARG VITE_GA4_DEBUG=
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist \
     && npm install \
     && npm run build
