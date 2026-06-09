@@ -72,6 +72,7 @@ def _apply_full_name_override(payload: dict[str, Any]) -> dict[str, Any]:
 
     enriched_payload = dict(payload)
     enriched_payload["full_name"] = resolved_full_name
+    enriched_payload["full_name_inferred"] = False
     return enriched_payload
 
 
