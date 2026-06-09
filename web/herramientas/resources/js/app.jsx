@@ -700,6 +700,7 @@ function CredixsaPage({ branding, tool }) {
 function CredixDedicatedReport({ normalized }) {
     return (
         <div className="credix-report">
+            <CredixAlertsPanel alerts={normalized?.alertas || []} />
             <CredixPersonPanel persona={normalized?.persona || {}} />
             <CredixBcraHistoryPanel bcra={normalized?.bcra || {}} />
             <CredixBcraEntityEvolutionPanel bcra={normalized?.bcra || {}} />
@@ -707,6 +708,33 @@ function CredixDedicatedReport({ normalized }) {
             <CredixQuiebrasPanel quiebras={normalized?.quiebras || {}} />
             <CredixSecondarySections normalized={normalized} />
         </div>
+    );
+}
+
+function CredixAlertsPanel({ alerts }) {
+    const visibleAlerts = Array.isArray(alerts)
+        ? alerts.filter((alert) => alert && typeof alert === 'object' && alert.mensaje)
+        : [];
+
+    if (visibleAlerts.length === 0) {
+        return null;
+    }
+
+    return (
+        <section className="credix-alerts" aria-label="Alertas del informe">
+            {visibleAlerts.map((alert, index) => (
+                <article
+                    className={`credix-alert credix-alert--${alert.nivel === 'error' ? 'error' : 'warning'}`}
+                    key={`${alert.codigo || 'alerta'}-${index}`}
+                    role="alert"
+                >
+                    <div className="credix-alert__body">
+                        <span>{alert.fuente || 'CredixSA'}</span>
+                        <strong>{alert.mensaje}</strong>
+                    </div>
+                </article>
+            ))}
+        </section>
     );
 }
 
