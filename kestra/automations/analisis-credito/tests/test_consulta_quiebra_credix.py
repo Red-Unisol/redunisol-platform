@@ -129,6 +129,40 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         self.assertEqual(len(alerts), 1)
         self.assertEqual(alerts[0]["codigo"], "cuit_baja_afip")
 
+    def test_extract_report_alerts_deduplicates_deceased_signals(self) -> None:
+        class StubPage:
+            def evaluate(self, script):
+                self.script = script
+                return [
+                    "Alerta Fallecimiento",
+                    "FALLECIDO",
+                    "Alerta: Boletin Oficial",
+                ]
+
+        page = StubPage()
+
+        alerts = _extract_report_alerts(page)
+
+        self.assertIn(r"alerta\s+fallecimiento", page.script)
+        self.assertIn("fallecido", page.script)
+        self.assertEqual(
+            alerts,
+            [
+                {
+                    "codigo": "persona_fallecida",
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                },
+                {
+                    "codigo": "credixsa_warning",
+                    "nivel": "warning",
+                    "fuente": "CredixSA",
+                    "mensaje": "Boletin Oficial",
+                },
+            ],
+        )
+
     def test_extract_report_alerts_returns_empty_list_without_warnings(self) -> None:
         class StubPage:
             def evaluate(self, script):
@@ -588,7 +622,7 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         self.assertEqual(cached["status"], "single")
         self.assertEqual(cached["cuit"], "20123456783")
 
-    def test_cache_version_one_is_rejected(self) -> None:
+    def test_previous_cache_version_is_rejected(self) -> None:
         result = build_single_result(
             SearchRequest(cuit="20123456783", nombre=""),
             [{"title": "Datos Filiatorios", "rows": [["Cuil", "20-12345678-3"]]}],
@@ -597,7 +631,7 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         )
         entry = build_cache_entry(result)
         self.assertIsNotNone(entry)
-        entry["version"] = 1
+        entry["version"] = 2
 
         self.assertIsNone(cached_result_if_fresh(entry))
 

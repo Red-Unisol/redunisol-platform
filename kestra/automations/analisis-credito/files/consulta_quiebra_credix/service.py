@@ -26,7 +26,7 @@ NO_RESULTS_SELECTOR = "text=No se encontraron"
 EDICTS_TABLE_TEXT = "Edictos judiciales"
 DETAIL_NEXT_TEXT = "Siguiente"
 PROCESSING_TEXT = "Procesando"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 CACHE_TTL = "P8D"
 CACHE_MAX_AGE_DAYS = 7
 CACHE_DUMMY_KEY = "credixsa.cache.lookup.none"
@@ -857,9 +857,29 @@ def _extract_report_sections(
 def _extract_report_alerts(page: "Page") -> list[dict[str, str]]:
     raw_messages = page.evaluate(
         """
-        () => Array.from(document.querySelectorAll('div.alert-warning'))
-            .map((element) => (element.innerText || '').replace(/\\s+/g, ' ').trim())
-            .filter((message) => message !== '')
+        () => {
+            const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+            const messages = [];
+
+            for (const table of document.querySelectorAll('table')) {
+                const text = normalize(table.innerText);
+                if (/alerta\\s+fallecimiento/i.test(text)) {
+                    messages.push('Alerta Fallecimiento');
+                }
+                if (/\\(\\s*fallecido\\s*\\)/i.test(text)) {
+                    messages.push('FALLECIDO');
+                }
+            }
+
+            for (const element of document.querySelectorAll('div.alert-warning')) {
+                const message = normalize(element.innerText);
+                if (message !== '') {
+                    messages.push(message);
+                }
+            }
+
+            return messages;
+        }
         """
     )
     return _normalize_alerts(raw_messages)
@@ -882,6 +902,21 @@ def _normalize_alerts(raw_alerts: Any) -> list[dict[str, str]]:
             continue
 
         normalized_message = _normalized_label(raw_message)
+        if "fallecimiento" in normalized_message or "fallecido" in normalized_message:
+            code = "persona_fallecida"
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            alerts.append(
+                {
+                    "codigo": code,
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                }
+            )
+            continue
+
         if (
             ("cuit" in normalized_message or "cuil" in normalized_message)
             and "baja" in normalized_message
