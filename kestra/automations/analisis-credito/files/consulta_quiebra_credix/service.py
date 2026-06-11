@@ -26,7 +26,7 @@ NO_RESULTS_SELECTOR = "text=No se encontraron"
 EDICTS_TABLE_TEXT = "Edictos judiciales"
 DETAIL_NEXT_TEXT = "Siguiente"
 PROCESSING_TEXT = "Procesando"
-CACHE_VERSION = 1
+CACHE_VERSION = 4
 CACHE_TTL = "P8D"
 CACHE_MAX_AGE_DAYS = 7
 CACHE_DUMMY_KEY = "credixsa.cache.lookup.none"
@@ -155,11 +155,13 @@ def consultar_tabla(request: SearchRequest, config: CredixConfig) -> dict[str, A
             data = _extract_report_sections(page, config, request)
             if not data and not _is_detail_summary_page(page):
                 raise TimeoutError("Timed out waiting for CredixSA report sections.")
+            alerts = _extract_report_alerts(page)
             return build_single_result(
                 request,
                 data,
                 cuit=normalize_cuit(selected_candidate.cuit) or request.cuit,
                 nombre=selected_candidate.nombre,
+                alerts=alerts,
             )
         finally:
             browser.close()
@@ -190,8 +192,9 @@ def build_single_result(
     *,
     cuit: str | None = None,
     nombre: str | None = None,
+    alerts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    return _base_result(
+    result = _base_result(
         request,
         status="single",
         rows=[],
@@ -200,6 +203,8 @@ def build_single_result(
         cuit=cuit,
         nombre=nombre,
     )
+    result["alertas"] = alerts or []
+    return result
 
 
 def build_error_result(
@@ -255,12 +260,14 @@ def build_legacy_response(result: dict[str, Any]) -> dict[str, Any]:
 def build_normalized_payload(result: dict[str, Any]) -> dict[str, Any]:
     normalized = result.get("normalized")
     if isinstance(normalized, dict):
+        normalized.setdefault("alertas", _normalize_alerts(result.get("alertas")))
         _ensure_bcra_24_months_payload(normalized, result.get("data") or [])
         _ensure_bcra_entity_evolution_payload(normalized, result.get("data") or [])
         _ensure_previsional_employer_tables_payload(normalized, result.get("data") or [])
         return normalized
 
     payload = {
+        "alertas": _normalize_alerts(result.get("alertas")),
         "persona": {
             "cuit": str(result.get("cuit") or ""),
             "documento": "",
@@ -520,6 +527,7 @@ def build_cache_entry(result: dict[str, Any]) -> dict[str, Any] | None:
         "nombre": str(result.get("nombre") or ""),
         "rows": [],
         "data": result.get("data") or [],
+        "alertas": _normalize_alerts(result.get("alertas")),
         "normalized": normalized_payload,
         "error": "",
     }
@@ -844,6 +852,104 @@ def _extract_report_sections(
         """
     )
     return [_normalize_report_section(section) for section in raw_sections]
+
+
+def _extract_report_alerts(page: "Page") -> list[dict[str, str]]:
+    raw_messages = page.evaluate(
+        """
+        () => {
+            const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+            const messages = [];
+
+            for (const table of document.querySelectorAll('table')) {
+                const text = normalize(table.innerText);
+                if (/alerta\\s+fallecimiento/i.test(text)) {
+                    messages.push('Alerta Fallecimiento');
+                }
+                if (/\\(\\s*fallecido\\s*\\)/i.test(text)) {
+                    messages.push('FALLECIDO');
+                }
+            }
+
+            for (const element of document.querySelectorAll('div.alert-warning')) {
+                const message = normalize(element.innerText);
+                if (message !== '') {
+                    messages.push(message);
+                }
+            }
+
+            return messages;
+        }
+        """
+    )
+    return _normalize_alerts(raw_messages)
+
+
+def _normalize_alerts(raw_alerts: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_alerts, list):
+        return []
+
+    alerts: list[dict[str, str]] = []
+    seen_codes: set[str] = set()
+    seen_messages: set[str] = set()
+
+    for raw_alert in raw_alerts:
+        if isinstance(raw_alert, dict):
+            raw_message = normalize_name(raw_alert.get("mensaje"))
+        else:
+            raw_message = normalize_name(raw_alert)
+        if not raw_message:
+            continue
+
+        normalized_message = _normalized_label(raw_message)
+        if "fallecimiento" in normalized_message or "fallecid" in normalized_message:
+            code = "persona_fallecida"
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            alerts.append(
+                {
+                    "codigo": code,
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                }
+            )
+            continue
+
+        if (
+            ("cuit" in normalized_message or "cuil" in normalized_message)
+            and "baja" in normalized_message
+            and "afip" in normalized_message
+        ):
+            code = "cuit_baja_afip"
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            alerts.append(
+                {
+                    "codigo": code,
+                    "nivel": "warning",
+                    "fuente": "AFIP",
+                    "mensaje": "CUIT dado de baja por AFIP",
+                }
+            )
+            continue
+
+        message_key = normalized_message
+        if message_key in seen_messages:
+            continue
+        seen_messages.add(message_key)
+        alerts.append(
+            {
+                "codigo": "credixsa_warning",
+                "nivel": "warning",
+                "fuente": "CredixSA",
+                "mensaje": re.sub(r"^(?:alerta|aviso):\s*", "", raw_message, flags=re.IGNORECASE),
+            }
+        )
+
+    return alerts
 
 
 def _wait_report_tables_stable(page: "Page", config: CredixConfig, request: SearchRequest) -> None:

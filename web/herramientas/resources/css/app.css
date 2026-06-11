@@ -967,6 +967,45 @@ input {
     background: rgba(255, 255, 255, 0.76);
 }
 
+.credix-alerts {
+    display: grid;
+    gap: 10px;
+}
+
+.credix-alert {
+    display: flex;
+    align-items: center;
+    min-height: 72px;
+    padding: 15px 18px;
+    border: 1px solid rgba(180, 125, 20, 0.28);
+    border-radius: 14px;
+    background: rgba(255, 196, 76, 0.16);
+    color: #67470b;
+}
+
+.credix-alert--error {
+    border-color: rgba(141, 65, 57, 0.24);
+    background: var(--red-soft);
+    color: #74382f;
+}
+
+.credix-alert__body {
+    display: grid;
+    gap: 4px;
+}
+
+.credix-alert__body span {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.credix-alert__body strong {
+    font-size: 0.98rem;
+    line-height: 1.4;
+}
+
 .credix-report__metric--compact {
     gap: 5px;
     min-height: 0;

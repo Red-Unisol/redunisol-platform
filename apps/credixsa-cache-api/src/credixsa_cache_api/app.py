@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 
-CACHE_VERSION = 1
+CACHE_VERSION = 4
 DEFAULT_DB_PATH = "/data/credixsa-cache/credixsa.sqlite"
 DEFAULT_MAX_AGE_DAYS = 7
 
@@ -166,12 +166,14 @@ def build_legacy_response(result: dict[str, Any]) -> dict[str, Any]:
 def build_normalized_payload(result: dict[str, Any]) -> dict[str, Any]:
     normalized = result.get("normalized")
     if isinstance(normalized, dict):
+        normalized.setdefault("alertas", _normalize_alerts(result.get("alertas")))
         _ensure_bcra_24_months_payload(normalized, result.get("data") or [])
         _ensure_bcra_entity_evolution_payload(normalized, result.get("data") or [])
         _ensure_previsional_employer_tables_payload(normalized, result.get("data") or [])
         return normalized
 
     payload = {
+        "alertas": _normalize_alerts(result.get("alertas")),
         "persona": {
             "cuit": str(result.get("cuit") or ""),
             "documento": "",
@@ -304,6 +306,73 @@ def normalize_cuit(value: Any) -> str:
 
 def normalize_name(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
+
+
+def _normalize_alerts(raw_alerts: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_alerts, list):
+        return []
+
+    alerts: list[dict[str, str]] = []
+    seen_codes: set[str] = set()
+    seen_messages: set[str] = set()
+
+    for raw_alert in raw_alerts:
+        if isinstance(raw_alert, dict):
+            raw_message = normalize_name(raw_alert.get("mensaje"))
+        else:
+            raw_message = normalize_name(raw_alert)
+        if not raw_message:
+            continue
+
+        normalized_message = _normalized_label(raw_message)
+        if "fallecimiento" in normalized_message or "fallecid" in normalized_message:
+            code = "persona_fallecida"
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            alerts.append(
+                {
+                    "codigo": code,
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                }
+            )
+            continue
+
+        if (
+            ("cuit" in normalized_message or "cuil" in normalized_message)
+            and "baja" in normalized_message
+            and "afip" in normalized_message
+        ):
+            code = "cuit_baja_afip"
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            alerts.append(
+                {
+                    "codigo": code,
+                    "nivel": "warning",
+                    "fuente": "AFIP",
+                    "mensaje": "CUIT dado de baja por AFIP",
+                }
+            )
+            continue
+
+        message_key = normalized_message
+        if message_key in seen_messages:
+            continue
+        seen_messages.add(message_key)
+        alerts.append(
+            {
+                "codigo": "credixsa_warning",
+                "nivel": "warning",
+                "fuente": "CredixSA",
+                "mensaje": re.sub(r"^(?:alerta|aviso):\s*", "", raw_message, flags=re.IGNORECASE),
+            }
+        )
+
+    return alerts
 
 
 def cache_key_for_cuil(value: Any) -> str:

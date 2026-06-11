@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from typing import Any
 
@@ -120,8 +121,10 @@ def ingest_submission(
         submission = normalize_business_input(payload)
         active_logger.info(f"CUIL normalizado: {submission.cuil_formatted}.")
 
-        contact_id = upsert_contact(client, config, submission, active_logger)
-        lead_id = create_lead(client, config, submission, contact_id, active_logger)
+        contact = upsert_contact(client, config, submission, active_logger)
+        contact_id = contact.contact_id
+        effective_submission = replace(submission, full_name=contact.effective_full_name)
+        lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
         return intake_success_result(
             contact_id=contact_id,
             lead_id=lead_id,
@@ -194,8 +197,10 @@ def persist_submission(
         client = bitrix_client or BitrixClient(config, active_logger)
         submission = normalize_business_input(payload)
 
-        contact_id = upsert_contact(client, config, submission, active_logger)
-        lead_id = create_lead(client, config, submission, contact_id, active_logger)
+        contact = upsert_contact(client, config, submission, active_logger)
+        contact_id = contact.contact_id
+        effective_submission = replace(submission, full_name=contact.effective_full_name)
+        lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
 
         if bcra_result_payload:
             bcra_result = deserialize_bcra_result(bcra_result_payload)
@@ -431,6 +436,7 @@ def submission_payload_with_original_tracking(
 ) -> dict[str, object]:
     normalized_payload = {
         "full_name": submission.full_name,
+        "full_name_inferred": submission.full_name_inferred,
         "email": submission.email,
         "whatsapp": submission.whatsapp,
         "cuil": submission.cuil_formatted,

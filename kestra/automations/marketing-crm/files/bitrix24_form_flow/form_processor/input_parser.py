@@ -12,6 +12,7 @@ from .normalization import normalize_cuil, normalize_email, normalize_full_name,
 @dataclass(frozen=True)
 class NormalizedInput:
     full_name: str
+    full_name_inferred: bool
     email: str
     whatsapp: str
     cuil_digits: str
@@ -53,6 +54,7 @@ def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
 
     return NormalizedInput(
         full_name=normalize_full_name(_first(payload, ["full_name", "nombre_completo", "name"])),
+        full_name_inferred=_optional_bool(payload.get("full_name_inferred"), default=False),
         email=normalize_email(_first(payload, ["email", "correo"])),
         whatsapp=normalize_whatsapp(_first(payload, ["whatsapp", "telefono", "phone"])),
         cuil_digits=cuil_digits,
@@ -111,3 +113,17 @@ def _optional_string(value: Any) -> str | None:
 
     text = str(value).strip()
     return text or None
+
+
+def _optional_bool(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "si", "s"}:
+        return True
+    if normalized in {"0", "false", "no", "n"}:
+        return False
+    return default

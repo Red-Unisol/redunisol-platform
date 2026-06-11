@@ -35,14 +35,32 @@ class FakeBitrixClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.leads: dict[int, dict] = {}
+        self.contacts: dict[int, dict] = {}
 
     def call(self, method: str, payload: dict):
         self.calls.append((method, payload))
 
         if method == "crm.contact.list":
-            return []
+            field_name, field_value = next(iter(payload["filter"].items()))
+            return [
+                {
+                    key: contact.get(key)
+                    for key in payload.get("select") or contact.keys()
+                }
+                for contact in self.contacts.values()
+                if str(contact.get(field_name) or "") == str(field_value)
+            ]
         if method == "crm.contact.add":
-            return 101
+            contact_id = 101
+            self.contacts[contact_id] = {
+                "ID": str(contact_id),
+                "LAST_NAME": None,
+                **payload["fields"],
+            }
+            return contact_id
+        if method == "crm.contact.update":
+            self.contacts[int(payload["id"])].update(payload["fields"])
+            return True
         if method == "crm.lead.add":
             lead_id = 202
             fields = dict(payload["fields"])
@@ -220,6 +238,7 @@ class BusinessLogicTests(unittest.TestCase):
                     os.environ[key] = value
 
         self.assertEqual(result["full_name"], "JUAN PEREZ")
+        self.assertFalse(result["full_name_inferred"])
         self.assertEqual(payload["full_name"], "Lead Web Redunisol")
 
     def test_apply_full_name_override_keeps_existing_name_when_arca_is_empty(self) -> None:
@@ -319,6 +338,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(submission.full_name, "Juan Perez")
+        self.assertFalse(submission.full_name_inferred)
         self.assertEqual(submission.email, "juan@example.com")
         self.assertEqual(submission.whatsapp, "+5493511234567")
         self.assertEqual(submission.cuil_digits, "20123456783")
@@ -614,12 +634,107 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertIsNone(result["lead_id"])
         self.assertEqual(bcra_client.calls, ["20876543219"])
         self.assertEqual(result["payload"]["full_name"], "Luis Diaz")
+        self.assertFalse(result["payload"]["full_name_inferred"])
         self.assertEqual(result["payload"]["utm_source"], "google")
         self.assertEqual(
             result["payload"]["recibo_url"],
             "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf",
         )
         self.assertEqual(result["bcra_result"]["identification"], "20876543219")
+
+    def test_prequalify_submission_preserves_inferred_name_marker(self) -> None:
+        result = prequalify_submission(
+            {
+                "full_name": "Lozadiego87",
+                "full_name_inferred": True,
+                "email": "lozadiego87@gmail.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-32282690-8",
+                "province": "La Rioja",
+                "employment_status": "Policia",
+                "payment_bank": "Banco Rioja Sociedad Anonima Unipersonal",
+                "lead_source": "Google",
+            },
+            bcra_client=FakeBcraClient({}),
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["payload"]["full_name_inferred"])
+
+    def test_inferred_name_does_not_overwrite_existing_contact_name(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "DIEGO ALEJANDRO LOZA",
+            "LAST_NAME": None,
+            "UF_CONTACT_CUIL": "20322826908",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "Lozadiego87",
+                "full_name_inferred": True,
+                "email": "lozadiego87@gmail.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-32282690-8",
+                "province": "Catamarca",
+                "employment_status": "Empleado Publico Provincial",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        contact_update = next(
+            payload for method, payload in client.calls if method == "crm.contact.update"
+        )
+        self.assertNotIn("NAME", contact_update["fields"])
+        self.assertEqual(client.contacts[101]["NAME"], "DIEGO ALEJANDRO LOZA")
+        lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
+        self.assertEqual(lead_add["fields"]["NAME"], "DIEGO ALEJANDRO LOZA")
+        self.assertEqual(lead_add["fields"]["TITLE"], "DIEGO ALEJANDRO LOZA")
+
+    def test_resolved_name_overwrites_existing_inferred_contact_name(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Lozadiego87",
+            "LAST_NAME": None,
+            "UF_CONTACT_CUIL": "20322826908",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "DIEGO ALEJANDRO LOZA",
+                "full_name_inferred": False,
+                "email": "lozadiego87@gmail.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-32282690-8",
+                "province": "Catamarca",
+                "employment_status": "Empleado Publico Provincial",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.contacts[101]["NAME"], "DIEGO ALEJANDRO LOZA")
+        self.assertEqual(client.contacts[101]["LAST_NAME"], "")
+        lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
+        self.assertEqual(lead_add["fields"]["NAME"], "DIEGO ALEJANDRO LOZA")
 
     def test_prequalify_submission_skips_bcra_for_la_rioja(self) -> None:
         bcra_client = FakeBcraClient({})

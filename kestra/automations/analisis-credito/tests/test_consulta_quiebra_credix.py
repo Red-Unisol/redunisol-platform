@@ -18,7 +18,9 @@ from consulta_quiebra_credix.service import (  # noqa: E402
     build_cache_entry,
     build_cache_lookup,
     _find_detail_next_control,
+    _extract_report_alerts,
     _normalize_report_section,
+    _normalize_alerts,
     _refresh_online_updates_if_available,
     build_error_result,
     build_output_payload,
@@ -83,6 +85,105 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
             output["response_json"],
             '{"status":"single","data":[{"index":1,"title":"Datos Filiatorios","source":"","headers":[],"rows":[["Cuil","20-12345678-3"]],"records":[{"Cuil":"20-12345678-3"}],"text":"Datos Filiatorios Cuil 20-12345678-3"}]}',
         )
+
+    def test_build_output_payload_includes_deduplicated_afip_alert(self) -> None:
+        result = build_single_result(
+            SearchRequest(cuit="20299683614", nombre="LOZA FABIO MARTIN"),
+            [{"title": "Datos Filiatorios", "rows": [["Cuil", "20-29968361-4"]]}],
+            alerts=_normalize_alerts(
+                [
+                    "Alerta: CUIT ha sido dado de baja por AFIP",
+                    "Aviso: AFIP informó el cuit/cuil consultado como dado de baja",
+                ]
+            ),
+        )
+
+        normalized = json.loads(build_output_payload(result)["normalized_json"])
+
+        self.assertEqual(
+            normalized["alertas"],
+            [
+                {
+                    "codigo": "cuit_baja_afip",
+                    "nivel": "warning",
+                    "fuente": "AFIP",
+                    "mensaje": "CUIT dado de baja por AFIP",
+                }
+            ],
+        )
+
+    def test_extract_report_alerts_reads_warning_elements(self) -> None:
+        class StubPage:
+            def evaluate(self, script):
+                self.script = script
+                return [
+                    "Alerta: CUIT ha sido dado de baja por AFIP",
+                    "Aviso: AFIP informó el cuit/cuil consultado como dado de baja",
+                ]
+
+        page = StubPage()
+
+        alerts = _extract_report_alerts(page)
+
+        self.assertIn("div.alert-warning", page.script)
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]["codigo"], "cuit_baja_afip")
+
+    def test_extract_report_alerts_deduplicates_deceased_signals(self) -> None:
+        class StubPage:
+            def evaluate(self, script):
+                self.script = script
+                return [
+                    "Alerta Fallecimiento",
+                    "FALLECIDO",
+                    "Alerta: Boletin Oficial",
+                ]
+
+        page = StubPage()
+
+        alerts = _extract_report_alerts(page)
+
+        self.assertIn(r"alerta\s+fallecimiento", page.script)
+        self.assertIn("fallecido", page.script)
+        self.assertEqual(
+            alerts,
+            [
+                {
+                    "codigo": "persona_fallecida",
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                },
+                {
+                    "codigo": "credixsa_warning",
+                    "nivel": "warning",
+                    "fuente": "CredixSA",
+                    "mensaje": "Boletin Oficial",
+                },
+            ],
+        )
+
+    def test_extract_report_alerts_returns_empty_list_without_warnings(self) -> None:
+        class StubPage:
+            def evaluate(self, script):
+                return []
+
+        self.assertEqual(_extract_report_alerts(StubPage()), [])
+
+    def test_normalize_alerts_preserves_structured_deceased_alert(self) -> None:
+        alerts = _normalize_alerts(
+            [
+                {
+                    "codigo": "persona_fallecida",
+                    "nivel": "error",
+                    "fuente": "CredixSA",
+                    "mensaje": "Persona informada como fallecida",
+                }
+            ]
+        )
+
+        self.assertEqual(alerts[0]["codigo"], "persona_fallecida")
+        self.assertEqual(alerts[0]["nivel"], "error")
 
     def test_build_output_payload_normalizes_priority_sections(self) -> None:
         request = SearchRequest(cuit="27364371980", nombre="")
@@ -535,6 +636,19 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         self.assertIsNotNone(cached)
         self.assertEqual(cached["status"], "single")
         self.assertEqual(cached["cuit"], "20123456783")
+
+    def test_previous_cache_version_is_rejected(self) -> None:
+        result = build_single_result(
+            SearchRequest(cuit="20123456783", nombre=""),
+            [{"title": "Datos Filiatorios", "rows": [["Cuil", "20-12345678-3"]]}],
+            cuit="20123456783",
+            nombre="Juan Perez",
+        )
+        entry = build_cache_entry(result)
+        self.assertIsNotNone(entry)
+        entry["version"] = 3
+
+        self.assertIsNone(cached_result_if_fresh(entry))
 
     def test_cache_key_for_name_is_accent_insensitive(self) -> None:
         self.assertEqual(cache_key_for_name("José   Pérez"), cache_key_for_name("jose perez"))
