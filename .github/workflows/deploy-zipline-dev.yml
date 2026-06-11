@@ -117,6 +117,9 @@ jobs:
           install -d -m 755 "$target_dir/data/themes"
           install -d -m 755 "$target_dir/apache"
 
+          export DOCKER_CONFIG="$staging_dir/docker-config"
+          install -d -m 700 "$DOCKER_CONFIG"
+
           cd "$target_dir"
           compose=(docker compose -p "$compose_project_name" --project-directory "$target_dir" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml")
           "${compose[@]}" config -q
