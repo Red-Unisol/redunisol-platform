@@ -30,6 +30,11 @@ Nota importante para aplicaciones no-Kestra:
 - ejemplo inicial: `apps/metamap-platform/server/`
 - nuevo app operativo importado: `apps/exportador-bancor/`
 
+Nota importante para servicios compartidos de plataforma:
+
+- `platform/` guarda servicios de VPS que no pertenecen a Kestra ni a una aplicacion web
+- `platform/zipline/` define el hosting de archivos para Marketing
+
 Ambientes actuales:
 
 - `dev`
@@ -43,6 +48,9 @@ Todo lo relacionado con Kestra vive dentro de `kestra/`.
 apps/
   exportador-bancor/
   metamap-platform/
+
+platform/
+  zipline/
 
 kestra/
   automations/

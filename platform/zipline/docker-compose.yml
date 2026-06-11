@@ -1,0 +1,53 @@
+services:
+  postgresql:
+    image: ${POSTGRES_IMAGE}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRESQL_USER}
+      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRES_DB: ${POSTGRESQL_DB}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  zipline:
+    image: ${ZIPLINE_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    ports:
+      - "${ZIPLINE_BIND}"
+    environment:
+      DATABASE_URL: postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@postgresql:5432/${POSTGRESQL_DB}
+      CORE_HOSTNAME: ${CORE_HOSTNAME}
+      CORE_PORT: ${CORE_PORT}
+      CORE_SECRET: ${CORE_SECRET}
+      CORE_TRUST_PROXY: ${CORE_TRUST_PROXY}
+      CORE_RETURN_HTTPS_URLS: ${CORE_RETURN_HTTPS_URLS}
+      CORE_DEFAULT_DOMAIN: ${CORE_DEFAULT_DOMAIN}
+      DATASOURCE_TYPE: ${DATASOURCE_TYPE}
+      DATASOURCE_LOCAL_DIRECTORY: ${DATASOURCE_LOCAL_DIRECTORY}
+      FILES_MAX_FILE_SIZE: ${FILES_MAX_FILE_SIZE}
+      FILES_MAX_FILES_PER_UPLOAD: ${FILES_MAX_FILES_PER_UPLOAD}
+      FILES_REMOVE_GPS_METADATA: ${FILES_REMOVE_GPS_METADATA}
+      FEATURES_USER_REGISTRATION: ${FEATURES_USER_REGISTRATION}
+      FEATURES_OAUTH_REGISTRATION: ${FEATURES_OAUTH_REGISTRATION}
+      INVITES_ENABLED: ${INVITES_ENABLED}
+      WEBSITE_TITLE: ${WEBSITE_TITLE}
+      MFA_TOTP_ENABLED: ${MFA_TOTP_ENABLED}
+      MFA_TOTP_ISSUER: ${MFA_TOTP_ISSUER}
+    volumes:
+      - ./data/uploads:/zipline/uploads
+      - ./data/public:/zipline/public
+      - ./data/themes:/zipline/themes
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://0.0.0.0:3000/api/healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
