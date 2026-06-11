@@ -7,7 +7,7 @@ Servicio Git-managed para que Marketing suba imagenes y obtenga URLs publicas.
 - URL prevista: `http://media-dev.redunisol.com.ar`
 - runtime: `/opt/zipline-dev`
 - bind interno: `127.0.0.1:3040`
-- imagen: `ghcr.io/diced/zipline:v4.6.2`
+- imagen: canal `v4` fijado por digest en el runtime env
 - datos persistentes: `/opt/zipline-dev/data`
 
 Git versiona Compose, el vhost, el workflow y el runtime env cifrado. PostgreSQL,
@@ -20,7 +20,7 @@ El workflow `Deploy Zipline Dev`:
 1. descifra `zipline.dev.env.enc`
 2. sube Compose, `.env` y el vhost a una carpeta temporal
 3. valida la configuracion
-4. levanta PostgreSQL y Zipline
+4. levanta PostgreSQL y la imagen inmutable de Zipline
 5. espera un `200` de `/api/healthcheck`
 6. persiste los archivos efectivos en `/opt/zipline-dev`
 
