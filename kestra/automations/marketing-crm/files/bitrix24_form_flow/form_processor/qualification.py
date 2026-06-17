@@ -27,6 +27,9 @@ QUALIFICATION_RULES = {
             "empleado_publico_municipal",
             "policia",
             "docente",
+            "personal_de_salud",
+            "empleado_de_la_unc",
+            "daspu",
             "jubilado_provincial",
             "jubilado_nacional",
             "pensionado",
@@ -37,6 +40,7 @@ QUALIFICATION_RULES = {
             "empleado_publico_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
             "policia": {"banco_de_la_provincia_de_cordoba_s_a"},
             "docente": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "personal_de_salud": {"banco_de_la_provincia_de_cordoba_s_a"},
             "jubilado_nacional": {"banco_de_la_provincia_de_cordoba_s_a"},
             "pensionado": {"banco_de_la_provincia_de_cordoba_s_a"},
         },
@@ -46,6 +50,7 @@ QUALIFICATION_RULES = {
             "empleado_publico_provincial",
             "policia",
             "docente",
+            "personal_de_salud",
         }
     },
     "la_rioja": {
