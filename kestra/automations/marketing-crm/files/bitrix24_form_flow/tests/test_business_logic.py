@@ -385,6 +385,31 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(submission.employment_status.key, "docente")
         self.assertEqual(submission.employment_status.bitrix_id, "3745")
 
+    def test_normalize_new_employment_statuses(self) -> None:
+        cases = [
+            ("Personal de Salud", "personal_de_salud", "4069"),
+            ("Empleado de la UNC", "empleado_de_la_unc", "4071"),
+            ("DASPU", "daspu", "4073"),
+        ]
+
+        for raw_status, expected_key, expected_bitrix_id in cases:
+            with self.subTest(raw_status=raw_status):
+                submission = normalize_business_input(
+                    {
+                        "full_name": "Maria Lopez",
+                        "email": "maria@example.com",
+                        "whatsapp": "3511234567",
+                        "cuil": "27-12345678-5",
+                        "province": "Cordoba",
+                        "employment_status": raw_status,
+                        "payment_bank": "Banco de la Provincia de Cordoba S.A.",
+                        "lead_source": "Google",
+                    }
+                )
+
+                self.assertEqual(submission.employment_status.key, expected_key)
+                self.assertEqual(submission.employment_status.bitrix_id, expected_bitrix_id)
+
     def test_qualification_rejects_non_eligible_province(self) -> None:
         submission = normalize_business_input(
             {
@@ -460,6 +485,84 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result.qualified)
         self.assertEqual(result.reason, "qualified")
+
+    def test_qualification_accepts_cordoba_personal_de_salud_with_bancor(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Cordoba",
+                "employment_status": "Personal de Salud",
+                "payment_bank": "Banco de la Provincia de Cordoba S.A.",
+                "lead_source": "Google",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertTrue(result.qualified)
+        self.assertEqual(result.reason, "qualified")
+
+    def test_qualification_rejects_cordoba_personal_de_salud_without_bancor(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Cordoba",
+                "employment_status": "Personal de Salud",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "payment_bank_not_eligible")
+
+    def test_qualification_accepts_catamarca_personal_de_salud_without_bank_filter(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Catamarca",
+                "employment_status": "Personal de Salud",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertTrue(result.qualified)
+        self.assertEqual(result.reason, "qualified")
+
+    def test_qualification_accepts_cordoba_unc_and_daspu_without_bank_filter(self) -> None:
+        for raw_status in ("Empleado de la UNC", "DASPU"):
+            with self.subTest(raw_status=raw_status):
+                submission = normalize_business_input(
+                    {
+                        "full_name": "Maria Lopez",
+                        "email": "maria@example.com",
+                        "whatsapp": "3511234567",
+                        "cuil": "27-12345678-5",
+                        "province": "Cordoba",
+                        "employment_status": raw_status,
+                        "payment_bank": "Banco de la Nacion Argentina",
+                        "lead_source": "Google",
+                    }
+                )
+
+                result = evaluate_qualification(submission)
+
+                self.assertTrue(result.qualified)
+                self.assertEqual(result.reason, "qualified")
 
     def test_qualification_rejects_la_rioja_pensionado(self) -> None:
         submission = normalize_business_input(

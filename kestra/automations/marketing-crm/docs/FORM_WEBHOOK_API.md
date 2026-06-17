@@ -67,17 +67,21 @@ Campos:
 
 `employment_status`
 
-- `Empleado Publico Provincial`
-- `Empleado Publico Nacional`
-- `Empleado Publico Municipal`
-- `Empleado Privado`
-- `Policia`
 - `Jubilado Provincial`
+- `Empleado Publico Provincial`
+- `Policia`
+- `Docente`
+- `Personal de Salud`
 - `Jubilado Nacional`
+- `Pensionado`
 - `Jubilado Municipal`
+- `Empleado Publico Municipal`
+- `Empleado de la UNC`
+- `DASPU`
+- `Empleado Publico Nacional`
+- `Empleado Privado`
 - `Autonomo Independiente`
 - `Monotributista`
-- `Pensionado`
 - `Beneficiario de Plan Social`
 
 `lead_source`
