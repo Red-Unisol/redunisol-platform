@@ -244,11 +244,22 @@ function validateCuil(value: string): CuilValidation {
     if (actualDigit !== expectedDigit) {
         return {
             status: 'invalid',
-            message: 'Revisá el CUIL: el último dígito no coincide.',
+            message: 'Revisá los dígitos del CUIL.',
         };
     }
 
     return { status: 'valid', message: null };
+}
+
+function formatCuilInput(value: string): string {
+    const digits = value.replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) {
+        return digits;
+    }
+    if (digits.length <= 10) {
+        return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    }
+    return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10)}`;
 }
 
 // ── Shared style constants ────────────────────────────────────────────────────
@@ -315,7 +326,7 @@ function Step1({
                             onChange={(e) =>
                                 setFormData((p) => ({
                                     ...p,
-                                    cuil: e.target.value,
+                                    cuil: formatCuilInput(e.target.value),
                                 }))
                             }
                             className={`${inputCls} ${
