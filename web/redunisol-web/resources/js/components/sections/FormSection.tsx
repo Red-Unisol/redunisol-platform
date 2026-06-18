@@ -211,6 +211,46 @@ function createLeadEventId() {
     return `lead_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+type CuilValidation = {
+    status: 'empty' | 'incomplete' | 'valid' | 'invalid';
+    message: string | null;
+};
+
+function validateCuil(value: string): CuilValidation {
+    const digits = value.replace(/\D/g, '');
+
+    if (!digits) {
+        return { status: 'empty', message: null };
+    }
+
+    if (digits.length !== 11) {
+        return {
+            status: 'incomplete',
+            message: 'Ingresá un CUIL de 11 dígitos.',
+        };
+    }
+
+    const multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    const sum = multipliers.reduce(
+        (total, multiplier, index) =>
+            total + Number(digits[index]) * multiplier,
+        0,
+    );
+    const remainder = sum % 11;
+    const expectedDigit =
+        remainder === 0 ? 0 : remainder === 1 ? 9 : 11 - remainder;
+    const actualDigit = Number(digits[10]);
+
+    if (actualDigit !== expectedDigit) {
+        return {
+            status: 'invalid',
+            message: 'Revisá el CUIL: el último dígito no coincide.',
+        };
+    }
+
+    return { status: 'valid', message: null };
+}
+
 // ── Shared style constants ────────────────────────────────────────────────────
 
 const inputCls =
@@ -234,11 +274,18 @@ function Step1({
     formData,
     setFormData,
     cfg,
+    cuilValidation,
 }: {
     formData: LeadFormData;
     setFormData: React.Dispatch<React.SetStateAction<LeadFormData>>;
     cfg: FormSectionConfig;
+    cuilValidation: CuilValidation;
 }) {
+    const showCuilError =
+        cfg.cuil.enabled &&
+        cuilValidation.message !== null &&
+        formData.cuil.trim() !== '';
+
     return (
         <motion.div {...stepAnim} key="s1">
             <h2 className="mb-1 text-center text-2xl font-semibold text-[#1e2d3d]">
@@ -259,14 +306,32 @@ function Step1({
                             inputMode="numeric"
                             placeholder="Ej: 20-12345678-3"
                             value={formData.cuil}
+                            aria-invalid={showCuilError}
+                            aria-describedby={
+                                showCuilError
+                                    ? 'cuil-validation-message'
+                                    : undefined
+                            }
                             onChange={(e) =>
                                 setFormData((p) => ({
                                     ...p,
                                     cuil: e.target.value,
                                 }))
                             }
-                            className={inputCls}
+                            className={`${inputCls} ${
+                                showCuilError
+                                    ? 'border-red-300 focus:border-red-400 focus:ring-red-400'
+                                    : ''
+                            }`}
                         />
+                        {showCuilError && (
+                            <p
+                                id="cuil-validation-message"
+                                className="mt-1.5 text-xs font-medium text-red-500"
+                            >
+                                {cuilValidation.message}
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -881,6 +946,15 @@ export default function FormSection({
     const totalActiveSteps = enabledSteps.length;
     const progressPercent = ((currentStepIndex + 1) / totalActiveSteps) * 100;
     const isLastStep = currentStepIndex === enabledSteps.length - 1;
+    const cuilValidation = useMemo(
+        () => validateCuil(formData.cuil),
+        [formData.cuil],
+    );
+    const blocksStep1 =
+        step === 1 &&
+        cfg.cuil.enabled &&
+        formData.cuil.trim() !== '' &&
+        cuilValidation.status !== 'valid';
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
@@ -1099,6 +1173,7 @@ export default function FormSection({
                                     formData={formData}
                                     setFormData={setFormData}
                                     cfg={cfg}
+                                    cuilValidation={cuilValidation}
                                 />
                             ) : step === 2 ? (
                                 <Step2
@@ -1151,6 +1226,7 @@ export default function FormSection({
                                 onClick={goNext}
                                 disabled={
                                     isSubmitting ||
+                                    blocksStep1 ||
                                     (step === 2 &&
                                         (uploading ||
                                             (!!formData.recibo && !reciboUrl)))
