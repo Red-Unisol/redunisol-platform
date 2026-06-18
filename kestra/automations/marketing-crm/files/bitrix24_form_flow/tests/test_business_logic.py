@@ -29,6 +29,7 @@ from bitrix24_form_flow.form_processor.bcra_client import (
 from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
 from bitrix24_form_flow.form_processor.input_parser import normalize_business_input, parse_body
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
+from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
 
 
 class FakeBitrixClient:
@@ -89,6 +90,13 @@ class FakeBitrixClient:
                         {"ID": "3939", "VALUE": "OTRO BANCO"},
                         {"ID": "3953", "VALUE": "PUBLICO NACIONAL"},
                         {"ID": "3967", "VALUE": "NO SON SOCIOS NI QUIEREN PRESTAMO"},
+                    ]
+                },
+                "UF_CRM_1728998183": {
+                    "items": [
+                        {"ID": "2617", "VALUE": "Si"},
+                        {"ID": "2619", "VALUE": "No"},
+                        {"ID": "4053", "VALUE": "Desconocido"},
                     ]
                 }
             }
@@ -908,6 +916,102 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertIn("Estado: NEGATIVO", client.leads[202]["UF_CRM_BCRA_STATUS"])
         self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_REJECTION_REASON"], "3935")
+
+    def test_persist_submission_sets_birthdate_from_arca(self) -> None:
+        client = FakeBitrixClient()
+        env = {
+            **self.env,
+            "ARCA_RESOLVED_FECHA_NACIMIENTO": "1986-01-04T12:00:00-03:00",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "+5493511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.leads[202]["BIRTHDATE"], "1986-01-04")
+
+    def test_persist_submission_sets_vimarx_enrichment_fields(self) -> None:
+        client = FakeBitrixClient()
+        enrichment = VimarxEnrichment(
+            ok=True,
+            es_socio=True,
+            socio={"nro_socio": "20936", "cuil": "20876543219"},
+            cantidad_creditos_activos=1,
+            creditos=[
+                {
+                    "prestamo_id": "419774",
+                    "linea": "AMEJUCA PREMIUM",
+                    "monto_credito": 387545.95,
+                    "cuotas_totales": 12,
+                    "cuotas_pagas": 3,
+                    "dias_atraso": 322,
+                    "saldo_prestamo": 268031.35,
+                }
+            ],
+            detalle_human=(
+                "Creditos activos: 1\n\n"
+                "1. Credito 419774 - AMEJUCA PREMIUM\n"
+                "   Monto: $387.545,95\n"
+                "   Cuotas: 3 pagas de 12\n"
+                "   Dias de atraso: 322\n"
+                "   Saldo: $268.031,35"
+            ),
+            raw_json='{"ok":true}',
+            error="",
+        )
+        original_vimarx_url = os.environ.get("VIMARX_EVAL_BASE_URL")
+        try:
+            os.environ["VIMARX_EVAL_BASE_URL"] = "https://vimarx.example.test"
+            with patch(
+                "bitrix24_form_flow.form_processor.vimarx_service.consult_vimarx_enrichment",
+                return_value=enrichment,
+            ):
+                result = persist_submission(
+                    {
+                        "full_name": "Luis Diaz",
+                        "email": "luis@example.com",
+                        "whatsapp": "+5493511234567",
+                        "cuil": "20-87654321-9",
+                        "province": "Cordoba",
+                        "employment_status": "Jubilado Provincial",
+                        "payment_bank": "Banco Santander Rio S.A.",
+                        "lead_source": "Facebook",
+                    },
+                    qualified=True,
+                    reason="qualified",
+                    message="Califica.",
+                    env=self.env,
+                    bitrix_client=client,
+                    logger=SilentLogger(),
+                )
+        finally:
+            if original_vimarx_url is None:
+                os.environ.pop("VIMARX_EVAL_BASE_URL", None)
+            else:
+                os.environ["VIMARX_EVAL_BASE_URL"] = original_vimarx_url
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.leads[202]["UF_CRM_1728998183"], "2617")
+        self.assertEqual(client.leads[202]["UF_CRM_VIMARX_NRO_SOCIO"], "20936")
+        self.assertEqual(client.leads[202]["UF_CRM_VIMARX_CRED_ACT_CNT"], 1)
+        self.assertIn("Credito 419774", client.leads[202]["UF_CRM_VIMARX_CRED_DET"])
+        self.assertEqual(client.leads[202]["UF_CRM_VIMARX_CRED_RAW"], '{"ok":true}')
 
     def test_ingest_submission_sets_processing_policy_to_skip(self) -> None:
         client = FakeBitrixClient()

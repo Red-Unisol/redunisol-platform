@@ -3,6 +3,7 @@
 /.github/workflows/ @Nasst
 /kestra/platform/ @Nasst
 /kestra/tools/ @Nasst
+/platform/ @Nasst
 
 # Runtime y deploy web
 /web/herramientas/deploy/ @Nasst

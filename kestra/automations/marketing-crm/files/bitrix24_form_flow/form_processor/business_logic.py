@@ -25,11 +25,13 @@ from .lead_service import (
     get_lead,
     should_process_lead,
     update_lead_bcra_snapshot,
+    update_lead_fields,
     update_lead_status,
 )
 from .logger import create_logger, Logger
 from .qualification import QualificationResult, evaluate_qualification
 from .result import failure_result, intake_success_result, skipped_result, success_result
+from .vimarx_service import build_birthdate_field, sync_lead_vimarx_enrichment
 
 
 def process_form_body(
@@ -201,6 +203,18 @@ def persist_submission(
         contact_id = contact.contact_id
         effective_submission = replace(submission, full_name=contact.effective_full_name)
         lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
+
+        birthdate_fields = build_birthdate_field(config, env)
+        if birthdate_fields:
+            update_lead_fields(client, lead_id, birthdate_fields)
+
+        sync_lead_vimarx_enrichment(
+            client,
+            config,
+            lead_id,
+            submission.cuil_digits,
+            active_logger,
+        )
 
         if bcra_result_payload:
             bcra_result = deserialize_bcra_result(bcra_result_payload)

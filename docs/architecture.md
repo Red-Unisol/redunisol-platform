@@ -27,6 +27,9 @@ apps/
   exportador-bancor/
   metamap-platform/
 
+platform/
+  zipline/
+
 kestra/
   automations/
     marketing-crm/
@@ -94,6 +97,14 @@ Ejemplo actual:
 
 - `apps/exportador-bancor/`: utilidad operativa Python para generar exports ARC Bancor con CLI, GUI y build local a `.exe`
 - `apps/metamap-platform/server/`: backend inicial de ingest y consulta de validaciones MetaMap persistidas en SQL
+
+### `platform/`
+
+Agrupa servicios compartidos de la VPS que no forman parte del runtime Kestra ni
+de una aplicacion web concreta.
+
+- `platform/zipline/`: hosting de archivos para Marketing, con infraestructura
+  Git-managed y datos persistentes fuera de Git
 
 ### `web/`
 

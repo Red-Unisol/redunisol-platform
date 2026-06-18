@@ -23,6 +23,10 @@ tasks:
     containerImage: python:3.12-slim
     beforeCommands:
       - pip install kestra requests > /dev/null
+    retry:
+      type: constant
+      interval: PT30S
+      maxAttempt: 3
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
       AFIP_CRM_BASE_URL: "https://servicioscf.afip.gob.ar/publico/crmcit/"
@@ -63,7 +67,26 @@ outputs:
 triggers:
   - id: webhook
     type: io.kestra.plugin.core.trigger.Webhook
-    key: afip_contacto_por_dni_dev_20260414
+    key: "{{ secret('AFIP_CONTACTO_WEBHOOK_KEY') }}"
     wait: true
     returnOutputs: true
     responseContentType: application/json
+
+errors:
+  - id: notificar_fallo
+    type: io.kestra.plugin.notifications.mail.MailSend
+    host: vps-3028748-x.dattaweb.com
+    port: 465
+    username: sistemas@redunisol.com.ar
+    password: "{{ secret('SMTP_PASSWORD') }}"
+    transportStrategy: SMTPS
+    from: sistemas@redunisol.com.ar
+    to: nicosallitto@gmail.com
+    subject: "Flow fallido: {{ flow.id }}"
+    htmlTextContent: |
+      <b>Flow:</b> {{ flow.id }}<br>
+      <b>Namespace:</b> {{ flow.namespace }}<br>
+      <b>Ejecución:</b> {{ execution.id }}<br>
+      <b>Fecha:</b> {{ execution.startDate }}<br>
+      <br>
+      Revisar en: https://kestra.redunisol.com.ar

@@ -15,6 +15,9 @@ La cadena actual tiene seis piezas principales:
 5. API de Kestra
 6. Docker Compose de runtime para la capa web
 
+Los servicios compartidos de `platform/` usan el mismo modelo de runtime env
+cifrado y deploy por SSH.
+
 ## Workflows Actuales
 
 ### `validate.yml`
@@ -90,6 +93,23 @@ Importante:
 - el archivo `.env.enc` ya no se guarda como un blob unico: ahora preserva nombres de variables y comments, con valores cifrados por linea para reducir conflictos de merge
 - por `push` sigue corriendo solo desde `main`
 - manualmente puede correrse desde `main` o `dev`, pero sigue aplicando sobre la misma instancia compartida en `/opt/kestra`
+
+### `deploy-zipline-dev.yml`
+
+Despliega `platform/zipline/` en `/opt/zipline-dev`.
+
+Comportamiento:
+
+- corre en push a `dev` cuando cambia Zipline y tambien manualmente desde `dev`
+- descifra `platform/zipline/zipline.dev.env.enc`
+- levanta Zipline v4 y PostgreSQL con Docker Compose
+- preserva base de datos, uploads, public assets y themes en `/opt/zipline-dev/data`
+- valida el healthcheck interno en `127.0.0.1:3040`
+- deja el vhost versionado en `/opt/zipline-dev/apache/` para activarlo en el Apache frontal
+
+La publicacion inicial prevista es `http://media-dev.redunisol.com.ar`. DNS y la
+activacion del vhost son prerequisitos externos al contenedor. HTTPS requiere un
+certificado y un cambio posterior del runtime env.
 
 ### `publish-analisis-credito-consulta-cuad-image.yml`
 
