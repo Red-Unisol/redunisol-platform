@@ -75,6 +75,9 @@ outputs:
   - id: razon_social
     type: STRING
     value: "{{ outputs.consultar_padron.vars.razon_social }}"
+  - id: fecha_nacimiento
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.fecha_nacimiento }}"
   - id: estado_clave
     type: STRING
     value: "{{ outputs.consultar_padron.vars.estado_clave }}"

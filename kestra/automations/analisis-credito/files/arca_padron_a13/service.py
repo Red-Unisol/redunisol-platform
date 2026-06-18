@@ -133,6 +133,7 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
         "nombre": str(persona.get("nombre") or ""),
         "apellido": str(persona.get("apellido") or ""),
         "razon_social": str(persona.get("razonSocial") or ""),
+        "fecha_nacimiento": normalize_date(persona.get("fechaNacimiento")),
         "estado_clave": str(persona.get("estadoClave") or ""),
         "tipo_persona": str(persona.get("tipoPersona") or ""),
         "tipo_clave": str(persona.get("tipoClave") or ""),
@@ -153,6 +154,20 @@ def normalize_identifier(value: Any) -> str:
     if len(digits) != 11:
         raise ValueError("Expected a CUIT/CUIL with 11 digits.")
     return digits
+
+
+def normalize_date(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    for candidate in (text, text[:10]):
+        try:
+            return datetime.fromisoformat(candidate).date().isoformat()
+        except ValueError:
+            pass
+
+    return ""
 
 
 def build_login_ticket_request(service_name: str, now: datetime | None = None) -> bytes:

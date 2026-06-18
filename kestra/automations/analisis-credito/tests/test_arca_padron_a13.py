@@ -55,6 +55,7 @@ class ArcaPadronA13Tests(unittest.TestCase):
                     "nombre": "NICOLAS",
                     "apellido": "SALLITTO",
                     "estadoClave": "ACTIVO",
+                    "fechaNacimiento": "1986-01-04T12:00:00-03:00",
                     "tipoPersona": "FISICA",
                     "tipoClave": "CUIT",
                     "numeroDocumento": "35966130",
@@ -67,6 +68,7 @@ class ArcaPadronA13Tests(unittest.TestCase):
         self.assertEqual(payload["nombre"], "NICOLAS")
         self.assertEqual(payload["apellido"], "SALLITTO")
         self.assertEqual(payload["id_persona"], "20359661305")
+        self.assertEqual(payload["fecha_nacimiento"], "1986-01-04")
 
     def test_build_error_result_defaults_to_empty_request(self) -> None:
         payload = build_output_payload(build_error_result(None, "boom"))
