@@ -31,7 +31,7 @@ from .lead_service import (
 from .logger import create_logger, Logger
 from .qualification import QualificationResult, evaluate_qualification
 from .result import failure_result, intake_success_result, skipped_result, success_result
-from .vimarx_service import build_birthdate_field, sync_lead_vimarx_enrichment
+from .vimarx_service import build_birthdate_field, resolve_arca_birthdate, sync_lead_vimarx_enrichment
 
 
 def process_form_body(
@@ -198,8 +198,15 @@ def persist_submission(
         config = load_config(env)
         client = bitrix_client or BitrixClient(config, active_logger)
         submission = normalize_business_input(payload)
+        arca_birthdate = resolve_arca_birthdate(env)
 
-        contact = upsert_contact(client, config, submission, active_logger)
+        contact = upsert_contact(
+            client,
+            config,
+            submission,
+            active_logger,
+            birthdate=arca_birthdate,
+        )
         contact_id = contact.contact_id
         effective_submission = replace(submission, full_name=contact.effective_full_name)
         lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)

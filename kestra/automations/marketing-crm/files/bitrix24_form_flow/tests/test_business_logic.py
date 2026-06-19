@@ -945,6 +945,87 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(client.leads[202]["BIRTHDATE"], "1986-01-04")
+        self.assertEqual(client.contacts[101]["BIRTHDATE"], "1986-01-04")
+
+    def test_persist_submission_sets_empty_contact_birthdate_from_arca(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Luis Diaz",
+            "LAST_NAME": None,
+            "BIRTHDATE": "",
+            "UF_CONTACT_CUIL": "20876543219",
+        }
+        env = {
+            **self.env,
+            "ARCA_RESOLVED_FECHA_NACIMIENTO": "1986-01-04T12:00:00-03:00",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "+5493511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        contact_update = next(
+            payload for method, payload in client.calls if method == "crm.contact.update"
+        )
+        self.assertEqual(contact_update["fields"]["BIRTHDATE"], "1986-01-04")
+        self.assertEqual(client.contacts[101]["BIRTHDATE"], "1986-01-04")
+
+    def test_persist_submission_does_not_overwrite_existing_contact_birthdate(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Luis Diaz",
+            "LAST_NAME": None,
+            "BIRTHDATE": "1970-02-03",
+            "UF_CONTACT_CUIL": "20876543219",
+        }
+        env = {
+            **self.env,
+            "ARCA_RESOLVED_FECHA_NACIMIENTO": "1986-01-04T12:00:00-03:00",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "+5493511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        contact_update = next(
+            payload for method, payload in client.calls if method == "crm.contact.update"
+        )
+        self.assertNotIn("BIRTHDATE", contact_update["fields"])
+        self.assertEqual(client.contacts[101]["BIRTHDATE"], "1970-02-03")
 
     def test_persist_submission_sets_vimarx_enrichment_fields(self) -> None:
         client = FakeBitrixClient()
