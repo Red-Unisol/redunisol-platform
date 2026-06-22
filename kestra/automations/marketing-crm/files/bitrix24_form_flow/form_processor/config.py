@@ -19,6 +19,7 @@ DEFAULT_LEAD_FIELDS = {
     "utm_content": "UTM_CONTENT",
     "recibo": "UF_CRM_64F9E8DA4DD9B",
     "birthdate": "BIRTHDATE",
+    "contact_birthdate": "",
     "es_socio": "UF_CRM_1728998183",
     "vimarx_nro_socio": "UF_CRM_VIMARX_NRO_SOCIO",
     "vimarx_creditos_activos_count": "UF_CRM_VIMARX_CRED_ACT_CNT",
@@ -53,6 +54,7 @@ class BitrixFieldsConfig:
     lead_utm_content: str
     lead_recibo_file: str | None
     lead_birthdate: str | None
+    lead_contact_birthdate: str | None
     lead_es_socio: str | None
     lead_vimarx_nro_socio: str | None
     lead_vimarx_creditos_activos_count: str | None
@@ -157,6 +159,10 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             lead_birthdate=source.get(
                 "BITRIX24_LEAD_BIRTHDATE_FIELD",
                 DEFAULT_LEAD_FIELDS["birthdate"],
+            ),
+            lead_contact_birthdate=_optional_env(
+                source,
+                "BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD",
             ),
             lead_es_socio=source.get(
                 "BITRIX24_LEAD_ES_SOCIO_FIELD",

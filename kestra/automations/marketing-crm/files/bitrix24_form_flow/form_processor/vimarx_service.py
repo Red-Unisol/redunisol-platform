@@ -16,6 +16,7 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .lead_service import update_lead_fields
 from .logger import Logger
+from .normalization import normalize_birthdate
 
 
 TIPO_SOCIO = "F.Module.SocioMutual"
@@ -222,7 +223,14 @@ def build_birthdate_field(
     config: AppConfig,
     env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    birthdate = resolve_arca_birthdate(env)
+    return build_birthdate_field_from_value(config, resolve_arca_birthdate(env))
+
+
+def build_birthdate_field_from_value(
+    config: AppConfig,
+    value: Any,
+) -> dict[str, str]:
+    birthdate = normalize_birthdate(value)
     if not birthdate or not config.fields.lead_birthdate:
         return {}
     return {config.fields.lead_birthdate: birthdate}
@@ -464,18 +472,6 @@ def resolve_enum_id(client: BitrixClient, field_name: str, target_label: str) ->
     raise RuntimeError(
         f'No se encontro el valor "{target_label}" en la enumeracion del campo "{field_name}".'
     )
-
-
-def normalize_birthdate(value: Any) -> str:
-    text = stringify(value)
-    if not text:
-        return ""
-    for candidate in (text, text[:10]):
-        try:
-            return dt.datetime.fromisoformat(candidate).date().isoformat()
-        except ValueError:
-            pass
-    return ""
 
 
 def cuota_distinta_esta_paga(rows: list[dict[str, Any]]) -> bool:

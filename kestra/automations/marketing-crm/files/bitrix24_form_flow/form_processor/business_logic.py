@@ -21,9 +21,11 @@ from .contact_service import upsert_contact
 from .input_parser import normalize_business_input, parse_body
 from .lead_service import (
     build_submission_from_lead,
+    build_lead_contact_birthdate_field,
     create_lead,
     get_lead,
     should_process_lead,
+    sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
     update_lead_fields,
     update_lead_status,
@@ -31,7 +33,11 @@ from .lead_service import (
 from .logger import create_logger, Logger
 from .qualification import QualificationResult, evaluate_qualification
 from .result import failure_result, intake_success_result, skipped_result, success_result
-from .vimarx_service import build_birthdate_field, resolve_arca_birthdate, sync_lead_vimarx_enrichment
+from .vimarx_service import (
+    build_birthdate_field_from_value,
+    resolve_arca_birthdate,
+    sync_lead_vimarx_enrichment,
+)
 
 
 def process_form_body(
@@ -211,9 +217,21 @@ def persist_submission(
         effective_submission = replace(submission, full_name=contact.effective_full_name)
         lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
 
-        birthdate_fields = build_birthdate_field(config, env)
+        birthdate_fields = {
+            **build_birthdate_field_from_value(config, contact.effective_birthdate),
+            **build_lead_contact_birthdate_field(config, contact.effective_birthdate),
+        }
         if birthdate_fields:
             update_lead_fields(client, lead_id, birthdate_fields)
+        if contact.birthdate_updated:
+            sync_contact_birthdate_to_leads(
+                client,
+                config,
+                contact_id,
+                contact.effective_birthdate,
+                active_logger,
+                exclude_lead_ids={lead_id},
+            )
 
         sync_lead_vimarx_enrichment(
             client,

@@ -88,6 +88,7 @@ Ejemplos reales:
 - `ENV_BITRIX24_LEAD_BCRA_RESULT_FIELD`
 - `ENV_BITRIX24_LEAD_BCRA_DATA_RAW_FIELD`
 - `ENV_BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD`
+- `ENV_BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
@@ -146,6 +147,19 @@ Importante:
 - los IDs reales de esos campos deben existir previamente en Bitrix24
 - si esos campos no estan configurados, la clasificacion puede seguir consultando BCRA para decidir rechazo, pero no persistira snapshot
 - el flow programado `bitrix24_bcra_backfill` se auto-omite hasta que esas cuatro variables esten configuradas
+
+## Variable Para Fecha De Nacimiento Visible En Lead
+
+`ENV_BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD` define un campo custom de lead, tipo fecha, usado solo como copia visible de `crm.contact.BIRTHDATE`.
+
+Regla de fuente de verdad:
+
+- `crm.contact.BIRTHDATE` es la fuente de verdad
+- el campo de lead es una duplicacion de conveniencia para la UI de Prospecto
+- si el contacto no tiene fecha de nacimiento, no se escribe el duplicado en lead
+- si el contacto ya tiene fecha de nacimiento, ARCA no la pisa
+
+Este campo debe existir previamente en Bitrix24 y su ID real debe cargarse como `UF_CRM_...`.
 
 ## Opcion Recomendada Para Evitar Doble Actualizacion
 

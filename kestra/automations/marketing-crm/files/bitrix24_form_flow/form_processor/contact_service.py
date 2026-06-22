@@ -6,12 +6,15 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .input_parser import NormalizedInput
 from .logger import Logger
+from .normalization import normalize_birthdate
 
 
 @dataclass(frozen=True)
 class ContactUpsertResult:
     contact_id: int
     effective_full_name: str
+    effective_birthdate: str
+    birthdate_updated: bool
 
 
 def upsert_contact(
@@ -47,16 +50,19 @@ def upsert_contact(
         existing_contact = contacts[0]
         contact_id = int(contacts[0]["ID"])
         existing_full_name = _contact_full_name(existing_contact)
+        existing_birthdate = normalize_birthdate(existing_contact.get("BIRTHDATE"))
         effective_full_name = (
             existing_full_name
             if submission.full_name_inferred and existing_full_name
             else submission.full_name
         )
+        effective_birthdate = existing_birthdate or (birthdate or "")
+        birthdate_updated = bool(birthdate and not existing_birthdate)
         fields = dict(common_fields)
         if effective_full_name == submission.full_name:
             fields["NAME"] = submission.full_name
             fields["LAST_NAME"] = ""
-        if birthdate and not _has_value(existing_contact.get("BIRTHDATE")):
+        if birthdate_updated:
             fields["BIRTHDATE"] = birthdate
 
         logger.info(f"Contacto encontrado ({contact_id}). Actualizando datos.")
@@ -64,6 +70,8 @@ def upsert_contact(
         return ContactUpsertResult(
             contact_id=contact_id,
             effective_full_name=effective_full_name,
+            effective_birthdate=effective_birthdate,
+            birthdate_updated=birthdate_updated,
         )
 
     logger.info("No se encontro contacto. Creando contacto nuevo.")
@@ -74,6 +82,8 @@ def upsert_contact(
     return ContactUpsertResult(
         contact_id=int(contact_id),
         effective_full_name=submission.full_name,
+        effective_birthdate=birthdate or "",
+        birthdate_updated=bool(birthdate),
     )
 
 
@@ -83,11 +93,3 @@ def _contact_full_name(contact: dict[str, object]) -> str:
         str(contact.get("LAST_NAME") or "").strip(),
     ]
     return " ".join(part for part in parts if part)
-
-
-def _has_value(value: object) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    return True

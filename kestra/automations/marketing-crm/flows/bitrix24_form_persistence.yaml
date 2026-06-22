@@ -83,6 +83,7 @@ tasks:
       BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
       BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
       BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
+      BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD: "{{ envs.bitrix24_lead_contact_birthdate_field ?? '' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
