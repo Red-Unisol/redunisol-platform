@@ -1,0 +1,15 @@
+id: test_de_alerta
+namespace: redunisol
+
+description: Flow manual de prueba para validar el system flow de alertas por fallo.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: manual
+  integration: test
+
+tasks:
+  - id: fallar
+    type: io.kestra.plugin.core.execution.Fail
+    errorMessage: "Fallo controlado para probar alerta_flow_fallos"
