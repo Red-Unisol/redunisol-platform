@@ -242,6 +242,8 @@ jobs:
           KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
 
   deploy-prod-system:
+    # Do not promote the current system alert flow to main/prod as-is.
+    # It is currently scoped to redunisol.dev.* and needs prod-specific filters first.
     runs-on: ubuntu-latest
     environment: kestra-prod
     needs:

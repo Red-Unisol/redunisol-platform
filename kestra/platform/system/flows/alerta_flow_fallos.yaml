@@ -1,6 +1,9 @@
 id: alerta_flow_fallos
 namespace: redunisol
 
+# Dev-only checkpoint:
+# este flow monitorea intencionalmente namespaces redunisol.dev.*.
+# No mergear/promover a main en este estado sin antes definir filtros prod.
 description: Observa ejecuciones fallidas de Kestra y registra una alerta tecnica centralizada.
 
 labels:
