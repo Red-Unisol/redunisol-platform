@@ -18,11 +18,11 @@ inputs:
     required: false
   - id: max_leads
     type: INT
-    required: false
+    required: true
     defaults: 500
   - id: dry_run
     type: BOOLEAN
-    required: false
+    required: true
     defaults: true
 
 tasks:
