@@ -222,11 +222,15 @@ def build_birthdate_field(
     config: AppConfig,
     env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    source = os.environ if env is None else env
-    birthdate = normalize_birthdate(source.get("ARCA_RESOLVED_FECHA_NACIMIENTO", ""))
+    birthdate = resolve_arca_birthdate(env)
     if not birthdate or not config.fields.lead_birthdate:
         return {}
     return {config.fields.lead_birthdate: birthdate}
+
+
+def resolve_arca_birthdate(env: dict[str, str] | None = None) -> str:
+    source = os.environ if env is None else env
+    return normalize_birthdate(source.get("ARCA_RESOLVED_FECHA_NACIMIENTO", ""))
 
 
 def fetch_socio_by_cuil(cuil_digits: str, config: VimarxConfig) -> dict[str, Any]:

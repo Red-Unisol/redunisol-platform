@@ -19,13 +19,15 @@ def upsert_contact(
     config: AppConfig,
     submission: NormalizedInput,
     logger: Logger,
+    *,
+    birthdate: str | None = None,
 ) -> ContactUpsertResult:
     logger.info(f"Buscando contacto por CUIL {submission.cuil_formatted}.")
     contacts = client.call(
         "crm.contact.list",
         {
             "filter": {config.fields.contact_cuil: submission.cuil_digits},
-            "select": ["ID", "NAME", "LAST_NAME"],
+            "select": ["ID", "NAME", "LAST_NAME", "BIRTHDATE"],
         },
     )
 
@@ -54,6 +56,8 @@ def upsert_contact(
         if effective_full_name == submission.full_name:
             fields["NAME"] = submission.full_name
             fields["LAST_NAME"] = ""
+        if birthdate and not _has_value(existing_contact.get("BIRTHDATE")):
+            fields["BIRTHDATE"] = birthdate
 
         logger.info(f"Contacto encontrado ({contact_id}). Actualizando datos.")
         client.call("crm.contact.update", {"id": contact_id, "fields": fields})
@@ -64,6 +68,8 @@ def upsert_contact(
 
     logger.info("No se encontro contacto. Creando contacto nuevo.")
     fields = {"NAME": submission.full_name, **common_fields}
+    if birthdate:
+        fields["BIRTHDATE"] = birthdate
     contact_id = client.call("crm.contact.add", {"fields": fields})
     return ContactUpsertResult(
         contact_id=int(contact_id),
@@ -77,3 +83,11 @@ def _contact_full_name(contact: dict[str, object]) -> str:
         str(contact.get("LAST_NAME") or "").strip(),
     ]
     return " ".join(part for part in parts if part)
+
+
+def _has_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
