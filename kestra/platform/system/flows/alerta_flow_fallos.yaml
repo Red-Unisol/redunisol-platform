@@ -1,0 +1,37 @@
+id: alerta_flow_fallos
+namespace: redunisol
+
+description: Observa ejecuciones fallidas de Kestra y registra una alerta tecnica centralizada.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: system
+  scope: observability
+
+tasks:
+  - id: registrar_alerta
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      Alerta de fallo detectada.
+      execution_id={{ trigger.executionId }}
+      namespace={{ trigger.namespace }}
+      flow_id={{ trigger.flowId }}
+      state={{ trigger.state }}
+
+triggers:
+  - id: detectar_fallos_prod
+    type: io.kestra.plugin.core.trigger.Flow
+    states:
+      - FAILED
+    preconditions:
+      id: fallos_redunisol_prod
+      where:
+        - id: namespaces_dev_excluyendo_system
+          filters:
+            - field: NAMESPACE
+              type: STARTS_WITH
+              value: redunisol.dev.
+            - field: NAMESPACE
+              type: NOT_EQUAL_TO
+              value: redunisol.dev.system
