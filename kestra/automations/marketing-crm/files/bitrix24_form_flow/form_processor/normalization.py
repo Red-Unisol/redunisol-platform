@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 
@@ -38,3 +39,15 @@ def normalize_full_name(raw_value: object) -> str:
     if not value:
         raise ValueError("El nombre completo es obligatorio.")
     return value
+
+
+def normalize_birthdate(raw_value: object) -> str:
+    text = str(raw_value or "").strip()
+    if not text:
+        return ""
+    for candidate in (text, text[:10]):
+        try:
+            return dt.datetime.fromisoformat(candidate).date().isoformat()
+        except ValueError:
+            pass
+    return ""

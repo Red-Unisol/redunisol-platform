@@ -27,6 +27,9 @@ from bitrix24_form_flow.form_processor.bcra_client import (
     serialize_bcra_result,
 )
 from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
+from bitrix24_form_flow.form_processor.contact_birthdate_service import (
+    backfill_contact_birthdate_to_leads,
+)
 from bitrix24_form_flow.form_processor.input_parser import normalize_business_input, parse_body
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
@@ -62,6 +65,8 @@ class FakeBitrixClient:
         if method == "crm.contact.update":
             self.contacts[int(payload["id"])].update(payload["fields"])
             return True
+        if method == "crm.contact.get":
+            return dict(self.contacts[int(payload["id"])])
         if method == "crm.lead.add":
             lead_id = 202
             fields = dict(payload["fields"])
@@ -107,13 +112,19 @@ class FakeBitrixClient:
         self.calls.append((method, payload))
 
         if method == "crm.lead.list":
-            date_from = payload["filter"][">=DATE_CREATE"]
-            date_to = payload["filter"]["<=DATE_CREATE"]
+            filters = payload.get("filter") or {}
+            date_from = filters.get(">=DATE_CREATE")
+            date_to = filters.get("<=DATE_CREATE")
+            contact_id = filters.get("CONTACT_ID")
             selected_fields = payload.get("select") or []
             rows = []
             for lead in self.leads.values():
                 date_create = str(lead.get("DATE_CREATE") or "")
-                if not date_create or date_create < date_from or date_create > date_to:
+                if date_from and (not date_create or date_create < date_from):
+                    continue
+                if date_to and (not date_create or date_create > date_to):
+                    continue
+                if contact_id is not None and str(lead.get("CONTACT_ID") or "") != str(contact_id):
                     continue
                 row = {field_name: lead.get(field_name) for field_name in selected_fields if field_name}
                 row["ID"] = lead["ID"]
@@ -1026,6 +1037,147 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertNotIn("BIRTHDATE", contact_update["fields"])
         self.assertEqual(client.contacts[101]["BIRTHDATE"], "1970-02-03")
+
+    def test_persist_submission_uses_contact_birthdate_as_lead_duplicate_source(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Luis Diaz",
+            "LAST_NAME": None,
+            "BIRTHDATE": "1970-02-03T03:00:00+03:00",
+            "UF_CONTACT_CUIL": "20876543219",
+        }
+        env = {
+            **self.env,
+            "BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD": "UF_CRM_CONTACT_BIRTHDATE",
+            "ARCA_RESOLVED_FECHA_NACIMIENTO": "1986-01-04T12:00:00-03:00",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "+5493511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.contacts[101]["BIRTHDATE"], "1970-02-03T03:00:00+03:00")
+        self.assertEqual(client.leads[202]["BIRTHDATE"], "1970-02-03")
+        self.assertEqual(client.leads[202]["UF_CRM_CONTACT_BIRTHDATE"], "1970-02-03")
+
+    def test_persist_submission_syncs_existing_contact_leads_when_birthdate_is_completed(
+        self,
+    ) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Luis Diaz",
+            "LAST_NAME": None,
+            "BIRTHDATE": "",
+            "UF_CONTACT_CUIL": "20876543219",
+        }
+        client.leads[201] = {
+            "ID": "201",
+            "CONTACT_ID": "101",
+            "DATE_CREATE": "2026-06-20T10:00:00+03:00",
+            "UF_CRM_CONTACT_BIRTHDATE": "",
+        }
+        env = {
+            **self.env,
+            "BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD": "UF_CRM_CONTACT_BIRTHDATE",
+            "ARCA_RESOLVED_FECHA_NACIMIENTO": "1986-01-04T12:00:00-03:00",
+        }
+
+        result = persist_submission(
+            {
+                "full_name": "Luis Diaz",
+                "email": "luis@example.com",
+                "whatsapp": "+5493511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            qualified=True,
+            reason="qualified",
+            message="Califica.",
+            env=env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.leads[201]["UF_CRM_CONTACT_BIRTHDATE"], "1986-01-04")
+        self.assertEqual(client.leads[202]["UF_CRM_CONTACT_BIRTHDATE"], "1986-01-04")
+
+    def test_backfill_contact_birthdate_to_leads_uses_contact_as_source(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Luis Diaz",
+            "LAST_NAME": None,
+            "BIRTHDATE": "1986-01-04T03:00:00+03:00",
+            "UF_CONTACT_CUIL": "20876543219",
+        }
+        client.contacts[102] = {
+            "ID": "102",
+            "NAME": "Ana Gomez",
+            "LAST_NAME": None,
+            "BIRTHDATE": "",
+            "UF_CONTACT_CUIL": "20999999999",
+        }
+        client.leads[201] = {
+            "ID": "201",
+            "CONTACT_ID": "101",
+            "DATE_CREATE": "2026-06-20T10:00:00+03:00",
+            "UF_CRM_CONTACT_BIRTHDATE": "",
+        }
+        client.leads[202] = {
+            "ID": "202",
+            "CONTACT_ID": "101",
+            "DATE_CREATE": "2026-06-20T11:00:00+03:00",
+            "UF_CRM_CONTACT_BIRTHDATE": "1986-01-04",
+        }
+        client.leads[203] = {
+            "ID": "203",
+            "CONTACT_ID": "102",
+            "DATE_CREATE": "2026-06-20T12:00:00+03:00",
+            "UF_CRM_CONTACT_BIRTHDATE": "",
+        }
+        env = {
+            **self.env,
+            "BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD": "UF_CRM_CONTACT_BIRTHDATE",
+        }
+
+        result = backfill_contact_birthdate_to_leads(
+            env=env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            date_from="2026-06-20T00:00:00+03:00",
+            date_to="2026-06-20T23:59:59+03:00",
+            dry_run=False,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["checked_count"], 3)
+        self.assertEqual(result["updated_count"], 1)
+        self.assertEqual(result["already_synced_count"], 1)
+        self.assertEqual(result["skipped_missing_birthdate_count"], 1)
+        self.assertEqual(client.leads[201]["UF_CRM_CONTACT_BIRTHDATE"], "1986-01-04")
+        self.assertEqual(client.leads[203]["UF_CRM_CONTACT_BIRTHDATE"], "")
 
     def test_persist_submission_sets_vimarx_enrichment_fields(self) -> None:
         client = FakeBitrixClient()

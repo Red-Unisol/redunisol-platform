@@ -1,0 +1,82 @@
+id: bitrix24_contact_birthdate_backfill
+namespace: redunisol
+
+description: Sincroniza la fecha de nacimiento del contacto hacia el campo visible duplicado en leads.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: manual
+  integration: bitrix24
+
+inputs:
+  - id: date_from
+    type: STRING
+    required: false
+  - id: date_to
+    type: STRING
+    required: false
+  - id: max_leads
+    type: INT
+    required: false
+    defaults: 500
+  - id: dry_run
+    type: BOOLEAN
+    required: false
+    defaults: true
+
+tasks:
+  - id: sincronizar_fechas
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      BACKFILL_DATE_FROM: "{{ inputs.date_from ?? '' }}"
+      BACKFILL_DATE_TO: "{{ inputs.date_to ?? '' }}"
+      BACKFILL_MAX_LEADS: "{{ inputs.max_leads ?? 500 }}"
+      BACKFILL_DRY_RUN: "{{ inputs.dry_run ?? true }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD: "{{ envs.bitrix24_lead_contact_birthdate_field ?? '' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_contact_birthdate_backfill_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.sincronizar_fechas.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.action }}"
+  - id: dry_run
+    type: BOOLEAN
+    value: "{{ outputs.sincronizar_fechas.vars.dry_run }}"
+  - id: checked_count
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.checked_count }}"
+  - id: updated_count
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.updated_count }}"
+  - id: already_synced_count
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.already_synced_count }}"
+  - id: skipped_missing_contact_count
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.skipped_missing_contact_count }}"
+  - id: skipped_missing_birthdate_count
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.skipped_missing_birthdate_count }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.sincronizar_fechas.vars.message }}"

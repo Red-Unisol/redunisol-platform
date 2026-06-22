@@ -7,6 +7,7 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .input_parser import NormalizedInput, normalize_business_input
 from .logger import Logger
+from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
 
 
@@ -147,6 +148,87 @@ def update_lead_fields(
     fields: dict[str, Any],
 ) -> None:
     client.call("crm.lead.update", {"id": lead_id, "fields": fields})
+
+
+def build_lead_contact_birthdate_field(
+    config: AppConfig,
+    birthdate: str,
+) -> dict[str, str]:
+    if not config.fields.lead_contact_birthdate or not birthdate:
+        return {}
+    return {config.fields.lead_contact_birthdate: birthdate}
+
+
+def sync_contact_birthdate_to_leads(
+    client: BitrixClient,
+    config: AppConfig,
+    contact_id: int,
+    birthdate: str,
+    logger: Logger,
+    *,
+    exclude_lead_ids: set[int] | None = None,
+    dry_run: bool = False,
+) -> int:
+    fields = build_lead_contact_birthdate_field(config, birthdate)
+    if not fields:
+        return 0
+
+    excluded = exclude_lead_ids or set()
+    field_name = next(iter(fields))
+    leads = list_leads_by_contact(
+        client,
+        contact_id=contact_id,
+        field_names=["ID", field_name],
+        logger=logger,
+    )
+    updated_count = 0
+    for lead in leads:
+        lead_id = int(str(lead.get("ID") or "0"))
+        if not lead_id or lead_id in excluded:
+            continue
+        if normalize_birthdate(_optional_lead_value(lead, field_name)) == birthdate:
+            continue
+
+        logger.info(f"Sincronizando fecha de nacimiento de contacto en lead {lead_id}.")
+        updated_count += 1
+        if not dry_run:
+            update_lead_fields(client, lead_id, fields)
+
+    return updated_count
+
+
+def list_leads_by_contact(
+    client: BitrixClient,
+    *,
+    contact_id: int,
+    field_names: list[str],
+    logger: Logger,
+) -> list[dict[str, Any]]:
+    logger.info(f"Listando leads del contacto {contact_id}.")
+    leads: list[dict[str, Any]] = []
+    start = 0
+
+    while True:
+        payload = {
+            "filter": {
+                "CONTACT_ID": contact_id,
+            },
+            "order": {"ID": "ASC"},
+            "select": field_names,
+            "start": start,
+        }
+        response = client.call_full("crm.lead.list", payload)
+        result = response.get("result") or []
+        if not isinstance(result, list):
+            raise RuntimeError("crm.lead.list devolvio un payload invalido.")
+        leads.extend(result)
+
+        next_page = response.get("next")
+        if next_page is None:
+            break
+        start = int(next_page)
+
+    return leads
 
 
 def list_leads_created_between(
