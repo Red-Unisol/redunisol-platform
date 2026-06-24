@@ -15,7 +15,7 @@ labels:
 tasks:
   - id: enviar_alerta
     type: io.kestra.plugin.core.http.Request
-    uri: "https://redunisol.bitrix24.es/rest/74827/jsokzher55stbzdk/im.message.add"
+    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
     contentType: application/json
     body: |
