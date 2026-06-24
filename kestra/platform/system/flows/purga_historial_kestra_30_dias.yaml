@@ -1,0 +1,29 @@
+id: purga_historial_kestra_30_dias
+namespace: redunisol
+
+description: Purga ejecuciones y logs de Kestra con antiguedad mayor a 30 dias.
+
+labels:
+  team: redunisol
+  kind: system
+  scope: maintenance
+  schedule_scope: prod_only
+
+triggers:
+  - id: purga_diaria_madrugada
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "30 3 * * *"
+    timezone: America/Argentina/Buenos_Aires
+    recoverMissedSchedules: NONE
+
+tasks:
+  - id: purgar_ejecuciones
+    type: io.kestra.plugin.core.execution.PurgeExecutions
+    namespace: "{{ flow.namespace | replace({'system': ''}) }}"
+    endDate: "{{ now() | dateAdd(-30, 'DAYS') }}"
+    purgeLog: false
+
+  - id: purgar_logs
+    type: io.kestra.plugin.core.log.PurgeLogs
+    namespace: "{{ flow.namespace | replace({'system': ''}) }}"
+    endDate: "{{ now() | dateAdd(-30, 'DAYS') }}"
