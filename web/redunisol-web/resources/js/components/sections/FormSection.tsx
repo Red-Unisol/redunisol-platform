@@ -1240,7 +1240,9 @@ export default function FormSection({
                                     blocksStep1 ||
                                     (step === 2 &&
                                         (uploading ||
-                                            (!!formData.recibo && !reciboUrl)))
+                                            (!!formData.recibo &&
+                                                !reciboUrl &&
+                                                !reciboUploadError)))
                                 }
                                 className="rounded-full bg-[#1e2d3d] px-7 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d3f54] disabled:cursor-not-allowed disabled:opacity-60"
                             >
