@@ -62,7 +62,7 @@ class CandidateRow:
 
 def parse_search_request(payload: Any) -> SearchRequest:
     if isinstance(payload, dict):
-        cuit = normalize_cuit(payload.get("cuit"))
+        cuit = normalize_cuit(payload.get("cuit") or payload.get("cuil"))
         nombre = normalize_name(payload.get("nombre"))
     elif payload is None:
         raise ValueError("Missing request body.")

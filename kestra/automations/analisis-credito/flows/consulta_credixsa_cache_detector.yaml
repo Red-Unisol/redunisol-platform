@@ -1,0 +1,107 @@
+id: consulta_credixsa_cache_detector
+namespace: redunisol
+
+description: Detecta solicitudes nuevas del dia y solo invoca la resolucion pesada de CredixSA cuando hace falta.
+
+retry:
+  type: constant
+  interval: PT1M
+  maxAttempts: 3
+  behavior: CREATE_NEW_EXECUTION
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  domain: analisis-credito
+  integration: credixsa
+
+tasks:
+  - id: leer_indice_diario
+    type: io.kestra.plugin.core.kv.Get
+    key: credixsa.daily.index
+    errorOnMissing: false
+
+  - id: detectar_solicitudes
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - consulta_quiebra_credix/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra requests urllib3 > /dev/null
+    env:
+      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | json }}"
+      CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
+      CREDIX_WARMUP_CORE_MAX_ROWS: "{{ envs.credixsa_warmup_core_max_rows ?? '1000' }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
+      LOCAL_TZ: "{{ envs.local_tz ?? 'America/Argentina/Buenos_Aires' }}"
+    commands:
+      - python -m consulta_quiebra_credix.detector_entrypoint
+
+  - id: resolver_pendientes
+    type: io.kestra.plugin.core.flow.ForEach
+    runIf: "{{ (outputs.detectar_solicitudes.vars.pending_count ?? '0') != '0' }}"
+    values: "{{ fromJson(outputs.detectar_solicitudes.vars.pending_requests_json) }}"
+    concurrencyLimit: 1
+    tasks:
+      - id: invocar_resolver
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: "{{ flow.namespace }}"
+        flowId: consulta_credixsa_cache_resolver
+        inputs:
+          solicitud_json: "{{ taskrun.value }}"
+        wait: true
+        transmitFailed: true
+
+  - id: guardar_indice_diario
+    type: io.kestra.plugin.core.kv.Set
+    key: credixsa.daily.index
+    value: "{{ outputs.detectar_solicitudes.vars.daily_index_json }}"
+    kvType: JSON
+    overwrite: true
+    ttl: "{{ outputs.detectar_solicitudes.vars.daily_index_ttl }}"
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.detectar_solicitudes.vars.ok }}"
+  - id: solicitudes_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.solicitudes_count }}"
+  - id: candidate_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.candidate_count }}"
+  - id: processed_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.processed_count }}"
+  - id: skipped_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.skipped_count }}"
+  - id: error_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.error_count }}"
+  - id: cache_entry_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.cache_entry_count }}"
+  - id: pending_count
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.pending_count }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.detectar_solicitudes.vars.error }}"
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"
