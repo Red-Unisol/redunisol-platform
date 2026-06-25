@@ -107,9 +107,25 @@ Comportamiento:
 - valida el healthcheck interno en `127.0.0.1:3040`
 - deja el vhost versionado en `/opt/zipline-dev/apache/` para activarlo en el Apache frontal
 
-La publicacion inicial prevista es `http://media-dev.redunisol.com.ar`. DNS y la
-activacion del vhost son prerequisitos externos al contenedor. HTTPS requiere un
-certificado y un cambio posterior del runtime env.
+La publicacion prevista es `https://media-dev.redunisol.com.ar`. DNS,
+certificado Let's Encrypt y activacion del vhost son prerequisitos externos al
+contenedor.
+
+### `deploy-zipline-prod.yml`
+
+Despliega `platform/zipline/` en `/opt/zipline-prod`.
+
+Comportamiento:
+
+- corre solo manualmente desde `main`
+- descifra `platform/zipline/zipline.prod.env.enc`
+- levanta Zipline v4 y PostgreSQL con Docker Compose
+- preserva base de datos, uploads, public assets y themes en `/opt/zipline-prod/data`
+- valida el healthcheck interno en `127.0.0.1:3041`
+- deja el vhost versionado en `/opt/zipline-prod/apache/` para activarlo en el Apache frontal
+
+La publicacion prevista es `https://media.redunisol.com.ar`. DNS, certificado
+Let's Encrypt y activacion del vhost son prerequisitos externos al contenedor.
 
 ### `publish-analisis-credito-consulta-cuad-image.yml`
 
