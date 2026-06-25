@@ -31,8 +31,11 @@ jobs:
       - name: Run deploy tooling tests
         run: python -m unittest kestra.tools.tests.test_deploy_kestra
 
-      - name: Validate Zipline Compose
+      - name: Validate Zipline Dev Compose
         run: docker compose --env-file platform/zipline/zipline.dev.env.example -f platform/zipline/docker-compose.yml config -q
+
+      - name: Validate Zipline Prod Compose
+        run: docker compose --env-file platform/zipline/zipline.prod.env.example -f platform/zipline/docker-compose.yml config -q
 
       - name: Run Marketing CRM unit tests
         run: python -m unittest discover -s kestra/automations/marketing-crm/files/bitrix24_form_flow/tests -p "test_*.py"
