@@ -1,0 +1,156 @@
+name: Deploy Zipline Prod
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-zipline-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+    steps:
+      - name: Allow manual prod deploy only from main by Nasst
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_ACTOR}" = "Nasst" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ]
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Trust target host
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Decrypt runtime env
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
+          python kestra/tools/manage_encrypted_env.py decrypt \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --input platform/zipline/zipline.prod.env.enc \
+            --output "$RUNNER_TEMP/zipline.env" \
+            --force
+          sed -i 's/\r$//' "$RUNNER_TEMP/zipline.env"
+          if [ -n "$(tail -c 1 "$RUNNER_TEMP/zipline.env")" ]; then
+            printf '\n' >> "$RUNNER_TEMP/zipline.env"
+          fi
+          set -a
+          . "$RUNNER_TEMP/zipline.env"
+          set +a
+          printf 'TARGET_DIR=%s\n' "$TARGET_DIR" >> "$GITHUB_ENV"
+
+      - name: Upload deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_STAGING_DIR="/tmp/zipline-prod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR/apache'"
+          scp -P "$SSH_PORT" platform/zipline/docker-compose.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
+          scp -P "$SSH_PORT" platform/zipline/apache/media-redunisol.conf "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/apache/media-redunisol.conf"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/zipline.env" "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+
+      - name: Deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+
+          set -a
+          . "$staging_dir/.env"
+          set +a
+
+          compose_project_name="${COMPOSE_PROJECT_NAME:-$(basename "$target_dir")}"
+          bind_host="$(printf '%s' "$ZIPLINE_BIND" | cut -d: -f1)"
+          bind_port="$(printf '%s' "$ZIPLINE_BIND" | cut -d: -f2)"
+
+          install -d -m 755 "$target_dir"
+          install -d -m 700 "$target_dir/data/postgres"
+          install -d -m 755 "$target_dir/data/uploads"
+          install -d -m 755 "$target_dir/data/public"
+          install -d -m 755 "$target_dir/data/themes"
+          install -d -m 755 "$target_dir/apache"
+
+          export DOCKER_CONFIG="$staging_dir/docker-config"
+          install -d -m 700 "$DOCKER_CONFIG"
+
+          cd "$target_dir"
+          compose=(docker compose -p "$compose_project_name" --project-directory "$target_dir" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml")
+          "${compose[@]}" config -q
+          "${compose[@]}" pull
+          "${compose[@]}" up -d --remove-orphans
+          "${compose[@]}" ps
+
+          status_code=""
+          for attempt in $(seq 1 24); do
+            status_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://$bind_host:$bind_port/api/healthcheck" || true)"
+            if [ "$status_code" = "200" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$status_code" != "200" ]; then
+            "${compose[@]}" logs --tail=160
+            exit 1
+          fi
+
+          install -m 600 "$staging_dir/.env" "$target_dir/.env"
+          install -m 644 "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+          install -m 644 "$staging_dir/apache/media-redunisol.conf" "$target_dir/apache/media-redunisol.conf"
+          EOF
+
+      - name: Clean remote staging files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${REMOTE_STAGING_DIR:-}" ]; then
+            ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf '$REMOTE_STAGING_DIR'"
+          fi
+
+      - name: Clean local decrypted files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f "$RUNNER_TEMP/zipline.env"
