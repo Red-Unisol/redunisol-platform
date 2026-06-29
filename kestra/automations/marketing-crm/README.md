@@ -10,6 +10,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_lead_classification.yaml`: flow interno de clasificacion por `lead_id`.
 - `files/bitrix24_form_flow/`: namespace files Python usados por el flow.
 - `docs/FORM_WEBHOOK_API.md`: contrato HTTP esperado por el frontend.
+- `docs/COMMERCIAL_DECISION_SPEC_2026-06-29.md`: decisiones y ambiguedades pendientes para automatizar decision comercial y derivacion.
 - `tests/`: reservado para tests del dominio fuera del package si mas adelante conviene separarlos.
 
 ## Criterio
