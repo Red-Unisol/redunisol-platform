@@ -83,6 +83,7 @@ class BlogForm
                         FileUpload::make('image')
                             ->label('Imagen destacada')
                             ->image()
+                            ->disk('public')
                             ->directory('blogs')
                             ->imageEditor()
                             ->nullable(),
