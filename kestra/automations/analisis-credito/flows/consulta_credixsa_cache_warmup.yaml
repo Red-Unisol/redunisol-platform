@@ -183,8 +183,3 @@ outputs:
   - id: error
     type: STRING
     value: "{{ outputs.precalentar_cache.vars.error }}"
-
-triggers:
-  - id: cada_minuto
-    type: io.kestra.plugin.core.trigger.Schedule
-    cron: "* * * * *"
