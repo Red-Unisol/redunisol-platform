@@ -42,6 +42,29 @@ from consulta_quiebra_credix.cache_lookup_entrypoint import (  # noqa: E402
 
 
 class ConsultaQuiebraCredixTests(unittest.TestCase):
+    def test_flow_uses_inputs_when_trigger_body_is_not_available(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_quiebra_credix.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = (
+            "trigger is defined and trigger.body is defined"
+        )
+        self.assertEqual(flow_source.count(expected), 3)
+        self.assertNotIn("trigger is defined ? (trigger.body | json)", flow_source)
+
+    def test_flow_outputs_are_safe_when_cache_tasks_do_not_run(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_quiebra_credix.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("outputs.responder_cache is defined", flow_source)
+        self.assertIn("outputs.consultar_quiebra.vars.ok ?? false", flow_source)
+
     def test_parse_search_request_normalizes_fields(self) -> None:
         request = parse_search_request(
             {
