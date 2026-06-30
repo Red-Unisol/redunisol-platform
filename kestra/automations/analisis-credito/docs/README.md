@@ -245,6 +245,7 @@ Tambien acepta:
 - solo `cuit`
 - solo `nombre`
 - un string simple en el body, tratado como CUIL
+- ejecucion como subflow con input `cuit` y/o `nombre`
 
 Debe venir al menos uno de los dos criterios.
 
