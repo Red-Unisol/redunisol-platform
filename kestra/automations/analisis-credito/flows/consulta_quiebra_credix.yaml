@@ -10,6 +10,14 @@ labels:
   domain: analisis-credito
   integration: credixsa
 
+inputs:
+  - id: cuit
+    type: STRING
+    required: false
+  - id: nombre
+    type: STRING
+    required: false
+
 tasks:
   - id: preparar_cache
     type: io.kestra.plugin.scripts.python.Commands
@@ -22,7 +30,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_REQUEST_JSON: "{{ trigger is defined ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
     commands:
       - python -m consulta_quiebra_credix.cache_lookup_entrypoint
 
@@ -47,7 +55,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_REQUEST_JSON: "{{ trigger is defined ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
       CREDIX_CACHE_BY_CUIL_JSON: "{{ (outputs.leer_cache_cuil.value ?? null) | json }}"
       CREDIX_CACHE_BY_NAME_JSON: "{{ (outputs.leer_cache_nombre.value ?? null) | json }}"
       CREDIX_CACHE_MAX_AGE_DAYS: "7"
@@ -69,7 +77,7 @@ tasks:
     beforeCommands:
       - pip install kestra playwright==1.58.0 > /dev/null
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_REQUEST_JSON: "{{ trigger is defined ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "30"
       CREDIX_DEBUG: "{{ envs.credix_debug ?? 'true' }}"

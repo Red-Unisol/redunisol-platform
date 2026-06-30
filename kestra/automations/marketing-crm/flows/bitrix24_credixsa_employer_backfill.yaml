@@ -1,0 +1,158 @@
+id: bitrix24_credixsa_employer_backfill
+namespace: redunisol
+
+description: Enriquece leads de Bitrix24 con datos de empleador tomados desde CredixSA, reutilizando cache cuando existe.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  integration: bitrix24
+  upstream: credixsa
+
+inputs:
+  - id: date_from
+    type: STRING
+    required: false
+  - id: date_to
+    type: STRING
+    required: false
+  - id: max_scan
+    type: INT
+    required: true
+    defaults: 300
+  - id: dry_run
+    type: BOOLEAN
+    required: true
+    defaults: false
+
+tasks:
+  - id: seleccionar_lead
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      BACKFILL_DATE_FROM: "{{ inputs.date_from ?? '' }}"
+      BACKFILL_DATE_TO: "{{ inputs.date_to ?? '' }}"
+      BACKFILL_MAX_SCAN: "{{ inputs.max_scan ?? 300 }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_CREDIXSA_STATUS_FIELD: "{{ envs.bitrix24_lead_credixsa_status_field ?? 'UF_CRM_CRDX_STATUS' }}"
+      BITRIX24_LEAD_CREDIXSA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_credixsa_checked_at_field ?? 'UF_CRM_CRDX_CHK_AT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_NAME_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_name_field ?? 'UF_CRM_EMP_NOMBRE' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_CUIT_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_cuit_field ?? 'UF_CRM_EMP_CUIT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_COUNT_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_count_field ?? 'UF_CRM_EMP_COUNT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_PERIODS_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_periods_field ?? 'UF_CRM_EMP_PERIODOS' }}"
+      BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD: "{{ envs.bitrix24_lead_credixsa_alerts_field ?? 'UF_CRM_CRDX_ALERTAS' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_credixsa_employer_select_entrypoint
+
+  - id: consultar_credixsa
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending }}"
+    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
+    flowId: consulta_quiebra_credix
+    inputs:
+      cuit: "{{ outputs.seleccionar_lead.vars.cuil }}"
+    wait: true
+    transmitFailed: false
+
+  - id: actualizar_bitrix
+    type: io.kestra.plugin.scripts.python.Commands
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending }}"
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      LEAD_ID: "{{ outputs.seleccionar_lead.vars.lead_id }}"
+      BACKFILL_DRY_RUN: "{{ inputs.dry_run ?? false }}"
+      CREDIX_OK: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+      CREDIX_STATUS: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+      CREDIX_CUIT: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+      CREDIX_NOMBRE: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
+      CREDIX_NORMALIZED_JSON: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
+      CREDIX_ERROR: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
+      CREDIX_CACHE_HIT: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
+      CREDIX_CACHED_AT: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_CREDIXSA_STATUS_FIELD: "{{ envs.bitrix24_lead_credixsa_status_field ?? 'UF_CRM_CRDX_STATUS' }}"
+      BITRIX24_LEAD_CREDIXSA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_credixsa_checked_at_field ?? 'UF_CRM_CRDX_CHK_AT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_NAME_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_name_field ?? 'UF_CRM_EMP_NOMBRE' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_CUIT_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_cuit_field ?? 'UF_CRM_EMP_CUIT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_COUNT_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_count_field ?? 'UF_CRM_EMP_COUNT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_PERIODS_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_periods_field ?? 'UF_CRM_EMP_PERIODOS' }}"
+      BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD: "{{ envs.bitrix24_lead_credixsa_alerts_field ?? 'UF_CRM_CRDX_ALERTAS' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_credixsa_employer_update_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.ok : outputs.seleccionar_lead.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.action : outputs.seleccionar_lead.vars.action }}"
+  - id: has_pending
+    type: BOOLEAN
+    value: "{{ outputs.seleccionar_lead.vars.has_pending }}"
+  - id: lead_id
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.lead_id }}"
+  - id: cuil
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.cuil }}"
+  - id: credixsa_status
+    type: STRING
+    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.status : '' }}"
+  - id: dry_run
+    type: BOOLEAN
+    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.dry_run : (inputs.dry_run ?? false) }}"
+  - id: checked_count
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.checked_count }}"
+  - id: skipped_populated_count
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.skipped_populated_count }}"
+  - id: skipped_missing_cuil_count
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.skipped_missing_cuil_count }}"
+  - id: skipped_temporary_error_count
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.skipped_temporary_error_count }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.message : outputs.seleccionar_lead.vars.message }}"
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"
