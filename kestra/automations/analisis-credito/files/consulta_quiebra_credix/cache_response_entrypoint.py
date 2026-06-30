@@ -46,9 +46,11 @@ def main() -> int:
 
 
 def _load_trigger_body() -> Any:
-    raw = os.environ.get("TRIGGER_BODY_JSON", "").strip()
+    raw = os.environ.get("CREDIX_REQUEST_JSON", "").strip()
     if not raw:
-        raise ValueError("Missing TRIGGER_BODY_JSON.")
+        raw = os.environ.get("TRIGGER_BODY_JSON", "").strip()
+    if not raw:
+        raise ValueError("Missing CREDIX_REQUEST_JSON or TRIGGER_BODY_JSON.")
     return json.loads(raw)
 
 

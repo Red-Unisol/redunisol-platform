@@ -25,6 +25,13 @@ DEFAULT_LEAD_FIELDS = {
     "vimarx_creditos_activos_count": "UF_CRM_VIMARX_CRED_ACT_CNT",
     "vimarx_creditos_activos_detail": "UF_CRM_VIMARX_CRED_DET",
     "vimarx_creditos_activos_raw": "UF_CRM_VIMARX_CRED_RAW",
+    "credixsa_status": "UF_CRM_CRDX_STATUS",
+    "credixsa_checked_at": "UF_CRM_CRDX_CHK_AT",
+    "credixsa_employer_name": "UF_CRM_EMP_NOMBRE",
+    "credixsa_employer_cuit": "UF_CRM_EMP_CUIT",
+    "credixsa_employer_count": "UF_CRM_EMP_COUNT",
+    "credixsa_employer_periods": "UF_CRM_EMP_PERIODOS",
+    "credixsa_alerts": "UF_CRM_CRDX_ALERTAS",
 }
 
 DEFAULT_PROCESSING_POLICIES = {
@@ -60,6 +67,13 @@ class BitrixFieldsConfig:
     lead_vimarx_creditos_activos_count: str | None
     lead_vimarx_creditos_activos_detail: str | None
     lead_vimarx_creditos_activos_raw: str | None
+    lead_credixsa_status: str | None
+    lead_credixsa_checked_at: str | None
+    lead_credixsa_employer_name: str | None
+    lead_credixsa_employer_cuit: str | None
+    lead_credixsa_employer_count: str | None
+    lead_credixsa_employer_periods: str | None
+    lead_credixsa_alerts: str | None
 
     def has_bcra_storage_fields(self) -> bool:
         return all(
@@ -69,6 +83,20 @@ class BitrixFieldsConfig:
                 self.lead_bcra_result,
                 self.lead_bcra_data_raw,
                 self.lead_bcra_checked_at,
+            )
+        )
+
+    def has_credixsa_employer_fields(self) -> bool:
+        return all(
+            field_name
+            for field_name in (
+                self.lead_credixsa_status,
+                self.lead_credixsa_checked_at,
+                self.lead_credixsa_employer_name,
+                self.lead_credixsa_employer_cuit,
+                self.lead_credixsa_employer_count,
+                self.lead_credixsa_employer_periods,
+                self.lead_credixsa_alerts,
             )
         )
 
@@ -183,6 +211,34 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             lead_vimarx_creditos_activos_raw=source.get(
                 "BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_RAW_FIELD",
                 DEFAULT_LEAD_FIELDS["vimarx_creditos_activos_raw"],
+            ),
+            lead_credixsa_status=source.get(
+                "BITRIX24_LEAD_CREDIXSA_STATUS_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_status"],
+            ),
+            lead_credixsa_checked_at=source.get(
+                "BITRIX24_LEAD_CREDIXSA_CHECKED_AT_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_checked_at"],
+            ),
+            lead_credixsa_employer_name=source.get(
+                "BITRIX24_LEAD_CREDIXSA_EMPLOYER_NAME_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_employer_name"],
+            ),
+            lead_credixsa_employer_cuit=source.get(
+                "BITRIX24_LEAD_CREDIXSA_EMPLOYER_CUIT_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_employer_cuit"],
+            ),
+            lead_credixsa_employer_count=source.get(
+                "BITRIX24_LEAD_CREDIXSA_EMPLOYER_COUNT_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_employer_count"],
+            ),
+            lead_credixsa_employer_periods=source.get(
+                "BITRIX24_LEAD_CREDIXSA_EMPLOYER_PERIODS_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_employer_periods"],
+            ),
+            lead_credixsa_alerts=source.get(
+                "BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD",
+                DEFAULT_LEAD_FIELDS["credixsa_alerts"],
             ),
         ),
         lead_statuses=LeadStatusesConfig(
