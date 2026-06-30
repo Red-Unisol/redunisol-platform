@@ -4,8 +4,10 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - "kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2/**"
+      - "kestra/automations/analisis-credito/flows/precalentar_cache_credixsa_v2_sondeo.yaml"
       - ".github/workflows/publish-analisis-credito-precalentar-cache-credixsa-v2-image.yml"
   workflow_dispatch:
 
