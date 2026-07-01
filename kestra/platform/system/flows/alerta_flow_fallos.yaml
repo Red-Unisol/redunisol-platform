@@ -1,7 +1,11 @@
 id: alerta_flow_fallos
 namespace: redunisol
 
-description: Observa ejecuciones fallidas de Kestra en prod y envia alerta a Bitrix24.
+description: Observa ejecuciones fallidas y recuperaciones de Kestra en prod y envia alertas deduplicadas a Bitrix24.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
 
 labels:
   env: prod
@@ -10,8 +14,14 @@ labels:
   scope: observability
 
 tasks:
-  - id: enviar_alerta
+  - id: leer_alerta_abierta
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
+    errorOnMissing: false
+
+  - id: enviar_alerta_fallo
     type: io.kestra.plugin.core.http.Request
+    runIf: "{{ trigger.state == 'FAILED' and outputs.leer_alerta_abierta.value == null }}"
     uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
     contentType: application/json
@@ -21,6 +31,31 @@ tasks:
         "MESSAGE": "KESTRA - Flow fallido\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}"
       }
 
+  - id: marcar_alerta_abierta
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ trigger.state == 'FAILED' and outputs.leer_alerta_abierta.value == null }}"
+    key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
+    value: "open"
+    overwrite: true
+    ttl: P30D
+
+  - id: enviar_alerta_clear
+    type: io.kestra.plugin.core.http.Request
+    runIf: "{{ trigger.state == 'SUCCESS' and outputs.leer_alerta_abierta.value != null }}"
+    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
+    method: POST
+    contentType: application/json
+    body: |
+      {
+        "DIALOG_ID": "chat119621",
+        "MESSAGE": "KESTRA - Flow recuperado\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}"
+      }
+
+  - id: limpiar_alerta_abierta
+    type: io.kestra.plugin.core.kv.Delete
+    runIf: "{{ trigger.state == 'SUCCESS' and outputs.leer_alerta_abierta.value != null }}"
+    key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
+
 triggers:
   - id: detectar_fallos_prod
     type: io.kestra.plugin.core.trigger.Flow
@@ -28,6 +63,22 @@ triggers:
       - FAILED
     preconditions:
       id: fallos_redunisol_prod
+      where:
+        - id: namespaces_prod_excluyendo_system
+          filters:
+            - field: NAMESPACE
+              type: STARTS_WITH
+              value: redunisol.prod.
+            - field: NAMESPACE
+              type: NOT_EQUAL_TO
+              value: redunisol.prod.system
+
+  - id: detectar_recuperaciones_prod
+    type: io.kestra.plugin.core.trigger.Flow
+    states:
+      - SUCCESS
+    preconditions:
+      id: recuperaciones_redunisol_prod
       where:
         - id: namespaces_prod_excluyendo_system
           filters:
