@@ -31,6 +31,7 @@ class AfipContactoPorDniTests(unittest.TestCase):
         payload = build_output_payload(
             {
                 "ok": True,
+                "status": "found",
                 "found": True,
                 "dni": "34838205",
                 "tipo_doc": "96",
@@ -45,6 +46,7 @@ class AfipContactoPorDniTests(unittest.TestCase):
             payload["response_json"],
             '{"ok":true,"found":true,"dni":"34838205","tipo_doc":"96","cuil":"27348382050","nombre":"LOPEZ MARINA VICTORIA BELEN","error":"","source":"afip_crmcit"}',
         )
+        self.assertEqual(payload["status"], "found")
 
     def test_build_error_result_marks_request_as_failed(self) -> None:
         result = build_error_result(SearchRequest(dni="34838205", tipo_doc="96"), "boom")

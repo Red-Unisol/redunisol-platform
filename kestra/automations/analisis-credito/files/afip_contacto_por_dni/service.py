@@ -182,6 +182,16 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
         "error": str(result.get("error") or ""),
         "source": "afip_crmcit",
     }
+    legacy_response_payload = {
+        "ok": response_payload["ok"],
+        "found": response_payload["found"],
+        "dni": response_payload["dni"],
+        "tipo_doc": response_payload["tipo_doc"],
+        "cuil": response_payload["cuil"],
+        "nombre": response_payload["nombre"],
+        "error": response_payload["error"],
+        "source": response_payload["source"],
+    }
     return {
         "ok": response_payload["ok"],
         "status": response_payload["status"],
@@ -190,7 +200,7 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
         "tipo_doc": response_payload["tipo_doc"],
         "cuil": response_payload["cuil"],
         "nombre": response_payload["nombre"],
-        "response_json": json.dumps(response_payload, ensure_ascii=True, separators=(",", ":")),
+        "response_json": json.dumps(legacy_response_payload, ensure_ascii=True, separators=(",", ":")),
         "raw_response_json": json.dumps(result.get("raw_response") or {}, ensure_ascii=True, separators=(",", ":")),
         "error": response_payload["error"],
     }
