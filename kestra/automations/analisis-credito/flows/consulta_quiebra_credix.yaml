@@ -71,11 +71,10 @@ tasks:
         - consulta_quiebra_credix/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
       volumes:
         - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
-    containerImage: mcr.microsoft.com/playwright/python:v1.58.0-noble
-    beforeCommands:
-      - pip install kestra playwright==1.58.0 > /dev/null
+    containerImage: ghcr.io/red-unisol/analisis-credito-precalentar-cache-credixsa-v2:latest
     env:
       CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
