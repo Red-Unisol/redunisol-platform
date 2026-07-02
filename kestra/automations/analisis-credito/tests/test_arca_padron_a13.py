@@ -12,6 +12,8 @@ if str(FILES_ROOT) not in sys.path:
 
 from arca_padron_a13.service import (  # noqa: E402
     ArcaConfig,
+    ConfigurationError,
+    InvalidRequestError,
     SearchRequest,
     build_error_result,
     build_login_ticket_request,
@@ -20,6 +22,7 @@ from arca_padron_a13.service import (  # noqa: E402
     format_duration_iso8601,
     get_ta,
     is_ta_valid,
+    load_config_from_env,
     parse_search_request,
 )
 
@@ -34,8 +37,12 @@ class ArcaPadronA13Tests(unittest.TestCase):
         self.assertEqual(request.cuit_cuil, "20359661305")
 
     def test_parse_search_request_rejects_non_11_digit_identifiers(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidRequestError):
             parse_search_request({"cuit_cuil": "35966130"})
+
+    def test_parse_search_request_missing_body_raises_invalid_request(self) -> None:
+        with self.assertRaises(InvalidRequestError):
+            parse_search_request(None)
 
     def test_build_login_ticket_request_embeds_service_name(self) -> None:
         xml = build_login_ticket_request("ws_sr_padron_a13").decode("utf-8")
@@ -46,6 +53,8 @@ class ArcaPadronA13Tests(unittest.TestCase):
         payload = build_output_payload(
             {
                 "ok": True,
+                "found": True,
+                "status": "found",
                 "cuit_cuil": "20359661305",
                 "cuit_representada": "33708707029",
                 "ta_expiration_time": "2026-04-17T00:34:22.465-03:00",
@@ -65,16 +74,28 @@ class ArcaPadronA13Tests(unittest.TestCase):
         )
 
         self.assertTrue(payload["ok"])
+        self.assertTrue(payload["found"])
+        self.assertEqual(payload["status"], "found")
         self.assertEqual(payload["nombre"], "NICOLAS")
         self.assertEqual(payload["apellido"], "SALLITTO")
         self.assertEqual(payload["id_persona"], "20359661305")
         self.assertEqual(payload["fecha_nacimiento"], "1986-01-04")
+        self.assertIn('"source":"arca_padron_a13"', payload["response_json"])
 
     def test_build_error_result_defaults_to_empty_request(self) -> None:
         payload = build_output_payload(build_error_result(None, "boom"))
         self.assertFalse(payload["ok"])
+        self.assertFalse(payload["found"])
+        self.assertEqual(payload["status"], "technical_error")
         self.assertEqual(payload["error"], "boom")
         self.assertEqual(payload["cuit_cuil"], "")
+
+    def test_load_config_from_env_missing_credentials_raises_configuration_error(
+        self,
+    ) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ConfigurationError):
+                load_config_from_env()
 
     def test_get_ta_reuses_cached_ticket_when_still_valid(self) -> None:
         config = ArcaConfig(
