@@ -19,6 +19,14 @@ DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 DEFAULT_TIPO_DOC = "96"
 
 
+class InvalidRequestError(ValueError):
+    """Raised when the webhook caller sends an invalid request."""
+
+
+class ConfigurationError(RuntimeError):
+    """Raised when the flow runtime configuration is invalid."""
+
+
 @dataclass(frozen=True)
 class SearchRequest:
     dni: str
@@ -37,15 +45,15 @@ def parse_search_request(payload: Any) -> SearchRequest:
         dni = _normalize_digits(payload.get("dni") or payload.get("nro_doc") or payload.get("documento"))
         tipo_doc = _normalize_digits(payload.get("tipo_doc") or payload.get("tipoDoc")) or DEFAULT_TIPO_DOC
     elif payload is None:
-        raise ValueError("Missing request body.")
+        raise InvalidRequestError("Missing request body.")
     elif isinstance(payload, (list, tuple)):
-        raise ValueError("Body must be an object, number or string.")
+        raise InvalidRequestError("Body must be an object, number or string.")
     else:
         dni = _normalize_digits(payload)
         tipo_doc = DEFAULT_TIPO_DOC
 
     if not dni:
-        raise ValueError("Field 'dni' is required.")
+        raise InvalidRequestError("Field 'dni' is required.")
 
     return SearchRequest(dni=dni, tipo_doc=tipo_doc)
 
@@ -56,13 +64,16 @@ def load_config_from_env() -> AfipConfig:
     user_agent = (os.getenv("AFIP_USER_AGENT", DEFAULT_USER_AGENT) or DEFAULT_USER_AGENT).strip()
 
     if not base_url:
-        raise ValueError("Missing AFIP_CRM_BASE_URL.")
+        raise ConfigurationError("Missing AFIP_CRM_BASE_URL.")
     if not user_agent:
-        raise ValueError("Missing AFIP_USER_AGENT.")
+        raise ConfigurationError("Missing AFIP_USER_AGENT.")
 
-    timeout_seconds = float(timeout_raw)
+    try:
+        timeout_seconds = float(timeout_raw)
+    except ValueError as exc:
+        raise ConfigurationError("AFIP_TIMEOUT_SECONDS must be a valid number.") from exc
     if timeout_seconds <= 0:
-        raise ValueError("AFIP_TIMEOUT_SECONDS must be greater than 0.")
+        raise ConfigurationError("AFIP_TIMEOUT_SECONDS must be greater than 0.")
 
     return AfipConfig(base_url=_ensure_trailing_slash(base_url), timeout_seconds=timeout_seconds, user_agent=user_agent)
 
@@ -110,6 +121,7 @@ def consultar_contacto(
     if not rows:
         logger.info("DNI %s no encontrado en AFIP", request.dni)
         return _build_result(
+            status="not_found",
             ok=True,
             found=False,
             dni=request.dni,
@@ -125,6 +137,7 @@ def consultar_contacto(
     nombre = _normalize_name(first_row.get("denominacion"))
     logger.info("DNI %s encontrado. CUIL: %s | Nombre: %s", request.dni, cuil, nombre)
     return _build_result(
+        status="found",
         ok=True,
         found=True,
         dni=request.dni,
@@ -136,9 +149,16 @@ def consultar_contacto(
     )
 
 
-def build_error_result(request: SearchRequest | None, error: str) -> dict[str, Any]:
+def build_error_result(
+    request: SearchRequest | None,
+    error: str,
+    *,
+    status: str | None = None,
+) -> dict[str, Any]:
     safe_request = request or SearchRequest(dni="", tipo_doc=DEFAULT_TIPO_DOC)
+    error_status = status or ("invalid_request" if not safe_request.dni else "technical_error")
     return _build_result(
+        status=error_status,
         ok=False,
         found=False,
         dni=safe_request.dni,
@@ -153,6 +173,7 @@ def build_error_result(request: SearchRequest | None, error: str) -> dict[str, A
 def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
     response_payload = {
         "ok": bool(result.get("ok", False)),
+        "status": str(result.get("status") or ""),
         "found": bool(result.get("found", False)),
         "dni": str(result.get("dni") or ""),
         "tipo_doc": str(result.get("tipo_doc") or ""),
@@ -161,27 +182,44 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
         "error": str(result.get("error") or ""),
         "source": "afip_crmcit",
     }
-    return {
+    legacy_response_payload = {
         "ok": response_payload["ok"],
         "found": response_payload["found"],
         "dni": response_payload["dni"],
         "tipo_doc": response_payload["tipo_doc"],
         "cuil": response_payload["cuil"],
         "nombre": response_payload["nombre"],
-        "response_json": json.dumps(response_payload, ensure_ascii=True, separators=(",", ":")),
+        "error": response_payload["error"],
+        "source": response_payload["source"],
+    }
+    return {
+        "ok": response_payload["ok"],
+        "status": response_payload["status"],
+        "found": response_payload["found"],
+        "dni": response_payload["dni"],
+        "tipo_doc": response_payload["tipo_doc"],
+        "cuil": response_payload["cuil"],
+        "nombre": response_payload["nombre"],
+        "response_json": json.dumps(legacy_response_payload, ensure_ascii=True, separators=(",", ":")),
         "raw_response_json": json.dumps(result.get("raw_response") or {}, ensure_ascii=True, separators=(",", ":")),
         "error": response_payload["error"],
     }
 
 
 def _parse_api_payload(response: requests.Response) -> dict[str, Any]:
-    response_json = response.json()
+    try:
+        response_json = response.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("AFIP API returned an invalid JSON payload.") from exc
     if not isinstance(response_json, dict):
         raise RuntimeError("AFIP API returned a non-object JSON payload.")
 
     wrapped = response_json.get("d")
     if isinstance(wrapped, str):
-        payload = json.loads(wrapped)
+        try:
+            payload = json.loads(wrapped)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("AFIP API field 'd' is not valid JSON.") from exc
     elif isinstance(wrapped, dict):
         payload = wrapped
     else:
@@ -197,6 +235,7 @@ def _parse_api_payload(response: requests.Response) -> dict[str, Any]:
 
 def _build_result(
     *,
+    status: str,
     ok: bool,
     found: bool,
     dni: str,
@@ -207,6 +246,7 @@ def _build_result(
     error: str,
 ) -> dict[str, Any]:
     return {
+        "status": status,
         "ok": ok,
         "found": found,
         "dni": dni,
