@@ -34,8 +34,8 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/red-unisol/analisis-credito-arca-padron-a13:latest
     env:
-      ARCA_INPUT_CUIT_CUIL: "{{ inputs.cuit_cuil }}"
-      TRIGGER_BODY_JSON: "{{ inputs.cuit_cuil ? ({'cuit_cuil': inputs.cuit_cuil} | toJson) : (trigger.body | json) }}"
+      ARCA_INPUT_CUIT_CUIL: "{{ inputs.cuit_cuil ?? '' }}"
+      TRIGGER_BODY_JSON: "{{ inputs.cuit_cuil ? ({'cuit_cuil': inputs.cuit_cuil} | json) : ((trigger is defined and trigger.body is defined) ? (trigger.body | json) : 'null') }}"
       ARCA_TA_CACHE_JSON: "{{ (outputs.leer_ta_cache.value ?? null) | json }}"
       ARCA_CUIT_REPRESENTADA: "{{ envs.arca_padron_a13_cuit_representada }}"
       ARCA_TIMEOUT_SECONDS: "{{ envs.arca_padron_a13_timeout_seconds }}"
@@ -57,6 +57,12 @@ outputs:
   - id: ok
     type: BOOLEAN
     value: "{{ outputs.consultar_padron.vars.ok }}"
+  - id: found
+    type: BOOLEAN
+    value: "{{ outputs.consultar_padron.vars.found }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.consultar_padron.vars.status }}"
   - id: cuit_cuil
     type: STRING
     value: "{{ outputs.consultar_padron.vars.cuit_cuil }}"
