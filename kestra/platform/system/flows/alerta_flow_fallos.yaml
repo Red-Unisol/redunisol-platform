@@ -21,7 +21,7 @@ tasks:
 
   - id: enviar_alerta_fallo
     type: io.kestra.plugin.core.http.Request
-    runIf: "{{ trigger.state == 'FAILED' and (outputs.leer_alerta_abierta.value is null) }}"
+    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
     uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
     contentType: application/json
@@ -33,7 +33,7 @@ tasks:
 
   - id: marcar_alerta_abierta
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ trigger.state == 'FAILED' and (outputs.leer_alerta_abierta.value is null) }}"
+    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
     key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
     value: "open"
     overwrite: true
@@ -41,7 +41,7 @@ tasks:
 
   - id: enviar_alerta_clear
     type: io.kestra.plugin.core.http.Request
-    runIf: "{{ trigger.state == 'SUCCESS' and (outputs.leer_alerta_abierta.value is not null) }}"
+    runIf: "{{ trigger.state == 'SUCCESS' and ((outputs.leer_alerta_abierta.value ?? null) is not null) }}"
     uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
     contentType: application/json
@@ -53,7 +53,7 @@ tasks:
 
   - id: limpiar_alerta_abierta
     type: io.kestra.plugin.core.kv.Delete
-    runIf: "{{ trigger.state == 'SUCCESS' and (outputs.leer_alerta_abierta.value is not null) }}"
+    runIf: "{{ trigger.state == 'SUCCESS' and ((outputs.leer_alerta_abierta.value ?? null) is not null) }}"
     key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
 
 triggers:
