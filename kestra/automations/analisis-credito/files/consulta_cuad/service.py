@@ -45,6 +45,51 @@ MISTRAL_OCR_FORMAT = {
 }
 
 
+class InvalidRequestError(ValueError):
+    """Raised when the webhook caller sends an invalid request."""
+
+
+class CuadTechnicalError(RuntimeError):
+    """Raised when the CUAD integration fails for technical reasons."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: str = "error",
+        captcha_attempts: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.captcha_attempts = captcha_attempts
+
+
+class ConfigurationError(CuadTechnicalError):
+    """Raised when the flow runtime configuration is invalid."""
+
+
+class SessionInvalidError(CuadTechnicalError):
+    """Raised when the CUAD session is invalid after login."""
+
+    def __init__(self, message: str, *, captcha_attempts: int = 0) -> None:
+        super().__init__(
+            message,
+            status="sesion_invalida",
+            captcha_attempts=captcha_attempts,
+        )
+
+
+class UnexpectedResponseError(CuadTechnicalError):
+    """Raised when the CUAD HTML response cannot be parsed as expected."""
+
+    def __init__(self, message: str, *, captcha_attempts: int = 0) -> None:
+        super().__init__(
+            message,
+            status="respuesta_no_reconocida",
+            captcha_attempts=captcha_attempts,
+        )
+
+
 @dataclass(frozen=True)
 class SearchRequest:
     cuil: str
@@ -78,9 +123,9 @@ def parse_search_request(payload: Any) -> SearchRequest:
             or payload.get("emp_cod")
         )
     elif payload is None:
-        raise ValueError("Missing request body.")
+        raise InvalidRequestError("Missing request body.")
     elif isinstance(payload, (list, tuple)):
-        raise ValueError("Body must be an object or string.")
+        raise InvalidRequestError("Body must be an object or string.")
     else:
         raw_cuil = payload
 
@@ -91,7 +136,7 @@ def parse_search_request(payload: Any) -> SearchRequest:
 def normalize_cuil(value: Any) -> str:
     digits = re.sub(r"\D+", "", str(value or ""))
     if len(digits) != 11:
-        raise ValueError("Expected a CUIT/CUIL with exactly 11 digits.")
+        raise InvalidRequestError("Expected a CUIT/CUIL with exactly 11 digits.")
     return digits
 
 
@@ -106,26 +151,45 @@ def load_config_from_env() -> CuadConfig:
     ).strip()
     emr_nombre = os.getenv("CUAD_EMR_NOMBRE", "Santa Fe - ACTIVOS").strip()
     emr_id = os.getenv("CUAD_EMR_ID", "10").strip()
-    timeout_seconds = float((os.getenv("CUAD_TIMEOUT_SECONDS", "60") or "60").strip())
-    max_intentos = int((os.getenv("CUAD_MAX_INTENTOS", "10") or "10").strip())
-    captcha_len = int((os.getenv("CUAD_CAPTCHA_LEN", "6") or "6").strip())
     ocr_model = os.getenv("CUAD_OCR_MODEL", "mistral-ocr-latest").strip()
-    pre_submit_delay_ms = int((os.getenv("CUAD_PRE_SUBMIT_DELAY_MS", "1500") or "1500").strip())
-    post_submit_wait_ms = int((os.getenv("CUAD_POST_SUBMIT_WAIT_MS", "3000") or "3000").strip())
     debug_raw = os.getenv("CUAD_DEBUG", "").strip().lower()
 
     if not usuario or not password:
-        raise ValueError("Missing CUAD_USUARIO or CUAD_PASSWORD.")
+        raise ConfigurationError("Missing CUAD_USUARIO or CUAD_PASSWORD.")
     if not mistral_api_key:
-        raise ValueError("Missing MISTRAL_API_KEY.")
+        raise ConfigurationError("Missing MISTRAL_API_KEY.")
     if not login_url or not movimiento_url:
-        raise ValueError("Missing CUAD_LOGIN_URL or CUAD_MOVIMIENTO_URL.")
+        raise ConfigurationError("Missing CUAD_LOGIN_URL or CUAD_MOVIMIENTO_URL.")
+    try:
+        timeout_seconds = float((os.getenv("CUAD_TIMEOUT_SECONDS", "60") or "60").strip())
+    except ValueError as exc:
+        raise ConfigurationError("CUAD_TIMEOUT_SECONDS must be a valid number.") from exc
+    try:
+        max_intentos = int((os.getenv("CUAD_MAX_INTENTOS", "10") or "10").strip())
+    except ValueError as exc:
+        raise ConfigurationError("CUAD_MAX_INTENTOS must be a valid integer.") from exc
+    try:
+        captcha_len = int((os.getenv("CUAD_CAPTCHA_LEN", "6") or "6").strip())
+    except ValueError as exc:
+        raise ConfigurationError("CUAD_CAPTCHA_LEN must be a valid integer.") from exc
+    try:
+        pre_submit_delay_ms = int((os.getenv("CUAD_PRE_SUBMIT_DELAY_MS", "1500") or "1500").strip())
+    except ValueError as exc:
+        raise ConfigurationError("CUAD_PRE_SUBMIT_DELAY_MS must be a valid integer.") from exc
+    try:
+        post_submit_wait_ms = int((os.getenv("CUAD_POST_SUBMIT_WAIT_MS", "3000") or "3000").strip())
+    except ValueError as exc:
+        raise ConfigurationError("CUAD_POST_SUBMIT_WAIT_MS must be a valid integer.") from exc
     if timeout_seconds <= 0:
-        raise ValueError("CUAD_TIMEOUT_SECONDS must be greater than 0.")
+        raise ConfigurationError("CUAD_TIMEOUT_SECONDS must be greater than 0.")
     if max_intentos <= 0:
-        raise ValueError("CUAD_MAX_INTENTOS must be greater than 0.")
+        raise ConfigurationError("CUAD_MAX_INTENTOS must be greater than 0.")
     if captcha_len <= 0:
-        raise ValueError("CUAD_CAPTCHA_LEN must be greater than 0.")
+        raise ConfigurationError("CUAD_CAPTCHA_LEN must be greater than 0.")
+    if pre_submit_delay_ms < 0:
+        raise ConfigurationError("CUAD_PRE_SUBMIT_DELAY_MS must be greater than or equal to 0.")
+    if post_submit_wait_ms < 0:
+        raise ConfigurationError("CUAD_POST_SUBMIT_WAIT_MS must be greater than or equal to 0.")
 
     return CuadConfig(
         usuario=usuario,
@@ -149,7 +213,7 @@ def load_config_from_env() -> CuadConfig:
 def consultar_cuad(request: SearchRequest, config: CuadConfig) -> dict[str, Any]:
     from playwright.sync_api import sync_playwright
 
-    _log_event("consulta_cuad_start", cuil=request.cuil)
+    log_event("consulta_cuad_start", cuil=request.cuil)
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -163,40 +227,69 @@ def consultar_cuad(request: SearchRequest, config: CuadConfig) -> dict[str, Any]
         try:
             _iniciar_login(page, config)
             captcha_attempts = _resolver_login(page, config)
+            log_event(
+                "consulta_cuad_login_ok",
+                cuil=request.cuil,
+                captcha_attempts=captcha_attempts,
+            )
             html = consultar_movimiento(page, request, config)
 
             if es_sesion_invalida(html):
-                return build_error_result(
-                    request,
-                    "sesion_invalida",
+                log_event(
+                    "consulta_cuad_session_invalid",
+                    cuil=request.cuil,
+                    captcha_attempts=captcha_attempts,
+                )
+                raise SessionInvalidError(
                     "La sesion de CUAD no es valida o vencio",
                     captcha_attempts=captcha_attempts,
                 )
 
             if es_respuesta_sin_resultado(html):
+                log_event(
+                    "consulta_cuad_not_found",
+                    cuil=request.cuil,
+                    captcha_attempts=captcha_attempts,
+                )
                 return build_not_found_result(request, captcha_attempts=captcha_attempts)
 
             totales = parsear_totales_cuad(html)
             if totales is None:
-                return build_error_result(
-                    request,
-                    "respuesta_no_reconocida",
+                log_event(
+                    "consulta_cuad_unexpected_response",
+                    cuil=request.cuil,
+                    captcha_attempts=captcha_attempts,
+                )
+                raise UnexpectedResponseError(
                     "No se encontro setTotales en la respuesta",
                     captcha_attempts=captcha_attempts,
                 )
 
+            log_event(
+                "consulta_cuad_success",
+                cuil=request.cuil,
+                captcha_attempts=captcha_attempts,
+                disponible=totales.get("disponible") or "",
+                deuda=totales.get("deuda") or "",
+            )
             return build_success_result(
                 request,
                 totales,
                 captcha_attempts=captcha_attempts,
             )
+        except CuadTechnicalError:
+            raise
         except Exception as exc:
-            return build_error_result(
-                request,
-                "error",
+            log_event(
+                "consulta_cuad_technical_error",
+                cuil=request.cuil,
+                captcha_attempts=captcha_attempts,
+                error=str(exc),
+            )
+            raise CuadTechnicalError(
                 str(exc),
                 captcha_attempts=captcha_attempts,
-            )
+            ) from exc
         finally:
             browser.close()
 
@@ -321,14 +414,14 @@ def _iniciar_login(page: "Page", config: CuadConfig) -> None:
         timeout_ms=min(config.timeout_ms, LOGIN_FRAME_DISCOVERY_TIMEOUT_MS),
     )
     if login_frame is None:
-        _log_event(
+        log_event(
             "consulta_cuad_login_frame_missing",
             page_url=page.url,
             frames=describir_frames(page),
         )
         raise RuntimeError("No se encontro el frame del login.")
     if captcha_frame is None:
-        _log_event(
+        log_event(
             "consulta_cuad_captcha_frame_missing",
             page_url=page.url,
             frames=describir_frames(page),
@@ -346,7 +439,16 @@ def _resolver_login(page: "Page", config: CuadConfig) -> int:
     for intento in range(1, config.max_intentos + 1):
         login_frame, captcha_frame = obtener_frames(page)
         if login_frame is None or captcha_frame is None:
-            return max(0, intento - 1)
+            captcha_attempts = max(0, intento - 1)
+            log_event(
+                "consulta_cuad_frames_lost_during_login",
+                captcha_attempts=captcha_attempts,
+                frames=describir_frames(page),
+            )
+            raise CuadTechnicalError(
+                "Se perdio el frame de login o captcha durante la autenticacion.",
+                captcha_attempts=captcha_attempts,
+            )
 
         login_frame.wait_for_selector("#user")
         login_frame.wait_for_selector("#password")
@@ -355,6 +457,11 @@ def _resolver_login(page: "Page", config: CuadConfig) -> int:
         cargar_input(login_frame, "#password", config.password, "password")
         texto_captcha = capturar_y_resolver_captcha(captcha_frame, intento, config)
         cargar_input(login_frame, "#txtCaptcha", texto_captcha, "captcha")
+        log_event(
+            "consulta_cuad_login_attempt",
+            intento=intento,
+            captcha_len=len(texto_captcha),
+        )
 
         page.wait_for_timeout(config.pre_submit_delay_ms)
         enviar_formulario(login_frame)
@@ -590,7 +697,7 @@ def procesar_captcha_con_mistral(contenido_img: bytes, intento: int, config: Cua
             parsed = json.loads(document_annotation)
             digits = str(parsed.get("captcha") or "").strip()
             if digits:
-                _log_event("consulta_cuad_ocr", intento=intento, captcha=digits)
+                log_event("consulta_cuad_ocr", intento=intento, captcha=digits)
                 return digits
         except json.JSONDecodeError:
             pass
@@ -598,11 +705,16 @@ def procesar_captcha_con_mistral(contenido_img: bytes, intento: int, config: Cua
     pages = data.get("pages") or []
     markdown = "\n".join(str(page.get("markdown") or "").strip() for page in pages).strip()
     digits = "".join(ch for ch in markdown if ch.isdigit())[: config.captcha_len]
-    _log_event("consulta_cuad_ocr_fallback", intento=intento, captcha=digits, markdown=markdown[:80])
+    log_event("consulta_cuad_ocr_fallback", intento=intento, captcha=digits, markdown=markdown[:80])
     return digits
 
 
 def consultar_movimiento(page: "Page", request: SearchRequest, config: CuadConfig) -> str:
+    log_event(
+        "consulta_cuad_movimiento_request",
+        cuil=request.cuil,
+        emr_id=config.emr_id,
+    )
     payload = {
         "Modo": "BS",
         "Emr_Nombre": config.emr_nombre,
@@ -623,6 +735,11 @@ def consultar_movimiento(page: "Page", request: SearchRequest, config: CuadConfi
             "Referer": config.movimiento_url,
         },
         timeout=config.timeout_ms,
+    )
+    log_event(
+        "consulta_cuad_movimiento_response",
+        cuil=request.cuil,
+        status=obtener_response_status(response),
     )
     if not obtener_response_ok(response):
         raise RuntimeError(f"HTTP {obtener_response_status(response)} al consultar movimiento.asp")
@@ -703,6 +820,6 @@ def es_sesion_invalida(html: str) -> bool:
     )
 
 
-def _log_event(event: str, **fields: Any) -> None:
+def log_event(event: str, **fields: Any) -> None:
     payload = {"event": event, **fields}
     sys.stderr.write(json.dumps(payload, ensure_ascii=True) + "\n")

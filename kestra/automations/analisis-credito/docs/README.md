@@ -471,6 +471,7 @@ Si no se informa `tipo`, el flow usa `S` para identificadores de 11 digitos y `M
 
 - `ok` (bool)
 - `found` (bool)
+- `status` (`found` | `not_found` | `invalid_request` | `technical_error`)
 - `identifier` (string)
 - `tipo` (string)
 - `token_source` (`cache` | `login` | vacio)
@@ -480,9 +481,10 @@ Si no se informa `tipo`, el flow usa `S` para identificadores de 11 digitos y `M
 
 Contrato serializado en `response_json`:
 
-- `{"ok":true,"found":true,"identifier":"32786693","tipo":"M","data":{...},"error":"","source":"pypdatos_persona"}`
-- `{"ok":true,"found":false,...}` si PYPDatos responde `No se pudo encontrar cuil/documento`
-- `{"ok":false,...}` si el request es invalido o la consulta falla
+- `{"ok":true,"found":true,"status":"found","identifier":"32786693","tipo":"M","data":{...},"error":"","source":"pypdatos_persona"}`
+- `{"ok":true,"found":false,"status":"not_found",...}` si PYPDatos responde `No se pudo encontrar cuil/documento`
+- `{"ok":false,"status":"invalid_request",...}` si el request es invalido
+- `{"ok":false,"status":"technical_error",...}` si la consulta falla por problemas tecnicos
 
 ### Variables
 
@@ -531,7 +533,7 @@ Debe venir un identificador de 11 digitos.
 
 - `ok` (bool)
 - `found` (bool)
-- `status` (`ok` | `sin_resultado` | `sesion_invalida` | `respuesta_no_reconocida` | `error`)
+- `status` (`ok` | `sin_resultado` | `invalid_request` | `sesion_invalida` | `respuesta_no_reconocida` | `error`)
 - `cuil` (string)
 - `bruto` (string)
 - `neto` (string)
@@ -548,6 +550,7 @@ Contrato serializado en `response_json`:
 
 - `{"ok":true,"found":true,"status":"ok","cuil":"23333121514","captcha_attempts":2,"data":{...},"error":"","source":"cuad_movimiento"}`
 - `{"ok":true,"found":false,"status":"sin_resultado",...}` si CUAD no devuelve movimiento
+- `{"ok":false,"status":"invalid_request",...}` si el body no trae un CUIL valido
 - `{"ok":false,...}` si el login, OCR o la consulta fallan
 
 ### Variables

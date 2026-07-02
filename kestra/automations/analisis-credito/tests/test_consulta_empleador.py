@@ -9,12 +9,17 @@ FILES_ROOT = Path(__file__).resolve().parent.parent / "files"
 if str(FILES_ROOT) not in sys.path:
     sys.path.insert(0, str(FILES_ROOT))
 
-from consulta_empleador.service import (  # noqa: E402
+from consulta_empleador import kestra_webhook_entrypoint as entrypoint
+from consulta_empleador.service import (
+    ConfigurationError,
+    InvalidRequestError,
     ConsultaEmpleadorConfig,
     SearchRequest,
+    TechnicalError,
     build_error_result,
     build_output_payload,
     consultar_empleador,
+    load_config_from_env,
     parse_search_request,
 )
 
@@ -40,6 +45,7 @@ class ConsultaEmpleadorTests(unittest.TestCase):
             {
                 "ok": True,
                 "found": True,
+                "status": "found",
                 "identifier": "32786693",
                 "tipo": "M",
                 "token_source": "cache",
@@ -48,12 +54,16 @@ class ConsultaEmpleadorTests(unittest.TestCase):
             }
         )
 
+        self.assertEqual(payload["status"], "found")
+
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["data_json"], '{"nombre":"JUAN PEREZ"}')
         self.assertIn('"source":"pypdatos_persona"', payload["response_json"])
 
     def test_build_error_result_uses_request_context(self) -> None:
-        result = build_error_result(SearchRequest(identifier="32786693", tipo="M"), "boom")
+        result = build_error_result(
+            SearchRequest(identifier="32786693", tipo="M"), "boom"
+        )
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["identifier"], "32786693")
@@ -83,6 +93,17 @@ class ConsultaEmpleadorTests(unittest.TestCase):
         self.assertFalse(result["token_cache_should_persist"])
         session.post.assert_called_once()
 
+    def test_parse_search_request_missing_body_raises_invalid_request(self) -> None:
+        with self.assertRaises(InvalidRequestError):
+            parse_search_request(None)
+
+    def test_load_config_from_env_missing_credentials_raises_configuration_error(
+        self,
+    ) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ConfigurationError):
+                load_config_from_env()
+
     def test_consultar_empleador_refreshes_expired_cached_token(self) -> None:
         config = ConsultaEmpleadorConfig(
             usuario="user",
@@ -110,6 +131,48 @@ class ConsultaEmpleadorTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["token_source"], "login")
         self.assertTrue(result["token_cache_should_persist"])
+
+    def test_entrypoint_returns_success_for_invalid_request(self) -> None:
+        with (
+            patch.object(
+                entrypoint,
+                "_load_trigger_body",
+                side_effect=InvalidRequestError("Missing request body."),
+            ),
+            patch.object(entrypoint, "_finalize_execution", return_value=0) as finalize,
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(finalize.call_args.kwargs["exit_code"], 0)
+        self.assertEqual(finalize.call_args.args[0]["status"], "invalid_request")
+
+    def test_entrypoint_returns_failed_for_technical_error(self) -> None:
+        request = SearchRequest(identifier="32786693", tipo="M")
+        config = ConsultaEmpleadorConfig(
+            usuario="user",
+            password="pass",
+            login_url="https://example.test/login",
+            persona_url="https://example.test/persona",
+            timeout_seconds=30.0,
+            cached_token="",
+        )
+        with (
+            patch.object(entrypoint, "_load_trigger_body", return_value={"dni": "32786693"}),
+            patch.object(entrypoint, "parse_search_request", return_value=request),
+            patch.object(entrypoint, "load_config_from_env", return_value=config),
+            patch.object(
+                entrypoint,
+                "consultar_empleador",
+                side_effect=TechnicalError("PYPDatos timeout."),
+            ),
+            patch.object(entrypoint, "_finalize_execution", return_value=1) as finalize,
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(finalize.call_args.kwargs["exit_code"], 1)
+        self.assertEqual(finalize.call_args.args[0]["status"], "technical_error")
 
 
 if __name__ == "__main__":

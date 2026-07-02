@@ -56,6 +56,9 @@ outputs:
   - id: found
     type: BOOLEAN
     value: "{{ outputs.consultar_empleador.vars.found }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.consultar_empleador.vars.status }}"
   - id: identifier
     type: STRING
     value: "{{ outputs.consultar_empleador.vars.identifier }}"
