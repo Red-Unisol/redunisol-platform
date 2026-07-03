@@ -1,1 +1,0 @@
-"""Consulta de quiebra via CredixSA usando HTTP directo."""

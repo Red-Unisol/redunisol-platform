@@ -61,10 +61,22 @@ def main() -> int:
     try:
         output_payload = run_warmup()
     except Exception as exc:
+        _log_event(
+            "credixsa_warmup_fatal_error",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         output_payload = build_error_output(str(exc))
 
     _emit_outputs_if_available(output_payload)
-    sys.stdout.write(json.dumps(_summary_for_stdout(output_payload), ensure_ascii=True, separators=(",", ":")) + "\n")
+    sys.stdout.write(
+        json.dumps(
+            _summary_for_stdout(output_payload),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
     return 0
 
 
@@ -79,6 +91,13 @@ def run_warmup() -> dict[str, Any]:
     solicitudes = fetch_today_solicitudes(core_config, today)
     solicitudes = complete_missing_cuils(core_config, solicitudes)
     candidates = select_candidates(solicitudes, daily_index, max_per_run)
+    _log_event(
+        "credixsa_warmup_start",
+        today=today.isoformat(),
+        solicitudes_count=len(solicitudes),
+        candidate_count=len(candidates),
+        max_per_run=max_per_run,
+    )
 
     cache_entries: list[dict[str, str]] = []
     processed_count = 0
@@ -87,18 +106,44 @@ def run_warmup() -> dict[str, Any]:
     errors: list[str] = []
 
     for solicitud in candidates:
+        _log_event(
+            "credixsa_warmup_candidate_start",
+            oid=solicitud.oid,
+            cuil=solicitud.cuil,
+            documento=solicitud.documento,
+        )
         try:
             result = consultar_with_retry(solicitud, credix_config)
             processed_count += 1
         except Exception as exc:
             error_count += 1
             errors.append(f"{solicitud.oid}:{type(exc).__name__}:{str(exc)[:160]}")
+            _log_event(
+                "credixsa_warmup_candidate_error",
+                oid=solicitud.oid,
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+            )
             continue
 
         output = build_output_payload(result)
+        _log_event(
+            "credixsa_warmup_candidate_done",
+            oid=solicitud.oid,
+            status=str(output.get("status") or ""),
+            cache_should_persist=bool(output.get("cache_should_persist")),
+        )
         if output.get("cache_should_persist"):
-            register_cache_entry(cache_entries, str(output.get("cuil_cache_key") or ""), str(output.get("cache_value_json") or ""))
-            register_cache_entry(cache_entries, str(output.get("name_cache_key") or ""), str(output.get("cache_value_json") or ""))
+            register_cache_entry(
+                cache_entries,
+                str(output.get("cuil_cache_key") or ""),
+                str(output.get("cache_value_json") or ""),
+            )
+            register_cache_entry(
+                cache_entries,
+                str(output.get("name_cache_key") or ""),
+                str(output.get("cache_value_json") or ""),
+            )
 
         mark_daily_index(daily_index, solicitud, output)
 
@@ -109,6 +154,11 @@ def run_warmup() -> dict[str, Any]:
         except Exception as exc:
             error_count += 1
             errors.append(f"sqlite_cache:{type(exc).__name__}:{str(exc)[:160]}")
+            _log_event(
+                "credixsa_warmup_sqlite_cache_error",
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+            )
 
     output_payload = build_success_output(
         daily_index=daily_index,
@@ -119,6 +169,13 @@ def run_warmup() -> dict[str, Any]:
         skipped_count=skipped_count,
         error_count=error_count,
         errors=errors,
+    )
+    _log_event(
+        "credixsa_warmup_complete",
+        status=output_payload["status"],
+        processed_count=processed_count,
+        error_count=error_count,
+        cache_entry_count=len(cache_entries),
     )
     return output_payload
 
@@ -305,8 +362,12 @@ def build_success_output(
     error_count: int,
     errors: list[str],
 ) -> dict[str, Any]:
+    has_errors = error_count > 0
     output: dict[str, Any] = {
-        "ok": error_count == 0,
+        "ok": not has_errors,
+        "has_errors": has_errors,
+        "fatal_error": False,
+        "status": "completed_with_errors" if has_errors else "completed",
         "solicitudes_count": str(solicitudes_count),
         "candidate_count": str(candidate_count),
         "processed_count": str(processed_count),
@@ -338,6 +399,9 @@ def build_error_output(error: str) -> dict[str, Any]:
         errors=[error],
     )
     output["ok"] = False
+    output["has_errors"] = True
+    output["fatal_error"] = True
+    output["status"] = "fatal_error"
     output["error"] = error
     return output
 
@@ -410,6 +474,7 @@ def parse_int_env(name: str, default: int) -> int:
 def _summary_for_stdout(output_payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": output_payload.get("ok"),
+        "status": output_payload.get("status"),
         "solicitudes_count": output_payload.get("solicitudes_count"),
         "candidate_count": output_payload.get("candidate_count"),
         "processed_count": output_payload.get("processed_count"),
@@ -424,6 +489,17 @@ def _emit_outputs_if_available(output_payload: dict[str, Any]) -> None:
         return
 
     Kestra.outputs(output_payload)
+
+
+def _log_event(event: str, **fields: Any) -> None:
+    sys.stdout.write(
+        json.dumps(
+            {"event": event, **fields},
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
 
 
 if __name__ == "__main__":
