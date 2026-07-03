@@ -107,6 +107,10 @@ def load_config_from_env() -> ArcaConfig:
 
 def consultar_padron(request: SearchRequest, config: ArcaConfig) -> dict[str, Any]:
     log_event("arca_padron_a13_start", cuit_cuil=request.cuit_cuil)
+    ta: dict[str, str] | None = None
+    ta_source = ""
+    ta_cache_should_persist = False
+    ta_cache_ttl = ""
 
     try:
         ta, ta_source, ta_cache_should_persist, ta_cache_ttl = get_ta(config)
@@ -184,6 +188,28 @@ def consultar_padron(request: SearchRequest, config: ArcaConfig) -> dict[str, An
         )
         raise
     except Exception as exc:
+        if _is_not_found_fault(str(exc)):
+            log_event(
+                "arca_padron_a13_not_found",
+                cuit_cuil=request.cuit_cuil,
+                ta_source=ta_source,
+                error=str(exc),
+            )
+            return _build_result(
+                ok=True,
+                found=False,
+                status="not_found",
+                request=request,
+                config=config,
+                ta=ta,
+                ta_source=ta_source,
+                ta_cache_should_persist=ta_cache_should_persist,
+                ta_cache_ttl=ta_cache_ttl,
+                response={},
+                persona={},
+                error="",
+            )
+
         log_event(
             "arca_padron_a13_technical_error",
             cuit_cuil=request.cuit_cuil,
@@ -261,6 +287,14 @@ def extract_persona(response: dict[str, Any]) -> dict[str, Any]:
         return response
 
     return {}
+
+
+def _is_not_found_fault(message: str) -> bool:
+    normalized = " ".join(str(message or "").strip().lower().split())
+    return (
+        "clave (cuit/cuil) consultada es inexistente" in normalized
+        or ("clave" in normalized and "inexistente" in normalized)
+    )
 
 
 def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:

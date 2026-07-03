@@ -17,6 +17,24 @@ from afip_contacto_por_dni.service import (  # noqa: E402
 
 
 class AfipContactoPorDniTests(unittest.TestCase):
+    def test_flow_uses_safe_trigger_body_fallback_for_manual_runs(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "afip_contacto_por_dni.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = "trigger is defined and trigger.body is defined"
+        self.assertEqual(flow_source.count(expected), 1)
+        self.assertIn(
+            "({'dni': inputs.dni ?? '', 'tipo_doc': inputs.tipo_doc ?? ''} | json)",
+            flow_source,
+        )
+        self.assertNotIn(
+            "TRIGGER_BODY_JSON: \"{{ trigger.body | json }}\"",
+            flow_source,
+        )
+
     def test_parse_search_request_accepts_object(self) -> None:
         request = parse_search_request({"dni": "34.838.205", "tipo_doc": 96})
 

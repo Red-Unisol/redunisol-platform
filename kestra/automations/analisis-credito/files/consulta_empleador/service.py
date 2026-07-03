@@ -161,7 +161,12 @@ def consultar_empleador(
         )
 
     message = _extract_message(response).strip()
-    found = message.lower() != "no se pudo encontrar cuil/documento"
+    domain_error_code, domain_error_message = _extract_domain_error(response)
+    found = not _is_not_found_response(
+        message,
+        domain_error_code=domain_error_code,
+        domain_error_message=domain_error_message,
+    )
 
     if not found:
         logger.info(
@@ -183,6 +188,13 @@ def consultar_empleador(
             ),
             data=response,
             error="",
+        )
+
+    if domain_error_code or domain_error_message:
+        raise TechnicalError(
+            "PYPDatos returned an error payload"
+            f" (code={domain_error_code or 'n/a'}"
+            f", message={domain_error_message or 'n/a'})."
         )
 
     logger.info(
@@ -376,6 +388,60 @@ def _extract_message(payload: dict[str, Any]) -> str:
         if value:
             return str(value)
     return ""
+
+
+def _extract_domain_error(payload: dict[str, Any]) -> tuple[str, str]:
+    candidates: list[dict[str, Any]] = [payload]
+
+    for key in ("RESULTADO", "resultado", "data", "result"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested)
+
+    for candidate in candidates:
+        error_payload = candidate.get("ERROR") or candidate.get("error")
+        if isinstance(error_payload, dict):
+            code = str(
+                error_payload.get("codigo_error")
+                or error_payload.get("code")
+                or ""
+            ).strip()
+            message = str(
+                error_payload.get("descripcion_error")
+                or error_payload.get("description")
+                or error_payload.get("message")
+                or ""
+            ).strip()
+            if code or message:
+                return code, message
+
+        if isinstance(error_payload, str) and error_payload.strip():
+            return "", error_payload.strip()
+
+        code = str(candidate.get("codigo_error") or candidate.get("code") or "").strip()
+        message = str(
+            candidate.get("descripcion_error")
+            or candidate.get("description")
+            or ""
+        ).strip()
+        if code or message:
+            return code, message
+
+    return "", ""
+
+
+def _is_not_found_response(
+    message: str,
+    *,
+    domain_error_code: str,
+    domain_error_message: str,
+) -> bool:
+    normalized_message = message.strip().lower()
+    normalized_domain_error = domain_error_message.strip().lower()
+
+    return normalized_message == "no se pudo encontrar cuil/documento" or (
+        domain_error_code == "560" and normalized_domain_error == "sin datos"
+    )
 
 
 def _build_result(

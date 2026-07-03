@@ -11,6 +11,14 @@ labels:
   integration: afip
   transport: http
 
+inputs:
+  - id: dni
+    type: STRING
+    required: false
+  - id: tipo_doc
+    type: STRING
+    required: false
+
 tasks:
   - id: consultar_contacto
     type: io.kestra.plugin.scripts.python.Commands
@@ -28,7 +36,7 @@ tasks:
       interval: PT30S
       maxAttempts: 3
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'dni': inputs.dni ?? '', 'tipo_doc': inputs.tipo_doc ?? ''} | json) }}"
       AFIP_CRM_BASE_URL: "https://servicioscf.afip.gob.ar/publico/crmcit/"
       AFIP_TIMEOUT_SECONDS: "60"
       AFIP_USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"

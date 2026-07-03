@@ -51,6 +51,24 @@ class ConsultaCuadTests(unittest.TestCase):
             self.frames = frames
             self.main_frame = frames[0] if frames else None
 
+    def test_flow_uses_safe_trigger_body_fallback_for_manual_runs(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_cuad.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = "trigger is defined and trigger.body is defined"
+        self.assertEqual(flow_source.count(expected), 1)
+        self.assertIn(
+            "({'cuil': inputs.cuil ?? ''} | json)",
+            flow_source,
+        )
+        self.assertNotIn(
+            "TRIGGER_BODY_JSON: \"{{ trigger.body | json }}\"",
+            flow_source,
+        )
+
     def test_parse_search_request_normalizes_cuil(self) -> None:
         request = parse_search_request({"cuil": "23-33312151-4"})
 

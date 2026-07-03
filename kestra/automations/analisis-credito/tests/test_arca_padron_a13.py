@@ -19,6 +19,7 @@ from arca_padron_a13.service import (  # noqa: E402
     build_login_ticket_request,
     build_output_payload,
     build_ta_cache_ttl,
+    consultar_padron,
     format_duration_iso8601,
     get_ta,
     is_ta_valid,
@@ -107,6 +108,43 @@ class ArcaPadronA13Tests(unittest.TestCase):
         self.assertEqual(payload["status"], "technical_error")
         self.assertEqual(payload["error"], "boom")
         self.assertEqual(payload["cuit_cuil"], "")
+
+    def test_consultar_padron_maps_clave_inexistente_to_not_found(self) -> None:
+        config = ArcaConfig(
+            cuit_representada="33708707029",
+            cert_pem=b"cert",
+            key_pem=b"key",
+            timeout_seconds=60.0,
+            cached_ta={},
+        )
+
+        with (
+            patch(
+                "arca_padron_a13.service.get_ta",
+                return_value=(
+                    {
+                        "token": "cached-token",
+                        "sign": "cached-sign",
+                        "expirationTime": "2099-01-01T00:00:00+00:00",
+                    },
+                    "cache",
+                    False,
+                    "",
+                ),
+            ),
+            patch(
+                "arca_padron_a13.service.call_get_persona",
+                side_effect=RuntimeError(
+                    "A13 fault: La Clave (CUIT/CUIL) consultada es inexistente"
+                ),
+            ),
+        ):
+            result = consultar_padron(SearchRequest("20999999999"), config)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["found"])
+        self.assertEqual(result["status"], "not_found")
+        self.assertEqual(result["ta_source"], "cache")
 
     def test_load_config_from_env_missing_credentials_raises_configuration_error(
         self,

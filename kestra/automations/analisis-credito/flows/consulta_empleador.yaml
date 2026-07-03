@@ -11,6 +11,17 @@ labels:
   integration: pypdatos
   transport: http
 
+inputs:
+  - id: dni
+    type: STRING
+    required: false
+  - id: cuit
+    type: STRING
+    required: false
+  - id: tipo
+    type: STRING
+    required: false
+
 tasks:
   - id: leer_token_cache
     type: io.kestra.plugin.core.kv.Get
@@ -30,7 +41,7 @@ tasks:
     beforeCommands:
       - pip install kestra requests > /dev/null
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'dni': inputs.dni ?? '', 'cuit': inputs.cuit ?? '', 'tipo': inputs.tipo ?? ''} | json) }}"
       PYPDATOS_TOKEN_CACHE_JSON: "{{ (outputs.leer_token_cache.value ?? null) | json }}"
       PYPDATOS_LOGIN_URL: "https://www.pypdatos.com.ar:8444/apiuser/usuario/login"
       PYPDATOS_PERSONA_URL: "https://www.pypdatos.com.ar:469/ascocco/rest/serviciospyp/persona/json"

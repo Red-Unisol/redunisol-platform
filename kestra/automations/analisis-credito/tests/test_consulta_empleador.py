@@ -25,6 +25,24 @@ from consulta_empleador.service import (
 
 
 class ConsultaEmpleadorTests(unittest.TestCase):
+    def test_flow_uses_safe_trigger_body_fallback_for_manual_runs(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_empleador.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = "trigger is defined and trigger.body is defined"
+        self.assertEqual(flow_source.count(expected), 1)
+        self.assertIn(
+            "({'dni': inputs.dni ?? '', 'cuit': inputs.cuit ?? '', 'tipo': inputs.tipo ?? ''} | json)",
+            flow_source,
+        )
+        self.assertNotIn(
+            "TRIGGER_BODY_JSON: \"{{ trigger.body | json }}\"",
+            flow_source,
+        )
+
     def test_parse_search_request_infers_dni_tipo(self) -> None:
         request = parse_search_request({"dni": "32.786.693"})
 
@@ -131,6 +149,65 @@ class ConsultaEmpleadorTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["token_source"], "login")
         self.assertTrue(result["token_cache_should_persist"])
+
+    def test_consultar_empleador_maps_sin_datos_to_not_found(self) -> None:
+        config = ConsultaEmpleadorConfig(
+            usuario="user",
+            password="pass",
+            login_url="https://example.test/login",
+            persona_url="https://example.test/persona",
+            timeout_seconds=30.0,
+            cached_token="cached-token",
+        )
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "RESULTADO": {
+                "ERROR": {
+                    "codigo_error": 560,
+                    "descripcion_error": "Sin Datos",
+                }
+            }
+        }
+        session = Mock()
+        session.post.return_value = response
+
+        with patch("consulta_empleador.service.requests.Session", return_value=session):
+            result = consultar_empleador(SearchRequest("20000000000", "S"), config)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["found"])
+        self.assertEqual(result["status"], "not_found")
+
+    def test_consultar_empleador_raises_technical_error_for_unknown_error_payload(
+        self,
+    ) -> None:
+        config = ConsultaEmpleadorConfig(
+            usuario="user",
+            password="pass",
+            login_url="https://example.test/login",
+            persona_url="https://example.test/persona",
+            timeout_seconds=30.0,
+            cached_token="cached-token",
+        )
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "RESULTADO": {
+                "ERROR": {
+                    "codigo_error": 999,
+                    "descripcion_error": "Backend caido",
+                }
+            }
+        }
+        session = Mock()
+        session.post.return_value = response
+
+        with (
+            patch("consulta_empleador.service.requests.Session", return_value=session),
+            self.assertRaises(TechnicalError),
+        ):
+            consultar_empleador(SearchRequest("20000000000", "S"), config)
 
     def test_entrypoint_returns_success_for_invalid_request(self) -> None:
         with (
