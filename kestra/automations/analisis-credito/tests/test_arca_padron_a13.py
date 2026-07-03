@@ -28,6 +28,24 @@ from arca_padron_a13.service import (  # noqa: E402
 
 
 class ArcaPadronA13Tests(unittest.TestCase):
+    def test_flow_uses_safe_trigger_body_fallback_for_manual_runs(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_padron_a13.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = "trigger is defined and trigger.body is defined"
+        self.assertEqual(flow_source.count(expected), 1)
+        self.assertIn(
+            "({'cuit_cuil': inputs.cuit_cuil ?? ''} | json)",
+            flow_source,
+        )
+        self.assertNotIn(
+            "inputs.cuit_cuil ? ({'cuit_cuil': inputs.cuit_cuil} | json)",
+            flow_source,
+        )
+
     def test_parse_search_request_accepts_cuit_cuil_key(self) -> None:
         request = parse_search_request({"cuit_cuil": "20-35966130-5"})
         self.assertEqual(request.cuit_cuil, "20359661305")
