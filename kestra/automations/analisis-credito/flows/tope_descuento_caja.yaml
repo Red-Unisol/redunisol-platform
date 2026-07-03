@@ -10,6 +10,11 @@ labels:
   domain: analisis-credito
   integration: caja-jubilaciones
 
+inputs:
+  - id: cuil
+    type: STRING
+    required: false
+
 tasks:
   - id: consultar_tope
     type: io.kestra.plugin.scripts.python.Commands
@@ -23,7 +28,7 @@ tasks:
     beforeCommands:
       - pip install kestra requests pycryptodome > /dev/null
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuil': inputs.cuil ?? ''} | json) }}"
       CIDI_USER: "{{ secret('CIDI_USER') }}"
       CIDI_PASS: "{{ secret('CIDI_PASS') }}"
       CIDI_BASE_URL: "{{ envs.cidi_base_url }}"

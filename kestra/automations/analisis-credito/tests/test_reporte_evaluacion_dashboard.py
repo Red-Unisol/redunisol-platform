@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 FILES_ROOT = Path(__file__).resolve().parent.parent / "files"
 if str(FILES_ROOT) not in sys.path:
@@ -12,6 +13,7 @@ if str(FILES_ROOT) not in sys.path:
 from reporte_evaluacion_dashboard.generate_snapshot import (  # noqa: E402
     NovedadEvent,
     compute_first_response_minutes,
+    main,
 )
 
 
@@ -87,6 +89,56 @@ class ReporteEvaluacionDashboardTests(unittest.TestCase):
         ]
 
         self.assertEqual(compute_first_response_minutes(events), [15.0, 30.0])
+
+    def test_main_emits_warning_outputs_when_snapshot_succeeds(self) -> None:
+        with (
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot.build_snapshot",
+                return_value=(
+                    Path("/tmp/latest.json"),
+                    {"periodo_actual": "2026-07", "metricas": []},
+                    ["warning-demo"],
+                ),
+            ),
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot.atomic_write_json"
+            ),
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot.set_kestra_outputs"
+            ) as set_outputs,
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot._log_event"
+            ),
+        ):
+            exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = set_outputs.call_args.args[0]
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(payload["warning_count"], 1)
+        self.assertEqual(payload["warnings_json"], '["warning-demo"]')
+
+    def test_main_emits_error_outputs_when_snapshot_fails(self) -> None:
+        with (
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot.build_snapshot",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot.set_kestra_outputs"
+            ) as set_outputs,
+            patch(
+                "reporte_evaluacion_dashboard.generate_snapshot._log_event"
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                main()
+
+        payload = set_outputs.call_args.args[0]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["status"], "technical_error")
+        self.assertEqual(payload["error"], "boom")
 
 
 if __name__ == "__main__":

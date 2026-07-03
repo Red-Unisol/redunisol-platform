@@ -17,14 +17,23 @@ except ImportError:  # pragma: no cover - optional outside Kestra
     Kestra = None
 
 
+class InvalidRequestError(ValueError):
+    pass
+
+
 def main() -> int:
     result: Dict[str, Any]
+    status = "technical_error"
+    exit_code = 1
+    cuil = ""
     try:
         payload = _load_trigger_body()
         cuil = _extract_cuil(payload)
+        _log_event("tope_descuento_caja_start", cuil=cuil)
 
         hash_sesion = login_cidi()
         cidi_cookie = f"CiDi={hash_sesion}"
+        _log_event("tope_descuento_caja_cidi_login_ok", cuil=cuil)
 
         token_caja = obtener_token_caja(
             token_inicial=os.getenv("CAJA_SEED_TOKEN", ""),
@@ -32,6 +41,7 @@ def main() -> int:
             permisos_body=os.getenv("CAJA_PERMISSIONS_BODY", ""),
             permisos_payload=os.getenv("CAJA_PERMISSIONS_PLAINTEXT", ""),
         )
+        _log_event("tope_descuento_caja_token_caja_ok", cuil=cuil)
 
         datos_persona, cupo_disponible = _obtener_datos(
             cidi_cookie=cidi_cookie,
@@ -48,38 +58,70 @@ def main() -> int:
             "tope_descuento": _to_float(cupo_disponible.get("discountLimit")),
             "error": "",
         }
-    except Exception as exc:
+        status = "completed"
+        exit_code = 0
+        _log_event(
+            "tope_descuento_caja_done",
+            cuil=cuil,
+            disponible=float(result.get("disponible", 0.0)),
+            tope_descuento=float(result.get("tope_descuento", 0.0)),
+        )
+    except InvalidRequestError as exc:
         result = {
             "ok": False,
-            "cuil": "",
+            "cuil": cuil,
             "nombre": "",
             "apellido": "",
             "disponible": 0.0,
             "tope_descuento": 0.0,
             "error": str(exc),
         }
+        status = "invalid_request"
+        exit_code = 0
+        _log_event("tope_descuento_caja_invalid_request", error=str(exc))
+    except Exception as exc:
+        result = {
+            "ok": False,
+            "cuil": cuil,
+            "nombre": "",
+            "apellido": "",
+            "disponible": 0.0,
+            "tope_descuento": 0.0,
+            "error": str(exc),
+        }
+        status = "technical_error"
+        exit_code = 1
+        _log_event(
+            "tope_descuento_caja_technical_error",
+            cuil=cuil,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
 
-    _emit_outputs_if_available(result)
+    _emit_outputs_if_available(result, status)
     sys.stdout.write(json.dumps(result, ensure_ascii=True))
-    return 0
+    return exit_code
 
 
 def _load_trigger_body() -> Any:
     raw = os.getenv("TRIGGER_BODY_JSON", "").strip()
     if not raw:
-        raise ValueError("Falta TRIGGER_BODY_JSON.")
-    return json.loads(raw)
+        raise InvalidRequestError("cuil requerido")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise InvalidRequestError("Body invalido") from exc
 
 
 def _extract_cuil(payload: Any) -> str:
     if isinstance(payload, dict):
         if "cuil" not in payload:
-            raise ValueError("cuil requerido")
+            raise InvalidRequestError("cuil requerido")
         return str(payload["cuil"])
     if payload is None:
-        raise ValueError("cuil requerido")
+        raise InvalidRequestError("cuil requerido")
     if isinstance(payload, (list, tuple)):
-        raise ValueError("Body invalido")
+        raise InvalidRequestError("Body invalido")
     return str(payload)
 
 
@@ -332,12 +374,13 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
-def _emit_outputs_if_available(result: Dict[str, Any]) -> None:
+def _emit_outputs_if_available(result: Dict[str, Any], status: str) -> None:
     if Kestra is None:
         return
     Kestra.outputs(
         {
             "ok": bool(result.get("ok", False)),
+            "status": status,
             "cuil": str(result.get("cuil") or ""),
             "nombre": str(result.get("nombre") or ""),
             "apellido": str(result.get("apellido") or ""),
@@ -346,6 +389,10 @@ def _emit_outputs_if_available(result: Dict[str, Any]) -> None:
             "error": str(result.get("error") or ""),
         }
     )
+
+
+def _log_event(event: str, **fields: Any) -> None:
+    sys.stdout.write(json.dumps({"event": event, **fields}, ensure_ascii=True) + "\n")
 
 
 def _require_env(name: str) -> str:
