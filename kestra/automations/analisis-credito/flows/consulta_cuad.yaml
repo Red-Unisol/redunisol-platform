@@ -11,6 +11,11 @@ labels:
   integration: cuad
   transport: browser-ocr
 
+inputs:
+  - id: cuil
+    type: STRING
+    required: false
+
 tasks:
   - id: consultar_cuad
     type: io.kestra.plugin.scripts.python.Commands
@@ -23,7 +28,7 @@ tasks:
       pullPolicy: ALWAYS
     containerImage: ghcr.io/red-unisol/analisis-credito-consulta-cuad:latest
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuil': inputs.cuil ?? ''} | json) }}"
       CUAD_LOGIN_URL: "https://www.santafe.gov.ar/cuad/"
       CUAD_MOVIMIENTO_URL: "https://www.santafe.gov.ar/cuad/movimiento.asp"
       CUAD_EMR_NOMBRE: "Santa Fe - ACTIVOS"
