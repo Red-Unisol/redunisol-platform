@@ -186,6 +186,7 @@ def fetch_month_novedades(
     per_day_max: int,
     *,
     today: date,
+    warnings: list[str],
 ) -> list[NovedadEvent]:
     start = month_start(month_value)
     end = next_month_start(start)
@@ -201,9 +202,12 @@ def fetch_month_novedades(
             max_rows=per_day_max,
         )
         if len(rows) == per_day_max:
-            print(
-                f"ADVERTENCIA: {current_day} alcanzo max={per_day_max}. Podria haber truncamiento.",
-                file=sys.stderr,
+            _append_warning(
+                warnings,
+                (
+                    f"{current_day} alcanzo max={per_day_max} al consultar "
+                    "PreSolicitud.Module.NovedadSolicitud. Podria haber truncamiento."
+                ),
             )
         events.extend(NovedadEvent.from_api_row(row) for row in rows)
     return events
@@ -226,6 +230,7 @@ def fetch_full_history_for_solicitudes(
     client: EvaluateApiClient,
     solicitud_oids: Sequence[int],
     per_query_max: int,
+    warnings: list[str],
     batch_size: int = 200,
 ) -> list[NovedadEvent]:
     if not solicitud_oids:
@@ -246,9 +251,12 @@ def fetch_full_history_for_solicitudes(
             fetch_batch(batch_oids[middle:])
             return
         if len(rows) >= per_query_max:
-            print(
-                f"ADVERTENCIA: solicitud {batch_oids[0]} alcanzo max={per_query_max}. Podria faltar historial.",
-                file=sys.stderr,
+            _append_warning(
+                warnings,
+                (
+                    f"solicitud {batch_oids[0]} alcanzo max={per_query_max} "
+                    "al consultar historial de novedades. Podria faltar historial."
+                ),
             )
         all_rows.extend(rows)
 
@@ -417,15 +425,35 @@ def fetch_history_by_month(
     per_day_max: int,
     *,
     today: date,
+    warnings: list[str],
 ) -> dict[str, list[NovedadEvent]]:
     history_by_month: dict[str, list[NovedadEvent]] = {}
     for month_value in months:
-        print(f"Extrayendo {month_value}")
-        month_events = fetch_month_novedades(client, month_value, per_day_max, today=today)
+        _log_event("dashboard_snapshot_month_start", month=month_value)
+        month_events = fetch_month_novedades(
+            client,
+            month_value,
+            per_day_max,
+            today=today,
+            warnings=warnings,
+        )
         closed_oids = find_closed_solicitudes(month_events)
-        print(f"- solicitudes cerradas: {len(closed_oids)}")
-        history = fetch_full_history_for_solicitudes(client, closed_oids, per_query_max=per_day_max)
-        print(f"- novedades historicas: {len(history)}")
+        _log_event(
+            "dashboard_snapshot_month_closed_solicitudes",
+            month=month_value,
+            closed_count=len(closed_oids),
+        )
+        history = fetch_full_history_for_solicitudes(
+            client,
+            closed_oids,
+            per_query_max=per_day_max,
+            warnings=warnings,
+        )
+        _log_event(
+            "dashboard_snapshot_month_history_loaded",
+            month=month_value,
+            history_count=len(history),
+        )
         history_by_month[month_value] = history
     return history_by_month
 
@@ -445,11 +473,17 @@ def set_kestra_outputs(values: dict[str, Any]) -> None:
         print(f"::{name}::{value}")
 
 
-def build_snapshot() -> tuple[Path, dict[str, Any]]:
+def build_snapshot() -> tuple[Path, dict[str, Any], list[str]]:
     now = datetime.now(LOCAL_TZ)
     run_month = env("OBJECTIVES_RUN_MONTH", now.strftime("%Y-%m"))
     target_months = [previous_month_value(run_month, offset) for offset in (3, 2, 1)]
     months_to_fetch = [*target_months, run_month]
+    warnings: list[str] = []
+    _log_event(
+        "dashboard_snapshot_start",
+        run_month=run_month,
+        target_months=target_months,
+    )
 
     client = EvaluateApiClient(
         base_url=env("REPORTE_EVALUACION_BASE_URL", DEFAULT_BASE_URL),
@@ -457,7 +491,13 @@ def build_snapshot() -> tuple[Path, dict[str, Any]]:
         verify_ssl=env("REPORTE_EVALUACION_VERIFY_SSL", "false").lower() == "true",
     )
     per_day_max = int(env("REPORTE_EVALUACION_PER_DAY_MAX", "20000"))
-    history_by_month = fetch_history_by_month(client, months_to_fetch, per_day_max, today=now.date())
+    history_by_month = fetch_history_by_month(
+        client,
+        months_to_fetch,
+        per_day_max,
+        today=now.date(),
+        warnings=warnings,
+    )
 
     current_history = history_by_month[run_month]
     target_history = [
@@ -505,26 +545,63 @@ def build_snapshot() -> tuple[Path, dict[str, Any]]:
     }
 
     output_path = Path(env("OBJECTIVES_DASHBOARD_SNAPSHOT_PATH", "/data/reporte-evaluacion/dashboard/latest.json"))
-    return output_path, snapshot
+    return output_path, snapshot, warnings
 
 
 def main() -> int:
     try:
-        output_path, snapshot = build_snapshot()
+        output_path, snapshot, warnings = build_snapshot()
         atomic_write_json(output_path, snapshot)
         set_kestra_outputs(
             {
                 "ok": True,
+                "status": "completed",
                 "snapshot_path": str(output_path),
                 "periodo_actual": snapshot["periodo_actual"],
                 "metricas_json": json.dumps(snapshot["metricas"], ensure_ascii=False),
+                "warning_count": len(warnings),
+                "warnings_json": json.dumps(warnings, ensure_ascii=False),
+                "error": "",
             }
         )
-        print(f"Snapshot generado: {output_path}")
+        _log_event(
+            "dashboard_snapshot_complete",
+            snapshot_path=str(output_path),
+            periodo_actual=snapshot["periodo_actual"],
+            metric_count=len(snapshot["metricas"]),
+            warning_count=len(warnings),
+        )
         return 0
     except Exception as exc:
-        set_kestra_outputs({"ok": False, "error": str(exc)})
+        set_kestra_outputs(
+            {
+                "ok": False,
+                "status": "technical_error",
+                "snapshot_path": "",
+                "periodo_actual": "",
+                "metricas_json": "[]",
+                "warning_count": 0,
+                "warnings_json": "[]",
+                "error": str(exc),
+            }
+        )
+        _log_event(
+            "dashboard_snapshot_technical_error",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         raise
+
+
+def _append_warning(warnings: list[str], message: str) -> None:
+    warnings.append(message)
+    _log_event("dashboard_snapshot_warning", message=message)
+
+
+def _log_event(event: str, **fields: Any) -> None:
+    sys.stdout.write(
+        json.dumps({"event": event, **fields}, ensure_ascii=True) + "\n"
+    )
 
 
 if __name__ == "__main__":
