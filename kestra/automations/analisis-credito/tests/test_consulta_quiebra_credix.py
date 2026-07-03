@@ -15,6 +15,8 @@ if str(FILES_ROOT) not in sys.path:
     sys.path.insert(0, str(FILES_ROOT))
 
 from consulta_quiebra_credix.service import (  # noqa: E402
+    ConfigurationError,
+    InvalidRequestError,
     SearchRequest,
     build_cache_entry,
     build_cache_lookup,
@@ -35,6 +37,7 @@ from consulta_quiebra_credix.service import (  # noqa: E402
     normalize_name,
     parse_search_request,
 )
+from consulta_quiebra_credix import kestra_webhook_entrypoint as entrypoint  # noqa: E402
 from consulta_quiebra_credix.sqlite_cache import write_cache_entries  # noqa: E402
 from consulta_quiebra_credix.cache_lookup_entrypoint import (  # noqa: E402
     _load_trigger_body as load_cache_lookup_body,
@@ -96,7 +99,10 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         self.assertEqual(request.nombre, "")
 
     def test_parse_search_request_requires_at_least_one_criterion(self) -> None:
-        with self.assertRaisesRegex(ValueError, "At least one of 'cuit' or 'nombre' is required."):
+        with self.assertRaisesRegex(
+            InvalidRequestError,
+            "At least one of 'cuit' or 'nombre' is required.",
+        ):
             parse_search_request({"cuit": "", "nombre": " "})
 
     def test_build_output_payload_for_single_result_preserves_legacy_shape(self) -> None:
@@ -646,9 +652,23 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         output = build_output_payload(result)
 
         self.assertFalse(output["ok"])
-        self.assertEqual(output["status"], "error")
-        self.assertEqual(output["response_json"], '{"status":"error","error":"boom"}')
+        self.assertEqual(output["status"], "technical_error")
+        self.assertEqual(
+            output["response_json"],
+            '{"status":"technical_error","error":"boom"}',
+        )
         self.assertEqual(output["error"], "boom")
+
+    def test_build_error_result_accepts_custom_status(self) -> None:
+        output = build_output_payload(
+            build_error_result(None, "Missing request body.", status="invalid_request")
+        )
+
+        self.assertEqual(output["status"], "invalid_request")
+        self.assertEqual(
+            output["response_json"],
+            '{"status":"invalid_request","error":"Missing request body."}',
+        )
 
     def test_normalizers_strip_noise(self) -> None:
         self.assertEqual(normalize_cuit("20-12345678-3"), "20123456783")
@@ -763,6 +783,68 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
         self.assertEqual(row[0], "20123456783")
         self.assertEqual(row[1], "Juan Perez")
         self.assertIn('"version"', row[2])
+
+    def test_load_config_from_env_invalid_timeout_raises_configuration_error(
+        self,
+    ) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "CREDIX_CLIENTE": "cliente",
+                "CREDIX_USER": "user",
+                "CREDIX_PASS": "pass",
+                "CREDIX_LOGIN_URL": "https://credixsa.test/login",
+                "CREDIX_TIMEOUT_SECONDS": "abc",
+            },
+            clear=True,
+        ):
+            from consulta_quiebra_credix.service import load_config_from_env
+
+            with self.assertRaises(ConfigurationError):
+                load_config_from_env()
+
+    def test_entrypoint_returns_success_for_invalid_request(self) -> None:
+        with (
+            patch.object(
+                entrypoint,
+                "_load_trigger_body",
+                side_effect=InvalidRequestError("Missing request body."),
+            ),
+            patch.object(entrypoint, "_write_sqlite_cache_if_configured"),
+            patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
+            patch("sys.stdout.write"),
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 0)
+        output_payload = emit_outputs.call_args.args[0]
+        self.assertEqual(output_payload["status"], "invalid_request")
+
+    def test_entrypoint_returns_failed_for_technical_error(self) -> None:
+        request = SearchRequest(cuit="20123456783", nombre="")
+
+        with (
+            patch.object(
+                entrypoint,
+                "_load_trigger_body",
+                return_value={"cuit": "20-12345678-3"},
+            ),
+            patch.object(entrypoint, "parse_search_request", return_value=request),
+            patch.object(entrypoint, "load_config_from_env", return_value=object()),
+            patch.object(
+                entrypoint,
+                "consultar_tabla",
+                side_effect=TimeoutError("Timed out waiting for CredixSA report sections."),
+            ),
+            patch.object(entrypoint, "_write_sqlite_cache_if_configured"),
+            patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
+            patch("sys.stdout.write"),
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 1)
+        output_payload = emit_outputs.call_args.args[0]
+        self.assertEqual(output_payload["status"], "technical_error")
 
     def test_is_detail_summary_page_detects_credix_detail_view(self) -> None:
         class BodyLocator:

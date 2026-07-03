@@ -34,7 +34,7 @@ def main() -> int:
             _parse_max_age_days(),
         )
         if result is None:
-            result = build_error_result(request, "cache_miss")
+            result = build_error_result(request, "cache_miss", status="cache_miss")
             result["cache_hit"] = False
     except Exception as exc:
         result = build_error_result(request, str(exc))
