@@ -32,6 +32,14 @@ CACHE_MAX_AGE_DAYS = 7
 CACHE_DUMMY_KEY = "credixsa.cache.lookup.none"
 
 
+class InvalidRequestError(ValueError):
+    """Raised when the caller sends an invalid Credix request."""
+
+
+class ConfigurationError(ValueError):
+    """Raised when the Credix runtime configuration is invalid."""
+
+
 @dataclass(frozen=True)
 class SearchRequest:
     cuit: str
@@ -65,15 +73,15 @@ def parse_search_request(payload: Any) -> SearchRequest:
         cuit = normalize_cuit(payload.get("cuit"))
         nombre = normalize_name(payload.get("nombre"))
     elif payload is None:
-        raise ValueError("Missing request body.")
+        raise InvalidRequestError("Missing request body.")
     elif isinstance(payload, (list, tuple)):
-        raise ValueError("Body must be an object or string.")
+        raise InvalidRequestError("Body must be an object or string.")
     else:
         cuit = normalize_cuit(payload)
         nombre = ""
 
     if not cuit and not nombre:
-        raise ValueError("At least one of 'cuit' or 'nombre' is required.")
+        raise InvalidRequestError("At least one of 'cuit' or 'nombre' is required.")
 
     return SearchRequest(cuit=cuit, nombre=nombre)
 
@@ -89,13 +97,28 @@ def load_config_from_env() -> CredixConfig:
     cache_max_age_raw = os.getenv("CREDIX_CACHE_MAX_AGE_DAYS", str(CACHE_MAX_AGE_DAYS)).strip()
 
     if not cliente or not usuario or not password:
-        raise ValueError("Missing CREDIX_CLIENTE, CREDIX_USER or CREDIX_PASS.")
+        raise ConfigurationError("Missing CREDIX_CLIENTE, CREDIX_USER or CREDIX_PASS.")
     if not login_url:
-        raise ValueError("Missing CREDIX_LOGIN_URL.")
+        raise ConfigurationError("Missing CREDIX_LOGIN_URL.")
 
-    timeout_seconds = float(timeout_raw)
+    try:
+        timeout_seconds = float(timeout_raw)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "CREDIX_TIMEOUT_SECONDS must be a valid number."
+        ) from exc
     if timeout_seconds <= 0:
-        raise ValueError("CREDIX_TIMEOUT_SECONDS must be greater than 0.")
+        raise ConfigurationError("CREDIX_TIMEOUT_SECONDS must be greater than 0.")
+    try:
+        cache_max_age_days = int(cache_max_age_raw or CACHE_MAX_AGE_DAYS)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "CREDIX_CACHE_MAX_AGE_DAYS must be a valid integer."
+        ) from exc
+    if cache_max_age_days <= 0:
+        raise ConfigurationError(
+            "CREDIX_CACHE_MAX_AGE_DAYS must be greater than 0."
+        )
 
     return CredixConfig(
         cliente=cliente,
@@ -107,7 +130,7 @@ def load_config_from_env() -> CredixConfig:
         debug_dir=debug_dir,
         cache_by_cuil=decode_cache_env(os.getenv("CREDIX_CACHE_BY_CUIL_JSON", "")),
         cache_by_name=decode_cache_env(os.getenv("CREDIX_CACHE_BY_NAME_JSON", "")),
-        cache_max_age_days=int(cache_max_age_raw or CACHE_MAX_AGE_DAYS),
+        cache_max_age_days=cache_max_age_days,
     )
 
 
@@ -117,6 +140,14 @@ def consultar_tabla(request: SearchRequest, config: CredixConfig) -> dict[str, A
     _log_event("consulta_quiebra_start", cuit=request.cuit, nombre=request.nombre)
     cached_result = find_cached_result(request, config)
     if cached_result is not None:
+        _log_event(
+            "consulta_quiebra_cache_hit",
+            cuit=request.cuit,
+            nombre=request.nombre,
+            cache_source=str(cached_result.get("cache_source") or ""),
+            cached_at=str(cached_result.get("cached_at") or ""),
+            status=str(cached_result.get("status") or ""),
+        )
         return cached_result
 
     with sync_playwright() as playwright:
@@ -137,9 +168,20 @@ def consultar_tabla(request: SearchRequest, config: CredixConfig) -> dict[str, A
             candidates = _extract_candidates(page)
             if not candidates:
                 _debug_dump(page, config, "no_results", request)
+                _log_event(
+                    "consulta_quiebra_not_found",
+                    cuit=request.cuit,
+                    nombre=request.nombre,
+                )
                 return build_none_result(request)
 
             if len(candidates) > 1:
+                _log_event(
+                    "consulta_quiebra_multiple_candidates",
+                    cuit=request.cuit,
+                    nombre=request.nombre,
+                    candidate_count=len(candidates),
+                )
                 return build_multiple_result(request, candidates)
 
             selected_candidate = candidates[0]
@@ -156,6 +198,13 @@ def consultar_tabla(request: SearchRequest, config: CredixConfig) -> dict[str, A
             if not data and not _is_detail_summary_page(page):
                 raise TimeoutError("Timed out waiting for CredixSA report sections.")
             alerts = _extract_report_alerts(page)
+            _log_event(
+                "consulta_quiebra_success",
+                cuit=normalize_cuit(selected_candidate.cuit) or request.cuit,
+                nombre=selected_candidate.nombre,
+                section_count=len(data),
+                alert_count=len(alerts),
+            )
             return build_single_result(
                 request,
                 data,
@@ -210,9 +259,18 @@ def build_single_result(
 def build_error_result(
     request: SearchRequest | None,
     error: str,
+    *,
+    status: str = "technical_error",
 ) -> dict[str, Any]:
     safe_request = request or SearchRequest(cuit="", nombre="")
-    return _base_result(safe_request, status="error", rows=[], data=[], error=error, ok=False)
+    return _base_result(
+        safe_request,
+        status=status,
+        rows=[],
+        data=[],
+        error=error,
+        ok=False,
+    )
 
 
 def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
@@ -254,7 +312,10 @@ def build_legacy_response(result: dict[str, Any]) -> dict[str, Any]:
         return {"status": "single", "data": result.get("data") or []}
     if status in {"none", "multiple"}:
         return {"status": status, "rows": result.get("rows") or []}
-    return {"status": "error", "error": str(result.get("error") or "Unknown error")}
+    return {
+        "status": status or "technical_error",
+        "error": str(result.get("error") or "Unknown error"),
+    }
 
 
 def build_normalized_payload(result: dict[str, Any]) -> dict[str, Any]:
