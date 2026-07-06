@@ -1,0 +1,28 @@
+id: auditoria_diaria_billetera
+namespace: redunisol.dev.billetera-virtual
+description: "Audita que las tareas programadas de la Billetera Virtual (49 y 50) se hayan ejecutado exitosamente."
+
+labels:
+  # Esta etiqueta indica al script de deploy que elimine los triggers automáticos en Desarrollo (dev)
+  # para que las alertas no se disparen accidentalmente fuera de Producción.
+  schedule_scope: prod_only
+
+triggers:
+  - id: ejecucion_diaria_1730
+    type: io.kestra.plugin.core.trigger.Schedule
+    # Formato Cron: Minuto 30, Hora 17, Todos los días (* * *)
+    cron: "30 17 * * *"
+    timezone: "America/Argentina/Cordoba"
+
+tasks:
+  - id: ejecutar_script_auditoria
+    type: io.kestra.plugin.scripts.python.Script
+    # ¡CORREGIDO! Hacemos referencia al nombre exacto de tu nuevo archivo Python
+    script: "{{ read('../files/auditar-billetera.py') }}"
+    beforeCommands:
+      - pip install requests > /dev/null
+    env:
+      # Inyectamos los secretos y variables de entorno del servidor hacia el script de Python
+      API_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      BITRIX_WEBHOOK_URL: "{{ secret('BITRIX24_ALERTA_SISTEMA_WEBHOOK') }}"
+      CHAT_ID_IT: "{{ envs.bitrix24_chat_id_it }}"
