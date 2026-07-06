@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import json
 import sqlite3
+from unittest.mock import patch
 
 FILES_ROOT = (
     Path(__file__).resolve().parent.parent / "files"
@@ -35,9 +36,35 @@ from consulta_quiebra_credix.service import (  # noqa: E402
     parse_search_request,
 )
 from consulta_quiebra_credix.sqlite_cache import write_cache_entries  # noqa: E402
+from consulta_quiebra_credix.cache_lookup_entrypoint import (  # noqa: E402
+    _load_trigger_body as load_cache_lookup_body,
+)
 
 
 class ConsultaQuiebraCredixTests(unittest.TestCase):
+    def test_flow_uses_inputs_when_trigger_body_is_not_available(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_quiebra_credix.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = (
+            "trigger is defined and trigger.body is defined"
+        )
+        self.assertEqual(flow_source.count(expected), 3)
+        self.assertNotIn("trigger is defined ? (trigger.body | json)", flow_source)
+
+    def test_flow_outputs_are_safe_when_cache_tasks_do_not_run(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_quiebra_credix.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("outputs.responder_cache is defined", flow_source)
+        self.assertIn("outputs.consultar_quiebra.vars.ok ?? false", flow_source)
+
     def test_parse_search_request_normalizes_fields(self) -> None:
         request = parse_search_request(
             {
@@ -48,6 +75,19 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
 
         self.assertEqual(request.cuit, "20123456783")
         self.assertEqual(request.nombre, "Juan Perez")
+
+    def test_cache_lookup_entrypoint_accepts_subflow_request_env(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "CREDIX_REQUEST_JSON": '{"cuit":"20-12345678-3"}',
+                "TRIGGER_BODY_JSON": "",
+            },
+            clear=False,
+        ):
+            payload = load_cache_lookup_body()
+
+        self.assertEqual(payload, {"cuit": "20-12345678-3"})
 
     def test_parse_search_request_accepts_plain_string_as_cuit(self) -> None:
         request = parse_search_request("20-12345678-3")

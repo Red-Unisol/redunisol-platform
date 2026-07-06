@@ -167,6 +167,23 @@ triggers:
         self.assertEqual(normalized["labels"]["env"], "prod")
         self.assertEqual(normalized["triggers"][0]["id"], "cada_minuto")
 
+    def test_get_deploy_targets_includes_system_when_present(self) -> None:
+        targets = deploy_kestra.get_deploy_targets(None)
+
+        self.assertIn(deploy_kestra.SYSTEM_TARGET, targets)
+
+    def test_get_deploy_targets_honors_explicit_target(self) -> None:
+        self.assertEqual(
+            deploy_kestra.get_deploy_targets(deploy_kestra.SYSTEM_TARGET),
+            [deploy_kestra.SYSTEM_TARGET],
+        )
+
+    def test_get_target_roots_for_system(self) -> None:
+        flows_root, files_root = deploy_kestra.get_target_roots(deploy_kestra.SYSTEM_TARGET)
+
+        self.assertEqual(flows_root, deploy_kestra.SYSTEM_ROOT / "flows")
+        self.assertEqual(files_root, deploy_kestra.SYSTEM_ROOT / "files")
+
 
 if __name__ == "__main__":
     unittest.main()

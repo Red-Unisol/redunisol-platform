@@ -1,0 +1,42 @@
+id: alerta_flow_fallos
+namespace: redunisol
+
+# Dev-only checkpoint:
+# este flow monitorea intencionalmente namespaces redunisol.dev.*.
+# No mergear/promover a main en este estado sin antes definir filtros prod.
+description: Observa ejecuciones fallidas de Kestra y envia alerta a Bitrix24.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: system
+  scope: observability
+
+tasks:
+  - id: enviar_alerta
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
+    method: POST
+    contentType: application/json
+    body: |
+      {
+        "DIALOG_ID": "chat119621",
+        "MESSAGE": "KESTRA — Flow fallido\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}"
+      }
+
+triggers:
+  - id: detectar_fallos_dev
+    type: io.kestra.plugin.core.trigger.Flow
+    states:
+      - FAILED
+    preconditions:
+      id: fallos_redunisol_dev
+      where:
+        - id: namespaces_dev_excluyendo_system
+          filters:
+            - field: NAMESPACE
+              type: STARTS_WITH
+              value: redunisol.dev.
+            - field: NAMESPACE
+              type: NOT_EQUAL_TO
+              value: redunisol.dev.system

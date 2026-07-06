@@ -10,6 +10,14 @@ labels:
   domain: analisis-credito
   integration: credixsa
 
+inputs:
+  - id: cuit
+    type: STRING
+    required: false
+  - id: nombre
+    type: STRING
+    required: false
+
 tasks:
   - id: preparar_cache
     type: io.kestra.plugin.scripts.python.Commands
@@ -22,7 +30,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
     commands:
       - python -m consulta_quiebra_credix.cache_lookup_entrypoint
 
@@ -47,7 +55,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
       CREDIX_CACHE_BY_CUIL_JSON: "{{ (outputs.leer_cache_cuil.value ?? null) | json }}"
       CREDIX_CACHE_BY_NAME_JSON: "{{ (outputs.leer_cache_nombre.value ?? null) | json }}"
       CREDIX_CACHE_MAX_AGE_DAYS: "7"
@@ -63,13 +71,12 @@ tasks:
         - consulta_quiebra_credix/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
       volumes:
         - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
-    containerImage: mcr.microsoft.com/playwright/python:v1.58.0-noble
-    beforeCommands:
-      - pip install kestra playwright==1.58.0 > /dev/null
+    containerImage: ghcr.io/red-unisol/analisis-credito-precalentar-cache-credixsa-v2:latest
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "30"
       CREDIX_DEBUG: "{{ envs.credix_debug ?? 'true' }}"
@@ -105,37 +112,37 @@ tasks:
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.ok : outputs.responder_cache.vars.ok }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.ok ?? false) : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.ok ?? false) : false) }}"
   - id: status
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.status : outputs.responder_cache.vars.status }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.status ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.status ?? '') : '') }}"
   - id: cuit
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.cuit : outputs.responder_cache.vars.cuit }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.cuit ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cuit ?? '') : '') }}"
   - id: nombre
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.nombre : outputs.responder_cache.vars.nombre }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.nombre ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.nombre ?? '') : '') }}"
   - id: rows_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.rows_json : outputs.responder_cache.vars.rows_json }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.rows_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.rows_json ?? '') : '') }}"
   - id: data_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.data_json : outputs.responder_cache.vars.data_json }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.data_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.data_json ?? '') : '') }}"
   - id: normalized_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.normalized_json : outputs.responder_cache.vars.normalized_json }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.normalized_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.normalized_json ?? '') : '') }}"
   - id: response_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.response_json : outputs.responder_cache.vars.response_json }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.response_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.response_json ?? '') : '') }}"
   - id: error
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.error : outputs.responder_cache.vars.error }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.error ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.error ?? '') : '') }}"
   - id: cache_hit
     type: BOOLEAN
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.cache_hit : outputs.responder_cache.vars.cache_hit }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.cache_hit ?? false) : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cache_hit ?? false) : false) }}"
   - id: cached_at
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? outputs.consultar_quiebra.vars.cached_at : outputs.responder_cache.vars.cached_at }}"
+    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.cached_at ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cached_at ?? '') : '') }}"
 
 triggers:
   - id: webhook

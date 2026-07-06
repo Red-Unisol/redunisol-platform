@@ -28,6 +28,9 @@ jobs:
       - name: Run encrypted env tooling tests
         run: python -m unittest kestra.tools.tests.test_manage_encrypted_env
 
+      - name: Run deploy tooling tests
+        run: python -m unittest kestra.tools.tests.test_deploy_kestra
+
       - name: Validate Zipline Dev Compose
         run: docker compose --env-file platform/zipline/zipline.dev.env.example -f platform/zipline/docker-compose.yml config -q
 
@@ -49,6 +52,9 @@ jobs:
 
       - name: Dry-run Analisis Credito deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain analisis-credito --dry-run
+
+      - name: Dry-run System deploy
+        run: python kestra/tools/deploy_kestra.py --environment dev --target system --dry-run
 
       - name: Build ARCA Padron A13 image
         run: docker build kestra/automations/analisis-credito/docker/arca-padron-a13 -t analisis-credito-arca-padron-a13:test

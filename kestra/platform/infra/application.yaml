@@ -36,3 +36,5 @@ kestra:
       - type: io.kestra.plugin.scripts.runner.docker.Docker
         values:
           volumeEnabled: true
+          pullPolicy: IF_NOT_PRESENT
+          autoRemove: true

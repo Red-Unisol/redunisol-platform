@@ -31,6 +31,14 @@ from bitrix24_form_flow.form_processor.contact_birthdate_service import (
     backfill_contact_birthdate_to_leads,
 )
 from bitrix24_form_flow.form_processor.config import load_config
+from bitrix24_form_flow.form_processor.credixsa_employer_service import (
+    STATUS_NO_EMPLOYER,
+    STATUS_OK,
+    STATUS_TEMPORARY_ERROR,
+    build_credixsa_employer_fields,
+    select_next_lead_for_credixsa_employer_backfill,
+    update_lead_with_credixsa_output,
+)
 from bitrix24_form_flow.form_processor.input_parser import normalize_business_input, parse_body
 from bitrix24_form_flow.form_processor.lead_service import (
     determine_commercial_owner,
@@ -1702,6 +1710,194 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertNotIn("UF_CRM_REJECTION_REASON", client.leads[601])
         self.assertEqual(client.leads[602]["STATUS_ID"], "UC_1P8I07")
         self.assertEqual(client.leads[602]["UF_CRM_REJECTION_REASON"], "3935")
+
+    def test_build_credixsa_employer_fields_extracts_single_employer(self) -> None:
+        config = load_config(self.env)
+        normalized = {
+            "alertas": [],
+            "previsional": {
+                "empleadores": [
+                    {
+                        "indice": "1",
+                        "cuit": "30636511354",
+                        "nombre": "TESORERIA GENERAL DE LA PROVINCIA",
+                    }
+                ],
+                "situaciones_por_empleador": [
+                    {
+                        "indice": "1",
+                        "empleador": {
+                            "indice": "1",
+                            "cuit": "30636511354",
+                            "nombre": "TESORERIA GENERAL DE LA PROVINCIA",
+                        },
+                        "periodos": [
+                            {
+                                "periodo": "04/2026",
+                                "incluido_declaracion_jurada": "SI",
+                                "aportes_seguridad_social": "PAGO",
+                                "aportes_obra_social": "-",
+                                "contribucion_patronal_obra_social": "PAGO",
+                            },
+                            {
+                                "periodo": "05/2026",
+                                "incluido_declaracion_jurada": "SI",
+                                "aportes_seguridad_social": "PAGO",
+                                "aportes_obra_social": "-",
+                                "contribucion_patronal_obra_social": "IMPAGO",
+                            },
+                        ],
+                    }
+                ],
+            },
+        }
+
+        fields, status, message = build_credixsa_employer_fields(
+            config,
+            {
+                "ok": True,
+                "status": "single",
+                "normalized_json": json.dumps(normalized),
+                "cached_at": "2026-06-29T17:10:02+00:00",
+            },
+        )
+
+        self.assertEqual(status, STATUS_OK)
+        self.assertIn("1 empleador", message)
+        self.assertEqual(fields["UF_CRM_CRDX_STATUS"], STATUS_OK)
+        self.assertEqual(fields["UF_CRM_CRDX_CHK_AT"], "2026-06-29T17:10:02+00:00")
+        self.assertEqual(fields["UF_CRM_EMP_NOMBRE"], "TESORERIA GENERAL DE LA PROVINCIA")
+        self.assertEqual(fields["UF_CRM_EMP_CUIT"], "30636511354")
+        self.assertEqual(fields["UF_CRM_EMP_COUNT"], 1)
+        self.assertIn("DDJJ SI 2/2", fields["UF_CRM_EMP_PERIODOS"])
+        self.assertIn("contrib. OS IMPAGO", fields["UF_CRM_EMP_PERIODOS"])
+
+    def test_build_credixsa_employer_fields_marks_no_employer(self) -> None:
+        config = load_config(self.env)
+
+        fields, status, _ = build_credixsa_employer_fields(
+            config,
+            {
+                "ok": True,
+                "status": "single",
+                "normalized_json": json.dumps({"previsional": {"empleadores": []}}),
+            },
+            now=datetime(2026, 6, 29, 17, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(status, STATUS_NO_EMPLOYER)
+        self.assertEqual(fields["UF_CRM_CRDX_STATUS"], STATUS_NO_EMPLOYER)
+        self.assertEqual(fields["UF_CRM_EMP_COUNT"], 0)
+        self.assertEqual(fields["UF_CRM_EMP_NOMBRE"], "")
+        self.assertEqual(fields["UF_CRM_CRDX_CHK_AT"], "2026-06-29T14:30:00-03:00")
+
+    def test_build_credixsa_employer_fields_keeps_temporary_error_retryable(self) -> None:
+        config = load_config(self.env)
+
+        fields, status, _ = build_credixsa_employer_fields(
+            config,
+            {"ok": False, "status": "error", "error": "timeout"},
+        )
+
+        self.assertEqual(status, STATUS_TEMPORARY_ERROR)
+        self.assertEqual(fields["UF_CRM_CRDX_STATUS"], STATUS_TEMPORARY_ERROR)
+        self.assertEqual(fields["UF_CRM_CRDX_ALERTAS"], "timeout")
+        self.assertNotIn("UF_CRM_CRDX_CHK_AT", fields)
+
+    def test_select_next_lead_for_credixsa_employer_backfill_skips_completed_and_errors(
+        self,
+    ) -> None:
+        client = FakeBitrixClient()
+        client.leads[601] = {
+            "ID": "601",
+            "DATE_CREATE": "2026-06-29T09:00:00-03:00",
+            "UF_CRM_1693840106704": "20111111112",
+            "UF_CRM_CRDX_CHK_AT": "2026-06-29T09:01:00-03:00",
+            "UF_CRM_CRDX_STATUS": STATUS_OK,
+        }
+        client.leads[602] = {
+            "ID": "602",
+            "DATE_CREATE": "2026-06-29T09:10:00-03:00",
+            "UF_CRM_1693840106704": "20222222223",
+            "UF_CRM_CRDX_CHK_AT": "",
+            "UF_CRM_CRDX_STATUS": STATUS_TEMPORARY_ERROR,
+        }
+        client.leads[603] = {
+            "ID": "603",
+            "DATE_CREATE": "2026-06-29T09:20:00-03:00",
+            "UF_CRM_1693840106704": "",
+            "UF_CRM_CRDX_CHK_AT": "",
+            "UF_CRM_CRDX_STATUS": "",
+        }
+        client.leads[604] = {
+            "ID": "604",
+            "DATE_CREATE": "2026-06-29T09:30:00-03:00",
+            "UF_CRM_1693840106704": "20333333334",
+            "UF_CRM_CRDX_CHK_AT": "",
+            "UF_CRM_CRDX_STATUS": "",
+        }
+
+        result = select_next_lead_for_credixsa_employer_backfill(
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            date_from="2026-06-29T00:00:00-03:00",
+            date_to="2026-06-29T23:59:59-03:00",
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["has_pending"])
+        self.assertEqual(result["lead_id"], "604")
+        self.assertEqual(result["cuil"], "20333333334")
+        self.assertEqual(result["skipped_populated_count"], 1)
+        self.assertEqual(result["skipped_temporary_error_count"], 1)
+        self.assertEqual(result["skipped_missing_cuil_count"], 1)
+
+    def test_update_lead_with_credixsa_output_persists_fields(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[701] = {
+            "ID": "701",
+            "DATE_CREATE": "2026-06-29T09:00:00-03:00",
+            "UF_CRM_1693840106704": "20111111112",
+        }
+        normalized = {
+            "alertas": [
+                {
+                    "codigo": "cuit_baja_afip",
+                    "mensaje": "CUIT dado de baja por AFIP",
+                }
+            ],
+            "previsional": {
+                "empleadores": [
+                    {
+                        "indice": "1",
+                        "cuit": "30999074843",
+                        "nombre": "MUNICIPALIDAD DE CORDOBA",
+                    }
+                ],
+                "situaciones_por_empleador": [],
+            },
+        }
+
+        result = update_lead_with_credixsa_output(
+            lead_id=701,
+            credixsa_output={
+                "ok": True,
+                "status": "single",
+                "normalized_json": json.dumps(normalized),
+                "cached_at": "2026-06-29T17:10:02+00:00",
+            },
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], STATUS_OK)
+        self.assertEqual(client.leads[701]["UF_CRM_EMP_NOMBRE"], "MUNICIPALIDAD DE CORDOBA")
+        self.assertEqual(client.leads[701]["UF_CRM_EMP_CUIT"], "30999074843")
+        self.assertEqual(client.leads[701]["UF_CRM_EMP_COUNT"], 1)
+        self.assertIn("cuit_baja_afip", client.leads[701]["UF_CRM_CRDX_ALERTAS"])
 
 
 if __name__ == "__main__":

@@ -1,13 +1,7 @@
-id: consulta_credixsa_cache_warmup
+id: precalentar_cache_credixsa_v2_sondeo
 namespace: redunisol
 
-description: Precalienta cache de CredixSA para solicitudes del dia en el core financiero.
-
-retry:
-  type: constant
-  interval: PT1M
-  maxAttempts: 3
-  behavior: CREATE_NEW_EXECUTION
+description: Sondea solicitudes nuevas de CredixSA y solo ejecuta el worker pesado cuando hay candidatos.
 
 concurrency:
   limit: 1
@@ -20,6 +14,7 @@ labels:
   schedule_scope: prod_only
   domain: analisis-credito
   integration: credixsa
+  role: probe
 
 tasks:
   - id: leer_indice_diario
@@ -27,21 +22,42 @@ tasks:
     key: credixsa.daily.index
     errorOnMissing: false
 
+  - id: ejecutar_sondeo
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - precalentar_cache_credixsa_v2/**
+        - consulta_quiebra_credix/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    env:
+      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | json }}"
+      CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
+      LOCAL_TZ: "{{ envs.local_tz ?? 'America/Argentina/Buenos_Aires' }}"
+    commands:
+      - python -m precalentar_cache_credixsa_v2.sondeo_entrypoint
+
   - id: precalentar_cache
     type: io.kestra.plugin.scripts.python.Commands
+    runIf: "{{ outputs.ejecutar_sondeo.vars.hay_candidatos }}"
     namespaceFiles:
       enabled: true
       include:
         - consulta_quiebra_credix/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
       volumes:
         - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
-    containerImage: mcr.microsoft.com/playwright/python:v1.58.0-noble
-    beforeCommands:
-      - pip install kestra requests urllib3 playwright==1.58.0 > /dev/null
+    containerImage: ghcr.io/red-unisol/analisis-credito-precalentar-cache-credixsa-v2:latest
     env:
-      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | json }}"
+      CREDIX_DAILY_INDEX_JSON: "{{ outputs.ejecutar_sondeo.vars.indice_diario_json }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "90"
       CREDIX_DEBUG: "{{ envs.credix_debug ?? 'true' }}"
@@ -62,6 +78,7 @@ tasks:
 
   - id: guardar_indice_diario
     type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.precalentar_cache is defined }}"
     key: credixsa.daily.index
     value: "{{ outputs.precalentar_cache.vars.daily_index_json }}"
     kvType: JSON
@@ -70,7 +87,7 @@ tasks:
 
   - id: guardar_cache_1
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_1_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_1_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_1_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_1_value }}"
     kvType: JSON
@@ -79,7 +96,7 @@ tasks:
 
   - id: guardar_cache_2
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_2_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_2_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_2_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_2_value }}"
     kvType: JSON
@@ -88,7 +105,7 @@ tasks:
 
   - id: guardar_cache_3
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_3_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_3_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_3_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_3_value }}"
     kvType: JSON
@@ -97,7 +114,7 @@ tasks:
 
   - id: guardar_cache_4
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_4_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_4_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_4_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_4_value }}"
     kvType: JSON
@@ -106,7 +123,7 @@ tasks:
 
   - id: guardar_cache_5
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_5_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_5_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_5_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_5_value }}"
     kvType: JSON
@@ -115,7 +132,7 @@ tasks:
 
   - id: guardar_cache_6
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_6_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_6_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_6_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_6_value }}"
     kvType: JSON
@@ -124,7 +141,7 @@ tasks:
 
   - id: guardar_cache_7
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_7_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_7_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_7_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_7_value }}"
     kvType: JSON
@@ -133,7 +150,7 @@ tasks:
 
   - id: guardar_cache_8
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_8_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_8_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_8_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_8_value }}"
     kvType: JSON
@@ -142,7 +159,7 @@ tasks:
 
   - id: guardar_cache_9
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_9_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_9_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_9_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_9_value }}"
     kvType: JSON
@@ -151,7 +168,7 @@ tasks:
 
   - id: guardar_cache_10
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_10_enabled }}"
+    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_10_enabled }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_10_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_10_value }}"
     kvType: JSON
@@ -161,25 +178,34 @@ tasks:
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ outputs.precalentar_cache.vars.ok }}"
-  - id: solicitudes_count
+    value: "{{ outputs.ejecutar_sondeo.vars.ok }}"
+  - id: hay_candidatos
+    type: BOOLEAN
+    value: "{{ outputs.ejecutar_sondeo.vars.hay_candidatos }}"
+  - id: cantidad_solicitudes
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.solicitudes_count }}"
-  - id: candidate_count
+    value: "{{ outputs.ejecutar_sondeo.vars.cantidad_solicitudes }}"
+  - id: cantidad_candidatos
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.candidate_count }}"
-  - id: processed_count
+    value: "{{ outputs.ejecutar_sondeo.vars.cantidad_candidatos }}"
+  - id: maximo_por_corrida
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.processed_count }}"
-  - id: skipped_count
+    value: "{{ outputs.ejecutar_sondeo.vars.maximo_por_corrida }}"
+  - id: fecha_sondeo
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.skipped_count }}"
-  - id: error_count
+    value: "{{ outputs.ejecutar_sondeo.vars.fecha_sondeo }}"
+  - id: indice_diario_json
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.error_count }}"
-  - id: cache_entry_count
+    value: "{{ outputs.ejecutar_sondeo.vars.indice_diario_json }}"
+  - id: candidatos_preview_json
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.cache_entry_count }}"
+    value: "{{ outputs.ejecutar_sondeo.vars.candidatos_preview_json }}"
   - id: error
     type: STRING
-    value: "{{ outputs.precalentar_cache.vars.error }}"
+    value: "{{ outputs.ejecutar_sondeo.vars.error }}"
+
+triggers:
+  - id: cada_minuto_horario_util
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* 7-18 * * *"
+    timezone: America/Argentina/Buenos_Aires
