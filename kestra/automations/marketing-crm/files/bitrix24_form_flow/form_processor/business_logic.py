@@ -24,7 +24,7 @@ from .lead_service import (
     build_lead_contact_birthdate_field,
     create_lead,
     get_lead,
-    should_process_lead,
+    lead_has_commercial_owner,
     sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
     update_lead_fields,
@@ -69,7 +69,7 @@ def process_form_body(
         bitrix_client=bitrix_client,
         bcra_client=bcra_client,
         logger=logger,
-        force_processing=True,
+        force_processing=False,
     )
 
 
@@ -95,7 +95,7 @@ def process_submission(
         bitrix_client=bitrix_client,
         bcra_client=bcra_client,
         logger=logger,
-        force_processing=True,
+        force_processing=False,
     )
 
 
@@ -300,17 +300,12 @@ def classify_lead(
         lead = get_lead(client, lead_id_int, active_logger)
         contact_id = _optional_int(lead.get("CONTACT_ID"))
         lead_status = _optional_str(lead.get("STATUS_ID"))
-
-        if not force_processing and not should_process_lead(client, lead, config):
-            active_logger.info(
-                f"Lead {lead_id_int} omitido: politica de procesamiento distinta de 'Procesar'."
-            )
-            return skipped_result(
-                contact_id=contact_id,
-                lead_id=lead_id_int,
-                lead_status=lead_status,
-                message="El lead no esta marcado para procesamiento automatico.",
-            )
+        can_take_commercial_decision = force_processing or lead_has_commercial_owner(
+            client,
+            lead,
+            config,
+            "kestra",
+        )
 
         submission = build_submission_from_lead(lead, config)
         qualification = evaluate_qualification(submission)
@@ -342,6 +337,21 @@ def classify_lead(
                 rejection_label="SIT NEG BCRA",
             )
         active_logger.info(f"Resultado de calificacion: {qualification.reason}.")
+
+        if not can_take_commercial_decision:
+            active_logger.info(
+                f"Lead {lead_id_int} omitido: Motor decision comercial distinto de Kestra."
+            )
+            return skipped_result(
+                contact_id=contact_id,
+                lead_id=lead_id_int,
+                lead_status=lead_status,
+                reason="commercial_owner_not_kestra",
+                message=(
+                    "La evaluacion fue calculada, pero Kestra no actualizo el estado "
+                    "porque no tiene ownership comercial del lead."
+                ),
+            )
 
         lead_status = update_lead_status(
             client,

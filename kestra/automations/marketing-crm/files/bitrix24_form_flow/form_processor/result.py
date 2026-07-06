@@ -67,6 +67,7 @@ def skipped_result(
     lead_id: int,
     lead_status: str | None,
     message: str,
+    reason: str = "processing_disabled",
 ) -> dict[str, object]:
     return {
         "ok": True,
@@ -75,6 +76,6 @@ def skipped_result(
         "lead_id": lead_id,
         "lead_status": lead_status,
         "action": "skipped",
-        "reason": "processing_disabled",
+        "reason": reason,
         "message": message,
     }

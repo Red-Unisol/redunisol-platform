@@ -39,6 +39,7 @@ tasks:
       BITRIX24_LEAD_PROCESSING_POLICY_FIELD: "{{ envs.bitrix24_lead_processing_policy_field }}"
       BITRIX24_LEAD_PROCESSING_POLICY_SKIP: "{{ envs.bitrix24_lead_processing_policy_skip }}"
       BITRIX24_LEAD_PROCESSING_POLICY_PROCESS: "{{ envs.bitrix24_lead_processing_policy_process }}"
+      BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
       BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
       BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
       BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"

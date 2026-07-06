@@ -104,6 +104,10 @@ Opcionales para override de campos del lead:
 - `BITRIX24_LEAD_PROCESSING_POLICY_FIELD`
 - `BITRIX24_LEAD_PROCESSING_POLICY_SKIP`
 - `BITRIX24_LEAD_PROCESSING_POLICY_PROCESS`
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD`
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_BITRIX`
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_KESTRA`
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL`
 - `BITRIX24_LEAD_CUIL_FIELD`
 - `BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD`
 - `BITRIX24_LEAD_PAYMENT_BANK_FIELD`
@@ -134,6 +138,10 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_PROCESSING_POLICY_FIELD=UF_CRM_PROCESSING_POLICY` (`Politica procesamiento`)
 - `BITRIX24_LEAD_PROCESSING_POLICY_SKIP=No procesar`
 - `BITRIX24_LEAD_PROCESSING_POLICY_PROCESS=Procesar`
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD=UF_CRM_COMM_OWNER` (`Motor decision comercial`)
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_BITRIX=Bitrix` (`ID=4117`)
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_KESTRA=Kestra` (`ID=4119`)
+- `BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL=Manual` (`ID=4121`)
 - `BITRIX24_CONTACT_CUIL_FIELD=UF_CRM_65B7E48033FCD`
 - `BITRIX24_LEAD_CUIL_FIELD=UF_CRM_1693840106704`
 - `BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD=UF_CRM_1714071903`
@@ -171,6 +179,7 @@ Comportamiento esperado al rechazar:
 - `UF_CRM_BCRA_RESULT`: resumen abreviado con conteo por situacion
 - `UF_CRM_BCRA_DATA_RAW`: JSON raw de la consulta actual, reutilizable para auditoria y reglas
 - `UF_CRM_BCRA_CHECKED_AT`: timestamp ISO 8601 en hora Argentina de la consulta
+- en clasificacion y backfill BCRA, el snapshot se guarda para todos los leads, pero el rechazo automatico por `SIT NEG BCRA` solo se aplica cuando `Motor decision comercial = Kestra` o cuando una ejecucion administrativa usa `force_processing`
 
 Backfill CredixSA de empleador:
 
@@ -185,8 +194,11 @@ Backfill CredixSA de empleador:
 Comportamiento esperado al crear el lead:
 
 - el intake crea el lead con la politica `No procesar`
-- el flow de clasificacion por `lead_id` puede saltarse el procesamiento si no se lo fuerza y la politica sigue distinta de `Procesar`
-- si otro origen crea el lead sin completar `Politica procesamiento`, el valor vacio tambien se interpreta como `No procesar`
+- el intake crea leads de Catamarca con `Motor decision comercial = Kestra`
+- el intake crea leads del resto de provincias con `Motor decision comercial = Bitrix` como default conservador
+- el flow de clasificacion por `lead_id` puede enriquecer BCRA aunque el owner sea `Bitrix` o `Manual`
+- el flow de clasificacion por `lead_id` solo actualiza estado/motivo cuando `Motor decision comercial = Kestra` o cuando se lo fuerza explicitamente
+- `Politica procesamiento` queda como campo legacy/parcial y no define el ownership comercial nuevo
 
 ## Integracion con Kestra
 
@@ -236,7 +248,7 @@ Los entrypoints:
   Busca el contacto por CUIL y hace create/update según corresponda.
 
 - `bitrix24_form_flow/form_processor/lead_service.py`
-  Crea el lead con la politica `No procesar`, reconstruye un lead por `lead_id` y actualiza su estado final en Bitrix24.
+  Crea el lead con la politica `No procesar`, asigna `Motor decision comercial` segun provincia migrada, reconstruye un lead por `lead_id` y expone helpers de ownership comercial.
 
 - `bitrix24_form_flow/form_processor/result.py`
   Genera la respuesta JSON final de éxito o error.
