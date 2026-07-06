@@ -6,7 +6,12 @@ from typing import Any
 from .bcra_client import BcraClient, BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
-from .lead_service import list_leads_created_between, update_lead_bcra_snapshot, update_lead_status
+from .lead_service import (
+    lead_has_commercial_owner,
+    list_leads_created_between,
+    update_lead_bcra_snapshot,
+    update_lead_status,
+)
 from .logger import Logger, create_logger
 
 
@@ -53,6 +58,7 @@ def backfill_bcra_for_today(
             "processed_count": 0,
             "populated_count": 0,
             "rejected_count": 0,
+            "commercial_rejection_skipped_count": 0,
             "skipped_populated_count": 0,
             "skipped_missing_cuil_count": 0,
             "temporary_error_count": 0,
@@ -76,6 +82,7 @@ def backfill_bcra_for_today(
         field_names=[
             "ID",
             "STATUS_ID",
+            config.fields.lead_commercial_owner,
             config.fields.lead_cuil,
             config.fields.lead_bcra_data_raw or "",
         ],
@@ -88,6 +95,7 @@ def backfill_bcra_for_today(
         "processed_count": 0,
         "populated_count": 0,
         "rejected_count": 0,
+        "commercial_rejection_skipped_count": 0,
         "skipped_populated_count": 0,
         "skipped_missing_cuil_count": 0,
         "temporary_error_count": 0,
@@ -133,6 +141,16 @@ def backfill_bcra_for_today(
         result["populated_count"] = int(result["populated_count"]) + 1
 
         if bcra_result.should_reject:
+            if not lead_has_commercial_owner(client, lead, config, "kestra"):
+                active_logger.info(
+                    f"Lead {lead_id} con BCRA negativo no se rechaza: "
+                    "Motor decision comercial distinto de Kestra."
+                )
+                result["commercial_rejection_skipped_count"] = (
+                    int(result["commercial_rejection_skipped_count"]) + 1
+                )
+                continue
+
             update_lead_status(
                 client,
                 config,

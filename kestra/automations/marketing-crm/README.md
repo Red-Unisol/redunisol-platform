@@ -12,6 +12,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `files/bitrix24_form_flow/`: namespace files Python usados por el flow.
 - `docs/FORM_WEBHOOK_API.md`: contrato HTTP esperado por el frontend.
 - `docs/COMMERCIAL_DECISION_SPEC_2026-06-29.md`: decisiones y ambiguedades pendientes para automatizar decision comercial y derivacion.
+- `docs/COMMERCIAL_CLASSIFICATION_CRITERIA_DRAFT_2026-07-02.md`: criterios provisorios de clasificacion en lenguaje natural.
 - `tests/`: reservado para tests del dominio fuera del package si mas adelante conviene separarlos.
 
 ## Criterio

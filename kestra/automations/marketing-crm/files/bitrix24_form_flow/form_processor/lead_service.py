@@ -11,6 +11,9 @@ from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
 
 
+KESTRA_COMMERCIAL_OWNER_PROVINCES = {"catamarca"}
+
+
 def create_lead(
     client: BitrixClient,
     config: AppConfig,
@@ -29,6 +32,11 @@ def create_lead(
             client,
             config.fields.lead_processing_policy,
             config.processing_policy.skip,
+        ),
+        config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(
+            client,
+            config,
+            determine_commercial_owner(submission),
         ),
         config.fields.lead_cuil: submission.cuil_digits,
         config.fields.lead_employment_status: submission.employment_status.bitrix_id,
@@ -81,6 +89,35 @@ def should_process_lead(
         config.processing_policy.process,
     )
     return str(current_value) == expected_value
+
+
+def resolve_commercial_owner_enum_id(
+    client: BitrixClient,
+    config: AppConfig,
+    owner: str,
+) -> str:
+    owner_label = _commercial_owner_label(config, owner)
+    return _resolve_enum_id(client, config.fields.lead_commercial_owner, owner_label)
+
+
+def lead_has_commercial_owner(
+    client: BitrixClient,
+    lead: dict[str, Any],
+    config: AppConfig,
+    owner: str,
+) -> bool:
+    current_value = _optional_lead_value(lead, config.fields.lead_commercial_owner)
+    if current_value is None:
+        return False
+
+    expected_value = resolve_commercial_owner_enum_id(client, config, owner)
+    return str(current_value) == expected_value
+
+
+def determine_commercial_owner(submission: NormalizedInput) -> str:
+    if submission.province.key in KESTRA_COMMERCIAL_OWNER_PROVINCES:
+        return "kestra"
+    return "bitrix"
 
 
 def build_submission_from_lead(
@@ -292,6 +329,17 @@ def _resolve_enum_id(
     raise RuntimeError(
         f'No se encontro el valor "{target_label}" en la enumeracion del campo "{field_name}".'
     )
+
+
+def _commercial_owner_label(config: AppConfig, owner: str) -> str:
+    normalized_owner = owner.strip().lower()
+    if normalized_owner == "bitrix":
+        return config.commercial_owner.bitrix
+    if normalized_owner == "kestra":
+        return config.commercial_owner.kestra
+    if normalized_owner == "manual":
+        return config.commercial_owner.manual
+    return owner
 
 
 def _build_optional_tracking_fields(
