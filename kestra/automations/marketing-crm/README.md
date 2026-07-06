@@ -20,5 +20,6 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El codigo Python vive bajo `files/bitrix24_form_flow/` para que el deploy a namespace files preserve el path esperado por Kestra.
 - Los secretos y variables de entorno siguen resolviendose en Kestra, no desde Git.
 - El webhook de formulario crea el lead con la enum custom `Politica procesamiento` en `No procesar` para evitar doble proceso en automatizaciones futuras.
+- Cuando un lead queda ganado y `Motor decision comercial = Kestra`, Kestra crea o reutiliza una negociacion en `VENTAS` (`CATEGORY_ID=1`, etapa `C1:NEW`) y asigna responsable por recurrencia de contacto o round-robin compensado.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.
 - Aunque el dominio se llame `marketing-crm`, la integracion actual sigue siendo con Bitrix24, por eso se mantienen nombres internos `bitrix24_*` donde ya forman parte del contrato tecnico.

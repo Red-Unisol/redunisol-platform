@@ -46,6 +46,13 @@ DEFAULT_COMMERCIAL_OWNERS = {
     "manual": "Manual",
 }
 
+DEFAULT_DEAL_CONFIG = {
+    "category_id": 1,
+    "stage_id": "C1:NEW",
+    "round_robin_user_ids": (68579, 10451, 71159, 90231),
+    "round_robin_lookback_days": 30,
+}
+
 
 @dataclass(frozen=True)
 class BitrixFieldsConfig:
@@ -129,6 +136,14 @@ class CommercialOwnerConfig:
 
 
 @dataclass(frozen=True)
+class DealConfig:
+    category_id: int
+    stage_id: str
+    round_robin_user_ids: tuple[int, ...]
+    round_robin_lookback_days: int
+
+
+@dataclass(frozen=True)
 class AppConfig:
     base_url: str
     webhook_path: str
@@ -136,6 +151,7 @@ class AppConfig:
     lead_statuses: LeadStatusesConfig
     processing_policy: ProcessingPolicyConfig
     commercial_owner: CommercialOwnerConfig
+    deal: DealConfig
     timeout_seconds: int
 
 
@@ -289,6 +305,25 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_COMMERCIAL_OWNERS["manual"],
             ),
         ),
+        deal=DealConfig(
+            category_id=_optional_int(
+                source,
+                "BITRIX24_DEAL_CATEGORY_ID",
+                default=DEFAULT_DEAL_CONFIG["category_id"],
+            ),
+            stage_id=source.get("BITRIX24_DEAL_STAGE_ID", DEFAULT_DEAL_CONFIG["stage_id"]).strip()
+            or DEFAULT_DEAL_CONFIG["stage_id"],
+            round_robin_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["round_robin_user_ids"],
+            ),
+            round_robin_lookback_days=_optional_int(
+                source,
+                "BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS",
+                default=DEFAULT_DEAL_CONFIG["round_robin_lookback_days"],
+            ),
+        ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),
     )
 
@@ -319,6 +354,35 @@ def _optional_int(env: dict[str, str], key: str, *, default: int) -> int:
         raise ValueError(f'La variable "{key}" debe ser mayor a cero.')
 
     return value
+
+
+def _optional_int_tuple(
+    env: dict[str, str],
+    key: str,
+    *,
+    default: tuple[int, ...],
+) -> tuple[int, ...]:
+    raw = env.get(key, "").strip()
+    if not raw:
+        return default
+
+    values: list[int] = []
+    for part in raw.split(","):
+        item = part.strip()
+        if not item:
+            continue
+        try:
+            value = int(item)
+        except ValueError as exc:
+            raise ValueError(f'La variable "{key}" debe contener IDs enteros separados por coma.') from exc
+        if value <= 0:
+            raise ValueError(f'La variable "{key}" solo puede contener IDs mayores a cero.')
+        values.append(value)
+
+    if not values:
+        raise ValueError(f'La variable "{key}" debe contener al menos un ID.')
+
+    return tuple(values)
 
 
 def _strip_trailing_slashes(value: str) -> str:

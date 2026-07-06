@@ -91,6 +91,10 @@ Ejemplos reales:
 - `ENV_BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD`
 - `ENV_BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
+- `ENV_BITRIX24_DEAL_CATEGORY_ID`
+- `ENV_BITRIX24_DEAL_STAGE_ID`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
@@ -355,6 +359,10 @@ Referenciadas hoy desde los flows:
 - `bitrix24_lead_status_qualified`
 - `bitrix24_lead_status_rejected`
 - `bitrix24_timeout_seconds`
+- `bitrix24_deal_category_id`
+- `bitrix24_deal_stage_id`
+- `bitrix24_deal_round_robin_user_ids`
+- `bitrix24_deal_round_robin_lookback_days`
 
 En la infraestructura actual corresponden a:
 
@@ -373,6 +381,10 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_LEAD_STATUS_QUALIFIED`
 - `ENV_BITRIX24_LEAD_STATUS_REJECTED`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
+- `ENV_BITRIX24_DEAL_CATEGORY_ID`
+- `ENV_BITRIX24_DEAL_STAGE_ID`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
 
 Presencia verificada en VPS:
 

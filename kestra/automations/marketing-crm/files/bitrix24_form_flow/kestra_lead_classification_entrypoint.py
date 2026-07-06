@@ -61,6 +61,7 @@ def _emit_outputs_if_available(result: dict[str, object]) -> None:
             "contact_id": "" if result.get("contact_id") is None else str(result.get("contact_id")),
             "lead_id": "" if result.get("lead_id") is None else str(result.get("lead_id")),
             "lead_status": str(result.get("lead_status") or ""),
+            "deal_id": "" if result.get("deal_id") is None else str(result.get("deal_id")),
             "action": str(result.get("action") or ""),
             "reason": str(result.get("reason") or ""),
             "message": str(result.get("message") or ""),

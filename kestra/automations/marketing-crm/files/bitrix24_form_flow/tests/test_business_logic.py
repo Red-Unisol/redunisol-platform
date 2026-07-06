@@ -54,6 +54,7 @@ class FakeBitrixClient:
         self.calls: list[tuple[str, dict]] = []
         self.leads: dict[int, dict] = {}
         self.contacts: dict[int, dict] = {}
+        self.deals: dict[int, dict] = {}
 
     def call(self, method: str, payload: dict):
         self.calls.append((method, payload))
@@ -94,6 +95,14 @@ class FakeBitrixClient:
         if method == "crm.lead.update":
             self.leads[int(payload["id"])].update(payload["fields"])
             return True
+        if method == "crm.item.add":
+            self.assert_deal_entity(payload)
+            deal_id = 901 if not self.deals else max(self.deals) + 1
+            fields = dict(payload["fields"])
+            fields["id"] = deal_id
+            fields.setdefault("createdTime", "2026-07-06T12:00:00+00:00")
+            self.deals[deal_id] = fields
+            return {"item": dict(fields)}
         if method == "crm.lead.fields":
             return {
                 "UF_CRM_PROCESSING_POLICY": {
@@ -132,6 +141,11 @@ class FakeBitrixClient:
     def call_full(self, method: str, payload: dict):
         self.calls.append((method, payload))
 
+        if method == "crm.item.list":
+            self.assert_deal_entity(payload)
+            rows = self._filter_deals(payload)
+            return {"result": {"items": rows}}
+
         if method == "crm.lead.list":
             filters = payload.get("filter") or {}
             date_from = filters.get(">=DATE_CREATE")
@@ -158,6 +172,43 @@ class FakeBitrixClient:
     def get_lead_field(self, field_name: str) -> dict:
         fields = self.call("crm.lead.fields", {})
         return fields[field_name]
+
+    def assert_deal_entity(self, payload: dict) -> None:
+        if int(str(payload.get("entityTypeId") or "0")) != 2:
+            raise AssertionError(f"Entidad CRM inesperada: {payload.get('entityTypeId')}")
+
+    def _filter_deals(self, payload: dict) -> list[dict]:
+        filters = payload.get("filter") or {}
+        select = payload.get("select") or []
+        rows: list[dict] = []
+        for deal in self.deals.values():
+            if not self._deal_matches(deal, filters):
+                continue
+            if select:
+                row = {field_name: deal.get(field_name) for field_name in select}
+            else:
+                row = dict(deal)
+            row.setdefault("id", deal["id"])
+            rows.append(row)
+
+        for field_name, direction in reversed(list((payload.get("order") or {}).items())):
+            rows.sort(
+                key=lambda row: str(row.get(field_name) or ""),
+                reverse=str(direction).upper() == "DESC",
+            )
+        return rows
+
+    def _deal_matches(self, deal: dict, filters: dict) -> bool:
+        for raw_field, expected in filters.items():
+            if raw_field.startswith(">="):
+                field_name = raw_field[2:]
+                if str(deal.get(field_name) or "") < str(expected):
+                    return False
+                continue
+            field_name = raw_field[1:] if raw_field.startswith("=") else raw_field
+            if str(deal.get(field_name) or "") != str(expected):
+                return False
+        return True
 
 
 class SilentLogger:
@@ -203,6 +254,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.commercial_owner.bitrix, "Bitrix")
         self.assertEqual(config.commercial_owner.kestra, "Kestra")
         self.assertEqual(config.commercial_owner.manual, "Manual")
+        self.assertEqual(config.deal.category_id, 1)
+        self.assertEqual(config.deal.stage_id, "C1:NEW")
+        self.assertEqual(config.deal.round_robin_user_ids, (68579, 10451, 71159, 90231))
+        self.assertEqual(config.deal.round_robin_lookback_days, 30)
 
     def test_resolve_commercial_owner_enum_ids(self) -> None:
         config = load_config(self.env)
@@ -777,6 +832,108 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(bcra_client.calls, ["27123456785"])
         self.assertEqual(client.leads[202]["UF_CRM_COMM_OWNER"], "4119")
         self.assertEqual(client.leads[202]["STATUS_ID"], "QUALIFIED")
+        self.assertEqual(result["deal_id"], 901)
+        self.assertEqual(client.deals[901]["categoryId"], 1)
+        self.assertEqual(client.deals[901]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[901]["leadId"], 202)
+        self.assertEqual(client.deals[901]["contactId"], 101)
+        self.assertEqual(client.deals[901]["assignedById"], 68579)
+
+    def test_catamarca_new_contact_round_robin_compensates_existing_load(self) -> None:
+        client = FakeBitrixClient()
+        client.deals[801] = {
+            "id": 801,
+            "categoryId": 1,
+            "stageId": "C1:NEW",
+            "leadId": 701,
+            "contactId": 501,
+            "assignedById": 68579,
+            "createdTime": "2026-07-06T10:00:00+00:00",
+        }
+        client.deals[802] = {
+            "id": 802,
+            "categoryId": 1,
+            "stageId": "C1:NEW",
+            "leadId": 702,
+            "contactId": 502,
+            "assignedById": 10451,
+            "createdTime": "2026-07-06T10:01:00+00:00",
+        }
+        bcra_client = FakeBcraClient(
+            {"27123456785": self.make_bcra_result(identification="27123456785", status_field_value="OK", should_reject=False)}
+        )
+
+        result = process_submission(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Catamarca",
+                "employment_status": "Personal de Salud",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            },
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra_client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 71159)
+
+    def test_catamarca_recurring_contact_reuses_latest_pool_assignee(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Maria Lopez",
+            "LAST_NAME": None,
+            "UF_CONTACT_CUIL": "27123456785",
+        }
+        client.deals[801] = {
+            "id": 801,
+            "categoryId": 1,
+            "stageId": "C1:NEW",
+            "leadId": 701,
+            "contactId": 101,
+            "assignedById": 68579,
+            "createdTime": "2026-07-06T10:00:00+00:00",
+        }
+        client.deals[802] = {
+            "id": 802,
+            "categoryId": 1,
+            "stageId": "C1:NEW",
+            "leadId": 702,
+            "contactId": 101,
+            "assignedById": 10451,
+            "createdTime": "2026-07-06T10:01:00+00:00",
+        }
+        bcra_client = FakeBcraClient(
+            {"27123456785": self.make_bcra_result(identification="27123456785", status_field_value="OK", should_reject=False)}
+        )
+
+        result = process_submission(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Catamarca",
+                "employment_status": "Personal de Salud",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Google",
+            },
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra_client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 10451)
 
     def test_process_form_body_returns_json_ready_payload_for_form_body(self) -> None:
         client = FakeBitrixClient()

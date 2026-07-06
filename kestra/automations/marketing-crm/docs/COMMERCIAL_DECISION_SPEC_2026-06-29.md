@@ -49,6 +49,7 @@ No es todavia una especificacion de implementacion cerrada.
    - por defecto, round-robin para contactos nuevos
    - si el contacto ya tuvo prospectos previos, asignar al vendedor del prospecto previo mas reciente
    - las recurrencias deben computarse para mantener equidad; el round-robin de contactos nuevos debe compensar para que quienes reciben mas recurrencias no terminen con mas prospectos totales
+   - implementacion inicial en Kestra: para contactos nuevos se elige el vendedor del pool con menor cantidad de negociaciones recientes en `VENTAS`; para contactos recurrentes se reutiliza el responsable de la negociacion previa mas reciente si pertenece al pool
 
 8. La linea comercial requiere campos custom en Bitrix:
    - campo custom en lead

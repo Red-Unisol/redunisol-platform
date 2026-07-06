@@ -87,6 +87,10 @@ tasks:
       BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD: "{{ envs.bitrix24_lead_contact_birthdate_field ?? '' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_STAGE_ID: "{{ envs.bitrix24_deal_stage_id ?? 'C1:NEW' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,71159,90231' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
       - python -m bitrix24_form_flow.kestra_form_persistence_entrypoint
@@ -107,6 +111,9 @@ outputs:
   - id: lead_status
     type: STRING
     value: "{{ outputs.persistir.vars.lead_status }}"
+  - id: deal_id
+    type: STRING
+    value: "{{ outputs.persistir.vars.deal_id }}"
   - id: action
     type: STRING
     value: "{{ outputs.persistir.vars.action }}"
