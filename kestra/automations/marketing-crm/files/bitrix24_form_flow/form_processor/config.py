@@ -6,6 +6,7 @@ import os
 
 DEFAULT_LEAD_FIELDS = {
     "processing_policy": "UF_CRM_PROCESSING_POLICY",
+    "commercial_owner": "UF_CRM_COMM_OWNER",
     "cuil": "UF_CRM_1693840106704",
     "situacion_laboral": "UF_CRM_1714071903",
     "banco_cobro": "UF_CRM_LEAD_1711458190312",
@@ -32,11 +33,18 @@ DEFAULT_PROCESSING_POLICIES = {
     "process": "Procesar",
 }
 
+DEFAULT_COMMERCIAL_OWNERS = {
+    "bitrix": "Bitrix",
+    "kestra": "Kestra",
+    "manual": "Manual",
+}
+
 
 @dataclass(frozen=True)
 class BitrixFieldsConfig:
     contact_cuil: str
     lead_processing_policy: str
+    lead_commercial_owner: str
     lead_cuil: str
     lead_employment_status: str
     lead_payment_bank: str
@@ -86,12 +94,20 @@ class ProcessingPolicyConfig:
 
 
 @dataclass(frozen=True)
+class CommercialOwnerConfig:
+    bitrix: str
+    kestra: str
+    manual: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     base_url: str
     webhook_path: str
     fields: BitrixFieldsConfig
     lead_statuses: LeadStatusesConfig
     processing_policy: ProcessingPolicyConfig
+    commercial_owner: CommercialOwnerConfig
     timeout_seconds: int
 
 
@@ -106,6 +122,10 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             lead_processing_policy=source.get(
                 "BITRIX24_LEAD_PROCESSING_POLICY_FIELD",
                 DEFAULT_LEAD_FIELDS["processing_policy"],
+            ),
+            lead_commercial_owner=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD",
+                DEFAULT_LEAD_FIELDS["commercial_owner"],
             ),
             lead_cuil=source.get("BITRIX24_LEAD_CUIL_FIELD", DEFAULT_LEAD_FIELDS["cuil"]),
             lead_employment_status=source.get(
@@ -197,6 +217,20 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             process=source.get(
                 "BITRIX24_LEAD_PROCESSING_POLICY_PROCESS",
                 DEFAULT_PROCESSING_POLICIES["process"],
+            ),
+        ),
+        commercial_owner=CommercialOwnerConfig(
+            bitrix=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_BITRIX",
+                DEFAULT_COMMERCIAL_OWNERS["bitrix"],
+            ),
+            kestra=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_KESTRA",
+                DEFAULT_COMMERCIAL_OWNERS["kestra"],
+            ),
+            manual=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL",
+                DEFAULT_COMMERCIAL_OWNERS["manual"],
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),

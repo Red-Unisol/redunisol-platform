@@ -23,6 +23,7 @@ def main() -> int:
             "processed_count": 0,
             "populated_count": 0,
             "rejected_count": 0,
+            "commercial_rejection_skipped_count": 0,
             "skipped_populated_count": 0,
             "skipped_missing_cuil_count": 0,
             "temporary_error_count": 0,
@@ -46,6 +47,9 @@ def _emit_outputs_if_available(result: dict[str, object]) -> None:
             "processed_count": int(result.get("processed_count", 0) or 0),
             "populated_count": int(result.get("populated_count", 0) or 0),
             "rejected_count": int(result.get("rejected_count", 0) or 0),
+            "commercial_rejection_skipped_count": int(
+                result.get("commercial_rejection_skipped_count", 0) or 0
+            ),
             "skipped_populated_count": int(result.get("skipped_populated_count", 0) or 0),
             "skipped_missing_cuil_count": int(result.get("skipped_missing_cuil_count", 0) or 0),
             "temporary_error_count": int(result.get("temporary_error_count", 0) or 0),

@@ -89,6 +89,7 @@ Ejemplos reales:
 - `ENV_BITRIX24_LEAD_BCRA_DATA_RAW_FIELD`
 - `ENV_BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD`
 - `ENV_BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD`
+- `ENV_BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
@@ -344,6 +345,7 @@ Referenciadas hoy desde los flows:
 - `bitrix24_lead_processing_policy_field`
 - `bitrix24_lead_processing_policy_skip`
 - `bitrix24_lead_processing_policy_process`
+- `bitrix24_lead_commercial_owner_field`
 - `bitrix24_lead_cuil_field`
 - `bitrix24_lead_employment_status_field`
 - `bitrix24_lead_payment_bank_field`
@@ -361,6 +363,7 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_LEAD_PROCESSING_POLICY_FIELD`
 - `ENV_BITRIX24_LEAD_PROCESSING_POLICY_SKIP`
 - `ENV_BITRIX24_LEAD_PROCESSING_POLICY_PROCESS`
+- `ENV_BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD`
 - `ENV_BITRIX24_LEAD_CUIL_FIELD`
 - `ENV_BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD`
 - `ENV_BITRIX24_LEAD_PAYMENT_BANK_FIELD`
