@@ -45,6 +45,7 @@ from bitrix24_form_flow.form_processor.lead_service import (
     lead_has_commercial_owner,
     resolve_commercial_owner_enum_id,
 )
+from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
 
@@ -365,6 +366,28 @@ class BusinessLogicTests(unittest.TestCase):
             negative_entities=("BANCO A", "BANCO B") if should_reject else (),
             message=None,
         )
+
+    def make_lead_update_event(
+        self,
+        lead_id: int,
+        *,
+        application_token: str = "app-token",
+    ) -> dict[str, object]:
+        return {
+            "event": "ONCRMLEADUPDATE",
+            "event_handler_id": "709",
+            "data": {
+                "FIELDS": {
+                    "ID": str(lead_id),
+                },
+            },
+            "ts": "1783497600",
+            "auth": {
+                "scope": "crm",
+                "domain": "redunisol.bitrix24.es",
+                "application_token": application_token,
+            },
+        }
 
     def test_apply_full_name_override_uses_nombre_y_apellido_from_arca(self) -> None:
         payload = {"full_name": "Lead Web Redunisol", "email": "juan@example.com"}
@@ -832,14 +855,106 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(bcra_client.calls, ["27123456785"])
         self.assertEqual(client.leads[202]["UF_CRM_COMM_OWNER"], "4119")
         self.assertEqual(client.leads[202]["STATUS_ID"], "QUALIFIED")
+        self.assertIsNone(result["deal_id"])
+        self.assertEqual(client.deals, {})
+
+    def test_lead_update_event_skips_non_won_lead(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "NEW",
+            "TITLE": "Maria Lopez",
+        }
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(303),
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "skipped")
+        self.assertEqual(result["reason"], "lead_not_won")
+        self.assertEqual(client.deals, {})
+
+    def test_lead_update_event_creates_deal_for_any_won_lead(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "QUALIFIED",
+            "TITLE": "Maria Lopez",
+            "UF_CRM_COMM_OWNER": "4117",
+        }
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(303),
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "deal_created")
+        self.assertEqual(result["reason"], "lead_won")
         self.assertEqual(result["deal_id"], 901)
         self.assertEqual(client.deals[901]["categoryId"], 1)
         self.assertEqual(client.deals[901]["stageId"], "C1:NEW")
-        self.assertEqual(client.deals[901]["leadId"], 202)
+        self.assertEqual(client.deals[901]["leadId"], 303)
         self.assertEqual(client.deals[901]["contactId"], 101)
         self.assertEqual(client.deals[901]["assignedById"], 68579)
 
-    def test_catamarca_new_contact_round_robin_compensates_existing_load(self) -> None:
+    def test_lead_update_event_does_not_duplicate_existing_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "QUALIFIED",
+            "TITLE": "Maria Lopez",
+        }
+        client.deals[801] = {
+            "id": 801,
+            "categoryId": 1,
+            "stageId": "C1:NEW",
+            "leadId": 303,
+            "contactId": 101,
+            "assignedById": 68579,
+            "createdTime": "2026-07-06T10:00:00+00:00",
+        }
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(303),
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "deal_exists")
+        self.assertEqual(result["deal_id"], 801)
+        self.assertEqual(len(client.deals), 1)
+
+    def test_lead_update_event_rejects_invalid_application_token(self) -> None:
+        client = FakeBitrixClient()
+        result = process_lead_update_event(
+            self.make_lead_update_event(303, application_token="wrong-token"),
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "error")
+        self.assertIn("Token de aplicacion", result["message"])
+        self.assertEqual(client.calls, [])
+
+    def test_lead_update_event_new_contact_round_robin_compensates_existing_load(self) -> None:
         client = FakeBitrixClient()
         client.deals[801] = {
             "id": 801,
@@ -859,32 +974,26 @@ class BusinessLogicTests(unittest.TestCase):
             "assignedById": 10451,
             "createdTime": "2026-07-06T10:01:00+00:00",
         }
-        bcra_client = FakeBcraClient(
-            {"27123456785": self.make_bcra_result(identification="27123456785", status_field_value="OK", should_reject=False)}
-        )
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "QUALIFIED",
+            "TITLE": "Maria Lopez",
+        }
 
-        result = process_submission(
-            {
-                "full_name": "Maria Lopez",
-                "email": "maria@example.com",
-                "whatsapp": "3511234567",
-                "cuil": "27-12345678-5",
-                "province": "Catamarca",
-                "employment_status": "Personal de Salud",
-                "payment_bank": "Banco de la Nacion Argentina",
-                "lead_source": "Google",
-            },
+        result = process_lead_update_event(
+            self.make_lead_update_event(303),
             env=self.env,
             bitrix_client=client,
-            bcra_client=bcra_client,
+            expected_application_token="app-token",
             logger=SilentLogger(),
         )
 
         self.assertTrue(result["ok"])
-        self.assertTrue(result["qualified"])
+        self.assertEqual(result["action"], "deal_created")
         self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 71159)
 
-    def test_catamarca_recurring_contact_reuses_latest_pool_assignee(self) -> None:
+    def test_lead_update_event_recurring_contact_reuses_latest_pool_assignee(self) -> None:
         client = FakeBitrixClient()
         client.contacts[101] = {
             "ID": "101",
@@ -910,29 +1019,23 @@ class BusinessLogicTests(unittest.TestCase):
             "assignedById": 10451,
             "createdTime": "2026-07-06T10:01:00+00:00",
         }
-        bcra_client = FakeBcraClient(
-            {"27123456785": self.make_bcra_result(identification="27123456785", status_field_value="OK", should_reject=False)}
-        )
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "QUALIFIED",
+            "TITLE": "Maria Lopez",
+        }
 
-        result = process_submission(
-            {
-                "full_name": "Maria Lopez",
-                "email": "maria@example.com",
-                "whatsapp": "3511234567",
-                "cuil": "27-12345678-5",
-                "province": "Catamarca",
-                "employment_status": "Personal de Salud",
-                "payment_bank": "Banco de la Nacion Argentina",
-                "lead_source": "Google",
-            },
+        result = process_lead_update_event(
+            self.make_lead_update_event(303),
             env=self.env,
             bitrix_client=client,
-            bcra_client=bcra_client,
+            expected_application_token="app-token",
             logger=SilentLogger(),
         )
 
         self.assertTrue(result["ok"])
-        self.assertTrue(result["qualified"])
+        self.assertEqual(result["action"], "deal_created")
         self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 10451)
 
     def test_process_form_body_returns_json_ready_payload_for_form_body(self) -> None:

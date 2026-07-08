@@ -44,6 +44,7 @@ No es todavia una especificacion de implementacion cerrada.
    - pipeline: `VENTAS`
    - `CATEGORY_ID=1`
    - etapa inicial: `C1:NEW` (`PRESENTACION`)
+   - disparador tecnico: webhook de salida Bitrix `ONCRMLEADUPDATE`; Kestra consulta el lead actualizado y crea/reutiliza negociacion si el estado real es `RESULTADO GANADO`, sin depender del valor de `Motor decision comercial`
 
 7. El pool interno `Dani / Pato / Nati / Sole` se asigna con estas reglas:
    - por defecto, round-robin para contactos nuevos

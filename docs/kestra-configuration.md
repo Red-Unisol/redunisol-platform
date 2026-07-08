@@ -95,6 +95,8 @@ Ejemplos reales:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `SECRET_BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
+- `SECRET_BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
@@ -343,6 +345,7 @@ Referenciadas hoy desde los flows:
 
 - `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
 - `kestra/automations/marketing-crm/flows/bitrix24_lead_classification.yaml`
+- `kestra/automations/marketing-crm/flows/bitrix24_lead_won_deal_webhook.yaml`
 
 - `bitrix24_base_url`
 - `bitrix24_contact_cuil_field`
@@ -389,6 +392,11 @@ En la infraestructura actual corresponden a:
 Presencia verificada en VPS:
 
 - si
+
+Secrets adicionales referenciados por el webhook de negociaciones:
+
+- `BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
+- `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 
 ### Runtime Analisis Credito: variables no sensibles
 

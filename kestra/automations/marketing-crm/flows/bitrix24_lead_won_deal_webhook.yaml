@@ -1,25 +1,16 @@
-id: bitrix24_lead_classification
+id: bitrix24_lead_won_deal_webhook
 namespace: redunisol
 
-description: Clasifica un lead de Bitrix24 por lead_id y actualiza su estado final.
+description: Recibe ONCRMLEADUPDATE desde Bitrix24 y crea una negociacion para cualquier lead que este en RESULTADO GANADO.
 
 labels:
   env: prod
   team: redunisol
-  kind: internal
+  kind: webhook
   integration: bitrix24
 
-inputs:
-  - id: lead_id
-    type: STRING
-    required: true
-  - id: force_processing
-    type: BOOLEAN
-    required: true
-    defaults: false
-
 tasks:
-  - id: clasificar
+  - id: crear_negociacion_si_ganado
     type: io.kestra.plugin.scripts.python.Commands
     namespaceFiles:
       enabled: true
@@ -31,8 +22,8 @@ tasks:
     beforeCommands:
       - pip install kestra > /dev/null
     env:
-      LEAD_ID: "{{ inputs.lead_id }}"
-      FORCE_PROCESSING: "{{ inputs.force_processing }}"
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN: "{{ secret('BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN') }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
@@ -52,32 +43,41 @@ tasks:
       BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_STAGE_ID: "{{ envs.bitrix24_deal_stage_id ?? 'C1:NEW' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,71159,90231' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
-      - python -m bitrix24_form_flow.kestra_lead_classification_entrypoint
+      - python -m bitrix24_form_flow.kestra_lead_won_deal_entrypoint
 
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ outputs.clasificar.vars.ok }}"
-  - id: qualified
-    type: BOOLEAN
-    value: "{{ outputs.clasificar.vars.qualified }}"
-  - id: contact_id
-    type: STRING
-    value: "{{ outputs.clasificar.vars.contact_id }}"
-  - id: lead_id
-    type: STRING
-    value: "{{ outputs.clasificar.vars.lead_id }}"
-  - id: lead_status
-    type: STRING
-    value: "{{ outputs.clasificar.vars.lead_status }}"
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.ok }}"
   - id: action
     type: STRING
-    value: "{{ outputs.clasificar.vars.action }}"
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.action }}"
   - id: reason
     type: STRING
-    value: "{{ outputs.clasificar.vars.reason }}"
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.reason }}"
   - id: message
     type: STRING
-    value: "{{ outputs.clasificar.vars.message }}"
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.message }}"
+  - id: lead_id
+    type: STRING
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.lead_id }}"
+  - id: lead_status
+    type: STRING
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.lead_status }}"
+  - id: deal_id
+    type: STRING
+    value: "{{ outputs.crear_negociacion_si_ganado.vars.deal_id }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

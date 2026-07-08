@@ -18,13 +18,11 @@ from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import load_config
 from .contact_service import upsert_contact
-from .deal_service import ensure_won_lead_deal
 from .input_parser import normalize_business_input, parse_body
 from .lead_service import (
     build_submission_from_lead,
     build_lead_contact_birthdate_field,
     create_lead,
-    determine_commercial_owner,
     get_lead,
     lead_has_commercial_owner,
     sync_contact_birthdate_to_leads,
@@ -200,7 +198,6 @@ def persist_submission(
     contact_id: int | None = None
     lead_id: int | None = None
     lead_status: str | None = None
-    deal_id: int | None = None
 
     try:
         active_logger.info("Inicio de persistencia asincronica en Bitrix.")
@@ -257,23 +254,12 @@ def persist_submission(
             None if qualified else rejection_label,
             active_logger,
         )
-        if qualified and determine_commercial_owner(effective_submission) == "kestra":
-            lead = get_lead(client, lead_id, active_logger)
-            deal_id = ensure_won_lead_deal(
-                client,
-                config,
-                lead,
-                lead_id=lead_id,
-                contact_id=contact_id,
-                logger=active_logger,
-            )
 
         return success_result(
             qualified=qualified,
             contact_id=contact_id,
             lead_id=lead_id,
             lead_status=lead_status,
-            deal_id=deal_id,
             message=message,
             reason=reason,
         )
@@ -301,7 +287,6 @@ def classify_lead(
     active_logger = logger or create_logger()
     contact_id: int | None = None
     lead_status: str | None = None
-    deal_id: int | None = None
     lead_id_int = int(lead_id)
     qualification = QualificationResult(
         qualified=False,
@@ -377,22 +362,12 @@ def classify_lead(
             qualification.rejection_label if not qualification.qualified else None,
             active_logger,
         )
-        if qualification.qualified:
-            deal_id = ensure_won_lead_deal(
-                client,
-                config,
-                lead,
-                lead_id=lead_id_int,
-                contact_id=contact_id,
-                logger=active_logger,
-            )
 
         return success_result(
             qualified=qualification.qualified,
             contact_id=contact_id or 0,
             lead_id=lead_id_int,
             lead_status=lead_status,
-            deal_id=deal_id,
             message=qualification.message,
             reason=qualification.reason,
         )

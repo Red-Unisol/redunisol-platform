@@ -136,6 +136,7 @@ Opcionales para override de campos del lead:
 - `BITRIX24_DEAL_STAGE_ID`
 - `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 
 Valores actualmente confirmados en el CRM:
 
@@ -150,6 +151,7 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_DEAL_STAGE_ID=C1:NEW` (`PRESENTACION`)
 - `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451,71159,90231` (`Dani,Pato,Nati,Sole`)
 - `BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS=30`
+- `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN=<token del webhook de salida ONCRMLEADUPDATE>`
 - `BITRIX24_CONTACT_CUIL_FIELD=UF_CRM_65B7E48033FCD`
 - `BITRIX24_LEAD_CUIL_FIELD=UF_CRM_1693840106704`
 - `BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD=UF_CRM_1714071903`
@@ -214,6 +216,7 @@ Para usar este paquete dentro de Kestra, el adaptador recomendado es:
 
 - `bitrix24_form_flow/kestra_form_intake_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_classification_entrypoint.py`
+- `bitrix24_form_flow/kestra_lead_won_deal_entrypoint.py`
 - `bitrix24_form_flow/kestra_webhook_entrypoint.py` como wrapper backward-compatible de la ejecucion end-to-end
 
 Los entrypoints:
@@ -257,6 +260,12 @@ Los entrypoints:
 
 - `bitrix24_form_flow/form_processor/lead_service.py`
   Crea el lead con la politica `No procesar`, asigna `Motor decision comercial` segun provincia migrada, reconstruye un lead por `lead_id` y expone helpers de ownership comercial.
+
+- `bitrix24_form_flow/form_processor/lead_won_deal_service.py`
+  Procesa eventos `ONCRMLEADUPDATE`, valida el token de aplicacion de Bitrix y crea negociacion solo si el lead esta en `RESULTADO GANADO`.
+
+- `bitrix24_form_flow/form_processor/deal_service.py`
+  Crea o reutiliza negociaciones en `VENTAS` y resuelve responsable por recurrencia de contacto o round-robin compensado.
 
 - `bitrix24_form_flow/form_processor/result.py`
   Genera la respuesta JSON final de éxito o error.
