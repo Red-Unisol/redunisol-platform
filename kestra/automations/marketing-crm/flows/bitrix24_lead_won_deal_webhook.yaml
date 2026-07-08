@@ -9,6 +9,10 @@ labels:
   kind: webhook
   integration: bitrix24
 
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
 tasks:
   - id: crear_negociacion_si_ganado
     type: io.kestra.plugin.scripts.python.Commands
