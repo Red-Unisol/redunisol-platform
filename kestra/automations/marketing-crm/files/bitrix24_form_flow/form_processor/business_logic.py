@@ -254,6 +254,7 @@ def persist_submission(
             None if qualified else rejection_label,
             active_logger,
         )
+
         return success_result(
             qualified=qualified,
             contact_id=contact_id,

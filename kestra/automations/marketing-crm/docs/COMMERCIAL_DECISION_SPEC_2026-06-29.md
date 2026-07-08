@@ -44,11 +44,13 @@ No es todavia una especificacion de implementacion cerrada.
    - pipeline: `VENTAS`
    - `CATEGORY_ID=1`
    - etapa inicial: `C1:NEW` (`PRESENTACION`)
+   - disparador tecnico: webhook de salida Bitrix `ONCRMLEADUPDATE`; Kestra consulta el lead actualizado y crea/reutiliza negociacion si el estado real es `RESULTADO GANADO`, sin depender del valor de `Motor decision comercial`
 
 7. El pool interno `Dani / Pato / Nati / Sole` se asigna con estas reglas:
    - por defecto, round-robin para contactos nuevos
    - si el contacto ya tuvo prospectos previos, asignar al vendedor del prospecto previo mas reciente
    - las recurrencias deben computarse para mantener equidad; el round-robin de contactos nuevos debe compensar para que quienes reciben mas recurrencias no terminen con mas prospectos totales
+   - implementacion inicial en Kestra: para contactos nuevos se elige el vendedor del pool con menor cantidad de negociaciones recientes en `VENTAS`; para contactos recurrentes se reutiliza el responsable de la negociacion previa mas reciente si pertenece al pool
 
 8. La linea comercial requiere campos custom en Bitrix:
    - campo custom en lead
