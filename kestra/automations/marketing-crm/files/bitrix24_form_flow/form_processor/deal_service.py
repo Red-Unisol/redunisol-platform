@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import unicodedata
 from typing import Any
 
 from .bitrix_client import BitrixClient
@@ -13,6 +14,37 @@ DEAL_ENTITY_TYPE_ID = 2
 LEAD_ENTITY_TYPE_ID = 1
 CONTACT_ENTITY_TYPE_ID = 3
 OPEN_LINE_ACTIVITY_PROVIDER_ID = "IMOPENLINES_SESSION"
+
+DEAL_DIRECT_FIELD_MAPPINGS = {
+    "cuil": "ufCrm_64FF4F9B5C195",
+    "bcra_status": "ufCrm_69E0D50649FEB",
+    "bcra_result": "ufCrm_69E0D5066A068",
+    "bcra_data_raw": "ufCrm_69E0F0E38EB6C",
+    "bcra_checked_at": "ufCrm_69E0D5067FD95",
+    "contact_birthdate": "ufCrm_6A3942DDF006B",
+    "vimarx_nro_socio": "ufCrm_6A34379BB89A9",
+    "vimarx_creditos_activos_count": "ufCrm_6A34379BDE41B",
+    "vimarx_creditos_activos_detail": "ufCrm_6A34379BEF025",
+    "vimarx_creditos_activos_raw": "ufCrm_6A34379C0D920",
+    "credixsa_status": "ufCrm_6A43D31E6DC9E",
+    "credixsa_checked_at": "ufCrm_6A43D31E9C6D7",
+    "credixsa_employer_name": "ufCrm_6A43D31EBC847",
+    "credixsa_employer_cuit": "ufCrm_6A43D31ED9E56",
+    "credixsa_employer_count": "ufCrm_6A43D31F06C90",
+    "credixsa_employer_periods": "ufCrm_6A43D31F1D7D1",
+    "credixsa_alerts": "ufCrm_6A43D31F38377",
+}
+
+DEAL_ENUM_FIELD_MAPPINGS = {
+    "province": "ufCrm_1684346013612",
+    "employment_status": "ufCrm_662B9D2685477",
+    "payment_bank": "ufCrm_6602D534A38CF",
+    "source": "ufCrm_66A93764BFF96",
+    "processing_policy": "ufCrm_69CA882AB72B7",
+    "es_socio": "ufCrm_670E6D6216DD4",
+}
+
+DEAL_SOCIO_NUEVO_FIELD = "ufCrm_1727360234"
 
 
 def ensure_won_lead_deal(
@@ -38,6 +70,7 @@ def ensure_won_lead_deal(
         logger=logger,
     )
     fields = _build_deal_fields(
+        client,
         config,
         lead,
         lead_id=lead_id,
@@ -294,6 +327,7 @@ def _list_deals(
 
 
 def _build_deal_fields(
+    client: BitrixClient,
     config: AppConfig,
     lead: dict[str, Any],
     *,
@@ -324,7 +358,172 @@ def _build_deal_fields(
         if value:
             fields[deal_field] = value
 
+    _copy_custom_lead_fields_to_deal(client, config, lead, fields)
     return fields
+
+
+def _copy_custom_lead_fields_to_deal(
+    client: BitrixClient,
+    config: AppConfig,
+    lead: dict[str, Any],
+    fields: dict[str, Any],
+) -> None:
+    for lead_field, deal_field in _direct_custom_field_pairs(config):
+        value = lead.get(lead_field or "")
+        if _has_value(value):
+            fields[deal_field] = value
+
+    enum_pairs = [
+        (lead_field, deal_field)
+        for lead_field, deal_field in _enum_custom_field_pairs(config)
+        if _has_value(lead.get(lead_field or ""))
+    ]
+    if not enum_pairs:
+        return
+
+    lead_fields = client.call("crm.lead.fields", {})
+    deal_fields_response = client.call(
+        "crm.item.fields",
+        {"entityTypeId": DEAL_ENTITY_TYPE_ID},
+    )
+    deal_fields = (
+        deal_fields_response.get("fields", {})
+        if isinstance(deal_fields_response, dict)
+        else {}
+    )
+
+    es_socio_label: str | None = None
+    for lead_field, deal_field in enum_pairs:
+        label = _enum_label_for_value(lead_fields.get(lead_field, {}), lead.get(lead_field))
+        if label is None:
+            continue
+        deal_value = _enum_id_for_label(deal_fields.get(deal_field, {}), label)
+        if deal_value is None:
+            continue
+        fields[deal_field] = deal_value
+        if deal_field == DEAL_ENUM_FIELD_MAPPINGS["es_socio"]:
+            es_socio_label = label
+
+    if es_socio_label is not None:
+        socio_nuevo_label = _socio_nuevo_label(es_socio_label)
+        if socio_nuevo_label is not None:
+            socio_nuevo_id = _enum_id_for_label(
+                deal_fields.get(DEAL_SOCIO_NUEVO_FIELD, {}),
+                socio_nuevo_label,
+            )
+            if socio_nuevo_id is not None:
+                fields[DEAL_SOCIO_NUEVO_FIELD] = socio_nuevo_id
+
+
+def _direct_custom_field_pairs(config: AppConfig) -> tuple[tuple[str | None, str], ...]:
+    return (
+        (config.fields.lead_cuil, DEAL_DIRECT_FIELD_MAPPINGS["cuil"]),
+        (config.fields.lead_bcra_status, DEAL_DIRECT_FIELD_MAPPINGS["bcra_status"]),
+        (config.fields.lead_bcra_result, DEAL_DIRECT_FIELD_MAPPINGS["bcra_result"]),
+        (config.fields.lead_bcra_data_raw, DEAL_DIRECT_FIELD_MAPPINGS["bcra_data_raw"]),
+        (config.fields.lead_bcra_checked_at, DEAL_DIRECT_FIELD_MAPPINGS["bcra_checked_at"]),
+        (config.fields.lead_contact_birthdate, DEAL_DIRECT_FIELD_MAPPINGS["contact_birthdate"]),
+        (config.fields.lead_vimarx_nro_socio, DEAL_DIRECT_FIELD_MAPPINGS["vimarx_nro_socio"]),
+        (
+            config.fields.lead_vimarx_creditos_activos_count,
+            DEAL_DIRECT_FIELD_MAPPINGS["vimarx_creditos_activos_count"],
+        ),
+        (
+            config.fields.lead_vimarx_creditos_activos_detail,
+            DEAL_DIRECT_FIELD_MAPPINGS["vimarx_creditos_activos_detail"],
+        ),
+        (
+            config.fields.lead_vimarx_creditos_activos_raw,
+            DEAL_DIRECT_FIELD_MAPPINGS["vimarx_creditos_activos_raw"],
+        ),
+        (config.fields.lead_credixsa_status, DEAL_DIRECT_FIELD_MAPPINGS["credixsa_status"]),
+        (
+            config.fields.lead_credixsa_checked_at,
+            DEAL_DIRECT_FIELD_MAPPINGS["credixsa_checked_at"],
+        ),
+        (
+            config.fields.lead_credixsa_employer_name,
+            DEAL_DIRECT_FIELD_MAPPINGS["credixsa_employer_name"],
+        ),
+        (
+            config.fields.lead_credixsa_employer_cuit,
+            DEAL_DIRECT_FIELD_MAPPINGS["credixsa_employer_cuit"],
+        ),
+        (
+            config.fields.lead_credixsa_employer_count,
+            DEAL_DIRECT_FIELD_MAPPINGS["credixsa_employer_count"],
+        ),
+        (
+            config.fields.lead_credixsa_employer_periods,
+            DEAL_DIRECT_FIELD_MAPPINGS["credixsa_employer_periods"],
+        ),
+        (config.fields.lead_credixsa_alerts, DEAL_DIRECT_FIELD_MAPPINGS["credixsa_alerts"]),
+    )
+
+
+def _enum_custom_field_pairs(config: AppConfig) -> tuple[tuple[str | None, str], ...]:
+    return (
+        (config.fields.lead_province, DEAL_ENUM_FIELD_MAPPINGS["province"]),
+        (config.fields.lead_employment_status, DEAL_ENUM_FIELD_MAPPINGS["employment_status"]),
+        (config.fields.lead_payment_bank, DEAL_ENUM_FIELD_MAPPINGS["payment_bank"]),
+        (config.fields.lead_source, DEAL_ENUM_FIELD_MAPPINGS["source"]),
+        (config.fields.lead_processing_policy, DEAL_ENUM_FIELD_MAPPINGS["processing_policy"]),
+        (config.fields.lead_es_socio, DEAL_ENUM_FIELD_MAPPINGS["es_socio"]),
+    )
+
+
+def _enum_label_for_value(field_meta: dict[str, Any], raw_value: Any) -> str | None:
+    value = _first_scalar(raw_value)
+    if value is None:
+        return None
+    for item in field_meta.get("items") or []:
+        if str(item.get("ID") or "") == str(value):
+            label = str(item.get("VALUE") or "").strip()
+            return label or None
+    return None
+
+
+def _enum_id_for_label(field_meta: dict[str, Any], label: str) -> str | None:
+    normalized_label = _normalize_label(label)
+    for item in field_meta.get("items") or []:
+        item_label = str(item.get("VALUE") or "")
+        if _normalize_label(item_label) == normalized_label:
+            value = str(item.get("ID") or "").strip()
+            return value or None
+    return None
+
+
+def _socio_nuevo_label(es_socio_label: str) -> str | None:
+    normalized_label = _normalize_label(es_socio_label)
+    if normalized_label == "si":
+        return "NO"
+    if normalized_label == "no":
+        return "SI"
+    return None
+
+
+def _normalize_label(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", str(value).strip().casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
+def _first_scalar(raw_value: Any) -> Any | None:
+    if isinstance(raw_value, (list, tuple)):
+        for item in raw_value:
+            if _has_value(item):
+                return item
+        return None
+    return raw_value if _has_value(raw_value) else None
+
+
+def _has_value(raw_value: Any) -> bool:
+    if raw_value is None:
+        return False
+    if isinstance(raw_value, str):
+        return raw_value.strip() != ""
+    if isinstance(raw_value, (list, tuple)):
+        return any(_has_value(item) for item in raw_value)
+    return True
 
 
 def _deal_title(lead: dict[str, Any], lead_id: int) -> str:
