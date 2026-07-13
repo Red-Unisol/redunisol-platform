@@ -56,6 +56,8 @@ class FakeBitrixClient:
         self.leads: dict[int, dict] = {}
         self.contacts: dict[int, dict] = {}
         self.deals: dict[int, dict] = {}
+        self.activities: dict[int, dict] = {}
+        self.activity_bindings: list[dict] = []
 
     def call(self, method: str, payload: dict):
         self.calls.append((method, payload))
@@ -95,6 +97,9 @@ class FakeBitrixClient:
             return dict(self.leads[int(payload["id"])])
         if method == "crm.lead.update":
             self.leads[int(payload["id"])].update(payload["fields"])
+            return True
+        if method == "crm.activity.binding.add":
+            self.activity_bindings.append(dict(payload))
             return True
         if method == "crm.item.add":
             self.assert_deal_entity(payload)
@@ -168,6 +173,24 @@ class FakeBitrixClient:
             rows.sort(key=lambda row: int(str(row["ID"])))
             return {"result": rows}
 
+        if method == "crm.activity.list":
+            filters = payload.get("filter") or {}
+            selected_fields = payload.get("select") or []
+            rows = []
+            for activity in self.activities.values():
+                if not self._activity_matches(activity, filters):
+                    continue
+                if selected_fields:
+                    row = {field_name: activity.get(field_name) for field_name in selected_fields}
+                else:
+                    row = dict(activity)
+                rows.append(row)
+            rows.sort(
+                key=lambda row: int(str(row.get("ID") or "0")),
+                reverse=True,
+            )
+            return {"result": rows}
+
         return {"result": self.call(method, payload)}
 
     def get_lead_field(self, field_name: str) -> dict:
@@ -208,6 +231,13 @@ class FakeBitrixClient:
                 continue
             field_name = raw_field[1:] if raw_field.startswith("=") else raw_field
             if str(deal.get(field_name) or "") != str(expected):
+                return False
+        return True
+
+    def _activity_matches(self, activity: dict, filters: dict) -> bool:
+        for raw_field, expected in filters.items():
+            field_name = raw_field[1:] if raw_field.startswith("=") else raw_field
+            if str(activity.get(field_name) or "") != str(expected):
                 return False
         return True
 
@@ -886,8 +916,21 @@ class BusinessLogicTests(unittest.TestCase):
             "ID": "303",
             "CONTACT_ID": "101",
             "STATUS_ID": "QUALIFIED",
+            "SOURCE_ID": "CALL",
             "TITLE": "Maria Lopez",
             "UF_CRM_COMM_OWNER": "4117",
+        }
+        client.activities[501] = {
+            "ID": "501",
+            "OWNER_TYPE_ID": 1,
+            "OWNER_ID": 303,
+            "PROVIDER_ID": "IMOPENLINES_SESSION",
+        }
+        client.activities[502] = {
+            "ID": "502",
+            "OWNER_TYPE_ID": 3,
+            "OWNER_ID": 101,
+            "PROVIDER_ID": "IMOPENLINES_SESSION",
         }
 
         result = process_lead_update_event(
@@ -907,6 +950,15 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[901]["leadId"], 303)
         self.assertEqual(client.deals[901]["contactId"], 101)
         self.assertEqual(client.deals[901]["assignedById"], 68579)
+        self.assertEqual(client.deals[901]["sourceId"], "CALL")
+        self.assertEqual(client.leads[303]["STATUS_ID"], "CONVERTED")
+        self.assertEqual(
+            client.activity_bindings,
+            [
+                {"activityId": 501, "entityTypeId": 2, "entityId": 901},
+                {"activityId": 502, "entityTypeId": 2, "entityId": 901},
+            ],
+        )
 
     def test_lead_update_event_does_not_duplicate_existing_deal(self) -> None:
         client = FakeBitrixClient()
@@ -915,6 +967,12 @@ class BusinessLogicTests(unittest.TestCase):
             "CONTACT_ID": "101",
             "STATUS_ID": "QUALIFIED",
             "TITLE": "Maria Lopez",
+        }
+        client.activities[501] = {
+            "ID": "501",
+            "OWNER_TYPE_ID": 1,
+            "OWNER_ID": 303,
+            "PROVIDER_ID": "IMOPENLINES_SESSION",
         }
         client.deals[801] = {
             "id": 801,
@@ -938,6 +996,11 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "deal_exists")
         self.assertEqual(result["deal_id"], 801)
         self.assertEqual(len(client.deals), 1)
+        self.assertEqual(client.leads[303]["STATUS_ID"], "CONVERTED")
+        self.assertEqual(
+            client.activity_bindings,
+            [{"activityId": 501, "entityTypeId": 2, "entityId": 801}],
+        )
 
     def test_lead_update_event_rejects_invalid_application_token(self) -> None:
         client = FakeBitrixClient()

@@ -120,6 +120,7 @@ class BitrixFieldsConfig:
 class LeadStatusesConfig:
     qualified: str
     rejected: str
+    converted: str
 
 
 @dataclass(frozen=True)
@@ -280,6 +281,8 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         lead_statuses=LeadStatusesConfig(
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
+            converted=source.get("BITRIX24_LEAD_STATUS_CONVERTED", "CONVERTED").strip()
+            or "CONVERTED",
         ),
         processing_policy=ProcessingPolicyConfig(
             skip=source.get(
