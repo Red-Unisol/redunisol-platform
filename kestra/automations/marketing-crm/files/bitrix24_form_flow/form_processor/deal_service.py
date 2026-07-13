@@ -10,6 +10,9 @@ from .logger import Logger
 
 
 DEAL_ENTITY_TYPE_ID = 2
+LEAD_ENTITY_TYPE_ID = 1
+CONTACT_ENTITY_TYPE_ID = 3
+OPEN_LINE_ACTIVITY_PROVIDER_ID = "IMOPENLINES_SESSION"
 
 
 def ensure_won_lead_deal(
@@ -71,6 +74,61 @@ def find_deal_by_lead(
         select=["id", "leadId", "assignedById"],
     )
     return deals[0] if deals else None
+
+
+def bind_open_line_activities_to_deal(
+    client: BitrixClient,
+    *,
+    lead_id: int,
+    contact_id: int | None,
+    deal_id: int,
+    logger: Logger,
+) -> int:
+    activity_ids = _list_open_line_activity_ids(
+        client,
+        owner_type_id=LEAD_ENTITY_TYPE_ID,
+        owner_id=lead_id,
+    )
+    if contact_id is not None:
+        activity_ids.extend(
+            _list_open_line_activity_ids(
+                client,
+                owner_type_id=CONTACT_ENTITY_TYPE_ID,
+                owner_id=contact_id,
+            )
+        )
+
+    linked_count = 0
+    seen_ids: set[int] = set()
+    for activity_id in activity_ids:
+        if activity_id in seen_ids:
+            continue
+        seen_ids.add(activity_id)
+
+        try:
+            client.call(
+                "crm.activity.binding.add",
+                {
+                    "activityId": activity_id,
+                    "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                    "entityId": deal_id,
+                },
+            )
+        except RuntimeError as exc:
+            error_text = str(exc)
+            if (
+                "ACTIVITY_IS_ALREADY_BOUND" in error_text
+                or "already bound" in error_text.lower()
+            ):
+                logger.info(f"Actividad {activity_id} ya estaba vinculada al deal {deal_id}.")
+                continue
+            logger.error(f"No se pudo vincular actividad {activity_id} al deal {deal_id}: {exc}")
+            continue
+
+        linked_count += 1
+        logger.info(f"Actividad Open Lines {activity_id} vinculada al deal {deal_id}.")
+
+    return linked_count
 
 
 def resolve_round_robin_assignee(
@@ -154,6 +212,47 @@ def _least_loaded_pool_assignee(
     )[1]
 
 
+def _list_open_line_activity_ids(
+    client: BitrixClient,
+    *,
+    owner_type_id: int,
+    owner_id: int,
+) -> list[int]:
+    activities: list[dict[str, Any]] = []
+    start = 0
+
+    while True:
+        response = client.call_full(
+            "crm.activity.list",
+            {
+                "filter": {
+                    "OWNER_TYPE_ID": owner_type_id,
+                    "OWNER_ID": owner_id,
+                    "PROVIDER_ID": OPEN_LINE_ACTIVITY_PROVIDER_ID,
+                },
+                "select": ["ID", "PROVIDER_ID", "OWNER_TYPE_ID", "OWNER_ID"],
+                "order": {"ID": "DESC"},
+                "start": start,
+            },
+        )
+        result = response.get("result") or []
+        if not isinstance(result, list):
+            raise RuntimeError("crm.activity.list devolvio un payload invalido.")
+        activities.extend(activity for activity in result if isinstance(activity, dict))
+
+        next_page = response.get("next")
+        if next_page is None:
+            break
+        start = int(next_page)
+
+    ids: list[int] = []
+    for activity in activities:
+        activity_id = activity.get("ID") or activity.get("id")
+        if _is_positive_int(activity_id):
+            ids.append(int(str(activity_id)))
+    return ids
+
+
 def _list_deals(
     client: BitrixClient,
     *,
@@ -213,6 +312,8 @@ def _build_deal_fields(
         fields["contactId"] = contact_id
 
     for lead_field, deal_field in (
+        ("SOURCE_ID", "sourceId"),
+        ("SOURCE_DESCRIPTION", "sourceDescription"),
         ("UTM_SOURCE", "utmSource"),
         ("UTM_MEDIUM", "utmMedium"),
         ("UTM_CAMPAIGN", "utmCampaign"),

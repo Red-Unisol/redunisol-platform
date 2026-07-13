@@ -5,7 +5,7 @@ from typing import Any
 
 from .bitrix_client import BitrixClient
 from .config import load_config
-from .deal_service import ensure_won_lead_deal, find_deal_by_lead
+from .deal_service import bind_open_line_activities_to_deal, ensure_won_lead_deal, find_deal_by_lead
 from .lead_service import get_lead
 from .logger import create_logger, Logger
 
@@ -48,6 +48,16 @@ def process_lead_update_event(
         existing_deal = find_deal_by_lead(client, lead_id=lead_id, logger=active_logger)
         if existing_deal is not None:
             deal_id = _optional_int(existing_deal.get("id") or existing_deal.get("ID"))
+            if deal_id is None:
+                raise RuntimeError("La negociacion existente no tiene un ID valido.")
+            bind_open_line_activities_to_deal(
+                client,
+                lead_id=lead_id,
+                contact_id=contact_id,
+                deal_id=deal_id,
+                logger=active_logger,
+            )
+            _mark_lead_converted(client, config, lead_id, lead_status, active_logger)
             return _event_result(
                 ok=True,
                 action="deal_exists",
@@ -66,6 +76,14 @@ def process_lead_update_event(
             contact_id=contact_id,
             logger=active_logger,
         )
+        bind_open_line_activities_to_deal(
+            client,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            deal_id=deal_id,
+            logger=active_logger,
+        )
+        _mark_lead_converted(client, config, lead_id, lead_status, active_logger)
         return _event_result(
             ok=True,
             action="deal_created",
@@ -126,6 +144,26 @@ def _extract_application_token(payload: dict[str, Any]) -> str:
             return str(token).strip()
 
     return ""
+
+
+def _mark_lead_converted(
+    client: Any,
+    config: Any,
+    lead_id: int,
+    current_status: str | None,
+    logger: Logger,
+) -> None:
+    if current_status == config.lead_statuses.converted:
+        return
+
+    logger.info(f"Marcando lead {lead_id} como {config.lead_statuses.converted}.")
+    client.call(
+        "crm.lead.update",
+        {
+            "id": lead_id,
+            "fields": {"STATUS_ID": config.lead_statuses.converted},
+        },
+    )
 
 
 def _extract_lead_id(payload: dict[str, Any]) -> int:
