@@ -133,12 +133,85 @@ class FakeBitrixClient:
                         {"ID": "3967", "VALUE": "NO SON SOCIOS NI QUIEREN PRESTAMO"},
                     ]
                 },
+                "UF_CRM_1714071903": {
+                    "items": [
+                        {"ID": "1239", "VALUE": "Empleado Publico Provincial"},
+                        {"ID": "3745", "VALUE": "Docente"},
+                    ]
+                },
+                "UF_CRM_LEAD_1711458190312": {
+                    "items": [
+                        {"ID": "437", "VALUE": "BANCO DE LA PROVINCIA DE CORDOBA S.A."},
+                        {"ID": "439", "VALUE": "BANCO DE LA NACION ARGENTINA"},
+                    ]
+                },
+                "UF_CRM_64E65D2B2136C": {
+                    "items": [
+                        {"ID": "209", "VALUE": "Cordoba"},
+                        {"ID": "215", "VALUE": "Catamarca"},
+                    ]
+                },
+                "UF_CRM_1722365051": {
+                    "items": [
+                        {"ID": "2423", "VALUE": "Google"},
+                        {"ID": "2425", "VALUE": "Facebook"},
+                    ]
+                },
                 "UF_CRM_1728998183": {
                     "items": [
                         {"ID": "2617", "VALUE": "Si"},
                         {"ID": "2619", "VALUE": "No"},
                         {"ID": "4053", "VALUE": "Desconocido"},
                     ]
+                }
+            }
+        if method == "crm.item.fields":
+            self.assert_deal_entity(payload)
+            return {
+                "fields": {
+                    "ufCrm_1684346013612": {
+                        "items": [
+                            {"ID": "69", "VALUE": "Cordoba"},
+                            {"ID": "75", "VALUE": "Catamarca"},
+                        ]
+                    },
+                    "ufCrm_662B9D2685477": {
+                        "items": [
+                            {"ID": "1281", "VALUE": "Empleado Publico Provincial"},
+                            {"ID": "3751", "VALUE": "Docente"},
+                        ]
+                    },
+                    "ufCrm_6602D534A38CF": {
+                        "items": [
+                            {"ID": "595", "VALUE": "BANCO DE LA PROVINCIA DE CORDOBA S.A."},
+                            {"ID": "597", "VALUE": "BANCO DE LA NACION ARGENTINA"},
+                        ]
+                    },
+                    "ufCrm_66A93764BFF96": {
+                        "items": [
+                            {"ID": "2429", "VALUE": "Google"},
+                            {"ID": "2431", "VALUE": "Facebook"},
+                        ]
+                    },
+                    "ufCrm_69CA882AB72B7": {
+                        "items": [
+                            {"ID": "4045", "VALUE": "No procesar"},
+                            {"ID": "4047", "VALUE": "Procesar"},
+                        ]
+                    },
+                    "ufCrm_670E6D6216DD4": {
+                        "items": [
+                            {"ID": "2629", "VALUE": "Si"},
+                            {"ID": "2631", "VALUE": "No"},
+                            {"ID": "4059", "VALUE": "Desconocido"},
+                        ]
+                    },
+                    "ufCrm_1727360234": {
+                        "items": [
+                            {"ID": "2599", "VALUE": "SI"},
+                            {"ID": "2601", "VALUE": "NO"},
+                        ]
+                    },
                 }
             }
 
@@ -959,6 +1032,72 @@ class BusinessLogicTests(unittest.TestCase):
                 {"activityId": 502, "entityTypeId": 2, "entityId": 901},
             ],
         )
+
+    def test_lead_update_event_copies_custom_lead_fields_to_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "TITLE": "MARINA NOEMI VILLAGRAN",
+            "STATUS_ID": "QUALIFIED",
+            "UF_CRM_1693840106704": "23267408114",
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1714071903": "3745",
+            "UF_CRM_LEAD_1711458190312": [439],
+            "UF_CRM_1722365051": "2423",
+            "UF_CRM_PROCESSING_POLICY": "4041",
+            "UF_CRM_1728998183": "2619",
+            "UF_CRM_BCRA_STATUS": "Consulta BCRA\nEstado: OK",
+            "UF_CRM_BCRA_RESULT": "Estado: OK\nSituacion 1: 2",
+            "UF_CRM_BCRA_DATA_RAW": '{"status": 200}',
+            "UF_CRM_BCRA_CHECKED_AT": "2026-07-13T11:34:14-03:00",
+            "UF_CRM_CONTACT_BIRTHDATE": "1978-06-25T21:00:00-03:00",
+            "UF_CRM_VIMARX_CRED_ACT_CNT": "0",
+            "UF_CRM_VIMARX_CRED_DET": "No se encontró socio en Vimarx.",
+            "UF_CRM_VIMARX_CRED_RAW": '{"ok": true}',
+            "UF_CRM_CRDX_STATUS": "ok",
+            "UF_CRM_CRDX_CHK_AT": "2026-07-13T11:36:46-03:00",
+            "UF_CRM_EMP_NOMBRE": "TESORERIA GENERAL DE LA PROVINCIA",
+            "UF_CRM_EMP_CUIT": "30636511354",
+            "UF_CRM_EMP_COUNT": "1",
+            "UF_CRM_EMP_PERIODOS": "1 empleador",
+        }
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(303),
+            env={
+                **self.env,
+                "BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD": "UF_CRM_CONTACT_BIRTHDATE",
+            },
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        deal = client.deals[result["deal_id"]]
+        self.assertEqual(deal["ufCrm_64FF4F9B5C195"], "23267408114")
+        self.assertEqual(deal["ufCrm_1684346013612"], "75")
+        self.assertEqual(deal["ufCrm_662B9D2685477"], "3751")
+        self.assertEqual(deal["ufCrm_6602D534A38CF"], "597")
+        self.assertEqual(deal["ufCrm_66A93764BFF96"], "2429")
+        self.assertEqual(deal["ufCrm_69CA882AB72B7"], "4045")
+        self.assertEqual(deal["ufCrm_670E6D6216DD4"], "2631")
+        self.assertEqual(deal["ufCrm_1727360234"], "2599")
+        self.assertEqual(deal["ufCrm_69E0D50649FEB"], "Consulta BCRA\nEstado: OK")
+        self.assertEqual(deal["ufCrm_69E0D5066A068"], "Estado: OK\nSituacion 1: 2")
+        self.assertEqual(deal["ufCrm_69E0F0E38EB6C"], '{"status": 200}')
+        self.assertEqual(deal["ufCrm_69E0D5067FD95"], "2026-07-13T11:34:14-03:00")
+        self.assertEqual(deal["ufCrm_6A3942DDF006B"], "1978-06-25T21:00:00-03:00")
+        self.assertEqual(deal["ufCrm_6A34379BDE41B"], "0")
+        self.assertEqual(deal["ufCrm_6A34379BEF025"], "No se encontró socio en Vimarx.")
+        self.assertEqual(deal["ufCrm_6A34379C0D920"], '{"ok": true}')
+        self.assertEqual(deal["ufCrm_6A43D31E6DC9E"], "ok")
+        self.assertEqual(deal["ufCrm_6A43D31E9C6D7"], "2026-07-13T11:36:46-03:00")
+        self.assertEqual(deal["ufCrm_6A43D31EBC847"], "TESORERIA GENERAL DE LA PROVINCIA")
+        self.assertEqual(deal["ufCrm_6A43D31ED9E56"], "30636511354")
+        self.assertEqual(deal["ufCrm_6A43D31F06C90"], "1")
+        self.assertEqual(deal["ufCrm_6A43D31F1D7D1"], "1 empleador")
 
     def test_lead_update_event_does_not_duplicate_existing_deal(self) -> None:
         client = FakeBitrixClient()
