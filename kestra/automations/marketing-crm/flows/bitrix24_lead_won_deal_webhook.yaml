@@ -1,5 +1,6 @@
 id: bitrix24_lead_won_deal_webhook
 namespace: redunisol
+disabled: true
 
 description: Recibe ONCRMLEADUPDATE desde Bitrix24 y crea una negociacion para cualquier lead que este en RESULTADO GANADO.
 
