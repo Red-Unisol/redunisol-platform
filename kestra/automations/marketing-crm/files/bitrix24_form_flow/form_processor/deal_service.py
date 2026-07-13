@@ -400,7 +400,7 @@ def _copy_custom_lead_fields_to_deal(
         deal_value = _enum_id_for_label(deal_fields.get(deal_field, {}), label)
         if deal_value is None:
             continue
-        fields[deal_field] = deal_value
+        fields[deal_field] = _deal_field_value(deal_fields.get(deal_field, {}), deal_value)
         if deal_field == DEAL_ENUM_FIELD_MAPPINGS["es_socio"]:
             es_socio_label = label
 
@@ -412,7 +412,10 @@ def _copy_custom_lead_fields_to_deal(
                 socio_nuevo_label,
             )
             if socio_nuevo_id is not None:
-                fields[DEAL_SOCIO_NUEVO_FIELD] = socio_nuevo_id
+                fields[DEAL_SOCIO_NUEVO_FIELD] = _deal_field_value(
+                    deal_fields.get(DEAL_SOCIO_NUEVO_FIELD, {}),
+                    socio_nuevo_id,
+                )
 
 
 def _direct_custom_field_pairs(config: AppConfig) -> tuple[tuple[str | None, str], ...]:
@@ -491,6 +494,12 @@ def _enum_id_for_label(field_meta: dict[str, Any], label: str) -> str | None:
             value = str(item.get("ID") or "").strip()
             return value or None
     return None
+
+
+def _deal_field_value(field_meta: dict[str, Any], value: str) -> str | list[str]:
+    if field_meta.get("isMultiple") is True:
+        return [value]
+    return value
 
 
 def _socio_nuevo_label(es_socio_label: str) -> str | None:

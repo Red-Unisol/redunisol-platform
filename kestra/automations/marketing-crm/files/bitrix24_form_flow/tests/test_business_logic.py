@@ -182,6 +182,7 @@ class FakeBitrixClient:
                         ]
                     },
                     "ufCrm_6602D534A38CF": {
+                        "isMultiple": True,
                         "items": [
                             {"ID": "595", "VALUE": "BANCO DE LA PROVINCIA DE CORDOBA S.A."},
                             {"ID": "597", "VALUE": "BANCO DE LA NACION ARGENTINA"},
@@ -1079,7 +1080,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(deal["ufCrm_64FF4F9B5C195"], "23267408114")
         self.assertEqual(deal["ufCrm_1684346013612"], "75")
         self.assertEqual(deal["ufCrm_662B9D2685477"], "3751")
-        self.assertEqual(deal["ufCrm_6602D534A38CF"], "597")
+        self.assertEqual(deal["ufCrm_6602D534A38CF"], ["597"])
         self.assertEqual(deal["ufCrm_66A93764BFF96"], "2429")
         self.assertEqual(deal["ufCrm_69CA882AB72B7"], "4045")
         self.assertEqual(deal["ufCrm_670E6D6216DD4"], "2631")
