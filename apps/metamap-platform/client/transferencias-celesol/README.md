@@ -12,6 +12,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
   - titularidad Coinag via CUIL/CUIT
+- transferencia automatica por cupo de sesion para lineas explicitamente autorizadas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
 - si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
   - documento MetaMap vs core
@@ -55,7 +56,18 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_OPERATOR_NAME`
 - `TRANSFERENCIAS_POLL_INTERVAL_SECONDS` default `20`
 - `TRANSFERENCIAS_RECEIPTS_DIR`
+- `TRANSFERENCIAS_AUTO_RECEIPTS_DIR` default `receipts-automaticas`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
+
+Automaticas:
+
+- `TRANSFERENCIAS_AUTO_LINEAS` allowlist exacta de lineas separadas por coma o punto y coma
+- `TRANSFERENCIAS_AUTO_LINEAS_PATH` archivo alternativo con una linea por renglon
+
+Si no se define ninguna linea automatica, los controles de cupo automatico quedan deshabilitados.
+El cupo automatico es de sesion: cada apertura de la app empieza en `0`, el operador suma cupo manualmente, y cada transferencia automatica enviada consume `1`.
+Las automaticas solo corren si la solicitud esta verde, sin warnings ni bloqueos, con MetaMap `completed`.
+Los comprobantes de automaticas se generan en `TRANSFERENCIAS_AUTO_RECEIPTS_DIR`, separado de los comprobantes manuales.
 
 Coinag para habilitar `Transferir`:
 

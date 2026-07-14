@@ -15,6 +15,7 @@ $cargoTomlPath = Join-Path $scriptDir "Cargo.toml"
 $packageInputDir = Join-Path $scriptDir "package-input"
 $packageInputSshDir = Join-Path $packageInputDir "ssh"
 $encryptedEnvPath = Join-Path $packageInputDir "transferencias.env.enc"
+$automaticLinesPath = Join-Path $packageInputDir "lineas_automaticas"
 $distDir = Join-Path $scriptDir "dist"
 $stagingDir = Join-Path $distDir "staging"
 $exePath = Join-Path $scriptDir "target\\release\\transferencias-celesol.exe"
@@ -101,6 +102,9 @@ try {
 
     Copy-Item -LiteralPath $exePath -Destination (Join-Path $packageRoot "transferencias-celesol.exe")
     Copy-Item -LiteralPath $encryptedEnvPath -Destination (Join-Path $packageRoot "transferencias.env.enc")
+    if (Test-Path -LiteralPath $automaticLinesPath -PathType Leaf) {
+        Copy-Item -LiteralPath $automaticLinesPath -Destination (Join-Path $packageRoot "lineas_automaticas")
+    }
     Copy-Item -LiteralPath $privateKeyPath -Destination (Join-Path $packageSshDir "coinag_tunnel_key")
     Copy-Item -LiteralPath $hostPublicKeyPath -Destination (Join-Path $packageSshDir "vps_host_key.pub")
 

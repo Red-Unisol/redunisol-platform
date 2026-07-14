@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     path::PathBuf,
     sync::{
         Arc,
@@ -9,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Local;
 use eframe::egui::{self, Color32, Key, RichText, TextEdit};
 use egui_extras::{Column, TableBuilder};
@@ -43,6 +44,11 @@ pub struct TransferenciasApp {
     show_disabled_lines: bool,
     pending_transfer_confirmation: Option<TransferConfirmation>,
     transfer_lookup: TransferLookupDialog,
+    automatic_quota: u32,
+    automatic_inflight: HashSet<String>,
+    automatic_attempted: HashSet<String>,
+    automatic_pending: Vec<AutomaticTransferPending>,
+    show_automatic_pending: bool,
 }
 
 const BALANCE_POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -66,6 +72,11 @@ impl TransferenciasApp {
             show_disabled_lines: false,
             pending_transfer_confirmation: None,
             transfer_lookup: TransferLookupDialog::default(),
+            automatic_quota: 0,
+            automatic_inflight: HashSet::new(),
+            automatic_attempted: HashSet::new(),
+            automatic_pending: Vec::new(),
+            show_automatic_pending: false,
         };
         log::info!("TransferenciasApp inicializada.");
         app.spawn_items_poll();
@@ -112,6 +123,10 @@ impl TransferenciasApp {
     }
 
     fn spawn_transfer(&mut self, request_oid: String) {
+        self.spawn_transfer_worker(request_oid, TransferKind::Manual);
+    }
+
+    fn spawn_transfer_worker(&mut self, request_oid: String, transfer_kind: TransferKind) {
         let Some(position) = self
             .items
             .iter()
@@ -122,16 +137,93 @@ impl TransferenciasApp {
         if self.items[position].busy {
             return;
         }
-        log::info!("Iniciando transferencia para solicitud {}.", request_oid);
+        log::info!(
+            "Iniciando transferencia {} para solicitud {}.",
+            transfer_kind.label(),
+            request_oid
+        );
         self.items[position].busy = true;
-        self.items[position].message = Some(TRANSFER_PROCESSING_MESSAGE.to_owned());
+        self.items[position].message = Some(match transfer_kind {
+            TransferKind::Manual => TRANSFER_PROCESSING_MESSAGE.to_owned(),
+            TransferKind::Automatic => "Procesando transferencia automatica...".to_owned(),
+        });
         let item = self.items[position].clone();
         let services = Arc::clone(&self.services);
         let sender = self.event_tx.clone();
         thread::spawn(move || {
-            let result = services.execute_transfer(item);
+            let result = services.execute_transfer(item, transfer_kind);
             let _ = sender.send(result);
         });
+    }
+
+    fn try_spawn_automatic_transfers(&mut self) {
+        if self.automatic_quota == 0 || !self.services.automatic_transfer_enabled() {
+            return;
+        }
+
+        let candidates = self
+            .items
+            .iter()
+            .filter(|item| self.is_automatic_candidate(item))
+            .map(|item| item.request_oid().to_owned())
+            .collect::<Vec<_>>();
+
+        for request_oid in candidates {
+            if self.automatic_quota == 0 {
+                break;
+            }
+            self.spawn_automatic_transfer(request_oid);
+        }
+    }
+
+    fn spawn_automatic_transfer(&mut self, request_oid: String) {
+        if self.automatic_quota == 0
+            || self.automatic_inflight.contains(&request_oid)
+            || self.automatic_attempted.contains(&request_oid)
+        {
+            return;
+        }
+        let Some(position) = self
+            .items
+            .iter()
+            .position(|item| item.request_oid() == request_oid)
+        else {
+            return;
+        };
+        if !self.is_automatic_candidate(&self.items[position]) {
+            return;
+        }
+        if let Err(error) = self.services.ensure_automatic_receipts_dir() {
+            self.push_notice(format!(
+                "Automatica bloqueada: no se pudo preparar la carpeta de comprobantes: {error}"
+            ));
+            return;
+        }
+
+        self.automatic_quota = self.automatic_quota.saturating_sub(1);
+        self.automatic_inflight.insert(request_oid.clone());
+        self.automatic_attempted.insert(request_oid.clone());
+        self.push_notice(format!(
+            "Transferencia automatica iniciada para solicitud {}. Cupo restante: {}.",
+            request_oid, self.automatic_quota
+        ));
+        self.spawn_transfer_worker(request_oid, TransferKind::Automatic);
+    }
+
+    fn is_automatic_candidate(&self, item: &HydratedCase) -> bool {
+        self.services.transfer_enabled()
+            && self.services.automatic_transfer_enabled()
+            && !item.busy
+            && !item.validation.disabled
+            && item.validation.can_transfer()
+            && item.validation.warnings.is_empty()
+            && item.server_validation.has_completed_validation()
+            && self
+                .services
+                .automatic_credit_lines
+                .is_enabled(item.core.credit_line_description.as_deref())
+            && !self.automatic_inflight.contains(item.request_oid())
+            && !self.automatic_attempted.contains(item.request_oid())
     }
 
     fn spawn_transfer_lookup(&mut self, request_number: String) {
@@ -284,6 +376,83 @@ impl TransferenciasApp {
         }
     }
 
+    fn render_automatic_pending_window(&mut self, ctx: &egui::Context) {
+        if !self.show_automatic_pending {
+            return;
+        }
+
+        let mut open = self.show_automatic_pending;
+        egui::Window::new("Automaticas pendientes")
+            .open(&mut open)
+            .default_width(760.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label("Transferencias automaticas de esta sesion pendientes de revisar.");
+                ui.add_space(8.0);
+                if self.automatic_pending.is_empty() {
+                    ui.label("No hay transferencias automaticas en esta sesion.");
+                    return;
+                }
+
+                egui::ScrollArea::vertical()
+                    .max_height(360.0)
+                    .show(ui, |ui| {
+                        for pending in &mut self.automatic_pending {
+                            ui.group(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.vertical(|ui| {
+                                        ui.strong(format!(
+                                            "{} - {}",
+                                            pending.request_oid, pending.display_name
+                                        ));
+                                        ui.small(format!(
+                                            "{} | {} | {}",
+                                            pending.credit_line, pending.amount, pending.created_at
+                                        ));
+                                        match pending.receipt_path.as_ref() {
+                                            Some(path) => {
+                                                ui.small(format!(
+                                                    "Comprobante: {}",
+                                                    path.display()
+                                                ));
+                                            }
+                                            None => {
+                                                ui.small(
+                                                    RichText::new("Comprobante no generado")
+                                                        .color(Color32::from_rgb(170, 30, 30)),
+                                                );
+                                            }
+                                        }
+                                    });
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if pending.reviewed {
+                                                ui.label(
+                                                    RichText::new("Revisada")
+                                                        .color(Color32::LIGHT_GRAY),
+                                                );
+                                            } else if ui.button("Marcar revisada").clicked() {
+                                                pending.reviewed = true;
+                                            }
+                                        },
+                                    );
+                                });
+                            });
+                            ui.add_space(6.0);
+                        }
+                    });
+            });
+        self.show_automatic_pending = open;
+    }
+
+    fn automatic_pending_count(&self) -> usize {
+        self.automatic_pending
+            .iter()
+            .filter(|pending| !pending.reviewed)
+            .count()
+    }
+
     fn process_worker_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
@@ -293,6 +462,7 @@ impl TransferenciasApp {
                     self.items = preserve_busy_items(&self.items, items);
                     self.next_poll_at = Instant::now() + self.services.poll_interval;
                     self.push_notice("Lista actualizada desde el core financiero.");
+                    self.try_spawn_automatic_transfers();
                 }
                 WorkerEvent::ItemsLoadFailed(error) => {
                     self.items_loading = false;
@@ -327,12 +497,43 @@ impl TransferenciasApp {
                     message,
                     receipt_path,
                     refresh_balance,
+                    transfer_kind,
+                    automatic_quota_consumed,
+                    automatic_receipt_pending,
                 } => {
-                    log::debug!("Caso actualizado para solicitud {}.", case.request_oid());
+                    let request_oid = case.request_oid().to_owned();
+                    log::debug!("Caso actualizado para solicitud {}.", request_oid);
+                    if transfer_kind == TransferKind::Automatic {
+                        self.automatic_inflight.remove(&request_oid);
+                        if !automatic_quota_consumed {
+                            self.automatic_quota = self.automatic_quota.saturating_add(1);
+                            self.push_notice(format!(
+                                "Se devolvio un cupo automatico para solicitud {}. Cupo actual: {}.",
+                                request_oid, self.automatic_quota
+                            ));
+                        }
+                        if automatic_receipt_pending {
+                            self.automatic_pending.insert(
+                                0,
+                                AutomaticTransferPending {
+                                    request_oid: request_oid.clone(),
+                                    display_name: case.display_name(),
+                                    amount: case.transfer_amount_display(),
+                                    credit_line: display_credit_line(
+                                        case.core.credit_line_description.as_deref(),
+                                    ),
+                                    receipt_path: receipt_path.clone(),
+                                    created_at: Local::now().format("%H:%M:%S").to_string(),
+                                    reviewed: false,
+                                },
+                            );
+                            self.show_automatic_pending = true;
+                        }
+                    }
                     if let Some(existing) = self
                         .items
                         .iter_mut()
-                        .find(|item| item.request_oid() == case.request_oid())
+                        .find(|item| item.request_oid() == request_oid.as_str())
                     {
                         *existing = case;
                     } else {
@@ -349,6 +550,7 @@ impl TransferenciasApp {
                     if refresh_balance {
                         self.spawn_balance_poll("post-transferencia");
                     }
+                    self.try_spawn_automatic_transfers();
                 }
             }
         }
@@ -379,6 +581,8 @@ impl eframe::App for TransferenciasApp {
 
         let mut request_to_transfer = None;
         let mut transfer_confirmation = None;
+        let mut automatic_quota_delta = 0_u32;
+        let mut clear_automatic_quota = false;
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -433,11 +637,60 @@ impl eframe::App for TransferenciasApp {
                 if !self.services.transfer_enabled() {
                     lookup_button.on_hover_text("Coinag no esta configurado en este runtime.");
                 }
+                ui.separator();
+                let automatic_enabled = self.services.automatic_transfer_enabled();
+                ui.label(format!("Auto: {}", self.automatic_quota));
+                if ui
+                    .add_enabled(automatic_enabled, egui::Button::new("+1 auto"))
+                    .clicked()
+                {
+                    automatic_quota_delta = 1;
+                }
+                if ui
+                    .add_enabled(automatic_enabled, egui::Button::new("+2 auto"))
+                    .clicked()
+                {
+                    automatic_quota_delta = 2;
+                }
+                if ui
+                    .add_enabled(self.automatic_quota > 0, egui::Button::new("Auto 0"))
+                    .clicked()
+                {
+                    clear_automatic_quota = true;
+                }
+                let pending_count = self.automatic_pending_count();
+                let pending_label = if pending_count > 0 {
+                    format!("● Auto ({pending_count})")
+                } else {
+                    "Auto pendientes".to_owned()
+                };
+                if ui.button(pending_label).clicked() {
+                    self.show_automatic_pending = true;
+                }
+                if !automatic_enabled {
+                    ui.small(
+                        RichText::new("Auto no configurado").color(Color32::from_rgb(176, 113, 0)),
+                    );
+                }
                 ui.checkbox(&mut self.show_disabled_lines, "Mostrar deshabilitadas");
             });
         });
 
+        if automatic_quota_delta > 0 {
+            self.automatic_quota = self.automatic_quota.saturating_add(automatic_quota_delta);
+            self.push_notice(format!(
+                "Cupo automatico aumentado en {}. Cupo actual: {}.",
+                automatic_quota_delta, self.automatic_quota
+            ));
+            self.try_spawn_automatic_transfers();
+        }
+        if clear_automatic_quota {
+            self.automatic_quota = 0;
+            self.push_notice("Cupo automatico puesto en 0.");
+        }
+
         self.render_transfer_lookup_window(ctx);
+        self.render_automatic_pending_window(ctx);
 
         egui::TopBottomPanel::bottom("notices")
             .resizable(true)
@@ -680,6 +933,36 @@ struct TransferLookupResult {
     raw_json: String,
 }
 
+#[derive(Clone)]
+struct AutomaticTransferPending {
+    request_oid: String,
+    display_name: String,
+    amount: String,
+    credit_line: String,
+    receipt_path: Option<PathBuf>,
+    created_at: String,
+    reviewed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransferKind {
+    Manual,
+    Automatic,
+}
+
+impl TransferKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Automatic => "automatica",
+        }
+    }
+
+    fn is_automatic(&self) -> bool {
+        matches!(self, Self::Automatic)
+    }
+}
+
 impl TransferConfirmation {
     fn for_case(item: &HydratedCase) -> Self {
         let resolution = item.transfer_amount_resolution();
@@ -730,9 +1013,11 @@ struct AppServices {
     core: CoreClient,
     coinag: Option<CoinagClient>,
     enabled_credit_lines: EnabledCreditLines,
+    automatic_credit_lines: EnabledCreditLines,
     operator_name: String,
     poll_interval: std::time::Duration,
     receipts_dir: PathBuf,
+    automatic_receipts_dir: PathBuf,
 }
 
 #[derive(Clone)]
@@ -785,26 +1070,47 @@ impl AppServices {
             config.enabled_credit_lines.path,
             config.enabled_credit_lines.values,
         );
+        let automatic_credit_lines = EnabledCreditLines::new(
+            config.automatic_credit_lines.path,
+            config.automatic_credit_lines.values,
+        );
         let services = Self {
             server,
             core,
             coinag,
             enabled_credit_lines,
+            automatic_credit_lines,
             operator_name: config.operator_name,
             poll_interval: config.poll_interval,
             receipts_dir: config.receipts_dir,
+            automatic_receipts_dir: config.automatic_receipts_dir,
         };
         log::info!(
-            "Servicios listos. transfer_enabled={}. lineas_habilitadas={} path={:?}.",
+            "Servicios listos. transfer_enabled={}. lineas_habilitadas={} path={:?}. lineas_auto={} auto_path={:?}.",
             services.transfer_enabled(),
             services.enabled_credit_lines.len(),
-            services.enabled_credit_lines.path
+            services.enabled_credit_lines.path,
+            services.automatic_credit_lines.len(),
+            services.automatic_credit_lines.path
         );
         Ok(services)
     }
 
     fn transfer_enabled(&self) -> bool {
         self.coinag.is_some()
+    }
+
+    fn automatic_transfer_enabled(&self) -> bool {
+        self.transfer_enabled() && self.automatic_credit_lines.len() > 0
+    }
+
+    fn ensure_automatic_receipts_dir(&self) -> Result<()> {
+        fs::create_dir_all(&self.automatic_receipts_dir).with_context(|| {
+            format!(
+                "No se pudo crear la carpeta {:?}",
+                self.automatic_receipts_dir
+            )
+        })
     }
 
     fn balance_enabled(&self) -> bool {
@@ -1128,7 +1434,7 @@ impl AppServices {
         );
     }
 
-    fn execute_transfer(&self, case: HydratedCase) -> WorkerEvent {
+    fn execute_transfer(&self, case: HydratedCase, transfer_kind: TransferKind) -> WorkerEvent {
         let Some(coinag) = &self.coinag else {
             log::warn!(
                 "Transferencia bloqueada para solicitud {}: Coinag no configurado.",
@@ -1142,11 +1448,21 @@ impl AppServices {
                 message: "Transferencia bloqueada: Coinag no esta configurado.".to_owned(),
                 receipt_path: None,
                 refresh_balance: false,
+                transfer_kind,
+                automatic_quota_consumed: false,
+                automatic_receipt_pending: false,
             };
         };
 
         let refreshed = self.refresh_case(&case);
-        if !refreshed.validation.can_transfer() {
+        if !refreshed.validation.can_transfer()
+            || (transfer_kind.is_automatic()
+                && (!refreshed.validation.warnings.is_empty()
+                    || !refreshed.server_validation.has_completed_validation()
+                    || !self
+                        .automatic_credit_lines
+                        .is_enabled(refreshed.core.credit_line_description.as_deref())))
+        {
             log::warn!(
                 "Transferencia bloqueada para solicitud {} por validaciones: {} bloqueos.",
                 case.request_oid(),
@@ -1160,6 +1476,9 @@ impl AppServices {
                 ),
                 receipt_path: None,
                 refresh_balance: false,
+                transfer_kind,
+                automatic_quota_consumed: false,
+                automatic_receipt_pending: false,
             };
         }
 
@@ -1181,10 +1500,17 @@ impl AppServices {
                     ),
                     receipt_path: None,
                     refresh_balance: false,
+                    transfer_kind,
+                    automatic_quota_consumed: false,
+                    automatic_receipt_pending: false,
                 };
             }
         };
 
+        let mut automatic_quota_consumed = false;
+        if transfer_kind.is_automatic() {
+            automatic_quota_consumed = true;
+        }
         let transfer_response = match coinag.perform_transfer(&transfer_payload) {
             Ok(response) => response,
             Err(error) => {
@@ -1204,6 +1530,9 @@ impl AppServices {
                     ),
                     receipt_path: None,
                     refresh_balance: false,
+                    transfer_kind,
+                    automatic_quota_consumed,
+                    automatic_receipt_pending: false,
                 };
             }
         };
@@ -1214,14 +1543,24 @@ impl AppServices {
             .and_then(|value| value.as_str())
             .map(str::to_owned);
         let external_transfer_id = CoinagClient::extract_external_transfer_id(&transfer_response);
-        let receipt_path = receipt::write_receipt(
-            &self.receipts_dir,
-            &self.operator_name,
-            &refreshed,
-            external_transfer_id
-                .as_deref()
-                .unwrap_or("SIN_EXTERNAL_TRANSFER_ID"),
-        )
+        let receipt_path = match transfer_kind {
+            TransferKind::Manual => receipt::write_receipt(
+                &self.receipts_dir,
+                &self.operator_name,
+                &refreshed,
+                external_transfer_id
+                    .as_deref()
+                    .unwrap_or("SIN_EXTERNAL_TRANSFER_ID"),
+            ),
+            TransferKind::Automatic => receipt::write_automatic_receipt(
+                &self.automatic_receipts_dir,
+                &self.operator_name,
+                &refreshed,
+                external_transfer_id
+                    .as_deref()
+                    .unwrap_or("SIN_EXTERNAL_TRANSFER_ID"),
+            ),
+        }
         .ok();
 
         let mut updated = refreshed;
@@ -1252,6 +1591,9 @@ impl AppServices {
                 message,
                 receipt_path,
                 refresh_balance: true,
+                transfer_kind,
+                automatic_quota_consumed,
+                automatic_receipt_pending: transfer_kind.is_automatic(),
             };
         }
         updated.transfer_guard = CoinagTransferGuard::EnProceso;
@@ -1291,6 +1633,9 @@ impl AppServices {
             message,
             receipt_path,
             refresh_balance: true,
+            transfer_kind,
+            automatic_quota_consumed,
+            automatic_receipt_pending: transfer_kind.is_automatic(),
         }
     }
 }
@@ -1306,6 +1651,9 @@ enum WorkerEvent {
         message: String,
         receipt_path: Option<PathBuf>,
         refresh_balance: bool,
+        transfer_kind: TransferKind,
+        automatic_quota_consumed: bool,
+        automatic_receipt_pending: bool,
     },
 }
 

@@ -40,16 +40,61 @@ pub fn write_receipt(
     case: &HydratedCase,
     external_transfer_id: &str,
 ) -> Result<PathBuf> {
+    write_receipt_with_mode(
+        receipts_dir,
+        operator_name,
+        case,
+        external_transfer_id,
+        ReceiptMode::Manual,
+    )
+}
+
+pub fn write_automatic_receipt(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    external_transfer_id: &str,
+) -> Result<PathBuf> {
+    write_receipt_with_mode(
+        receipts_dir,
+        operator_name,
+        case,
+        external_transfer_id,
+        ReceiptMode::Automatic,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ReceiptMode {
+    Manual,
+    Automatic,
+}
+
+fn write_receipt_with_mode(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    external_transfer_id: &str,
+    mode: ReceiptMode,
+) -> Result<PathBuf> {
     fs::create_dir_all(receipts_dir)
         .with_context(|| format!("No se pudo crear la carpeta {:?}", receipts_dir))?;
 
     let timestamp = Local::now();
-    let file_name = format!(
-        "{}-{}-{}.pdf",
-        sanitize_filename(case.request_oid()),
-        sanitize_filename(case.display_name().as_str()),
-        timestamp.format("%Y%m%d-%H%M%S"),
-    );
+    let file_name = match mode {
+        ReceiptMode::Manual => format!(
+            "{}-{}-{}.pdf",
+            sanitize_filename(case.request_oid()),
+            sanitize_filename(case.display_name().as_str()),
+            timestamp.format("%Y%m%d-%H%M%S"),
+        ),
+        ReceiptMode::Automatic => format!(
+            "{}_solicitud-{}_importe-{}_automatico.pdf",
+            timestamp.format("%Y%m%d-%H%M%S"),
+            sanitize_filename(case.request_oid()),
+            sanitize_filename(case.transfer_amount_display().as_str()),
+        ),
+    };
     let receipt_path = receipts_dir.join(file_name);
 
     let (document, page, layer) = PdfDocument::new(
