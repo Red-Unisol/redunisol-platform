@@ -52,6 +52,8 @@ pub struct CoreSnapshot {
     pub bank_coinag_cba_amount_raw: Option<String>,
     pub bank_coinag_cba_amount: Option<Decimal>,
     pub coinag_cuil: Option<String>,
+    pub coinag_account_type_code: Option<String>,
+    pub coinag_account_type_label: Option<String>,
     pub refreshed_label: Option<String>,
 }
 
@@ -296,6 +298,27 @@ impl HydratedCase {
 }
 
 impl CoreSnapshot {
+    pub fn coinag_account_type_display(&self) -> Option<String> {
+        match (
+            self.coinag_account_type_code.as_deref(),
+            self.coinag_account_type_label.as_deref(),
+        ) {
+            (Some(code), Some(label)) if !label.trim().is_empty() => {
+                Some(format!("{} - {}", code.trim(), label.trim()))
+            }
+            (Some(code), _) => Some(code.trim().to_owned()),
+            _ => None,
+        }
+    }
+
+    pub fn coinag_account_type_is_pesos_transfer_compatible(&self) -> Option<bool> {
+        self.coinag_account_type_code
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| matches!(value, "1" | "10" | "20" | "30"))
+    }
+
     pub fn transfer_amount_resolution(&self) -> TransferAmountResolution {
         let zero = Decimal::ZERO;
         let bank_cmf_amount = self.bank_cmf_amount.filter(|amount| *amount > zero);

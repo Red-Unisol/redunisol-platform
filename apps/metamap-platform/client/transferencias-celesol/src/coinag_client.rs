@@ -51,6 +51,27 @@ pub struct TransferLookupResponse {
     pub body: Value,
 }
 
+#[derive(Clone, Debug)]
+pub struct CbuLookupResponse {
+    pub cuil: Option<String>,
+    pub account_type_code: Option<String>,
+    pub account_type_label: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CoelsaTransferLookupResponse {
+    pub id_coelsa: String,
+    pub body: Value,
+    pub status: CoelsaTransferStatus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CoelsaTransferStatus {
+    Confirmed,
+    Rejected { detail: String },
+    Pending { detail: String },
+}
+
 impl CoinagClient {
     pub fn new(config: &CoinagConfig, timeout: std::time::Duration) -> Result<Self> {
         let (direct_http, ssh_http) = if config.ssh.is_enabled() {
@@ -100,6 +121,12 @@ impl CoinagClient {
     }
 
     pub fn lookup_cbu_cuil(&self, cbu: &str) -> Result<String> {
+        self.lookup_cbu_details(cbu)?
+            .cuil
+            .ok_or_else(|| anyhow!("Coinag no devolvio CUIL/CUIT para el CBU destino."))
+    }
+
+    pub fn lookup_cbu_details(&self, cbu: &str) -> Result<CbuLookupResponse> {
         log::debug!(
             "Consultando titularidad Coinag para CBU {}.",
             mask_value(cbu, 6)
@@ -113,14 +140,26 @@ impl CoinagClient {
             ),
             RequestBody::default(),
         )?;
-        let coinag_cuil = extract_coinag_cuil(&response)
-            .ok_or_else(|| anyhow!("Coinag no devolvio CUIL/CUIT para el CBU destino."))?;
+        let coinag_cuil = extract_coinag_cuil(&response);
+        let account_type_code = extract_cbu_account_type_code(&response);
+        let account_type_label = account_type_code
+            .as_deref()
+            .and_then(coinag_account_type_label)
+            .map(str::to_owned);
         log::debug!(
-            "Coinag devolvio titularidad {} para CBU {}.",
-            mask_value(&coinag_cuil, 4),
-            mask_value(cbu, 6)
+            "Coinag devolvio titularidad {} y tipoCuenta {:?} para CBU {}.",
+            coinag_cuil
+                .as_deref()
+                .map(|value| mask_value(value, 4))
+                .unwrap_or_else(|| "N/D".to_owned()),
+            account_type_code,
+            mask_value(cbu, 6),
         );
-        Ok(coinag_cuil)
+        Ok(CbuLookupResponse {
+            cuil: coinag_cuil,
+            account_type_code,
+            account_type_label,
+        })
     }
 
     pub fn can_fetch_balance(&self) -> bool {
@@ -219,6 +258,31 @@ impl CoinagClient {
                 detail: error.to_string(),
             },
         }
+    }
+
+    pub fn lookup_transfer_by_id_coelsa(
+        &self,
+        id_coelsa: &str,
+    ) -> Result<CoelsaTransferLookupResponse> {
+        let id_coelsa = id_coelsa.trim();
+        if id_coelsa.is_empty() {
+            return Err(anyhow!("Id Coelsa vacio."));
+        }
+        log::info!("Consultando transferencia Coinag por idCoelsa {id_coelsa}.");
+        let body = self.request_authorized_json(
+            Method::GET,
+            format!(
+                "{}/TransferenciaByIdCoelsa/{}",
+                self.config.lookup_api_base.trim_end_matches('/'),
+                id_coelsa
+            ),
+            RequestBody::default(),
+        )?;
+        Ok(CoelsaTransferLookupResponse {
+            id_coelsa: id_coelsa.to_owned(),
+            status: classify_coelsa_transfer_status(&body),
+            body,
+        })
     }
 
     fn request_transfer_lookup(&self, request_number: &str) -> Result<TransferLookupResponse> {
@@ -410,8 +474,17 @@ impl CoinagClient {
     pub fn extract_external_transfer_id(response: &Value) -> Option<String> {
         response
             .get("debito")
+            .or_else(|| {
+                response
+                    .get("response")
+                    .and_then(|value| value.get("debito"))
+            })
             .and_then(|debito| debito.get("idTrx").or_else(|| debito.get("id")))
             .and_then(value_to_string)
+    }
+
+    pub fn classify_transfer_response(response: &Value) -> CoelsaTransferStatus {
+        classify_coelsa_transfer_status(response)
     }
 
     fn request_authorized_json(
@@ -689,6 +762,34 @@ fn extract_coinag_cuil(body: &Value) -> Option<String> {
         })
 }
 
+fn extract_cbu_account_type_code(body: &Value) -> Option<String> {
+    let response = body.get("response").unwrap_or(body);
+    response
+        .get("cuenta")
+        .and_then(|cuenta| {
+            cuenta
+                .get("tipoCuenta")
+                .or_else(|| cuenta.get("tipo"))
+                .or_else(|| cuenta.get("tipo_cuenta"))
+        })
+        .and_then(value_to_string)
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn coinag_account_type_label(code: &str) -> Option<&'static str> {
+    match code.trim() {
+        "1" => Some("CVU"),
+        "10" => Some("CA Pesos"),
+        "20" => Some("CC Pesos"),
+        "11" => Some("CA Dolares"),
+        "21" => Some("CC Dolares"),
+        "30" => Some("CC Especiales Pesos"),
+        "31" => Some("CC Especiales Dolares"),
+        _ => None,
+    }
+}
+
 fn extract_balance_amount(body: &Value) -> Option<rust_decimal::Decimal> {
     match body {
         Value::Array(items) => items.iter().find_map(extract_balance_amount),
@@ -796,6 +897,96 @@ fn extract_transfer_status_code(body: &Value) -> Option<String> {
         .and_then(value_to_string)
 }
 
+fn classify_coelsa_transfer_status(body: &Value) -> CoelsaTransferStatus {
+    let Some(status) = extract_coelsa_status(body) else {
+        return CoelsaTransferStatus::Pending {
+            detail: "Coinag no devolvio estado Coelsa interpretable.".to_owned(),
+        };
+    };
+    if status.code.as_deref() == Some("00") {
+        return CoelsaTransferStatus::Confirmed;
+    }
+    let detail = status.detail();
+    if status.code.is_some() {
+        CoelsaTransferStatus::Rejected { detail }
+    } else {
+        CoelsaTransferStatus::Pending { detail }
+    }
+}
+
+struct CoelsaStatus {
+    code: Option<String>,
+    description: Option<String>,
+    error_coelsa: Option<String>,
+}
+
+impl CoelsaStatus {
+    fn detail(&self) -> String {
+        match (
+            self.code.as_deref(),
+            self.description.as_deref(),
+            self.error_coelsa.as_deref(),
+        ) {
+            (Some(code), Some(description), Some(error)) => {
+                format!("{code} - {description}. Coelsa: {error}")
+            }
+            (Some(code), Some(description), None) => format!("{code} - {description}"),
+            (Some(code), None, Some(error)) => format!("{code}. Coelsa: {error}"),
+            (Some(code), None, None) => code.to_owned(),
+            (None, Some(description), Some(error)) => format!("{description}. Coelsa: {error}"),
+            (None, Some(description), None) => description.to_owned(),
+            (None, None, Some(error)) => error.to_owned(),
+            (None, None, None) => "Estado Coelsa no informado.".to_owned(),
+        }
+    }
+}
+
+fn extract_coelsa_status(body: &Value) -> Option<CoelsaStatus> {
+    let root = body.get("response").unwrap_or(body);
+    let status = root
+        .get("estadoCoelsa")
+        .or_else(|| root.get("estado"))
+        .unwrap_or(root);
+    match status {
+        Value::Object(map) => {
+            let code = map
+                .get("codigo")
+                .or_else(|| map.get("code"))
+                .and_then(value_to_string)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty());
+            let description = map
+                .get("descripcion")
+                .or_else(|| map.get("description"))
+                .and_then(value_to_string)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty());
+            let error_coelsa = map
+                .get("errorCoelsa")
+                .and_then(value_to_string)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty());
+            if code.is_none() && description.is_none() && error_coelsa.is_none() {
+                None
+            } else {
+                Some(CoelsaStatus {
+                    code,
+                    description,
+                    error_coelsa,
+                })
+            }
+        }
+        _ => value_to_string(status)
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .map(|code| CoelsaStatus {
+                code: Some(code),
+                description: None,
+                error_coelsa: None,
+            }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -805,7 +996,12 @@ mod tests {
 
     use rust_decimal::Decimal;
 
-    use super::{CoinagClient, TokenCache, build_request_based_transaction_suffix};
+    use serde_json::json;
+
+    use super::{
+        CoelsaTransferStatus, CoinagClient, TokenCache, build_request_based_transaction_suffix,
+        classify_coelsa_transfer_status, extract_cbu_account_type_code,
+    };
     use crate::{
         config::CoinagConfig,
         models::{CoreSnapshot, HydratedCase},
@@ -866,6 +1062,51 @@ mod tests {
         assert_eq!(
             payload.get("importe").and_then(|value| value.as_str()),
             Some("800")
+        );
+    }
+
+    #[test]
+    fn cbu_lookup_extracts_account_type_code() {
+        let body = json!({
+            "cuenta": {
+                "tipoCuenta": "11",
+                "cbu": "0110519331051903253916"
+            }
+        });
+
+        assert_eq!(extract_cbu_account_type_code(&body).as_deref(), Some("11"));
+    }
+
+    #[test]
+    fn coelsa_status_code_zero_is_confirmed() {
+        let body = json!({
+            "estado": {
+                "codigo": "00",
+                "descripcion": "OK"
+            }
+        });
+
+        assert_eq!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Confirmed
+        );
+    }
+
+    #[test]
+    fn coelsa_non_zero_status_is_rejected() {
+        let body = json!({
+            "estado": {
+                "codigo": "ERROR DATOS",
+                "descripcion": "2109 - MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA"
+            }
+        });
+
+        assert_eq!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Rejected {
+                detail: "ERROR DATOS - 2109 - MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA"
+                    .to_owned()
+            }
         );
     }
 }
