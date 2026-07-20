@@ -68,6 +68,12 @@ La linea comercial debe existir como campo custom tanto en lead como en deal.
 
 ## Asignacion De Vendedor
 
+Comportamiento operativo vigente desde el 2026-07-20:
+
+- al crear una negociacion, Kestra no ejecuta round-robin ni recalcula el vendedor
+- la negociacion hereda siempre el responsable actual del lead
+- si se retoma el round-robin, debe aplicarse durante la asignacion del lead y antes de crear la negociacion
+
 Para La Rioja, todo prospecto ganado se asigna a Mercedes (`85431`).
 
 Para casos internos asignados al pool `Dani / Pato / Nati / Sole`:

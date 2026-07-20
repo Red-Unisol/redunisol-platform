@@ -39,6 +39,7 @@ from bitrix24_form_flow.form_processor.credixsa_employer_service import (
     select_next_lead_for_credixsa_employer_backfill,
     update_lead_with_credixsa_output,
 )
+from bitrix24_form_flow.form_processor.deal_service import ensure_deal_timeline_comment
 from bitrix24_form_flow.form_processor.input_parser import normalize_business_input, parse_body
 from bitrix24_form_flow.form_processor.lead_service import (
     determine_commercial_owner,
@@ -58,6 +59,7 @@ class FakeBitrixClient:
         self.deals: dict[int, dict] = {}
         self.activities: dict[int, dict] = {}
         self.activity_bindings: list[dict] = []
+        self.timeline_comments: dict[int, dict] = {}
 
     def call(self, method: str, payload: dict):
         self.calls.append((method, payload))
@@ -101,6 +103,21 @@ class FakeBitrixClient:
         if method == "crm.activity.binding.add":
             self.activity_bindings.append(dict(payload))
             return True
+        if method == "crm.timeline.comment.list":
+            filters = payload.get("filter") or {}
+            return [
+                dict(comment)
+                for comment in self.timeline_comments.values()
+                if str(comment.get("ENTITY_ID")) == str(filters.get("ENTITY_ID"))
+                and str(comment.get("ENTITY_TYPE")) == str(filters.get("ENTITY_TYPE"))
+            ]
+        if method == "crm.timeline.comment.add":
+            comment_id = 1001 if not self.timeline_comments else max(self.timeline_comments) + 1
+            self.timeline_comments[comment_id] = {
+                "ID": str(comment_id),
+                **payload["fields"],
+            }
+            return comment_id
         if method == "crm.item.add":
             self.assert_deal_entity(payload)
             deal_id = 901 if not self.deals else max(self.deals) + 1
@@ -992,6 +1009,7 @@ class BusinessLogicTests(unittest.TestCase):
             "STATUS_ID": "QUALIFIED",
             "SOURCE_ID": "CALL",
             "TITLE": "Maria Lopez",
+            "ASSIGNED_BY_ID": "74365",
             "UF_CRM_COMM_OWNER": "4117",
         }
         client.activities[501] = {
@@ -1023,9 +1041,18 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[901]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[901]["leadId"], 303)
         self.assertEqual(client.deals[901]["contactId"], 101)
-        self.assertEqual(client.deals[901]["assignedById"], 68579)
+        self.assertEqual(client.deals[901]["assignedById"], 74365)
         self.assertEqual(client.deals[901]["sourceId"], "CALL")
         self.assertEqual(client.leads[303]["STATUS_ID"], "CONVERTED")
+        self.assertEqual(len(client.timeline_comments), 1)
+        comment = next(iter(client.timeline_comments.values()))
+        self.assertEqual(comment["ENTITY_ID"], 303)
+        self.assertEqual(comment["ENTITY_TYPE"], "lead")
+        self.assertIn("Negociación creada a partir del prospecto", comment["COMMENT"])
+        self.assertIn(
+            "https://example.bitrix24.com/crm/deal/details/901/",
+            comment["COMMENT"],
+        )
         self.assertEqual(
             client.activity_bindings,
             [
@@ -1041,6 +1068,7 @@ class BusinessLogicTests(unittest.TestCase):
             "CONTACT_ID": "101",
             "TITLE": "MARINA NOEMI VILLAGRAN",
             "STATUS_ID": "QUALIFIED",
+            "ASSIGNED_BY_ID": "10451",
             "UF_CRM_1693840106704": "23267408114",
             "UF_CRM_64E65D2B2136C": "215",
             "UF_CRM_1714071903": "3745",
@@ -1136,11 +1164,37 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "deal_exists")
         self.assertEqual(result["deal_id"], 801)
         self.assertEqual(len(client.deals), 1)
+        self.assertEqual(client.timeline_comments, {})
         self.assertEqual(client.leads[303]["STATUS_ID"], "CONVERTED")
         self.assertEqual(
             client.activity_bindings,
             [{"activityId": 501, "entityTypeId": 2, "entityId": 801}],
         )
+
+    def test_deal_timeline_comment_is_idempotent(self) -> None:
+        client = FakeBitrixClient()
+        config = load_config(self.env)
+        lead = {"ID": "303", "TITLE": "Maria Lopez"}
+
+        first_comment_id = ensure_deal_timeline_comment(
+            client,
+            config,
+            lead,
+            lead_id=303,
+            deal_id=901,
+            logger=SilentLogger(),
+        )
+        second_comment_id = ensure_deal_timeline_comment(
+            client,
+            config,
+            lead,
+            lead_id=303,
+            deal_id=901,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(first_comment_id, second_comment_id)
+        self.assertEqual(len(client.timeline_comments), 1)
 
     def test_lead_update_event_rejects_invalid_application_token(self) -> None:
         client = FakeBitrixClient()
@@ -1157,7 +1211,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertIn("Token de aplicacion", result["message"])
         self.assertEqual(client.calls, [])
 
-    def test_lead_update_event_new_contact_round_robin_compensates_existing_load(self) -> None:
+    def test_lead_update_event_new_contact_inherits_lead_assignee(self) -> None:
         client = FakeBitrixClient()
         client.deals[801] = {
             "id": 801,
@@ -1182,6 +1236,7 @@ class BusinessLogicTests(unittest.TestCase):
             "CONTACT_ID": "101",
             "STATUS_ID": "QUALIFIED",
             "TITLE": "Maria Lopez",
+            "ASSIGNED_BY_ID": "90231",
         }
 
         result = process_lead_update_event(
@@ -1194,9 +1249,9 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["action"], "deal_created")
-        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 71159)
+        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 90231)
 
-    def test_lead_update_event_recurring_contact_reuses_latest_pool_assignee(self) -> None:
+    def test_lead_update_event_recurring_contact_still_inherits_lead_assignee(self) -> None:
         client = FakeBitrixClient()
         client.contacts[101] = {
             "ID": "101",
@@ -1227,6 +1282,7 @@ class BusinessLogicTests(unittest.TestCase):
             "CONTACT_ID": "101",
             "STATUS_ID": "QUALIFIED",
             "TITLE": "Maria Lopez",
+            "ASSIGNED_BY_ID": "74365",
         }
 
         result = process_lead_update_event(
@@ -1239,7 +1295,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["action"], "deal_created")
-        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 10451)
+        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 74365)
 
     def test_process_form_body_returns_json_ready_payload_for_form_body(self) -> None:
         client = FakeBitrixClient()

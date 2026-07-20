@@ -51,6 +51,7 @@ No es todavia una especificacion de implementacion cerrada.
    - si el contacto ya tuvo prospectos previos, asignar al vendedor del prospecto previo mas reciente
    - las recurrencias deben computarse para mantener equidad; el round-robin de contactos nuevos debe compensar para que quienes reciben mas recurrencias no terminen con mas prospectos totales
    - implementacion inicial en Kestra: para contactos nuevos se elige el vendedor del pool con menor cantidad de negociaciones recientes en `VENTAS`; para contactos recurrentes se reutiliza el responsable de la negociacion previa mas reciente si pertenece al pool
+   - ajuste operativo del 2026-07-20: el round-robin queda suspendido en la creacion de negociaciones; el deal debe heredar siempre el responsable actual del lead. Si se retoma el round-robin, debe aplicarse antes sobre el lead y no recalcularse al crear el deal
 
 8. La linea comercial requiere campos custom en Bitrix:
    - campo custom en lead
@@ -101,6 +102,11 @@ No es todavia una especificacion de implementacion cerrada.
    - la clasificacion por `lead_id` puede enriquecer BCRA para todos, pero solo cambia estado/motivo cuando `Motor decision comercial = Kestra` o cuando una ejecucion administrativa usa `force_processing`
    - el backfill BCRA puede seguir guardando snapshot/raw/resumen para todos los leads, pero solo puede cambiar estado o motivo de rechazo cuando `Motor decision comercial = Kestra`
    - `UF_CRM_PROCESSING_POLICY` ya no es la compuerta comercial nueva
+
+21. Cuando Kestra crea una negociacion para un lead ganado:
+   - la negociacion hereda `ASSIGNED_BY_ID` del lead
+   - Kestra agrega al timeline del lead un comentario `Negociacion creada a partir del prospecto` con enlace a la negociacion
+   - el comentario se crea solo para negociaciones nuevas creadas por Kestra; no se agrega a negociaciones preexistentes creadas por Bitrix
 
 ## Evidencia Bitrix24
 

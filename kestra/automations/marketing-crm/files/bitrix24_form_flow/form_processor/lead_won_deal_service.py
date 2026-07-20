@@ -5,7 +5,12 @@ from typing import Any
 
 from .bitrix_client import BitrixClient
 from .config import load_config
-from .deal_service import bind_open_line_activities_to_deal, ensure_won_lead_deal, find_deal_by_lead
+from .deal_service import (
+    bind_open_line_activities_to_deal,
+    ensure_deal_timeline_comment,
+    ensure_won_lead_deal,
+    find_deal_by_lead,
+)
 from .lead_service import get_lead
 from .logger import create_logger, Logger
 
@@ -74,6 +79,14 @@ def process_lead_update_event(
             lead,
             lead_id=lead_id,
             contact_id=contact_id,
+            logger=active_logger,
+        )
+        ensure_deal_timeline_comment(
+            client,
+            config,
+            lead,
+            lead_id=lead_id,
+            deal_id=deal_id,
             logger=active_logger,
         )
         bind_open_line_activities_to_deal(
