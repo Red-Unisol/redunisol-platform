@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
-from datetime import datetime, timedelta, timezone
 import unicodedata
 from typing import Any
 
@@ -62,13 +60,7 @@ def ensure_won_lead_deal(
         logger.info(f"Lead {lead_id} ya tiene negociacion {deal_id}.")
         return deal_id
 
-    assigned_by_id = resolve_round_robin_assignee(
-        client,
-        config,
-        contact_id=contact_id,
-        lead_id=lead_id,
-        logger=logger,
-    )
+    assigned_by_id = _required_int(lead.get("ASSIGNED_BY_ID"), "ASSIGNED_BY_ID")
     fields = _build_deal_fields(
         client,
         config,
@@ -91,6 +83,53 @@ def ensure_won_lead_deal(
         raise RuntimeError("crm.item.add devolvio un payload invalido al crear la negociacion.")
 
     return _required_int(item.get("id") or item.get("ID"), "id")
+
+
+def ensure_deal_timeline_comment(
+    client: BitrixClient,
+    config: AppConfig,
+    lead: dict[str, Any],
+    *,
+    lead_id: int,
+    deal_id: int,
+    logger: Logger,
+) -> int:
+    deal_url = _deal_url(config.base_url, deal_id)
+    comments = client.call(
+        "crm.timeline.comment.list",
+        {
+            "filter": {"ENTITY_ID": lead_id, "ENTITY_TYPE": "lead"},
+            "select": ["ID", "COMMENT"],
+        },
+    )
+    if not isinstance(comments, list):
+        raise RuntimeError("crm.timeline.comment.list devolvio un payload invalido.")
+
+    for comment in comments:
+        if deal_url not in str(comment.get("COMMENT") or ""):
+            continue
+        comment_id = _required_int(comment.get("ID"), "timeline_comment_id")
+        logger.info(f"El lead {lead_id} ya tiene comentario para el deal {deal_id}.")
+        return comment_id
+
+    deal_title = _deal_title(lead, lead_id)
+    comment_text = (
+        "[B]Negociación creada a partir del prospecto[/B]\n"
+        f"[URL={deal_url}]{deal_title}[/URL]"
+    )
+    result = client.call(
+        "crm.timeline.comment.add",
+        {
+            "fields": {
+                "ENTITY_ID": lead_id,
+                "ENTITY_TYPE": "lead",
+                "COMMENT": comment_text,
+            }
+        },
+    )
+    comment_id = _required_int(result, "timeline_comment_id")
+    logger.info(f"Comentario {comment_id} agregado al lead {lead_id} para el deal {deal_id}.")
+    return comment_id
 
 
 def find_deal_by_lead(
@@ -162,87 +201,6 @@ def bind_open_line_activities_to_deal(
         logger.info(f"Actividad Open Lines {activity_id} vinculada al deal {deal_id}.")
 
     return linked_count
-
-
-def resolve_round_robin_assignee(
-    client: BitrixClient,
-    config: AppConfig,
-    *,
-    contact_id: int | None,
-    lead_id: int,
-    logger: Logger,
-) -> int:
-    pool = config.deal.round_robin_user_ids
-    if not pool:
-        raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
-
-    if contact_id is not None:
-        previous_assignee = _latest_pool_assignee_for_contact(
-            client,
-            pool=pool,
-            contact_id=contact_id,
-            lead_id=lead_id,
-            logger=logger,
-        )
-        if previous_assignee is not None:
-            return previous_assignee
-
-    return _least_loaded_pool_assignee(client, config, logger)
-
-
-def _latest_pool_assignee_for_contact(
-    client: BitrixClient,
-    *,
-    pool: tuple[int, ...],
-    contact_id: int,
-    lead_id: int,
-    logger: Logger,
-) -> int | None:
-    logger.info(f"Buscando vendedor recurrente para contacto {contact_id}.")
-    deals = _list_deals(
-        client,
-        filter_={"=contactId": contact_id},
-        order={"createdTime": "DESC", "id": "DESC"},
-        select=["id", "leadId", "contactId", "assignedById", "createdTime"],
-    )
-    pool_set = {str(user_id) for user_id in pool}
-    for deal in deals:
-        if str(deal.get("leadId") or "") == str(lead_id):
-            continue
-        assigned_by_id = str(deal.get("assignedById") or "")
-        if assigned_by_id in pool_set:
-            logger.info(f"Contacto {contact_id} reutiliza vendedor {assigned_by_id}.")
-            return int(assigned_by_id)
-    return None
-
-
-def _least_loaded_pool_assignee(
-    client: BitrixClient,
-    config: AppConfig,
-    logger: Logger,
-) -> int:
-    date_from = (
-        datetime.now(timezone.utc) - timedelta(days=config.deal.round_robin_lookback_days)
-    ).isoformat()
-    logger.info(f"Calculando carga round-robin desde {date_from}.")
-    deals = _list_deals(
-        client,
-        filter_={
-            "=categoryId": config.deal.category_id,
-            ">=createdTime": date_from,
-        },
-        order={"createdTime": "ASC", "id": "ASC"},
-        select=["id", "assignedById", "categoryId", "createdTime"],
-    )
-    counts = Counter(
-        int(str(deal.get("assignedById")))
-        for deal in deals
-        if _is_positive_int(deal.get("assignedById"))
-    )
-    return min(
-        enumerate(config.deal.round_robin_user_ids),
-        key=lambda item: (counts[item[1]], item[0]),
-    )[1]
 
 
 def _list_open_line_activity_ids(
@@ -549,6 +507,17 @@ def _deal_title(lead: dict[str, Any], lead_id: int) -> str:
         if part
     )
     return full_name or f"Lead {lead_id}"
+
+
+def _deal_url(base_url: str, deal_id: int) -> str:
+    normalized_base_url = str(base_url).rstrip("/")
+    rest_index = normalized_base_url.find("/rest")
+    portal_url = (
+        normalized_base_url[:rest_index]
+        if rest_index >= 0
+        else normalized_base_url
+    )
+    return f"{portal_url}/crm/deal/details/{deal_id}/"
 
 
 def _required_int(raw_value: Any, field_name: str) -> int:
