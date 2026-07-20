@@ -246,14 +246,26 @@ def persist_submission(
             if bcra_result.is_persistable and config.fields.has_bcra_storage_fields():
                 update_lead_bcra_snapshot(client, config, lead_id, bcra_result, active_logger)
 
-        lead_status = update_lead_status(
-            client,
-            config,
-            lead_id,
-            qualified,
-            None if qualified else rejection_label,
-            active_logger,
-        )
+        current_lead = get_lead(client, lead_id, active_logger)
+        current_status = _optional_str(current_lead.get("STATUS_ID"))
+        protected_statuses = {
+            config.lead_statuses.qualified,
+            config.lead_statuses.converted,
+        }
+        if current_status in protected_statuses:
+            lead_status = current_status
+            active_logger.info(
+                f"Lead {lead_id} conserva estado {current_status}; no se actualiza."
+            )
+        else:
+            lead_status = update_lead_status(
+                client,
+                config,
+                lead_id,
+                qualified,
+                None if qualified else rejection_label,
+                active_logger,
+            )
 
         return success_result(
             qualified=qualified,

@@ -341,6 +341,17 @@ class SilentLogger:
         return None
 
 
+class StatusTransitionBitrixClient(FakeBitrixClient):
+    def __init__(self, status_before_get: str) -> None:
+        super().__init__()
+        self.status_before_get = status_before_get
+
+    def call(self, method: str, payload: dict):
+        if method == "crm.lead.get":
+            self.leads[int(payload["id"])]["STATUS_ID"] = self.status_before_get
+        return super().call(method, payload)
+
+
 class FakeBcraClient:
     def __init__(self, results_by_identification: dict[str, BcraConsultationResult]) -> None:
         self.results_by_identification = results_by_identification
@@ -1553,12 +1564,48 @@ class BusinessLogicTests(unittest.TestCase):
                 "crm.lead.fields",
                 "crm.lead.add",
                 "crm.lead.update",
+                "crm.lead.get",
                 "crm.lead.fields",
                 "crm.lead.update",
             ],
         )
         self.assertIn("Estado: NEGATIVO", client.leads[202]["UF_CRM_BCRA_STATUS"])
         self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_REJECTION_REASON"], "3935")
+
+    def test_persist_submission_preserves_won_or_converted_status(self) -> None:
+        for current_status in ("QUALIFIED", "CONVERTED"):
+            with self.subTest(current_status=current_status):
+                client = StatusTransitionBitrixClient(current_status)
+
+                result = persist_submission(
+                    {
+                        "full_name": "Luis Diaz",
+                        "email": "luis@example.com",
+                        "whatsapp": "+5493511234567",
+                        "cuil": "20-87654321-9",
+                        "province": "Cordoba",
+                        "employment_status": "Jubilado Provincial",
+                        "payment_bank": "Banco Santander Rio S.A.",
+                        "lead_source": "Facebook",
+                    },
+                    qualified=False,
+                    reason="bcra_negative_situation",
+                    message="No califica.",
+                    rejection_label="SIT NEG BCRA",
+                    env=self.env,
+                    bitrix_client=client,
+                    logger=SilentLogger(),
+                )
+
+                status_updates = [
+                    payload
+                    for method, payload in client.calls
+                    if method == "crm.lead.update"
+                    and "STATUS_ID" in payload.get("fields", {})
+                ]
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["lead_status"], current_status)
+                self.assertEqual(status_updates, [])
 
     def test_persist_submission_sets_birthdate_from_arca(self) -> None:
         client = FakeBitrixClient()
