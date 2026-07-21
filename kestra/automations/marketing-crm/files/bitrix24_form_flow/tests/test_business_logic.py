@@ -27,6 +27,10 @@ from bitrix24_form_flow.form_processor.bcra_client import (
     serialize_bcra_result,
 )
 from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
+from bitrix24_form_flow.form_processor.commercial_prequalification import (
+    RULE_VERSION,
+    prequalify_commercial_fields,
+)
 from bitrix24_form_flow.form_processor.contact_birthdate_service import (
     backfill_contact_birthdate_to_leads,
 )
@@ -40,7 +44,11 @@ from bitrix24_form_flow.form_processor.credixsa_employer_service import (
     update_lead_with_credixsa_output,
 )
 from bitrix24_form_flow.form_processor.deal_service import ensure_deal_timeline_comment
-from bitrix24_form_flow.form_processor.input_parser import normalize_business_input, parse_body
+from bitrix24_form_flow.form_processor.input_parser import (
+    normalize_business_input,
+    normalize_prequalification_input,
+    parse_body,
+)
 from bitrix24_form_flow.form_processor.lead_service import (
     determine_commercial_owner,
     lead_has_commercial_owner,
@@ -846,6 +854,61 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result.qualified)
         self.assertEqual(result.reason, "qualified")
+
+    def test_commercial_prequalification_requires_only_commercial_fields(self) -> None:
+        result = prequalify_commercial_fields(
+            {
+                "province": "Catamarca",
+                "employment_status": "Docente",
+                "payment_bank": "Banco de la Nacion Argentina",
+            }
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["prequalified"])
+        self.assertTrue(result["route_to_whatsapp"])
+        self.assertEqual(result["reason"], "qualified")
+        self.assertEqual(result["rule_version"], RULE_VERSION)
+
+    def test_commercial_prequalification_reuses_bank_rule(self) -> None:
+        result = prequalify_commercial_fields(
+            {
+                "province": "Cordoba",
+                "employment_status": "Policia",
+                "payment_bank": "Banco de la Nacion Argentina",
+            }
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["prequalified"])
+        self.assertFalse(result["route_to_whatsapp"])
+        self.assertEqual(result["reason"], "payment_bank_not_eligible")
+
+    def test_commercial_prequalification_accepts_catalog_ids(self) -> None:
+        submission = normalize_prequalification_input(
+            {
+                "province": "215",
+                "employment_status": "3745",
+                "payment_bank": "439",
+            }
+        )
+
+        self.assertEqual(submission.province.key, "catamarca")
+        self.assertEqual(submission.employment_status.key, "docente")
+        self.assertEqual(submission.payment_bank.key, "banco_de_la_nacion_argentina")
+
+    def test_commercial_prequalification_rejects_invalid_input_without_routing(self) -> None:
+        result = prequalify_commercial_fields(
+            {
+                "province": "Catamarca",
+                "employment_status": "Docente",
+            }
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["prequalified"])
+        self.assertFalse(result["route_to_whatsapp"])
+        self.assertEqual(result["reason"], "invalid_input")
 
     def test_qualification_accepts_cordoba_unc_and_daspu_without_bank_filter(self) -> None:
         for raw_status in ("Empleado de la UNC", "DASPU"):

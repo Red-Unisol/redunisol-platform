@@ -7,11 +7,13 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 ## Contenido
 
 - `flows/bitrix24_form_webhook.yaml`: flow de intake del formulario y respuesta al frontend.
+- `flows/commercial_prequalification_webhook.yaml`: endpoint de pre-elegibilidad sin persistencia ni consultas externas.
 - `flows/bitrix24_lead_classification.yaml`: flow interno de clasificacion por `lead_id`.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: webhook receptor de `ONCRMLEADUPDATE` para crear negociacion cuando un lead queda en `RESULTADO GANADO`.
 - `flows/bitrix24_credixsa_employer_backfill.yaml`: backfill programado que enriquece leads con datos de empleador desde CredixSA.
 - `files/bitrix24_form_flow/`: namespace files Python usados por el flow.
 - `docs/FORM_WEBHOOK_API.md`: contrato HTTP esperado por el frontend.
+- `docs/COMMERCIAL_PREQUALIFICATION_API.md`: contrato del endpoint de pre-elegibilidad.
 - `docs/COMMERCIAL_DECISION_SPEC_2026-06-29.md`: decisiones y ambiguedades pendientes para automatizar decision comercial y derivacion.
 - `docs/COMMERCIAL_CLASSIFICATION_CRITERIA_DRAFT_2026-07-02.md`: criterios provisorios de clasificacion en lenguaje natural.
 - `tests/`: reservado para tests del dominio fuera del package si mas adelante conviene separarlos.
