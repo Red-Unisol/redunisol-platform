@@ -54,6 +54,10 @@ from bitrix24_form_flow.form_processor.lead_service import (
     lead_has_commercial_owner,
     resolve_commercial_owner_enum_id,
 )
+from bitrix24_form_flow.form_processor.lead_prefill_service import (
+    prefill_lead,
+    select_next_new_lead_for_prefill,
+)
 from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
@@ -256,6 +260,7 @@ class FakeBitrixClient:
             date_from = filters.get(">=DATE_CREATE")
             date_to = filters.get("<=DATE_CREATE")
             contact_id = filters.get("CONTACT_ID")
+            status_id = filters.get("STATUS_ID")
             selected_fields = payload.get("select") or []
             rows = []
             for lead in self.leads.values():
@@ -265,6 +270,8 @@ class FakeBitrixClient:
                 if date_to and (not date_create or date_create > date_to):
                     continue
                 if contact_id is not None and str(lead.get("CONTACT_ID") or "") != str(contact_id):
+                    continue
+                if status_id is not None and str(lead.get("STATUS_ID") or "") != str(status_id):
                     continue
                 row = {field_name: lead.get(field_name) for field_name in selected_fields if field_name}
                 row["ID"] = lead["ID"]
@@ -399,6 +406,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.stage_id, "C1:NEW")
         self.assertEqual(config.deal.round_robin_user_ids, (68579, 10451, 71159, 90231))
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
+        self.assertEqual(config.lead_statuses.new, "NEW")
+        self.assertEqual(config.lead_statuses.preclassification, "UC_5N2OEO")
+        self.assertEqual(config.fields.lead_backfill_attempts, "UF_CRM_KSTRA_BF_ATTEMPTS")
 
     def test_resolve_commercial_owner_enum_ids(self) -> None:
         config = load_config(self.env)
@@ -2527,6 +2537,185 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.leads[701]["UF_CRM_EMP_CUIT"], "30999074843")
         self.assertEqual(client.leads[701]["UF_CRM_EMP_COUNT"], 1)
         self.assertIn("cuit_baja_afip", client.leads[701]["UF_CRM_CRDX_ALERTAS"])
+
+    def test_prefill_selects_only_new_leads_without_checking_owner(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[801] = {
+            "ID": "801",
+            "STATUS_ID": "QUALIFIED",
+            "DATE_CREATE": "2026-07-21T10:00:00-03:00",
+            "UF_CRM_1693840106704": "20111111112",
+            "UF_CRM_COMM_OWNER": "4119",
+        }
+        client.leads[802] = {
+            "ID": "802",
+            "STATUS_ID": "NEW",
+            "DATE_CREATE": "2026-07-21T11:00:00-03:00",
+            "UF_CRM_1693840106704": "20222222223",
+            "UF_CRM_COMM_OWNER": "4117",
+        }
+
+        result = select_next_new_lead_for_prefill(
+            date_from="2026-07-21T00:00:00-03:00",
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["has_pending"])
+        self.assertEqual(result["lead_id"], "802")
+        self.assertEqual(result["cuil"], "20222222223")
+        self.assertEqual(
+            client.calls[0][1]["filter"][">=DATE_CREATE"],
+            "2026-07-21T00:00:00-03:00",
+        )
+
+    def test_prefill_advances_complete_lead_to_preclassification(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[901] = {"ID": "901", "NAME": "Lead Web", "LAST_NAME": ""}
+        client.leads[803] = {
+            "ID": "803",
+            "CONTACT_ID": "901",
+            "STATUS_ID": "NEW",
+            "UF_CRM_1693840106704": "20333333334",
+            "UF_CRM_COMM_OWNER": "4117",
+        }
+        bcra = FakeBcraClient(
+            {
+                "20333333334": self.make_bcra_result(
+                    identification="20333333334",
+                    status_field_value="OK",
+                    should_reject=False,
+                )
+            }
+        )
+
+        result = prefill_lead(
+            803,
+            arca_output={
+                "ok": True,
+                "nombre": "Juan",
+                "apellido": "Perez",
+                "fecha_nacimiento": "1990-05-10",
+            },
+            credixsa_output={"ok": True, "status": "none"},
+            max_attempts=3,
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "advanced")
+        self.assertEqual(client.leads[803]["STATUS_ID"], "UC_5N2OEO")
+        self.assertEqual(client.leads[803]["UF_CRM_KSTRA_BF_ATTEMPTS"], 1)
+        self.assertEqual(client.leads[803]["TITLE"], "Juan Perez")
+        self.assertEqual(client.contacts[901]["NAME"], "Juan")
+
+    def test_prefill_retries_then_advances_with_partial_data(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[804] = {
+            "ID": "804",
+            "CONTACT_ID": "",
+            "STATUS_ID": "NEW",
+            "UF_CRM_1693840106704": "20444444445",
+            "UF_CRM_KSTRA_BF_ATTEMPTS": 1,
+        }
+        temporary_bcra = FakeBcraClient(
+            {
+                "20444444445": self.make_bcra_result(
+                    identification="20444444445",
+                    status_field_value=None,
+                    should_reject=False,
+                    outcome="temporary_error",
+                    http_status=503,
+                )
+            }
+        )
+
+        retry_result = prefill_lead(
+            804,
+            arca_output={"ok": False, "error": "timeout"},
+            credixsa_output={"ok": False, "status": "error", "error": "timeout"},
+            max_attempts=3,
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=temporary_bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(retry_result["action"], "retry_pending")
+        self.assertEqual(client.leads[804]["STATUS_ID"], "NEW")
+        self.assertEqual(client.leads[804]["UF_CRM_KSTRA_BF_ATTEMPTS"], 2)
+
+        partial_result = prefill_lead(
+            804,
+            arca_output={"ok": False, "error": "timeout"},
+            credixsa_output={"ok": False, "status": "error", "error": "timeout"},
+            max_attempts=3,
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=temporary_bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(partial_result["action"], "advanced_partial")
+        self.assertEqual(client.leads[804]["STATUS_ID"], "UC_5N2OEO")
+        self.assertEqual(client.leads[804]["UF_CRM_KSTRA_BF_ATTEMPTS"], 3)
+
+    def test_lead_update_classifies_preclassification_only_for_kestra_owner(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[805] = {
+            "ID": "805",
+            "TITLE": "Maria Catamarca",
+            "NAME": "Maria Catamarca",
+            "EMAIL": [{"VALUE": "maria@example.com"}],
+            "PHONE": [{"VALUE": "3834123456"}],
+            "CONTACT_ID": "901",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1693840106704": "27555555556",
+            "UF_CRM_1714071903": "3745",
+            "UF_CRM_LEAD_1711458190312": ["439"],
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1722365051": "2423",
+            "UF_CRM_BCRA_DATA_RAW": json.dumps({"should_reject": False}),
+        }
+        payload = {
+            "event": "ONCRMLEADUPDATE",
+            "data": {"FIELDS": {"ID": "805"}},
+            "auth": {"application_token": "expected-token"},
+        }
+
+        result = process_lead_update_event(
+            payload,
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="expected-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["reason"], "qualified")
+        self.assertEqual(client.leads[805]["STATUS_ID"], "QUALIFIED")
+
+        client.leads[806] = {
+            **client.leads[805],
+            "ID": "806",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_COMM_OWNER": "4117",
+        }
+        payload["data"]["FIELDS"]["ID"] = "806"
+        skipped = process_lead_update_event(
+            payload,
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="expected-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(skipped["reason"], "commercial_owner_not_kestra")
+        self.assertEqual(client.leads[806]["STATUS_ID"], "UC_5N2OEO")
 
 
 if __name__ == "__main__":

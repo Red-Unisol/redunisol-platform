@@ -51,6 +51,8 @@ return [
     'kestra' => [
         'form_webhook_url' => env('KESTRA_FORM_WEBHOOK_URL'),
         'form_webhook_timeout_seconds' => (int) env('KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS', 60),
+        'prequalification_webhook_url' => env('KESTRA_PREQUALIFICATION_WEBHOOK_URL'),
+        'prequalification_webhook_timeout_seconds' => (int) env('KESTRA_PREQUALIFICATION_WEBHOOK_TIMEOUT_SECONDS', 15),
         'default_lead_source' => env('KESTRA_FORM_DEFAULT_LEAD_SOURCE', 'Google'),
     ],
 

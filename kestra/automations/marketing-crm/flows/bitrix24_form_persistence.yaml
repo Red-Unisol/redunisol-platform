@@ -1,7 +1,8 @@
 id: bitrix24_form_persistence
 namespace: redunisol
+disabled: true
 
-description: Persiste en Bitrix24 el contacto y lead del formulario usando un resultado de preclasificacion ya calculado.
+description: Flow legacy deshabilitado; la carga actual usa bitrix24_form_webhook sin enriquecimiento.
 
 labels:
   env: prod

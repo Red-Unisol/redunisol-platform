@@ -1,5 +1,6 @@
 id: bitrix24_credixsa_employer_backfill
 namespace: redunisol
+disabled: true
 
 description: Enriquece leads de Bitrix24 con datos de empleador tomados desde CredixSA, reutilizando cache cuando existe.
 

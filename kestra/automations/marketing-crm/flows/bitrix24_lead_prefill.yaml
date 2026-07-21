@@ -1,0 +1,169 @@
+id: bitrix24_lead_prefill
+namespace: redunisol
+
+description: Enriquece un lead NEW y lo mueve a PRECLASIFICACION al completar o agotar reintentos.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  integration: bitrix24
+
+inputs:
+  - id: date_from
+    type: STRING
+    required: true
+    defaults: "2026-07-21T00:00:00-03:00"
+  - id: max_attempts
+    type: INT
+    required: true
+    defaults: 3
+
+tasks:
+  - id: seleccionar_lead
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      BACKFILL_DATE_FROM: "{{ inputs.date_from }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD: "{{ envs.bitrix24_lead_backfill_attempts_field ?? 'UF_CRM_KSTRA_BF_ATTEMPTS' }}"
+      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'NEW' }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_lead_prefill_select_entrypoint
+
+  - id: consultar_arca
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending and outputs.seleccionar_lead.vars.cuil != '' }}"
+    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
+    flowId: consulta_padron_a13
+    inputs:
+      cuit_cuil: "{{ outputs.seleccionar_lead.vars.cuil }}"
+    wait: true
+    transmitFailed: false
+
+  - id: consultar_credixsa
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending and outputs.seleccionar_lead.vars.cuil != '' }}"
+    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
+    flowId: consulta_quiebra_credix
+    inputs:
+      cuit: "{{ outputs.seleccionar_lead.vars.cuil }}"
+    wait: true
+    transmitFailed: false
+
+  - id: completar_backfill
+    type: io.kestra.plugin.scripts.python.Commands
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending }}"
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      LEAD_ID: "{{ outputs.seleccionar_lead.vars.lead_id }}"
+      BACKFILL_MAX_ATTEMPTS: "{{ inputs.max_attempts }}"
+      ARCA_OK: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.ok ?? false) : false }}"
+      ARCA_NOMBRE: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.nombre ?? '') : '' }}"
+      ARCA_APELLIDO: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.apellido ?? '') : '' }}"
+      ARCA_RAZON_SOCIAL: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.razon_social ?? '') : '' }}"
+      ARCA_FECHA_NACIMIENTO: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.fecha_nacimiento ?? '') : '' }}"
+      ARCA_ERROR: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.error ?? '') : 'not_executed' }}"
+      CREDIX_OK: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+      CREDIX_STATUS: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+      CREDIX_CUIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+      CREDIX_NOMBRE: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
+      CREDIX_NORMALIZED_JSON: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
+      CREDIX_ERROR: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.error ?? '') : 'not_executed' }}"
+      CREDIX_CACHE_HIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
+      CREDIX_CACHED_AT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
+      BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_BCRA_STATUS_FIELD: "{{ envs.bitrix24_lead_bcra_status_field }}"
+      BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
+      BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
+      BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
+      BITRIX24_LEAD_BIRTHDATE_FIELD: "{{ envs.bitrix24_lead_birthdate_field ?? 'BIRTHDATE' }}"
+      BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD: "{{ envs.bitrix24_lead_contact_birthdate_field ?? '' }}"
+      BITRIX24_LEAD_ES_SOCIO_FIELD: "{{ envs.bitrix24_lead_es_socio_field ?? 'UF_CRM_1728998183' }}"
+      BITRIX24_LEAD_VIMARX_NRO_SOCIO_FIELD: "{{ envs.bitrix24_lead_vimarx_nro_socio_field ?? 'UF_CRM_VIMARX_NRO_SOCIO' }}"
+      BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_COUNT_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_count_field ?? 'UF_CRM_VIMARX_CRED_ACT_CNT' }}"
+      BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_DETAIL_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_detail_field ?? 'UF_CRM_VIMARX_CRED_DET' }}"
+      BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_RAW_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_raw_field ?? 'UF_CRM_VIMARX_CRED_RAW' }}"
+      BITRIX24_LEAD_CREDIXSA_STATUS_FIELD: "{{ envs.bitrix24_lead_credixsa_status_field ?? 'UF_CRM_CRDX_STATUS' }}"
+      BITRIX24_LEAD_CREDIXSA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_credixsa_checked_at_field ?? 'UF_CRM_CRDX_CHK_AT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_NAME_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_name_field ?? 'UF_CRM_EMP_NOMBRE' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_CUIT_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_cuit_field ?? 'UF_CRM_EMP_CUIT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_COUNT_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_count_field ?? 'UF_CRM_EMP_COUNT' }}"
+      BITRIX24_LEAD_CREDIXSA_EMPLOYER_PERIODS_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_periods_field ?? 'UF_CRM_EMP_PERIODOS' }}"
+      BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD: "{{ envs.bitrix24_lead_credixsa_alerts_field ?? 'UF_CRM_CRDX_ALERTAS' }}"
+      BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD: "{{ envs.bitrix24_lead_backfill_attempts_field ?? 'UF_CRM_KSTRA_BF_ATTEMPTS' }}"
+      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'NEW' }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_lead_prefill_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.ok : outputs.seleccionar_lead.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.action : outputs.seleccionar_lead.vars.action }}"
+  - id: lead_id
+    type: STRING
+    value: "{{ outputs.seleccionar_lead.vars.lead_id }}"
+  - id: lead_status
+    type: STRING
+    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.lead_status : '' }}"
+  - id: attempts
+    type: STRING
+    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.attempts : outputs.seleccionar_lead.vars.attempts }}"
+  - id: errors_json
+    type: STRING
+    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.errors_json : '[]' }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.message : outputs.seleccionar_lead.vars.message }}"
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"

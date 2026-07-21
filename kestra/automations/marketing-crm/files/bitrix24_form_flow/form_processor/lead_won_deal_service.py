@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from .bitrix_client import BitrixClient
+from .business_logic import classify_lead
 from .config import load_config
 from .deal_service import (
     bind_open_line_activities_to_deal,
@@ -11,7 +12,7 @@ from .deal_service import (
     ensure_won_lead_deal,
     find_deal_by_lead,
 )
-from .lead_service import get_lead
+from .lead_service import get_lead, lead_has_commercial_owner
 from .logger import create_logger, Logger
 
 
@@ -39,6 +40,34 @@ def process_lead_update_event(
         lead = get_lead(client, lead_id, active_logger)
         lead_status = _optional_str(lead.get("STATUS_ID"))
         contact_id = _optional_int(lead.get("CONTACT_ID"))
+
+        if lead_status == config.lead_statuses.preclassification:
+            if not lead_has_commercial_owner(client, lead, config, "kestra"):
+                return _event_result(
+                    ok=True,
+                    action="skipped",
+                    reason="commercial_owner_not_kestra",
+                    lead_id=lead_id,
+                    lead_status=lead_status,
+                    message=(
+                        "El lead esta en PRECLASIFICACION pero su motor comercial no es Kestra."
+                    ),
+                )
+
+            classification = classify_lead(
+                lead_id,
+                env=source,
+                bitrix_client=client,
+                logger=active_logger,
+            )
+            return _event_result(
+                ok=bool(classification.get("ok")),
+                action=str(classification.get("action") or "classified"),
+                reason=str(classification.get("reason") or "classified"),
+                lead_id=lead_id,
+                lead_status=_optional_str(classification.get("lead_status")),
+                message=str(classification.get("message") or "Lead clasificado."),
+            )
 
         if lead_status != config.lead_statuses.qualified:
             return _event_result(

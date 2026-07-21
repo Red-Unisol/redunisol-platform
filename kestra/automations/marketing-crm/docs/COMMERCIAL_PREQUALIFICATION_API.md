@@ -1,6 +1,6 @@
 # API De Preclasificacion Comercial
 
-Estado: disponible para pruebas; el formulario productivo todavia no la consume.
+Estado: integrado por el backend web junto con el endpoint independiente de carga.
 
 ## Objetivo
 
@@ -77,5 +77,5 @@ aceptan los aliases existentes en el formulario:
 }
 ```
 
-`prequalified=true` no representa una aprobacion final. La clasificacion definitiva
-puede cambiar luego de consultar las fuentes externas requeridas.
+`prequalified=true` no representa una aprobacion final. Solo determina la salida
+inmediata del formulario. La clasificacion definitiva puede cambiar luego del backfill.

@@ -2,7 +2,7 @@ id: bitrix24_lead_won_deal_webhook
 namespace: redunisol
 disabled: false
 
-description: Recibe ONCRMLEADUPDATE desde Bitrix24 y crea una negociacion para cualquier lead que este en RESULTADO GANADO.
+description: Recibe ONCRMLEADUPDATE, clasifica leads en PRECLASIFICACION y crea negociaciones para RESULTADO GANADO.
 
 labels:
   env: prod
@@ -15,7 +15,7 @@ concurrency:
   behavior: QUEUE
 
 tasks:
-  - id: crear_negociacion_si_ganado
+  - id: procesar_actualizacion_lead
     type: io.kestra.plugin.scripts.python.Commands
     namespaceFiles:
       enabled: true
@@ -46,6 +46,7 @@ tasks:
       BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
       BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
       BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'UC_5N2OEO' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_LEAD_STATUS_CONVERTED: "{{ envs.bitrix24_lead_status_converted ?? 'CONVERTED' }}"
@@ -60,25 +61,25 @@ tasks:
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.ok }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.ok }}"
   - id: action
     type: STRING
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.action }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.action }}"
   - id: reason
     type: STRING
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.reason }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.reason }}"
   - id: message
     type: STRING
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.message }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.message }}"
   - id: lead_id
     type: STRING
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.lead_id }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.lead_id }}"
   - id: lead_status
     type: STRING
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.lead_status }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.lead_status }}"
   - id: deal_id
     type: STRING
-    value: "{{ outputs.crear_negociacion_si_ganado.vars.deal_id }}"
+    value: "{{ outputs.procesar_actualizacion_lead.vars.deal_id }}"
 
 triggers:
   - id: webhook
