@@ -103,56 +103,93 @@ def prefill_lead(
             message="El lead ya no esta en NEW; no se ejecuta backfill.",
         )
 
-    attempts = (_optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0) + 1
+    previous_attempts = _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0
+    if previous_attempts >= max_attempts:
+        update_lead_fields(
+            client,
+            lead_id_int,
+            {"STATUS_ID": config.lead_statuses.preclassification},
+        )
+        return _result(
+            action="advanced_partial",
+            lead_id=lead_id_int,
+            lead_status=config.lead_statuses.preclassification,
+            attempts=previous_attempts,
+            errors=["attempts_exhausted"],
+            message=(
+                "Backfill previamente agotado; "
+                "lead movido a PRECLASIFICACION sin ejecutar otro intento."
+            ),
+        )
+
+    attempts = previous_attempts + 1
+    update_lead_fields(
+        client,
+        lead_id_int,
+        {config.fields.lead_backfill_attempts: attempts},
+    )
     errors: list[str] = []
     cuil = _optional_str(lead.get(config.fields.lead_cuil))
 
     if cuil is None:
         errors.append("missing_cuil")
     else:
-        if not _apply_arca_output(client, config, lead, arca_output, active_logger):
+        try:
+            if not _apply_arca_output(client, config, lead, arca_output, active_logger):
+                errors.append("arca")
+        except Exception as exc:
+            active_logger.error(f"Fallo ARCA para el lead {lead_id_int}: {exc}")
             errors.append("arca")
 
-        credix_result = update_lead_with_credixsa_output(
-            lead_id=lead_id_int,
-            credixsa_output=credixsa_output,
-            env=env,
-            bitrix_client=client,
-            logger=active_logger,
-        )
-        if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+        try:
+            credix_result = update_lead_with_credixsa_output(
+                lead_id=lead_id_int,
+                credixsa_output=credixsa_output,
+                env=env,
+                bitrix_client=client,
+                logger=active_logger,
+            )
+            if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+                errors.append("credixsa")
+        except Exception as exc:
+            active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
             errors.append("credixsa")
 
-        if not sync_lead_vimarx_enrichment(
-            client,
-            config,
-            lead_id_int,
-            cuil,
-            active_logger,
-        ):
+        try:
+            if not sync_lead_vimarx_enrichment(
+                client,
+                config,
+                lead_id_int,
+                cuil,
+                active_logger,
+            ):
+                errors.append("vimarx")
+        except Exception as exc:
+            active_logger.error(f"Fallo Vimarx para el lead {lead_id_int}: {exc}")
             errors.append("vimarx")
 
-        bcra_result = sync_lead_bcra(
-            client,
-            config,
-            lead_id_int,
-            cuil,
-            active_logger,
-            bcra_client=bcra_client,
-        )
-        if not bcra_result.is_persistable:
+        try:
+            bcra_result = sync_lead_bcra(
+                client,
+                config,
+                lead_id_int,
+                cuil,
+                active_logger,
+                bcra_client=bcra_client,
+            )
+            if not bcra_result.is_persistable:
+                errors.append("bcra")
+        except Exception as exc:
+            active_logger.error(f"Fallo BCRA para el lead {lead_id_int}: {exc}")
             errors.append("bcra")
 
     errors = list(dict.fromkeys(errors))
     exhausted = attempts >= max_attempts
     should_advance = not errors or exhausted
-    fields: dict[str, Any] = {config.fields.lead_backfill_attempts: attempts}
     next_status = current_status
     if should_advance:
         next_status = config.lead_statuses.preclassification
-        fields["STATUS_ID"] = next_status
-
-    update_lead_fields(client, lead_id_int, fields)
+        update_lead_fields(client, lead_id_int, {"STATUS_ID": next_status})
 
     if not errors:
         action = "advanced"

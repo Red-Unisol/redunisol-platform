@@ -2663,6 +2663,78 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.leads[804]["STATUS_ID"], "UC_5N2OEO")
         self.assertEqual(client.leads[804]["UF_CRM_KSTRA_BF_ATTEMPTS"], 3)
 
+    def test_prefill_counts_provider_exceptions_and_advances_on_last_attempt(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[806] = {
+            "ID": "806",
+            "CONTACT_ID": "",
+            "STATUS_ID": "NEW",
+            "UF_CRM_1693840106704": "20666666667",
+            "UF_CRM_KSTRA_BF_ATTEMPTS": 2,
+        }
+
+        provider_error = RuntimeError("provider unavailable")
+        with (
+            patch(
+                "bitrix24_form_flow.form_processor.lead_prefill_service._apply_arca_output",
+                side_effect=provider_error,
+            ),
+            patch(
+                "bitrix24_form_flow.form_processor.lead_prefill_service.update_lead_with_credixsa_output",
+                side_effect=provider_error,
+            ),
+            patch(
+                "bitrix24_form_flow.form_processor.lead_prefill_service.sync_lead_vimarx_enrichment",
+                side_effect=provider_error,
+            ),
+            patch(
+                "bitrix24_form_flow.form_processor.lead_prefill_service.sync_lead_bcra",
+                side_effect=provider_error,
+            ),
+        ):
+            result = prefill_lead(
+                806,
+                arca_output={"ok": True},
+                credixsa_output={"ok": True},
+                max_attempts=3,
+                env=self.env,
+                bitrix_client=client,
+                logger=SilentLogger(),
+            )
+
+        self.assertEqual(result["action"], "advanced_partial")
+        self.assertEqual(result["errors"], ["arca", "credixsa", "vimarx", "bcra"])
+        self.assertEqual(client.leads[806]["STATUS_ID"], "UC_5N2OEO")
+        self.assertEqual(client.leads[806]["UF_CRM_KSTRA_BF_ATTEMPTS"], 3)
+
+    def test_prefill_does_not_run_a_fourth_attempt(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[807] = {
+            "ID": "807",
+            "CONTACT_ID": "",
+            "STATUS_ID": "NEW",
+            "UF_CRM_1693840106704": "20777777778",
+            "UF_CRM_KSTRA_BF_ATTEMPTS": 3,
+        }
+
+        with patch(
+            "bitrix24_form_flow.form_processor.lead_prefill_service._apply_arca_output"
+        ) as arca:
+            result = prefill_lead(
+                807,
+                arca_output={"ok": True},
+                credixsa_output={"ok": True},
+                max_attempts=3,
+                env=self.env,
+                bitrix_client=client,
+                logger=SilentLogger(),
+            )
+
+        arca.assert_not_called()
+        self.assertEqual(result["action"], "advanced_partial")
+        self.assertEqual(result["attempts"], 3)
+        self.assertEqual(client.leads[807]["STATUS_ID"], "UC_5N2OEO")
+
     def test_lead_update_classifies_preclassification_only_for_kestra_owner(self) -> None:
         client = FakeBitrixClient()
         client.leads[805] = {
