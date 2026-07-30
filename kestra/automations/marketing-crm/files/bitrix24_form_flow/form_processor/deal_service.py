@@ -6,6 +6,7 @@ from typing import Any
 from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .logger import Logger
+from .receipt_file import build_bitrix_file_data
 
 
 DEAL_ENTITY_TYPE_ID = 2
@@ -31,6 +32,7 @@ DEAL_DIRECT_FIELD_MAPPINGS = {
     "credixsa_employer_count": "ufCrm_6A43D31F06C90",
     "credixsa_employer_periods": "ufCrm_6A43D31F1D7D1",
     "credixsa_alerts": "ufCrm_6A43D31F38377",
+    "receipt": "ufCrm_1692197958",
 }
 
 DEAL_ENUM_FIELD_MAPPINGS = {
@@ -39,6 +41,7 @@ DEAL_ENUM_FIELD_MAPPINGS = {
     "payment_bank": "ufCrm_6602D534A38CF",
     "source": "ufCrm_66A93764BFF96",
     "processing_policy": "ufCrm_69CA882AB72B7",
+    "commercial_owner": "ufCrm_6A4698BDAB8EA",
     "es_socio": "ufCrm_670E6D6216DD4",
 }
 
@@ -68,6 +71,7 @@ def ensure_won_lead_deal(
         lead_id=lead_id,
         contact_id=contact_id,
         assigned_by_id=assigned_by_id,
+        logger=logger,
     )
 
     logger.info(f"Creando negociacion para lead {lead_id} con responsable {assigned_by_id}.")
@@ -292,6 +296,7 @@ def _build_deal_fields(
     lead_id: int,
     contact_id: int | None,
     assigned_by_id: int,
+    logger: Logger,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "title": _deal_title(lead, lead_id),
@@ -317,6 +322,7 @@ def _build_deal_fields(
             fields[deal_field] = value
 
     _copy_custom_lead_fields_to_deal(client, config, lead, fields)
+    _copy_receipt_file_to_deal(client, config, lead, fields, lead_id=lead_id, logger=logger)
     return fields
 
 
@@ -376,6 +382,46 @@ def _copy_custom_lead_fields_to_deal(
                 )
 
 
+def _copy_receipt_file_to_deal(
+    client: BitrixClient,
+    config: AppConfig,
+    lead: dict[str, Any],
+    fields: dict[str, Any],
+    *,
+    lead_id: int,
+    logger: Logger,
+) -> None:
+    lead_receipt_field = config.fields.lead_recibo_file
+    if not lead_receipt_field or not _has_value(lead.get(lead_receipt_field)):
+        return
+
+    try:
+        result = client.call(
+            "crm.item.get",
+            {
+                "entityTypeId": LEAD_ENTITY_TYPE_ID,
+                "id": lead_id,
+            },
+        )
+        item = result.get("item") if isinstance(result, dict) else None
+        if not isinstance(item, dict):
+            raise RuntimeError("crm.item.get no devolvio el lead esperado.")
+
+        dynamic_field = _dynamic_user_field_name(lead_receipt_field)
+        descriptor = _first_file_descriptor(item.get(dynamic_field))
+        machine_url = str(descriptor.get("urlMachine") or "").strip()
+        if not machine_url:
+            raise RuntimeError("Bitrix24 no devolvio urlMachine para el recibo.")
+
+        file_data = build_bitrix_file_data(
+            machine_url,
+            timeout_seconds=config.timeout_seconds,
+        )
+        fields[DEAL_DIRECT_FIELD_MAPPINGS["receipt"]] = file_data["fileData"]
+    except Exception as exc:
+        logger.error(f"No se pudo copiar el recibo del lead {lead_id} al deal: {exc}")
+
+
 def _direct_custom_field_pairs(config: AppConfig) -> tuple[tuple[str | None, str], ...]:
     return (
         (config.fields.lead_cuil, DEAL_DIRECT_FIELD_MAPPINGS["cuil"]),
@@ -429,6 +475,7 @@ def _enum_custom_field_pairs(config: AppConfig) -> tuple[tuple[str | None, str],
         (config.fields.lead_payment_bank, DEAL_ENUM_FIELD_MAPPINGS["payment_bank"]),
         (config.fields.lead_source, DEAL_ENUM_FIELD_MAPPINGS["source"]),
         (config.fields.lead_processing_policy, DEAL_ENUM_FIELD_MAPPINGS["processing_policy"]),
+        (config.fields.lead_commercial_owner, DEAL_ENUM_FIELD_MAPPINGS["commercial_owner"]),
         (config.fields.lead_es_socio, DEAL_ENUM_FIELD_MAPPINGS["es_socio"]),
     )
 
@@ -481,6 +528,23 @@ def _first_scalar(raw_value: Any) -> Any | None:
                 return item
         return None
     return raw_value if _has_value(raw_value) else None
+
+
+def _first_file_descriptor(raw_value: Any) -> dict[str, Any]:
+    if isinstance(raw_value, dict):
+        return raw_value
+    if isinstance(raw_value, (list, tuple)):
+        for value in raw_value:
+            if isinstance(value, dict):
+                return value
+    raise RuntimeError("Bitrix24 devolvio un descriptor de archivo invalido.")
+
+
+def _dynamic_user_field_name(field_name: str) -> str:
+    normalized = str(field_name).strip()
+    if normalized.startswith("UF_CRM_"):
+        return f"ufCrm_{normalized[len('UF_CRM_'):]}"
+    return normalized
 
 
 def _has_value(raw_value: Any) -> bool:

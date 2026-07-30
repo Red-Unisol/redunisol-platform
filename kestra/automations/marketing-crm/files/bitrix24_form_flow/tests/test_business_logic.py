@@ -60,6 +60,7 @@ from bitrix24_form_flow.form_processor.lead_prefill_service import (
 )
 from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
+from bitrix24_form_flow.form_processor.receipt_file import _filename_from_content_disposition
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
 
 
@@ -138,6 +139,15 @@ class FakeBitrixClient:
             fields.setdefault("createdTime", "2026-07-06T12:00:00+00:00")
             self.deals[deal_id] = fields
             return {"item": dict(fields)}
+        if method == "crm.item.get":
+            if payload["entityTypeId"] != 1:
+                raise AssertionError("crm.item.get esperaba entityTypeId de lead.")
+            lead = self.leads[int(payload["id"])]
+            receipt = lead.get("UF_CRM_64F9E8DA4DD9B")
+            item: dict[str, object] = {"id": int(payload["id"])}
+            if receipt:
+                item["ufCrm_64F9E8DA4DD9B"] = receipt
+            return {"item": item}
         if method == "crm.lead.fields":
             return {
                 "UF_CRM_PROCESSING_POLICY": {
@@ -227,6 +237,13 @@ class FakeBitrixClient:
                         "items": [
                             {"ID": "4045", "VALUE": "No procesar"},
                             {"ID": "4047", "VALUE": "Procesar"},
+                        ]
+                    },
+                    "ufCrm_6A4698BDAB8EA": {
+                        "items": [
+                            {"ID": "4123", "VALUE": "Bitrix"},
+                            {"ID": "4125", "VALUE": "Kestra"},
+                            {"ID": "4127", "VALUE": "Manual"},
                         ]
                     },
                     "ufCrm_670E6D6216DD4": {
@@ -1159,6 +1176,7 @@ class BusinessLogicTests(unittest.TestCase):
             "UF_CRM_LEAD_1711458190312": [439],
             "UF_CRM_1722365051": "2423",
             "UF_CRM_PROCESSING_POLICY": "4041",
+            "UF_CRM_COMM_OWNER": "4119",
             "UF_CRM_1728998183": "2619",
             "UF_CRM_BCRA_STATUS": "Consulta BCRA\nEstado: OK",
             "UF_CRM_BCRA_RESULT": "Estado: OK\nSituacion 1: 2",
@@ -1195,6 +1213,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(deal["ufCrm_6602D534A38CF"], ["597"])
         self.assertEqual(deal["ufCrm_66A93764BFF96"], "2429")
         self.assertEqual(deal["ufCrm_69CA882AB72B7"], "4045")
+        self.assertEqual(deal["ufCrm_6A4698BDAB8EA"], "4125")
         self.assertEqual(deal["ufCrm_670E6D6216DD4"], "2631")
         self.assertEqual(deal["ufCrm_1727360234"], "2599")
         self.assertEqual(deal["ufCrm_69E0D50649FEB"], "Consulta BCRA\nEstado: OK")
@@ -1211,6 +1230,40 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(deal["ufCrm_6A43D31ED9E56"], "30636511354")
         self.assertEqual(deal["ufCrm_6A43D31F06C90"], "1")
         self.assertEqual(deal["ufCrm_6A43D31F1D7D1"], "1 empleador")
+
+    def test_lead_update_event_copies_receipt_file_to_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[303] = {
+            "ID": "303",
+            "CONTACT_ID": "101",
+            "TITLE": "Maria Lopez",
+            "STATUS_ID": "QUALIFIED",
+            "ASSIGNED_BY_ID": "10451",
+            "UF_CRM_64F9E8DA4DD9B": {
+                "id": 419551,
+                "urlMachine": "https://example.bitrix24.com/rest/crm.controller.item.getFile/?token=file",
+            },
+        }
+
+        with patch(
+            "bitrix24_form_flow.form_processor.deal_service.build_bitrix_file_data",
+            return_value={"fileData": ["recibo.pdf", "BASE64"]},
+        ) as build_file_data:
+            result = process_lead_update_event(
+                self.make_lead_update_event(303),
+                env=self.env,
+                bitrix_client=client,
+                expected_application_token="app-token",
+                logger=SilentLogger(),
+            )
+
+        self.assertTrue(result["ok"])
+        deal = client.deals[result["deal_id"]]
+        self.assertEqual(deal["ufCrm_1692197958"], ["recibo.pdf", "BASE64"])
+        build_file_data.assert_called_once_with(
+            "https://example.bitrix24.com/rest/crm.controller.item.getFile/?token=file",
+            timeout_seconds=30,
+        )
 
     def test_lead_update_event_does_not_duplicate_existing_deal(self) -> None:
         client = FakeBitrixClient()
@@ -2087,6 +2140,15 @@ class BusinessLogicTests(unittest.TestCase):
             {"fileData": ["abc.pdf", "BASE64"]},
         )
         build_file_data.assert_called_once_with(recibo_url, timeout_seconds=30)
+
+    def test_receipt_filename_uses_content_disposition(self) -> None:
+        self.assertEqual(
+            _filename_from_content_disposition(
+                'attachment; filename="fallback.pdf"; '
+                "filename*=utf-8''recibo%20de%20sueldo.pdf"
+            ),
+            "recibo_de_sueldo.pdf",
+        )
 
     def test_classify_lead_skips_commercial_decision_when_owner_is_not_kestra(self) -> None:
         client = FakeBitrixClient()
