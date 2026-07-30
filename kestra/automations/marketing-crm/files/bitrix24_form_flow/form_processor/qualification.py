@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .input_parser import NormalizedInput
+from .input_parser import NormalizedInput, PrequalificationInput
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,9 @@ QUALIFICATION_RULES = {
 }
 
 
-def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
+def evaluate_prequalification(
+    submission: NormalizedInput | PrequalificationInput,
+) -> QualificationResult:
     if submission.province.key in EXTERNAL_REFERRAL_PROVINCES:
         return QualificationResult(
             qualified=False,
@@ -119,6 +121,10 @@ def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
         reason="qualified",
         message=f"La persona califica para {submission.province.label}.",
     )
+
+
+def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
+    return evaluate_prequalification(submission)
 
 
 def _employment_status_rejection_label(employment_status_key: str) -> str:

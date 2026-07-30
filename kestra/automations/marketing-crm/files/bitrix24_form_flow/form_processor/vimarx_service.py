@@ -87,13 +87,13 @@ def sync_lead_vimarx_enrichment(
     lead_id: int,
     cuil_digits: str,
     logger: Logger,
-) -> None:
+) -> bool:
     if not _has_storage_fields(config):
         logger.info("Campos Vimarx no configurados; se omite enrichment.")
-        return
+        return True
     if not os.getenv("VIMARX_EVAL_BASE_URL", "").strip():
         logger.info("VIMARX_EVAL_BASE_URL no configurado; se omite enrichment Vimarx.")
-        return
+        return True
 
     try:
         vimarx_config = load_vimarx_config_from_env()
@@ -104,10 +104,11 @@ def sync_lead_vimarx_enrichment(
 
     fields = build_bitrix_enrichment_fields(client, config, enrichment)
     if not fields:
-        return
+        return enrichment.ok
 
     logger.info(f"Persistiendo enrichment Vimarx en el lead {lead_id}.")
     update_lead_fields(client, lead_id, fields)
+    return enrichment.ok
 
 
 def load_vimarx_config_from_env() -> VimarxConfig:

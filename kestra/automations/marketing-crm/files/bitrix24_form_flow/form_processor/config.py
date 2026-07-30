@@ -33,6 +33,7 @@ DEFAULT_LEAD_FIELDS = {
     "credixsa_employer_count": "UF_CRM_EMP_COUNT",
     "credixsa_employer_periods": "UF_CRM_EMP_PERIODOS",
     "credixsa_alerts": "UF_CRM_CRDX_ALERTAS",
+    "backfill_attempts": "UF_CRM_KSTRA_BF_ATTEMPTS",
 }
 
 DEFAULT_PROCESSING_POLICIES = {
@@ -89,6 +90,7 @@ class BitrixFieldsConfig:
     lead_credixsa_employer_count: str | None
     lead_credixsa_employer_periods: str | None
     lead_credixsa_alerts: str | None
+    lead_backfill_attempts: str
 
     def has_bcra_storage_fields(self) -> bool:
         return all(
@@ -118,6 +120,8 @@ class BitrixFieldsConfig:
 
 @dataclass(frozen=True)
 class LeadStatusesConfig:
+    new: str
+    preclassification: str
     qualified: str
     rejected: str
     converted: str
@@ -277,8 +281,18 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 "BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD",
                 DEFAULT_LEAD_FIELDS["credixsa_alerts"],
             ),
+            lead_backfill_attempts=source.get(
+                "BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD",
+                DEFAULT_LEAD_FIELDS["backfill_attempts"],
+            ),
         ),
         lead_statuses=LeadStatusesConfig(
+            new=source.get("BITRIX24_LEAD_STATUS_NEW", "NEW").strip() or "NEW",
+            preclassification=source.get(
+                "BITRIX24_LEAD_STATUS_PRECLASSIFICATION",
+                "UC_5N2OEO",
+            ).strip()
+            or "UC_5N2OEO",
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
             converted=source.get("BITRIX24_LEAD_STATUS_CONVERTED", "CONVERTED").strip()

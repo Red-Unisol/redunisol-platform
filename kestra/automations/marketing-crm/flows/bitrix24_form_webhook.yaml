@@ -1,7 +1,7 @@
 id: bitrix24_form_webhook
 namespace: redunisol
 
-description: Recibe el payload del formulario, lo preclasifica y responde rapido al caller mientras persiste en Bitrix24 de forma asincronica.
+description: Valida el payload del formulario y crea el contacto y lead en Bitrix24 sin enriquecimiento ni clasificacion.
 
 labels:
   env: prod
@@ -10,7 +10,7 @@ labels:
   integration: bitrix24
 
 tasks:
-  - id: preclasificar_formulario
+  - id: cargar_formulario
     type: io.kestra.plugin.scripts.python.Commands
     namespaceFiles:
       enabled: true
@@ -23,50 +23,44 @@ tasks:
       - pip install kestra > /dev/null
     env:
       TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_FIELD: "{{ envs.bitrix24_lead_processing_policy_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_SKIP: "{{ envs.bitrix24_lead_processing_policy_skip }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_PROCESS: "{{ envs.bitrix24_lead_processing_policy_process }}"
+      BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
+      BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
-      - python -m bitrix24_form_flow.kestra_form_prequalification_entrypoint
-
-  - id: persistir_bitrix
-    type: io.kestra.plugin.core.flow.Subflow
-    namespace: "{{ flow.namespace }}"
-    flowId: bitrix24_form_persistence
-    inputs:
-      submission_payload_json: "{{ outputs.preclasificar_formulario.vars.payload_json }}"
-      submission_cuil: "{{ trigger.body.cuil }}"
-      qualified: "{{ outputs.preclasificar_formulario.vars.qualified }}"
-      reason: "{{ outputs.preclasificar_formulario.vars.reason }}"
-      message: "{{ outputs.preclasificar_formulario.vars.message }}"
-      rejection_label: "{{ outputs.preclasificar_formulario.vars.rejection_label }}"
-      bcra_result_json: "{{ outputs.preclasificar_formulario.vars.bcra_result_json }}"
-    wait: false
-    transmitFailed: false
-    runIf: "{{ outputs.preclasificar_formulario.vars.ok }}"
+      - python -m bitrix24_form_flow.kestra_form_intake_entrypoint
 
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ outputs.preclasificar_formulario.vars.ok }}"
-  - id: qualified
-    type: BOOLEAN
-    value: "{{ outputs.preclasificar_formulario.vars.qualified }}"
+    value: "{{ outputs.cargar_formulario.vars.ok }}"
   - id: contact_id
     type: STRING
-    value: ""
+    value: "{{ outputs.cargar_formulario.vars.contact_id }}"
   - id: lead_id
     type: STRING
-    value: ""
-  - id: lead_status
-    type: STRING
-    value: ""
+    value: "{{ outputs.cargar_formulario.vars.lead_id }}"
   - id: action
     type: STRING
-    value: "{{ outputs.preclasificar_formulario.vars.action }}"
+    value: "{{ outputs.cargar_formulario.vars.action }}"
   - id: reason
     type: STRING
-    value: "{{ outputs.preclasificar_formulario.vars.reason }}"
+    value: "{{ outputs.cargar_formulario.vars.reason }}"
   - id: message
     type: STRING
-    value: "{{ outputs.preclasificar_formulario.vars.message }}"
+    value: "{{ outputs.cargar_formulario.vars.message }}"
 
 triggers:
   - id: webhook

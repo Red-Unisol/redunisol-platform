@@ -346,6 +346,7 @@ Referenciadas hoy desde los flows:
 - `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
 - `kestra/automations/marketing-crm/flows/bitrix24_lead_classification.yaml`
 - `kestra/automations/marketing-crm/flows/bitrix24_lead_won_deal_webhook.yaml`
+- `kestra/automations/marketing-crm/flows/bitrix24_lead_prefill.yaml`
 
 - `bitrix24_base_url`
 - `bitrix24_contact_cuil_field`
@@ -359,6 +360,9 @@ Referenciadas hoy desde los flows:
 - `bitrix24_lead_province_field`
 - `bitrix24_lead_source_field`
 - `bitrix24_lead_rejection_reason_field`
+- `bitrix24_lead_backfill_attempts_field`
+- `bitrix24_lead_status_new`
+- `bitrix24_lead_status_preclassification`
 - `bitrix24_lead_status_qualified`
 - `bitrix24_lead_status_rejected`
 - `bitrix24_timeout_seconds`
@@ -381,6 +385,9 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_LEAD_PROVINCE_FIELD`
 - `ENV_BITRIX24_LEAD_SOURCE_FIELD`
 - `ENV_BITRIX24_LEAD_REJECTION_REASON_FIELD`
+- `ENV_BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD`
+- `ENV_BITRIX24_LEAD_STATUS_NEW`
+- `ENV_BITRIX24_LEAD_STATUS_PRECLASSIFICATION`
 - `ENV_BITRIX24_LEAD_STATUS_QUALIFIED`
 - `ENV_BITRIX24_LEAD_STATUS_REJECTED`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
@@ -420,11 +427,13 @@ Referenciados hoy desde el flow:
 
 - `BITRIX24_WEBHOOK_PATH`
 - `BITRIX24_FORM_WEBHOOK_KEY`
+- `COMMERCIAL_PREQUALIFICATION_WEBHOOK_KEY`
 
 En la infraestructura actual corresponden a:
 
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
+- `SECRET_COMMERCIAL_PREQUALIFICATION_WEBHOOK_KEY`
 
 Presencia verificada en VPS:
 

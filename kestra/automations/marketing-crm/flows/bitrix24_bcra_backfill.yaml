@@ -1,5 +1,6 @@
 id: bitrix24_bcra_backfill
 namespace: redunisol
+disabled: true
 
 description: Consulta BCRA para leads del dia sin snapshot previo y corta el lote si el upstream rate-limita.
 
