@@ -39,10 +39,41 @@ def build_bitrix_file_data(
             raise RuntimeError("El recibo supera el tamano maximo permitido.")
 
         content_type = _normalize_content_type(response.headers.get("content-type"))
+        content_disposition = response.headers.get("content-disposition")
 
-    filename = _filename_from_url(parsed_url.path, content_type)
+    filename = (
+        _filename_from_content_disposition(content_disposition)
+        or _filename_from_url(parsed_url.path, content_type)
+    )
     encoded_content = base64.b64encode(content).decode("ascii")
     return {"fileData": [filename, encoded_content]}
+
+
+def _filename_from_content_disposition(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    encoded_match = re.search(
+        r"filename\*\s*=\s*(?:UTF-8'')?([^;]+)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if encoded_match:
+        filename = _sanitize_filename(unquote(encoded_match.group(1).strip().strip('"')))
+        if filename:
+            return filename
+
+    filename_match = re.search(
+        r'filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)',
+        value,
+        flags=re.IGNORECASE,
+    )
+    if not filename_match:
+        return None
+
+    raw_filename = (filename_match.group(1) or filename_match.group(2)).strip()
+    filename = _sanitize_filename(unquote(raw_filename))
+    return filename or None
 
 
 def _filename_from_url(path: str, content_type: str | None) -> str:
