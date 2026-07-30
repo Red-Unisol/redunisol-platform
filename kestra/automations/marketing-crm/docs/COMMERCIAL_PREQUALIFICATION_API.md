@@ -1,6 +1,7 @@
 # API De Preclasificacion Comercial
 
-Estado: integrado por el backend web junto con el endpoint independiente de carga.
+Estado: integrado como única dependencia síncrona del formulario web. La carga
+independiente en Bitrix se procesa de forma asíncrona.
 
 ## Objetivo
 
@@ -79,3 +80,7 @@ aceptan los aliases existentes en el formulario:
 
 `prequalified=true` no representa una aprobacion final. Solo determina la salida
 inmediata del formulario. La clasificacion definitiva puede cambiar luego del backfill.
+
+El backend encola la persistencia del formulario cualquiera sea el resultado de
+preclasificación. Por lo tanto, la respuesta no confirma que el lead ya exista en
+Bitrix; confirma que el trabajo de persistencia fue encolado.

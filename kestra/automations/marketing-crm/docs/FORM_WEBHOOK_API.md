@@ -60,9 +60,15 @@ La respuesta exitosa confirma que el lead fue creado. No expresa calificación.
 
 ## Integracion Web
 
-El backend web llama por separado a este endpoint y al endpoint de preclasificación:
+El backend web espera solamente la respuesta del endpoint de preclasificación.
+La carga en Bitrix se encola en PostgreSQL y un `queue-worker` de Laravel llama
+a este endpoint en segundo plano.
 
-- carga fallida: responde error técnico al navegador
-- carga exitosa y `prequalified=false`: muestra la salida comercial no aprobada
-- carga exitosa y `prequalified=true`: muestra la salida con acceso a WhatsApp
-- carga exitosa y preclasificación indisponible: conserva el lead y muestra una salida neutral sin WhatsApp
+- `prequalified=false`: muestra la salida comercial no aprobada
+- `prequalified=true`: muestra la salida con acceso a WhatsApp
+- preclasificación indisponible: muestra una salida neutral sin WhatsApp
+- fallo al encolar: responde error técnico al navegador
+- fallo posterior de carga: no modifica la pantalla; queda registrado como job fallido
+
+El job no tiene reintentos automáticos. Hasta contar con una clave idempotente,
+un reintento luego de un timeout ambiguo podría crear un lead duplicado.

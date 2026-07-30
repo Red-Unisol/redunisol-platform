@@ -12,7 +12,7 @@ services:
 
   php-fpm:
     image: ${APP_IMAGE}
-    environment:
+    environment: &app-environment
       APP_NAME: ${APP_NAME}
       APP_ENV: ${APP_ENV}
       APP_KEY: ${APP_KEY}
@@ -85,6 +85,29 @@ services:
     volumes:
       - storage-data:/var/www/storage
     depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  queue-worker:
+    image: ${APP_IMAGE}
+    entrypoint:
+      - php
+      - artisan
+      - queue:work
+    command:
+      - --sleep=1
+      - --tries=1
+      - --timeout=75
+      - --max-time=3600
+    environment: *app-environment
+    volumes:
+      - storage-data:/var/www/storage
+    depends_on:
+      php-fpm:
+        condition: service_started
       postgres:
         condition: service_started
       redis:
