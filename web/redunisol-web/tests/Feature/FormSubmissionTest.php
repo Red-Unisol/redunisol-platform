@@ -1,12 +1,19 @@
 <?php
 
+use App\Actions\SubmitFormToKestra;
+use App\Jobs\PersistFormSubmission;
+use App\Services\MetaConversionsApiService;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
-it('forwards form submissions to kestra through the backend endpoint', function () {
+it('queues form persistence after receiving commercial prequalification', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
     config()->set('services.kestra.default_lead_source', 'Google');
 
+    Queue::fake();
     Http::fake([
         'https://kestra.example.test/prequalification' => Http::response([
             'ok' => true,
@@ -15,13 +22,6 @@ it('forwards form submissions to kestra through the backend endpoint', function 
             'reason' => 'qualified',
             'message' => 'Califica.',
             'rule_version' => '2026-07-21',
-        ], 200),
-        'https://kestra.example.test/webhook' => Http::response([
-            'ok' => true,
-            'action' => 'created',
-            'reason' => 'created',
-            'message' => 'Lead creado.',
-            'lead_id' => '202',
         ], 200),
     ]);
 
@@ -43,33 +43,32 @@ it('forwards form submissions to kestra through the backend endpoint', function 
     $response->assertOk()->assertJson([
         'ok' => true,
         'qualified' => true,
+        'persistence' => 'queued',
     ]);
 
-    Http::assertSent(function ($request) {
-        $data = $request->data();
-
-        return $request->url() === 'https://kestra.example.test/webhook'
-            && $data['cuil'] === '20-12345678-3'
-            && $data['email'] === 'juan.perez@example.com'
-            && $data['whatsapp'] === '3511234567'
-            && $data['province'] === 'Córdoba'
-            && $data['employment_status'] === 'Policia'
-            && $data['payment_bank'] === 'Banco de la Nacion Argentina'
-            && $data['landing_slug'] === '/prestamos-para-policias'
-            && $data['lead_source'] === 'Google'
-            && $data['full_name'] === 'Juan Perez';
+    Queue::assertPushed(PersistFormSubmission::class, function ($job) {
+        return $job->qualified
+            && $job->input['cuil'] === '20-12345678-3'
+            && $job->input['email'] === 'juan.perez@example.com'
+            && $job->input['celular'] === '3511234567'
+            && $job->input['provincia'] === 'Córdoba'
+            && $job->input['situacion_laboral'] === 'Policia'
+            && $job->input['banco'] === 'Banco de la Nacion Argentina'
+            && $job->input['landing_slug'] === '/prestamos-para-policias';
     });
 
     Http::assertSent(fn ($request) => $request->url() === 'https://kestra.example.test/prequalification'
         && $request['province'] === 'Córdoba'
         && $request['employment_status'] === 'Policia'
         && $request['payment_bank'] === 'Banco de la Nacion Argentina');
+    Http::assertNotSent(fn ($request) => $request->url() === 'https://kestra.example.test/webhook');
 });
 
 it('requires the landing slug to submit the form', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
 
+    Queue::fake();
     Http::fake();
 
     $response = $this->postJson('/api/form-submissions', [
@@ -80,23 +79,20 @@ it('requires the landing slug to submit the form', function () {
     $response->assertUnprocessable()->assertJsonValidationErrors(['landing_slug']);
 
     Http::assertNothingSent();
+    Queue::assertNothingPushed();
 });
 
-it('returns not qualified only after the lead was loaded successfully', function () {
+it('returns not qualified while persistence continues asynchronously', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
 
+    Queue::fake();
     Http::fake([
         'https://kestra.example.test/prequalification' => Http::response([
             'ok' => true,
             'prequalified' => false,
             'reason' => 'payment_bank_not_eligible',
             'message' => 'El banco no califica.',
-        ]),
-        'https://kestra.example.test/webhook' => Http::response([
-            'ok' => true,
-            'lead_id' => '203',
-            'action' => 'created',
         ]),
     ]);
 
@@ -106,21 +102,22 @@ it('returns not qualified only after the lead was loaded successfully', function
         'ok' => true,
         'qualified' => false,
         'reason' => 'payment_bank_not_eligible',
-        'lead_id' => '203',
+        'persistence' => 'queued',
     ]);
+
+    Queue::assertPushed(
+        PersistFormSubmission::class,
+        fn ($job) => $job->qualified === false,
+    );
 });
 
-it('shows a neutral no-ok result when prequalification fails but loading succeeds', function () {
+it('shows a neutral result and still queues persistence when prequalification fails', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
 
+    Queue::fake();
     Http::fake([
         'https://kestra.example.test/prequalification' => Http::response(['ok' => false], 503),
-        'https://kestra.example.test/webhook' => Http::response([
-            'ok' => true,
-            'lead_id' => '204',
-            'action' => 'created',
-        ]),
     ]);
 
     $response = $this->postJson('/api/form-submissions', validFormPayload());
@@ -129,29 +126,106 @@ it('shows a neutral no-ok result when prequalification fails but loading succeed
         'ok' => true,
         'qualified' => false,
         'reason' => 'prequalification_unavailable',
-        'lead_id' => '204',
+        'persistence' => 'queued',
     ]);
+
+    Queue::assertPushed(
+        PersistFormSubmission::class,
+        fn ($job) => $job->qualified === false,
+    );
 });
 
-it('returns a technical error when loading fails even if prequalification succeeds', function () {
+it('persists the queued form and sends meta only after bitrix succeeds', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
-    config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
+    config()->set('services.kestra.default_lead_source', 'Google');
+    config()->set('services.meta.pixel_id', 'pixel-123');
+    config()->set('services.meta.capi_access_token', 'meta-token');
+    config()->set('services.meta.capi_graph_version', 'v23.0');
 
     Http::fake([
-        'https://kestra.example.test/prequalification' => Http::response([
+        'https://kestra.example.test/webhook' => Http::response([
             'ok' => true,
-            'prequalified' => true,
+            'lead_id' => '205',
+            'action' => 'created',
         ]),
+        'https://graph.facebook.com/*' => Http::response(['events_received' => 1]),
+    ]);
+
+    $job = new PersistFormSubmission(
+        input: [
+            ...validFormPayload(),
+            'email' => 'juan.perez@example.com',
+            'celular' => '3511234567',
+        ],
+        qualified: true,
+        clientContext: [
+            'ip' => '203.0.113.10',
+            'user_agent' => 'Form test',
+            'fbp' => 'fb.1.test',
+        ],
+    );
+
+    $job->handle(
+        app(SubmitFormToKestra::class),
+        app(MetaConversionsApiService::class),
+    );
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://kestra.example.test/webhook'
+        && $request['cuil'] === '20-12345678-3'
+        && $request['email'] === 'juan.perez@example.com'
+        && $request['whatsapp'] === '3511234567'
+        && $request['province'] === 'Córdoba'
+        && $request['employment_status'] === 'Policia'
+        && $request['payment_bank'] === 'Banco de la Nacion Argentina'
+        && $request['landing_slug'] === '/prestamos-para-policias'
+        && $request['lead_source'] === 'Google'
+        && $request['full_name'] === 'Juan Perez');
+    Http::assertSent(fn ($request) => str_starts_with(
+        $request->url(),
+        'https://graph.facebook.com/v23.0/pixel-123/events',
+    ));
+});
+
+it('fails the queued job without sending meta when bitrix persistence fails', function () {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    config()->set('services.meta.pixel_id', 'pixel-123');
+    config()->set('services.meta.capi_access_token', 'meta-token');
+
+    Http::fake([
         'https://kestra.example.test/webhook' => Http::response(['ok' => false], 500),
+        'https://graph.facebook.com/*' => Http::response(['events_received' => 1]),
     ]);
 
-    $response = $this->postJson('/api/form-submissions', validFormPayload());
+    $job = new PersistFormSubmission(
+        input: validFormPayload(),
+        qualified: true,
+    );
 
-    $response->assertStatus(500)->assertJson([
-        'ok' => false,
-        'qualified' => false,
-        'reason' => 'form_load_failed',
-    ]);
+    expect(fn () => $job->handle(
+        app(SubmitFormToKestra::class),
+        app(MetaConversionsApiService::class),
+    ))->toThrow(RequestException::class);
+
+    Http::assertNotSent(fn ($request) => str_starts_with(
+        $request->url(),
+        'https://graph.facebook.com/',
+    ));
+});
+
+it('encrypts personal data in the database queue payload', function () {
+    config()->set('app.key', 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+    config()->set('queue.default', 'database');
+
+    PersistFormSubmission::dispatch(
+        input: validFormPayload(),
+        qualified: true,
+    );
+
+    $payload = (string) DB::table('jobs')->value('payload');
+
+    expect($payload)
+        ->not->toContain('20-12345678-3')
+        ->not->toContain('/prestamos-para-policias');
 });
 
 function validFormPayload(): array
