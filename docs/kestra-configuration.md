@@ -396,6 +396,11 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
 
+En el pipeline actual:
+
+- `ENV_BITRIX24_LEAD_STATUS_NEW=UC_5N2OEO`: etapa visible `INGRESO`, previa al prefill.
+- `ENV_BITRIX24_LEAD_STATUS_PRECLASSIFICATION=NEW`: etapa visible `PRECLASIFICACION`, punto de entrega posterior al prefill.
+
 Presencia verificada en VPS:
 
 - si

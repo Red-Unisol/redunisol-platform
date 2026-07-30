@@ -25,6 +25,7 @@ def create_lead(
     fields = {
         "TITLE": submission.full_name,
         "NAME": submission.full_name,
+        "STATUS_ID": config.lead_statuses.new,
         "EMAIL": [{"VALUE": submission.email, "VALUE_TYPE": "WORK"}],
         "PHONE": [{"VALUE": submission.whatsapp, "VALUE_TYPE": "WORK"}],
         "CONTACT_ID": contact_id,
