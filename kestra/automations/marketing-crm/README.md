@@ -26,6 +26,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El codigo Python vive bajo `files/bitrix24_form_flow/` para que el deploy a namespace files preserve el path esperado por Kestra.
 - Los secretos y variables de entorno siguen resolviendose en Kestra, no desde Git.
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
+- La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
 - `ONCRMLEADUPDATE` clasifica un lead en `PRECLASIFICACION (NEW)` solamente cuando `Motor decision comercial = Kestra`.
 - El mismo listener crea o reutiliza la negociacion cuando el lead llega a `RESULTADO GANADO`.
