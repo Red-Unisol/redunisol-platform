@@ -1,7 +1,7 @@
 id: bitrix24_lead_prefill
 namespace: redunisol
 
-description: Enriquece un lead NEW y lo mueve a PRECLASIFICACION al completar o agotar reintentos.
+description: Enriquece un lead INGRESO (UC_5N2OEO) y lo mueve a PRECLASIFICACION (NEW) al completar o agotar reintentos.
 
 concurrency:
   limit: 1
@@ -43,8 +43,8 @@ tasks:
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
       BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
       BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD: "{{ envs.bitrix24_lead_backfill_attempts_field ?? 'UF_CRM_KSTRA_BF_ATTEMPTS' }}"
-      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'NEW' }}"
-      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'NEW' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
@@ -132,8 +132,8 @@ tasks:
       BITRIX24_LEAD_CREDIXSA_EMPLOYER_PERIODS_FIELD: "{{ envs.bitrix24_lead_credixsa_employer_periods_field ?? 'UF_CRM_EMP_PERIODOS' }}"
       BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD: "{{ envs.bitrix24_lead_credixsa_alerts_field ?? 'UF_CRM_CRDX_ALERTAS' }}"
       BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD: "{{ envs.bitrix24_lead_backfill_attempts_field ?? 'UF_CRM_KSTRA_BF_ATTEMPTS' }}"
-      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'NEW' }}"
-      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'NEW' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"

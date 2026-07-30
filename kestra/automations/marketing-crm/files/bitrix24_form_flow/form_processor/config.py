@@ -287,12 +287,13 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             ),
         ),
         lead_statuses=LeadStatusesConfig(
-            new=source.get("BITRIX24_LEAD_STATUS_NEW", "NEW").strip() or "NEW",
+            new=source.get("BITRIX24_LEAD_STATUS_NEW", "UC_5N2OEO").strip()
+            or "UC_5N2OEO",
             preclassification=source.get(
                 "BITRIX24_LEAD_STATUS_PRECLASSIFICATION",
-                "UC_5N2OEO",
+                "NEW",
             ).strip()
-            or "UC_5N2OEO",
+            or "NEW",
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
             converted=source.get("BITRIX24_LEAD_STATUS_CONVERTED", "CONVERTED").strip()

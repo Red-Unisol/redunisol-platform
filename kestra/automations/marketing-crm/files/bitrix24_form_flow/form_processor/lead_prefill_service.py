@@ -69,7 +69,7 @@ def select_next_new_lead_for_prefill(
         "lead_id": "",
         "cuil": "",
         "attempts": 0,
-        "message": "No hay leads NEW pendientes de backfill.",
+        "message": "No hay leads en INGRESO pendientes de backfill.",
     }
 
 
@@ -100,7 +100,7 @@ def prefill_lead(
             lead_id=lead_id_int,
             lead_status=current_status,
             attempts=_optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0,
-            message="El lead ya no esta en NEW; no se ejecuta backfill.",
+            message="El lead ya no esta en INGRESO; no se ejecuta backfill.",
         )
 
     previous_attempts = _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0
@@ -202,7 +202,7 @@ def prefill_lead(
         )
     else:
         action = "retry_pending"
-        message = "Backfill incompleto; el lead permanece en NEW para reintentar."
+        message = "Backfill incompleto; el lead permanece en INGRESO para reintentar."
 
     active_logger.info(
         f"Backfill lead {lead_id_int}: action={action}, attempts={attempts}, errors={errors}."
