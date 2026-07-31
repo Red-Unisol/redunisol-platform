@@ -76,31 +76,31 @@ tasks:
 outputs:
   - id: ok
     type: BOOLEAN
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.ok : outputs.seleccionar_negociacion.vars.ok }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.ok : outputs.seleccionar_negociacion.vars.ok }}"
   - id: action
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.action : outputs.seleccionar_negociacion.vars.action }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.action : outputs.seleccionar_negociacion.vars.action }}"
   - id: deal_id
     type: STRING
     value: "{{ outputs.seleccionar_negociacion.vars.deal_id }}"
   - id: lead_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.lead_id : outputs.seleccionar_negociacion.vars.lead_id }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.lead_id : outputs.seleccionar_negociacion.vars.lead_id }}"
   - id: stage_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.stage_id : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.stage_id : '' }}"
   - id: reason
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.reason : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.reason : '' }}"
   - id: assigned_by_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
   - id: commercial_line
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.commercial_line : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_line : '' }}"
   - id: message
     type: STRING
-    value: "{{ outputs.calificar_negociacion is defined ? outputs.calificar_negociacion.vars.message : outputs.seleccionar_negociacion.vars.message }}"
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.message : outputs.seleccionar_negociacion.vars.message }}"
 
 triggers:
   - id: cada_minuto

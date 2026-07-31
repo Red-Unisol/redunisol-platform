@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from bitrix24_form_flow.kestra_form_intake_entrypoint import _apply_full_name_override
+from bitrix24_form_flow.kestra_catamarca_deal_select_entrypoint import _kestra_outputs
 from bitrix24_form_flow.form_processor.business_logic import (
     classify_lead,
     ingest_submission,
@@ -441,6 +442,23 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.lead_statuses.new, "UC_5N2OEO")
         self.assertEqual(config.lead_statuses.preclassification, "NEW")
         self.assertEqual(config.fields.lead_backfill_attempts, "UF_CRM_KSTRA_BF_ATTEMPTS")
+
+    def test_catamarca_selector_emits_empty_strings_for_optional_ids(self) -> None:
+        outputs = _kestra_outputs(
+            {
+                "ok": True,
+                "action": "no_pending",
+                "has_pending": False,
+                "deal_id": None,
+                "lead_id": None,
+                "message": "Sin pendientes.",
+            }
+        )
+
+        self.assertEqual(outputs["deal_id"], "")
+        self.assertEqual(outputs["lead_id"], "")
+        self.assertEqual(outputs["stage_id"], "")
+        self.assertEqual(outputs["reason"], "")
 
     def test_resolve_commercial_owner_enum_ids(self) -> None:
         config = load_config(self.env)
