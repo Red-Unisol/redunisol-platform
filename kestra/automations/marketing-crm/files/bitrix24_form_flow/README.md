@@ -134,6 +134,11 @@ Opcionales para override de campos del lead:
 - `BITRIX24_LEAD_RECIBO_FILE_FIELD`
 - `BITRIX24_DEAL_CATEGORY_ID`
 - `BITRIX24_DEAL_STAGE_ID`
+- `BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID`
+- `BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID`
+- `BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID`
+- `BITRIX24_DEAL_PROVISIONAL_USER_ID`
+- `BITRIX24_DEAL_COMMERCIAL_LINE_FIELD`
 - `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
@@ -149,6 +154,11 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL=Manual` (`ID=4121`)
 - `BITRIX24_DEAL_CATEGORY_ID=1` (`VENTAS`)
 - `BITRIX24_DEAL_STAGE_ID=C1:NEW` (`PRESENTACION`)
+- `BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID=C1:KESTRA_PENDING`
+- `BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID=C1:KESTRA_REVIEW`
+- `BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID=C1:5`
+- `BITRIX24_DEAL_PROVISIONAL_USER_ID=57` (`Maru Lopez`)
+- `BITRIX24_DEAL_COMMERCIAL_LINE_FIELD=ufCrm_659EBB0445E8E` (`Linea`)
 - `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451,71159,90231` (`Dani,Pato,Nati,Sole`)
 - `BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS=30`
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN=<token del webhook de salida ONCRMLEADUPDATE>`
@@ -189,7 +199,8 @@ Comportamiento esperado al rechazar:
 - `UF_CRM_BCRA_RESULT`: resumen abreviado con conteo por situacion
 - `UF_CRM_BCRA_DATA_RAW`: JSON raw de la consulta actual, reutilizable para auditoria y reglas
 - `UF_CRM_BCRA_CHECKED_AT`: timestamp ISO 8601 en hora Argentina de la consulta
-- en clasificacion y backfill BCRA, el snapshot se guarda para todos los leads, pero el rechazo automatico por `SIT NEG BCRA` solo se aplica cuando `Motor decision comercial = Kestra` o cuando una ejecucion administrativa usa `force_processing`
+- el prefill guarda el snapshot BCRA en el lead, pero la precalificacion no lo interpreta
+- para Catamarca, la decision BCRA ocurre sobre la negociacion pendiente y puede moverla a `C1:5`
 
 Backfill CredixSA de empleador:
 
@@ -206,7 +217,7 @@ Comportamiento esperado al crear el lead:
 - el intake crea el lead con la politica `No procesar`
 - el intake crea leads de Catamarca con `Motor decision comercial = Kestra`
 - el intake crea leads del resto de provincias con `Motor decision comercial = Bitrix` como default conservador
-- el flow de clasificacion por `lead_id` puede enriquecer BCRA aunque el owner sea `Bitrix` o `Manual`
+- el flow de clasificacion por `lead_id` solo usa los criterios locales de precalificacion
 - el flow de clasificacion por `lead_id` solo actualiza estado/motivo cuando `Motor decision comercial = Kestra` o cuando se lo fuerza explicitamente
 - `Politica procesamiento` queda como campo legacy/parcial y no define el ownership comercial nuevo
 
@@ -217,6 +228,8 @@ Para usar este paquete dentro de Kestra, el adaptador recomendado es:
 - `bitrix24_form_flow/kestra_form_intake_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_classification_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_won_deal_entrypoint.py`
+- `bitrix24_form_flow/kestra_catamarca_deal_select_entrypoint.py`
+- `bitrix24_form_flow/kestra_catamarca_deal_qualification_entrypoint.py`
 - `bitrix24_form_flow/kestra_webhook_entrypoint.py` como wrapper backward-compatible de la ejecucion end-to-end
 
 Los entrypoints:

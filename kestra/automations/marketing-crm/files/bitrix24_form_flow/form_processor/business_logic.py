@@ -31,7 +31,11 @@ from .lead_service import (
     update_lead_status,
 )
 from .logger import create_logger, Logger
-from .qualification import QualificationResult, evaluate_qualification
+from .qualification import (
+    QualificationResult,
+    evaluate_prequalification,
+    evaluate_qualification,
+)
 from .result import failure_result, intake_success_result, skipped_result, success_result
 from .vimarx_service import (
     build_birthdate_field_from_value,
@@ -321,35 +325,8 @@ def classify_lead(
         )
 
         submission = build_submission_from_lead(lead, config)
-        qualification = evaluate_qualification(submission)
-
-        should_reject_by_bcra = False
-        if _should_consult_bcra(submission, qualification):
-            stored_bcra_rejection = _stored_bcra_should_reject(lead, config, active_logger, lead_id_int)
-
-            if stored_bcra_rejection is None:
-                bcra_result = sync_lead_bcra(
-                    client,
-                    config,
-                    lead_id_int,
-                    submission.cuil_digits,
-                    active_logger,
-                    bcra_client=bcra_client,
-                )
-                should_reject_by_bcra = bcra_result.should_reject
-            else:
-                should_reject_by_bcra = stored_bcra_rejection
-
-        if should_reject_by_bcra:
-            qualification = QualificationResult(
-                qualified=False,
-                reason="bcra_negative_situation",
-                message=(
-                    "El snapshot actual del BCRA supera el umbral permitido de situaciones 5."
-                ),
-                rejection_label="SIT NEG BCRA",
-            )
-        active_logger.info(f"Resultado de calificacion: {qualification.reason}.")
+        qualification = evaluate_prequalification(submission)
+        active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
 
         if not can_take_commercial_decision:
             active_logger.info(
@@ -361,7 +338,7 @@ def classify_lead(
                 lead_status=lead_status,
                 reason="commercial_owner_not_kestra",
                 message=(
-                    "La evaluacion fue calculada, pero Kestra no actualizo el estado "
+                    "La precalificacion fue calculada, pero Kestra no actualizo el estado "
                     "porque no tiene ownership comercial del lead."
                 ),
             )

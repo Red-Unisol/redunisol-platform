@@ -43,7 +43,8 @@ No es todavia una especificacion de implementacion cerrada.
 6. Las negociaciones de prospectos ganados deben crearse en:
    - pipeline: `VENTAS`
    - `CATEGORY_ID=1`
-   - etapa inicial: `C1:NEW` (`PRESENTACION`)
+   - default general: `C1:NEW` (`PRESENTACION`)
+   - Catamarca con motor Kestra: `C1:KESTRA_PENDING` (`PENDIENTE CALIFICACION KESTRA`)
    - disparador tecnico: webhook de salida Bitrix `ONCRMLEADUPDATE`; Kestra consulta el lead actualizado y crea/reutiliza negociacion si el estado real es `RESULTADO GANADO`, sin depender del valor de `Motor decision comercial`
 
 7. El pool interno `Dani / Pato / Nati / Sole` se asigna con estas reglas:
@@ -51,7 +52,7 @@ No es todavia una especificacion de implementacion cerrada.
    - si el contacto ya tuvo prospectos previos, asignar al vendedor del prospecto previo mas reciente
    - las recurrencias deben computarse para mantener equidad; el round-robin de contactos nuevos debe compensar para que quienes reciben mas recurrencias no terminen con mas prospectos totales
    - implementacion inicial en Kestra: para contactos nuevos se elige el vendedor del pool con menor cantidad de negociaciones recientes en `VENTAS`; para contactos recurrentes se reutiliza el responsable de la negociacion previa mas reciente si pertenece al pool
-   - ajuste operativo del 2026-07-20: el round-robin queda suspendido en la creacion de negociaciones; el deal debe heredar siempre el responsable actual del lead. Si se retoma el round-robin, debe aplicarse antes sobre el lead y no recalcularse al crear el deal
+   - ajuste operativo del 2026-07-31 para Catamarca: el deal nace con Maru Lopez (`57`) como responsable provisional; el round-robin se aplica despues de la calificacion definitiva y solo si el caso resulta aprobable
 
 8. La linea comercial requiere campos custom en Bitrix:
    - campo custom en lead
@@ -104,7 +105,8 @@ No es todavia una especificacion de implementacion cerrada.
    - `UF_CRM_PROCESSING_POLICY` ya no es la compuerta comercial nueva
 
 21. Cuando Kestra crea una negociacion para un lead ganado:
-   - la negociacion hereda `ASSIGNED_BY_ID` del lead
+   - fuera del circuito Catamarca, la negociacion hereda `ASSIGNED_BY_ID` del lead
+   - Catamarca con motor Kestra usa responsable provisional Maru Lopez (`57`)
    - Kestra agrega al timeline del lead un comentario `Negociacion creada a partir del prospecto` con enlace a la negociacion
    - el comentario se crea solo para negociaciones nuevas creadas por Kestra; no se agrega a negociaciones preexistentes creadas por Bitrix
 

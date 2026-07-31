@@ -27,6 +27,10 @@ from bitrix24_form_flow.form_processor.bcra_client import (
     serialize_bcra_result,
 )
 from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
+from bitrix24_form_flow.form_processor.catamarca_deal_qualification import (
+    qualify_catamarca_deal,
+    select_next_pending_catamarca_deal,
+)
 from bitrix24_form_flow.form_processor.commercial_prequalification import (
     RULE_VERSION,
     prequalify_commercial_fields,
@@ -140,14 +144,20 @@ class FakeBitrixClient:
             self.deals[deal_id] = fields
             return {"item": dict(fields)}
         if method == "crm.item.get":
-            if payload["entityTypeId"] != 1:
-                raise AssertionError("crm.item.get esperaba entityTypeId de lead.")
-            lead = self.leads[int(payload["id"])]
-            receipt = lead.get("UF_CRM_64F9E8DA4DD9B")
-            item: dict[str, object] = {"id": int(payload["id"])}
-            if receipt:
-                item["ufCrm_64F9E8DA4DD9B"] = receipt
-            return {"item": item}
+            if payload["entityTypeId"] == 1:
+                lead = self.leads[int(payload["id"])]
+                receipt = lead.get("UF_CRM_64F9E8DA4DD9B")
+                item: dict[str, object] = {"id": int(payload["id"])}
+                if receipt:
+                    item["ufCrm_64F9E8DA4DD9B"] = receipt
+                return {"item": item}
+            if payload["entityTypeId"] == 2:
+                return {"item": dict(self.deals[int(payload["id"])])}
+            raise AssertionError("crm.item.get recibio una entidad inesperada.")
+        if method == "crm.item.update":
+            self.assert_deal_entity(payload)
+            self.deals[int(payload["id"])].update(payload["fields"])
+            return {"item": dict(self.deals[int(payload["id"])])}
         if method == "crm.lead.fields":
             return {
                 "UF_CRM_PROCESSING_POLICY": {
@@ -421,6 +431,11 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.commercial_owner.manual, "Manual")
         self.assertEqual(config.deal.category_id, 1)
         self.assertEqual(config.deal.stage_id, "C1:NEW")
+        self.assertEqual(config.deal.pending_qualification_stage_id, "C1:KESTRA_PENDING")
+        self.assertEqual(config.deal.manual_review_stage_id, "C1:KESTRA_REVIEW")
+        self.assertEqual(config.deal.bcra_rejected_stage_id, "C1:5")
+        self.assertEqual(config.deal.provisional_user_id, 57)
+        self.assertEqual(config.deal.commercial_line_field, "ufCrm_659EBB0445E8E")
         self.assertEqual(config.deal.round_robin_user_ids, (68579, 10451, 71159, 90231))
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
         self.assertEqual(config.lead_statuses.new, "UC_5N2OEO")
@@ -1014,7 +1029,6 @@ class BusinessLogicTests(unittest.TestCase):
                 "crm.lead.add",
                 "crm.lead.get",
                 "crm.lead.fields",
-                "crm.lead.update",
             ],
         )
         self.assertTrue(result["ok"])
@@ -1024,7 +1038,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["lead_status"], "UC_5N2OEO")
         self.assertEqual(result["action"], "skipped")
         self.assertEqual(result["reason"], "commercial_owner_not_kestra")
-        self.assertEqual(bcra_client.calls, ["20876543219"])
+        self.assertEqual(bcra_client.calls, [])
         self.assertEqual(client.calls[0][1]["filter"]["UF_CONTACT_CUIL"], "20876543219")
         self.assertEqual(client.calls[1][1]["fields"]["UF_CONTACT_CUIL"], "20876543219")
         lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
@@ -1036,15 +1050,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(lead_add["fields"]["UTM_CAMPAIGN"], "policias-abril")
         self.assertEqual(lead_add["fields"]["UTM_TERM"], "prestamo policia cordoba")
         self.assertEqual(lead_add["fields"]["UTM_CONTENT"], "anuncio-a")
-        self.assertIn("Consulta BCRA", client.leads[202]["UF_CRM_BCRA_STATUS"])
-        self.assertIn("Estado: OK", client.leads[202]["UF_CRM_BCRA_STATUS"])
-        self.assertIn("Situacion 1: 0", client.leads[202]["UF_CRM_BCRA_RESULT"])
-        self.assertIn("Situacion 5: 0", client.leads[202]["UF_CRM_BCRA_RESULT"])
-        self.assertEqual(client.leads[202]["UF_CRM_BCRA_CHECKED_AT"], "2026-04-15T17:30:00-03:00")
-        self.assertEqual(
-            json.loads(client.leads[202]["UF_CRM_BCRA_DATA_RAW"])["identification"],
-            "20876543219",
-        )
+        self.assertNotIn("UF_CRM_BCRA_STATUS", client.leads[202])
 
     def test_process_submission_updates_status_for_catamarca_owner_kestra(self) -> None:
         client = FakeBitrixClient()
@@ -1074,7 +1080,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "qualified")
         self.assertEqual(result["reason"], "qualified")
         self.assertEqual(result["lead_status"], "QUALIFIED")
-        self.assertEqual(bcra_client.calls, ["27123456785"])
+        self.assertEqual(bcra_client.calls, [])
         self.assertEqual(client.leads[202]["UF_CRM_COMM_OWNER"], "4119")
         self.assertEqual(client.leads[202]["STATUS_ID"], "QUALIFIED")
         self.assertIsNone(result["deal_id"])
@@ -2186,8 +2192,8 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "skipped")
         self.assertEqual(result["reason"], "commercial_owner_not_kestra")
         self.assertEqual(result["lead_status"], "UC_5N2OEO")
-        self.assertEqual(bcra_client.calls, ["20876543219"])
-        self.assertIn("Estado: OK", client.leads[202]["UF_CRM_BCRA_STATUS"])
+        self.assertEqual(bcra_client.calls, [])
+        self.assertNotIn("UF_CRM_BCRA_STATUS", client.leads[202])
 
     def test_classify_lead_skips_commercial_decision_when_owner_is_empty(self) -> None:
         client = FakeBitrixClient()
@@ -2224,9 +2230,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "skipped")
         self.assertEqual(result["reason"], "commercial_owner_not_kestra")
         self.assertEqual(result["lead_status"], "NEW")
-        self.assertEqual(bcra_client.calls, ["20876543219"])
+        self.assertEqual(bcra_client.calls, [])
 
-    def test_process_submission_rejects_when_bcra_is_negative(self) -> None:
+    def test_process_submission_does_not_consult_bcra_during_prequalification(self) -> None:
         client = FakeBitrixClient()
         bcra_client = FakeBcraClient(
             {
@@ -2260,14 +2266,11 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "skipped")
         self.assertEqual(result["reason"], "commercial_owner_not_kestra")
         self.assertEqual(result["lead_status"], "UC_5N2OEO")
-        last_method, last_payload = client.calls[-1]
-        self.assertEqual(last_method, "crm.lead.update")
-        self.assertNotIn("UF_CRM_REJECTION_REASON", last_payload["fields"])
-        self.assertIn("Estado: NEGATIVO", client.leads[202]["UF_CRM_BCRA_STATUS"])
-        self.assertIn("Situacion 5: 2", client.leads[202]["UF_CRM_BCRA_RESULT"])
+        self.assertEqual(bcra_client.calls, [])
+        self.assertNotIn("UF_CRM_BCRA_STATUS", client.leads[202])
         self.assertEqual(client.leads[202]["STATUS_ID"], "UC_5N2OEO")
 
-    def test_classify_lead_reuses_existing_bcra_snapshot(self) -> None:
+    def test_classify_lead_ignores_existing_bcra_snapshot(self) -> None:
         client = FakeBitrixClient()
         client.leads[304] = {
             "ID": "304",
@@ -2299,8 +2302,8 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertFalse(result["qualified"])
-        self.assertEqual(result["reason"], "bcra_negative_situation")
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["reason"], "qualified")
         self.assertEqual(bcra_client.calls, [])
 
     def test_backfill_stops_on_rate_limit_and_skips_populated_leads(self) -> None:
@@ -2852,6 +2855,197 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(skipped["reason"], "commercial_owner_not_kestra")
         self.assertEqual(client.leads[806]["STATUS_ID"], "NEW")
+
+    def test_catamarca_won_lead_creates_pending_deal_with_maru(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[910] = {
+            "ID": "910",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "QUALIFIED",
+            "TITLE": "Maria Catamarca",
+            "NAME": "Maria",
+            "LAST_NAME": "Catamarca",
+            "EMAIL": [{"VALUE": "maria@example.com"}],
+            "PHONE": [{"VALUE": "3834123456"}],
+            "ASSIGNED_BY_ID": "74365",
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1693840106704": "27555555556",
+            "UF_CRM_1714071903": "3745",
+            "UF_CRM_LEAD_1711458190312": ["439"],
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1722365051": "2423",
+        }
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(910),
+            env=self.env,
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        deal = client.deals[int(result["deal_id"])]
+        self.assertEqual(deal["stageId"], "C1:KESTRA_PENDING")
+        self.assertEqual(deal["assignedById"], 57)
+        self.assertEqual(client.leads[910]["STATUS_ID"], "CONVERTED")
+
+    def test_catamarca_pending_deal_is_approved_and_distributed(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[920] = self._catamarca_enriched_lead(
+            920,
+            bcra_entities=[{"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 1}],
+        )
+        client.deals[930] = {
+            "id": 930,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 920,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+
+        selected = select_next_pending_catamarca_deal(
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+        result = qualify_catamarca_deal(
+            selected["deal_id"],
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "amejuca_premium")
+        self.assertEqual(client.deals[930]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[930]["assignedById"], 68579)
+        self.assertEqual(client.deals[930]["ufCrm_659EBB0445E8E"], "AMEJUCA Premium")
+
+    def test_catamarca_pending_deal_reuses_recent_contact_assignee(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[921] = self._catamarca_enriched_lead(921, bcra_entities=[])
+        client.deals[929] = {
+            "id": 929,
+            "categoryId": 1,
+            "stageId": "C1:WON",
+            "leadId": 800,
+            "contactId": 101,
+            "assignedById": 71159,
+            "createdTime": "2026-07-30T12:00:00+00:00",
+        }
+        client.deals[931] = {
+            "id": 931,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 921,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+
+        result = qualify_catamarca_deal(
+            931,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(client.deals[931]["assignedById"], 71159)
+
+    def test_catamarca_hard_bcra_rejection_keeps_provisional_owner(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[922] = self._catamarca_enriched_lead(
+            922,
+            bcra_entities=[
+                {"entidad": f"ENTIDAD {index}", "situacion": 4}
+                for index in range(5)
+            ],
+        )
+        client.deals[932] = {
+            "id": 932,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 922,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            932,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(client.deals[932]["stageId"], "C1:5")
+        self.assertEqual(client.deals[932]["assignedById"], 57)
+
+    def test_catamarca_member_with_active_credit_goes_to_manual_review(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[923] = self._catamarca_enriched_lead(923, bcra_entities=[])
+        client.leads[923]["UF_CRM_1728998183"] = "2617"
+        client.leads[923]["UF_CRM_VIMARX_CRED_ACT_CNT"] = "1"
+        client.deals[933] = {
+            "id": 933,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 923,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            933,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "member_credit_rules_require_manual_review")
+        self.assertEqual(client.deals[933]["stageId"], "C1:KESTRA_REVIEW")
+
+    def _catamarca_enriched_lead(
+        self,
+        lead_id: int,
+        *,
+        bcra_entities: list[dict],
+    ) -> dict:
+        return {
+            "ID": str(lead_id),
+            "CONTACT_ID": "101",
+            "STATUS_ID": "CONVERTED",
+            "TITLE": "Maria Catamarca",
+            "NAME": "Maria",
+            "LAST_NAME": "Catamarca",
+            "EMAIL": [{"VALUE": "maria@example.com"}],
+            "PHONE": [{"VALUE": "3834123456"}],
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1693840106704": "27555555556",
+            "UF_CRM_1714071903": "3745",
+            "UF_CRM_LEAD_1711458190312": ["439"],
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1722365051": "2423",
+            "UF_CRM_1728998183": "2619",
+            "UF_CRM_VIMARX_CRED_ACT_CNT": "0",
+            "UF_CRM_BCRA_DATA_RAW": json.dumps(
+                {
+                    "outcome": "ok",
+                    "payload": {
+                        "results": {
+                            "periodos": [
+                                {"periodo": "202607", "entidades": bcra_entities}
+                            ]
+                        }
+                    },
+                }
+            ),
+        }
 
 
 if __name__ == "__main__":

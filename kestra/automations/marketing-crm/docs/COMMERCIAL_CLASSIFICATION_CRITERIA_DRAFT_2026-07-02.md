@@ -60,7 +60,8 @@ Cuando un prospecto queda ganado:
 - se debe crear una negociacion
 - la negociacion debe crearse en `VENTAS`
 - `CATEGORY_ID=1`
-- etapa inicial `C1:NEW` (`PRESENTACION`)
+- etapa inicial general `C1:NEW` (`PRESENTACION`)
+- excepcion Catamarca con motor Kestra: `C1:KESTRA_PENDING` hasta completar la calificacion definitiva
 - el deal debe copiar desde el lead la linea comercial calculada
 - el deal debe copiar o preservar la informacion necesaria para analisis comercial posterior
 
@@ -68,11 +69,16 @@ La linea comercial debe existir como campo custom tanto en lead como en deal.
 
 ## Asignacion De Vendedor
 
-Comportamiento operativo vigente desde el 2026-07-20:
+Comportamiento general vigente desde el 2026-07-20:
 
 - al crear una negociacion, Kestra no ejecuta round-robin ni recalcula el vendedor
 - la negociacion hereda siempre el responsable actual del lead
 - si se retoma el round-robin, debe aplicarse durante la asignacion del lead y antes de crear la negociacion
+
+Excepcion Catamarca vigente desde el 2026-07-31:
+
+- la negociacion nace asignada provisionalmente a Maru Lopez (`57`)
+- el round-robin se aplica sobre la negociacion solo despues de una calificacion definitiva aprobable
 
 Para La Rioja, todo prospecto ganado se asigna a Mercedes (`85431`).
 

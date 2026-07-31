@@ -18,13 +18,24 @@ Formulario
      PRECLASIFICACION (NEW)
             |
             | ONCRMLEADUPDATE
-            | solo clasifica si Motor = Kestra
+            | solo precalifica si Motor = Kestra
+            | provincia + situacion laboral + banco
             v
    RESULTADO GANADO / rechazo
             |
             | ONCRMLEADUPDATE al quedar ganado
             v
-        Negociación
+        Negociacion
+            |
+            | Catamarca + Motor Kestra:
+            | PENDIENTE CALIFICACION KESTRA + Maru
+            v
+     Calificacion definitiva
+     BCRA + condicion de socio
+            |
+            |-- aprobado: PRESENTACION + vendedor definitivo
+            |-- BCRA duro: SIT. NEG. EN BCRA
+            `-- incompleto/ambiguo: REVISION MANUAL KESTRA
 ```
 
 ## Carga
@@ -63,6 +74,11 @@ El webhook existente de `ONCRMLEADUPDATE` funciona como dispatcher:
 - `RESULTADO GANADO`: crea o reutiliza la negociación
 - cualquier otra etapa: no hace nada
 
-La clasificación reutiliza el snapshot BCRA persistido por el prefill. Si el snapshot
-no está disponible, puede hacer un último intento online y continúa con la información
-existente si el proveedor sigue temporalmente indisponible.
+La precalificacion reactiva no consulta ni interpreta BCRA. Usa los mismos criterios
+locales que el endpoint consumido por el formulario.
+
+Para Catamarca, el listener crea la negociacion en una etapa aislada y con responsable
+provisional. `bitrix24_catamarca_deal_qualification` procesa una negociacion pendiente
+por minuto. La decision definitiva reutiliza los datos enriquecidos por el prefill,
+aplica el criterio BCRA confirmado y recien al aprobar asigna vendedor y mueve a
+`PRESENTACION`.

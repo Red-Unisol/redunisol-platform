@@ -115,6 +115,27 @@ def lead_has_commercial_owner(
     return str(current_value) == expected_value
 
 
+def lead_enum_label(
+    client: BitrixClient,
+    lead: dict[str, Any],
+    field_name: str | None,
+) -> str | None:
+    if not field_name:
+        return None
+    current_value = _optional_lead_value(lead, field_name)
+    if current_value is None:
+        return None
+
+    field = client.get_lead_field(field_name)
+    for item in field.get("items") or []:
+        if str(item.get("ID")) == str(current_value):
+            value = str(item.get("VALUE") or "").strip()
+            return value or None
+
+    value = str(current_value).strip()
+    return value or None
+
+
 def determine_commercial_owner(submission: NormalizedInput) -> str:
     if submission.province.key in KESTRA_COMMERCIAL_OWNER_PROVINCES:
         return "kestra"
