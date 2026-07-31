@@ -1,5 +1,10 @@
 # Snapshot BCRA Y Backfill De Leads
 
+Nota de arquitectura 2026-07-31: la precalificacion reactiva del lead ya no interpreta
+BCRA. El snapshot sigue siendo enriquecimiento del prefill y, para Catamarca, la
+decision comercial BCRA ocurre despues de crear la negociacion. El resto de este
+documento conserva el comportamiento historico para auditoria.
+
 - fecha de relevamiento: `2026-04-16`
 - fuente: working tree local de esta monorepo
 - dominio: `kestra/automations/marketing-crm`

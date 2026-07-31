@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 import unicodedata
 from typing import Any
 
@@ -56,6 +58,8 @@ def ensure_won_lead_deal(
     lead_id: int,
     contact_id: int | None,
     logger: Logger,
+    stage_id: str | None = None,
+    assigned_by_id: int | None = None,
 ) -> int:
     existing_deal = find_deal_by_lead(client, lead_id=lead_id, logger=logger)
     if existing_deal is not None:
@@ -63,18 +67,25 @@ def ensure_won_lead_deal(
         logger.info(f"Lead {lead_id} ya tiene negociacion {deal_id}.")
         return deal_id
 
-    assigned_by_id = _required_int(lead.get("ASSIGNED_BY_ID"), "ASSIGNED_BY_ID")
+    effective_assigned_by_id = assigned_by_id or _required_int(
+        lead.get("ASSIGNED_BY_ID"),
+        "ASSIGNED_BY_ID",
+    )
     fields = _build_deal_fields(
         client,
         config,
         lead,
         lead_id=lead_id,
         contact_id=contact_id,
-        assigned_by_id=assigned_by_id,
+        assigned_by_id=effective_assigned_by_id,
+        stage_id=stage_id,
         logger=logger,
     )
 
-    logger.info(f"Creando negociacion para lead {lead_id} con responsable {assigned_by_id}.")
+    logger.info(
+        f"Creando negociacion para lead {lead_id} "
+        f"con responsable {effective_assigned_by_id}."
+    )
     result = client.call(
         "crm.item.add",
         {
@@ -147,9 +158,81 @@ def find_deal_by_lead(
         client,
         filter_={"=leadId": lead_id},
         order={"id": "DESC"},
-        select=["id", "leadId", "assignedById"],
+        select=["id", "leadId", "contactId", "assignedById", "stageId"],
     )
     return deals[0] if deals else None
+
+
+def resolve_round_robin_assignee(
+    client: BitrixClient,
+    config: AppConfig,
+    *,
+    contact_id: int | None,
+    lead_id: int,
+    logger: Logger,
+) -> int:
+    pool = config.deal.round_robin_user_ids
+    if not pool:
+        raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
+
+    if contact_id is not None:
+        previous_assignee = _latest_pool_assignee_for_contact(
+            client,
+            pool=pool,
+            contact_id=contact_id,
+            lead_id=lead_id,
+            logger=logger,
+        )
+        if previous_assignee is not None:
+            return previous_assignee
+
+    date_from = (
+        datetime.now(timezone.utc) - timedelta(days=config.deal.round_robin_lookback_days)
+    ).isoformat()
+    deals = _list_deals(
+        client,
+        filter_={
+            "=categoryId": config.deal.category_id,
+            ">=createdTime": date_from,
+        },
+        order={"createdTime": "ASC", "id": "ASC"},
+        select=["id", "assignedById", "categoryId", "createdTime"],
+    )
+    counts = Counter(
+        int(str(deal.get("assignedById")))
+        for deal in deals
+        if _is_positive_int(deal.get("assignedById"))
+    )
+    return min(
+        enumerate(pool),
+        key=lambda item: (counts[item[1]], item[0]),
+    )[1]
+
+
+def _latest_pool_assignee_for_contact(
+    client: BitrixClient,
+    *,
+    pool: tuple[int, ...],
+    contact_id: int,
+    lead_id: int,
+    logger: Logger,
+) -> int | None:
+    logger.info(f"Buscando vendedor recurrente para contacto {contact_id}.")
+    deals = _list_deals(
+        client,
+        filter_={"=contactId": contact_id},
+        order={"createdTime": "DESC", "id": "DESC"},
+        select=["id", "leadId", "contactId", "assignedById", "createdTime"],
+    )
+    pool_set = {str(user_id) for user_id in pool}
+    for deal in deals:
+        if str(deal.get("leadId") or "") == str(lead_id):
+            continue
+        assigned_by_id = str(deal.get("assignedById") or "")
+        if assigned_by_id in pool_set:
+            logger.info(f"Contacto {contact_id} reutiliza vendedor {assigned_by_id}.")
+            return int(assigned_by_id)
+    return None
 
 
 def bind_open_line_activities_to_deal(
@@ -296,12 +379,13 @@ def _build_deal_fields(
     lead_id: int,
     contact_id: int | None,
     assigned_by_id: int,
+    stage_id: str | None,
     logger: Logger,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "title": _deal_title(lead, lead_id),
         "categoryId": config.deal.category_id,
-        "stageId": config.deal.stage_id,
+        "stageId": stage_id or config.deal.stage_id,
         "leadId": lead_id,
         "assignedById": assigned_by_id,
     }

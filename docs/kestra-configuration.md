@@ -368,6 +368,11 @@ Referenciadas hoy desde los flows:
 - `bitrix24_timeout_seconds`
 - `bitrix24_deal_category_id`
 - `bitrix24_deal_stage_id`
+- `bitrix24_deal_pending_qualification_stage_id`
+- `bitrix24_deal_manual_review_stage_id`
+- `bitrix24_deal_bcra_rejected_stage_id`
+- `bitrix24_deal_provisional_user_id`
+- `bitrix24_deal_commercial_line_field`
 - `bitrix24_deal_round_robin_user_ids`
 - `bitrix24_deal_round_robin_lookback_days`
 

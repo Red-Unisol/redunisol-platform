@@ -50,6 +50,11 @@ DEFAULT_COMMERCIAL_OWNERS = {
 DEFAULT_DEAL_CONFIG = {
     "category_id": 1,
     "stage_id": "C1:NEW",
+    "pending_qualification_stage_id": "C1:KESTRA_PENDING",
+    "manual_review_stage_id": "C1:KESTRA_REVIEW",
+    "bcra_rejected_stage_id": "C1:5",
+    "provisional_user_id": 57,
+    "commercial_line_field": "ufCrm_659EBB0445E8E",
     "round_robin_user_ids": (68579, 10451, 71159, 90231),
     "round_robin_lookback_days": 30,
 }
@@ -144,6 +149,11 @@ class CommercialOwnerConfig:
 class DealConfig:
     category_id: int
     stage_id: str
+    pending_qualification_stage_id: str
+    manual_review_stage_id: str
+    bcra_rejected_stage_id: str
+    provisional_user_id: int
+    commercial_line_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
 
@@ -331,6 +341,31 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             ),
             stage_id=source.get("BITRIX24_DEAL_STAGE_ID", DEFAULT_DEAL_CONFIG["stage_id"]).strip()
             or DEFAULT_DEAL_CONFIG["stage_id"],
+            pending_qualification_stage_id=source.get(
+                "BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["pending_qualification_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["pending_qualification_stage_id"],
+            manual_review_stage_id=source.get(
+                "BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["manual_review_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["manual_review_stage_id"],
+            bcra_rejected_stage_id=source.get(
+                "BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
+            provisional_user_id=_optional_int(
+                source,
+                "BITRIX24_DEAL_PROVISIONAL_USER_ID",
+                default=DEFAULT_DEAL_CONFIG["provisional_user_id"],
+            ),
+            commercial_line_field=source.get(
+                "BITRIX24_DEAL_COMMERCIAL_LINE_FIELD",
+                DEFAULT_DEAL_CONFIG["commercial_line_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["commercial_line_field"],
             round_robin_user_ids=_optional_int_tuple(
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",

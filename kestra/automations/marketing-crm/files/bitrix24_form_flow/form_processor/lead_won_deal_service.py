@@ -12,7 +12,7 @@ from .deal_service import (
     ensure_won_lead_deal,
     find_deal_by_lead,
 )
-from .lead_service import get_lead, lead_has_commercial_owner
+from .lead_service import get_lead, lead_enum_label, lead_has_commercial_owner
 from .logger import create_logger, Logger
 
 
@@ -79,6 +79,13 @@ def process_lead_update_event(
                 message="El lead no esta en estado ganado; no se crea negociacion.",
             )
 
+        catamarca_kestra = _is_catamarca_kestra_lead(
+            client,
+            config,
+            lead,
+            active_logger,
+        )
+
         existing_deal = find_deal_by_lead(client, lead_id=lead_id, logger=active_logger)
         if existing_deal is not None:
             deal_id = _optional_int(existing_deal.get("id") or existing_deal.get("ID"))
@@ -109,6 +116,16 @@ def process_lead_update_event(
             lead_id=lead_id,
             contact_id=contact_id,
             logger=active_logger,
+            stage_id=(
+                config.deal.pending_qualification_stage_id
+                if catamarca_kestra
+                else None
+            ),
+            assigned_by_id=(
+                config.deal.provisional_user_id
+                if catamarca_kestra
+                else None
+            ),
         )
         ensure_deal_timeline_comment(
             client,
@@ -206,6 +223,20 @@ def _mark_lead_converted(
             "fields": {"STATUS_ID": config.lead_statuses.converted},
         },
     )
+
+
+def _is_catamarca_kestra_lead(
+    client: Any,
+    config: Any,
+    lead: dict[str, Any],
+    logger: Logger,
+) -> bool:
+    province = lead_enum_label(client, lead, config.fields.lead_province)
+    is_catamarca = str(province or "").strip().lower() == "catamarca"
+    if not is_catamarca:
+        logger.info("El lead ganado no pertenece al circuito Catamarca Kestra.")
+        return False
+    return lead_has_commercial_owner(client, lead, config, "kestra")
 
 
 def _extract_lead_id(payload: dict[str, Any]) -> int:
