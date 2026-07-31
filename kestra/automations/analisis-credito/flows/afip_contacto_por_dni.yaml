@@ -11,6 +11,14 @@ labels:
   integration: afip
   transport: http
 
+inputs:
+  - id: dni
+    type: STRING
+    required: false
+  - id: tipo_doc
+    type: STRING
+    required: false
+
 tasks:
   - id: consultar_contacto
     type: io.kestra.plugin.scripts.python.Commands
@@ -26,9 +34,9 @@ tasks:
     retry:
       type: constant
       interval: PT30S
-      maxAttempt: 3
+      maxAttempts: 3
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'dni': inputs.dni ?? '', 'tipo_doc': inputs.tipo_doc ?? ''} | json) }}"
       AFIP_CRM_BASE_URL: "https://servicioscf.afip.gob.ar/publico/crmcit/"
       AFIP_TIMEOUT_SECONDS: "60"
       AFIP_USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
@@ -39,6 +47,9 @@ outputs:
   - id: ok
     type: BOOLEAN
     value: "{{ outputs.consultar_contacto.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.consultar_contacto.vars.status }}"
   - id: found
     type: BOOLEAN
     value: "{{ outputs.consultar_contacto.vars.found }}"
@@ -71,22 +82,3 @@ triggers:
     wait: true
     returnOutputs: true
     responseContentType: application/json
-
-errors:
-  - id: notificar_fallo
-    type: io.kestra.plugin.notifications.mail.MailSend
-    host: vps-3028748-x.dattaweb.com
-    port: 465
-    username: sistemas@redunisol.com.ar
-    password: "{{ secret('SMTP_PASSWORD') }}"
-    transportStrategy: SMTPS
-    from: sistemas@redunisol.com.ar
-    to: nicosallitto@gmail.com
-    subject: "Flow fallido: {{ flow.id }}"
-    htmlTextContent: |
-      <b>Flow:</b> {{ flow.id }}<br>
-      <b>Namespace:</b> {{ flow.namespace }}<br>
-      <b>Ejecución:</b> {{ execution.id }}<br>
-      <b>Fecha:</b> {{ execution.startDate }}<br>
-      <br>
-      Revisar en: https://kestra.redunisol.com.ar

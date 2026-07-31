@@ -9,7 +9,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `afip_contacto_por_dni`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
-- `consulta_quiebra_credix_http`
+- `precalentar_cache_credixsa_v2_sondeo`
 - `consulta_padron_a13`
 - `consulta_empleador`
 - `consulta_cuad`
@@ -288,22 +288,25 @@ Configuracion inline en el flow:
 
 - `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
 
-## consulta_credixsa_cache_warmup
+## precalentar_cache_credixsa_v2_sondeo
 
-Precalienta cache de CredixSA para solicitudes del dia tomadas desde el core financiero.
+Sondea solicitudes nuevas de CredixSA y solo ejecuta el worker pesado cuando hay candidatos.
 
-Corre cada minuto con concurrencia `1`. En cada corrida:
+Este flow reemplaza el uso operativo normal del flow legacy `consulta_credixsa_cache_warmup`.
+
+Corre cada minuto en horario util con concurrencia `1`. En cada corrida:
 
 1. lee el indice diario `credixsa.daily.index`
 2. consulta solicitudes de hoy en `PreSolicitud.Module.Solicitud`
 3. completa CUIL desde `F.Module.SocioMutual` si la solicitud trae solo DNI
 4. omite solicitudes ya procesadas/cacheadas hoy
-5. procesa un lote acotado
-6. consulta CredixSA con retry por candidato
-7. guarda cache por CUIL y por nombre si el resultado es `single`
-8. actualiza el indice diario
+5. arma un preview acotado de candidatos
+6. solo si hay candidatos ejecuta el worker pesado de warmup
+7. el worker consulta CredixSA con retry por candidato
+8. guarda cache por CUIL y por nombre si el resultado es `single`
+9. actualiza el indice diario
 
-Si CredixSA falla para un candidato, ese candidato no se marca como procesado; la siguiente corrida vuelve a intentarlo.
+Si CredixSA falla para un candidato dentro del worker, ese candidato no se marca como procesado; la siguiente corrida vuelve a intentarlo.
 
 ### Variables
 
@@ -319,67 +322,15 @@ Config en `envs`:
 - `vimarx_timeout_seconds`
 - `vimarx_verify_tls`
 - `local_tz` opcional, default `America/Argentina/Buenos_Aires`
+- `credix_debug` opcional, default `true` en los tasks del flow
 - `credixsa_warmup_max_per_run` opcional, default `5`
 - `credixsa_warmup_core_max_rows` opcional, default `1000`
 - `credixsa_warmup_retry_attempts` opcional, default `2`
 
-## consulta_quiebra_credix_http
-
-Consulta CredixSA por HTTP directo y devuelve `none`, `multiple` o `single`.
-
-Este transporte no ejecuta los refrescos JS de `Actualizar Todo`; se mantiene como alternativa para lectura directa, con el mismo shape de salida por secciones cuando llega al informe final.
-
-### Entrada
-
-Webhook `POST` con JSON:
-
-```json
-{ "cuit": "20-12345678-3", "nombre": "Juan Perez" }
-```
-
-Tambien acepta:
-
-- solo `cuit`
-- solo `nombre`
-- un string simple en el body, tratado como CUIL
-
-Debe venir al menos uno de los dos criterios.
-
-### Salida
-
-Outputs principales:
-
-- `ok` (bool)
-- `status` (`none` | `multiple` | `single` | `error`)
-- `rows_json` (string JSON)
-- `data_json` (string JSON con las secciones/tablas del informe CredixSA)
-- `response_json` (string JSON con el contrato legacy)
-- `error` (string | vacio)
-
-Contrato serializado en `response_json`:
-
-- `{"status":"none","rows":[]}`
-- `{"status":"multiple","rows":[...]}`
-- `{"status":"single","data":[{"title":"Datos Filiatorios","source":"","headers":[],"rows":[...],"records":[...],"text":"..."}]}`
-
-### Variables
-
-Secrets:
-
-- `ANALISIS_CREDITO_QUIEBRA_WEBHOOK_KEY`
-- `CREDIX_CLIENTE`
-- `CREDIX_USER`
-- `CREDIX_PASS`
-
-Configuracion inline en el flow:
-
-- `CREDIX_LOGIN_URL=https://www.credixsa.com/nuevo/login.php`
-- `CREDIX_TIMEOUT_SECONDS=30`
-- `CREDIX_DEBUG=false`
-
 ### Namespace files
 
-- `kestra/automations/analisis-credito/files/consulta_quiebra_credix_http/**`
+- `kestra/automations/analisis-credito/files/precalentar_cache_credixsa_v2/**`
+- `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
 
 ## consulta_padron_a13
 
@@ -461,6 +412,7 @@ Si no se informa `tipo`, el flow usa `S` para identificadores de 11 digitos y `M
 
 - `ok` (bool)
 - `found` (bool)
+- `status` (`found` | `not_found` | `invalid_request` | `technical_error`)
 - `identifier` (string)
 - `tipo` (string)
 - `token_source` (`cache` | `login` | vacio)
@@ -470,9 +422,10 @@ Si no se informa `tipo`, el flow usa `S` para identificadores de 11 digitos y `M
 
 Contrato serializado en `response_json`:
 
-- `{"ok":true,"found":true,"identifier":"32786693","tipo":"M","data":{...},"error":"","source":"pypdatos_persona"}`
-- `{"ok":true,"found":false,...}` si PYPDatos responde `No se pudo encontrar cuil/documento`
-- `{"ok":false,...}` si el request es invalido o la consulta falla
+- `{"ok":true,"found":true,"status":"found","identifier":"32786693","tipo":"M","data":{...},"error":"","source":"pypdatos_persona"}`
+- `{"ok":true,"found":false,"status":"not_found",...}` si PYPDatos responde `No se pudo encontrar cuil/documento`
+- `{"ok":false,"status":"invalid_request",...}` si el request es invalido
+- `{"ok":false,"status":"technical_error",...}` si la consulta falla por problemas tecnicos
 
 ### Variables
 
@@ -521,7 +474,7 @@ Debe venir un identificador de 11 digitos.
 
 - `ok` (bool)
 - `found` (bool)
-- `status` (`ok` | `sin_resultado` | `sesion_invalida` | `respuesta_no_reconocida` | `error`)
+- `status` (`ok` | `sin_resultado` | `invalid_request` | `sesion_invalida` | `respuesta_no_reconocida` | `error`)
 - `cuil` (string)
 - `bruto` (string)
 - `neto` (string)
@@ -538,6 +491,7 @@ Contrato serializado en `response_json`:
 
 - `{"ok":true,"found":true,"status":"ok","cuil":"23333121514","captcha_attempts":2,"data":{...},"error":"","source":"cuad_movimiento"}`
 - `{"ok":true,"found":false,"status":"sin_resultado",...}` si CUAD no devuelve movimiento
+- `{"ok":false,"status":"invalid_request",...}` si el body no trae un CUIL valido
 - `{"ok":false,...}` si el login, OCR o la consulta fallan
 
 ### Variables

@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+import sys
 from typing import Any
 import urllib.error
 import urllib.request
@@ -14,7 +15,6 @@ import xml.etree.ElementTree as ET
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.serialization import pkcs7
-
 
 WSAA_URL = "https://wsaa.afip.gov.ar/ws/services/LoginCms"
 PADRON_A13_URL = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA13"
@@ -39,17 +39,29 @@ class ArcaConfig:
     cached_ta: dict[str, str] | None
 
 
+class InvalidRequestError(ValueError):
+    pass
+
+
+class ConfigurationError(ValueError):
+    pass
+
+
+class TechnicalError(RuntimeError):
+    def __init__(self, message: str, *, status: str = "technical_error") -> None:
+        super().__init__(message)
+        self.status = status
+
+
 def parse_search_request(payload: Any) -> SearchRequest:
     if isinstance(payload, dict):
         raw_value = (
-            payload.get("cuit_cuil")
-            or payload.get("cuit")
-            or payload.get("cuil")
+            payload.get("cuit_cuil") or payload.get("cuit") or payload.get("cuil")
         )
     elif payload is None:
-        raise ValueError("Missing request body.")
+        raise InvalidRequestError("Missing request body.")
     elif isinstance(payload, (list, tuple)):
-        raise ValueError("Body must be an object or string.")
+        raise InvalidRequestError("Body must be an object or string.")
     else:
         raw_value = payload
 
@@ -58,17 +70,31 @@ def parse_search_request(payload: Any) -> SearchRequest:
 
 
 def load_config_from_env() -> ArcaConfig:
-    cuit_representada = normalize_identifier(os.getenv("ARCA_CUIT_REPRESENTADA", ""))
-    cert_pem = decode_pem_secret(os.getenv("ARCA_CERT_PEM_B64", ""), "ARCA_CERT_PEM_B64")
+    try:
+        cuit_representada = normalize_identifier(os.getenv("ARCA_CUIT_REPRESENTADA", ""))
+    except InvalidRequestError as exc:
+        raise ConfigurationError(
+            "ARCA_CUIT_REPRESENTADA must contain 11 digits."
+        ) from exc
+
+    cert_pem = decode_pem_secret(
+        os.getenv("ARCA_CERT_PEM_B64", ""), "ARCA_CERT_PEM_B64"
+    )
     key_pem = decode_pem_secret(os.getenv("ARCA_KEY_PEM_B64", ""), "ARCA_KEY_PEM_B64")
     cached_ta = decode_ta_cache(os.getenv("ARCA_TA_CACHE_JSON", ""))
     timeout_raw = (os.getenv("ARCA_TIMEOUT_SECONDS", "") or "").strip()
-    timeout_seconds = float(timeout_raw or DEFAULT_TIMEOUT_SECONDS)
+
+    try:
+        timeout_seconds = float(timeout_raw or DEFAULT_TIMEOUT_SECONDS)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "ARCA_TIMEOUT_SECONDS must be a numeric value."
+        ) from exc
 
     if not cert_pem or not key_pem:
-        raise ValueError("Missing ARCA_CERT_PEM_B64 or ARCA_KEY_PEM_B64.")
+        raise ConfigurationError("Missing ARCA_CERT_PEM_B64 or ARCA_KEY_PEM_B64.")
     if timeout_seconds <= 0:
-        raise ValueError("ARCA_TIMEOUT_SECONDS must be greater than 0.")
+        raise ConfigurationError("ARCA_TIMEOUT_SECONDS must be greater than 0.")
 
     return ArcaConfig(
         cuit_representada=cuit_representada,
@@ -80,53 +106,215 @@ def load_config_from_env() -> ArcaConfig:
 
 
 def consultar_padron(request: SearchRequest, config: ArcaConfig) -> dict[str, Any]:
-    ta, ta_source, ta_cache_should_persist, ta_cache_ttl = get_ta(config)
-    response = call_get_persona(
-        token=ta["token"],
-        sign=ta["sign"],
-        cuit_representada=config.cuit_representada,
-        id_persona=request.cuit_cuil,
-        timeout_seconds=config.timeout_seconds,
-    )
-    persona = response.get("persona") if isinstance(response.get("persona"), dict) else {}
+    log_event("arca_padron_a13_start", cuit_cuil=request.cuit_cuil)
+    ta: dict[str, str] | None = None
+    ta_source = ""
+    ta_cache_should_persist = False
+    ta_cache_ttl = ""
 
+    try:
+        ta, ta_source, ta_cache_should_persist, ta_cache_ttl = get_ta(config)
+        log_event(
+            "arca_padron_a13_ta_ready",
+            cuit_cuil=request.cuit_cuil,
+            ta_source=ta_source,
+            ta_expiration_time=ta.get("expirationTime", ""),
+        )
+
+        log_event(
+            "arca_padron_a13_get_persona_request",
+            cuit_cuil=request.cuit_cuil,
+            cuit_representada=config.cuit_representada,
+        )
+        response = call_get_persona(
+            token=ta["token"],
+            sign=ta["sign"],
+            cuit_representada=config.cuit_representada,
+            id_persona=request.cuit_cuil,
+            timeout_seconds=config.timeout_seconds,
+        )
+        if not isinstance(response, dict):
+            raise RuntimeError("A13 returned an unexpected payload.")
+
+        persona = extract_persona(response)
+        if not persona or not str(persona.get("idPersona") or "").strip():
+            log_event(
+                "arca_padron_a13_not_found",
+                cuit_cuil=request.cuit_cuil,
+                ta_source=ta_source,
+            )
+            return _build_result(
+                ok=True,
+                found=False,
+                status="not_found",
+                request=request,
+                config=config,
+                ta=ta,
+                ta_source=ta_source,
+                ta_cache_should_persist=ta_cache_should_persist,
+                ta_cache_ttl=ta_cache_ttl,
+                response=response,
+                persona={},
+                error="",
+            )
+
+        log_event(
+            "arca_padron_a13_success",
+            cuit_cuil=request.cuit_cuil,
+            ta_source=ta_source,
+            id_persona=str(persona.get("idPersona") or ""),
+        )
+        return _build_result(
+            ok=True,
+            found=True,
+            status="found",
+            request=request,
+            config=config,
+            ta=ta,
+            ta_source=ta_source,
+            ta_cache_should_persist=ta_cache_should_persist,
+            ta_cache_ttl=ta_cache_ttl,
+            response=response,
+            persona=persona,
+            error="",
+        )
+
+    except TechnicalError as exc:
+        log_event(
+            "arca_padron_a13_technical_error",
+            cuit_cuil=request.cuit_cuil,
+            status=exc.status,
+            error=str(exc),
+        )
+        raise
+    except Exception as exc:
+        if _is_not_found_fault(str(exc)):
+            log_event(
+                "arca_padron_a13_not_found",
+                cuit_cuil=request.cuit_cuil,
+                ta_source=ta_source,
+                error=str(exc),
+            )
+            return _build_result(
+                ok=True,
+                found=False,
+                status="not_found",
+                request=request,
+                config=config,
+                ta=ta,
+                ta_source=ta_source,
+                ta_cache_should_persist=ta_cache_should_persist,
+                ta_cache_ttl=ta_cache_ttl,
+                response={},
+                persona={},
+                error="",
+            )
+
+        log_event(
+            "arca_padron_a13_technical_error",
+            cuit_cuil=request.cuit_cuil,
+            status="technical_error",
+            error=str(exc),
+        )
+        raise TechnicalError(str(exc)) from exc
+
+
+def build_error_result(
+    request: SearchRequest | None,
+    error: str,
+    *,
+    status: str = "technical_error",
+) -> dict[str, Any]:
+    return _build_result(
+        ok=False,
+        found=False,
+        status=status,
+        request=request,
+        config=None,
+        ta=None,
+        ta_source="",
+        ta_cache_should_persist=False,
+        ta_cache_ttl="",
+        response={},
+        persona={},
+        error=error,
+    )
+
+
+def _build_result(
+    *,
+    ok: bool,
+    found: bool,
+    status: str,
+    request: SearchRequest | None,
+    config: ArcaConfig | None,
+    ta: dict[str, str] | None,
+    ta_source: str,
+    ta_cache_should_persist: bool,
+    ta_cache_ttl: str,
+    response: dict[str, Any],
+    persona: dict[str, Any],
+    error: str,
+) -> dict[str, Any]:
+    ta_payload = ta or {}
     return {
-        "ok": True,
-        "cuit_cuil": request.cuit_cuil,
-        "cuit_representada": config.cuit_representada,
-        "ta_expiration_time": ta["expirationTime"],
+        "ok": ok,
+        "found": found,
+        "status": status,
+        "cuit_cuil": request.cuit_cuil if request else "",
+        "cuit_representada": config.cuit_representada if config else "",
+        "ta_expiration_time": str(ta_payload.get("expirationTime") or ""),
         "ta_source": ta_source,
         "ta_cache_should_persist": ta_cache_should_persist,
         "ta_cache_ttl": ta_cache_ttl,
-        "ta_cache_json": json.dumps(ta, ensure_ascii=True, separators=(",", ":")),
+        "ta_cache_json": (
+            json.dumps(ta_payload, ensure_ascii=True, separators=(",", ":"))
+            if ta_payload
+            else ""
+        ),
         "response": response,
         "persona": persona,
-        "error": "",
-    }
-
-
-def build_error_result(request: SearchRequest | None, error: str) -> dict[str, Any]:
-    return {
-        "ok": False,
-        "cuit_cuil": request.cuit_cuil if request else "",
-        "cuit_representada": "",
-        "ta_expiration_time": "",
-        "ta_source": "",
-        "ta_cache_should_persist": False,
-        "ta_cache_ttl": "",
-        "ta_cache_json": "",
-        "response": {},
-        "persona": {},
         "error": error,
     }
 
 
+def extract_persona(response: dict[str, Any]) -> dict[str, Any]:
+    persona = response.get("persona")
+    if isinstance(persona, dict):
+        return persona
+
+    if str(response.get("idPersona") or "").strip():
+        return response
+
+    return {}
+
+
+def _is_not_found_fault(message: str) -> bool:
+    normalized = " ".join(str(message or "").strip().lower().split())
+    return (
+        "clave (cuit/cuil) consultada es inexistente" in normalized
+        or ("clave" in normalized and "inexistente" in normalized)
+    )
+
+
 def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
     persona = result.get("persona") or {}
-    response = result.get("response") or {}
+    response_payload = {
+        "ok": bool(result.get("ok", False)),
+        "found": bool(result.get("found", False)),
+        "status": str(result.get("status") or ""),
+        "cuit_cuil": str(result.get("cuit_cuil") or ""),
+        "cuit_representada": str(result.get("cuit_representada") or ""),
+        "ta_source": str(result.get("ta_source") or ""),
+        "persona": persona,
+        "error": str(result.get("error") or ""),
+        "source": "arca_padron_a13",
+    }
 
     return {
         "ok": bool(result.get("ok", False)),
+        "found": bool(result.get("found", False)),
+        "status": str(result.get("status") or ""),
         "cuit_cuil": str(result.get("cuit_cuil") or ""),
         "cuit_representada": str(result.get("cuit_representada") or ""),
         "id_persona": str(persona.get("idPersona") or ""),
@@ -144,7 +332,11 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
         "ta_cache_ttl": str(result.get("ta_cache_ttl") or ""),
         "ta_cache_json": str(result.get("ta_cache_json") or ""),
         "persona_json": json.dumps(persona, ensure_ascii=True, separators=(",", ":")),
-        "response_json": json.dumps(response, ensure_ascii=True, separators=(",", ":")),
+        "response_json": json.dumps(
+            response_payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ),
         "error": str(result.get("error") or ""),
     }
 
@@ -152,7 +344,7 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
 def normalize_identifier(value: Any) -> str:
     digits = re.sub(r"\D+", "", str(value or ""))
     if len(digits) != 11:
-        raise ValueError("Expected a CUIT/CUIL with 11 digits.")
+        raise InvalidRequestError("Expected a CUIT/CUIL with 11 digits.")
     return digits
 
 
@@ -177,7 +369,7 @@ def build_login_ticket_request(service_name: str, now: datetime | None = None) -
     unique_id = int(current_time.timestamp())
     payload = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        "<loginTicketRequest version=\"1.0\">\n"
+        '<loginTicketRequest version="1.0">\n'
         "  <header>\n"
         f"    <uniqueId>{unique_id}</uniqueId>\n"
         f"    <generationTime>{generation_time.isoformat()}</generationTime>\n"
@@ -195,10 +387,14 @@ def sign_tra(cert_pem: bytes, key_pem: bytes, tra_xml: bytes) -> bytes:
         key_pem,
         password=None,
     )
-    builder = pkcs7.PKCS7SignatureBuilder().set_data(tra_xml).add_signer(
-        certificate,
-        private_key,
-        hashes.SHA256(),
+    builder = (
+        pkcs7.PKCS7SignatureBuilder()
+        .set_data(tra_xml)
+        .add_signer(
+            certificate,
+            private_key,
+            hashes.SHA256(),
+        )
     )
     return builder.sign(
         serialization.Encoding.DER,
@@ -208,12 +404,21 @@ def sign_tra(cert_pem: bytes, key_pem: bytes, tra_xml: bytes) -> bytes:
 
 def get_ta(config: ArcaConfig) -> tuple[dict[str, str], str, bool, str]:
     if is_ta_valid(config.cached_ta):
+        log_event(
+            "arca_padron_a13_ta_cache_hit",
+            ta_expiration_time=config.cached_ta["expirationTime"],
+        )
         return config.cached_ta, "cache", False, ""
 
+    log_event("arca_padron_a13_ta_refresh_start")
     tra_xml = build_login_ticket_request(SERVICE_NAME)
     signed_tra = sign_tra(config.cert_pem, config.key_pem, tra_xml)
     signed_tra_b64 = base64.b64encode(signed_tra).decode("ascii")
     ta = request_ta(signed_tra_b64, timeout_seconds=config.timeout_seconds)
+    log_event(
+        "arca_padron_a13_ta_refresh_success",
+        ta_expiration_time=ta["expirationTime"],
+    )
     return ta, "wsaa", True, build_ta_cache_ttl(ta["expirationTime"])
 
 
@@ -369,11 +574,7 @@ def strip_ns(tag: str) -> str:
 
 
 def escape_xml(value: str) -> str:
-    return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def decode_pem_secret(value: str, variable_name: str) -> bytes:
@@ -385,7 +586,7 @@ def decode_pem_secret(value: str, variable_name: str) -> bytes:
     try:
         return base64.b64decode(raw_value.encode("ascii"), validate=True)
     except ValueError as exc:
-        raise ValueError(f"{variable_name} is not valid Base64.") from exc
+        raise ConfigurationError(f"{variable_name} is not valid Base64.") from exc
 
 
 def decode_ta_cache(value: str) -> dict[str, str] | None:
@@ -393,9 +594,13 @@ def decode_ta_cache(value: str) -> dict[str, str] | None:
     if not raw_value or raw_value == "null":
         return None
 
-    payload = json.loads(raw_value)
+    try:
+        payload = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError("ARCA_TA_CACHE_JSON must be valid JSON.") from exc
+
     if not isinstance(payload, dict):
-        raise ValueError("ARCA_TA_CACHE_JSON must be a JSON object.")
+        raise ConfigurationError("ARCA_TA_CACHE_JSON must be a JSON object.")
 
     token = str(payload.get("token") or "").strip()
     sign = str(payload.get("sign") or "").strip()
@@ -450,3 +655,8 @@ def format_duration_iso8601(duration: timedelta) -> str:
     if seconds or len(parts) == 1:
         parts.append(f"{seconds}S")
     return "".join(parts)
+
+
+def log_event(event: str, **fields: Any) -> None:
+    payload = {"event": event, **fields}
+    sys.stderr.write(json.dumps(payload, ensure_ascii=True) + "\n")

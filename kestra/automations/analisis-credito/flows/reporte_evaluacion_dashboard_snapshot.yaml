@@ -46,6 +46,9 @@ outputs:
   - id: ok
     type: BOOLEAN
     value: "{{ outputs.generar_snapshot.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.generar_snapshot.vars.status }}"
   - id: snapshot_path
     type: STRING
     value: "{{ outputs.generar_snapshot.vars.snapshot_path }}"
@@ -55,6 +58,15 @@ outputs:
   - id: metricas_json
     type: STRING
     value: "{{ outputs.generar_snapshot.vars.metricas_json }}"
+  - id: warning_count
+    type: INT
+    value: "{{ outputs.generar_snapshot.vars.warning_count }}"
+  - id: warnings_json
+    type: STRING
+    value: "{{ outputs.generar_snapshot.vars.warnings_json }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.generar_snapshot.vars.error }}"
 
 triggers:
   - id: horario_oficina

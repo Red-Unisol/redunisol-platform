@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from typing import Any
@@ -13,6 +14,8 @@ except ImportError:  # pragma: no cover - optional outside Kestra
     Kestra = None
 
 from .service import (
+    ConfigurationError,
+    InvalidRequestError,
     build_error_result,
     build_output_payload,
     consultar_tabla,
@@ -21,22 +24,30 @@ from .service import (
 )
 from .sqlite_cache import write_cache_entries
 
+logger = logging.getLogger(__name__)
+
 
 def main() -> int:
     request = None
+    exit_code = 0
     try:
         payload = _load_trigger_body()
         request = parse_search_request(payload)
         config = load_config_from_env()
         result = consultar_tabla(request, config)
-    except Exception as exc:
-        result = build_error_result(request, str(exc))
+    except InvalidRequestError as exc:
+        logger.warning("Solicitud invalida de consulta CredixSA: %s", exc)
+        result = build_error_result(request, str(exc), status="invalid_request")
+    except (ConfigurationError, Exception) as exc:
+        logger.error("Error tecnico al consultar CredixSA: %s", exc, exc_info=True)
+        result = build_error_result(request, str(exc), status="technical_error")
+        exit_code = 1
 
     output_payload = build_output_payload(result)
     _write_sqlite_cache_if_configured(output_payload)
     _emit_outputs_if_available(output_payload)
     sys.stdout.write(output_payload["response_json"] + "\n")
-    return 0
+    return exit_code
 
 
 def _load_trigger_body() -> Any:
@@ -44,8 +55,11 @@ def _load_trigger_body() -> Any:
     if not raw:
         raw = os.environ.get("TRIGGER_BODY_JSON", "").strip()
     if not raw:
-        raise ValueError("Missing CREDIX_REQUEST_JSON or TRIGGER_BODY_JSON.")
-    return json.loads(raw)
+        raise InvalidRequestError("Missing CREDIX_REQUEST_JSON or TRIGGER_BODY_JSON.")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise InvalidRequestError("Request body must be valid JSON.") from exc
 
 
 def _emit_outputs_if_available(output_payload: dict[str, Any]) -> None:

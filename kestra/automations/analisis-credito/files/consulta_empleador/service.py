@@ -2,17 +2,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import os
 import re
 from typing import Any
 
 import requests
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOGIN_URL = "https://www.pypdatos.com.ar:8444/apiuser/usuario/login"
-DEFAULT_PERSONA_URL = "https://www.pypdatos.com.ar:469/ascocco/rest/serviciospyp/persona/json"
+DEFAULT_PERSONA_URL = (
+    "https://www.pypdatos.com.ar:469/ascocco/rest/serviciospyp/persona/json"
+)
 DEFAULT_TIMEOUT_SECONDS = 30.0
 TOKEN_CACHE_TTL = "PT1H55M"
+
+
+class InvalidRequestError(ValueError):
+    """Raised when the webhook caller sends an invalid request."""
+
+
+class TechnicalError(RuntimeError):
+    """Raised when the PYPDatos integration fails for technical reasons."""
+
+    def __init__(self, message: str, *, status: str = "technical_error") -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class ConfigurationError(TechnicalError):
+    """Raised when the flow runtime configuration is invalid."""
 
 
 @dataclass(frozen=True)
@@ -43,9 +63,9 @@ def parse_search_request(payload: Any) -> SearchRequest:
             or payload.get("nro_doc")
         )
     elif payload is None:
-        raise ValueError("Missing request body.")
+        raise InvalidRequestError("Missing request body.")
     elif isinstance(payload, (list, tuple)):
-        raise ValueError("Body must be an object or string.")
+        raise InvalidRequestError("Body must be an object or string.")
     else:
         raw_tipo = None
         raw_identifier = payload
@@ -60,16 +80,29 @@ def load_config_from_env() -> ConsultaEmpleadorConfig:
     password = os.getenv("PYPDATOS_PASSWORD", "").strip()
     login_url = os.getenv("PYPDATOS_LOGIN_URL", DEFAULT_LOGIN_URL).strip()
     persona_url = os.getenv("PYPDATOS_PERSONA_URL", DEFAULT_PERSONA_URL).strip()
-    cached_token = _decode_token_cache(os.getenv("PYPDATOS_TOKEN_CACHE_JSON", ""))
-    timeout_raw = os.getenv("PYPDATOS_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)).strip()
-    timeout_seconds = float(timeout_raw or DEFAULT_TIMEOUT_SECONDS)
+    timeout_raw = (
+        os.getenv("PYPDATOS_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)) or ""
+    ).strip()
+    cache_raw = os.getenv("PYPDATOS_TOKEN_CACHE_JSON", "")
 
     if not usuario or not password:
-        raise ValueError("Missing PYPDATOS_USUARIO or PYPDATOS_PASSWORD.")
+        raise ConfigurationError("Missing PYPDATOS_USUARIO or PYPDATOS_PASSWORD.")
     if not login_url or not persona_url:
-        raise ValueError("Missing PYPDATOS_LOGIN_URL or PYPDATOS_PERSONA_URL.")
+        raise ConfigurationError("Missing PYPDATOS_LOGIN_URL or PYPDATOS_PERSONA_URL.")
+
+    try:
+        timeout_seconds = float(timeout_raw or DEFAULT_TIMEOUT_SECONDS)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "PYPDATOS_TIMEOUT_SECONDS must be a valid number."
+        ) from exc
     if timeout_seconds <= 0:
-        raise ValueError("PYPDATOS_TIMEOUT_SECONDS must be greater than 0.")
+        raise ConfigurationError("PYPDATOS_TIMEOUT_SECONDS must be greater than 0.")
+
+    try:
+        cached_token = _decode_token_cache(cache_raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ConfigurationError("PYPDATOS_TOKEN_CACHE_JSON is invalid.") from exc
 
     return ConsultaEmpleadorConfig(
         usuario=usuario,
@@ -85,45 +118,110 @@ def consultar_empleador(
     request: SearchRequest,
     config: ConsultaEmpleadorConfig,
 ) -> dict[str, Any]:
+    logger.info(
+        "Iniciando consulta PYPDatos. identifier=%s tipo=%s",
+        request.identifier,
+        request.tipo,
+    )
+
     session = requests.Session()
     token = config.cached_token
     token_source = "cache" if token else "login"
     token_cache_should_persist = False
 
-    if not token:
+    if token:
+        logger.info("Usando token cacheado para PYPDatos.")
+    else:
+        logger.info("No hay token cacheado. Haciendo login en PYPDatos.")
         token = login(session, config)
         token_cache_should_persist = True
 
     response, status_code = call_persona(session, request, config, token)
+    logger.info(
+        "Respuesta persona de PYPDatos. status=%s token_source=%s",
+        status_code,
+        token_source,
+    )
+
     if status_code == 401 and token_source == "cache":
+        logger.warning(
+            "Token cacheado rechazado por PYPDatos. Reintentando con login nuevo."
+        )
         token = login(session, config)
         token_source = "login"
         token_cache_should_persist = True
         response, status_code = call_persona(session, request, config, token)
+        logger.info("Respuesta persona tras refresh de token. status=%s", status_code)
 
     if status_code == 401:
-        raise RuntimeError(_extract_message(response) or "Token no valido.")
+        raise TechnicalError(_extract_message(response) or "Token no valido.")
     if status_code >= 400:
-        raise RuntimeError(f"PYPDatos persona failed with HTTP {status_code}: {_extract_message(response)}")
+        raise TechnicalError(
+            f"PYPDatos persona failed with HTTP {status_code}: {_extract_message(response)}"
+        )
 
-    message = _extract_message(response)
-    found = message.lower() != "no se pudo encontrar cuil/documento"
+    message = _extract_message(response).strip()
+    domain_error_code, domain_error_message = _extract_domain_error(response)
+    found = not _is_not_found_response(
+        message,
+        domain_error_code=domain_error_code,
+        domain_error_message=domain_error_message,
+    )
 
-    return {
-        "ok": True,
-        "found": found,
-        "identifier": request.identifier,
-        "tipo": request.tipo,
-        "token_source": token_source,
-        "token_cache_should_persist": token_cache_should_persist,
-        "token_cache_ttl": TOKEN_CACHE_TTL if token_cache_should_persist else "",
-        "token_cache_json": json.dumps({"token": token}, ensure_ascii=True, separators=(",", ":")),
-        "data": response,
-        "error": "",
-    }
+    if not found:
+        logger.info(
+            "Identificador no encontrado en PYPDatos. identifier=%s tipo=%s",
+            request.identifier,
+            request.tipo,
+        )
+        return _build_result(
+            status="not_found",
+            ok=True,
+            found=False,
+            identifier=request.identifier,
+            tipo=request.tipo,
+            token_source=token_source,
+            token_cache_should_persist=token_cache_should_persist,
+            token_cache_ttl=TOKEN_CACHE_TTL if token_cache_should_persist else "",
+            token_cache_json=json.dumps(
+                {"token": token}, ensure_ascii=True, separators=(",", ":")
+            ),
+            data=response,
+            error="",
+        )
+
+    if domain_error_code or domain_error_message:
+        raise TechnicalError(
+            "PYPDatos returned an error payload"
+            f" (code={domain_error_code or 'n/a'}"
+            f", message={domain_error_message or 'n/a'})."
+        )
+
+    logger.info(
+        "Consulta PYPDatos exitosa. identifier=%s tipo=%s token_source=%s",
+        request.identifier,
+        request.tipo,
+        token_source,
+    )
+    return _build_result(
+        status="found",
+        ok=True,
+        found=True,
+        identifier=request.identifier,
+        tipo=request.tipo,
+        token_source=token_source,
+        token_cache_should_persist=token_cache_should_persist,
+        token_cache_ttl=TOKEN_CACHE_TTL if token_cache_should_persist else "",
+        token_cache_json=json.dumps(
+            {"token": token}, ensure_ascii=True, separators=(",", ":")
+        ),
+        data=response,
+        error="",
+    )
 
 
 def login(session: requests.Session, config: ConsultaEmpleadorConfig) -> str:
+    logger.info("Solicitando nuevo token de PYPDatos.")
     response = session.post(
         config.login_url,
         json={"login": config.usuario, "password": config.password},
@@ -131,11 +229,15 @@ def login(session: requests.Session, config: ConsultaEmpleadorConfig) -> str:
     )
     payload = _parse_json_response(response)
     if response.status_code >= 400:
-        raise RuntimeError(f"PYPDatos login failed with HTTP {response.status_code}: {_extract_message(payload)}")
+        raise TechnicalError(
+            f"PYPDatos login failed with HTTP {response.status_code}: {_extract_message(payload)}"
+        )
 
     token = _extract_token(payload)
     if not token:
-        raise RuntimeError("PYPDatos login did not return a token.")
+        raise TechnicalError("PYPDatos login did not return a token.")
+
+    logger.info("Login PYPDatos exitoso.")
     return token
 
 
@@ -159,25 +261,36 @@ def call_persona(
     return _parse_json_response(response), response.status_code
 
 
-def build_error_result(request: SearchRequest | None, error: str) -> dict[str, Any]:
-    return {
-        "ok": False,
-        "found": False,
-        "identifier": request.identifier if request else "",
-        "tipo": request.tipo if request else "",
-        "token_source": "",
-        "token_cache_should_persist": False,
-        "token_cache_ttl": "",
-        "token_cache_json": "",
-        "data": {},
-        "error": error,
-    }
+def build_error_result(
+    request: SearchRequest | None,
+    error: str,
+    *,
+    status: str | None = None,
+) -> dict[str, Any]:
+    safe_request = request or SearchRequest(identifier="", tipo="")
+    error_status = status or (
+        "invalid_request" if not safe_request.identifier else "technical_error"
+    )
+    return _build_result(
+        status=error_status,
+        ok=False,
+        found=False,
+        identifier=safe_request.identifier,
+        tipo=safe_request.tipo,
+        token_source="",
+        token_cache_should_persist=False,
+        token_cache_ttl="",
+        token_cache_json="",
+        data={},
+        error=error,
+    )
 
 
 def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
     response_payload = {
         "ok": bool(result.get("ok", False)),
         "found": bool(result.get("found", False)),
+        "status": str(result.get("status") or ""),
         "identifier": str(result.get("identifier") or ""),
         "tipo": str(result.get("tipo") or ""),
         "data": result.get("data") or {},
@@ -187,14 +300,21 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": response_payload["ok"],
         "found": response_payload["found"],
+        "status": response_payload["status"],
         "identifier": response_payload["identifier"],
         "tipo": response_payload["tipo"],
         "token_source": str(result.get("token_source") or ""),
-        "token_cache_should_persist": bool(result.get("token_cache_should_persist", False)),
+        "token_cache_should_persist": bool(
+            result.get("token_cache_should_persist", False)
+        ),
         "token_cache_ttl": str(result.get("token_cache_ttl") or ""),
         "token_cache_json": str(result.get("token_cache_json") or ""),
-        "data_json": json.dumps(response_payload["data"], ensure_ascii=True, separators=(",", ":")),
-        "response_json": json.dumps(response_payload, ensure_ascii=True, separators=(",", ":")),
+        "data_json": json.dumps(
+            response_payload["data"], ensure_ascii=True, separators=(",", ":")
+        ),
+        "response_json": json.dumps(
+            response_payload, ensure_ascii=True, separators=(",", ":")
+        ),
         "error": response_payload["error"],
     }
 
@@ -202,7 +322,9 @@ def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:
 def normalize_identifier(value: Any) -> str:
     digits = re.sub(r"\D+", "", str(value or ""))
     if len(digits) not in {7, 8, 11}:
-        raise ValueError("Expected a DNI with 7/8 digits or a CUIT/CUIL with 11 digits.")
+        raise InvalidRequestError(
+            "Expected a DNI with 7/8 digits or a CUIT/CUIL with 11 digits."
+        )
     return digits
 
 
@@ -210,7 +332,7 @@ def normalize_tipo(value: Any, identifier: str) -> str:
     raw_tipo = str(value or "").strip().upper()
     if raw_tipo:
         if raw_tipo not in {"M", "S"}:
-            raise ValueError("tipo must be 'M' for DNI or 'S' for CUIT/CUIL.")
+            raise InvalidRequestError("tipo must be 'M' for DNI or 'S' for CUIT/CUIL.")
         return raw_tipo
 
     if len(identifier) == 11:
@@ -232,9 +354,11 @@ def _parse_json_response(response: requests.Response) -> dict[str, Any]:
     try:
         payload = response.json()
     except ValueError as exc:
-        raise RuntimeError(f"PYPDatos returned a non-JSON response: {response.text[:300]}") from exc
+        raise TechnicalError(
+            f"PYPDatos returned a non-JSON response: {response.text[:300]}"
+        ) from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("PYPDatos returned an unexpected JSON payload.")
+        raise TechnicalError("PYPDatos returned an unexpected JSON payload.")
     return payload
 
 
@@ -264,3 +388,86 @@ def _extract_message(payload: dict[str, Any]) -> str:
         if value:
             return str(value)
     return ""
+
+
+def _extract_domain_error(payload: dict[str, Any]) -> tuple[str, str]:
+    candidates: list[dict[str, Any]] = [payload]
+
+    for key in ("RESULTADO", "resultado", "data", "result"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested)
+
+    for candidate in candidates:
+        error_payload = candidate.get("ERROR") or candidate.get("error")
+        if isinstance(error_payload, dict):
+            code = str(
+                error_payload.get("codigo_error")
+                or error_payload.get("code")
+                or ""
+            ).strip()
+            message = str(
+                error_payload.get("descripcion_error")
+                or error_payload.get("description")
+                or error_payload.get("message")
+                or ""
+            ).strip()
+            if code or message:
+                return code, message
+
+        if isinstance(error_payload, str) and error_payload.strip():
+            return "", error_payload.strip()
+
+        code = str(candidate.get("codigo_error") or candidate.get("code") or "").strip()
+        message = str(
+            candidate.get("descripcion_error")
+            or candidate.get("description")
+            or ""
+        ).strip()
+        if code or message:
+            return code, message
+
+    return "", ""
+
+
+def _is_not_found_response(
+    message: str,
+    *,
+    domain_error_code: str,
+    domain_error_message: str,
+) -> bool:
+    normalized_message = message.strip().lower()
+    normalized_domain_error = domain_error_message.strip().lower()
+
+    return normalized_message == "no se pudo encontrar cuil/documento" or (
+        domain_error_code == "560" and normalized_domain_error == "sin datos"
+    )
+
+
+def _build_result(
+    *,
+    status: str,
+    ok: bool,
+    found: bool,
+    identifier: str,
+    tipo: str,
+    token_source: str,
+    token_cache_should_persist: bool,
+    token_cache_ttl: str,
+    token_cache_json: str,
+    data: dict[str, Any],
+    error: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "ok": ok,
+        "found": found,
+        "identifier": identifier,
+        "tipo": tipo,
+        "token_source": token_source,
+        "token_cache_should_persist": token_cache_should_persist,
+        "token_cache_ttl": token_cache_ttl,
+        "token_cache_json": token_cache_json,
+        "data": data,
+        "error": error,
+    }

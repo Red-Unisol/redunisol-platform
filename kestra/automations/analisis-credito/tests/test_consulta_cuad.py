@@ -3,12 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 FILES_ROOT = Path(__file__).resolve().parent.parent / "files"
 if str(FILES_ROOT) not in sys.path:
     sys.path.insert(0, str(FILES_ROOT))
 
 from consulta_cuad.service import (  # noqa: E402
+    ConfigurationError,
+    InvalidRequestError,
     SearchRequest,
     build_error_result,
     build_not_found_result,
@@ -16,6 +19,7 @@ from consulta_cuad.service import (  # noqa: E402
     build_success_result,
     decodificar_respuesta_http,
     es_respuesta_sin_resultado,
+    load_config_from_env,
     normalize_cuil,
     obtener_response_ok,
     obtener_response_status,
@@ -47,6 +51,24 @@ class ConsultaCuadTests(unittest.TestCase):
             self.frames = frames
             self.main_frame = frames[0] if frames else None
 
+    def test_flow_uses_safe_trigger_body_fallback_for_manual_runs(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_cuad.yaml"
+        ).read_text(encoding="utf-8")
+
+        expected = "trigger is defined and trigger.body is defined"
+        self.assertEqual(flow_source.count(expected), 1)
+        self.assertIn(
+            "({'cuil': inputs.cuil ?? ''} | json)",
+            flow_source,
+        )
+        self.assertNotIn(
+            "TRIGGER_BODY_JSON: \"{{ trigger.body | json }}\"",
+            flow_source,
+        )
+
     def test_parse_search_request_normalizes_cuil(self) -> None:
         request = parse_search_request({"cuil": "23-33312151-4"})
 
@@ -57,9 +79,18 @@ class ConsultaCuadTests(unittest.TestCase):
 
         self.assertEqual(request.cuil, "23333121514")
 
+    def test_parse_search_request_missing_body_raises_invalid_request(self) -> None:
+        with self.assertRaises(InvalidRequestError):
+            parse_search_request(None)
+
     def test_normalize_cuil_requires_eleven_digits(self) -> None:
         with self.assertRaisesRegex(ValueError, "exactly 11 digits"):
             normalize_cuil("1234")
+
+    def test_load_config_from_env_missing_credentials_raises_configuration_error(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ConfigurationError):
+                load_config_from_env()
 
     def test_parsear_totales_cuad_extracts_expected_fields(self) -> None:
         html = (
