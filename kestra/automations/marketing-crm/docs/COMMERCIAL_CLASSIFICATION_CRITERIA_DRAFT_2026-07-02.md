@@ -357,8 +357,11 @@ Si es socio con mora:
 
 Rechazo duro:
 
+- estas reglas se aplican solo a socios nuevos (`Es socio = No`)
 - mas de 4 situaciones 4 o 5
-- situacion mayor a 2 en Banco Nacion; esta regla tiene prioridad sobre las reglas de revision manual
+- situacion mayor a 2 en Banco Nacion
+
+Los socios recurrentes (`Es socio = Si`) y los casos con creditos activos quedan en revision manual antes de aplicar las reglas BCRA automaticas.
 
 AMEJUCA Premium:
 

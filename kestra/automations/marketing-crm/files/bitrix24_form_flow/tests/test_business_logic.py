@@ -3068,8 +3068,6 @@ class BusinessLogicTests(unittest.TestCase):
                 {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 3},
             ],
         )
-        client.leads[926]["UF_CRM_1728998183"] = "2617"
-        client.leads[926]["UF_CRM_VIMARX_CRED_ACT_CNT"] = "1"
         client.deals[936] = {
             "id": 936,
             "categoryId": 1,
@@ -3090,6 +3088,36 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "banco_nacion_situation_above_two")
         self.assertEqual(client.deals[936]["stageId"], "C1:5")
         self.assertEqual(client.deals[936]["assignedById"], 57)
+
+    def test_catamarca_recurrent_member_skips_hard_bcra_rules(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[927] = self._catamarca_enriched_lead(
+            927,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 4},
+            ],
+        )
+        client.leads[927]["UF_CRM_1728998183"] = "2617"
+        client.leads[927]["UF_CRM_VIMARX_CRED_ACT_CNT"] = "0"
+        client.deals[937] = {
+            "id": 937,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 927,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            937,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "member_rules_require_manual_review")
+        self.assertEqual(client.deals[937]["stageId"], "C1:KESTRA_REVIEW")
 
     def test_catamarca_member_with_active_credit_goes_to_manual_review(self) -> None:
         client = FakeBitrixClient()
@@ -3113,7 +3141,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "member_credit_rules_require_manual_review")
+        self.assertEqual(result["reason"], "member_rules_require_manual_review")
         self.assertEqual(client.deals[933]["stageId"], "C1:KESTRA_REVIEW")
 
     def _catamarca_enriched_lead(
