@@ -10,7 +10,7 @@ it('shows the Fiat convention card using the active regulator linked by short na
 
     Regulator::create([
         'name' => 'Asociación Mutual Fiat Concord',
-        'short_name' => 'Fiat',
+        'short_name' => 'Fiat Concord',
         'logo_path' => 'regulators/fiat.png',
         'inaes_mat' => '233',
         'bcra_code' => '55277',
@@ -32,7 +32,7 @@ it('shows the Fiat convention card using the active regulator linked by short na
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
-            ->where('finalizar.regulator.short_name', 'Fiat')
+            ->where('finalizar.regulator.short_name', 'Fiat Concord')
             ->where('finalizar.regulator.name', 'Asociación Mutual Fiat Concord')
             ->where('finalizar.regulator.cuit', '30-62415628-1')
             ->where('finalizar.regulator.inaes_mat', '233')
