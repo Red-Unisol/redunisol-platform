@@ -3032,7 +3032,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[934]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[934]["ufCrm_659EBB0445E8E"], "AMEJUCA Especial")
 
-    def test_catamarca_explicit_banco_nacion_above_one_is_manual(self) -> None:
+    def test_catamarca_banco_nacion_situation_two_is_not_hard_rejection(self) -> None:
         client = FakeBitrixClient()
         client.leads[925] = self._catamarca_enriched_lead(
             925,
@@ -3057,8 +3057,39 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "banco_nacion_rule_requires_manual_review")
+        self.assertEqual(result["reason"], "amejuca_line_requires_manual_review")
         self.assertEqual(client.deals[935]["stageId"], "C1:KESTRA_REVIEW")
+
+    def test_catamarca_banco_nacion_above_two_is_hard_rejection(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[926] = self._catamarca_enriched_lead(
+            926,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 3},
+            ],
+        )
+        client.leads[926]["UF_CRM_1728998183"] = "2617"
+        client.leads[926]["UF_CRM_VIMARX_CRED_ACT_CNT"] = "1"
+        client.deals[936] = {
+            "id": 936,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 926,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            936,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "banco_nacion_situation_above_two")
+        self.assertEqual(client.deals[936]["stageId"], "C1:5")
+        self.assertEqual(client.deals[936]["assignedById"], 57)
 
     def test_catamarca_member_with_active_credit_goes_to_manual_review(self) -> None:
         client = FakeBitrixClient()

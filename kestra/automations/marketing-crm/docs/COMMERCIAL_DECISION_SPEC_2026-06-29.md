@@ -110,6 +110,8 @@ No es todavia una especificacion de implementacion cerrada.
    - Kestra agrega al timeline del lead un comentario `Negociacion creada a partir del prospecto` con enlace a la negociacion
    - el comentario se crea solo para negociaciones nuevas creadas por Kestra; no se agrega a negociaciones preexistentes creadas por Bitrix
 
+22. Para Catamarca, Banco Nacion en situacion mayor a 2 es rechazo duro. Esta regla tiene prioridad sobre las reglas que enviarian el caso a revision manual. Banco Nacion ausente del snapshot equivale a situacion 0.
+
 ## Evidencia Bitrix24
 
 Pipelines de negociaciones existentes observados:
@@ -306,15 +308,13 @@ Por eso conviene separar la implementacion en dos decisiones:
 
 13. Para Caja Morosos: definir como detectar si la irregularidad es con banco de cobro, especialmente Bancor o Macro.
 
-14. Para Catamarca: confirmar si "situacion mayor a 1 en Banco Nacion" es rechazo duro siempre.
+14. Para AMEJUCA Premium: confirmar si manda "sin situaciones con ninguna entidad" o "equivalente operativo: situacion 1".
 
-15. Para AMEJUCA Premium: confirmar si manda "sin situaciones con ninguna entidad" o "equivalente operativo: situacion 1".
+15. Definir si `rechazo por analisis` debe cerrar automaticamente como perdido o quedar en etapa manual de revision.
 
-16. Definir si `rechazo por analisis` debe cerrar automaticamente como perdido o quedar en etapa manual de revision.
+16. Definir que reglas deben aplicarse inmediatamente en carga via formulario y cuales solo en reclasificacion posterior, cuando ya existe enrichment Vimarx/BCRA.
 
-17. Definir que reglas deben aplicarse inmediatamente en carga via formulario y cuales solo en reclasificacion posterior, cuando ya existe enrichment Vimarx/BCRA.
-
-18. Definir si se migra o limpia el comportamiento actual donde `SOURCE_ID` queda como `CALL` aunque el origen real venga del formulario.
+17. Definir si se migra o limpia el comportamiento actual donde `SOURCE_ID` queda como `CALL` aunque el origen real venga del formulario.
 
 ## Recomendacion De Implementacion
 

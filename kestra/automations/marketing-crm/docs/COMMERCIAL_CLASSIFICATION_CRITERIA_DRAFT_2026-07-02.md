@@ -358,8 +358,7 @@ Si es socio con mora:
 Rechazo duro:
 
 - mas de 4 situaciones 4 o 5
-
-La regla "situacion mayor a 1 en Banco Nacion" queda pendiente de confirmacion. Si aparece esa condicion y afecta la decision, el caso va a revision manual.
+- situacion mayor a 2 en Banco Nacion; esta regla tiene prioridad sobre las reglas de revision manual
 
 AMEJUCA Premium:
 

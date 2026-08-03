@@ -160,28 +160,37 @@ def _evaluate_catamarca(
     active_credits = _optional_int(
         lead.get(config.fields.lead_vimarx_creditos_activos_count or "")
     )
-    if active_credits is not None and active_credits > 0:
-        return _manual(config, "member_credit_rules_require_manual_review")
-    if member_label == "si" and active_credits is None:
-        return _manual(config, "missing_active_credit_data")
-    if member_label not in {"no", "si"} and active_credits is None:
-        return _manual(config, "missing_membership_data")
 
-    return _evaluate_bcra(config, lead, submission.payment_bank.label)
+    return _evaluate_bcra(
+        config,
+        lead,
+        submission.payment_bank.label,
+        member_label=member_label,
+        active_credits=active_credits,
+    )
 
 
 def _evaluate_bcra(
     config: AppConfig,
     lead: dict[str, Any],
     payment_bank_label: str,
+    *,
+    member_label: str,
+    active_credits: int | None,
 ) -> CatamarcaDecision:
     raw_value = lead.get(config.fields.lead_bcra_data_raw or "")
     try:
         snapshot = json.loads(str(raw_value))
     except (TypeError, ValueError, json.JSONDecodeError):
-        return _manual(config, "missing_bcra_snapshot")
+        return _member_review(config, member_label, active_credits) or _manual(
+            config,
+            "missing_bcra_snapshot",
+        )
     if not isinstance(snapshot, dict) or snapshot.get("outcome") != "ok":
-        return _manual(config, "bcra_snapshot_not_conclusive")
+        return _member_review(config, member_label, active_credits) or _manual(
+            config,
+            "bcra_snapshot_not_conclusive",
+        )
 
     entities = _latest_bcra_entities(snapshot)
     high_risk_count = sum(
@@ -196,10 +205,18 @@ def _evaluate_bcra(
 
     if any(
         _is_banco_nacion(entity.get("entidad"))
-        and (_optional_int(entity.get("situacion")) or 0) > 1
+        and (_optional_int(entity.get("situacion")) or 0) > 2
         for entity in entities
     ):
-        return _manual(config, "banco_nacion_rule_requires_manual_review")
+        return CatamarcaDecision(
+            action="rejected",
+            reason="banco_nacion_situation_above_two",
+            stage_id=config.deal.bcra_rejected_stage_id,
+        )
+
+    member_review = _member_review(config, member_label, active_credits)
+    if member_review is not None:
+        return member_review
 
     situations = [
         value
@@ -226,6 +243,20 @@ def _evaluate_bcra(
         )
 
     return _manual(config, "amejuca_line_requires_manual_review")
+
+
+def _member_review(
+    config: AppConfig,
+    member_label: str,
+    active_credits: int | None,
+) -> CatamarcaDecision | None:
+    if active_credits is not None and active_credits > 0:
+        return _manual(config, "member_credit_rules_require_manual_review")
+    if member_label == "si" and active_credits is None:
+        return _manual(config, "missing_active_credit_data")
+    if member_label not in {"no", "si"} and active_credits is None:
+        return _manual(config, "missing_membership_data")
+    return None
 
 
 def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
