@@ -192,6 +192,17 @@ interface LeadFormData {
     banco: string;
 }
 
+type FormFieldName =
+    | 'cuil'
+    | 'email'
+    | 'celular'
+    | 'terminos'
+    | 'provincia'
+    | 'situacion_laboral'
+    | 'banco';
+
+type FormErrors = Partial<Record<FormFieldName, string>>;
+
 const INITIAL_FORM: LeadFormData = {
     cuil: '',
     email: '',
@@ -262,6 +273,15 @@ function formatCuilInput(value: string): string {
     return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10)}`;
 }
 
+function isValidEmail(value: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function isValidPhone(value: string): boolean {
+    const digits = value.replace(/\D/g, '');
+    return digits.length >= 8 && digits.length <= 15;
+}
+
 // ── Shared style constants ────────────────────────────────────────────────────
 
 const inputCls =
@@ -286,16 +306,16 @@ function Step1({
     setFormData,
     cfg,
     cuilValidation,
+    errors,
 }: {
     formData: LeadFormData;
     setFormData: React.Dispatch<React.SetStateAction<LeadFormData>>;
     cfg: FormSectionConfig;
     cuilValidation: CuilValidation;
+    errors: FormErrors;
 }) {
-    const showCuilError =
-        cfg.cuil.enabled &&
-        cuilValidation.message !== null &&
-        formData.cuil.trim() !== '';
+    const cuilError = errors.cuil ?? cuilValidation.message ?? null;
+    const showCuilError = cfg.cuil.enabled && cuilError !== null;
 
     return (
         <motion.div {...stepAnim} key="s1">
@@ -340,7 +360,7 @@ function Step1({
                                 id="cuil-validation-message"
                                 className="mt-1.5 text-xs font-medium text-red-500"
                             >
-                                {cuilValidation.message}
+                                {cuilError}
                             </p>
                         )}
                     </div>
@@ -361,8 +381,14 @@ function Step1({
                                     email: e.target.value,
                                 }))
                             }
-                            className={inputCls}
+                            aria-invalid={Boolean(errors.email)}
+                            className={`${inputCls} ${errors.email ? 'border-red-300 focus:border-red-400 focus:ring-red-400' : ''}`}
                         />
+                        {errors.email && (
+                            <p className="mt-1.5 text-xs font-medium text-red-500">
+                                {errors.email}
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -381,33 +407,46 @@ function Step1({
                                     celular: e.target.value,
                                 }))
                             }
-                            className={inputCls}
+                            aria-invalid={Boolean(errors.celular)}
+                            className={`${inputCls} ${errors.celular ? 'border-red-300 focus:border-red-400 focus:ring-red-400' : ''}`}
                         />
+                        {errors.celular && (
+                            <p className="mt-1.5 text-xs font-medium text-red-500">
+                                {errors.celular}
+                            </p>
+                        )}
                     </div>
                 )}
 
                 {cfg.terminos.enabled && (
-                    <label className="flex cursor-pointer items-start gap-3">
-                        <div className="relative mt-0.5 shrink-0">
-                            <input
-                                type="checkbox"
-                                checked={formData.terminos}
-                                onChange={(e) =>
-                                    setFormData((p) => ({
-                                        ...p,
-                                        terminos: e.target.checked,
-                                    }))
-                                }
-                                className="h-4.5 w-4.5 cursor-pointer rounded border-gray-300 accent-[#6BAF92]"
+                    <div>
+                        <label className="flex cursor-pointer items-start gap-3">
+                            <div className="relative mt-0.5 shrink-0">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.terminos}
+                                    onChange={(e) =>
+                                        setFormData((p) => ({
+                                            ...p,
+                                            terminos: e.target.checked,
+                                        }))
+                                    }
+                                    className="h-4.5 w-4.5 cursor-pointer rounded border-gray-300 accent-[#6BAF92]"
+                                />
+                            </div>
+                            <span
+                                className="text-sm leading-snug text-gray-500"
+                                dangerouslySetInnerHTML={{
+                                    __html: cfg.terminos.label,
+                                }}
                             />
-                        </div>
-                        <span
-                            className="text-sm leading-snug text-gray-500"
-                            dangerouslySetInnerHTML={{
-                                __html: cfg.terminos.label,
-                            }}
-                        />
-                    </label>
+                        </label>
+                        {errors.terminos && (
+                            <p className="mt-1.5 text-xs font-medium text-red-500">
+                                {errors.terminos}
+                            </p>
+                        )}
+                    </div>
                 )}
             </div>
         </motion.div>
@@ -533,9 +572,11 @@ function Step2({
 function Step3({
     formData,
     setFormData,
+    error,
 }: {
     formData: LeadFormData;
     setFormData: React.Dispatch<React.SetStateAction<LeadFormData>>;
+    error?: string;
 }) {
     const [showOtherProvinces, setShowOtherProvinces] = useState(
         otrasProvincias.includes(formData.provincia),
@@ -616,6 +657,9 @@ function Step3({
                     <ChevronDown />
                 </div>
             )}
+            {error && (
+                <p className="mt-3 text-xs font-medium text-red-500">{error}</p>
+            )}
         </motion.div>
     );
 }
@@ -642,10 +686,12 @@ function Step4({
     formData,
     setFormData,
     cfg,
+    errors,
 }: {
     formData: LeadFormData;
     setFormData: React.Dispatch<React.SetStateAction<LeadFormData>>;
     cfg: FormSectionConfig;
+    errors: FormErrors;
 }) {
     return (
         <motion.div {...stepAnim} key="s4">
@@ -677,6 +723,11 @@ function Step4({
                             </select>
                             <ChevronDown />
                         </div>
+                        {errors.situacion_laboral && (
+                            <p className="mt-1.5 text-xs font-medium text-red-500">
+                                {errors.situacion_laboral}
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -707,6 +758,11 @@ function Step4({
                             </select>
                             <ChevronDown />
                         </div>
+                        {errors.banco && (
+                            <p className="mt-1.5 text-xs font-medium text-red-500">
+                                {errors.banco}
+                            </p>
+                        )}
                     </div>
                 )}
             </div>
@@ -934,6 +990,7 @@ export default function FormSection({
         'success' | 'error' | 'not_qualified' | null
     >(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [formErrors, setFormErrors] = useState<FormErrors>({});
     const [formData, setFormData] = useState<LeadFormData>(INITIAL_FORM);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [reciboUrl, setReciboUrl] = useState<string | null>(null);
@@ -943,6 +1000,13 @@ export default function FormSection({
     const [uploading, setUploading] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const updateFormData: React.Dispatch<React.SetStateAction<LeadFormData>> = (
+        action,
+    ) => {
+        setFormErrors({});
+        setFormData(action);
+    };
 
     // Compute which steps are active based on config
     const enabledSteps = useMemo(() => {
@@ -961,11 +1025,46 @@ export default function FormSection({
         () => validateCuil(formData.cuil),
         [formData.cuil],
     );
-    const blocksStep1 =
-        step === 1 &&
-        cfg.cuil.enabled &&
-        formData.cuil.trim() !== '' &&
-        cuilValidation.status !== 'valid';
+    const clientErrors = useMemo((): FormErrors => {
+        const errors: FormErrors = {};
+
+        if (cfg.cuil.enabled && cuilValidation.status !== 'valid') {
+            errors.cuil =
+                cuilValidation.message ?? 'Ingresá tu CUIL para continuar.';
+        }
+        if (cfg.email.enabled && !isValidEmail(formData.email)) {
+            errors.email = 'Ingresá un email válido.';
+        }
+        if (cfg.celular.enabled && !isValidPhone(formData.celular)) {
+            errors.celular = 'Ingresá un celular válido.';
+        }
+        if (cfg.terminos.enabled && !formData.terminos) {
+            errors.terminos = 'Debés aceptar los términos para continuar.';
+        }
+        if (cfg.provincia.enabled && !formData.provincia) {
+            errors.provincia = 'Seleccioná una provincia.';
+        }
+        if (cfg.situacionLaboral.enabled && !formData.situacionLaboral) {
+            errors.situacion_laboral = 'Seleccioná tu situación laboral.';
+        }
+        if (cfg.banco.enabled && !formData.banco) {
+            errors.banco = 'Seleccioná tu banco de cobro.';
+        }
+
+        return errors;
+    }, [cfg, cuilValidation, formData]);
+
+    const displayedErrors = { ...clientErrors, ...formErrors };
+    const blocksCurrentStep =
+        (step === 1 &&
+            ['cuil', 'email', 'celular', 'terminos'].some(
+                (field) => displayedErrors[field as FormFieldName],
+            )) ||
+        (step === 3 && Boolean(displayedErrors.provincia)) ||
+        (step === 4 &&
+            Boolean(
+                displayedErrors.situacion_laboral || displayedErrors.banco,
+            ));
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
@@ -1036,24 +1135,70 @@ export default function FormSection({
         try {
             const res = await fetch('/api/form-submissions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
                 body: JSON.stringify(payload),
             });
 
-            const data = (await res.json()) as {
+            const contentType = res.headers.get('content-type') ?? '';
+            const data = contentType.includes('application/json')
+                ? ((await res.json()) as {
+                      ok?: boolean;
+                      message?: string;
+                      qualified?: boolean;
+                      errors?: Record<string, string[]>;
+                  })
+                : null;
+
+            if (res.status === 422 && data?.errors) {
+                const validationErrors: FormErrors = {};
+                for (const [field, messages] of Object.entries(data.errors)) {
+                    if (messages[0]) {
+                        validationErrors[field as FormFieldName] = messages[0];
+                    }
+                }
+                setFormErrors(validationErrors);
+                const firstField = Object.keys(validationErrors)[0];
+                setStep(
+                    firstField === 'provincia'
+                        ? 3
+                        : firstField === 'situacion_laboral' ||
+                            firstField === 'banco'
+                          ? 4
+                          : 1,
+                );
+                return;
+            }
+
+            if (!res.ok || data?.ok === false) {
+                setErrorMessage(
+                    data?.message ??
+                        'No pudimos procesar la solicitud. Intentá nuevamente.',
+                );
+                setResult('error');
+                return;
+            }
+
+            if (!data) {
+                setErrorMessage(
+                    'El servidor devolvió una respuesta inesperada. Intentá nuevamente.',
+                );
+                setResult('error');
+                return;
+            }
+
+            setFormErrors({});
+
+            const responseData = data as {
                 ok?: boolean;
                 message?: string;
                 qualified?: boolean;
             };
 
-            if (!res.ok || data.ok === false) {
-                setErrorMessage(data.message ?? null);
-                setResult('error');
-                return;
-            }
-
-            if (data.qualified === false) {
-                setErrorMessage(data.message ?? null);
+            if (responseData.qualified === false) {
+                setErrorMessage(responseData.message ?? null);
                 setResult('not_qualified');
                 return;
             }
@@ -1067,7 +1212,9 @@ export default function FormSection({
             });
             setResult('success');
         } catch {
-            setErrorMessage(null);
+            setErrorMessage(
+                'No pudimos conectarnos con el servidor. Revisá tu conexión e intentá nuevamente.',
+            );
             setResult('error');
         } finally {
             setIsSubmitting(false);
@@ -1075,6 +1222,7 @@ export default function FormSection({
     };
 
     const goNext = () => {
+        setFormErrors({});
         const nextIndex = currentStepIndex + 1;
         if (nextIndex < enabledSteps.length) {
             setStep(enabledSteps[nextIndex]);
@@ -1093,6 +1241,7 @@ export default function FormSection({
         setFormData(INITIAL_FORM);
         setReciboUrl(null);
         setReciboUploadError(null);
+        setFormErrors({});
     };
 
     const handleSkipRecibo = () => {
@@ -1182,9 +1331,10 @@ export default function FormSection({
                                 <Step1
                                     key="step1"
                                     formData={formData}
-                                    setFormData={setFormData}
+                                    setFormData={updateFormData}
                                     cfg={cfg}
                                     cuilValidation={cuilValidation}
+                                    errors={displayedErrors}
                                 />
                             ) : step === 2 ? (
                                 <Step2
@@ -1204,14 +1354,16 @@ export default function FormSection({
                                 <Step3
                                     key="step3"
                                     formData={formData}
-                                    setFormData={setFormData}
+                                    setFormData={updateFormData}
+                                    error={displayedErrors.provincia}
                                 />
                             ) : (
                                 <Step4
                                     key="step4"
                                     formData={formData}
-                                    setFormData={setFormData}
+                                    setFormData={updateFormData}
                                     cfg={cfg}
+                                    errors={displayedErrors}
                                 />
                             )}
                         </AnimatePresence>
@@ -1237,7 +1389,7 @@ export default function FormSection({
                                 onClick={goNext}
                                 disabled={
                                     isSubmitting ||
-                                    blocksStep1 ||
+                                    blocksCurrentStep ||
                                     (step === 2 &&
                                         (uploading ||
                                             (!!formData.recibo &&
