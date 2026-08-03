@@ -67,7 +67,7 @@ class FinalizarController extends Controller
             );
         }
 
-        $finalizar['regulator'] = $this->resolveRegulatorForLine($finalizar['linea']);
+        $finalizar['regulator'] = $this->resolveRegulatorForLine((string) $request->query('linea', ''));
 
         return Inertia::render('finalizar', [
             'settings'  => $settings,
@@ -77,13 +77,11 @@ class FinalizarController extends Controller
 
     private function resolveRegulatorForLine(string $linea): ?array
     {
-        $shortName = config("finalizar.lines.{$linea}.regulator_short_name");
+        $normalizedShortName = Str::lower(trim($linea));
 
-        if (! is_string($shortName) || trim($shortName) === '') {
+        if ($normalizedShortName === '') {
             return null;
         }
-
-        $normalizedShortName = Str::lower(trim($shortName));
 
         try {
             $regulator = Regulator::query()
@@ -93,7 +91,7 @@ class FinalizarController extends Controller
         } catch (Throwable $exception) {
             Log::warning('No se pudo resolver el convenio para finalizar.', [
                 'linea' => $linea,
-                'regulator_short_name' => $shortName,
+                'regulator_short_name' => $linea,
                 'exception' => $exception,
             ]);
 
@@ -103,7 +101,7 @@ class FinalizarController extends Controller
         if (! $regulator) {
             Log::warning('No existe un regulador activo para el convenio de finalizar.', [
                 'linea' => $linea,
-                'regulator_short_name' => $shortName,
+                'regulator_short_name' => $linea,
             ]);
 
             return null;

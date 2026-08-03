@@ -6,11 +6,11 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 it('shows the Fiat convention card using the active regulator linked by short name', function () {
     config()->set('finalizar.metamap.client_id', 'public-client-id');
-    config()->set('finalizar.legacy_clients.fiat.base_url', 'https://fiat.example.test');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://fiat.example.test');
 
     Regulator::create([
         'name' => 'Asociación Mutual Fiat Concord',
-        'short_name' => 'Fiat Concord',
+        'short_name' => 'fiat_celesol',
         'logo_path' => 'regulators/fiat.png',
         'inaes_mat' => '233',
         'bcra_code' => '55277',
@@ -28,11 +28,11 @@ it('shows the Fiat convention card using the active regulator linked by short na
         ], 200),
     ]);
 
-    $this->get('/finalizar.php?sol=228418&ntrans=0&linea=fiat')
+    $this->get('/finalizar.php?sol=228418&ntrans=0&linea=fiat_celesol')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
-            ->where('finalizar.regulator.short_name', 'Fiat Concord')
+            ->where('finalizar.regulator.short_name', 'fiat_celesol')
             ->where('finalizar.regulator.name', 'Asociación Mutual Fiat Concord')
             ->where('finalizar.regulator.cuit', '30-62415628-1')
             ->where('finalizar.regulator.inaes_mat', '233')
@@ -46,13 +46,35 @@ it('shows the Fiat convention card using the active regulator linked by short na
         && $request->method() === 'POST');
 });
 
-it('does not show a convention card when the configured regulator is inactive', function () {
+it('does not show a convention card when short_name does not match linea', function () {
     config()->set('finalizar.metamap.client_id', 'public-client-id');
-    config()->set('finalizar.legacy_clients.fiat.base_url', 'https://fiat.example.test');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://fiat.example.test');
 
     Regulator::create([
         'name' => 'Asociación Mutual Fiat Concord',
-        'short_name' => 'Fiat',
+        'short_name' => 'Fiat Concord',
+        'is_active' => true,
+    ]);
+
+    Http::fake([
+        'https://fiat.example.test/api/redunisol/finSolicitud/0/228418' => Http::response([], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=228418&ntrans=0&linea=fiat_celesol')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.regulator', null)
+        );
+});
+
+it('does not show a convention card when the matching regulator is inactive', function () {
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://fiat.example.test');
+
+    Regulator::create([
+        'name' => 'Asociación Mutual Fiat Concord',
+        'short_name' => 'fiat_celesol',
         'is_active' => false,
     ]);
 
@@ -60,7 +82,7 @@ it('does not show a convention card when the configured regulator is inactive', 
         'https://fiat.example.test/api/redunisol/finSolicitud/0/228418' => Http::response([], 200),
     ]);
 
-    $this->get('/finalizar.php?sol=228418&ntrans=0&linea=fiat')
+    $this->get('/finalizar.php?sol=228418&ntrans=0&linea=fiat_celesol')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
@@ -76,7 +98,6 @@ it('uses the same convention card data shape for a future configured line', func
         'flow_id' => 'future-flow-id',
         'doc_id' => 'future-doc-id',
         'extra_html' => '',
-        'regulator_short_name' => 'Futura',
     ]);
 
     Regulator::create([
@@ -103,12 +124,34 @@ it('uses the same convention card data shape for a future configured line', func
         );
 });
 
+it('uses linea from the URL as the source of truth for the convention card', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+
+    Regulator::create([
+        'name' => 'Asociación Mutual Cliente Nuevo',
+        'short_name' => 'cliente_nuevo',
+        'is_active' => true,
+    ]);
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/321' => Http::response([], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=321&ntrans=0&linea=cliente_nuevo')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'caja')
+            ->where('finalizar.regulator.short_name', 'cliente_nuevo')
+            ->where('finalizar.regulator.name', 'Asociación Mutual Cliente Nuevo')
+        );
+});
+
 it('does not resolve Fiat convention data for Caja or unknown lines', function () {
     config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
 
     Regulator::create([
         'name' => 'Asociación Mutual Fiat Concord',
-        'short_name' => 'Fiat',
+        'short_name' => 'fiat_celesol',
         'is_active' => true,
     ]);
 
