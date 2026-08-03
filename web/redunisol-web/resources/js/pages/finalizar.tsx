@@ -9,6 +9,9 @@ import {
 } from '@phosphor-icons/react';
 import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 
+import ConventionCard, {
+    type ConvenioRegulator,
+} from '@/components/convenio-card';
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
 
@@ -61,6 +64,7 @@ interface FinalizarPayload {
     loan: LoanData | null;
     metamap: MetamapConfig;
     error: string | null;
+    regulator: ConvenioRegulator | null;
 }
 
 interface PageProps {
@@ -133,11 +137,11 @@ export default function Finalizar() {
     const hasLoanData = Boolean(loan);
     const metamapReady = Boolean(
         hasLoanData &&
-            finalizar.metamap.client_id &&
-            finalizar.metamap.flow_id &&
-            finalizar.metamap.doc_id &&
-            finalizar.metamap.metadata &&
-            scriptStatus === 'ready',
+        finalizar.metamap.client_id &&
+        finalizar.metamap.flow_id &&
+        finalizar.metamap.doc_id &&
+        finalizar.metamap.metadata &&
+        scriptStatus === 'ready',
     );
 
     const metadata = useMemo(() => {
@@ -200,6 +204,10 @@ export default function Finalizar() {
                                 'Su prestamo sera descontado de la siguiente forma:'}
                         </p>
                     </div>
+
+                    {finalizar.regulator && (
+                        <ConventionCard regulator={finalizar.regulator} />
+                    )}
 
                     {verificationState === 'finished' && (
                         <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-5 text-center shadow-sm">

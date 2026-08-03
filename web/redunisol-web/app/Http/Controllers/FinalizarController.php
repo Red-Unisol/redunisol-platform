@@ -2,11 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Regulator;
 use App\Models\SiteSetting;
 use App\Services\FinalizarSolicitudService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class FinalizarController extends Controller
 {
@@ -62,9 +67,54 @@ class FinalizarController extends Controller
             );
         }
 
+        $finalizar['regulator'] = $this->resolveRegulatorForLine((string) $request->query('linea', ''));
+
         return Inertia::render('finalizar', [
             'settings'  => $settings,
             'finalizar' => $finalizar,
         ]);
+    }
+
+    private function resolveRegulatorForLine(string $linea): ?array
+    {
+        $normalizedShortName = Str::lower(trim($linea));
+
+        if ($normalizedShortName === '') {
+            return null;
+        }
+
+        try {
+            $regulator = Regulator::query()
+                ->active()
+                ->whereRaw('LOWER(TRIM(short_name)) = ?', [$normalizedShortName])
+                ->first();
+        } catch (Throwable $exception) {
+            Log::warning('No se pudo resolver el convenio para finalizar.', [
+                'linea' => $linea,
+                'regulator_short_name' => $linea,
+                'exception' => $exception,
+            ]);
+
+            return null;
+        }
+
+        if (! $regulator) {
+            Log::warning('No existe un regulador activo para el convenio de finalizar.', [
+                'linea' => $linea,
+                'regulator_short_name' => $linea,
+            ]);
+
+            return null;
+        }
+
+        return [
+            'short_name' => $regulator->short_name,
+            'name' => $regulator->name,
+            'cuit' => $regulator->cuit,
+            'inaes_mat' => $regulator->inaes_mat,
+            'logo_url' => $regulator->logo_path
+                ? Storage::disk('public')->url($regulator->logo_path)
+                : null,
+        ];
     }
 }
