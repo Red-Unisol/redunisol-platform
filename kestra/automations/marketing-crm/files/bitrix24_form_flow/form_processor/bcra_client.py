@@ -38,6 +38,7 @@ class BcraConsultationResult:
     negative_entity_count: int
     negative_entities: tuple[str, ...]
     message: str | None = None
+    denominacion: str | None = None
 
     @property
     def is_persistable(self) -> bool:
@@ -61,6 +62,7 @@ def serialize_bcra_result(result: BcraConsultationResult) -> dict[str, Any]:
         "negative_entity_count": result.negative_entity_count,
         "negative_entities": list(result.negative_entities),
         "message": result.message,
+        "denominacion": result.denominacion,
     }
 
 
@@ -81,6 +83,7 @@ def deserialize_bcra_result(payload: dict[str, Any]) -> BcraConsultationResult:
             if str(item).strip()
         ),
         message=_optional_str(payload.get("message")),
+        denominacion=_optional_str(payload.get("denominacion")),
     )
 
 
@@ -190,6 +193,7 @@ def _success_result(
         "payload": payload,
     }
 
+    denominacion = str(results.get("denominacion") or "").strip()
     return BcraConsultationResult(
         outcome="ok",
         checked_at=checked_at,
@@ -198,7 +202,7 @@ def _success_result(
         formatted_field_value=_format_success_snapshot(
             checked_at=checked_at,
             identification=identification,
-            denominacion=str(results.get("denominacion") or "").strip(),
+            denominacion=denominacion,
             entities=entities,
             status_label=status_label,
         ),
@@ -211,6 +215,7 @@ def _success_result(
         negative_entity_count=negative_entity_count,
         negative_entities=negative_entities,
         message=None,
+        denominacion=denominacion or None,
     )
 
 
