@@ -160,20 +160,17 @@ def _evaluate_catamarca(
     active_credits = _optional_int(
         lead.get(config.fields.lead_vimarx_creditos_activos_count or "")
     )
-    if active_credits is not None and active_credits > 0:
-        return _manual(config, "member_credit_rules_require_manual_review")
-    if member_label == "si" and active_credits is None:
-        return _manual(config, "missing_active_credit_data")
-    if member_label not in {"no", "si"} and active_credits is None:
+    if member_label == "si" or (active_credits is not None and active_credits > 0):
+        return _manual(config, "member_rules_require_manual_review")
+    if member_label != "no":
         return _manual(config, "missing_membership_data")
 
-    return _evaluate_bcra(config, lead, submission.payment_bank.label)
+    return _evaluate_bcra(config, lead)
 
 
 def _evaluate_bcra(
     config: AppConfig,
     lead: dict[str, Any],
-    payment_bank_label: str,
 ) -> CatamarcaDecision:
     raw_value = lead.get(config.fields.lead_bcra_data_raw or "")
     try:
@@ -194,12 +191,12 @@ def _evaluate_bcra(
             stage_id=config.deal.bcra_rejected_stage_id,
         )
 
-    if any(
-        _is_banco_nacion(entity.get("entidad"))
-        and (_optional_int(entity.get("situacion")) or 0) > 1
-        for entity in entities
-    ):
-        return _manual(config, "banco_nacion_rule_requires_manual_review")
+    if _banco_nacion_situation(entities) > 2:
+        return CatamarcaDecision(
+            action="rejected",
+            reason="banco_nacion_situation_above_two",
+            stage_id=config.deal.bcra_rejected_stage_id,
+        )
 
     situations = [
         value
@@ -214,18 +211,12 @@ def _evaluate_bcra(
             commercial_line="AMEJUCA Premium",
         )
 
-    if high_risk_count <= 4 and _payment_bank_is_situation_one(
-        entities,
-        payment_bank_label,
-    ):
-        return CatamarcaDecision(
-            action="approved",
-            reason="amejuca_special",
-            stage_id=config.deal.stage_id,
-            commercial_line="AMEJUCA Especial",
-        )
-
-    return _manual(config, "amejuca_line_requires_manual_review")
+    return CatamarcaDecision(
+        action="approved",
+        reason="amejuca_special",
+        stage_id=config.deal.stage_id,
+        commercial_line="AMEJUCA Especial",
+    )
 
 
 def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
@@ -244,25 +235,16 @@ def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return [entity for entity in entities if isinstance(entity, dict)]
 
 
-def _payment_bank_is_situation_one(
-    entities: list[dict[str, Any]],
-    payment_bank_label: str,
-) -> bool:
-    bank = _normalize_text(payment_bank_label)
-    bank_tokens = {
-        token
-        for token in bank.split()
-        if len(token) >= 4 and token not in {"banco", "argentina", "provincia"}
-    }
-    if not bank_tokens:
-        return False
+def _banco_nacion_situation(entities: list[dict[str, Any]]) -> int:
+    situations: list[int] = []
     for entity in entities:
-        entity_name = _normalize_text(entity.get("entidad"))
-        if bank_tokens.intersection(entity_name.split()) and _optional_int(
-            entity.get("situacion")
-        ) == 1:
-            return True
-    return False
+        if not _is_banco_nacion(entity.get("entidad")):
+            continue
+        situation = _optional_int(entity.get("situacion"))
+        if situation is not None:
+            situations.append(situation)
+
+    return max(situations, default=0)
 
 
 def _is_banco_nacion(value: Any) -> bool:

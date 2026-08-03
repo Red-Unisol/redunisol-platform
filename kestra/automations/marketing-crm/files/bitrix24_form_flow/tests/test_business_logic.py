@@ -3003,6 +3003,123 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[932]["stageId"], "C1:5")
         self.assertEqual(client.deals[932]["assignedById"], 57)
 
+    def test_catamarca_absent_banco_nacion_is_situation_zero(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[924] = self._catamarca_enriched_lead(
+            924,
+            bcra_entities=[
+                {"entidad": "Naldo Lombardi S.A.", "situacion": 2},
+            ],
+        )
+        client.deals[934] = {
+            "id": 934,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 924,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            934,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "amejuca_special")
+        self.assertEqual(client.deals[934]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[934]["ufCrm_659EBB0445E8E"], "AMEJUCA Especial")
+
+    def test_catamarca_banco_nacion_situation_two_is_amejuca_special(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[925] = self._catamarca_enriched_lead(
+            925,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 2},
+            ],
+        )
+        client.deals[935] = {
+            "id": 935,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 925,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            935,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "amejuca_special")
+        self.assertEqual(client.deals[935]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[935]["ufCrm_659EBB0445E8E"], "AMEJUCA Especial")
+
+    def test_catamarca_banco_nacion_above_two_is_hard_rejection(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[926] = self._catamarca_enriched_lead(
+            926,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 3},
+            ],
+        )
+        client.deals[936] = {
+            "id": 936,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 926,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            936,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "banco_nacion_situation_above_two")
+        self.assertEqual(client.deals[936]["stageId"], "C1:5")
+        self.assertEqual(client.deals[936]["assignedById"], 57)
+
+    def test_catamarca_recurrent_member_skips_hard_bcra_rules(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[927] = self._catamarca_enriched_lead(
+            927,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 4},
+            ],
+        )
+        client.leads[927]["UF_CRM_1728998183"] = "2617"
+        client.leads[927]["UF_CRM_VIMARX_CRED_ACT_CNT"] = "0"
+        client.deals[937] = {
+            "id": 937,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 927,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            937,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "member_rules_require_manual_review")
+        self.assertEqual(client.deals[937]["stageId"], "C1:KESTRA_REVIEW")
+
     def test_catamarca_member_with_active_credit_goes_to_manual_review(self) -> None:
         client = FakeBitrixClient()
         client.leads[923] = self._catamarca_enriched_lead(923, bcra_entities=[])
@@ -3025,7 +3142,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "member_credit_rules_require_manual_review")
+        self.assertEqual(result["reason"], "member_rules_require_manual_review")
         self.assertEqual(client.deals[933]["stageId"], "C1:KESTRA_REVIEW")
 
     def _catamarca_enriched_lead(

@@ -43,13 +43,13 @@ Las dos etapas Kestra fueron creadas por API sin mover negociaciones existentes.
 
 ## Reglas Automatizadas
 
-- Socio con al menos un credito activo: revision manual, porque faltan reglas estructuradas de cuotas, mora y cupo.
-- No socio o persona sin creditos activos: evaluar snapshot BCRA.
-- Mas de cuatro entidades en situacion 4 o 5 en el periodo mas reciente: rechazo BCRA.
-- Banco Nacion en situacion mayor a 1: revision manual mientras la regla siga ambigua.
+- Socio recurrente (`Es socio = Si`) o persona con creditos activos: revision manual, sin aplicar rechazo BCRA automatico.
+- Socio nuevo (`Es socio = No`): evaluar snapshot BCRA.
+- Para socios nuevos, mas de cuatro entidades en situacion 4 o 5 en el periodo mas reciente: rechazo BCRA.
+- Para socios nuevos, banco de cobro (Banco Nacion) en situacion mayor a 2: rechazo BCRA duro. Si Banco Nacion no aparece en el snapshot, equivale a situacion 0.
 - Sin situaciones mayores a 1: `AMEJUCA Premium`.
-- Con situaciones mayores a 1, hasta cuatro situaciones 4/5 y banco de cobro en situacion 1: `AMEJUCA Especial`.
-- Snapshot faltante, error de proveedor o caso sin linea concluyente: revision manual.
+- Si no corresponde rechazo duro ni `AMEJUCA Premium`: `AMEJUCA Especial`.
+- Snapshot faltante o error de proveedor: revision manual.
 
 ## Distribucion
 
