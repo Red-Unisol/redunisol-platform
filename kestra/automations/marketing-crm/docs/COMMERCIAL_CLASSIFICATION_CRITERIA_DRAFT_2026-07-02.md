@@ -364,13 +364,13 @@ La regla "situacion mayor a 1 en Banco Nacion" queda pendiente de confirmacion. 
 AMEJUCA Premium:
 
 - se acepta cuando no hay situaciones negativas
-- si hay duda entre "sin situaciones con ninguna entidad" y "situacion 1", el caso va a revision manual
+- no aparecer con Banco Nacion equivale a situacion 0, la mejor situacion posible
 
 AMEJUCA Especial:
 
 - situaciones 2 en adelante
 - hasta 4 situaciones 4 o 5
-- situacion 1 con banco de cobro
+- situacion 0 o 1 con banco de cobro; para Banco Nacion, no aparecer equivale a situacion 0
 
 Si pasa Premium, el resultado es aprobable internos, vendedor pool interno y linea `AMEJUCA Premium`.
 

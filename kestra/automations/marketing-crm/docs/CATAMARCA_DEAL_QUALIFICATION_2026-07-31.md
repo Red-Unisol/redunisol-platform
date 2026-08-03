@@ -48,7 +48,7 @@ Las dos etapas Kestra fueron creadas por API sin mover negociaciones existentes.
 - Mas de cuatro entidades en situacion 4 o 5 en el periodo mas reciente: rechazo BCRA.
 - Banco Nacion en situacion mayor a 1: revision manual mientras la regla siga ambigua.
 - Sin situaciones mayores a 1: `AMEJUCA Premium`.
-- Con situaciones mayores a 1, hasta cuatro situaciones 4/5 y banco de cobro en situacion 1: `AMEJUCA Especial`.
+- Con situaciones mayores a 1, hasta cuatro situaciones 4/5 y banco de cobro en situacion 0 o 1: `AMEJUCA Especial`. Para Banco Nacion, no aparecer en el snapshot BCRA equivale a situacion 0.
 - Snapshot faltante, error de proveedor o caso sin linea concluyente: revision manual.
 
 ## Distribucion

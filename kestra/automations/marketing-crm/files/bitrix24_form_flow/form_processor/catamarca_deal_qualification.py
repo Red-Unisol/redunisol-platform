@@ -214,7 +214,7 @@ def _evaluate_bcra(
             commercial_line="AMEJUCA Premium",
         )
 
-    if high_risk_count <= 4 and _payment_bank_is_situation_one(
+    if high_risk_count <= 4 and _payment_bank_is_acceptable(
         entities,
         payment_bank_label,
     ):
@@ -244,7 +244,7 @@ def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return [entity for entity in entities if isinstance(entity, dict)]
 
 
-def _payment_bank_is_situation_one(
+def _payment_bank_is_acceptable(
     entities: list[dict[str, Any]],
     payment_bank_label: str,
 ) -> bool:
@@ -256,13 +256,20 @@ def _payment_bank_is_situation_one(
     }
     if not bank_tokens:
         return False
+    matching_situations: list[int] = []
     for entity in entities:
         entity_name = _normalize_text(entity.get("entidad"))
-        if bank_tokens.intersection(entity_name.split()) and _optional_int(
-            entity.get("situacion")
-        ) == 1:
-            return True
-    return False
+        if not bank_tokens.intersection(entity_name.split()):
+            continue
+        situation = _optional_int(entity.get("situacion"))
+        if situation is not None:
+            matching_situations.append(situation)
+
+    if matching_situations:
+        return all(situation <= 1 for situation in matching_situations)
+
+    # Banco Nacion ausente en el snapshot equivale a situacion cero.
+    return _is_banco_nacion(payment_bank_label)
 
 
 def _is_banco_nacion(value: Any) -> bool:
