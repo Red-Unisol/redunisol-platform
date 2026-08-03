@@ -305,16 +305,14 @@ function Step1({
     formData,
     setFormData,
     cfg,
-    cuilValidation,
     errors,
 }: {
     formData: LeadFormData;
     setFormData: React.Dispatch<React.SetStateAction<LeadFormData>>;
     cfg: FormSectionConfig;
-    cuilValidation: CuilValidation;
     errors: FormErrors;
 }) {
-    const cuilError = errors.cuil ?? cuilValidation.message ?? null;
+    const cuilError = errors.cuil ?? null;
     const showCuilError = cfg.cuil.enabled && cuilError !== null;
 
     return (
@@ -991,6 +989,9 @@ export default function FormSection({
     >(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [formErrors, setFormErrors] = useState<FormErrors>({});
+    const [attemptedSteps, setAttemptedSteps] = useState<Set<number>>(
+        () => new Set(),
+    );
     const [formData, setFormData] = useState<LeadFormData>(INITIAL_FORM);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [reciboUrl, setReciboUrl] = useState<string | null>(null);
@@ -1054,17 +1055,16 @@ export default function FormSection({
         return errors;
     }, [cfg, cuilValidation, formData]);
 
-    const displayedErrors = { ...clientErrors, ...formErrors };
-    const blocksCurrentStep =
-        (step === 1 &&
-            ['cuil', 'email', 'celular', 'terminos'].some(
-                (field) => displayedErrors[field as FormFieldName],
-            )) ||
-        (step === 3 && Boolean(displayedErrors.provincia)) ||
-        (step === 4 &&
-            Boolean(
-                displayedErrors.situacion_laboral || displayedErrors.banco,
-            ));
+    const displayedErrors = attemptedSteps.has(step)
+        ? { ...clientErrors, ...formErrors }
+        : formErrors;
+
+    const currentStepFields: Record<number, FormFieldName[]> = {
+        1: ['cuil', 'email', 'celular', 'terminos'],
+        2: [],
+        3: ['provincia'],
+        4: ['situacion_laboral', 'banco'],
+    };
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
@@ -1161,14 +1161,17 @@ export default function FormSection({
                 }
                 setFormErrors(validationErrors);
                 const firstField = Object.keys(validationErrors)[0];
-                setStep(
+                const errorStep =
                     firstField === 'provincia'
                         ? 3
                         : firstField === 'situacion_laboral' ||
                             firstField === 'banco'
                           ? 4
-                          : 1,
+                          : 1;
+                setAttemptedSteps((previous) =>
+                    new Set(previous).add(errorStep),
                 );
+                setStep(errorStep);
                 return;
             }
 
@@ -1223,6 +1226,15 @@ export default function FormSection({
 
     const goNext = () => {
         setFormErrors({});
+        const hasErrors = currentStepFields[step].some(
+            (field) => clientErrors[field],
+        );
+
+        if (hasErrors) {
+            setAttemptedSteps((previous) => new Set(previous).add(step));
+            return;
+        }
+
         const nextIndex = currentStepIndex + 1;
         if (nextIndex < enabledSteps.length) {
             setStep(enabledSteps[nextIndex]);
@@ -1242,6 +1254,7 @@ export default function FormSection({
         setReciboUrl(null);
         setReciboUploadError(null);
         setFormErrors({});
+        setAttemptedSteps(new Set());
     };
 
     const handleSkipRecibo = () => {
@@ -1333,7 +1346,6 @@ export default function FormSection({
                                     formData={formData}
                                     setFormData={updateFormData}
                                     cfg={cfg}
-                                    cuilValidation={cuilValidation}
                                     errors={displayedErrors}
                                 />
                             ) : step === 2 ? (
@@ -1389,7 +1401,6 @@ export default function FormSection({
                                 onClick={goNext}
                                 disabled={
                                     isSubmitting ||
-                                    blocksCurrentStep ||
                                     (step === 2 &&
                                         (uploading ||
                                             (!!formData.recibo &&
