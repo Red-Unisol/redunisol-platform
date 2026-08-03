@@ -514,6 +514,7 @@ class BusinessLogicTests(unittest.TestCase):
         should_reject: bool,
         outcome: str = "ok",
         http_status: int | None = 200,
+        denominacion: str | None = None,
     ) -> BcraConsultationResult:
         checked_at = "2026-04-15T17:30:00-03:00"
         return BcraConsultationResult(
@@ -565,6 +566,7 @@ class BusinessLogicTests(unittest.TestCase):
             negative_entity_count=2 if should_reject else 0,
             negative_entities=("BANCO A", "BANCO B") if should_reject else (),
             message=None,
+            denominacion=denominacion,
         )
 
     def make_lead_update_event(
@@ -2696,6 +2698,86 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.leads[803]["UF_CRM_KSTRA_BF_ATTEMPTS"], 1)
         self.assertEqual(client.leads[803]["TITLE"], "Juan Perez")
         self.assertEqual(client.contacts[901]["NAME"], "Juan")
+
+    def test_prefill_uses_bcra_name_when_contact_name_was_inferred_from_email(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[901] = {
+            "ID": "901",
+            "NAME": "Silviamirez41",
+            "LAST_NAME": None,
+            "EMAIL": [{"VALUE": "silviamirez41@gmail.com"}],
+        }
+        client.leads[803] = {
+            "ID": "803",
+            "CONTACT_ID": "901",
+            "NAME": "Silviamirez41",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "27226759595",
+        }
+        bcra = FakeBcraClient(
+            {
+                "27226759595": self.make_bcra_result(
+                    identification="27226759595",
+                    status_field_value="OK",
+                    should_reject=False,
+                    denominacion="RAMIREZ SILVIA BEATRIZ",
+                )
+            }
+        )
+
+        prefill_lead(
+            803,
+            arca_output={"ok": False, "error": "sin datos"},
+            credixsa_output={"ok": True, "status": "none"},
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(client.contacts[901]["NAME"], "RAMIREZ SILVIA BEATRIZ")
+        self.assertEqual(client.contacts[901]["LAST_NAME"], "")
+        self.assertEqual(client.leads[803]["NAME"], "RAMIREZ SILVIA BEATRIZ")
+        self.assertEqual(client.leads[803]["TITLE"], "RAMIREZ SILVIA BEATRIZ")
+
+    def test_prefill_does_not_replace_a_real_contact_name_with_bcra_name(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[901] = {
+            "ID": "901",
+            "NAME": "Silvia Ramirez",
+            "LAST_NAME": None,
+            "EMAIL": [{"VALUE": "silviamirez41@gmail.com"}],
+        }
+        client.leads[803] = {
+            "ID": "803",
+            "CONTACT_ID": "901",
+            "NAME": "Silvia Ramirez",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "27226759595",
+        }
+        bcra = FakeBcraClient(
+            {
+                "27226759595": self.make_bcra_result(
+                    identification="27226759595",
+                    status_field_value="OK",
+                    should_reject=False,
+                    denominacion="RAMIREZ SILVIA BEATRIZ",
+                )
+            }
+        )
+
+        prefill_lead(
+            803,
+            arca_output={"ok": False, "error": "sin datos"},
+            credixsa_output={"ok": True, "status": "none"},
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(client.contacts[901]["NAME"], "Silvia Ramirez")
+        self.assertEqual(client.leads[803]["NAME"], "Silvia Ramirez")
 
     def test_prefill_retries_then_advances_with_partial_data(self) -> None:
         client = FakeBitrixClient()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 from .bcra_service import sync_lead_bcra
@@ -134,8 +135,10 @@ def prefill_lead(
     if cuil is None:
         errors.append("missing_cuil")
     else:
+        arca_applied = False
         try:
-            if not _apply_arca_output(client, config, lead, arca_output, active_logger):
+            arca_applied = _apply_arca_output(client, config, lead, arca_output, active_logger)
+            if not arca_applied:
                 errors.append("arca")
         except Exception as exc:
             active_logger.error(f"Fallo ARCA para el lead {lead_id_int}: {exc}")
@@ -177,6 +180,13 @@ def prefill_lead(
                 active_logger,
                 bcra_client=bcra_client,
             )
+            if not arca_applied and bcra_result.denominacion:
+                _apply_bcra_name_fallback(
+                    client,
+                    lead,
+                    bcra_result.denominacion,
+                    active_logger,
+                )
             if not bcra_result.is_persistable:
                 errors.append("bcra")
         except Exception as exc:
@@ -262,6 +272,56 @@ def _apply_arca_output(
     if lead_fields:
         update_lead_fields(client, int(str(lead["ID"])), lead_fields)
     return True
+
+
+def _apply_bcra_name_fallback(
+    client: Any,
+    lead: dict[str, Any],
+    denominacion: str,
+    logger: Logger,
+) -> bool:
+    """Replace only email-derived placeholder names with BCRA's holder name."""
+    contact_id = _optional_int(lead.get("CONTACT_ID"))
+    resolved_name = _optional_str(denominacion)
+    if contact_id is None or resolved_name is None:
+        return False
+
+    contact = client.call("crm.contact.get", {"id": contact_id})
+    if not isinstance(contact, dict) or not _contact_name_is_email_inferred(contact):
+        return False
+
+    logger.info(f"Actualizando contacto {contact_id} con titular informado por BCRA.")
+    client.call(
+        "crm.contact.update",
+        {"id": contact_id, "fields": {"NAME": resolved_name, "LAST_NAME": ""}},
+    )
+    update_lead_fields(
+        client,
+        int(str(lead["ID"])),
+        {"TITLE": resolved_name, "NAME": resolved_name, "LAST_NAME": ""},
+    )
+    return True
+
+
+def _contact_name_is_email_inferred(contact: dict[str, Any]) -> bool:
+    full_name = " ".join(
+        part
+        for part in (
+            str(contact.get("NAME") or "").strip(),
+            str(contact.get("LAST_NAME") or "").strip(),
+        )
+        if part
+    )
+    emails = contact.get("EMAIL") or []
+    if not full_name or not isinstance(emails, list):
+        return False
+    normalized_name = re.sub(r"[^a-z0-9]", "", full_name.casefold())
+    return any(
+        normalized_name
+        == re.sub(r"[^a-z0-9]", "", str(item.get("VALUE") or "").split("@", 1)[0].casefold())
+        for item in emails
+        if isinstance(item, dict) and "@" in str(item.get("VALUE") or "")
+    )
 
 
 def _result(
