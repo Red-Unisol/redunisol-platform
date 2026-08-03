@@ -46,10 +46,10 @@ Las dos etapas Kestra fueron creadas por API sin mover negociaciones existentes.
 - Socio recurrente (`Es socio = Si`) o persona con creditos activos: revision manual, sin aplicar rechazo BCRA automatico.
 - Socio nuevo (`Es socio = No`): evaluar snapshot BCRA.
 - Para socios nuevos, mas de cuatro entidades en situacion 4 o 5 en el periodo mas reciente: rechazo BCRA.
-- Para socios nuevos, Banco Nacion en situacion mayor a 2: rechazo BCRA duro.
+- Para socios nuevos, banco de cobro (Banco Nacion) en situacion mayor a 2: rechazo BCRA duro. Si Banco Nacion no aparece en el snapshot, equivale a situacion 0.
 - Sin situaciones mayores a 1: `AMEJUCA Premium`.
-- Con situaciones mayores a 1, hasta cuatro situaciones 4/5 y banco de cobro en situacion 0 o 1: `AMEJUCA Especial`. Para Banco Nacion, no aparecer en el snapshot BCRA equivale a situacion 0.
-- Snapshot faltante, error de proveedor o caso sin linea concluyente: revision manual.
+- Si no corresponde rechazo duro ni `AMEJUCA Premium`: `AMEJUCA Especial`.
+- Snapshot faltante o error de proveedor: revision manual.
 
 ## Distribucion
 

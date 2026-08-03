@@ -3032,7 +3032,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[934]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[934]["ufCrm_659EBB0445E8E"], "AMEJUCA Especial")
 
-    def test_catamarca_banco_nacion_situation_two_is_not_hard_rejection(self) -> None:
+    def test_catamarca_banco_nacion_situation_two_is_amejuca_special(self) -> None:
         client = FakeBitrixClient()
         client.leads[925] = self._catamarca_enriched_lead(
             925,
@@ -3056,9 +3056,10 @@ class BusinessLogicTests(unittest.TestCase):
             logger=SilentLogger(),
         )
 
-        self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "amejuca_line_requires_manual_review")
-        self.assertEqual(client.deals[935]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "amejuca_special")
+        self.assertEqual(client.deals[935]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[935]["ufCrm_659EBB0445E8E"], "AMEJUCA Especial")
 
     def test_catamarca_banco_nacion_above_two_is_hard_rejection(self) -> None:
         client = FakeBitrixClient()

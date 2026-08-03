@@ -359,7 +359,7 @@ Rechazo duro:
 
 - estas reglas se aplican solo a socios nuevos (`Es socio = No`)
 - mas de 4 situaciones 4 o 5
-- situacion mayor a 2 en Banco Nacion
+- situacion mayor a 2 en el banco de cobro, que para esta regla es Banco Nacion
 
 Los socios recurrentes (`Es socio = Si`) y los casos con creditos activos quedan en revision manual antes de aplicar las reglas BCRA automaticas.
 
@@ -370,15 +370,13 @@ AMEJUCA Premium:
 
 AMEJUCA Especial:
 
-- situaciones 2 en adelante
-- hasta 4 situaciones 4 o 5
-- situacion 0 o 1 con banco de cobro; para Banco Nacion, no aparecer equivale a situacion 0
+- todo caso con snapshot BCRA valido que no corresponda a rechazo duro ni a `AMEJUCA Premium`
 
 Si pasa Premium, el resultado es aprobable internos, vendedor pool interno y linea `AMEJUCA Premium`.
 
 Si no pasa Premium pero pasa Especial, el resultado es aprobable internos, vendedor pool interno y linea `AMEJUCA Especial`.
 
-Si no pasa ninguna linea AMEJUCA, se rechaza por analisis.
+Con snapshot BCRA valido, todo socio nuevo termina en rechazo duro, `AMEJUCA Premium` o `AMEJUCA Especial`; no queda en revision manual.
 
 ## Rechazo Por Analisis
 

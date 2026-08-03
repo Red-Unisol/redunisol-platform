@@ -165,13 +165,12 @@ def _evaluate_catamarca(
     if member_label != "no":
         return _manual(config, "missing_membership_data")
 
-    return _evaluate_bcra(config, lead, submission.payment_bank.label)
+    return _evaluate_bcra(config, lead)
 
 
 def _evaluate_bcra(
     config: AppConfig,
     lead: dict[str, Any],
-    payment_bank_label: str,
 ) -> CatamarcaDecision:
     raw_value = lead.get(config.fields.lead_bcra_data_raw or "")
     try:
@@ -192,11 +191,7 @@ def _evaluate_bcra(
             stage_id=config.deal.bcra_rejected_stage_id,
         )
 
-    if any(
-        _is_banco_nacion(entity.get("entidad"))
-        and (_optional_int(entity.get("situacion")) or 0) > 2
-        for entity in entities
-    ):
+    if _banco_nacion_situation(entities) > 2:
         return CatamarcaDecision(
             action="rejected",
             reason="banco_nacion_situation_above_two",
@@ -216,18 +211,12 @@ def _evaluate_bcra(
             commercial_line="AMEJUCA Premium",
         )
 
-    if high_risk_count <= 4 and _payment_bank_is_acceptable(
-        entities,
-        payment_bank_label,
-    ):
-        return CatamarcaDecision(
-            action="approved",
-            reason="amejuca_special",
-            stage_id=config.deal.stage_id,
-            commercial_line="AMEJUCA Especial",
-        )
-
-    return _manual(config, "amejuca_line_requires_manual_review")
+    return CatamarcaDecision(
+        action="approved",
+        reason="amejuca_special",
+        stage_id=config.deal.stage_id,
+        commercial_line="AMEJUCA Especial",
+    )
 
 
 def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
@@ -246,32 +235,16 @@ def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return [entity for entity in entities if isinstance(entity, dict)]
 
 
-def _payment_bank_is_acceptable(
-    entities: list[dict[str, Any]],
-    payment_bank_label: str,
-) -> bool:
-    bank = _normalize_text(payment_bank_label)
-    bank_tokens = {
-        token
-        for token in bank.split()
-        if len(token) >= 4 and token not in {"banco", "argentina", "provincia"}
-    }
-    if not bank_tokens:
-        return False
-    matching_situations: list[int] = []
+def _banco_nacion_situation(entities: list[dict[str, Any]]) -> int:
+    situations: list[int] = []
     for entity in entities:
-        entity_name = _normalize_text(entity.get("entidad"))
-        if not bank_tokens.intersection(entity_name.split()):
+        if not _is_banco_nacion(entity.get("entidad")):
             continue
         situation = _optional_int(entity.get("situacion"))
         if situation is not None:
-            matching_situations.append(situation)
+            situations.append(situation)
 
-    if matching_situations:
-        return all(situation <= 1 for situation in matching_situations)
-
-    # Banco Nacion ausente en el snapshot equivale a situacion cero.
-    return _is_banco_nacion(payment_bank_label)
+    return max(situations, default=0)
 
 
 def _is_banco_nacion(value: Any) -> bool:

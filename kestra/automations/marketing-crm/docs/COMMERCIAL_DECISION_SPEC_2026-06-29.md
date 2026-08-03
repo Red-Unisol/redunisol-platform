@@ -110,7 +110,7 @@ No es todavia una especificacion de implementacion cerrada.
    - Kestra agrega al timeline del lead un comentario `Negociacion creada a partir del prospecto` con enlace a la negociacion
    - el comentario se crea solo para negociaciones nuevas creadas por Kestra; no se agrega a negociaciones preexistentes creadas por Bitrix
 
-22. Para Catamarca, las reglas BCRA automaticas se aplican solo a socios nuevos (`Es socio = No`). Banco Nacion en situacion mayor a 2 es rechazo duro para esos casos y Banco Nacion ausente del snapshot equivale a situacion 0. Los socios recurrentes (`Es socio = Si`) y los casos con creditos activos quedan en revision manual sin aplicar rechazo BCRA automatico.
+22. Para Catamarca, las reglas BCRA automaticas se aplican solo a socios nuevos (`Es socio = No`). Banco de cobro, entendido como Banco Nacion para esta regla, en situacion mayor a 2 o mas de cuatro entidades en situacion 4/5 son rechazo duro. Si todas las situaciones son 0/1 corresponde `AMEJUCA Premium`; cualquier otro snapshot BCRA valido corresponde `AMEJUCA Especial`. Banco Nacion ausente del snapshot equivale a situacion 0. Los socios recurrentes (`Es socio = Si`) y los casos con creditos activos quedan en revision manual sin aplicar rechazo BCRA automatico.
 
 ## Evidencia Bitrix24
 
