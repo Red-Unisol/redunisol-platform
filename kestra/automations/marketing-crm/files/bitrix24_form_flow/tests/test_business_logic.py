@@ -2111,6 +2111,69 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertNotIn("UTM_TERM", client.calls[-1][1]["fields"])
         self.assertNotIn("UTM_CONTENT", client.calls[-1][1]["fields"])
 
+    def test_ingest_submission_reuses_master_contact_when_cuil_is_duplicated(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Juan Perez",
+            "LAST_NAME": None,
+            "BIRTHDATE": "",
+            "COMMENTS": "Contacto original",
+            "UF_CONTACT_CUIL": "20876543219",
+            "EMAIL": [{"VALUE": "viejo@example.com", "VALUE_TYPE": "WORK"}],
+            "PHONE": [{"VALUE": "+5493510000000", "VALUE_TYPE": "WORK"}],
+        }
+        client.contacts[105] = {
+            "ID": "105",
+            "NAME": "Juan Carlos Perez",
+            "LAST_NAME": None,
+            "BIRTHDATE": "",
+            "COMMENTS": "",
+            "UF_CONTACT_CUIL": "20876543219",
+            "EMAIL": [{"VALUE": "otro@example.com", "VALUE_TYPE": "WORK"}],
+            "PHONE": [{"VALUE": "+5493511111111", "VALUE_TYPE": "WORK"}],
+        }
+
+        result = ingest_submission(
+            {
+                "full_name": "Juan C Perez",
+                "email": "juan@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-87654321-9",
+                "province": "Cordoba",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Facebook",
+            },
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "ingested")
+        self.assertEqual(result["contact_id"], 101)
+
+        contact_update = next(
+            payload for method, payload in client.calls if method == "crm.contact.update"
+        )
+        self.assertEqual(contact_update["id"], 101)
+        self.assertEqual(contact_update["fields"]["NAME"], "Juan Carlos Perez")
+        self.assertEqual(
+            sorted(item["VALUE"] for item in contact_update["fields"]["EMAIL"]),
+            ["juan@example.com", "otro@example.com", "viejo@example.com"],
+        )
+        self.assertEqual(
+            sorted(item["VALUE"] for item in contact_update["fields"]["PHONE"]),
+            ["+5493510000000", "+5493511111111", "+5493511234567"],
+        )
+        self.assertIn(
+            "Nombres alternativos detectados por CUIL duplicado",
+            contact_update["fields"]["COMMENTS"],
+        )
+        self.assertEqual(client.calls[-1][0], "crm.lead.add")
+        self.assertEqual(client.calls[-1][1]["fields"]["CONTACT_ID"], 101)
+
     def test_ingest_submission_sets_commercial_owner_to_kestra_for_catamarca(self) -> None:
         client = FakeBitrixClient()
 
