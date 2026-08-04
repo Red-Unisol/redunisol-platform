@@ -137,11 +137,11 @@ export default function Finalizar() {
     const hasLoanData = Boolean(loan);
     const metamapReady = Boolean(
         hasLoanData &&
-            finalizar.metamap.client_id &&
-            finalizar.metamap.flow_id &&
-            finalizar.metamap.doc_id &&
-            finalizar.metamap.metadata &&
-            scriptStatus === 'ready',
+        finalizar.metamap.client_id &&
+        finalizar.metamap.flow_id &&
+        finalizar.metamap.doc_id &&
+        finalizar.metamap.metadata &&
+        scriptStatus === 'ready',
     );
 
     const metadata = useMemo(() => {
