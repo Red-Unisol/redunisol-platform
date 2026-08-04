@@ -1,0 +1,35 @@
+image: node:22
+
+variables:
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/celesol?schema=public"
+
+stages:
+  - validate
+  - build
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+
+before_script:
+  - npm ci --cache .npm --prefer-offline
+  - npx prisma generate
+
+lint:
+  stage: validate
+  script:
+    - npm run lint
+
+typecheck:
+  stage: validate
+  script:
+    - npx prisma validate
+    - npm run typecheck
+
+build:
+  stage: build
+  script:
+    - npm run build

@@ -1,0 +1,103 @@
+export type UpdateSolicitudInput = {
+  currentUser: {
+    id: string;
+    isAnalista?: boolean;
+    isSystemAdmin?: boolean;
+    workflowOwnerId: string | null;
+  };
+  createdBy: string;
+  createdByLegacyUser: string;
+  conyuge?:
+    | {
+        actividad?: string | null;
+        apellido?: string | null;
+        fechaNacimiento?: string | null;
+        ingresosMensuales?: number | null;
+        nacionalidad?: string | null;
+        nombre?: string | null;
+        nroDocumento?: string | null;
+        sexo?: string | null;
+        tipoDocumento?: string | null;
+      }
+    | null;
+  garantias?: Array<{
+    antiguedadLaboralMeses?: number | null;
+    casadoConTitular?: boolean | null;
+    celular?: string | null;
+    cuit?: string | null;
+    denominacion?: string | null;
+    domicilio?: string | null;
+    edad?: number | null;
+    email?: string | null;
+    estadoCivil?: string | null;
+    fechaIngresoLaboral?: string | null;
+    fechaNacimiento?: string | null;
+    ingresoMensual?: number | null;
+    nacionalidad?: string | null;
+    nombre?: string | null;
+    nombreCompleto?: string | null;
+    nroDocumento?: string | null;
+    nroSocio?: string | null;
+    observaciones?: string | null;
+    ocupacion?: string | null;
+    persona?: string | null;
+    sexo?: string | null;
+    sumaIngresos?: boolean;
+    telefono?: string | null;
+    tipoDocumento?: string | null;
+    tipoGarantia?: string | null;
+    tipoRelacion?: string | null;
+  }>;
+  id: string;
+  datosLaborales?: {
+    actividadLaboral?: string | null;
+    antiguedadLaboralMeses?: number | null;
+    descuentosSueldo?: number | null;
+    domicilioLaboralCalle?: string | null;
+    domicilioLaboralLocalidad?: string | null;
+    domicilioLaboralNroPuerta?: string | null;
+    domicilioLaboralPisoDepto?: string | null;
+    empleador?: string | null;
+    fechaIngresoLaboral?: string | null;
+    montoRecibo?: number | null;
+    relacionLaboral?: string | null;
+    tarjetas?: string | null;
+    vehiculo?: string | null;
+    vivienda?: string | null;
+  };
+  solicitud?: {
+    cupoTitular?: number | null;
+    cuotaResultante?: string | null;
+    cuotas?: number | null;
+    ejecutivoSolicitud?: string | null;
+    linkFirmaDigital?: string | null;
+    firmaDigitalmente?: boolean;
+    fechaPrimerVencimiento?: string | null;
+    lineaPrestamoLegacyOid?: string;
+    montoAFinanciar?: number | null;
+    motivo?: string | null;
+    nroOperacion?: string | null;
+    observaciones?: string | null;
+    vendedorSolicitud?: string | null;
+  };
+  titular?: {
+    apellidoDenominacion?: string;
+    cbu?: string | null;
+    celular?: string | null;
+    cuit?: string | null;
+    domicilioCalle?: string | null;
+    email?: string | null;
+    estadoCivil?: string | null;
+    fechaNacimiento?: string | null;
+    localidad?: string | null;
+    nacionalidad?: string | null;
+    nombre?: string;
+    nroDocumento?: string;
+    nroPuerta?: string | null;
+    nroSocio?: string | null;
+    personaExpuestaPoliticamente?: boolean | null;
+    sexo?: string | null;
+    telefonoFijo?: string | null;
+    tipoDocumento?: string;
+  };
+};

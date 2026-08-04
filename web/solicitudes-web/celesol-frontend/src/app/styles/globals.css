@@ -1,0 +1,493 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", sans-serif;
+  --color-surface: var(--surface);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border-soft: var(--border-soft);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-input-background: var(--input-background);
+  --color-input-border: var(--input-border);
+  --color-input-focus: var(--input-focus);
+  --color-disabled-background: var(--disabled-background);
+  --color-disabled-foreground: var(--disabled-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #f4f4f4;
+  --surface: #ffffff;
+  --foreground: #1f1f1f;
+  --foreground-secondary: #666666;
+  --foreground-muted: #8a8a8a;
+  --border: #d9d9d9;
+  --border-soft: #e6e6e6;
+  --primary: #f97316;
+  --primary-hover: #ea580c;
+  --primary-soft: #fb923c;
+  --danger: #f31225;
+  --danger-foreground: #ffffff;
+  --success: #b7f0b1;
+  --success-foreground: #2f6b2f;
+  --warning: #fde68a;
+  --warning-foreground: #92400e;
+  --input-background: #ffffff;
+  --input-border: #d6d6d6;
+  --input-focus: #f59e0b;
+  --disabled-background: #efefef;
+  --disabled-foreground: #9a9a9a;
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--background);
+  --muted-foreground: var(--foreground-muted);
+  --accent: var(--surface);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--danger);
+  --input: var(--input-border);
+  --ring: var(--input-focus);
+  --chart-1: var(--success);
+  --chart-2: var(--primary-soft);
+  --chart-3: var(--primary);
+  --chart-4: var(--foreground-secondary);
+  --chart-5: var(--foreground-muted);
+  --radius: 0.625rem;
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--background);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border-soft);
+  --sidebar-ring: var(--input-focus);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dashboard-specific animations — scoped to admin dashboard use */
+@keyframes barSlide {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes skelPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes progressIndeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply min-h-screen;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  input,
+  textarea {
+    cursor: default;
+    caret-color: var(--foreground);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"],
+  select,
+  button {
+    cursor: pointer;
+  }
+
+  input:disabled,
+  textarea:disabled,
+  select:disabled,
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  .date-picker-popover {
+    --rdp-accent-color: var(--primary);
+    --rdp-accent-background-color: color-mix(
+      in oklab,
+      var(--primary) 12%,
+      white
+    );
+    --rdp-day-height: 2.18rem;
+    --rdp-day-width: 2.18rem;
+    --rdp-day_button-border-radius: 0.5rem;
+    --rdp-day_button-height: 2.04rem;
+    --rdp-day_button-width: 2.04rem;
+    --rdp-disabled-opacity: 0.4;
+    --rdp-nav-height: 2rem;
+    --rdp-outside-opacity: 0.55;
+    --rdp-today-color: var(--primary);
+  }
+
+  .date-picker {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--foreground);
+    width: 100%;
+  }
+
+  .date-picker-body {
+    min-height: 14.9rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .date-picker-panel {
+    flex: 1;
+  }
+
+  .date-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.1rem 0.1rem 0.6rem 0.1rem;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 0.6rem;
+  }
+
+  .date-picker-header-center {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .date-picker-header-button {
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    color: var(--foreground);
+    transition: background-color 0.15s ease;
+    line-height: 1;
+  }
+
+  .date-picker-header-button:hover {
+    background: var(--background);
+  }
+
+  .date-picker-months {
+    display: flex;
+    height: 100%;
+    margin: 0;
+  }
+
+  .date-picker-month {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+  }
+
+  .date-picker-month-grid {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0;
+  }
+
+  .date-picker-weekdays {
+    color: var(--foreground-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+
+  .date-picker-weekday {
+    font-weight: 600;
+    text-transform: capitalize;
+    padding: 0;
+    height: 2.05rem;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .date-picker-week {
+    height: 2.18rem;
+  }
+
+  .date-picker-day {
+    text-align: center;
+    height: 2.18rem;
+    padding: 0.06rem;
+    vertical-align: middle;
+  }
+
+  .date-picker-disabled {
+    opacity: 0.45;
+  }
+
+  .date-picker-hidden {
+    opacity: 0.45;
+  }
+
+  .date-picker-day-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 2.04rem;
+    margin: 0 auto;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    font-size: 0.83rem;
+    font-weight: 500;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .date-picker-day-button:hover {
+    background: color-mix(in oklab, var(--primary) 8%, white);
+    border-color: color-mix(in oklab, var(--primary) 26%, white);
+  }
+
+  .date-picker-selected .date-picker-day-button {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: color-mix(in oklab, var(--primary) 70%, white);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 55%, white);
+  }
+
+  .date-picker-today .date-picker-day-button {
+    border-color: color-mix(in oklab, var(--primary) 45%, white);
+    font-weight: 600;
+  }
+
+  .date-picker-outside .date-picker-day-button {
+    color: var(--foreground-muted);
+    opacity: 0.75;
+  }
+
+  .date-picker-caption-label-hidden {
+    display: none;
+  }
+
+  .date-picker-caption-hidden,
+  .date-picker-month-caption-hidden {
+    display: none;
+  }
+
+  .date-picker-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    align-content: stretch;
+    justify-items: stretch;
+    height: 100%;
+    min-height: 11.4rem;
+    padding: 0.45rem 0.15rem 0.15rem;
+  }
+
+  .date-picker-grid-item {
+    width: 100%;
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 0.45rem;
+    min-height: 2.3rem;
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--foreground);
+    background: transparent;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .date-picker-grid-item:hover {
+    background: var(--background);
+    border-color: var(--border-soft);
+  }
+
+  .date-picker-grid-item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .date-picker-grid-item-selected {
+    background: color-mix(in oklab, var(--primary) 82%, white);
+    color: var(--primary-foreground);
+    border-color: color-mix(in oklab, var(--primary) 70%, white);
+  }
+
+  .celesol-phone-input {
+    --react-international-phone-height: 2.25rem;
+    --react-international-phone-border-radius: var(--radius-md);
+    --react-international-phone-border-color: var(--input-border);
+    --react-international-phone-background-color: var(--input-background);
+    --react-international-phone-text-color: var(--foreground);
+    --react-international-phone-font-size: 0.875rem;
+    width: 100%;
+  }
+
+  .celesol-phone-input .react-international-phone-input-container {
+    width: 100%;
+  }
+
+  .celesol-phone-input .react-international-phone-country-selector-button {
+    border-color: var(--input-border);
+    background: var(--input-background);
+    border-top-left-radius: var(--radius-md);
+    border-bottom-left-radius: var(--radius-md);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+
+  .celesol-phone-input .react-international-phone-input {
+    width: 100%;
+    min-width: 0;
+    color: var(--foreground);
+    background: var(--input-background);
+    border-color: var(--input-border);
+    border-top-right-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-md);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    outline: none;
+  }
+
+  .celesol-phone-input .react-international-phone-input::placeholder {
+    color: var(--foreground-muted);
+  }
+
+  .celesol-phone-input:focus-within
+    .react-international-phone-country-selector-button,
+  .celesol-phone-input:focus-within .react-international-phone-input {
+    border-color: var(--input-focus);
+    box-shadow: 0 0 0 2px
+      color-mix(in oklab, var(--input-focus) 20%, transparent);
+  }
+
+  .celesol-phone-input--invalid
+    .react-international-phone-country-selector-button,
+  .celesol-phone-input--invalid .react-international-phone-input {
+    border-color: var(--destructive);
+    box-shadow: 0 0 0 2px
+      color-mix(in oklab, var(--destructive) 20%, transparent);
+  }
+
+  .celesol-phone-input .react-international-phone-country-selector-dropdown {
+    z-index: 70;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--foreground);
+    box-shadow:
+      0 10px 15px -3px rgb(0 0 0 / 0.1),
+      0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+
+  .calculadora-riesgo-univer {
+    background: #f3f6fb;
+  }
+
+  .calculadora-riesgo-univer .univer-workbench {
+    background: #f3f6fb;
+  }
+
+  .calculadora-riesgo-univer [class*="sheet"],
+  .calculadora-riesgo-univer [class*="univer"] {
+    font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+  }
+}

@@ -1,0 +1,497 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SolicitudParticipantRole {
+  CREATOR
+  OPERATOR
+  ASSIGNED
+  WATCHER
+}
+
+enum SolicitudParticipantSource {
+  CREATE
+  STATE_CHANGE
+  MANUAL_ASSIGNMENT
+  ATTACHMENT_UPLOAD
+  SYSTEM
+}
+
+enum TipoPersona {
+  FISICA
+  JURIDICA
+}
+
+model User {
+  id                           String                     @id @default(uuid()) @map("usr_id") @db.Uuid
+  email                        String                     @unique @map("usr_email")
+  legacyUser                   String                     @unique @map("usr_legacy_user")
+  passwordHash                 String                     @map("usr_password_hash")
+  firstName                    String?                    @map("usr_first_name")
+  lastName                     String?                    @map("usr_last_name")
+  emailVerified                Boolean                    @default(false) @map("usr_email_verified")
+  isSystemAdmin                Boolean                    @default(false) @map("usr_is_system_admin")
+  state                        Int                        @default(1) @map("usr_state")
+  createdAt                    DateTime                   @default(now()) @map("usr_created_at")
+  updatedAt                    DateTime                   @updatedAt @map("usr_updated_at")
+  deletedAt                    DateTime?                  @map("usr_deleted_at")
+  workflowOwnerId              String?                    @map("workflow_owner_id") @db.Uuid
+  emailTokens                  EmailVerificationToken[]
+  passwordTokens               PasswordResetToken[]
+  refreshTokens                RefreshToken[]
+  createdSolicitudes           Solicitud[]
+  assignedSolicitudes          Solicitud[]                @relation("SolicitudAssignedToUser")
+  vendedorSolicitudes          Solicitud[]                @relation("SolicitudVendedor")
+  uploadedSolicitudAdjuntos    SolicitudAdjunto[]         @relation("SolicitudAdjuntoUploadedByUser")
+  deletedSolicitudAdjuntos     SolicitudAdjunto[]         @relation("SolicitudAdjuntoDeletedByUser")
+  createdSolicitudCancelaciones SolicitudCancelacion[]    @relation("SolicitudCancelacionCreatedByUser")
+  deletedSolicitudCancelaciones SolicitudCancelacion[]    @relation("SolicitudCancelacionDeletedByUser")
+  changedSolicitudEstados      SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
+  solicitudParticipants        SolicitudParticipant[]     @relation("SolicitudParticipantUser")
+  createdSolicitudParticipants SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
+  workflowOwner                WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
+
+  @@index([workflowOwnerId])
+  @@map("users")
+}
+
+model WorkflowOwner {
+  id        String          @id @default(uuid()) @db.Uuid
+  code      String          @unique
+  name      String
+  sortOrder Int             @default(0) @map("sort_order")
+  isActive  Boolean         @default(true) @map("is_active")
+  states    WorkflowState[]
+  users     User[]
+
+  @@map("workflow_owners")
+}
+
+model WorkflowState {
+  id                   String                          @id @default(uuid()) @db.Uuid
+  ownerId              String                          @map("owner_id") @db.Uuid
+  code                 String                          @unique
+  name                 String
+  description          String?
+  isInitial            Boolean                         @default(false) @map("is_initial")
+  isTerminal           Boolean                         @default(false) @map("is_terminal")
+  isActive             Boolean                         @default(true) @map("is_active")
+  createdAt            DateTime                        @default(now()) @map("created_at")
+  updatedAt            DateTime                        @updatedAt @map("updated_at")
+  owner                WorkflowOwner                   @relation(fields: [ownerId], references: [id])
+  solicitudes          Solicitud[]
+  outgoingTransitions  WorkflowTransition[]            @relation("WorkflowTransitionFromState")
+  incomingTransitions  WorkflowTransition[]            @relation("WorkflowTransitionToState")
+  previousHistory      SolicitudEstadoHistorial[]      @relation("SolicitudHistoryPreviousState")
+  newHistory           SolicitudEstadoHistorial[]      @relation("SolicitudHistoryNewState")
+  fieldAccessRules     SolicitudFieldAccessRule[]
+  fieldAccessRuleAudit SolicitudFieldAccessRuleAudit[]
+
+  @@index([ownerId])
+  @@index([isInitial])
+  @@index([isActive])
+  @@map("workflow_states")
+}
+
+model Socio {
+  id                    String      @id @default(uuid()) @db.Uuid
+  tipoPersona           TipoPersona @map("tipo_persona")
+  cuit                  String      @unique
+  email                 String?
+  celular               String?
+  nroSocioLegacy        String?     @map("nro_socio_legacy")
+  apellido              String?
+  nombre                String?
+  nroDocumento          String?     @unique @map("nro_documento")
+  tipoDocumento         String?     @map("tipo_documento")
+  sexo                  String?
+  fechaDeNacimiento     DateTime?   @map("fecha_de_nacimiento") @db.Date
+  razonSocial           String?     @map("razon_social")
+  domicilioCalle        String?     @map("domicilio_calle")
+  domicilioNroPuerta    String?     @map("domicilio_nro_puerta")
+  domicilioLocalidad    String?     @map("domicilio_localidad")
+  domicilioCodigoPostal String?     @map("domicilio_codigo_postal")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+
+  @@index([tipoPersona])
+  @@map("socios")
+}
+
+model Solicitud {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  legacyOid                String?                    @unique @map("legacy_oid")
+  nroSolicitud             String?                    @unique @map("nro_solicitud")
+  fechaPrimerVencimiento   DateTime?                  @map("fecha_primer_vencimiento") @db.Date
+  estadoActualId           String                     @map("estado_actual_id") @db.Uuid
+  lineaPrestamoLegacyOid   String                     @map("linea_prestamo_legacy_oid")
+  lineaPrestamoDescripcion String                     @map("linea_prestamo_descripcion")
+  montoAFinanciar          Decimal?                   @map("monto_a_financiar") @db.Decimal(18, 2)
+  cuotaResultante          String?                    @map("cuota_resultante")
+  cuotas                   Int?
+  motivo                   String?
+  nroOperacion             String?                    @map("nro_operacion")
+  cupoTitular              Decimal?                   @map("cupo_titular") @db.Decimal(18, 2)
+  firmaDigitalmente        Boolean                    @default(false) @map("firma_digitalmente")
+  linkFirmaDigital         String?                    @map("link_firma_digital")
+  ejecutivoSolicitud       String?                    @map("ejecutivo_solicitud")
+  vendedorSolicitud        String?                    @map("vendedor_solicitud")
+  vendedorId               String?                    @map("vendedor_id") @db.Uuid
+  observaciones            String?
+  createdBy                String                     @map("created_by") @db.Uuid
+  assignedToUserId         String?                    @map("assigned_to_user_id") @db.Uuid
+  createdAt                DateTime                   @default(now()) @map("created_at")
+  updatedAt                DateTime                   @updatedAt @map("updated_at")
+  archivedAt               DateTime?                  @map("archived_at")
+  estadoActual             WorkflowState              @relation(fields: [estadoActualId], references: [id])
+  creator                  User                       @relation(fields: [createdBy], references: [id])
+  assignedToUser           User?                      @relation("SolicitudAssignedToUser", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  vendedor                 User?                      @relation("SolicitudVendedor", fields: [vendedorId], references: [id], onDelete: SetNull)
+  titular                  SolicitudTitular?
+  datosLaborales           SolicitudDatosLaborales?
+  conyuge                  SolicitudConyuge?
+  garantias                SolicitudGarantia[]
+  adjuntos                 SolicitudAdjunto[]
+  cancelaciones            SolicitudCancelacion[]
+  estadoHistorial          SolicitudEstadoHistorial[]
+  participants             SolicitudParticipant[]
+
+  @@index([estadoActualId])
+  @@index([createdBy])
+  @@index([assignedToUserId])
+  @@index([vendedorId])
+  @@index([createdAt])
+  @@map("solicitudes")
+}
+
+model SolicitudParticipant {
+  id          String                     @id @default(uuid()) @db.Uuid
+  solicitudId String                     @map("solicitud_id") @db.Uuid
+  userId      String                     @map("user_id") @db.Uuid
+  role        SolicitudParticipantRole
+  source      SolicitudParticipantSource
+  createdAt   DateTime                   @default(now()) @map("created_at")
+  createdBy   String?                    @map("created_by") @db.Uuid
+  solicitud   Solicitud                  @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  user        User                       @relation("SolicitudParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
+  creator     User?                      @relation("SolicitudParticipantCreatedByUser", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([solicitudId, userId])
+  @@index([solicitudId])
+  @@index([userId])
+  @@index([createdBy])
+  @@map("solicitud_participants")
+}
+
+model WorkflowTransition {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  fromStateId           String                     @map("from_state_id") @db.Uuid
+  toStateId             String                     @map("to_state_id") @db.Uuid
+  actionCode            String                     @map("action_code")
+  actionLabel           String                     @map("action_label")
+  defaultComment        String?                    @map("default_comment")
+  description           String?
+  sortOrder             Int                        @map("sort_order")
+  saveAndExit           Boolean                    @default(false) @map("save_and_exit")
+  requiresComment       Boolean                    @default(false) @map("requires_comment")
+  isActive              Boolean                    @default(true) @map("is_active")
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  updatedAt             DateTime                   @updatedAt @map("updated_at")
+  fromState             WorkflowState              @relation("WorkflowTransitionFromState", fields: [fromStateId], references: [id])
+  toState               WorkflowState              @relation("WorkflowTransitionToState", fields: [toStateId], references: [id])
+  history               SolicitudEstadoHistorial[]
+
+  @@unique([fromStateId, actionCode])
+  @@unique([fromStateId, toStateId, actionCode])
+  @@index([fromStateId])
+  @@index([toStateId])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("workflow_transitions")
+}
+
+model SolicitudEstadoHistorial {
+  id                    String              @id @default(uuid()) @db.Uuid
+  solicitudId           String              @map("solicitud_id") @db.Uuid
+  transitionId          String?             @map("transition_id") @db.Uuid
+  estadoAnteriorId      String?             @map("estado_anterior_id") @db.Uuid
+  estadoNuevoId         String              @map("estado_nuevo_id") @db.Uuid
+  fromStateCodeSnapshot String?             @map("from_state_code_snapshot")
+  toStateCodeSnapshot   String              @map("to_state_code_snapshot")
+  fromStateNameSnapshot String?             @map("from_state_name_snapshot")
+  toStateNameSnapshot   String              @map("to_state_name_snapshot")
+  fromOwnerIdSnapshot   String?             @map("from_owner_id_snapshot") @db.Uuid
+  toOwnerIdSnapshot     String?             @map("to_owner_id_snapshot") @db.Uuid
+  fromOwnerCodeSnapshot String?             @map("from_owner_code_snapshot")
+  toOwnerCodeSnapshot   String?             @map("to_owner_code_snapshot")
+  fromOwnerNameSnapshot String?             @map("from_owner_name_snapshot")
+  toOwnerNameSnapshot   String?             @map("to_owner_name_snapshot")
+  actionCode            String?             @map("action_code")
+  actionLabel           String?             @map("action_label")
+  saveAndExit           Boolean?            @map("save_and_exit")
+  requiresComment       Boolean?            @map("requires_comment")
+  motivo                String?
+  comentario            String?
+  metadata              Json?
+  changedBy             String?             @map("changed_by") @db.Uuid
+  changedAt             DateTime            @default(now()) @map("changed_at")
+  solicitud             Solicitud           @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  transition            WorkflowTransition? @relation(fields: [transitionId], references: [id])
+  estadoAnterior        WorkflowState?      @relation("SolicitudHistoryPreviousState", fields: [estadoAnteriorId], references: [id])
+  estadoNuevo           WorkflowState       @relation("SolicitudHistoryNewState", fields: [estadoNuevoId], references: [id])
+  changedByUser         User?               @relation("SolicitudHistoryChangedByUser", fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([solicitudId])
+  @@index([solicitudId, changedAt])
+  @@index([transitionId])
+  @@index([estadoAnteriorId])
+  @@index([estadoNuevoId])
+  @@index([changedBy])
+  @@map("solicitud_estado_historial")
+}
+
+model SolicitudTitular {
+  solicitudId                  String    @id @map("solicitud_id") @db.Uuid
+  tipoDocumento                String?   @map("tipo_documento")
+  nroDocumento                 String?   @map("nro_documento")
+  cuit                         String?
+  nroSocio                     String?   @map("nro_socio")
+  apellidoDenominacion         String?   @map("apellido_denominacion")
+  nombre                       String?
+  email                        String?
+  celular                      String?
+  telefonoFijo                 String?   @map("telefono_fijo")
+  domicilioCalle               String?   @map("domicilio_calle")
+  nroPuerta                    String?   @map("nro_puerta")
+  localidad                    String?
+  cbu                          String?
+  personaExpuestaPoliticamente Boolean?  @map("persona_expuesta_politicamente")
+  sexo                         String?
+  nacionalidad                 String?
+  estadoCivil                  String?   @map("estado_civil")
+  fechaNacimiento              DateTime? @map("fecha_nacimiento") @db.Date
+  solicitud                    Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@index([nroDocumento])
+  @@map("solicitud_titulares")
+}
+
+model SolicitudDatosLaborales {
+  solicitudId               String    @id @map("solicitud_id") @db.Uuid
+  empleador                 String?
+  actividadLaboral          String?   @map("actividad_laboral")
+  relacionLaboral           String?   @map("relacion_laboral")
+  antiguedadLaboralMeses    Int?      @map("antiguedad_laboral_meses")
+  fechaIngresoLaboral       DateTime? @map("fecha_ingreso_laboral") @db.Date
+  domicilioLaboralCalle     String?   @map("domicilio_laboral_calle")
+  domicilioLaboralNroPuerta String?   @map("domicilio_laboral_nro_puerta")
+  domicilioLaboralPisoDepto String?   @map("domicilio_laboral_piso_depto")
+  domicilioLaboralLocalidad String?   @map("domicilio_laboral_localidad")
+  montoRecibo               Decimal?  @map("monto_recibo") @db.Decimal(18, 2)
+  descuentosSueldo          Decimal?  @map("descuentos_sueldo") @db.Decimal(18, 2)
+  tarjetas                  String?
+  vehiculo                  String?
+  vivienda                  String?
+  solicitud                 Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@map("solicitud_datos_laborales")
+}
+
+model SolicitudConyuge {
+  solicitudId       String    @id @map("solicitud_id") @db.Uuid
+  apellido          String?
+  nombre            String?
+  tipoDocumento     String?   @map("tipo_documento")
+  nroDocumento      String?   @map("nro_documento")
+  fechaNacimiento   DateTime? @map("fecha_nacimiento") @db.Date
+  sexo              String?
+  actividad         String?
+  ingresosMensuales Decimal?  @map("ingresos_mensuales") @db.Decimal(18, 2)
+  nacionalidad      String?
+  solicitud         Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@index([nroDocumento])
+  @@map("solicitud_conyuges")
+}
+
+model SolicitudGarantia {
+  id                     String    @id @default(uuid()) @db.Uuid
+  solicitudId            String    @map("solicitud_id") @db.Uuid
+  tipoRelacion           String?   @map("tipo_relacion")
+  tipoGarantia           String?   @map("tipo_garantia")
+  observaciones          String?
+  tipoDocumento          String?   @map("tipo_documento")
+  nroDocumento           String?   @map("nro_documento")
+  persona                String?
+  cuit                   String?
+  nroSocio               String?   @map("nro_socio")
+  denominacion           String?
+  nombre                 String?
+  nombreCompleto         String?   @map("nombre_completo")
+  sexo                   String?
+  fechaNacimiento        DateTime? @map("fecha_nacimiento") @db.Date
+  edad                   Int?
+  email                  String?
+  nacionalidad           String?
+  estadoCivil            String?   @map("estado_civil")
+  telefono               String?
+  celular                String?
+  domicilio              String?
+  ocupacion              String?
+  ingresoMensual         Decimal?  @map("ingreso_mensual") @db.Decimal(18, 2)
+  fechaIngresoLaboral    DateTime? @map("fecha_ingreso_laboral") @db.Date
+  antiguedadLaboralMeses Int?      @map("antiguedad_laboral_meses")
+  sumaIngresos           Boolean   @default(false) @map("suma_ingresos")
+  casadoConTitular       Boolean?  @map("casado_con_titular")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  solicitud              Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@index([solicitudId])
+  @@index([nroDocumento])
+  @@index([cuit])
+  @@index([nroSocio])
+  @@map("solicitud_garantias")
+}
+
+model SolicitudAdjunto {
+  id               String    @id @default(uuid()) @db.Uuid
+  solicitudId      String    @map("solicitud_id") @db.Uuid
+  legacyOid        String?   @map("legacy_oid")
+  archivoNombre    String?   @map("archivo_nombre")
+  archivoPath      String?   @map("archivo_path")
+  archivoMimeType  String?   @map("archivo_mime_type")
+  archivoSizeBytes BigInt?   @map("archivo_size_bytes")
+  storageBucket    String?   @map("storage_bucket")
+  nroDocumento     String?   @map("nro_documento")
+  descripcion      String?
+  adicional        String?
+  tipoAdjunto      String?   @map("tipo_adjunto")
+  estadoAdjunto    String?   @map("estado_adjunto")
+  restringido      Boolean   @default(false)
+  comentario       String?
+  uploadedBy       String?   @map("uploaded_by") @db.Uuid
+  uploadedAt       DateTime  @default(now()) @map("uploaded_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+  deletedBy        String?   @map("deleted_by") @db.Uuid
+  deleteReason     String?   @map("delete_reason")
+  solicitud        Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  uploadedByUser   User?     @relation("SolicitudAdjuntoUploadedByUser", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  deletedByUser    User?     @relation("SolicitudAdjuntoDeletedByUser", fields: [deletedBy], references: [id], onDelete: SetNull)
+
+  @@index([solicitudId])
+  @@index([legacyOid])
+  @@index([tipoAdjunto])
+  @@index([estadoAdjunto])
+  @@index([uploadedBy])
+  @@index([uploadedAt])
+  @@map("solicitud_adjuntos")
+}
+
+model SolicitudCancelacion {
+  id             String    @id @default(uuid()) @db.Uuid
+  solicitudId    String    @map("solicitud_id") @db.Uuid
+  cuentaADebitar String    @map("cuenta_a_debitar")
+  cbu            String
+  cuentaBancaria String    @map("cuenta_bancaria")
+  socio          String
+  socioLegacyId  String?   @map("socio_legacy_id")
+  monto          Decimal   @db.Decimal(18, 2)
+  notas          String?
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  deletedBy      String?   @map("deleted_by") @db.Uuid
+  solicitud      Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  createdByUser  User?     @relation("SolicitudCancelacionCreatedByUser", fields: [createdBy], references: [id], onDelete: SetNull)
+  deletedByUser  User?     @relation("SolicitudCancelacionDeletedByUser", fields: [deletedBy], references: [id], onDelete: SetNull)
+
+  @@index([solicitudId])
+  @@index([createdBy])
+  @@map("solicitud_cancelaciones")
+}
+
+model SolicitudFieldAccessRule {
+  id                   String        @id @default(uuid()) @db.Uuid
+  workflowStateId      String        @unique @map("workflow_state_id") @db.Uuid
+  defaultMode          String        @default("readonly") @map("default_mode")
+  editableFields       String[]      @default([]) @map("editable_fields")
+  editableGroups       String[]      @default([]) @map("editable_groups")
+  canManageAttachments Boolean       @default(false) @map("can_manage_attachments")
+  readonlyReason       String?       @map("readonly_reason")
+  backgroundColor      String?       @map("background_color")
+  textColor            String?       @map("text_color")
+  active               Boolean       @default(true)
+  version              Int           @default(1)
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  updatedBy            String?       @map("updated_by") @db.Uuid
+  workflowState        WorkflowState @relation(fields: [workflowStateId], references: [id], onDelete: Cascade)
+
+  @@index([active])
+  @@map("solicitud_field_access_rules")
+}
+
+model SolicitudFieldAccessRuleAudit {
+  id                String        @id @default(uuid()) @db.Uuid
+  workflowStateId   String        @map("workflow_state_id") @db.Uuid
+  stateCodeSnapshot String        @map("state_code_snapshot")
+  stateNameSnapshot String        @map("state_name_snapshot")
+  version           Int
+  eventType         String        @map("event_type")
+  previousValue     Json?         @map("previous_value")
+  nextValue         Json?         @map("next_value")
+  changedAt         DateTime      @default(now()) @map("changed_at")
+  changedBy         String?       @map("changed_by") @db.Uuid
+  workflowState     WorkflowState @relation(fields: [workflowStateId], references: [id], onDelete: Cascade)
+
+  @@index([workflowStateId])
+  @@index([workflowStateId, changedAt])
+  @@map("solicitud_field_access_rule_audit")
+}
+
+model RefreshToken {
+  id                  String    @id @default(uuid()) @map("rtk_id") @db.Uuid
+  userId              String    @map("usr_id") @db.Uuid
+  tokenHash           String    @unique @map("rtk_token_hash")
+  expiresAt           DateTime  @map("rtk_expires_at")
+  revokedAt           DateTime? @map("rtk_revoked_at")
+  replacedByTokenHash String?   @map("rtk_replaced_by_token_hash")
+  ipAddress           String?   @map("rtk_ip_address")
+  userAgent           String?   @map("rtk_user_agent")
+  createdAt           DateTime  @default(now()) @map("rtk_created_at")
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @map("evt_id") @db.Uuid
+  userId    String    @map("usr_id") @db.Uuid
+  tokenHash String    @unique @map("evt_token_hash")
+  expiresAt DateTime  @map("evt_expires_at")
+  usedAt    DateTime? @map("evt_used_at")
+  createdAt DateTime  @default(now()) @map("evt_created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @map("prt_id") @db.Uuid
+  userId    String    @map("usr_id") @db.Uuid
+  tokenHash String    @unique @map("prt_token_hash")
+  expiresAt DateTime  @map("prt_expires_at")
+  usedAt    DateTime? @map("prt_used_at")
+  createdAt DateTime  @default(now()) @map("prt_created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}

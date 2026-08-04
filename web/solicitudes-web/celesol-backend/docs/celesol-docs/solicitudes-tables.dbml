@@ -1,0 +1,561 @@
+Project celesol_solicitudes_workflow {
+  database_type: 'PostgreSQL'
+  Note: '''
+  Modelo real de la base CELESOL 2026 (generado desde prisma/schema.prisma).
+
+  Cubre:
+  - Auth: users, refresh_tokens, email_verification_tokens, password_reset_tokens.
+  - Estados: workflow_owners, workflow_states.
+  - Transiciones: workflow_transitions.
+  - Reglas de acceso a campos / apariencia visual por estado: solicitud_field_access_rules,
+    solicitud_field_access_rule_audit.
+  - Socios (backend propio, no legado): socios.
+  - Solicitud y sus datos relacionados: solicitudes, solicitud_participants,
+    solicitud_titulares, solicitud_datos_laborales, solicitud_conyuges,
+    solicitud_garantias, solicitud_adjuntos.
+  - Historico de cambios de estado: solicitud_estado_historial.
+
+  Fuera de este modelo (no hay tabla propia, se resuelven en vivo contra el
+  sistema legado via EvaluateList/EvaluateObj):
+  - Lineas de prestamo disponibles para una solicitud.
+  - Socios elegibles para cancelacion y su detalle (CBU, cuenta bancaria habitual).
+  Ver docs/consultas-validadas.md para el detalle de esas consultas legado.
+
+  El handoff hacia Tesoreria/legado no tiene tabla dedicada: se modela con las
+  columnas triggers_legacy_handoff/legacy_target_system/legacy_handoff_type de
+  workflow_transitions, y queda registrado como una fila mas de
+  solicitud_estado_historial (sin tabla de auditoria de integracion aparte).
+
+  Recomendacion: usar workflow_states.code como marcador tecnico estable y
+  workflow_states.name como descripcion visible para UI/reportes.
+  '''
+}
+
+Enum solicitud_participant_role {
+  CREATOR
+  OPERATOR
+  ASSIGNED
+  WATCHER
+}
+
+Enum solicitud_participant_source {
+  CREATE
+  STATE_CHANGE
+  MANUAL_ASSIGNMENT
+  ATTACHMENT_UPLOAD
+  SYSTEM
+}
+
+Enum tipo_persona {
+  FISICA
+  JURIDICA
+}
+
+Table users {
+  usr_id uuid [pk, default: `gen_random_uuid()`]
+  usr_email text [unique, not null]
+  usr_legacy_user text [unique, not null]
+  usr_password_hash text [not null]
+  usr_first_name text
+  usr_last_name text
+  usr_email_verified boolean [not null, default: false]
+  usr_is_system_admin boolean [not null, default: false]
+  usr_state int [not null, default: 1]
+  usr_created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  usr_updated_at "timestamp(3)" [not null]
+  usr_deleted_at "timestamp(3)"
+  workflow_owner_id uuid [ref: > workflow_owners.id]
+
+  Indexes {
+    usr_email [unique]
+    usr_legacy_user [unique]
+    workflow_owner_id
+  }
+}
+
+Table refresh_tokens {
+  rtk_id uuid [pk, default: `gen_random_uuid()`]
+  usr_id uuid [not null, ref: > users.usr_id]
+  rtk_token_hash text [unique, not null]
+  rtk_expires_at "timestamp(3)" [not null]
+  rtk_revoked_at "timestamp(3)"
+  rtk_replaced_by_token_hash text
+  rtk_ip_address text
+  rtk_user_agent text
+  rtk_created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    usr_id
+    rtk_token_hash [unique]
+  }
+}
+
+Table email_verification_tokens {
+  evt_id uuid [pk, default: `gen_random_uuid()`]
+  usr_id uuid [not null, ref: > users.usr_id]
+  evt_token_hash text [unique, not null]
+  evt_expires_at "timestamp(3)" [not null]
+  evt_used_at "timestamp(3)"
+  evt_created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    usr_id
+    evt_token_hash [unique]
+  }
+}
+
+Table password_reset_tokens {
+  prt_id uuid [pk, default: `gen_random_uuid()`]
+  usr_id uuid [not null, ref: > users.usr_id]
+  prt_token_hash text [unique, not null]
+  prt_expires_at "timestamp(3)" [not null]
+  prt_used_at "timestamp(3)"
+  prt_created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    usr_id
+    prt_token_hash [unique]
+  }
+}
+
+Table workflow_owners {
+  Note: '''
+  Area responsable de cada estado del workflow: agrupa solicitudes por
+  bandejas operativas (VENDEDORES, RIESGO, TESORERIA) o por estados de
+  cierre (HISTORIAL). SISTEMA es para el paso tecnico automatico (Motor).
+
+  Ejemplo:
+    code       | name
+    -----------|-----------
+    VENDEDORES | Vendedores
+    SISTEMA    | Sistema
+    RIESGO     | Riesgo
+    TESORERIA  | Tesoreria
+    HISTORIAL  | Historial
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  code text [unique, not null]
+  name text [not null]
+  sort_order int [not null, default: 0]
+  is_active boolean [not null, default: true]
+
+  Indexes {
+    code [unique]
+  }
+}
+
+Table workflow_states {
+  Note: '''
+  Catalogo maestro de estados del workflow. code es el marcador tecnico
+  estable (nunca cambia de significado una vez usado en produccion); name es
+  el nombre visible, que si puede renombrarse (ej. la unificacion de
+  VerificacionDocumentacion + VerificarFirma en VerificarFirmaYDocumentacion).
+  Los estados nunca se borran, solo se desactivan (is_active=false), porque
+  solicitud_estado_historial y solicitud_field_access_rule_audit tienen FK
+  restrictiva hacia esta tabla.
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  owner_id uuid [not null, ref: > workflow_owners.id]
+  code text [unique, not null]
+  name text [not null]
+  description text
+  is_initial boolean [not null, default: false]
+  is_terminal boolean [not null, default: false]
+  is_active boolean [not null, default: true]
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+
+  Indexes {
+    code [unique]
+    owner_id
+    is_initial
+    is_active
+  }
+}
+
+Table workflow_transitions {
+  Note: '''
+  Transiciones permitidas entre estados: que acciones estan disponibles
+  desde un estado origen y a que estado destino llevan. Si
+  triggers_legacy_handoff=true, la transicion representa un pase de gestion
+  a un sistema externo (no crea una fila en una tabla de handoff propia; el
+  pase queda registrado via el propio historial de estados).
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  from_state_id uuid [not null, ref: > workflow_states.id]
+  to_state_id uuid [not null, ref: > workflow_states.id]
+  action_code text [not null]
+  action_label text [not null]
+  default_comment text
+  description text
+  sort_order int [not null]
+  save_and_exit boolean [not null, default: false]
+  requires_comment boolean [not null, default: false]
+  triggers_legacy_handoff boolean [not null, default: false]
+  legacy_target_system text
+  legacy_handoff_type text
+  is_active boolean [not null, default: true]
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+
+  Indexes {
+    (from_state_id, action_code) [unique]
+    (from_state_id, to_state_id, action_code) [unique]
+    from_state_id
+    to_state_id
+    is_active
+    sort_order
+  }
+}
+
+Table solicitud_field_access_rules {
+  Note: '''
+  Regla de edicion/apariencia por estado (1:1 con workflow_states). Define
+  que campos/grupos son editables (o, si default_mode ya es lo permisivo,
+  cuales quedan bloqueados), si se pueden gestionar adjuntos, y el color de
+  fondo/texto del badge de estado en la UI. Reemplaza lo que en un diseño
+  anterior era una tabla "workflow_state_appearance" separada: hoy el color
+  vive como columnas directas de esta misma tabla.
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  workflow_state_id uuid [unique, not null, ref: > workflow_states.id]
+  default_mode text [not null, default: 'readonly']
+  editable_fields "text[]" [not null, default: `ARRAY[]::TEXT[]`]
+  editable_groups "text[]" [not null, default: `ARRAY[]::TEXT[]`]
+  can_manage_attachments boolean [not null, default: false]
+  readonly_reason text
+  background_color text
+  text_color text
+  active boolean [not null, default: true]
+  version int [not null, default: 1]
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+  updated_by uuid [ref: > users.usr_id]
+
+  Indexes {
+    workflow_state_id [unique]
+    active
+  }
+}
+
+Table solicitud_field_access_rule_audit {
+  Note: '''
+  Auditoria de cambios sobre solicitud_field_access_rules: guarda snapshot
+  de code/name del estado al momento del cambio (por si el estado se
+  renombra despues) y el valor previo/nuevo de la regla completa.
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  workflow_state_id uuid [not null, ref: > workflow_states.id]
+  state_code_snapshot text [not null]
+  state_name_snapshot text [not null]
+  version int [not null]
+  event_type text [not null]
+  previous_value jsonb
+  next_value jsonb
+  changed_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  changed_by uuid [ref: > users.usr_id]
+
+  Indexes {
+    workflow_state_id
+    (workflow_state_id, changed_at)
+  }
+}
+
+Table socios {
+  Note: '''
+  Socios dados de alta en el backend propio (distinto del socio mutual del
+  sistema legado). Se crea tipicamente al liquidar una solicitud cuyo
+  titular todavia no existe como socio. tipo_persona determina que otros
+  campos son relevantes: FISICA usa apellido/nombre/nro_documento/sexo/etc,
+  JURIDICA usa razon_social.
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  tipo_persona tipo_persona [not null]
+  cuit text [unique, not null]
+  email text
+  celular text
+  nro_socio_legacy text
+  apellido text
+  nombre text
+  nro_documento text [unique]
+  tipo_documento text
+  sexo text
+  fecha_de_nacimiento date
+  razon_social text
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+
+  Indexes {
+    cuit [unique]
+    nro_documento [unique]
+    tipo_persona
+  }
+}
+
+Table solicitudes {
+  Note: '''
+  Entidad principal del dominio: una solicitud de prestamo, sus datos
+  comerciales, montos, fechas, linea seleccionada (por descripcion +
+  referencia legado, no FK a un catalogo propio) y estado actual dentro del
+  workflow.
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  legacy_oid text [unique]
+  nro_solicitud text [unique]
+  fecha_primer_vencimiento date
+  estado_actual_id uuid [not null, ref: > workflow_states.id]
+  linea_prestamo_legacy_oid text [not null]
+  linea_prestamo_descripcion text [not null]
+  monto_a_financiar "numeric(18,2)"
+  cuota_resultante text
+  cuotas int
+  motivo text
+  nro_operacion text
+  cupo_titular "numeric(18,2)"
+  firma_digitalmente boolean [not null, default: false]
+  link_firma_digital text
+  ejecutivo_solicitud text
+  vendedor_solicitud text
+  vendedor_id uuid [ref: > users.usr_id]
+  observaciones text
+  created_by uuid [not null, ref: > users.usr_id]
+  assigned_to_user_id uuid [ref: > users.usr_id]
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+  archived_at "timestamp(3)"
+
+  Indexes {
+    legacy_oid [unique]
+    nro_solicitud [unique]
+    estado_actual_id
+    created_by
+    assigned_to_user_id
+    vendedor_id
+    created_at
+  }
+}
+
+Table solicitud_participants {
+  Note: '''
+  Relaciona una solicitud con los usuarios que participaron en ella (quien
+  la creo, quien opero un cambio de estado, quien la tiene asignada, quien
+  la esta observando) y el origen de esa participacion. No otorga permisos
+  operativos por si sola (ver SolicitudPermissions en el backend).
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  solicitud_id uuid [not null, ref: > solicitudes.id]
+  user_id uuid [not null, ref: > users.usr_id]
+  role solicitud_participant_role [not null]
+  source solicitud_participant_source [not null]
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  created_by uuid [ref: > users.usr_id]
+
+  Indexes {
+    (solicitud_id, user_id) [unique]
+    solicitud_id
+    user_id
+    created_by
+  }
+}
+
+Table solicitud_titulares {
+  Note: '''
+  Datos personales y de contacto del titular de la solicitud. Relacion 1 a 1
+  con solicitudes: cada solicitud tiene un unico titular principal.
+  '''
+
+  solicitud_id uuid [pk, ref: > solicitudes.id]
+  tipo_documento text
+  nro_documento text
+  cuit text
+  nro_socio text
+  apellido_denominacion text
+  nombre text
+  email text
+  celular text
+  telefono_fijo text
+  domicilio_calle text
+  nro_puerta text
+  localidad text
+  cbu text
+  persona_expuesta_politicamente boolean
+  sexo text
+  nacionalidad text
+  estado_civil text
+  fecha_nacimiento date
+
+  Indexes {
+    nro_documento
+  }
+}
+
+Table solicitud_datos_laborales {
+  Note: '''Datos laborales y economicos del titular asociados a la solicitud. Relacion 1 a 1 con solicitudes.'''
+
+  solicitud_id uuid [pk, ref: > solicitudes.id]
+  empleador text
+  actividad_laboral text
+  relacion_laboral text
+  antiguedad_laboral_meses int
+  fecha_ingreso_laboral date
+  domicilio_laboral_calle text
+  domicilio_laboral_nro_puerta text
+  domicilio_laboral_piso_depto text
+  domicilio_laboral_localidad text
+  monto_recibo "numeric(18,2)"
+  descuentos_sueldo "numeric(18,2)"
+  tarjetas text
+  vehiculo text
+  vivienda text
+}
+
+Table solicitud_conyuges {
+  Note: '''Datos del conyuge del titular cuando aplica. Relacion 1 a 1 con solicitudes, separada del titular por opcionalidad.'''
+
+  solicitud_id uuid [pk, ref: > solicitudes.id]
+  apellido text
+  nombre text
+  tipo_documento text
+  nro_documento text
+  fecha_nacimiento date
+  sexo text
+  actividad text
+  ingresos_mensuales "numeric(18,2)"
+  nacionalidad text
+
+  Indexes {
+    nro_documento
+  }
+}
+
+Table solicitud_garantias {
+  Note: '''Coleccion de garantias/garantes/codeudores por solicitud (relacion 1 a N).'''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  solicitud_id uuid [not null, ref: > solicitudes.id]
+  tipo_relacion text
+  tipo_garantia text
+  observaciones text
+  tipo_documento text
+  nro_documento text
+  persona text
+  cuit text
+  nro_socio text
+  denominacion text
+  nombre text
+  nombre_completo text
+  sexo text
+  fecha_nacimiento date
+  edad int
+  email text
+  nacionalidad text
+  estado_civil text
+  telefono text
+  celular text
+  domicilio text
+  ocupacion text
+  ingreso_mensual "numeric(18,2)"
+  fecha_ingreso_laboral date
+  antiguedad_laboral_meses int
+  suma_ingresos boolean [not null, default: false]
+  casado_con_titular boolean
+  created_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+
+  Indexes {
+    solicitud_id
+    nro_documento
+    cuit
+    nro_socio
+  }
+}
+
+Table solicitud_adjuntos {
+  Note: '''Metadatos de archivos adjuntos de una solicitud: referencia al archivo fisico, tipo, estado documental, restriccion y usuario que lo cargo/borro (borrado logico via deleted_at/deleted_by/delete_reason).'''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  solicitud_id uuid [not null, ref: > solicitudes.id]
+  legacy_oid text
+  archivo_nombre text
+  archivo_path text
+  archivo_mime_type text
+  archivo_size_bytes bigint
+  storage_bucket text
+  nro_documento text
+  descripcion text
+  adicional text
+  tipo_adjunto text
+  estado_adjunto text
+  restringido boolean [not null, default: false]
+  comentario text
+  uploaded_by uuid [ref: > users.usr_id]
+  uploaded_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at "timestamp(3)" [not null]
+  deleted_at "timestamp(3)"
+  deleted_by uuid [ref: > users.usr_id]
+  delete_reason text
+
+  Indexes {
+    solicitud_id
+    legacy_oid
+    tipo_adjunto
+    estado_adjunto
+    uploaded_by
+    uploaded_at
+  }
+}
+
+Table solicitud_estado_historial {
+  Note: '''
+  Auditoria de cambios de estado de una solicitud. Guarda transicion,
+  estados anterior/nuevo, snapshots inmutables de code/name/owner al
+  momento del cambio (para que un rename posterior de workflow_states no
+  reescriba lecturas pasadas), motivo, comentario y usuario. No existe una
+  tabla de handoff legado separada: cuando la transicion dispara un pase a
+  un sistema externo, esa informacion se resuelve solo con las columnas de
+  workflow_transitions (triggers_legacy_handoff/legacy_target_system/
+  legacy_handoff_type), no con una FK adicional en esta tabla.
+  '''
+
+  id uuid [pk, default: `gen_random_uuid()`]
+  solicitud_id uuid [not null, ref: > solicitudes.id]
+  transition_id uuid [ref: > workflow_transitions.id]
+  estado_anterior_id uuid [ref: > workflow_states.id]
+  estado_nuevo_id uuid [not null, ref: > workflow_states.id]
+  from_state_code_snapshot text
+  to_state_code_snapshot text [not null]
+  from_state_name_snapshot text
+  to_state_name_snapshot text [not null]
+  from_owner_id_snapshot uuid
+  to_owner_id_snapshot uuid
+  from_owner_code_snapshot text
+  to_owner_code_snapshot text
+  from_owner_name_snapshot text
+  to_owner_name_snapshot text
+  action_code text
+  action_label text
+  save_and_exit boolean
+  requires_comment boolean
+  motivo text
+  comentario text
+  metadata jsonb
+  changed_by uuid [ref: > users.usr_id]
+  changed_at "timestamp(3)" [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    solicitud_id
+    (solicitud_id, changed_at)
+    transition_id
+    estado_anterior_id
+    estado_nuevo_id
+    changed_by
+  }
+}
