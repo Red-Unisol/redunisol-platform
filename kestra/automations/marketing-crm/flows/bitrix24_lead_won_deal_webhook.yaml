@@ -58,7 +58,7 @@ tasks:
       BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_bcra_rejected_stage_id ?? 'C1:5' }}"
       BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
       BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
-      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,71159,90231' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:

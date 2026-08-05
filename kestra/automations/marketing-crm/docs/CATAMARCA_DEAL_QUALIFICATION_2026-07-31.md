@@ -59,7 +59,7 @@ La negociacion nace asignada a Maru. Al aprobar:
 - en otro caso se elige el vendedor con menor cantidad de negociaciones en los ultimos 30 dias;
 - las recurrencias no incrementan artificialmente la carga del round-robin porque la eleccion usa la carga real ya asignada.
 
-Pool actual: Daniel Carrera (`68579`), Patricia Contenti (`10451`), Natalia Rojo Moyano (`71159`) y Soledad Rojo Moyano (`90231`).
+Pool actual: Daniel Carrera (`68579`), Patricia Contendi (`10451`), Susana Contenti (`29`), Soledad Moyano (`90231`), Natalia Rojo (`71159`), Claudia Algarbe (`113457`) y Daniela Arias (`113455`).
 
 ## Operacion
 

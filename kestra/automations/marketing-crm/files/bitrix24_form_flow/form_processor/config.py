@@ -55,7 +55,7 @@ DEFAULT_DEAL_CONFIG = {
     "bcra_rejected_stage_id": "C1:5",
     "provisional_user_id": 57,
     "commercial_line_field": "ufCrm_659EBB0445E8E",
-    "round_robin_user_ids": (68579, 10451, 71159, 90231),
+    "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
     "round_robin_lookback_days": 30,
 }
 
