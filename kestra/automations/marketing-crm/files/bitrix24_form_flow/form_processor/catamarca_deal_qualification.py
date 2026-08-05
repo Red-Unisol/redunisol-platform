@@ -136,7 +136,7 @@ def qualify_catamarca_deal(
         deal_id=deal_id_int,
         logger=active_logger,
     )
-    assign_open_line_chats_to_user(
+    transferred_chat_count = assign_open_line_chats_to_user(
         client,
         lead_id=lead_id,
         contact_id=contact_id,
@@ -148,8 +148,10 @@ def qualify_catamarca_deal(
         client,
         config,
         deal_id=deal_id_int,
+        deal_title=str(deal.get("title") or deal.get("TITLE") or "").strip(),
         assigned_by_id=assigned_by_id,
         action=decision.action,
+        chat_transferred=transferred_chat_count > 0,
         logger=active_logger,
     )
     active_logger.info(
