@@ -190,9 +190,13 @@ def resolve_round_robin_assignee(
 
     deals = _list_deals(
         client,
-        filter_={"=categoryId": config.deal.category_id},
+        filter_={
+            "=categoryId": config.deal.category_id,
+            "@assignedById": list(pool),
+        },
         order={"createdTime": "DESC", "id": "DESC"},
         select=["id", "assignedById", "categoryId", "createdTime"],
+        max_items=1,
     )
     pool_set = set(pool)
     for deal in deals:
@@ -456,6 +460,7 @@ def _list_deals(
     filter_: dict[str, Any],
     order: dict[str, str],
     select: list[str],
+    max_items: int | None = None,
 ) -> list[dict[str, Any]]:
     deals: list[dict[str, Any]] = []
     start = 0
@@ -479,6 +484,8 @@ def _list_deals(
         if not isinstance(items, list):
             raise RuntimeError("crm.item.list devolvio un payload invalido.")
         deals.extend(item for item in items if isinstance(item, dict))
+        if max_items is not None and len(deals) >= max_items:
+            return deals[:max_items]
 
         next_page = response.get("next")
         if next_page is None and isinstance(result, dict):

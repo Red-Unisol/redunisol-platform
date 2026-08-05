@@ -382,6 +382,11 @@ class FakeBitrixClient:
                 if str(deal.get(field_name) or "") < str(expected):
                     return False
                 continue
+            if raw_field.startswith("@"):
+                field_name = raw_field[1:]
+                if str(deal.get(field_name) or "") not in {str(value) for value in expected}:
+                    return False
+                continue
             field_name = raw_field[1:] if raw_field.startswith("=") else raw_field
             if str(deal.get(field_name) or "") != str(expected):
                 return False
@@ -3132,6 +3137,17 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[930]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[930]["assignedById"], 68579)
         self.assertEqual(client.deals[930]["ufCrm_659EBB0445E8E"], "AMEJUCA Premium")
+        routing_queries = [
+            payload
+            for method, payload in client.calls
+            if method == "crm.item.list" and "@assignedById" in (payload.get("filter") or {})
+        ]
+        self.assertEqual(len(routing_queries), 1)
+        self.assertEqual(
+            routing_queries[0]["filter"]["@assignedById"],
+            [68579, 10451, 29, 90231, 71159, 113457, 113455],
+        )
+        self.assertEqual(routing_queries[0]["start"], 0)
 
     def test_catamarca_pending_deal_reuses_recent_contact_assignee(self) -> None:
         client = FakeBitrixClient()
