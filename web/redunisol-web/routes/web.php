@@ -7,6 +7,11 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
+Route::get('/admin/reportes/descargar/{path}', \App\Http\Controllers\AdminReportDownloadController::class)
+    ->where('path', '.*')
+    ->middleware(['auth'])
+    ->name('admin.reports.download');
+
 
 Route::get('/health', function () {
     $status = [];
