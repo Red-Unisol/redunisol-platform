@@ -959,6 +959,29 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(submission.employment_status.key, "docente")
         self.assertEqual(submission.payment_bank.key, "banco_de_la_nacion_argentina")
 
+    def test_normalize_payment_bank_accepts_otros_bitrix_enum(self) -> None:
+        submission = normalize_prequalification_input(
+            {
+                "province": "Cordoba",
+                "employment_status": "Policia",
+                "payment_bank": "Otros",
+            }
+        )
+
+        self.assertEqual(submission.payment_bank.key, "otros")
+        self.assertEqual(submission.payment_bank.bitrix_id, "593")
+
+        result = prequalify_commercial_fields(
+            {
+                "province": "Cordoba",
+                "employment_status": "Policia",
+                "payment_bank": "Otros",
+            }
+        )
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["prequalified"])
+        self.assertEqual(result["reason"], "payment_bank_not_eligible")
+
     def test_commercial_prequalification_rejects_invalid_input_without_routing(self) -> None:
         result = prequalify_commercial_fields(
             {

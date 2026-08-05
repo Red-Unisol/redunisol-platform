@@ -192,5 +192,6 @@ BANCOS = Catalog(
         ("Reba Compania Financiera S.A.", "587"),
         ("Credito Regional Compania Financiera S.A.", "589"),
         ("Banco Coinag S.A.", "591"),
+        ("Otros", "593"),
     ]
 )
