@@ -54,6 +54,7 @@ DEFAULT_DEAL_CONFIG = {
     "manual_review_stage_id": "C1:KESTRA_REVIEW",
     "bcra_rejected_stage_id": "C1:5",
     "provisional_user_id": 57,
+    "distribution_notification_user_id": 57,
     "commercial_line_field": "ufCrm_659EBB0445E8E",
     "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
     "round_robin_lookback_days": 30,
@@ -153,6 +154,7 @@ class DealConfig:
     manual_review_stage_id: str
     bcra_rejected_stage_id: str
     provisional_user_id: int
+    distribution_notification_user_id: int
     commercial_line_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
@@ -360,6 +362,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 source,
                 "BITRIX24_DEAL_PROVISIONAL_USER_ID",
                 default=DEFAULT_DEAL_CONFIG["provisional_user_id"],
+            ),
+            distribution_notification_user_id=_optional_int(
+                source,
+                "BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID",
+                default=DEFAULT_DEAL_CONFIG["distribution_notification_user_id"],
             ),
             commercial_line_field=source.get(
                 "BITRIX24_DEAL_COMMERCIAL_LINE_FIELD",
