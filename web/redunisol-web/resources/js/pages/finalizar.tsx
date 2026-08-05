@@ -221,7 +221,7 @@ export default function Finalizar() {
         <div className="flex min-h-screen flex-col bg-gray-50">
             <Navbar sections={[]} activeId={null} onNavigate={() => {}} />
 
-            <main className="flex flex-1 flex-col items-center px-3 pt-20 pb-8 sm:px-6 sm:py-16">
+            <main className="flex flex-1 flex-col items-center px-3 pt-20 pb-32 sm:px-6 sm:py-16">
                 <div className="w-full max-w-2xl">
                     <header className="mb-5 text-center sm:mb-10">
                         <p className="mb-3 hidden text-xs font-bold tracking-[0.2em] text-emerald-600 uppercase sm:block">
@@ -355,10 +355,10 @@ export default function Finalizar() {
                             </div>
                         )}
 
-                        <div className="overflow-hidden rounded-lg border border-gray-200 sm:rounded-xl">
+                        <div className="fixed right-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-3 z-40 overflow-hidden rounded-xl border border-gray-200 bg-white p-2 shadow-2xl sm:static sm:rounded-xl sm:bg-transparent sm:p-0 sm:shadow-none">
                             <div
                                 aria-disabled={!metamapReady}
-                                className={`flex min-h-20 flex-col items-center justify-center gap-2 bg-[#4a7cdc] px-3 py-3 text-center transition-opacity sm:min-h-28 sm:gap-3 sm:px-5 sm:py-5 ${
+                                className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg bg-[#4a7cdc] px-3 py-3 text-center transition-opacity sm:min-h-28 sm:gap-3 sm:rounded-none sm:px-5 sm:py-5 ${
                                     metamapReady
                                         ? ''
                                         : 'pointer-events-none opacity-50'
