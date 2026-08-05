@@ -85,7 +85,6 @@ class FinalizarController extends Controller
 
         try {
             $regulator = Regulator::query()
-                ->active()
                 ->whereRaw('LOWER(TRIM(short_name)) = ?', [$normalizedShortName])
                 ->first();
         } catch (Throwable $exception) {
@@ -99,7 +98,7 @@ class FinalizarController extends Controller
         }
 
         if (! $regulator) {
-            Log::warning('No existe un regulador activo para el convenio de finalizar.', [
+            Log::warning('No existe un regulador para el convenio de finalizar.', [
                 'linea' => $linea,
                 'regulator_short_name' => $linea,
             ]);
