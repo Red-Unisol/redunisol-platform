@@ -128,7 +128,14 @@ class FakeBitrixClient:
             return True
         if method == "user.get":
             return [
-                {"ID": user_id, "ACTIVE": True, "IS_ONLINE": "Y", "ABSENT": False}
+                {
+                    "ID": user_id,
+                    "NAME": "Daniel" if int(user_id) == 68579 else "Vendedor",
+                    "LAST_NAME": "Carrera" if int(user_id) == 68579 else str(user_id),
+                    "ACTIVE": True,
+                    "IS_ONLINE": "Y",
+                    "ABSENT": False,
+                }
                 for user_id in payload["FILTER"]["ID"]
                 if int(user_id) in self.online_user_ids
             ]
@@ -3127,6 +3134,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
         client.deals[930] = {
             "id": 930,
+            "title": "Credito de prueba Catamarca",
             "categoryId": 1,
             "stageId": "C1:KESTRA_PENDING",
             "leadId": 920,
@@ -3229,6 +3237,7 @@ class BusinessLogicTests(unittest.TestCase):
         client.leads[920] = self._catamarca_enriched_lead(920, bcra_entities=[])
         client.deals[930] = {
             "id": 930,
+            "title": "Credito de prueba Catamarca",
             "categoryId": 1,
             "stageId": "C1:KESTRA_PENDING",
             "leadId": 920,
@@ -3249,9 +3258,12 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertTrue(chat_queries)
         self.assertTrue(all(payload["ACTIVE_ONLY"] == "N" for payload in chat_queries))
         self.assertEqual(client.notifications[0]["USER_ID"], 57)
-        self.assertIn("Negociacion #930", client.notifications[0]["MESSAGE"])
-        self.assertIn("approved", client.notifications[0]["MESSAGE"])
-        self.assertIn("68579", client.notifications[0]["MESSAGE"])
+        notification = client.notifications[0]
+        self.assertIn("Nombre: Credito de prueba Catamarca", notification["MESSAGE"])
+        self.assertIn("Negociacion: [URL=", notification["MESSAGE"])
+        self.assertIn("Resultado: Aprobada", notification["MESSAGE"])
+        self.assertIn("[USER=68579]Daniel Carrera[/USER]", notification["MESSAGE"])
+        self.assertIn("Chat transferido: Sí", notification["MESSAGE"])
 
     def test_catamarca_does_not_transfer_historical_chat_without_current_session(self) -> None:
         client = FakeBitrixClient()
@@ -3454,7 +3466,8 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[933]["assignedById"], 68579)
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 778, "USER_ID": 68579}])
         self.assertEqual(client.notifications[0]["USER_ID"], 57)
-        self.assertIn("manual_review", client.notifications[0]["MESSAGE"])
+        self.assertIn("Resultado: Revisión manual", client.notifications[0]["MESSAGE"])
+        self.assertIn("Chat transferido: Sí", client.notifications[0]["MESSAGE"])
 
     def _catamarca_enriched_lead(
         self,

@@ -401,21 +401,34 @@ def notify_distribution_supervisor(
     config: AppConfig,
     *,
     deal_id: int,
+    deal_title: str,
     assigned_by_id: int,
     action: str,
+    chat_transferred: bool,
     logger: Logger,
 ) -> bool:
     recipient_id = config.deal.distribution_notification_user_id
     deal_url = f"{config.base_url.rstrip('/')}/crm/deal/details/{deal_id}/"
+    safe_deal_title = _notification_text(deal_title) or f"Negociacion #{deal_id}"
+    action_label = {
+        "approved": "Aprobada",
+        "manual_review": "Revisión manual",
+        "rejected": "Rechazada",
+    }.get(action, _notification_text(action))
+    assignee_name = _user_display_name(client, assigned_by_id=assigned_by_id, logger=logger)
+    chat_label = "Sí" if chat_transferred else "No"
     message = (
-        "[B]Distribucion automatica Catamarca[/B]\n"
-        f"[URL={deal_url}]Negociacion #{deal_id}[/URL]\n"
-        f"Resultado: {action}\n"
-        f"Responsable asignado: [USER={assigned_by_id}]usuario {assigned_by_id}[/USER]"
+        "[B]Nueva negociacion de Catamarca asignada[/B]\n"
+        f"Nombre: {safe_deal_title}\n"
+        f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
+        f"Resultado: {action_label}\n"
+        f"Responsable: [USER={assigned_by_id}]{assignee_name}[/USER]\n"
+        f"Chat transferido: {chat_label}"
     )
     message_out = (
-        f"Distribucion automatica Catamarca. Negociacion #{deal_id}. "
-        f"Resultado: {action}. Responsable asignado: usuario {assigned_by_id}. {deal_url}"
+        f"Nueva negociacion de Catamarca asignada. Nombre: {safe_deal_title}. "
+        f"Negociacion #{deal_id}. Resultado: {action_label}. "
+        f"Responsable: {assignee_name}. Chat transferido: {chat_label}. {deal_url}"
     )
     try:
         notification_id = client.call(
@@ -438,6 +451,34 @@ def notify_distribution_supervisor(
         f"por la negociacion {deal_id}."
     )
     return True
+
+
+def _user_display_name(
+    client: BitrixClient,
+    *,
+    assigned_by_id: int,
+    logger: Logger,
+) -> str:
+    try:
+        users = client.call("user.get", {"FILTER": {"ID": [assigned_by_id]}})
+    except RuntimeError as exc:
+        logger.error(f"No se pudo obtener el nombre del vendedor {assigned_by_id}: {exc}")
+        return f"Usuario {assigned_by_id}"
+
+    if isinstance(users, list) and users and isinstance(users[0], dict):
+        user = users[0]
+        full_name = " ".join(
+            part.strip()
+            for part in (str(user.get("NAME") or ""), str(user.get("LAST_NAME") or ""))
+            if part.strip()
+        )
+        if full_name:
+            return _notification_text(full_name)
+    return f"Usuario {assigned_by_id}"
+
+
+def _notification_text(value: object) -> str:
+    return str(value or "").replace("[", "(").replace("]", ")").strip()
 
 
 def _list_open_line_activity_ids(
