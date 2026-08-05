@@ -105,18 +105,19 @@ def qualify_catamarca_deal(
 
     lead = get_lead(client, lead_id, active_logger)
     decision = _evaluate_catamarca(client, config, lead)
-    update_fields: dict[str, Any] = {"stageId": decision.stage_id}
-    assigned_by_id = config.deal.provisional_user_id
-    if decision.action == "approved":
-        contact_id = _optional_int(deal.get("contactId") or lead.get("CONTACT_ID"))
-        assigned_by_id = resolve_round_robin_assignee(
-            client,
-            config,
-            contact_id=contact_id,
-            lead_id=lead_id,
-            logger=active_logger,
-        )
-        update_fields["assignedById"] = assigned_by_id
+    contact_id = _optional_int(deal.get("contactId") or lead.get("CONTACT_ID"))
+    assigned_by_id = resolve_round_robin_assignee(
+        client,
+        config,
+        contact_id=contact_id,
+        lead_id=lead_id,
+        logger=active_logger,
+    )
+    update_fields: dict[str, Any] = {
+        "stageId": decision.stage_id,
+        "assignedById": assigned_by_id,
+    }
+    if decision.commercial_line is not None:
         update_fields[config.deal.commercial_line_field] = decision.commercial_line
 
     client.call(
@@ -127,22 +128,21 @@ def qualify_catamarca_deal(
             "fields": update_fields,
         },
     )
-    if decision.action == "approved":
-        bind_open_line_activities_to_deal(
-            client,
-            lead_id=lead_id,
-            contact_id=contact_id,
-            deal_id=deal_id_int,
-            logger=active_logger,
-        )
-        assign_open_line_chats_to_user(
-            client,
-            lead_id=lead_id,
-            contact_id=contact_id,
-            deal_id=deal_id_int,
-            assigned_by_id=assigned_by_id,
-            logger=active_logger,
-        )
+    bind_open_line_activities_to_deal(
+        client,
+        lead_id=lead_id,
+        contact_id=contact_id,
+        deal_id=deal_id_int,
+        logger=active_logger,
+    )
+    assign_open_line_chats_to_user(
+        client,
+        lead_id=lead_id,
+        contact_id=contact_id,
+        deal_id=deal_id_int,
+        assigned_by_id=assigned_by_id,
+        logger=active_logger,
+    )
     active_logger.info(
         f"Negociacion {deal_id_int}: {decision.action}, "
         f"reason={decision.reason}, stage={decision.stage_id}."
