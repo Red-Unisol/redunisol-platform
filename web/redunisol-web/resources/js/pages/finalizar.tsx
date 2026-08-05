@@ -73,9 +73,36 @@ interface PageProps {
     [key: string]: unknown;
 }
 
+type VerificationState = 'idle' | 'started' | 'finished' | 'exited';
+
+function SummaryItem({
+    label,
+    value,
+    prominent = false,
+}: {
+    label: string;
+    value?: string | null;
+    prominent?: boolean;
+}) {
+    return (
+        <div>
+            <dt className="text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                {label}
+            </dt>
+            <dd
+                className={`mt-2 font-bold text-gray-900 ${
+                    prominent ? 'text-3xl sm:text-4xl' : 'text-base sm:text-lg'
+                }`}
+            >
+                {value || <span className="text-gray-300">-</span>}
+            </dd>
+        </div>
+    );
+}
+
 function RateItem({ label, value }: { label: string; value: string }) {
     return (
-        <div className="flex items-center justify-between gap-4 border-b border-gray-100 py-2 last:border-0">
+        <div className="flex flex-col gap-1 border-b border-gray-100 py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <span className="text-sm text-gray-600">{label}</span>
             <span className="text-sm font-semibold text-gray-800">
                 {value ? `${value}%` : <span className="text-gray-400">-</span>}
@@ -94,7 +121,7 @@ function useMetamapScript() {
 
         if (existing) {
             if (existing.dataset.loaded === 'true') {
-                setStatus('ready');
+                queueMicrotask(() => setStatus('ready'));
                 return;
             }
 
@@ -129,9 +156,8 @@ export default function Finalizar() {
     const { settings, finalizar } = usePage<PageProps>().props;
     const scriptStatus = useMetamapScript();
     const metamapButtonRef = useRef<HTMLElement | null>(null);
-    const [verificationState, setVerificationState] = useState<
-        'idle' | 'started' | 'finished' | 'exited'
-    >('idle');
+    const [verificationState, setVerificationState] =
+        useState<VerificationState>('idle');
 
     const loan = finalizar.loan;
     const hasLoanData = Boolean(loan);
@@ -186,45 +212,29 @@ export default function Finalizar() {
         cft: loan?.prestamo_cft || settings.cft,
     };
 
+    const installmentPlan =
+        loan?.cuotas && loan?.monto_cuota_display
+            ? `${loan.cuotas} cuotas de ${loan.monto_cuota_display}`
+            : '';
+
     return (
         <div className="flex min-h-screen flex-col bg-gray-50">
             <Navbar sections={[]} activeId={null} onNavigate={() => {}} />
 
-            <main className="flex flex-1 flex-col items-center justify-center px-4 py-16 sm:px-6">
-                <div className="w-full max-w-lg">
-                    <div className="mb-10 text-center">
-                        <p className="mb-2 text-xs font-bold tracking-widest text-emerald-600 uppercase">
-                            Acepta tu Credito
+            <main className="flex flex-1 flex-col items-center px-4 py-12 sm:px-6 sm:py-16">
+                <div className="w-full max-w-2xl">
+                    <header className="mb-8 text-center sm:mb-10">
+                        <p className="mb-3 text-xs font-bold tracking-[0.2em] text-emerald-600 uppercase">
+                            ACEPTÁ TU CRÉDITO
                         </p>
-                        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">
-                            {settings.heading || 'Termina tu Solicitud'}
+                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
+                            Revisá y aceptá tu crédito
                         </h1>
-                        <p className="mt-4 text-base text-gray-500">
-                            {settings.subheading ||
-                                'Su prestamo sera descontado de la siguiente forma:'}
+                        <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-gray-600">
+                            Verificá las condiciones de tu crédito antes de
+                            continuar.
                         </p>
-                    </div>
-
-                    {finalizar.regulator && (
-                        <ConventionCard regulator={finalizar.regulator} />
-                    )}
-
-                    {verificationState === 'finished' && (
-                        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-5 text-center shadow-sm">
-                            <CheckCircle
-                                size={32}
-                                weight="fill"
-                                className="mx-auto mb-3 text-emerald-600"
-                            />
-                            <p className="text-base font-bold text-emerald-900">
-                                Validacion enviada correctamente
-                            </p>
-                            <p className="mt-2 text-sm text-emerald-800">
-                                Un asesor revisara la informacion para continuar
-                                con el proceso.
-                            </p>
-                        </div>
-                    )}
+                    </header>
 
                     {finalizar.error && (
                         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800 shadow-sm">
@@ -239,118 +249,169 @@ export default function Finalizar() {
                         </div>
                     )}
 
-                    <div className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                        <div className="bg-linear-to-br from-emerald-50 to-white px-8 py-8 text-center">
-                            {loan?.nombre && (
-                                <p className="mb-4 text-sm font-bold tracking-wide text-gray-700 uppercase">
-                                    {loan.nombre}
-                                </p>
-                            )}
-
-                            {loan?.cuotas && loan?.monto_cuota_display ? (
-                                <p className="text-2xl font-light text-gray-700">
-                                    EN{' '}
-                                    <span className="font-extrabold text-emerald-600">
-                                        {loan.cuotas} CUOTAS
-                                    </span>{' '}
-                                    DE{' '}
-                                    <span className="font-extrabold text-emerald-600">
-                                        {loan.monto_cuota_display}
-                                    </span>
-                                </p>
-                            ) : (
-                                <p className="text-lg font-semibold text-gray-400">
-                                    EN{' '}
-                                    <span className="text-emerald-500">
-                                        CUOTAS
-                                    </span>{' '}
-                                    DE
-                                </p>
-                            )}
+                    <section
+                        aria-labelledby="credit-summary-title"
+                        className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+                    >
+                        <div className="border-b border-emerald-100 bg-linear-to-br from-emerald-50 to-white px-5 py-6 sm:px-7 sm:py-7">
+                            <p className="text-sm font-medium text-emerald-700">
+                                Crédito para
+                            </p>
+                            <h2
+                                id="credit-summary-title"
+                                className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl"
+                            >
+                                {loan?.nombre || '-'}
+                            </h2>
                         </div>
 
-                        <div className="divide-y divide-gray-100 px-8 py-4">
-                            <div className="flex items-center justify-between gap-4 py-3">
-                                <span className="text-sm font-medium text-gray-500">
-                                    Monto de tu Credito
-                                </span>
-                                <span className="text-base font-bold text-gray-800">
-                                    {loan?.monto_total_display || (
-                                        <span className="text-gray-300">-</span>
-                                    )}
-                                </span>
+                        <dl className="grid grid-cols-1 gap-6 px-5 py-6 sm:grid-cols-2 sm:px-7 sm:py-7">
+                            <div className="sm:col-span-2">
+                                <SummaryItem
+                                    label="Monto del crédito"
+                                    value={loan?.monto_total_display}
+                                    prominent
+                                />
                             </div>
+                            <SummaryItem
+                                label="Plan de cuotas"
+                                value={installmentPlan}
+                            />
+                            <SummaryItem
+                                label="Número de solicitud"
+                                value={
+                                    loan?.solicitud ? `#${loan.solicitud}` : ''
+                                }
+                            />
+                        </dl>
+                    </section>
 
-                            <div className="flex items-center justify-between gap-4 py-3">
-                                <span className="text-sm font-medium text-gray-500">
-                                    Numero de Solicitud
-                                </span>
-                                <span className="text-base font-bold text-gray-800">
-                                    {loan?.solicitud ? (
-                                        `#${loan.solicitud}`
-                                    ) : (
-                                        <span className="text-gray-300">-</span>
-                                    )}
-                                </span>
+                    {finalizar.regulator && (
+                        <ConventionCard regulator={finalizar.regulator} />
+                    )}
+
+                    <section
+                        aria-labelledby="identity-verification-title"
+                        className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7"
+                    >
+                        <div className="mb-5 flex items-start gap-4">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-50">
+                                <ShieldCheck
+                                    size={25}
+                                    className="text-emerald-600"
+                                    weight="duotone"
+                                />
+                            </div>
+                            <div>
+                                <h2
+                                    id="identity-verification-title"
+                                    className="text-xl font-bold text-gray-900"
+                                >
+                                    Verificá tu identidad
+                                </h2>
                             </div>
                         </div>
-                    </div>
 
-                    <div className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                        <div className="flex items-stretch gap-0">
-                            <div className="flex items-center justify-center border-r border-gray-200 bg-gray-50 px-6 py-5">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-inner">
-                                    <ShieldCheck
+                        {finalizar.metamap.extra_html && (
+                            <div
+                                className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950 [&_a]:font-semibold [&_a]:text-amber-800 [&_a]:underline"
+                                dangerouslySetInnerHTML={{
+                                    __html: finalizar.metamap.extra_html,
+                                }}
+                            />
+                        )}
+
+                        {verificationState === 'started' && (
+                            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                                La validación de identidad está en curso.
+                            </div>
+                        )}
+
+                        {verificationState === 'finished' && (
+                            <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-900">
+                                <div className="flex gap-3">
+                                    <CheckCircle
                                         size={24}
-                                        className="text-emerald-500"
-                                        weight="duotone"
+                                        weight="fill"
+                                        className="shrink-0 text-emerald-600"
                                     />
+                                    <div>
+                                        <p className="font-bold">
+                                            Identidad validada correctamente
+                                        </p>
+                                        <p className="mt-1 text-sm leading-6 text-emerald-800">
+                                            La información fue enviada para
+                                            continuar con el proceso.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
+                        )}
 
+                        {verificationState === 'exited' && (
+                            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                La validación no fue completada. Podés volver a
+                                iniciarla cuando quieras.
+                            </div>
+                        )}
+
+                        <div className="overflow-hidden rounded-xl border border-gray-200">
                             <div
-                                className={`flex min-h-20 flex-1 items-center justify-center bg-[#4a7cdc] px-4 py-4 transition-opacity ${
+                                aria-disabled={!metamapReady}
+                                className={`flex min-h-28 flex-col items-center justify-center gap-3 bg-[#4a7cdc] px-5 py-5 text-center transition-opacity ${
                                     metamapReady
                                         ? ''
                                         : 'pointer-events-none opacity-50'
                                 }`}
                             >
                                 {metamapReady ? (
-                                    createElement('metamap-button', {
-                                        ref: metamapButtonRef,
-                                        clientid: finalizar.metamap.client_id,
-                                        flowid: finalizar.metamap.flow_id,
-                                        metadata,
-                                    })
+                                    <>
+                                        <p className="text-sm font-bold text-white">
+                                            Verificar mi identidad y continuar
+                                        </p>
+                                        {createElement('metamap-button', {
+                                            ref: metamapButtonRef,
+                                            clientid:
+                                                finalizar.metamap.client_id,
+                                            flowid: finalizar.metamap.flow_id,
+                                            metadata,
+                                        })}
+                                    </>
+                                ) : scriptStatus === 'idle' ? (
+                                    <span className="text-sm font-semibold text-white">
+                                        Cargando validación de identidad…
+                                    </span>
+                                ) : scriptStatus === 'error' ? (
+                                    <span className="text-sm font-semibold text-white">
+                                        No pudimos cargar la validación de
+                                        identidad.
+                                    </span>
                                 ) : (
                                     <span className="text-sm font-semibold text-white">
-                                        Validacion no disponible
+                                        Validación no disponible
                                     </span>
                                 )}
                             </div>
                         </div>
-                    </div>
+                    </section>
 
-                    {finalizar.metamap.extra_html && (
-                        <div
-                            className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-6 py-5 text-sm text-amber-950 shadow-sm [&_a]:font-semibold [&_a]:text-amber-800 [&_a]:underline"
-                            dangerouslySetInnerHTML={{
-                                __html: finalizar.metamap.extra_html,
-                            }}
-                        />
-                    )}
-
-                    <div className="mb-6 rounded-2xl border border-gray-200 bg-white px-6 py-6 shadow-sm">
-                        <div className="mb-4 flex items-center justify-between gap-4">
-                            <p className="text-xs font-bold tracking-widest text-gray-500 uppercase">
-                                Condiciones Financieras
-                            </p>
+                    <section
+                        aria-labelledby="financial-conditions-title"
+                        className="mb-6 rounded-2xl border border-gray-200 bg-white px-5 py-6 shadow-sm sm:px-7"
+                    >
+                        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                            <h2
+                                id="financial-conditions-title"
+                                className="text-sm font-bold text-gray-800"
+                            >
+                                Condiciones financieras
+                            </h2>
                             {settings.terms_url && (
                                 <a
                                     href={settings.terms_url}
-                                    className="text-xs font-semibold text-emerald-600 underline underline-offset-2 transition-colors hover:text-emerald-700"
+                                    className="text-sm font-semibold text-emerald-600 underline underline-offset-2 transition-colors hover:text-emerald-700"
                                 >
-                                    Terminos y condiciones
+                                    Términos y condiciones
                                 </a>
                             )}
                         </div>
@@ -373,12 +434,12 @@ export default function Finalizar() {
                                 value={rates.cft}
                             />
                         </div>
-                    </div>
+                    </section>
 
-                    <div className="rounded-2xl border border-gray-200 bg-white px-6 py-6 shadow-sm">
+                    <section className="rounded-2xl border border-gray-200 bg-white px-5 py-6 shadow-sm sm:px-7">
                         <p className="mb-5 text-center text-sm font-semibold text-gray-700">
                             {settings.contact_question ||
-                                'Tiene otra consulta para hacernos?'}
+                                '¿Tiene otra consulta para hacernos?'}
                         </p>
 
                         <div className="flex flex-col gap-3">
@@ -439,7 +500,7 @@ export default function Finalizar() {
                                 </a>
                             )}
                         </div>
-                    </div>
+                    </section>
                 </div>
             </main>
 

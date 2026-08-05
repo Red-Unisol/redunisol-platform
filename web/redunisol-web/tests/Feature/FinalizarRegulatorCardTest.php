@@ -119,6 +119,9 @@ it('uses the same convention card data shape for a future configured line', func
             ->component('finalizar')
             ->where('finalizar.regulator.short_name', 'Futura')
             ->where('finalizar.regulator.name', 'Asociación Mutual Futura')
+            ->where('finalizar.regulator.cuit', '30-00000000-0')
+            ->where('finalizar.regulator.inaes_mat', '999')
+            ->where('finalizar.regulator.logo_url', null)
             ->where('finalizar.metamap.flow_id', 'future-flow-id')
             ->where('finalizar.metamap.doc_id', 'future-doc-id')
         );
