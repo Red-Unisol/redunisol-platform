@@ -350,7 +350,7 @@ def assign_open_line_chats_to_user(
             continue
         chats = client.call(
             "imopenlines.crm.chat.get",
-            {"CRM_ENTITY_TYPE": entity_type, "CRM_ENTITY": entity_id, "ACTIVE_ONLY": "Y"},
+            {"CRM_ENTITY_TYPE": entity_type, "CRM_ENTITY": entity_id, "ACTIVE_ONLY": "N"},
         )
         if not isinstance(chats, list):
             raise RuntimeError("imopenlines.crm.chat.get devolvio un payload invalido.")
@@ -360,6 +360,8 @@ def assign_open_line_chats_to_user(
 
     transferred = 0
     for chat_id in dict.fromkeys(chat_ids):
+        if not _has_current_open_line_session(client, chat_id=chat_id, logger=logger):
+            continue
         client.call(
             "imopenlines.operator.transfer",
             {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
@@ -367,6 +369,31 @@ def assign_open_line_chats_to_user(
         transferred += 1
         logger.info(f"Chat Open Lines {chat_id} transferido al vendedor {assigned_by_id}.")
     return transferred
+
+
+def _has_current_open_line_session(
+    client: BitrixClient,
+    *,
+    chat_id: int,
+    logger: Logger,
+) -> bool:
+    try:
+        dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+    except RuntimeError as exc:
+        logger.error(f"No se pudo inspeccionar el chat Open Lines {chat_id}: {exc}")
+        return False
+    if not isinstance(dialog, dict):
+        logger.error(f"imopenlines.dialog.get devolvio un payload invalido para el chat {chat_id}.")
+        return False
+
+    entity_data = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "")
+    parts = entity_data.split("|")
+    session_id = parts[5] if len(parts) > 5 else ""
+    text_enabled = dialog.get("text_field_enabled", dialog.get("TEXT_FIELD_ENABLED", False))
+    has_session = _is_positive_int(session_id) and text_enabled in (True, "Y", "y", 1)
+    if not has_session:
+        logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
+    return has_session
 
 
 def notify_distribution_supervisor(
