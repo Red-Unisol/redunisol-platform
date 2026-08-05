@@ -3206,7 +3206,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
 
-    def test_catamarca_hard_bcra_rejection_keeps_provisional_owner(self) -> None:
+    def test_catamarca_hard_bcra_rejection_is_distributed(self) -> None:
         client = FakeBitrixClient()
         client.leads[922] = self._catamarca_enriched_lead(
             922,
@@ -3233,7 +3233,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "rejected")
         self.assertEqual(client.deals[932]["stageId"], "C1:5")
-        self.assertEqual(client.deals[932]["assignedById"], 57)
+        self.assertEqual(client.deals[932]["assignedById"], 68579)
 
     def test_catamarca_absent_banco_nacion_is_situation_zero(self) -> None:
         client = FakeBitrixClient()
@@ -3320,7 +3320,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "rejected")
         self.assertEqual(result["reason"], "banco_nacion_situation_above_two")
         self.assertEqual(client.deals[936]["stageId"], "C1:5")
-        self.assertEqual(client.deals[936]["assignedById"], 57)
+        self.assertEqual(client.deals[936]["assignedById"], 68579)
 
     def test_catamarca_recurrent_member_skips_hard_bcra_rules(self) -> None:
         client = FakeBitrixClient()
@@ -3351,6 +3351,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "manual_review")
         self.assertEqual(result["reason"], "member_rules_require_manual_review")
         self.assertEqual(client.deals[937]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[937]["assignedById"], 68579)
 
     def test_catamarca_member_with_active_credit_goes_to_manual_review(self) -> None:
         client = FakeBitrixClient()
@@ -3365,6 +3366,7 @@ class BusinessLogicTests(unittest.TestCase):
             "contactId": 101,
             "assignedById": 57,
         }
+        client.open_line_chats[("contact", 101)] = [778]
 
         result = qualify_catamarca_deal(
             933,
@@ -3376,6 +3378,8 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "manual_review")
         self.assertEqual(result["reason"], "member_rules_require_manual_review")
         self.assertEqual(client.deals[933]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[933]["assignedById"], 68579)
+        self.assertEqual(client.chat_transfers, [{"CHAT_ID": 778, "USER_ID": 68579}])
 
     def _catamarca_enriched_lead(
         self,
