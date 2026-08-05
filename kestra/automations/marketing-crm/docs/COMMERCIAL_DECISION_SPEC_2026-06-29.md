@@ -174,7 +174,7 @@ IDs confirmados manualmente el 2026-06-29:
 
 Notas:
 
-- El webhook/API actual solo tiene scope `crm`; los metodos `user.get` y `user.search` devuelven `insufficient_scope`. Por eso estos IDs no se pudieron resolver por API y fueron confirmados manualmente.
+- El webhook/API actual tiene scopes `crm`, `user` e `imopenlines` (verificado por API el 2026-08-05). Los IDs de vendedores pueden resolverse mediante `user.get` o `user.search`, y los chats de Contact Center pueden consultarse y transferirse mediante `imopenlines.*`; la observacion historica de `insufficient_scope` ya no representa la configuracion vigente.
 
 ## Etapas Relevantes En Pipeline VENTAS
 

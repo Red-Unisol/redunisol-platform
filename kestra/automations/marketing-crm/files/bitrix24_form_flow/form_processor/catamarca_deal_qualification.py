@@ -7,7 +7,12 @@ from typing import Any
 
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
-from .deal_service import DEAL_ENTITY_TYPE_ID, resolve_round_robin_assignee
+from .deal_service import (
+    DEAL_ENTITY_TYPE_ID,
+    assign_open_line_chats_to_user,
+    bind_open_line_activities_to_deal,
+    resolve_round_robin_assignee,
+)
 from .lead_service import (
     build_submission_from_lead,
     get_lead,
@@ -122,6 +127,22 @@ def qualify_catamarca_deal(
             "fields": update_fields,
         },
     )
+    if decision.action == "approved":
+        bind_open_line_activities_to_deal(
+            client,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            deal_id=deal_id_int,
+            logger=active_logger,
+        )
+        assign_open_line_chats_to_user(
+            client,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            deal_id=deal_id_int,
+            assigned_by_id=assigned_by_id,
+            logger=active_logger,
+        )
     active_logger.info(
         f"Negociacion {deal_id_int}: {decision.action}, "
         f"reason={decision.reason}, stage={decision.stage_id}."

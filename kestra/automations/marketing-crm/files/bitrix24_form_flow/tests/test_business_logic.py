@@ -78,6 +78,9 @@ class FakeBitrixClient:
         self.activities: dict[int, dict] = {}
         self.activity_bindings: list[dict] = []
         self.timeline_comments: dict[int, dict] = {}
+        self.online_user_ids: set[int] = {68579, 10451, 29, 90231, 71159, 113457, 113455}
+        self.open_line_chats: dict[tuple[str, int], list[int]] = {}
+        self.chat_transfers: list[dict] = []
 
     def call(self, method: str, payload: dict):
         self.calls.append((method, payload))
@@ -120,6 +123,18 @@ class FakeBitrixClient:
             return True
         if method == "crm.activity.binding.add":
             self.activity_bindings.append(dict(payload))
+            return True
+        if method == "user.get":
+            return [
+                {"ID": user_id, "ACTIVE": True, "IS_ONLINE": "Y", "ABSENT": False}
+                for user_id in payload["FILTER"]["ID"]
+                if int(user_id) in self.online_user_ids
+            ]
+        if method == "imopenlines.crm.chat.get":
+            key = (str(payload["CRM_ENTITY_TYPE"]), int(payload["CRM_ENTITY"]))
+            return [{"CHAT_ID": str(chat_id)} for chat_id in self.open_line_chats.get(key, [])]
+        if method == "imopenlines.operator.transfer":
+            self.chat_transfers.append(dict(payload))
             return True
         if method == "crm.timeline.comment.list":
             filters = payload.get("filter") or {}
@@ -3144,6 +3159,52 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "approved")
         self.assertEqual(client.deals[931]["assignedById"], 71159)
+
+    def test_catamarca_skips_offline_recurrent_assignee_and_uses_next_online(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {10451}
+        client.leads[921] = self._catamarca_enriched_lead(921, bcra_entities=[])
+        client.deals[929] = {
+            "id": 929,
+            "categoryId": 1,
+            "stageId": "C1:WON",
+            "leadId": 800,
+            "contactId": 101,
+            "assignedById": 68579,
+            "createdTime": "2026-07-30T12:00:00+00:00",
+        }
+        client.deals[931] = {
+            "id": 931,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 921,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+
+        qualify_catamarca_deal(931, env=self.env, bitrix_client=client, logger=SilentLogger())
+
+        self.assertEqual(client.deals[931]["assignedById"], 10451)
+
+    def test_catamarca_transfers_active_contact_center_chat_to_assignee(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {68579}
+        client.leads[920] = self._catamarca_enriched_lead(920, bcra_entities=[])
+        client.deals[930] = {
+            "id": 930,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 920,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+        client.open_line_chats[("contact", 101)] = [777]
+
+        qualify_catamarca_deal(930, env=self.env, bitrix_client=client, logger=SilentLogger())
+
+        self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
 
     def test_catamarca_hard_bcra_rejection_keeps_provisional_owner(self) -> None:
         client = FakeBitrixClient()

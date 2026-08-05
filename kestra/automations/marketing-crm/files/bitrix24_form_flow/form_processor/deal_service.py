@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
-from datetime import datetime, timedelta, timezone
 import unicodedata
 from typing import Any
 
@@ -175,10 +173,14 @@ def resolve_round_robin_assignee(
     if not pool:
         raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
 
+    online_pool = _online_pool_users(client, pool=pool, logger=logger)
+    if not online_pool:
+        raise RuntimeError("No hay vendedores online disponibles para asignar la negociacion.")
+
     if contact_id is not None:
         previous_assignee = _latest_pool_assignee_for_contact(
             client,
-            pool=pool,
+            pool=online_pool,
             contact_id=contact_id,
             lead_id=lead_id,
             logger=logger,
@@ -186,27 +188,62 @@ def resolve_round_robin_assignee(
         if previous_assignee is not None:
             return previous_assignee
 
-    date_from = (
-        datetime.now(timezone.utc) - timedelta(days=config.deal.round_robin_lookback_days)
-    ).isoformat()
     deals = _list_deals(
         client,
-        filter_={
-            "=categoryId": config.deal.category_id,
-            ">=createdTime": date_from,
-        },
-        order={"createdTime": "ASC", "id": "ASC"},
+        filter_={"=categoryId": config.deal.category_id},
+        order={"createdTime": "DESC", "id": "DESC"},
         select=["id", "assignedById", "categoryId", "createdTime"],
     )
-    counts = Counter(
-        int(str(deal.get("assignedById")))
-        for deal in deals
-        if _is_positive_int(deal.get("assignedById"))
+    pool_set = set(pool)
+    for deal in deals:
+        raw_assignee = deal.get("assignedById")
+        if not _is_positive_int(raw_assignee):
+            continue
+        previous = int(str(raw_assignee))
+        if previous not in pool_set:
+            continue
+        previous_index = pool.index(previous)
+        for offset in range(1, len(pool) + 1):
+            candidate = pool[(previous_index + offset) % len(pool)]
+            if candidate in online_pool:
+                return candidate
+
+    return online_pool[0]
+
+
+def _online_pool_users(
+    client: BitrixClient,
+    *,
+    pool: tuple[int, ...],
+    logger: Logger,
+) -> tuple[int, ...]:
+    users = client.call(
+        "user.get",
+        {
+            "FILTER": {
+                "ID": list(pool),
+                "ACTIVE": True,
+                "IS_ONLINE": "Y",
+            }
+        },
     )
-    return min(
-        enumerate(pool),
-        key=lambda item: (counts[item[1]], item[0]),
-    )[1]
+    if not isinstance(users, list):
+        raise RuntimeError("user.get devolvio un payload invalido.")
+
+    online_ids: set[int] = set()
+    for user in users:
+        if not isinstance(user, dict) or not _is_positive_int(user.get("id") or user.get("ID")):
+            continue
+        user_id = int(str(user.get("id") or user.get("ID")))
+        active = user.get("active", user.get("ACTIVE", True))
+        absent = user.get("absent") or user.get("ABSENT")
+        is_online = user.get("IS_ONLINE", user.get("is_online", "Y"))
+        if active not in (False, "N", "n", 0) and is_online in (True, "Y", "y", 1) and not absent:
+            online_ids.add(user_id)
+
+    online_pool = tuple(user_id for user_id in pool if user_id in online_ids)
+    logger.info(f"Vendedores online para distribucion: {list(online_pool)}.")
+    return online_pool
 
 
 def _latest_pool_assignee_for_contact(
@@ -288,6 +325,44 @@ def bind_open_line_activities_to_deal(
         logger.info(f"Actividad Open Lines {activity_id} vinculada al deal {deal_id}.")
 
     return linked_count
+
+
+def assign_open_line_chats_to_user(
+    client: BitrixClient,
+    *,
+    lead_id: int,
+    contact_id: int | None,
+    deal_id: int,
+    assigned_by_id: int,
+    logger: Logger,
+) -> int:
+    chat_ids: list[int] = []
+    for entity_type, entity_id in (
+        ("lead", lead_id),
+        ("contact", contact_id),
+        ("deal", deal_id),
+    ):
+        if entity_id is None:
+            continue
+        chats = client.call(
+            "imopenlines.crm.chat.get",
+            {"CRM_ENTITY_TYPE": entity_type, "CRM_ENTITY": entity_id, "ACTIVE_ONLY": "Y"},
+        )
+        if not isinstance(chats, list):
+            raise RuntimeError("imopenlines.crm.chat.get devolvio un payload invalido.")
+        for chat in chats:
+            if isinstance(chat, dict) and _is_positive_int(chat.get("CHAT_ID") or chat.get("chat_id")):
+                chat_ids.append(int(str(chat.get("CHAT_ID") or chat.get("chat_id"))))
+
+    transferred = 0
+    for chat_id in dict.fromkeys(chat_ids):
+        client.call(
+            "imopenlines.operator.transfer",
+            {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
+        )
+        transferred += 1
+        logger.info(f"Chat Open Lines {chat_id} transferido al vendedor {assigned_by_id}.")
+    return transferred
 
 
 def _list_open_line_activity_ids(
