@@ -95,8 +95,11 @@ Pool interno confirmado:
 | --- | --- | ---: |
 | Dani | Daniel Carrera | 68579 |
 | Pato | Patricia Contendi | 10451 |
+| Susana | Susana Contenti | 29 |
+| Sole | Soledad Moyano | 90231 |
 | Nati | Natalia Rojo Moyano | 71159 |
-| Sole | Soledad Rojo Moyano | 90231 |
+| Claudia | Claudia Algarbe | 113457 |
+| Daniela | Daniela Arias | 113455 |
 
 Nancy es Nancy Romina Spengler (`74365`).
 

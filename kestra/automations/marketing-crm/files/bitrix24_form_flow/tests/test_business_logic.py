@@ -437,7 +437,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.bcra_rejected_stage_id, "C1:5")
         self.assertEqual(config.deal.provisional_user_id, 57)
         self.assertEqual(config.deal.commercial_line_field, "ufCrm_659EBB0445E8E")
-        self.assertEqual(config.deal.round_robin_user_ids, (68579, 10451, 71159, 90231))
+        self.assertEqual(
+            config.deal.round_robin_user_ids,
+            (68579, 10451, 29, 90231, 71159, 113457, 113455),
+        )
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
         self.assertEqual(config.lead_statuses.new, "UC_5N2OEO")
         self.assertEqual(config.lead_statuses.preclassification, "NEW")
