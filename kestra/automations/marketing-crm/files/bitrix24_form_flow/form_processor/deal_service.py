@@ -365,6 +365,50 @@ def assign_open_line_chats_to_user(
     return transferred
 
 
+def notify_distribution_supervisor(
+    client: BitrixClient,
+    config: AppConfig,
+    *,
+    deal_id: int,
+    assigned_by_id: int,
+    action: str,
+    logger: Logger,
+) -> bool:
+    recipient_id = config.deal.distribution_notification_user_id
+    deal_url = f"{config.base_url.rstrip('/')}/crm/deal/details/{deal_id}/"
+    message = (
+        "[B]Distribucion automatica Catamarca[/B]\n"
+        f"[URL={deal_url}]Negociacion #{deal_id}[/URL]\n"
+        f"Resultado: {action}\n"
+        f"Responsable asignado: [USER={assigned_by_id}]usuario {assigned_by_id}[/USER]"
+    )
+    message_out = (
+        f"Distribucion automatica Catamarca. Negociacion #{deal_id}. "
+        f"Resultado: {action}. Responsable asignado: usuario {assigned_by_id}. {deal_url}"
+    )
+    try:
+        notification_id = client.call(
+            "im.notify.system.add",
+            {
+                "USER_ID": recipient_id,
+                "MESSAGE": message,
+                "MESSAGE_OUT": message_out,
+            },
+        )
+    except RuntimeError as exc:
+        logger.error(
+            f"No se pudo notificar la distribucion de la negociacion {deal_id} "
+            f"al usuario {recipient_id}: {exc}"
+        )
+        return False
+
+    logger.info(
+        f"Notificacion {notification_id} enviada al usuario {recipient_id} "
+        f"por la negociacion {deal_id}."
+    )
+    return True
+
+
 def _list_open_line_activity_ids(
     client: BitrixClient,
     *,

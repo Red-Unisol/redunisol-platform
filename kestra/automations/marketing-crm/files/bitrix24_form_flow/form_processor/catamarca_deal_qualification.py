@@ -11,6 +11,7 @@ from .deal_service import (
     DEAL_ENTITY_TYPE_ID,
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
+    notify_distribution_supervisor,
     resolve_round_robin_assignee,
 )
 from .lead_service import (
@@ -141,6 +142,14 @@ def qualify_catamarca_deal(
         contact_id=contact_id,
         deal_id=deal_id_int,
         assigned_by_id=assigned_by_id,
+        logger=active_logger,
+    )
+    notify_distribution_supervisor(
+        client,
+        config,
+        deal_id=deal_id_int,
+        assigned_by_id=assigned_by_id,
+        action=decision.action,
         logger=active_logger,
     )
     active_logger.info(

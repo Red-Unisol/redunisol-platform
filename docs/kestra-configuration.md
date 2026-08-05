@@ -372,6 +372,7 @@ Referenciadas hoy desde los flows:
 - `bitrix24_deal_manual_review_stage_id`
 - `bitrix24_deal_bcra_rejected_stage_id`
 - `bitrix24_deal_provisional_user_id`
+- `bitrix24_deal_distribution_notification_user_id`
 - `bitrix24_deal_commercial_line_field`
 - `bitrix24_deal_round_robin_user_ids`
 - `bitrix24_deal_round_robin_lookback_days`

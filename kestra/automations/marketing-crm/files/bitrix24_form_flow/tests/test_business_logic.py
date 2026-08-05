@@ -81,6 +81,7 @@ class FakeBitrixClient:
         self.online_user_ids: set[int] = {68579, 10451, 29, 90231, 71159, 113457, 113455}
         self.open_line_chats: dict[tuple[str, int], list[int]] = {}
         self.chat_transfers: list[dict] = []
+        self.notifications: list[dict] = []
 
     def call(self, method: str, payload: dict):
         self.calls.append((method, payload))
@@ -136,6 +137,9 @@ class FakeBitrixClient:
         if method == "imopenlines.operator.transfer":
             self.chat_transfers.append(dict(payload))
             return True
+        if method == "im.notify.system.add":
+            self.notifications.append(dict(payload))
+            return len(self.notifications)
         if method == "crm.timeline.comment.list":
             filters = payload.get("filter") or {}
             return [
@@ -451,6 +455,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.manual_review_stage_id, "C1:KESTRA_REVIEW")
         self.assertEqual(config.deal.bcra_rejected_stage_id, "C1:5")
         self.assertEqual(config.deal.provisional_user_id, 57)
+        self.assertEqual(config.deal.distribution_notification_user_id, 57)
         self.assertEqual(config.deal.commercial_line_field, "ufCrm_659EBB0445E8E")
         self.assertEqual(
             config.deal.round_robin_user_ids,
@@ -3205,6 +3210,10 @@ class BusinessLogicTests(unittest.TestCase):
         qualify_catamarca_deal(930, env=self.env, bitrix_client=client, logger=SilentLogger())
 
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+        self.assertEqual(client.notifications[0]["USER_ID"], 57)
+        self.assertIn("Negociacion #930", client.notifications[0]["MESSAGE"])
+        self.assertIn("approved", client.notifications[0]["MESSAGE"])
+        self.assertIn("68579", client.notifications[0]["MESSAGE"])
 
     def test_catamarca_hard_bcra_rejection_is_distributed(self) -> None:
         client = FakeBitrixClient()
@@ -3380,6 +3389,8 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[933]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[933]["assignedById"], 68579)
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 778, "USER_ID": 68579}])
+        self.assertEqual(client.notifications[0]["USER_ID"], 57)
+        self.assertIn("manual_review", client.notifications[0]["MESSAGE"])
 
     def _catamarca_enriched_lead(
         self,
