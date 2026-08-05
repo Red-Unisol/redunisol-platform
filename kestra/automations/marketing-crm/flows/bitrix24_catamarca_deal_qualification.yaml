@@ -98,7 +98,7 @@ outputs:
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
   - id: commercial_line
     type: STRING
-    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_line : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars.commercial_line is defined ? outputs.calificar_negociacion.vars.commercial_line : '' }}"
   - id: message
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.message : outputs.seleccionar_negociacion.vars.message }}"
