@@ -90,8 +90,8 @@ function SummaryItem({
                 {label}
             </dt>
             <dd
-                className={`mt-2 font-bold text-gray-900 ${
-                    prominent ? 'text-3xl sm:text-4xl' : 'text-base sm:text-lg'
+                className={`mt-1 font-bold text-gray-900 sm:mt-2 ${
+                    prominent ? 'text-2xl sm:text-4xl' : 'text-sm sm:text-lg'
                 }`}
             >
                 {value || <span className="text-gray-300">-</span>}
@@ -102,7 +102,7 @@ function SummaryItem({
 
 function RateItem({ label, value }: { label: string; value: string }) {
     return (
-        <div className="flex flex-col gap-1 border-b border-gray-100 py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0 sm:py-3">
             <span className="text-sm text-gray-600">{label}</span>
             <span className="text-sm font-semibold text-gray-800">
                 {value ? `${value}%` : <span className="text-gray-400">-</span>}
@@ -221,16 +221,16 @@ export default function Finalizar() {
         <div className="flex min-h-screen flex-col bg-gray-50">
             <Navbar sections={[]} activeId={null} onNavigate={() => {}} />
 
-            <main className="flex flex-1 flex-col items-center px-4 py-12 sm:px-6 sm:py-16">
+            <main className="flex flex-1 flex-col items-center px-3 pt-20 pb-8 sm:px-6 sm:py-16">
                 <div className="w-full max-w-2xl">
-                    <header className="mb-8 text-center sm:mb-10">
-                        <p className="mb-3 text-xs font-bold tracking-[0.2em] text-emerald-600 uppercase">
+                    <header className="mb-5 text-center sm:mb-10">
+                        <p className="mb-3 hidden text-xs font-bold tracking-[0.2em] text-emerald-600 uppercase sm:block">
                             ACEPTÁ TU CRÉDITO
                         </p>
-                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
+                        <h1 className="text-2xl leading-tight font-extrabold tracking-tight text-gray-900 sm:text-4xl">
                             Revisá y aceptá tu crédito
                         </h1>
-                        <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-gray-600">
+                        <p className="mx-auto mt-2 max-w-xl text-sm leading-5 text-gray-600 sm:mt-4 sm:text-base sm:leading-7">
                             Verificá las condiciones de tu crédito antes de
                             continuar.
                         </p>
@@ -251,22 +251,22 @@ export default function Finalizar() {
 
                     <section
                         aria-labelledby="credit-summary-title"
-                        className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+                        className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm sm:mb-6 sm:rounded-2xl"
                     >
-                        <div className="border-b border-emerald-100 bg-linear-to-br from-emerald-50 to-white px-5 py-6 sm:px-7 sm:py-7">
-                            <p className="text-sm font-medium text-emerald-700">
+                        <div className="border-b border-emerald-100 bg-linear-to-br from-emerald-50 to-white px-4 py-4 sm:px-7 sm:py-7">
+                            <p className="text-xs font-medium text-emerald-700 sm:text-sm">
                                 Crédito para
                             </p>
                             <h2
                                 id="credit-summary-title"
-                                className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl"
+                                className="mt-1 text-lg leading-tight font-bold text-gray-900 sm:text-2xl"
                             >
                                 {loan?.nombre || '-'}
                             </h2>
                         </div>
 
-                        <dl className="grid grid-cols-1 gap-6 px-5 py-6 sm:grid-cols-2 sm:px-7 sm:py-7">
-                            <div className="sm:col-span-2">
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-4 sm:gap-6 sm:px-7 sm:py-7">
+                            <div className="col-span-2">
                                 <SummaryItem
                                     label="Monto del crédito"
                                     value={loan?.monto_total_display}
@@ -292,12 +292,12 @@ export default function Finalizar() {
 
                     <section
                         aria-labelledby="identity-verification-title"
-                        className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7"
+                        className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:mb-6 sm:rounded-2xl sm:p-7"
                     >
-                        <div className="mb-5 flex items-start gap-4">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-50">
+                        <div className="mb-3 flex items-center gap-3 sm:mb-5 sm:items-start sm:gap-4">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 sm:h-11 sm:w-11">
                                 <ShieldCheck
-                                    size={25}
+                                    size={23}
                                     className="text-emerald-600"
                                     weight="duotone"
                                 />
@@ -305,7 +305,7 @@ export default function Finalizar() {
                             <div>
                                 <h2
                                     id="identity-verification-title"
-                                    className="text-xl font-bold text-gray-900"
+                                    className="text-lg font-bold text-gray-900 sm:text-xl"
                                 >
                                     Verificá tu identidad
                                 </h2>
@@ -314,7 +314,7 @@ export default function Finalizar() {
 
                         {finalizar.metamap.extra_html && (
                             <div
-                                className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950 [&_a]:font-semibold [&_a]:text-amber-800 [&_a]:underline"
+                                className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 sm:mb-5 sm:rounded-xl sm:px-4 sm:py-4 sm:text-sm [&_a]:font-semibold [&_a]:text-amber-800 [&_a]:underline"
                                 dangerouslySetInnerHTML={{
                                     __html: finalizar.metamap.extra_html,
                                 }}
@@ -322,13 +322,13 @@ export default function Finalizar() {
                         )}
 
                         {verificationState === 'started' && (
-                            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                            <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-800 sm:mb-5 sm:rounded-xl sm:px-4 sm:py-3 sm:text-sm">
                                 La validación de identidad está en curso.
                             </div>
                         )}
 
                         {verificationState === 'finished' && (
-                            <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-900">
+                            <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-emerald-900 sm:mb-5 sm:rounded-xl sm:px-4 sm:py-4">
                                 <div className="flex gap-3">
                                     <CheckCircle
                                         size={24}
@@ -349,16 +349,16 @@ export default function Finalizar() {
                         )}
 
                         {verificationState === 'exited' && (
-                            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 sm:mb-5 sm:rounded-xl sm:px-4 sm:py-3 sm:text-sm">
                                 La validación no fue completada. Podés volver a
                                 iniciarla cuando quieras.
                             </div>
                         )}
 
-                        <div className="overflow-hidden rounded-xl border border-gray-200">
+                        <div className="overflow-hidden rounded-lg border border-gray-200 sm:rounded-xl">
                             <div
                                 aria-disabled={!metamapReady}
-                                className={`flex min-h-28 flex-col items-center justify-center gap-3 bg-[#4a7cdc] px-5 py-5 text-center transition-opacity ${
+                                className={`flex min-h-20 flex-col items-center justify-center gap-2 bg-[#4a7cdc] px-3 py-3 text-center transition-opacity sm:min-h-28 sm:gap-3 sm:px-5 sm:py-5 ${
                                     metamapReady
                                         ? ''
                                         : 'pointer-events-none opacity-50'
@@ -397,7 +397,7 @@ export default function Finalizar() {
 
                     <section
                         aria-labelledby="financial-conditions-title"
-                        className="mb-6 rounded-2xl border border-gray-200 bg-white px-5 py-6 shadow-sm sm:px-7"
+                        className="mb-4 rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-sm sm:mb-6 sm:rounded-2xl sm:px-7 sm:py-6"
                     >
                         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <h2
@@ -436,13 +436,13 @@ export default function Finalizar() {
                         </div>
                     </section>
 
-                    <section className="rounded-2xl border border-gray-200 bg-white px-5 py-6 shadow-sm sm:px-7">
-                        <p className="mb-5 text-center text-sm font-semibold text-gray-700">
+                    <section className="rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-sm sm:rounded-2xl sm:px-7 sm:py-6">
+                        <p className="mb-3 text-center text-sm font-semibold text-gray-700 sm:mb-5">
                             {settings.contact_question ||
                                 '¿Tiene otra consulta para hacernos?'}
                         </p>
 
-                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2 sm:gap-3">
                             {settings.contact_email && (
                                 <a
                                     href={`mailto:${settings.contact_email}`}
