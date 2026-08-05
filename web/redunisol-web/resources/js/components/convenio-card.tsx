@@ -71,10 +71,6 @@ export default function ConvenioCard({ regulator }: ConvenioCardProps) {
                 <p className="text-xs leading-5 font-medium text-gray-800 sm:text-sm sm:leading-6">
                     El crédito será descontado por esta entidad.
                 </p>
-                <p className="mt-1 text-[11px] leading-4 text-gray-600 sm:mt-2 sm:text-xs sm:leading-5">
-                    RED UNISOL proporciona la infraestructura tecnológica
-                    utilizada en este proceso.
-                </p>
             </div>
         </section>
     );
