@@ -249,7 +249,10 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->toContain('Entidad del convenio')
         ->toContain('Matrícula INAES')
         ->toContain('regulator.logo_url')
-        ->toContain('El crédito será descontado por esta entidad.')
+        ->toContain('La ayuda económica será descontada de su recibo de sueldo')
+        ->toContain('por <strong>{regulator.name}</strong>.')
+        ->not->toContain('El crédito será descontado por esta entidad.')
+        ->not->toContain('crédito')
         ->not->toContain('RED UNISOL proporciona la infraestructura tecnológica')
         ->not->toContain('Entidad otorgante');
 });

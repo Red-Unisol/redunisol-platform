@@ -69,7 +69,8 @@ export default function ConvenioCard({ regulator }: ConvenioCardProps) {
 
             <div className="mt-3 border-t border-emerald-200 pt-3 sm:mt-5 sm:pt-4">
                 <p className="text-xs leading-5 font-medium text-gray-800 sm:text-sm sm:leading-6">
-                    El crédito será descontado por esta entidad.
+                    La ayuda económica será descontada de su recibo de sueldo
+                    por <strong>{regulator.name}</strong>.
                 </p>
             </div>
         </section>
