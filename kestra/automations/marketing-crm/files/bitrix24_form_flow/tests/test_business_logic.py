@@ -80,6 +80,7 @@ class FakeBitrixClient:
         self.timeline_comments: dict[int, dict] = {}
         self.online_user_ids: set[int] = {68579, 10451, 29, 90231, 71159, 113457, 113455}
         self.open_line_chats: dict[tuple[str, int], list[int]] = {}
+        self.open_line_dialogs: dict[int, dict] = {}
         self.chat_transfers: list[dict] = []
         self.notifications: list[dict] = []
 
@@ -134,6 +135,20 @@ class FakeBitrixClient:
         if method == "imopenlines.crm.chat.get":
             key = (str(payload["CRM_ENTITY_TYPE"]), int(payload["CRM_ENTITY"]))
             return [{"CHAT_ID": str(chat_id)} for chat_id in self.open_line_chats.get(key, [])]
+        if method == "imopenlines.dialog.get":
+            chat_id = int(payload["CHAT_ID"])
+            return dict(
+                self.open_line_dialogs.get(
+                    chat_id,
+                    {
+                        "id": chat_id,
+                        "entity_data_1": f"Y|CONTACT|101|N|N|{chat_id + 1000}|0|0|0|DEFAULT",
+                        "text_field_enabled": True,
+                        "owner": 0,
+                        "manager_list": [],
+                    },
+                )
+            )
         if method == "imopenlines.operator.transfer":
             self.chat_transfers.append(dict(payload))
             return True
@@ -3208,7 +3223,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(client.deals[931]["assignedById"], 10451)
 
-    def test_catamarca_transfers_active_contact_center_chat_to_assignee(self) -> None:
+    def test_catamarca_transfers_queued_contact_center_chat_to_assignee(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids = {68579}
         client.leads[920] = self._catamarca_enriched_lead(920, bcra_entities=[])
@@ -3226,10 +3241,43 @@ class BusinessLogicTests(unittest.TestCase):
         qualify_catamarca_deal(930, env=self.env, bitrix_client=client, logger=SilentLogger())
 
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+        chat_queries = [
+            payload
+            for method, payload in client.calls
+            if method == "imopenlines.crm.chat.get"
+        ]
+        self.assertTrue(chat_queries)
+        self.assertTrue(all(payload["ACTIVE_ONLY"] == "N" for payload in chat_queries))
         self.assertEqual(client.notifications[0]["USER_ID"], 57)
         self.assertIn("Negociacion #930", client.notifications[0]["MESSAGE"])
         self.assertIn("approved", client.notifications[0]["MESSAGE"])
         self.assertIn("68579", client.notifications[0]["MESSAGE"])
+
+    def test_catamarca_does_not_transfer_historical_chat_without_current_session(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {68579}
+        client.leads[920] = self._catamarca_enriched_lead(920, bcra_entities=[])
+        client.deals[930] = {
+            "id": 930,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 920,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+        client.open_line_chats[("contact", 101)] = [779]
+        client.open_line_dialogs[779] = {
+            "id": 779,
+            "entity_data_1": "Y|CONTACT|101|N|N|0|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+            "owner": 0,
+            "manager_list": [],
+        }
+
+        qualify_catamarca_deal(930, env=self.env, bitrix_client=client, logger=SilentLogger())
+
+        self.assertEqual(client.chat_transfers, [])
 
     def test_catamarca_hard_bcra_rejection_is_distributed(self) -> None:
         client = FakeBitrixClient()
