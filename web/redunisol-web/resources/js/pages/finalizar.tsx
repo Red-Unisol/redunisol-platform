@@ -504,7 +504,7 @@ export default function Finalizar() {
                 </div>
             </main>
 
-            <Footer />
+            <Footer showWhatsAppButton={false} />
         </div>
     );
 }
