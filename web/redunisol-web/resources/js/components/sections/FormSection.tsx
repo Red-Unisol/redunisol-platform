@@ -76,6 +76,7 @@ const otrasProvincias = [
     'Santiago del Estero',
     'Tierra del Fuego',
     'Tucumán',
+    'Otros',
 ];
 const situacionesLaborales = [
     'Jubilado Provincial',
@@ -278,8 +279,24 @@ function isValidEmail(value: string): boolean {
 }
 
 function isValidPhone(value: string): boolean {
-    const digits = value.replace(/\D/g, '');
-    return digits.length >= 8 && digits.length <= 15;
+    let digits = value.replace(/\D/g, '');
+
+    if (digits.startsWith('00')) digits = digits.slice(2);
+
+    const localDigits =
+        digits.length === 13 && digits.startsWith('549')
+            ? digits.slice(3)
+            : digits.length === 12 && digits.startsWith('54')
+              ? digits.slice(2)
+              : digits.length === 10
+                ? digits
+                : '';
+
+    return (
+        localDigits.length === 10 &&
+        localDigits[0] !== '0' &&
+        new Set(localDigits).size > 1
+    );
 }
 
 // ── Shared style constants ────────────────────────────────────────────────────
@@ -1037,7 +1054,8 @@ export default function FormSection({
             errors.email = 'Ingresá un email válido.';
         }
         if (cfg.celular.enabled && !isValidPhone(formData.celular)) {
-            errors.celular = 'Ingresá un celular válido.';
+            errors.celular =
+                'Ingresá un WhatsApp argentino válido de 10 dígitos.';
         }
         if (cfg.terminos.enabled && !formData.terminos) {
             errors.terminos = 'Debés aceptar los términos para continuar.';

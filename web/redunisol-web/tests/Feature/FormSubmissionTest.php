@@ -82,6 +82,41 @@ it('requires the landing slug to submit the form', function () {
     Queue::assertNothingPushed();
 });
 
+it('rejects invalid Argentine WhatsApp numbers', function (string $celular) {
+    Http::fake();
+
+    $response = $this->postJson('/api/form-submissions', [
+        ...validFormPayload(),
+        'celular' => $celular,
+    ]);
+
+    $response->assertUnprocessable()->assertJsonValidationErrors(['celular']);
+    Http::assertNothingSent();
+})->with([
+    'too short' => '35112345',
+    'all zeroes' => '0000000000',
+    'foreign country code' => '+598 99 123 456',
+]);
+
+it('accepts an Argentine WhatsApp with international prefix', function () {
+    config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
+    Queue::fake();
+    Http::fake([
+        'https://kestra.example.test/prequalification' => Http::response([
+            'ok' => true,
+            'prequalified' => true,
+            'route_to_whatsapp' => true,
+        ]),
+    ]);
+
+    $response = $this->postJson('/api/form-submissions', [
+        ...validFormPayload(),
+        'celular' => '+54 9 351 123-4567',
+    ]);
+
+    $response->assertOk();
+});
+
 it('returns not qualified while persistence continues asynchronously', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');

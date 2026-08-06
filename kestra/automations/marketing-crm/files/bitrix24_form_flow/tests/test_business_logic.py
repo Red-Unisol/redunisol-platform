@@ -54,6 +54,7 @@ from bitrix24_form_flow.form_processor.input_parser import (
     normalize_prequalification_input,
     parse_body,
 )
+from bitrix24_form_flow.form_processor.normalization import normalize_whatsapp
 from bitrix24_form_flow.form_processor.lead_service import (
     determine_commercial_owner,
     lead_has_commercial_owner,
@@ -67,6 +68,34 @@ from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
 from bitrix24_form_flow.form_processor.receipt_file import _filename_from_content_disposition
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
+
+
+class FormCatalogAndWhatsappTests(unittest.TestCase):
+    def test_resolves_caba_and_other_province(self) -> None:
+        caba = normalize_prequalification_input({
+            "province": "CABA",
+            "employment_status": "Policia",
+            "payment_bank": "Otros",
+        })
+        other = normalize_prequalification_input({
+            "province": "Otros",
+            "employment_status": "Policia",
+            "payment_bank": "Otros",
+        })
+
+        self.assertEqual(caba.province.bitrix_id, "4145")
+        self.assertEqual(other.province.bitrix_id, "4147")
+
+    def test_normalizes_supported_argentine_whatsapp_formats(self) -> None:
+        self.assertEqual(normalize_whatsapp("351 123-4567"), "+5493511234567")
+        self.assertEqual(normalize_whatsapp("+54 9 351 123-4567"), "+5493511234567")
+        self.assertEqual(normalize_whatsapp("+54 351 123-4567"), "+5493511234567")
+
+    def test_rejects_invalid_whatsapp(self) -> None:
+        for value in ("35112345", "0000000000", "1111111111", "+59899123456"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    normalize_whatsapp(value)
 
 
 class FakeBitrixClient:
