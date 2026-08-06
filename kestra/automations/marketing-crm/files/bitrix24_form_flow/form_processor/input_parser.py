@@ -29,6 +29,13 @@ class NormalizedInput:
     recibo_url: str | None = None
 
 
+@dataclass(frozen=True)
+class PrequalificationInput:
+    province: CatalogItem
+    employment_status: CatalogItem
+    payment_bank: CatalogItem
+
+
 def parse_body(body: str, content_type: str | None = None) -> dict[str, Any]:
     body = body or ""
     content_type = (content_type or "").lower()
@@ -81,6 +88,26 @@ def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
         utm_term=_optional_string(payload.get("utm_term")),
         utm_content=_optional_string(payload.get("utm_content")),
         recibo_url=_optional_string(payload.get("recibo_url")),
+    )
+
+
+def normalize_prequalification_input(payload: dict[str, Any]) -> PrequalificationInput:
+    if not isinstance(payload, dict):
+        raise ValueError("El payload debe ser un objeto JSON.")
+
+    return PrequalificationInput(
+        province=PROVINCIAS.resolve(
+            _first(payload, ["province", "provincia", "ProvinciaDeContacto"]),
+            "province",
+        ),
+        employment_status=SITUACIONES_LABORALES.resolve(
+            _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]),
+            "employment_status",
+        ),
+        payment_bank=BANCOS.resolve(
+            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]),
+            "payment_bank",
+        ),
     )
 
 

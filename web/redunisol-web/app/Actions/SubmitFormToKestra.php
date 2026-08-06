@@ -9,7 +9,7 @@ use RuntimeException;
 
 class SubmitFormToKestra
 {
-    public function execute(array $input): Response
+    public function execute(array $input, array $prequalification = []): Response
     {
         $url = (string) config('services.kestra.form_webhook_url');
 
@@ -20,10 +20,10 @@ class SubmitFormToKestra
         return Http::acceptJson()
             ->asJson()
             ->timeout((int) config('services.kestra.form_webhook_timeout_seconds', 60))
-            ->post($url, $this->buildPayload($input));
+            ->post($url, $this->buildPayload($input, $prequalification));
     }
 
-    private function buildPayload(array $input): array
+    private function buildPayload(array $input, array $prequalification): array
     {
         $leadSource = $this->resolveLeadSource($input['utm_source'] ?? null);
 
@@ -47,6 +47,11 @@ class SubmitFormToKestra
             'utm_term' => $this->normalizeString($input['utm_term'] ?? null),
             'utm_content' => $this->normalizeString($input['utm_content'] ?? null),
             'submission_channel' => 'redunisol-web',
+            'prequalification_available' => $prequalification['available'] ?? null,
+            'prequalified' => $prequalification['prequalified'] ?? null,
+            'prequalification_reason' => $this->normalizeString($prequalification['reason'] ?? null),
+            'prequalification_message' => $this->normalizeString($prequalification['message'] ?? null),
+            'prequalification_rule_version' => $this->normalizeString($prequalification['rule_version'] ?? null),
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
     }
 

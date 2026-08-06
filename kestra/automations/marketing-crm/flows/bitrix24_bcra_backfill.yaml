@@ -1,5 +1,6 @@
 id: bitrix24_bcra_backfill
 namespace: redunisol
+disabled: true
 
 description: Consulta BCRA para leads del dia sin snapshot previo y corta el lote si el upstream rate-limita.
 
@@ -29,6 +30,7 @@ tasks:
       BITRIX24_LEAD_PROCESSING_POLICY_FIELD: "{{ envs.bitrix24_lead_processing_policy_field }}"
       BITRIX24_LEAD_PROCESSING_POLICY_SKIP: "{{ envs.bitrix24_lead_processing_policy_skip }}"
       BITRIX24_LEAD_PROCESSING_POLICY_PROCESS: "{{ envs.bitrix24_lead_processing_policy_process }}"
+      BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
       BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
       BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
       BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
@@ -61,6 +63,9 @@ outputs:
   - id: rejected_count
     type: STRING
     value: "{{ outputs.sincronizar_bcra.vars.rejected_count }}"
+  - id: commercial_rejection_skipped_count
+    type: STRING
+    value: "{{ outputs.sincronizar_bcra.vars.commercial_rejection_skipped_count }}"
   - id: skipped_populated_count
     type: STRING
     value: "{{ outputs.sincronizar_bcra.vars.skipped_populated_count }}"

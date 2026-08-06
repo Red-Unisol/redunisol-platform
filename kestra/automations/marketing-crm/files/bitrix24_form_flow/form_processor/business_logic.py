@@ -24,14 +24,18 @@ from .lead_service import (
     build_lead_contact_birthdate_field,
     create_lead,
     get_lead,
-    should_process_lead,
+    lead_has_commercial_owner,
     sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
     update_lead_fields,
     update_lead_status,
 )
 from .logger import create_logger, Logger
-from .qualification import QualificationResult, evaluate_qualification
+from .qualification import (
+    QualificationResult,
+    evaluate_prequalification,
+    evaluate_qualification,
+)
 from .result import failure_result, intake_success_result, skipped_result, success_result
 from .vimarx_service import (
     build_birthdate_field_from_value,
@@ -69,7 +73,7 @@ def process_form_body(
         bitrix_client=bitrix_client,
         bcra_client=bcra_client,
         logger=logger,
-        force_processing=True,
+        force_processing=False,
     )
 
 
@@ -95,7 +99,7 @@ def process_submission(
         bitrix_client=bitrix_client,
         bcra_client=bcra_client,
         logger=logger,
-        force_processing=True,
+        force_processing=False,
     )
 
 
@@ -246,14 +250,27 @@ def persist_submission(
             if bcra_result.is_persistable and config.fields.has_bcra_storage_fields():
                 update_lead_bcra_snapshot(client, config, lead_id, bcra_result, active_logger)
 
-        lead_status = update_lead_status(
-            client,
-            config,
-            lead_id,
-            qualified,
-            None if qualified else rejection_label,
-            active_logger,
-        )
+        current_lead = get_lead(client, lead_id, active_logger)
+        current_status = _optional_str(current_lead.get("STATUS_ID"))
+        protected_statuses = {
+            config.lead_statuses.qualified,
+            config.lead_statuses.converted,
+        }
+        if current_status in protected_statuses:
+            lead_status = current_status
+            active_logger.info(
+                f"Lead {lead_id} conserva estado {current_status}; no se actualiza."
+            )
+        else:
+            lead_status = update_lead_status(
+                client,
+                config,
+                lead_id,
+                qualified,
+                None if qualified else rejection_label,
+                active_logger,
+            )
+
         return success_result(
             qualified=qualified,
             contact_id=contact_id,
@@ -300,48 +317,31 @@ def classify_lead(
         lead = get_lead(client, lead_id_int, active_logger)
         contact_id = _optional_int(lead.get("CONTACT_ID"))
         lead_status = _optional_str(lead.get("STATUS_ID"))
+        can_take_commercial_decision = force_processing or lead_has_commercial_owner(
+            client,
+            lead,
+            config,
+            "kestra",
+        )
 
-        if not force_processing and not should_process_lead(client, lead, config):
+        submission = build_submission_from_lead(lead, config)
+        qualification = evaluate_prequalification(submission)
+        active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
+
+        if not can_take_commercial_decision:
             active_logger.info(
-                f"Lead {lead_id_int} omitido: politica de procesamiento distinta de 'Procesar'."
+                f"Lead {lead_id_int} omitido: Motor decision comercial distinto de Kestra."
             )
             return skipped_result(
                 contact_id=contact_id,
                 lead_id=lead_id_int,
                 lead_status=lead_status,
-                message="El lead no esta marcado para procesamiento automatico.",
-            )
-
-        submission = build_submission_from_lead(lead, config)
-        qualification = evaluate_qualification(submission)
-
-        should_reject_by_bcra = False
-        if _should_consult_bcra(submission, qualification):
-            stored_bcra_rejection = _stored_bcra_should_reject(lead, config, active_logger, lead_id_int)
-
-            if stored_bcra_rejection is None:
-                bcra_result = sync_lead_bcra(
-                    client,
-                    config,
-                    lead_id_int,
-                    submission.cuil_digits,
-                    active_logger,
-                    bcra_client=bcra_client,
-                )
-                should_reject_by_bcra = bcra_result.should_reject
-            else:
-                should_reject_by_bcra = stored_bcra_rejection
-
-        if should_reject_by_bcra:
-            qualification = QualificationResult(
-                qualified=False,
-                reason="bcra_negative_situation",
+                reason="commercial_owner_not_kestra",
                 message=(
-                    "El snapshot actual del BCRA supera el umbral permitido de situaciones 5."
+                    "La precalificacion fue calculada, pero Kestra no actualizo el estado "
+                    "porque no tiene ownership comercial del lead."
                 ),
-                rejection_label="SIT NEG BCRA",
             )
-        active_logger.info(f"Resultado de calificacion: {qualification.reason}.")
 
         lead_status = update_lead_status(
             client,

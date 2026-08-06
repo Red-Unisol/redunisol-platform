@@ -89,7 +89,14 @@ Ejemplos reales:
 - `ENV_BITRIX24_LEAD_BCRA_DATA_RAW_FIELD`
 - `ENV_BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD`
 - `ENV_BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD`
+- `ENV_BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
+- `ENV_BITRIX24_DEAL_CATEGORY_ID`
+- `ENV_BITRIX24_DEAL_STAGE_ID`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `SECRET_BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
+- `SECRET_BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
@@ -338,21 +345,37 @@ Referenciadas hoy desde los flows:
 
 - `kestra/automations/marketing-crm/flows/bitrix24_form_webhook.yaml`
 - `kestra/automations/marketing-crm/flows/bitrix24_lead_classification.yaml`
+- `kestra/automations/marketing-crm/flows/bitrix24_lead_won_deal_webhook.yaml`
+- `kestra/automations/marketing-crm/flows/bitrix24_lead_prefill.yaml`
 
 - `bitrix24_base_url`
 - `bitrix24_contact_cuil_field`
 - `bitrix24_lead_processing_policy_field`
 - `bitrix24_lead_processing_policy_skip`
 - `bitrix24_lead_processing_policy_process`
+- `bitrix24_lead_commercial_owner_field`
 - `bitrix24_lead_cuil_field`
 - `bitrix24_lead_employment_status_field`
 - `bitrix24_lead_payment_bank_field`
 - `bitrix24_lead_province_field`
 - `bitrix24_lead_source_field`
 - `bitrix24_lead_rejection_reason_field`
+- `bitrix24_lead_backfill_attempts_field`
+- `bitrix24_lead_status_new`
+- `bitrix24_lead_status_preclassification`
 - `bitrix24_lead_status_qualified`
 - `bitrix24_lead_status_rejected`
 - `bitrix24_timeout_seconds`
+- `bitrix24_deal_category_id`
+- `bitrix24_deal_stage_id`
+- `bitrix24_deal_pending_qualification_stage_id`
+- `bitrix24_deal_manual_review_stage_id`
+- `bitrix24_deal_bcra_rejected_stage_id`
+- `bitrix24_deal_provisional_user_id`
+- `bitrix24_deal_distribution_notification_user_id`
+- `bitrix24_deal_commercial_line_field`
+- `bitrix24_deal_round_robin_user_ids`
+- `bitrix24_deal_round_robin_lookback_days`
 
 En la infraestructura actual corresponden a:
 
@@ -361,19 +384,37 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_LEAD_PROCESSING_POLICY_FIELD`
 - `ENV_BITRIX24_LEAD_PROCESSING_POLICY_SKIP`
 - `ENV_BITRIX24_LEAD_PROCESSING_POLICY_PROCESS`
+- `ENV_BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD`
 - `ENV_BITRIX24_LEAD_CUIL_FIELD`
 - `ENV_BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD`
 - `ENV_BITRIX24_LEAD_PAYMENT_BANK_FIELD`
 - `ENV_BITRIX24_LEAD_PROVINCE_FIELD`
 - `ENV_BITRIX24_LEAD_SOURCE_FIELD`
 - `ENV_BITRIX24_LEAD_REJECTION_REASON_FIELD`
+- `ENV_BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD`
+- `ENV_BITRIX24_LEAD_STATUS_NEW`
+- `ENV_BITRIX24_LEAD_STATUS_PRECLASSIFICATION`
 - `ENV_BITRIX24_LEAD_STATUS_QUALIFIED`
 - `ENV_BITRIX24_LEAD_STATUS_REJECTED`
 - `ENV_BITRIX24_TIMEOUT_SECONDS`
+- `ENV_BITRIX24_DEAL_CATEGORY_ID`
+- `ENV_BITRIX24_DEAL_STAGE_ID`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
+- `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+
+En el pipeline actual:
+
+- `ENV_BITRIX24_LEAD_STATUS_NEW=UC_5N2OEO`: etapa visible `INGRESO`, previa al prefill.
+- `ENV_BITRIX24_LEAD_STATUS_PRECLASSIFICATION=NEW`: etapa visible `PRECLASIFICACION`, punto de entrega posterior al prefill.
 
 Presencia verificada en VPS:
 
 - si
+
+Secrets adicionales referenciados por el webhook de negociaciones:
+
+- `BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
+- `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 
 ### Runtime Analisis Credito: variables no sensibles
 
@@ -397,11 +438,13 @@ Referenciados hoy desde el flow:
 
 - `BITRIX24_WEBHOOK_PATH`
 - `BITRIX24_FORM_WEBHOOK_KEY`
+- `COMMERCIAL_PREQUALIFICATION_WEBHOOK_KEY`
 
 En la infraestructura actual corresponden a:
 
 - `SECRET_BITRIX24_WEBHOOK_PATH`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
+- `SECRET_COMMERCIAL_PREQUALIFICATION_WEBHOOK_KEY`
 
 Presencia verificada en VPS:
 

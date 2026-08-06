@@ -1,0 +1,96 @@
+id: bitrix24_lead_won_deal_webhook
+namespace: redunisol
+disabled: false
+
+description: Recibe ONCRMLEADUPDATE, clasifica leads en PRECLASIFICACION y crea negociaciones para RESULTADO GANADO.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  integration: bitrix24
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+tasks:
+  - id: procesar_actualizacion_lead
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN: "{{ secret('BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN') }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_FIELD: "{{ envs.bitrix24_lead_processing_policy_field }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_SKIP: "{{ envs.bitrix24_lead_processing_policy_skip }}"
+      BITRIX24_LEAD_PROCESSING_POLICY_PROCESS: "{{ envs.bitrix24_lead_processing_policy_process }}"
+      BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
+      BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_BCRA_STATUS_FIELD: "{{ envs.bitrix24_lead_bcra_status_field }}"
+      BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
+      BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
+      BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
+      BITRIX24_LEAD_CONTACT_BIRTHDATE_FIELD: "{{ envs.bitrix24_lead_contact_birthdate_field ?? '' }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'NEW' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_LEAD_STATUS_CONVERTED: "{{ envs.bitrix24_lead_status_converted ?? 'CONVERTED' }}"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_STAGE_ID: "{{ envs.bitrix24_deal_stage_id ?? 'C1:NEW' }}"
+      BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID: "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"
+      BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID: "{{ envs.bitrix24_deal_manual_review_stage_id ?? 'C1:KESTRA_REVIEW' }}"
+      BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_bcra_rejected_stage_id ?? 'C1:5' }}"
+      BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
+      BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_lead_won_deal_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.procesar_actualizacion_lead.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.procesar_actualizacion_lead.vars.action }}"
+  - id: reason
+    type: STRING
+    value: "{{ outputs.procesar_actualizacion_lead.vars.reason }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.procesar_actualizacion_lead.vars.message }}"
+  - id: lead_id
+    type: STRING
+    value: "{{ outputs.procesar_actualizacion_lead.vars.lead_id }}"
+  - id: lead_status
+    type: STRING
+    value: "{{ outputs.procesar_actualizacion_lead.vars.lead_status }}"
+  - id: deal_id
+    type: STRING
+    value: "{{ outputs.procesar_actualizacion_lead.vars.deal_id }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

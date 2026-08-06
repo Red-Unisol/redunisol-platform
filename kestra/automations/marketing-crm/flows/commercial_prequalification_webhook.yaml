@@ -1,0 +1,52 @@
+id: commercial_prequalification_webhook
+namespace: redunisol
+
+description: Evalua pre-elegibilidad comercial sin crear entidades ni consultar servicios externos.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  integration: bitrix24
+
+tasks:
+  - id: preclasificar
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    env:
+      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_commercial_prequalification_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.preclasificar.vars.ok }}"
+  - id: prequalified
+    type: BOOLEAN
+    value: "{{ outputs.preclasificar.vars.prequalified }}"
+  - id: route_to_whatsapp
+    type: BOOLEAN
+    value: "{{ outputs.preclasificar.vars.route_to_whatsapp }}"
+  - id: reason
+    type: STRING
+    value: "{{ outputs.preclasificar.vars.reason }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.preclasificar.vars.message }}"
+  - id: rule_version
+    type: STRING
+    value: "{{ outputs.preclasificar.vars.rule_version }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('COMMERCIAL_PREQUALIFICATION_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

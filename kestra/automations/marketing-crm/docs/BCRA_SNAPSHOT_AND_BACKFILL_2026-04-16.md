@@ -1,5 +1,10 @@
 # Snapshot BCRA Y Backfill De Leads
 
+Nota de arquitectura 2026-07-31: la precalificacion reactiva del lead ya no interpreta
+BCRA. El snapshot sigue siendo enriquecimiento del prefill y, para Catamarca, la
+decision comercial BCRA ocurre despues de crear la negociacion. El resto de este
+documento conserva el comportamiento historico para auditoria.
+
 - fecha de relevamiento: `2026-04-16`
 - fuente: working tree local de esta monorepo
 - dominio: `kestra/automations/marketing-crm`
@@ -35,7 +40,7 @@ El flujo funcional implementado es este:
 2. si el lead ya tiene snapshot BCRA guardado en el campo raw, se reutiliza ese resultado y no se vuelve a consultar upstream
 3. si no tiene snapshot, se consulta BCRA
 4. si la respuesta es persistible, se guarda en Bitrix24
-5. si el estado resultante es `NEGATIVO`, el lead se rechaza con motivo `SIT NEG BCRA`
+5. si el estado resultante es `NEGATIVO`, el lead solo se rechaza con motivo `SIT NEG BCRA` cuando `Motor decision comercial = Kestra` o cuando una ejecucion administrativa usa `force_processing`
 
 Errores temporales y `429 rate limit` no se persisten como snapshot.
 
@@ -100,7 +105,8 @@ Comportamiento del backfill:
 - omite leads sin CUIL
 - consulta BCRA para los pendientes
 - persiste snapshot cuando aplica
-- rechaza en Bitrix24 los leads que queden con `NEGATIVO`
+- si el snapshot queda `NEGATIVO`, solo rechaza en Bitrix24 cuando `Motor decision comercial = Kestra`
+- si el snapshot queda `NEGATIVO` pero el owner comercial es `Bitrix`, `Manual` o vacio, deja el snapshot guardado y omite la accion comercial
 - corta el lote si el upstream responde `429`
 
 Outputs expuestos por el flow:
@@ -110,6 +116,7 @@ Outputs expuestos por el flow:
 - `processed_count`
 - `populated_count`
 - `rejected_count`
+- `commercial_rejection_skipped_count`
 - `skipped_populated_count`
 - `skipped_missing_cuil_count`
 - `temporary_error_count`
@@ -187,6 +194,7 @@ En el relevamiento hecho para este documento no muestran diff funcional de conte
 - centraliza `sync_lead_bcra()`
 - implementa `backfill_bcra_for_today()`
 - define la politica de corte por rate limiting
+- separa enriquecimiento BCRA de decision comercial: snapshot para todos, rechazo solo para owner `Kestra`
 
 ### Flows YAML
 

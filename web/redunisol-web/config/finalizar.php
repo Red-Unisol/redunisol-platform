@@ -103,6 +103,7 @@ return [
             'flow_id' => '6453f8ecf6fa8c001c7b15e6',
             'doc_id' => 'f6aad70e-d611-4efd-a3ee-8b08487e89c4',
             'extra_html' => '',
+            'regulator_short_name' => 'Fiat Concord',
         ],
         'fiat_celesol' => [
             'flow_id' => '6453f8ecf6fa8c001c7b15e6',

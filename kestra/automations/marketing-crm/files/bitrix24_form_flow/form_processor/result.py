@@ -27,6 +27,7 @@ def success_result(
     lead_status: str,
     message: str,
     reason: str,
+    deal_id: int | None = None,
 ) -> dict[str, object]:
     return {
         "ok": True,
@@ -34,6 +35,7 @@ def success_result(
         "contact_id": contact_id,
         "lead_id": lead_id,
         "lead_status": lead_status,
+        "deal_id": deal_id,
         "action": "qualified" if qualified else "rejected",
         "reason": reason,
         "message": message,
@@ -67,6 +69,7 @@ def skipped_result(
     lead_id: int,
     lead_status: str | None,
     message: str,
+    reason: str = "processing_disabled",
 ) -> dict[str, object]:
     return {
         "ok": True,
@@ -75,6 +78,6 @@ def skipped_result(
         "lead_id": lead_id,
         "lead_status": lead_status,
         "action": "skipped",
-        "reason": "processing_disabled",
+        "reason": reason,
         "message": message,
     }

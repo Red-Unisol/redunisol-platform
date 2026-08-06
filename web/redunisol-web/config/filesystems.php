@@ -19,6 +19,8 @@ return [
 
     'recibos_temporary_url_minutes' => env('RECIBOS_TEMPORARY_URL_MINUTES', 10080),
 
+    'reports_path' => env('REPORTS_PATH', storage_path('app/reports')),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

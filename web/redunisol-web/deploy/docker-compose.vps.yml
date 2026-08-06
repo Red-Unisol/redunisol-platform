@@ -12,7 +12,7 @@ services:
 
   php-fpm:
     image: ${APP_IMAGE}
-    environment:
+    environment: &app-environment
       APP_NAME: ${APP_NAME}
       APP_ENV: ${APP_ENV}
       APP_KEY: ${APP_KEY}
@@ -41,6 +41,7 @@ services:
       FILESYSTEM_DISK: ${FILESYSTEM_DISK}
       RECIBOS_DISK: ${RECIBOS_DISK}
       RECIBOS_TEMPORARY_URL_MINUTES: ${RECIBOS_TEMPORARY_URL_MINUTES}
+      REPORTS_PATH: ${REPORTS_PATH:-/var/www/reports}
       QUEUE_CONNECTION: ${QUEUE_CONNECTION}
       CACHE_STORE: ${CACHE_STORE}
       REDIS_CLIENT: ${REDIS_CLIENT}
@@ -62,6 +63,7 @@ services:
       AWS_ENDPOINT: ${AWS_ENDPOINT}
       AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT}
       KESTRA_FORM_WEBHOOK_URL: ${KESTRA_FORM_WEBHOOK_URL}
+      KESTRA_PREQUALIFICATION_WEBHOOK_URL: ${KESTRA_PREQUALIFICATION_WEBHOOK_URL}
       GTM_ID: ${GTM_ID:-}
       GTM_AUTH: ${GTM_AUTH:-}
       GTM_PREVIEW: ${GTM_PREVIEW:-}
@@ -70,6 +72,7 @@ services:
       META_CAPI_GRAPH_VERSION: ${META_CAPI_GRAPH_VERSION:-v23.0}
       META_CAPI_TEST_EVENT_CODE: ${META_CAPI_TEST_EVENT_CODE:-}
       KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS: ${KESTRA_FORM_WEBHOOK_TIMEOUT_SECONDS}
+      KESTRA_PREQUALIFICATION_WEBHOOK_TIMEOUT_SECONDS: ${KESTRA_PREQUALIFICATION_WEBHOOK_TIMEOUT_SECONDS}
       KESTRA_FORM_DEFAULT_LEAD_SOURCE: ${KESTRA_FORM_DEFAULT_LEAD_SOURCE}
       FINALIZAR_METAMAP_CLIENT_ID: ${FINALIZAR_METAMAP_CLIENT_ID:-}
       FINALIZAR_CAJA_API_BASE_URL: ${FINALIZAR_CAJA_API_BASE_URL:-}
@@ -82,7 +85,31 @@ services:
       FINALIZAR_ITS_API_TIMEOUT_SECONDS: ${FINALIZAR_ITS_API_TIMEOUT_SECONDS:-25}
     volumes:
       - storage-data:/var/www/storage
+      - /srv/redunisol-reports:/var/www/reports:ro
     depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  queue-worker:
+    image: ${APP_IMAGE}
+    entrypoint:
+      - php
+      - artisan
+      - queue:work
+    command:
+      - --sleep=1
+      - --tries=1
+      - --timeout=75
+      - --max-time=3600
+    environment: *app-environment
+    volumes:
+      - storage-data:/var/www/storage
+    depends_on:
+      php-fpm:
+        condition: service_started
       postgres:
         condition: service_started
       redis:

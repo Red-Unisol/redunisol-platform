@@ -2,14 +2,13 @@
 
 namespace App\Services;
 
-use App\Http\Requests\FormSubmissionRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
 class MetaConversionsApiService
 {
-    public function sendLead(FormSubmissionRequest $request, array $input): void
+    public function sendLead(array $input, array $clientContext = []): void
     {
         $pixelId = (string) config('services.meta.pixel_id');
         $accessToken = (string) config('services.meta.capi_access_token');
@@ -24,7 +23,7 @@ class MetaConversionsApiService
             'event_id' => $this->normalizeString($input['meta_event_id'] ?? null),
             'action_source' => 'website',
             'event_source_url' => $this->normalizeString($input['landing_url'] ?? null) ?: url()->current(),
-            'user_data' => $this->buildUserData($request, $input),
+            'user_data' => $this->buildUserData($input, $clientContext),
             'custom_data' => array_filter([
                 'content_name' => 'lead_form',
                 'landing_slug' => $this->normalizeString($input['landing_slug'] ?? null),
@@ -63,15 +62,15 @@ class MetaConversionsApiService
         }
     }
 
-    private function buildUserData(FormSubmissionRequest $request, array $input): array
+    private function buildUserData(array $input, array $clientContext): array
     {
         return array_filter([
             'em' => $this->hashEmail($input['email'] ?? null),
             'ph' => $this->hashPhone($input['celular'] ?? null),
-            'client_ip_address' => $request->ip(),
-            'client_user_agent' => $request->userAgent(),
-            'fbp' => $request->cookie('_fbp'),
-            'fbc' => $request->cookie('_fbc'),
+            'client_ip_address' => $this->normalizeString($clientContext['ip'] ?? null),
+            'client_user_agent' => $this->normalizeString($clientContext['user_agent'] ?? null),
+            'fbp' => $this->normalizeString($clientContext['fbp'] ?? null),
+            'fbc' => $this->normalizeString($clientContext['fbc'] ?? null),
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
     }
 

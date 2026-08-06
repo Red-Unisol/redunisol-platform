@@ -1,33 +1,19 @@
-# API Formulario -> Kestra
+# API De Carga De Formulario
 
 ## Objetivo
 
-Este endpoint recibe los datos del formulario, sincroniza contacto y lead en Bitrix24 y responde si la persona califica o no.
-Internamente el dominio hoy esta partido en un flow publico de intake y un flow interno de clasificacion por `lead_id`, pero el contrato HTTP hacia frontend se mantiene estable.
-
-El frontend solo necesita:
-
-- enviar un `POST` JSON
-- leer la respuesta
-- redirigir según `qualified`
+Este endpoint valida el payload, sincroniza el contacto y crea un lead en Bitrix24.
+No consulta BCRA, ARCA, Vimarx ni CredixSA y no toma decisiones comerciales.
 
 ## Endpoint
 
 ```text
-POST http://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol/bitrix24_form_webhook/<WEBHOOK_KEY>
+POST https://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol.prod.marketing-crm/bitrix24_form_webhook/<WEBHOOK_KEY>
 ```
 
-`<WEBHOOK_KEY>` debe obtenerse desde el secret configurado en Kestra para este flow. No hardcodearlo en frontend ni versionarlo en Git.
+El webhook se consume desde el backend Laravel. La clave no debe exponerse al navegador.
 
-## Headers
-
-```http
-Content-Type: application/json
-```
-
-## Body Esperado
-
-Ejemplo:
+## Request
 
 ```json
 {
@@ -42,142 +28,47 @@ Ejemplo:
 }
 ```
 
-Campos:
-
-- `full_name`: nombre completo
-- `email`: email valido
-- `whatsapp`: telefono argentino; puede venir como `3511234567` o formato internacional
-- `cuil`: puede venir con o sin guiones
-- `province`: nombre semantico de la provincia
-- `employment_status`: nombre semantico de la situacion laboral
-- `payment_bank`: nombre semantico del banco
-- `lead_source`: origen del lead
-
-## Valores Recomendados
-
-`province`
-
-- `Cordoba`
-- `Rio Negro`
-- `Neuquen`
-- `Catamarca`
-- `Santa Fe`
-- `La Rioja`
-- `Buenos Aires`
-
-`employment_status`
-
-- `Jubilado Provincial`
-- `Empleado Publico Provincial`
-- `Policia`
-- `Docente`
-- `Personal de Salud`
-- `Jubilado Nacional`
-- `Pensionado`
-- `Jubilado Municipal`
-- `Empleado Publico Municipal`
-- `Empleado de la UNC`
-- `DASPU`
-- `Empleado Publico Nacional`
-- `Empleado Privado`
-- `Autonomo Independiente`
-- `Monotributista`
-- `Beneficiario de Plan Social`
-
-`lead_source`
-
-- `Google`
-- `Facebook`
-- `Instagram`
-- `WhatsApp`
-- `E Mail`
-- `YouTube`
+También admite campos UTM, `landing_slug`, `landing_title`, `landing_url` y `recibo_url`.
 
 ## Respuesta Exitosa
 
-### Caso aprobado
+La respuesta exitosa confirma que el lead fue creado. No expresa calificación.
 
 ```json
 {
   "ok": true,
-  "action": "qualified",
-  "reason": "qualified",
-  "lead_id": "316073",
-  "message": "La persona califica para Cordoba.",
-  "qualified": true,
+  "action": "created",
+  "reason": "created",
   "contact_id": "181487",
-  "lead_status": "UC_64AUC9"
-}
-```
-
-### Caso rechazado
-
-```json
-{
-  "ok": true,
-  "action": "rejected",
-  "reason": "province_not_eligible",
-  "lead_id": "316065",
-  "message": "La provincia \"Buenos Aires\" no califica.",
-  "qualified": false,
-  "contact_id": "181479",
-  "lead_status": "UC_1P8I07"
+  "lead_id": "316073",
+  "message": "Lead creado para clasificacion posterior."
 }
 ```
 
 ## Respuesta De Error
 
-Si faltan datos o el payload es invalido, el endpoint responde JSON estable:
-
 ```json
 {
   "ok": false,
   "action": "error",
-  "reason": "not_evaluated",
-  "lead_id": "",
-  "message": "Falta el campo requerido: cuil.",
-  "qualified": false,
+  "reason": "error",
   "contact_id": "",
-  "lead_status": ""
+  "lead_id": "",
+  "message": "Falta el campo requerido: cuil."
 }
 ```
 
-## Regla De Integracion Para Frontend
+## Integracion Web
 
-- si `ok` es `false`, tratarlo como error de integracion o validacion
-- si `ok` es `true` y `qualified` es `true`, redirigir al flujo aprobado
-- si `ok` es `true` y `qualified` es `false`, redirigir al flujo rechazado
+El backend web espera solamente la respuesta del endpoint de preclasificación.
+La carga en Bitrix se encola en PostgreSQL y un `queue-worker` de Laravel llama
+a este endpoint en segundo plano.
 
-## Ejemplo Con `fetch`
+- `prequalified=false`: muestra la salida comercial no aprobada
+- `prequalified=true`: muestra la salida con acceso a WhatsApp
+- preclasificación indisponible: muestra una salida neutral sin WhatsApp
+- fallo al encolar: responde error técnico al navegador
+- fallo posterior de carga: no modifica la pantalla; queda registrado como job fallido
 
-```js
-const response = await fetch(
-  "http://kestra.redunisol.com.ar/api/v1/main/executions/webhook/redunisol/bitrix24_form_webhook/<WEBHOOK_KEY>",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      full_name: "Juan Perez",
-      email: "juan.perez@example.com",
-      whatsapp: "3511234567",
-      cuil: "20-12345678-3",
-      province: "Cordoba",
-      employment_status: "Policia",
-      payment_bank: "Banco de la Nacion Argentina",
-      lead_source: "Google"
-    })
-  }
-);
-
-const data = await response.json();
-
-if (!data.ok) {
-  console.error("Error de integracion:", data.message);
-} else if (data.qualified) {
-  window.location.href = "/aprobado";
-} else {
-  window.location.href = "/rechazado";
-}
-```
+El job no tiene reintentos automáticos. Hasta contar con una clave idempotente,
+un reintento luego de un timeout ambiguo podría crear un lead duplicado.

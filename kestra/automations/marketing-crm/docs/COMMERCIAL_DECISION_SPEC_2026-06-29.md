@@ -43,17 +43,74 @@ No es todavia una especificacion de implementacion cerrada.
 6. Las negociaciones de prospectos ganados deben crearse en:
    - pipeline: `VENTAS`
    - `CATEGORY_ID=1`
-   - etapa inicial: `C1:NEW` (`PRESENTACION`)
+   - default general: `C1:NEW` (`PRESENTACION`)
+   - Catamarca con motor Kestra: `C1:KESTRA_PENDING` (`PENDIENTE CALIFICACION KESTRA`)
+   - disparador tecnico: webhook de salida Bitrix `ONCRMLEADUPDATE`; Kestra consulta el lead actualizado y crea/reutiliza negociacion si el estado real es `RESULTADO GANADO`, sin depender del valor de `Motor decision comercial`
 
 7. El pool interno `Dani / Pato / Nati / Sole` se asigna con estas reglas:
    - por defecto, round-robin para contactos nuevos
    - si el contacto ya tuvo prospectos previos, asignar al vendedor del prospecto previo mas reciente
    - las recurrencias deben computarse para mantener equidad; el round-robin de contactos nuevos debe compensar para que quienes reciben mas recurrencias no terminen con mas prospectos totales
+   - implementacion inicial en Kestra: para contactos nuevos se elige el vendedor del pool con menor cantidad de negociaciones recientes en `VENTAS`; para contactos recurrentes se reutiliza el responsable de la negociacion previa mas reciente si pertenece al pool
+   - ajuste operativo del 2026-07-31 para Catamarca: el deal nace con Maru Lopez (`57`) como responsable provisional; el round-robin se aplica despues de la calificacion definitiva y solo si el caso resulta aprobable
 
 8. La linea comercial requiere campos custom en Bitrix:
    - campo custom en lead
    - campo custom en deal
    - al crear la negociacion, el deal debe heredar/copiar la linea comercial calculada en el lead
+
+9. La Rioja nunca debe consultar BCRA automaticamente, ni siquiera despues de crear la negociacion.
+
+10. Todo prospecto ganado de La Rioja debe asignarse a Mercedes (`85431`) y quedar para validacion manual.
+
+11. En La Rioja, `Salud` equivale a `Personal de Salud` del formulario y debe aceptarse como situacion laboral valida.
+
+12. Cuando falten datos para aplicar una regla comercial, el caso debe quedar pendiente/manual. No debe rechazarse automaticamente por falta de datos.
+
+13. La respuesta del webhook al formulario debe seguir siendo binaria: `qualified/rejected`. No debe exponer linea, vendedor ni estado manual al caller del formulario.
+
+14. En Cordoba, `Empleado de la UNC` y `DASPU` siguen aceptados aunque no figuren en el informe original.
+
+15. Las provincias fuera de alcance actual se rechazan.
+
+16. Para `CBU Nuevos` y `CBU Propia Recurrentes`, no se acepta ninguna situacion mayor a 1. El maximo aceptado es 5 situaciones y todas deben ser situacion 1.
+
+17. La convivencia transitoria entre automatizaciones nativas de Bitrix24 y Kestra debe controlarse con un campo custom de ownership comercial separado de los campos de enriquecimiento:
+   - campo lead: `UF_CRM_COMM_OWNER`
+   - etiqueta: `Motor decision comercial`
+   - tipo: enumeracion
+   - ID de userfield Bitrix: `1773`
+   - valores:
+     - `Bitrix` (`ID=4117`, default conservador)
+     - `Kestra` (`ID=4119`)
+     - `Manual` (`ID=4121`)
+   - `Bitrix`: las decisiones comerciales quedan a cargo de las automatizaciones nativas/manuales de Bitrix24
+   - `Kestra`: Kestra puede tomar decisiones comerciales sobre el lead
+   - `Manual`: el caso queda para revision manual y no debe tener decision comercial automatica
+   - las automatizaciones nativas de Bitrix24 deben arrancar con una condicion que saltee sus ramas cuando `Motor decision comercial = Kestra`
+   - las automatizaciones de Kestra deben validar este campo antes de cambiar estado, etapa, responsable, crear negociacion, rechazar o derivar
+   - Kestra puede seguir enriqueciendo leads de cualquier ownership con BCRA, Vimarx u otros campos informativos
+   - el formulario debe cargar el lead con `Bitrix`, `Kestra` o `Manual` segun el plan de migracion vigente
+   - la migracion se hara gradualmente por provincia/flujo comercial
+
+18. Mientras una provincia o flujo no este migrado a Kestra, el default operativo debe seguir siendo `Bitrix` para evitar doble procesamiento comercial. Catamarca es la primera provincia foco de automatizacion y debe cargarse con `Motor decision comercial = Kestra`.
+
+19. `UF_CRM_PROCESSING_POLICY` (`Politica procesamiento`) queda como campo legacy/parcial del flujo actual y no debe usarse como ownership comercial nuevo. La implementacion debe migrar gradualmente la compuerta de decisiones comerciales hacia `UF_CRM_COMM_OWNER`.
+
+20. Implementado en Kestra:
+   - el intake crea leads de Catamarca con `Motor decision comercial = Kestra`
+   - el intake crea leads del resto de provincias con `Motor decision comercial = Bitrix` como default conservador
+   - la clasificacion por `lead_id` puede enriquecer BCRA para todos, pero solo cambia estado/motivo cuando `Motor decision comercial = Kestra` o cuando una ejecucion administrativa usa `force_processing`
+   - el backfill BCRA puede seguir guardando snapshot/raw/resumen para todos los leads, pero solo puede cambiar estado o motivo de rechazo cuando `Motor decision comercial = Kestra`
+   - `UF_CRM_PROCESSING_POLICY` ya no es la compuerta comercial nueva
+
+21. Cuando Kestra crea una negociacion para un lead ganado:
+   - fuera del circuito Catamarca, la negociacion hereda `ASSIGNED_BY_ID` del lead
+   - Catamarca con motor Kestra usa responsable provisional Maru Lopez (`57`)
+   - Kestra agrega al timeline del lead un comentario `Negociacion creada a partir del prospecto` con enlace a la negociacion
+   - el comentario se crea solo para negociaciones nuevas creadas por Kestra; no se agrega a negociaciones preexistentes creadas por Bitrix
+
+22. Para Catamarca, las reglas BCRA automaticas se aplican solo a socios nuevos (`Es socio = No`). Banco de cobro, entendido como Banco Nacion para esta regla, en situacion mayor a 2 o mas de cuatro entidades en situacion 4/5 son rechazo duro. Si todas las situaciones son 0/1 corresponde `AMEJUCA Premium`; cualquier otro snapshot BCRA valido corresponde `AMEJUCA Especial`. Banco Nacion ausente del snapshot equivale a situacion 0. Los socios recurrentes (`Es socio = Si`) y los casos con creditos activos quedan en revision manual sin aplicar rechazo BCRA automatico.
 
 ## Evidencia Bitrix24
 
@@ -117,7 +174,7 @@ IDs confirmados manualmente el 2026-06-29:
 
 Notas:
 
-- El webhook/API actual solo tiene scope `crm`; los metodos `user.get` y `user.search` devuelven `insufficient_scope`. Por eso estos IDs no se pudieron resolver por API y fueron confirmados manualmente.
+- El webhook/API actual tiene scopes `crm`, `user` e `imopenlines` (verificado por API el 2026-08-05). Los IDs de vendedores pueden resolverse mediante `user.get` o `user.search`, y los chats de Contact Center pueden consultarse y transferirse mediante `imopenlines.*`; la observacion historica de `insufficient_scope` ya no representa la configuracion vigente.
 
 ## Etapas Relevantes En Pipeline VENTAS
 
@@ -229,53 +286,35 @@ Por eso conviene separar la implementacion en dos decisiones:
 
 2. Para Neuquen, Rio Negro y Santa Fe: definir vendedor externo, si se crea negociacion en `VENTAS`, si queda en `C1:4` y si se envia mail.
 
-3. Para provincias fuera de alcance: rechazar, dejar sin procesar, derivar o crear negociacion manual.
+3. Definir plantilla de mail Bitrix para derivacion externa, destinatarios y remitente.
 
-4. Definir plantilla de mail Bitrix para derivacion externa, destinatarios y remitente.
+4. Definir si el envio de mails lo hace Kestra via API o una automatizacion interna de Bitrix disparada por estado/campo.
 
-5. Definir si el envio de mails lo hace Kestra via API o una automatizacion interna de Bitrix disparada por estado/campo.
+5. Definir como identificar si la persona es socio, cliente nuevo o recurrente: Vimarx, campo Bitrix, formulario o validacion manual.
 
-6. La Rioja: confirmar si `Salud` equivale a `Personal de Salud` del formulario y debe aceptarse.
+6. Definir como identificar credito vigente, cantidad de creditos activos, mora, cuotas pagadas, renovacion y paralelo.
 
-7. Cordoba: confirmar si `Empleado de la UNC` y `DASPU` siguen aceptados aunque no figuren en el informe.
+7. Definir que datos de Vimarx son fuente valida para decision automatica y cuales solo deben mostrarse para analisis manual.
 
-8. La Rioja: confirmar que nunca consulta BCRA automaticamente, ni siquiera despues de crear negociacion.
+8. Definir reglas para `BCRA REN`; el informe lo marca como pendiente de definicion.
 
-9. La Rioja: confirmar que todo prospecto ganado se asigna siempre a Mercedes y queda para validacion manual.
+9. Definir como matchear banco de cobro contra entidades del BCRA: nombre exacto, alias normalizados, codigo/CUIT de entidad o tabla manual.
 
-10. Definir como identificar si la persona es socio, cliente nuevo o recurrente: Vimarx, campo Bitrix, formulario o validacion manual.
+10. Para CBU Comer recurrentes: confirmar que significa "cupo afectado al 0,1" y si existe fuente para calcularlo.
 
-11. Definir como identificar credito vigente, cantidad de creditos activos, mora, cuotas pagadas, renovacion y paralelo.
+11. Para Cruz del Eje Especial: confirmar si permite cualquier cantidad de situaciones 2/3 y solo limita situaciones 4/5.
 
-12. Definir que datos de Vimarx son fuente valida para decision automatica y cuales solo deben mostrarse para analisis manual.
+12. Para rechazo duro Cordoba: confirmar si "situacion 2 o mayor en Banco de Cordoba" se evalua contra entidad BCRA Banco de Cordoba, independientemente del banco de cobro declarado.
 
-13. Definir reglas para `BCRA REN`; el informe lo marca como pendiente de definicion.
+13. Para Caja Morosos: definir como detectar si la irregularidad es con banco de cobro, especialmente Bancor o Macro.
 
-14. Definir como matchear banco de cobro contra entidades del BCRA: nombre exacto, alias normalizados, codigo/CUIT de entidad o tabla manual.
+14. Para AMEJUCA Premium: confirmar si manda "sin situaciones con ninguna entidad" o "equivalente operativo: situacion 1".
 
-15. Para CBU nuevos / propia recurrentes: confirmar si "hasta 5 situaciones" significa hasta 5 entidades en situacion 1 o hasta 5 registros totales.
+15. Definir si `rechazo por analisis` debe cerrar automaticamente como perdido o quedar en etapa manual de revision.
 
-16. Para CBU Comer recurrentes: confirmar que significa "cupo afectado al 0,1" y si existe fuente para calcularlo.
+16. Definir que reglas deben aplicarse inmediatamente en carga via formulario y cuales solo en reclasificacion posterior, cuando ya existe enrichment Vimarx/BCRA.
 
-17. Para Cruz del Eje Especial: confirmar si permite cualquier cantidad de situaciones 2/3 y solo limita situaciones 4/5.
-
-18. Para rechazo duro Cordoba: confirmar si "situacion 2 o mayor en Banco de Cordoba" se evalua contra entidad BCRA Banco de Cordoba, independientemente del banco de cobro declarado.
-
-19. Para Caja Morosos: definir como detectar si la irregularidad es con banco de cobro, especialmente Bancor o Macro.
-
-20. Para Catamarca: confirmar si "situacion mayor a 1 en Banco Nacion" es rechazo duro siempre.
-
-21. Para AMEJUCA Premium: confirmar si manda "sin situaciones con ninguna entidad" o "equivalente operativo: situacion 1".
-
-22. Definir que pasa cuando faltan datos para una regla: rechazar, dejar pendiente manual o crear negociacion sin linea asignada.
-
-23. Definir si `rechazo por analisis` debe cerrar automaticamente como perdido o quedar en etapa manual de revision.
-
-24. Definir si la respuesta del webhook al formulario debe seguir siendo binaria `qualified/rejected` o devolver tambien linea, vendedor y estado manual.
-
-25. Definir que reglas deben aplicarse inmediatamente en carga via formulario y cuales solo en reclasificacion posterior, cuando ya existe enrichment Vimarx/BCRA.
-
-26. Definir si se migra o limpia el comportamiento actual donde `SOURCE_ID` queda como `CALL` aunque el origen real venga del formulario.
+17. Definir si se migra o limpia el comportamiento actual donde `SOURCE_ID` queda como `CALL` aunque el origen real venga del formulario.
 
 ## Recomendacion De Implementacion
 

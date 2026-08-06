@@ -6,6 +6,7 @@ import os
 
 DEFAULT_LEAD_FIELDS = {
     "processing_policy": "UF_CRM_PROCESSING_POLICY",
+    "commercial_owner": "UF_CRM_COMM_OWNER",
     "cuil": "UF_CRM_1693840106704",
     "situacion_laboral": "UF_CRM_1714071903",
     "banco_cobro": "UF_CRM_LEAD_1711458190312",
@@ -32,6 +33,7 @@ DEFAULT_LEAD_FIELDS = {
     "credixsa_employer_count": "UF_CRM_EMP_COUNT",
     "credixsa_employer_periods": "UF_CRM_EMP_PERIODOS",
     "credixsa_alerts": "UF_CRM_CRDX_ALERTAS",
+    "backfill_attempts": "UF_CRM_KSTRA_BF_ATTEMPTS",
 }
 
 DEFAULT_PROCESSING_POLICIES = {
@@ -39,11 +41,33 @@ DEFAULT_PROCESSING_POLICIES = {
     "process": "Procesar",
 }
 
+DEFAULT_COMMERCIAL_OWNERS = {
+    "bitrix": "Bitrix",
+    "kestra": "Kestra",
+    "manual": "Manual",
+}
+
+DEFAULT_DEAL_CONFIG = {
+    "category_id": 1,
+    "stage_id": "C1:NEW",
+    "pending_qualification_stage_id": "C1:KESTRA_PENDING",
+    "manual_review_stage_id": "C1:KESTRA_REVIEW",
+    "routing_review_stage_id": "C1:KESTRA_ROUTE_REVIEW",
+    "bcra_rejected_stage_id": "C1:5",
+    "provisional_user_id": 57,
+    "distribution_notification_user_id": 57,
+    "commercial_line_field": "ufCrm_659EBB0445E8E",
+    "routing_bucket_field": "ufCrmRouteBucket",
+    "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
+    "round_robin_lookback_days": 30,
+}
+
 
 @dataclass(frozen=True)
 class BitrixFieldsConfig:
     contact_cuil: str
     lead_processing_policy: str
+    lead_commercial_owner: str
     lead_cuil: str
     lead_employment_status: str
     lead_payment_bank: str
@@ -74,6 +98,7 @@ class BitrixFieldsConfig:
     lead_credixsa_employer_count: str | None
     lead_credixsa_employer_periods: str | None
     lead_credixsa_alerts: str | None
+    lead_backfill_attempts: str
 
     def has_bcra_storage_fields(self) -> bool:
         return all(
@@ -103,8 +128,11 @@ class BitrixFieldsConfig:
 
 @dataclass(frozen=True)
 class LeadStatusesConfig:
+    new: str
+    preclassification: str
     qualified: str
     rejected: str
+    converted: str
 
 
 @dataclass(frozen=True)
@@ -114,12 +142,37 @@ class ProcessingPolicyConfig:
 
 
 @dataclass(frozen=True)
+class CommercialOwnerConfig:
+    bitrix: str
+    kestra: str
+    manual: str
+
+
+@dataclass(frozen=True)
+class DealConfig:
+    category_id: int
+    stage_id: str
+    pending_qualification_stage_id: str
+    manual_review_stage_id: str
+    routing_review_stage_id: str
+    bcra_rejected_stage_id: str
+    provisional_user_id: int
+    distribution_notification_user_id: int
+    commercial_line_field: str
+    routing_bucket_field: str
+    round_robin_user_ids: tuple[int, ...]
+    round_robin_lookback_days: int
+
+
+@dataclass(frozen=True)
 class AppConfig:
     base_url: str
     webhook_path: str
     fields: BitrixFieldsConfig
     lead_statuses: LeadStatusesConfig
     processing_policy: ProcessingPolicyConfig
+    commercial_owner: CommercialOwnerConfig
+    deal: DealConfig
     timeout_seconds: int
 
 
@@ -134,6 +187,10 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             lead_processing_policy=source.get(
                 "BITRIX24_LEAD_PROCESSING_POLICY_FIELD",
                 DEFAULT_LEAD_FIELDS["processing_policy"],
+            ),
+            lead_commercial_owner=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD",
+                DEFAULT_LEAD_FIELDS["commercial_owner"],
             ),
             lead_cuil=source.get("BITRIX24_LEAD_CUIL_FIELD", DEFAULT_LEAD_FIELDS["cuil"]),
             lead_employment_status=source.get(
@@ -240,10 +297,23 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 "BITRIX24_LEAD_CREDIXSA_ALERTS_FIELD",
                 DEFAULT_LEAD_FIELDS["credixsa_alerts"],
             ),
+            lead_backfill_attempts=source.get(
+                "BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD",
+                DEFAULT_LEAD_FIELDS["backfill_attempts"],
+            ),
         ),
         lead_statuses=LeadStatusesConfig(
+            new=source.get("BITRIX24_LEAD_STATUS_NEW", "UC_5N2OEO").strip()
+            or "UC_5N2OEO",
+            preclassification=source.get(
+                "BITRIX24_LEAD_STATUS_PRECLASSIFICATION",
+                "NEW",
+            ).strip()
+            or "NEW",
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
+            converted=source.get("BITRIX24_LEAD_STATUS_CONVERTED", "CONVERTED").strip()
+            or "CONVERTED",
         ),
         processing_policy=ProcessingPolicyConfig(
             skip=source.get(
@@ -253,6 +323,79 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             process=source.get(
                 "BITRIX24_LEAD_PROCESSING_POLICY_PROCESS",
                 DEFAULT_PROCESSING_POLICIES["process"],
+            ),
+        ),
+        commercial_owner=CommercialOwnerConfig(
+            bitrix=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_BITRIX",
+                DEFAULT_COMMERCIAL_OWNERS["bitrix"],
+            ),
+            kestra=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_KESTRA",
+                DEFAULT_COMMERCIAL_OWNERS["kestra"],
+            ),
+            manual=source.get(
+                "BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL",
+                DEFAULT_COMMERCIAL_OWNERS["manual"],
+            ),
+        ),
+        deal=DealConfig(
+            category_id=_optional_int(
+                source,
+                "BITRIX24_DEAL_CATEGORY_ID",
+                default=DEFAULT_DEAL_CONFIG["category_id"],
+            ),
+            stage_id=source.get("BITRIX24_DEAL_STAGE_ID", DEFAULT_DEAL_CONFIG["stage_id"]).strip()
+            or DEFAULT_DEAL_CONFIG["stage_id"],
+            pending_qualification_stage_id=source.get(
+                "BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["pending_qualification_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["pending_qualification_stage_id"],
+            manual_review_stage_id=source.get(
+                "BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["manual_review_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["manual_review_stage_id"],
+            routing_review_stage_id=source.get(
+                "BITRIX24_DEAL_ROUTING_REVIEW_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
+            bcra_rejected_stage_id=source.get(
+                "BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
+            provisional_user_id=_optional_int(
+                source,
+                "BITRIX24_DEAL_PROVISIONAL_USER_ID",
+                default=DEFAULT_DEAL_CONFIG["provisional_user_id"],
+            ),
+            distribution_notification_user_id=_optional_int(
+                source,
+                "BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID",
+                default=DEFAULT_DEAL_CONFIG["distribution_notification_user_id"],
+            ),
+            commercial_line_field=source.get(
+                "BITRIX24_DEAL_COMMERCIAL_LINE_FIELD",
+                DEFAULT_DEAL_CONFIG["commercial_line_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["commercial_line_field"],
+            routing_bucket_field=source.get(
+                "BITRIX24_DEAL_ROUTING_BUCKET_FIELD",
+                DEFAULT_DEAL_CONFIG["routing_bucket_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["routing_bucket_field"],
+            round_robin_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["round_robin_user_ids"],
+            ),
+            round_robin_lookback_days=_optional_int(
+                source,
+                "BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS",
+                default=DEFAULT_DEAL_CONFIG["round_robin_lookback_days"],
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),
@@ -285,6 +428,35 @@ def _optional_int(env: dict[str, str], key: str, *, default: int) -> int:
         raise ValueError(f'La variable "{key}" debe ser mayor a cero.')
 
     return value
+
+
+def _optional_int_tuple(
+    env: dict[str, str],
+    key: str,
+    *,
+    default: tuple[int, ...],
+) -> tuple[int, ...]:
+    raw = env.get(key, "").strip()
+    if not raw:
+        return default
+
+    values: list[int] = []
+    for part in raw.split(","):
+        item = part.strip()
+        if not item:
+            continue
+        try:
+            value = int(item)
+        except ValueError as exc:
+            raise ValueError(f'La variable "{key}" debe contener IDs enteros separados por coma.') from exc
+        if value <= 0:
+            raise ValueError(f'La variable "{key}" solo puede contener IDs mayores a cero.')
+        values.append(value)
+
+    if not values:
+        raise ValueError(f'La variable "{key}" debe contener al menos un ID.')
+
+    return tuple(values)
 
 
 def _strip_trailing_slashes(value: str) -> str:

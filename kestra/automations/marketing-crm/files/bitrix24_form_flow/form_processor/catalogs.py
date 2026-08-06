@@ -60,6 +60,8 @@ PROVINCIAS = Catalog(
         ("Chubut", "217"),
         ("Jujuy", "219"),
         ("Buenos Aires", "221"),
+        ("CABA", "4145"),
+        ("Ciudad Autonoma de Buenos Aires", "4145"),
         ("Chaco", "255"),
         ("Corrientes", "257"),
         ("Entre Rios", "259"),
@@ -77,6 +79,7 @@ PROVINCIAS = Catalog(
         ("Tierra del Fuego", "283"),
         ("Tucuman", "285"),
         ("No contesta", "431"),
+        ("Otros", "4147"),
     ]
 )
 
@@ -192,5 +195,6 @@ BANCOS = Catalog(
         ("Reba Compania Financiera S.A.", "587"),
         ("Credito Regional Compania Financiera S.A.", "589"),
         ("Banco Coinag S.A.", "591"),
+        ("Otros", "593"),
     ]
 )
