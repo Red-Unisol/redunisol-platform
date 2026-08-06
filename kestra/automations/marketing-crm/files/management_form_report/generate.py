@@ -199,7 +199,8 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         if summary.cell(number, 1).value == "Conversión formulario → lead":
             summary.cell(number, 2).number_format = "0.00%"
     summary["D1"], summary["E1"] = "Resultado", "Cantidad"
-    categories = [(key, counts[key]) for key in ("Lead aprobado", "Lead rechazado en Bitrix", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")]
+    category_names = ("Lead aprobado", "Lead rechazado en Bitrix", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")
+    categories = [(key, counts[key]) for key in category_names]
     for index, item in enumerate(categories, 2):
         summary.cell(index, 4, item[0])
         summary.cell(index, 5, item[1])
@@ -208,6 +209,43 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
     pie.add_data(Reference(summary, min_col=5, min_row=1, max_row=7), titles_from_data=True)
     pie.set_categories(Reference(summary, min_col=4, min_row=2, max_row=7))
     summary.add_chart(pie, "G2")
+
+    daily_ws = wb.create_sheet("Evolución diaria")
+    daily_ws.append(["Fecha", "Formularios", "Leads confirmados", "Conversión", *category_names])
+    rows_by_day: dict[Any, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row["date"]:
+            rows_by_day.setdefault(row["date"].date(), []).append(row)
+    for day, day_rows in sorted(rows_by_day.items()):
+        day_counts = Counter(row["category"] for row in day_rows)
+        day_leads = {row["lead_id"] for row in day_rows if row["lead_id"]}
+        daily_ws.append([
+            day,
+            len(day_rows),
+            len(day_leads),
+            len(day_leads) / len(day_rows),
+            *(day_counts[category] for category in category_names),
+        ])
+    compact(daily_ws, {1: 14, 2: 16, 3: 20, 4: 14})
+    for number in range(2, daily_ws.max_row + 1):
+        daily_ws.cell(number, 1).number_format = "dd/mm/yyyy"
+        daily_ws.cell(number, 4).number_format = "0.00%"
+    if daily_ws.max_row > 1:
+        daily_chart = BarChart()
+        daily_chart.type = "col"
+        daily_chart.grouping = "stacked"
+        daily_chart.overlap = 100
+        daily_chart.title = "Resultados de formularios por día"
+        daily_chart.y_axis.title = "Cantidad"
+        daily_chart.x_axis.title = "Fecha"
+        daily_chart.add_data(
+            Reference(daily_ws, min_col=5, max_col=10, min_row=1, max_row=daily_ws.max_row),
+            titles_from_data=True,
+        )
+        daily_chart.set_categories(Reference(daily_ws, min_col=1, min_row=2, max_row=daily_ws.max_row))
+        daily_chart.height = 9
+        daily_chart.width = 20
+        daily_ws.add_chart(daily_chart, "L2")
 
     lead_ws = wb.create_sheet("Leads en Bitrix")
     lead_ws.append(["fecha", "lead_id", "contact_id", "nombre", "cuil", "email", "whatsapp", "provincia", "situación laboral", "banco de cobro", "origen", "utm_source", "utm_medium", "utm_campaign", "landing", "resultado", "motivo", "ejecución Kestra", "subejecución", "revisión"])

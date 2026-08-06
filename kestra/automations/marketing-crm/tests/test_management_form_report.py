@@ -53,6 +53,23 @@ class ManagementFormReportTest(unittest.TestCase):
             self.assertTrue(dated.exists())
             self.assertEqual(latest.read_bytes(), dated.read_bytes())
 
+    def test_builds_daily_breakdown_with_chart(self):
+        rows = [
+            REPORT.normalized(execution("one", outputs={"action": "created", "lead_id": "42"}), None),
+            REPORT.normalized(execution("two", outputs={"action": "rejected"}), None),
+        ]
+
+        workbook = REPORT.build(rows)
+        sheet = workbook["Evolución diaria"]
+
+        self.assertEqual(sheet.cell(2, 1).value, REPORT.datetime(2026, 8, 5).date())
+        self.assertEqual(sheet.cell(2, 2).value, 2)
+        self.assertEqual(sheet.cell(2, 3).value, 1)
+        self.assertEqual(sheet.cell(2, 4).value, 0.5)
+        self.assertEqual(sheet.cell(2, 5).value, 1)
+        self.assertEqual(sheet.cell(2, 7).value, 1)
+        self.assertEqual(len(sheet._charts), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
