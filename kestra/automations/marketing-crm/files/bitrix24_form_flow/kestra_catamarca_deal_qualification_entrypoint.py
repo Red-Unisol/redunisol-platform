@@ -30,6 +30,7 @@ def main() -> int:
             "stage_id": "",
             "reason": "internal_error",
             "assigned_by_id": "",
+            "routing_bucket": "",
             "commercial_line": "",
             "message": str(exc),
         }

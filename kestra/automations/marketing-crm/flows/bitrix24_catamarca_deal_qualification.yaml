@@ -46,10 +46,12 @@ tasks:
       BITRIX24_DEAL_STAGE_ID: "{{ envs.bitrix24_deal_stage_id ?? 'C1:NEW' }}"
       BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID: "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"
       BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID: "{{ envs.bitrix24_deal_manual_review_stage_id ?? 'C1:KESTRA_REVIEW' }}"
+      BITRIX24_DEAL_ROUTING_REVIEW_STAGE_ID: "{{ envs.bitrix24_deal_routing_review_stage_id ?? 'C1:KESTRA_ROUTE_REVIEW' }}"
       BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_bcra_rejected_stage_id ?? 'C1:5' }}"
       BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
       BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID: "{{ envs.bitrix24_deal_distribution_notification_user_id ?? '57' }}"
       BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
+      BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
       BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
@@ -96,6 +98,9 @@ outputs:
   - id: assigned_by_id
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
+  - id: routing_bucket
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.routing_bucket : '' }}"
   - id: commercial_line
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars.commercial_line is defined ? outputs.calificar_negociacion.vars.commercial_line : '' }}"
