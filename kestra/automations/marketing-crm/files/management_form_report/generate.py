@@ -106,7 +106,40 @@ def cross_children(parents: list[dict[str, Any]], children: list[dict[str, Any]]
     return result
 
 
-def normalized(row: dict[str, Any], child: dict[str, Any] | None) -> dict[str, Any]:
+def prequalification_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    request = body(row)
+    return tuple(str(request.get(key) or "").strip().casefold() for key in ("province", "employment_status", "payment_bank"))
+
+
+def cross_prequalifications(parents: list[dict[str, Any]], prequalifications: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    available: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in prequalifications:
+        available.setdefault(prequalification_key(row), []).append(row)
+    for rows in available.values():
+        rows.sort(key=lambda item: iso((item.get("state") or {}).get("startDate")) or datetime.min)
+    used: set[str] = set()
+    result: dict[str, dict[str, Any]] = {}
+    for parent in sorted(parents, key=lambda item: iso((item.get("state") or {}).get("startDate")) or datetime.min):
+        parent_date = iso((parent.get("state") or {}).get("startDate"))
+        if not parent_date:
+            continue
+        candidates = []
+        for row in available.get(prequalification_key(parent), []):
+            row_id = str(row.get("id") or "")
+            row_date = iso((row.get("state") or {}).get("startDate"))
+            if row_id in used or not row_date:
+                continue
+            delta = (parent_date - row_date).total_seconds()
+            if 0 <= delta <= 120:
+                candidates.append((delta, row))
+        if candidates:
+            matched = min(candidates, key=lambda item: item[0])[1]
+            used.add(str(matched.get("id") or ""))
+            result[str(parent.get("id") or "")] = matched
+    return result
+
+
+def normalized(row: dict[str, Any], child: dict[str, Any] | None, prequalification: dict[str, Any] | None = None) -> dict[str, Any]:
     request = body(row)
     parent_outputs = row.get("outputs") or {}
     child_outputs = (child or {}).get("outputs") or {}
@@ -115,16 +148,27 @@ def normalized(row: dict[str, Any], child: dict[str, Any] | None) -> dict[str, A
     lead_id = str(outputs.get("lead_id") or "")
     technical_error = state(row) in {"FAILED", "KILLED"} or (child is not None and state(child) in {"FAILED", "KILLED"})
     reason = str(outputs.get("message") or outputs.get("reason") or parent_outputs.get("message") or parent_outputs.get("reason") or "")
-    if lead_id:
-        category = "Lead aprobado" if action != "rejected" else "Lead rechazado en Bitrix"
-    elif technical_error:
+    prequalification_outputs = (prequalification or {}).get("outputs") or {}
+    embedded_available = request.get("prequalification_available")
+    prequalification_available = embedded_available is True or prequalification is not None
+    prequalified = request.get("prequalified") if embedded_available is not None else prequalification_outputs.get("prequalified")
+    prequalification_reason = str(request.get("prequalification_reason") or prequalification_outputs.get("reason") or "")
+    prequalification_message = str(request.get("prequalification_message") or prequalification_outputs.get("message") or "")
+    rule_version = str(request.get("prequalification_rule_version") or prequalification_outputs.get("rule_version") or "")
+    if not lead_id and technical_error:
         category = "Error técnico"
-    elif action == "rejected":
+    elif not lead_id and action == "rejected":
         category = "Rechazo antes de Bitrix"
-    elif action == "error":
+    elif not lead_id and action == "error":
         category = "Error de datos"
-    else:
+    elif not lead_id:
         category = "Pendiente de verificación"
+    elif prequalification_available and prequalified is True:
+        category = "Precalificado"
+    elif prequalification_available:
+        category = "Rechazado en precalificación"
+    elif lead_id:
+        category = "Sin precalificación histórica"
     return {
         "date": iso((row.get("state") or {}).get("startDate")),
         "execution_id": str(row.get("id") or ""),
@@ -135,6 +179,10 @@ def normalized(row: dict[str, Any], child: dict[str, Any] | None) -> dict[str, A
         "reason": reason,
         "category": category,
         "lead_id": lead_id,
+        "prequalified": prequalified,
+        "prequalification_reason": prequalification_reason,
+        "prequalification_message": prequalification_message,
+        "prequalification_rule_version": rule_version,
         "contact_id": str(outputs.get("contact_id") or ""),
         "name": request.get("full_name"),
         "cuil": request.get("cuil"),
@@ -182,8 +230,8 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         ("Período", f"{min(dates):%d/%m/%Y} al {max(dates):%d/%m/%Y}" if dates else ""),
         ("Formularios recibidos", len(rows)),
         ("Leads confirmados en Bitrix", len({row["lead_id"] for row in leads})),
-        ("Leads aprobados/ingresados", counts["Lead aprobado"]),
-        ("Leads rechazados en Bitrix", counts["Lead rechazado en Bitrix"]),
+        ("Formularios precalificados", counts["Precalificado"]),
+        ("Formularios rechazados", counts["Rechazado en precalificación"]),
         ("Conversión formulario → lead", len(leads) / len(rows) if rows else 0),
         ("Rechazados antes de Bitrix", counts["Rechazo antes de Bitrix"]),
         ("Errores de datos", counts["Error de datos"]),
@@ -199,15 +247,15 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         if summary.cell(number, 1).value == "Conversión formulario → lead":
             summary.cell(number, 2).number_format = "0.00%"
     summary["D1"], summary["E1"] = "Resultado", "Cantidad"
-    category_names = ("Lead aprobado", "Lead rechazado en Bitrix", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")
+    category_names = ("Precalificado", "Rechazado en precalificación", "Sin precalificación histórica", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")
     categories = [(key, counts[key]) for key in category_names]
     for index, item in enumerate(categories, 2):
         summary.cell(index, 4, item[0])
         summary.cell(index, 5, item[1])
     pie = PieChart()
     pie.title = "Resultado de formularios"
-    pie.add_data(Reference(summary, min_col=5, min_row=1, max_row=7), titles_from_data=True)
-    pie.set_categories(Reference(summary, min_col=4, min_row=2, max_row=7))
+    pie.add_data(Reference(summary, min_col=5, min_row=1, max_row=1 + len(category_names)), titles_from_data=True)
+    pie.set_categories(Reference(summary, min_col=4, min_row=2, max_row=1 + len(category_names)))
     summary.add_chart(pie, "G2")
 
     daily_ws = wb.create_sheet("Evolución diaria")
@@ -239,7 +287,7 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         daily_chart.y_axis.title = "Cantidad"
         daily_chart.x_axis.title = "Fecha"
         daily_chart.add_data(
-            Reference(daily_ws, min_col=5, max_col=10, min_row=1, max_row=daily_ws.max_row),
+            Reference(daily_ws, min_col=5, max_col=4 + len(category_names), min_row=1, max_row=daily_ws.max_row),
             titles_from_data=True,
         )
         daily_chart.set_categories(Reference(daily_ws, min_col=1, min_row=2, max_row=daily_ws.max_row))
@@ -248,21 +296,21 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         daily_ws.add_chart(daily_chart, "L2")
 
     lead_ws = wb.create_sheet("Leads en Bitrix")
-    lead_ws.append(["fecha", "lead_id", "contact_id", "nombre", "cuil", "email", "whatsapp", "provincia", "situación laboral", "banco de cobro", "origen", "utm_source", "utm_medium", "utm_campaign", "landing", "resultado", "motivo", "ejecución Kestra", "subejecución", "revisión"])
+    lead_ws.append(["fecha", "lead_id", "contact_id", "nombre", "cuil", "email", "whatsapp", "provincia", "situación laboral", "banco de cobro", "origen", "utm_source", "utm_medium", "utm_campaign", "landing", "precalificación", "motivo", "detalle", "versión reglas", "ejecución Kestra", "subejecución", "revisión"])
     for row in sorted(leads, key=lambda item: item["date"] or datetime.min):
-        lead_ws.append([row[key] for key in ("date", "lead_id", "contact_id", "name", "cuil", "email", "whatsapp", "province", "employment", "bank", "source", "utm_source", "utm_medium", "utm_campaign", "landing", "category", "reason", "execution_id", "child_execution_id", "revision")])
+        lead_ws.append([row[key] for key in ("date", "lead_id", "contact_id", "name", "cuil", "email", "whatsapp", "province", "employment", "bank", "source", "utm_source", "utm_medium", "utm_campaign", "landing", "category", "prequalification_reason", "prequalification_message", "prequalification_rule_version", "execution_id", "child_execution_id", "revision")])
     compact(lead_ws, {4: 28, 6: 32, 10: 38, 14: 42, 17: 62, 18: 28, 19: 28})
 
     rejected_ws = wb.create_sheet("No enviados")
     rejected_ws.append(["fecha", "nombre", "cuil", "email", "whatsapp", "provincia", "origen", "resultado", "motivo", "acción recomendada", "estado Kestra", "ejecución Kestra", "revisión"])
-    recommendations = {"Rechazo antes de Bitrix": "Sin acción técnica", "Error de datos": "Corregir validación o catálogo", "Error técnico": "Reintentar y revisar logs", "Pendiente de verificación": "Revisar manualmente"}
+    recommendations = {"Rechazado en precalificación": "Sin acción técnica", "Rechazo antes de Bitrix": "Sin acción técnica", "Error de datos": "Corregir validación o catálogo", "Error técnico": "Reintentar y revisar logs", "Pendiente de verificación": "Revisar manualmente"}
     for row in sorted((item for item in rows if not item["lead_id"]), key=lambda item: item["date"] or datetime.min):
         rejected_ws.append([row["date"], row["name"], row["cuil"], row["email"], row["whatsapp"], row["province"], row["source"], row["category"], row["reason"], recommendations[row["category"]], row["technical_state"], row["execution_id"], row["revision"]])
     compact(rejected_ws, {2: 28, 4: 32, 8: 28, 9: 62, 10: 44, 12: 28})
 
     quality = wb.create_sheet("Motivos y Calidad")
     quality.append(["Resultado", "Motivo", "Cantidad", "% total", "Acción recomendada"])
-    reason_counts = Counter((row["category"], row["reason"]) for row in rows if not row["lead_id"])
+    reason_counts = Counter((row["category"], row["prequalification_message"] or row["reason"]) for row in rows if row["category"] in recommendations)
     for (category, reason), count in reason_counts.most_common():
         quality.append([category, reason, count, count / len(rows) if rows else 0, recommendations[category]])
     compact(quality, {1: 28, 2: 72, 5: 48})
@@ -309,8 +357,10 @@ def main() -> None:
     session.auth = (os.environ["REPORTS_KESTRA_USERNAME"], os.environ["REPORTS_KESTRA_PASSWORD"])
     parents = executions(session, base, tenant, namespace, "bitrix24_form_webhook")
     children = executions(session, base, tenant, namespace, "bitrix24_form_persistence")
+    prequalifications = executions(session, base, tenant, namespace, "commercial_prequalification_webhook")
     crossed = cross_children(parents, children)
-    rows = [normalized(row, crossed.get(str(row.get("id")))) for row in parents]
+    prequalification_cross = cross_prequalifications(parents, prequalifications)
+    rows = [normalized(row, crossed.get(str(row.get("id"))), prequalification_cross.get(str(row.get("id")))) for row in parents]
     latest, dated = publish(build(rows), Path(os.getenv("REPORTS_ROOT", "/reports")), datetime.now())
     print(json.dumps({"ok": True, "forms": len(rows), "leads": sum(bool(row["lead_id"]) for row in rows), "latest": str(latest), "history": str(dated)}))
 
