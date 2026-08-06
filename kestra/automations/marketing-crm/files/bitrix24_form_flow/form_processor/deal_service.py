@@ -408,7 +408,7 @@ def notify_distribution_supervisor(
     logger: Logger,
 ) -> bool:
     recipient_id = config.deal.distribution_notification_user_id
-    deal_url = f"{config.base_url.rstrip('/')}/crm/deal/details/{deal_id}/"
+    deal_url = f"{_portal_base_url(config.base_url)}/crm/deal/details/{deal_id}/"
     safe_deal_title = _notification_text(deal_title) or f"Negociacion #{deal_id}"
     action_label = {
         "approved": "Aprobada",
@@ -479,6 +479,13 @@ def _user_display_name(
 
 def _notification_text(value: object) -> str:
     return str(value or "").replace("[", "(").replace("]", ")").strip()
+
+
+def _portal_base_url(api_base_url: str) -> str:
+    base_url = api_base_url.rstrip("/")
+    if base_url.lower().endswith("/rest"):
+        return base_url[:-5]
+    return base_url
 
 
 def _list_open_line_activity_ids(

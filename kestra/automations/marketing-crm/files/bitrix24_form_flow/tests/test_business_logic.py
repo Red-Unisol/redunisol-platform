@@ -3260,7 +3260,11 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.notifications[0]["USER_ID"], 57)
         notification = client.notifications[0]
         self.assertIn("Nombre: Credito de prueba Catamarca", notification["MESSAGE"])
-        self.assertIn("Negociacion: [URL=", notification["MESSAGE"])
+        self.assertIn(
+            "Negociacion: [URL=https://example.bitrix24.com/crm/deal/details/930/]#930[/URL]",
+            notification["MESSAGE"],
+        )
+        self.assertNotIn("/rest/crm/deal/", notification["MESSAGE"])
         self.assertIn("Resultado: Aprobada", notification["MESSAGE"])
         self.assertIn("[USER=68579]Daniel Carrera[/USER]", notification["MESSAGE"])
         self.assertIn("Chat transferido: Sí", notification["MESSAGE"])
