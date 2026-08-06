@@ -15,15 +15,27 @@ def normalize_cuil(raw_value: object) -> tuple[str, str]:
 def normalize_whatsapp(raw_value: object) -> str:
     digits = re.sub(r"\D", "", str(raw_value or ""))
 
-    if len(digits) == 10:
-        return f"+549{digits}"
-    if len(digits) == 12 and digits.startswith("54"):
-        return f"+{digits}"
+    if digits.startswith("00"):
+        digits = digits[2:]
+
     if len(digits) == 13 and digits.startswith("549"):
-        return f"+{digits}"
+        local_digits = digits[3:]
+    elif len(digits) == 12 and digits.startswith("54"):
+        local_digits = digits[2:]
+    elif len(digits) == 10:
+        local_digits = digits
+    else:
+        local_digits = ""
+
+    if (
+        len(local_digits) == 10
+        and local_digits[0] != "0"
+        and len(set(local_digits)) > 1
+    ):
+        return f"+549{local_digits}"
 
     raise ValueError(
-        'El campo "whatsapp" debe venir con 10 digitos locales o en formato internacional argentino.'
+        'El campo "whatsapp" debe contener un celular argentino valido de 10 digitos, con o sin +54 9.'
     )
 
 

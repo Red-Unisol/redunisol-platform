@@ -48,7 +48,33 @@ class FormSubmissionRequest extends FormRequest
         return [
             'cuil' => ['nullable', 'string', 'max:32'],
             'email' => ['nullable', 'email:rfc', 'max:255'],
-            'celular' => ['nullable', 'string', 'max:32'],
+            'celular' => [
+                'nullable',
+                'string',
+                'max:32',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+
+                    if (str_starts_with($digits, '00')) {
+                        $digits = substr($digits, 2);
+                    }
+
+                    $localDigits = match (true) {
+                        strlen($digits) === 13 && str_starts_with($digits, '549') => substr($digits, 3),
+                        strlen($digits) === 12 && str_starts_with($digits, '54') => substr($digits, 2),
+                        strlen($digits) === 10 => $digits,
+                        default => '',
+                    };
+
+                    if (
+                        strlen($localDigits) !== 10
+                        || str_starts_with($localDigits, '0')
+                        || count(array_unique(str_split($localDigits))) === 1
+                    ) {
+                        $fail('El WhatsApp debe ser un celular argentino válido de 10 dígitos.');
+                    }
+                },
+            ],
             'provincia' => ['nullable', 'string', 'max:120'],
             'situacion_laboral' => ['nullable', 'string', 'max:120'],
             'banco' => ['nullable', 'string', 'max:255'],
