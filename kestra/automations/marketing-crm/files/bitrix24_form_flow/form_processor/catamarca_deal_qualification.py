@@ -12,6 +12,7 @@ from .deal_service import (
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
     notify_distribution_supervisor,
+    notify_unmatched_routing,
     resolve_round_robin_assignee,
 )
 from .lead_service import (
@@ -21,6 +22,7 @@ from .lead_service import (
     lead_has_commercial_owner,
 )
 from .logger import Logger, create_logger
+from .routing_bucket import resolve_routing_bucket
 
 
 @dataclass(frozen=True)
@@ -105,18 +107,58 @@ def qualify_catamarca_deal(
         )
 
     lead = get_lead(client, lead_id, active_logger)
-    decision = _evaluate_catamarca(client, config, lead)
     contact_id = _optional_int(deal.get("contactId") or lead.get("CONTACT_ID"))
+    deal_title = str(deal.get("title") or deal.get("TITLE") or "").strip()
+    routing = resolve_routing_bucket(config, lead)
+    if routing.bucket is None:
+        client.call(
+            "crm.item.update",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "id": deal_id_int,
+                "fields": {"stageId": config.deal.routing_review_stage_id},
+            },
+        )
+        notify_unmatched_routing(
+            client,
+            config,
+            deal_id=deal_id_int,
+            deal_title=deal_title,
+            province=routing.province,
+            reason=routing.reason,
+            logger=active_logger,
+        )
+        active_logger.info(
+            f"Negociacion {deal_id_int} sin bucket: {routing.reason}; "
+            "no se asigna vendedor ni se transfiere chat."
+        )
+        return _result(
+            action="routing_review",
+            has_pending=False,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=config.deal.routing_review_stage_id,
+            reason=routing.reason,
+            message="Negociacion enviada a revision por no tener bucket de distribucion.",
+        )
+
+    bucket = routing.bucket
+    decision = _evaluate_catamarca(client, config, lead)
     assigned_by_id = resolve_round_robin_assignee(
         client,
         config,
         contact_id=contact_id,
         lead_id=lead_id,
+        bucket_key=bucket.key,
+        bucket_field=config.deal.routing_bucket_field,
+        pool=bucket.seller_ids,
+        legacy_province_label=bucket.legacy_province_label,
         logger=active_logger,
     )
     update_fields: dict[str, Any] = {
         "stageId": decision.stage_id,
         "assignedById": assigned_by_id,
+        config.deal.routing_bucket_field: bucket.key,
     }
     if decision.commercial_line is not None:
         update_fields[config.deal.commercial_line_field] = decision.commercial_line
@@ -148,7 +190,8 @@ def qualify_catamarca_deal(
         client,
         config,
         deal_id=deal_id_int,
-        deal_title=str(deal.get("title") or deal.get("TITLE") or "").strip(),
+        deal_title=deal_title,
+        bucket_label=bucket.label,
         assigned_by_id=assigned_by_id,
         action=decision.action,
         chat_transferred=transferred_chat_count > 0,
@@ -166,6 +209,7 @@ def qualify_catamarca_deal(
         stage_id=decision.stage_id,
         reason=decision.reason,
         assigned_by_id=assigned_by_id,
+        routing_bucket=bucket.key,
         commercial_line=decision.commercial_line,
         message="Calificacion comercial Catamarca aplicada a la negociacion.",
     )
@@ -335,6 +379,7 @@ def _result(
     stage_id: str = "",
     reason: str = "",
     assigned_by_id: int | None = None,
+    routing_bucket: str = "",
     commercial_line: str | None = None,
 ) -> dict[str, object]:
     return {
@@ -347,5 +392,6 @@ def _result(
         "stage_id": stage_id,
         "reason": reason,
         "assigned_by_id": assigned_by_id,
+        "routing_bucket": routing_bucket,
         "commercial_line": commercial_line,
     }

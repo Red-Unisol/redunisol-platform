@@ -52,10 +52,12 @@ DEFAULT_DEAL_CONFIG = {
     "stage_id": "C1:NEW",
     "pending_qualification_stage_id": "C1:KESTRA_PENDING",
     "manual_review_stage_id": "C1:KESTRA_REVIEW",
+    "routing_review_stage_id": "C1:KESTRA_ROUTE_REVIEW",
     "bcra_rejected_stage_id": "C1:5",
     "provisional_user_id": 57,
     "distribution_notification_user_id": 57,
     "commercial_line_field": "ufCrm_659EBB0445E8E",
+    "routing_bucket_field": "ufCrmRouteBucket",
     "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
     "round_robin_lookback_days": 30,
 }
@@ -152,10 +154,12 @@ class DealConfig:
     stage_id: str
     pending_qualification_stage_id: str
     manual_review_stage_id: str
+    routing_review_stage_id: str
     bcra_rejected_stage_id: str
     provisional_user_id: int
     distribution_notification_user_id: int
     commercial_line_field: str
+    routing_bucket_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
 
@@ -353,6 +357,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["manual_review_stage_id"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["manual_review_stage_id"],
+            routing_review_stage_id=source.get(
+                "BITRIX24_DEAL_ROUTING_REVIEW_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
             bcra_rejected_stage_id=source.get(
                 "BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID",
                 DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
@@ -373,6 +382,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["commercial_line_field"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["commercial_line_field"],
+            routing_bucket_field=source.get(
+                "BITRIX24_DEAL_ROUTING_BUCKET_FIELD",
+                DEFAULT_DEAL_CONFIG["routing_bucket_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["routing_bucket_field"],
             round_robin_user_ids=_optional_int_tuple(
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",

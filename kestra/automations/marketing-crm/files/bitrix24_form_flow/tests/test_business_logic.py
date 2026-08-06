@@ -480,10 +480,12 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.stage_id, "C1:NEW")
         self.assertEqual(config.deal.pending_qualification_stage_id, "C1:KESTRA_PENDING")
         self.assertEqual(config.deal.manual_review_stage_id, "C1:KESTRA_REVIEW")
+        self.assertEqual(config.deal.routing_review_stage_id, "C1:KESTRA_ROUTE_REVIEW")
         self.assertEqual(config.deal.bcra_rejected_stage_id, "C1:5")
         self.assertEqual(config.deal.provisional_user_id, 57)
         self.assertEqual(config.deal.distribution_notification_user_id, 57)
         self.assertEqual(config.deal.commercial_line_field, "ufCrm_659EBB0445E8E")
+        self.assertEqual(config.deal.routing_bucket_field, "ufCrmRouteBucket")
         self.assertEqual(
             config.deal.round_robin_user_ids,
             (68579, 10451, 29, 90231, 71159, 113457, 113455),
@@ -3159,18 +3161,57 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "amejuca_premium")
         self.assertEqual(client.deals[930]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[930]["assignedById"], 68579)
+        self.assertEqual(client.deals[930]["ufCrmRouteBucket"], "catamarca_general")
         self.assertEqual(client.deals[930]["ufCrm_659EBB0445E8E"], "AMEJUCA Premium")
         routing_queries = [
             payload
             for method, payload in client.calls
             if method == "crm.item.list" and "@assignedById" in (payload.get("filter") or {})
         ]
-        self.assertEqual(len(routing_queries), 1)
+        self.assertEqual(len(routing_queries), 2)
+        bucket_query = next(
+            payload
+            for payload in routing_queries
+            if "=ufCrmRouteBucket" in payload["filter"]
+        )
         self.assertEqual(
-            routing_queries[0]["filter"]["@assignedById"],
+            bucket_query["filter"]["@assignedById"],
             [68579, 10451, 29, 90231, 71159, 113457, 113455],
         )
-        self.assertEqual(routing_queries[0]["start"], 0)
+        self.assertEqual(bucket_query["filter"]["=ufCrmRouteBucket"], "catamarca_general")
+        self.assertEqual(bucket_query["start"], 0)
+
+    def test_catamarca_bucket_reuses_legacy_catamarca_contact_assignee(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[921] = self._catamarca_enriched_lead(921, bcra_entities=[])
+        client.deals[929] = {
+            "id": 929,
+            "categoryId": 1,
+            "stageId": "C1:WON",
+            "leadId": 800,
+            "contactId": 101,
+            "assignedById": 71159,
+            "ufCrm_1684346013612": "75",
+            "createdTime": "2026-07-30T12:00:00+00:00",
+        }
+        client.deals[931] = {
+            "id": 931,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 921,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        result = qualify_catamarca_deal(
+            931,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["routing_bucket"], "catamarca_general")
+        self.assertEqual(client.deals[931]["assignedById"], 71159)
 
     def test_catamarca_pending_deal_reuses_recent_contact_assignee(self) -> None:
         client = FakeBitrixClient()
@@ -3182,6 +3223,7 @@ class BusinessLogicTests(unittest.TestCase):
             "leadId": 800,
             "contactId": 101,
             "assignedById": 71159,
+            "ufCrmRouteBucket": "catamarca_general",
             "createdTime": "2026-07-30T12:00:00+00:00",
         }
         client.deals[931] = {
@@ -3203,6 +3245,37 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "approved")
         self.assertEqual(client.deals[931]["assignedById"], 71159)
+
+    def test_catamarca_bucket_ignores_legacy_cordoba_contact_assignee(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[921] = self._catamarca_enriched_lead(921, bcra_entities=[])
+        client.deals[929] = {
+            "id": 929,
+            "categoryId": 1,
+            "stageId": "C1:WON",
+            "leadId": 800,
+            "contactId": 101,
+            "assignedById": 71159,
+            "ufCrm_1684346013612": "69",
+            "createdTime": "2026-07-30T12:00:00+00:00",
+        }
+        client.deals[931] = {
+            "id": 931,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 921,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+
+        qualify_catamarca_deal(
+            931,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(client.deals[931]["assignedById"], 68579)
 
     def test_catamarca_skips_offline_recurrent_assignee_and_uses_next_online(self) -> None:
         client = FakeBitrixClient()
@@ -3267,7 +3340,43 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertNotIn("/rest/crm/deal/", notification["MESSAGE"])
         self.assertIn("Resultado: Aprobada", notification["MESSAGE"])
         self.assertIn("[USER=68579]Daniel Carrera[/USER]", notification["MESSAGE"])
+        self.assertIn("Bucket: Catamarca - General", notification["MESSAGE"])
         self.assertIn("Chat transferido: Sí", notification["MESSAGE"])
+
+    def test_non_catamarca_deal_goes_to_routing_review_without_distribution(self) -> None:
+        client = FakeBitrixClient()
+        lead = self._catamarca_enriched_lead(922, bcra_entities=[])
+        lead["TITLE"] = "Maria Cordoba"
+        lead["UF_CRM_64E65D2B2136C"] = "209"
+        client.leads[922] = lead
+        client.deals[934] = {
+            "id": 934,
+            "title": "Maria Cordoba",
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 922,
+            "contactId": 101,
+            "assignedById": 57,
+        }
+        client.open_line_chats[("contact", 101)] = [780]
+
+        result = qualify_catamarca_deal(
+            934,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "routing_review")
+        self.assertEqual(result["reason"], "no_matching_bucket")
+        self.assertEqual(result["routing_bucket"], "")
+        self.assertEqual(client.deals[934]["stageId"], "C1:KESTRA_ROUTE_REVIEW")
+        self.assertEqual(client.deals[934]["assignedById"], 57)
+        self.assertNotIn("ufCrmRouteBucket", client.deals[934])
+        self.assertEqual(client.chat_transfers, [])
+        self.assertIn("Negociacion sin bucket", client.notifications[0]["MESSAGE"])
+        self.assertIn("Provincia: Cordoba", client.notifications[0]["MESSAGE"])
+        self.assertIn("No se asigno vendedor ni se transfirio el chat", client.notifications[0]["MESSAGE"])
 
     def test_catamarca_does_not_transfer_historical_chat_without_current_session(self) -> None:
         client = FakeBitrixClient()

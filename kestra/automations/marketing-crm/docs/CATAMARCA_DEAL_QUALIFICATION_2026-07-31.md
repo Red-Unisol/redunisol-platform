@@ -36,10 +36,16 @@ Calificacion definitiva Catamarca
 
 - `C1:KESTRA_PENDING`: `PENDIENTE CALIFICACION KESTRA`
 - `C1:KESTRA_REVIEW`: `REVISION MANUAL KESTRA`
+- `C1:KESTRA_ROUTE_REVIEW`: `REVISION DE ENRUTAMIENTO KESTRA`
 - `C1:NEW`: `PRESENTACION`
 - `C1:5`: `SIT. NEG. EN BCRA`
 
 Las dos etapas Kestra fueron creadas por API sin mover negociaciones existentes.
+
+Provisionado en Bitrix el 2026-08-06:
+
+- campo de negociacion `UF_CRM_ROUTE_BUCKET` (ID `1801`);
+- etapa `C1:KESTRA_ROUTE_REVIEW` (ID `807`).
 
 ## Reglas Automatizadas
 
@@ -51,13 +57,31 @@ Las dos etapas Kestra fueron creadas por API sin mover negociaciones existentes.
 - Si no corresponde rechazo duro ni `AMEJUCA Premium`: `AMEJUCA Especial`.
 - Snapshot faltante o error de proveedor: revision manual.
 
-## Distribucion
+## Buckets Y Distribucion
 
-La negociacion nace asignada a Maru. Al aprobar:
+La negociacion nace asignada a Maru. Antes de distribuir, Kestra resuelve un bucket
+con los datos enriquecidos disponibles en la negociacion y su lead vinculado.
 
-- si el contacto tuvo una negociacion previa con alguien del pool, conserva ese vendedor;
-- en otro caso se elige el vendedor con menor cantidad de negociaciones en los ultimos 30 dias;
-- las recurrencias no incrementan artificialmente la carga del round-robin porque la eleccion usa la carga real ya asignada.
+Bucket actual:
+
+- clave: `catamarca_general`
+- etiqueta: `Catamarca - General`
+- criterio: provincia Catamarca
+- campo de deal: `UF_CRM_ROUTE_BUCKET` (`ufCrmRouteBucket` en CRM universal)
+
+Si la provincia no coincide con ningun bucket, la negociacion pasa a
+`C1:KESTRA_ROUTE_REVIEW`: no cambia de responsable, no transfiere el chat y Maru
+recibe una notificacion explicita. Esto evita que Córdoba u otras provincias entren
+al pool Catamarca aunque hayan llegado a `C1:KESTRA_PENDING`.
+
+Para una negociacion con bucket:
+
+- si el contacto tuvo una negociacion previa del mismo bucket con alguien disponible
+  del pool, conserva ese vendedor;
+- si no, toma la ultima negociacion distribuida dentro del mismo bucket y asigna al
+  siguiente vendedor disponible segun el orden configurado;
+- la negociacion, el chat y la notificacion comparten el mismo vendedor;
+- la notificacion informa el bucket aplicado.
 
 Pool actual: Daniel Carrera (`68579`), Patricia Contendi (`10451`), Susana Contenti (`29`), Soledad Moyano (`90231`), Natalia Rojo (`71159`), Claudia Algarbe (`113457`) y Daniela Arias (`113455`).
 

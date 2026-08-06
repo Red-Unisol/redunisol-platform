@@ -167,9 +167,12 @@ def resolve_round_robin_assignee(
     *,
     contact_id: int | None,
     lead_id: int,
+    bucket_key: str,
+    bucket_field: str,
+    pool: tuple[int, ...],
+    legacy_province_label: str | None,
     logger: Logger,
 ) -> int:
-    pool = config.deal.round_robin_user_ids
     if not pool:
         raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
 
@@ -177,12 +180,16 @@ def resolve_round_robin_assignee(
     if not online_pool:
         raise RuntimeError("No hay vendedores online disponibles para asignar la negociacion.")
 
+    legacy_filter = _legacy_bucket_filter(client, province_label=legacy_province_label)
     if contact_id is not None:
         previous_assignee = _latest_pool_assignee_for_contact(
             client,
             pool=online_pool,
             contact_id=contact_id,
             lead_id=lead_id,
+            bucket_key=bucket_key,
+            bucket_field=bucket_field,
+            legacy_filter=legacy_filter,
             logger=logger,
         )
         if previous_assignee is not None:
@@ -193,11 +200,30 @@ def resolve_round_robin_assignee(
         filter_={
             "=categoryId": config.deal.category_id,
             "@assignedById": list(pool),
+            f"={bucket_field}": bucket_key,
         },
         order={"createdTime": "DESC", "id": "DESC"},
-        select=["id", "assignedById", "categoryId", "createdTime"],
+        select=["id", "assignedById", "categoryId", "createdTime", bucket_field],
         max_items=1,
     )
+    if not deals and legacy_filter:
+        deals = _list_deals(
+            client,
+            filter_={
+                "=categoryId": config.deal.category_id,
+                "@assignedById": list(pool),
+                **legacy_filter,
+            },
+            order={"createdTime": "DESC", "id": "DESC"},
+            select=[
+                "id",
+                "assignedById",
+                "categoryId",
+                "createdTime",
+                *(field.lstrip("=") for field in legacy_filter),
+            ],
+            max_items=1,
+        )
     pool_set = set(pool)
     for deal in deals:
         raw_assignee = deal.get("assignedById")
@@ -256,14 +282,17 @@ def _latest_pool_assignee_for_contact(
     pool: tuple[int, ...],
     contact_id: int,
     lead_id: int,
+    bucket_key: str,
+    bucket_field: str,
+    legacy_filter: dict[str, Any],
     logger: Logger,
 ) -> int | None:
     logger.info(f"Buscando vendedor recurrente para contacto {contact_id}.")
     deals = _list_deals(
         client,
-        filter_={"=contactId": contact_id},
+        filter_={"=contactId": contact_id, f"={bucket_field}": bucket_key},
         order={"createdTime": "DESC", "id": "DESC"},
-        select=["id", "leadId", "contactId", "assignedById", "createdTime"],
+        select=["id", "leadId", "contactId", "assignedById", "createdTime", bucket_field],
     )
     pool_set = {str(user_id) for user_id in pool}
     for deal in deals:
@@ -273,7 +302,46 @@ def _latest_pool_assignee_for_contact(
         if assigned_by_id in pool_set:
             logger.info(f"Contacto {contact_id} reutiliza vendedor {assigned_by_id}.")
             return int(assigned_by_id)
+    if legacy_filter:
+        legacy_deals = _list_deals(
+            client,
+            filter_={"=contactId": contact_id, **legacy_filter},
+            order={"createdTime": "DESC", "id": "DESC"},
+            select=[
+                "id",
+                "leadId",
+                "contactId",
+                "assignedById",
+                "createdTime",
+                *(field.lstrip("=") for field in legacy_filter),
+            ],
+        )
+        for deal in legacy_deals:
+            if str(deal.get("leadId") or "") == str(lead_id):
+                continue
+            assigned_by_id = str(deal.get("assignedById") or "")
+            if assigned_by_id in pool_set:
+                logger.info(
+                    f"Contacto {contact_id} reutiliza vendedor historico {assigned_by_id}."
+                )
+                return int(assigned_by_id)
     return None
+
+
+def _legacy_bucket_filter(
+    client: BitrixClient,
+    *,
+    province_label: str | None,
+) -> dict[str, Any]:
+    if not province_label:
+        return {}
+    response = client.call("crm.item.fields", {"entityTypeId": DEAL_ENTITY_TYPE_ID})
+    fields = response.get("fields", {}) if isinstance(response, dict) else {}
+    province_field = DEAL_ENUM_FIELD_MAPPINGS["province"]
+    province_value = _enum_id_for_label(fields.get(province_field, {}), province_label)
+    if province_value is None:
+        return {}
+    return {f"={province_field}": province_value}
 
 
 def bind_open_line_activities_to_deal(
@@ -402,6 +470,7 @@ def notify_distribution_supervisor(
     *,
     deal_id: int,
     deal_title: str,
+    bucket_label: str,
     assigned_by_id: int,
     action: str,
     chat_transferred: bool,
@@ -421,13 +490,15 @@ def notify_distribution_supervisor(
         "[B]Nueva negociacion de Catamarca asignada[/B]\n"
         f"Nombre: {safe_deal_title}\n"
         f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
+        f"Bucket: {_notification_text(bucket_label)}\n"
         f"Resultado: {action_label}\n"
         f"Responsable: [USER={assigned_by_id}]{assignee_name}[/USER]\n"
         f"Chat transferido: {chat_label}"
     )
     message_out = (
         f"Nueva negociacion de Catamarca asignada. Nombre: {safe_deal_title}. "
-        f"Negociacion #{deal_id}. Resultado: {action_label}. "
+        f"Negociacion #{deal_id}. Bucket: {_notification_text(bucket_label)}. "
+        f"Resultado: {action_label}. "
         f"Responsable: {assignee_name}. Chat transferido: {chat_label}. {deal_url}"
     )
     try:
@@ -449,6 +520,56 @@ def notify_distribution_supervisor(
     logger.info(
         f"Notificacion {notification_id} enviada al usuario {recipient_id} "
         f"por la negociacion {deal_id}."
+    )
+    return True
+
+
+def notify_unmatched_routing(
+    client: BitrixClient,
+    config: AppConfig,
+    *,
+    deal_id: int,
+    deal_title: str,
+    province: str,
+    reason: str,
+    logger: Logger,
+) -> bool:
+    recipient_id = config.deal.distribution_notification_user_id
+    deal_url = f"{_portal_base_url(config.base_url)}/crm/deal/details/{deal_id}/"
+    safe_deal_title = _notification_text(deal_title) or f"Negociacion #{deal_id}"
+    province_label = _notification_text(province) or "Sin datos"
+    reason_label = {
+        "no_matching_bucket": "No hay un bucket configurado para estos datos",
+        "missing_routing_data": "Faltan datos para determinar el bucket",
+    }.get(reason, _notification_text(reason))
+    message = (
+        "[B]Negociacion sin bucket de distribucion[/B]\n"
+        f"Nombre: {safe_deal_title}\n"
+        f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
+        f"Provincia: {province_label}\n"
+        f"Motivo: {reason_label}\n"
+        "No se asigno vendedor ni se transfirio el chat."
+    )
+    message_out = (
+        f"Negociacion sin bucket de distribucion. Nombre: {safe_deal_title}. "
+        f"Negociacion #{deal_id}. Provincia: {province_label}. Motivo: {reason_label}. "
+        f"No se asigno vendedor ni se transfirio el chat. {deal_url}"
+    )
+    try:
+        notification_id = client.call(
+            "im.notify.system.add",
+            {"USER_ID": recipient_id, "MESSAGE": message, "MESSAGE_OUT": message_out},
+        )
+    except RuntimeError as exc:
+        logger.error(
+            f"No se pudo notificar la falta de bucket de la negociacion {deal_id} "
+            f"al usuario {recipient_id}: {exc}"
+        )
+        return False
+
+    logger.info(
+        f"Notificacion {notification_id} enviada al usuario {recipient_id} "
+        f"por negociacion {deal_id} sin bucket."
     )
     return True
 
