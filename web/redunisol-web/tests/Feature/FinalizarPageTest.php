@@ -34,10 +34,21 @@ it('loads legacy finalizar urls and resolves caja loan data server side', functi
             ->where('finalizar.loan.nombre', 'Juan Perez')
             ->where('finalizar.loan.monto_total_display', '$ 100.000,00')
             ->where('finalizar.loan.monto_cuota_display', '$ 25.000,50')
+            ->where('finalizar.loan.cuotas', '6')
+            ->where('finalizar.loan.prestamo_cft', '320.00')
+            ->where('finalizar.loan.prestamo_tem', '10.00')
             ->where('finalizar.loan.prestamo_tna', '295.00')
+            ->where('finalizar.loan.prestamo_tea', '1830.00')
             ->where('finalizar.metamap.client_id', 'public-client-id')
             ->where('finalizar.metamap.flow_id', '66143f63a6c0b9001c9d8e57')
             ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey.value', '228418')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey2.value', '$ 100.000,00')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey3.value', '6')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey4.value', '$ 25.000,50')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey5.value', '295.00%')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey6.value', '1830.00%')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey7.value', '320.00%')
+            ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey8.value', '10.00%')
         );
 
     Http::assertSent(fn ($request) => $request->url() === 'https://caja.example.test/api/redunisol/finSolicitud/0/228418'
@@ -124,12 +135,54 @@ it('maps its solicitudes and infers the metamap line', function () {
 
 it('does not expose legacy api credentials in inertia props', function () {
     config()->set('finalizar.legacy_clients.caja.base_url', '');
+    config()->set('finalizar.its.api_key', 'private-api-key');
+    config()->set('finalizar.its.user', 'private-api-user');
+    config()->set('finalizar.its.password', 'private-api-password');
 
     $response = $this->get('/finalizar?sol=1&linea=caja');
 
     $response->assertOk();
-    $response->assertDontSee('FINALIZAR_API_USER');
-    $response->assertDontSee('test-password');
+    $response->assertDontSee('private-api-key');
+    $response->assertDontSee('private-api-user');
+    $response->assertDontSee('private-api-password');
+    $response->assertInertia(fn (Assert $page) => $page
+        ->missing('finalizar.credentials')
+        ->missing('finalizar.api_key')
+        ->missing('finalizar.user')
+        ->missing('finalizar.password')
+    );
+});
+
+it('supports a null loan when no request or fallback data is available', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', '');
+
+    $this->get('/finalizar')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.loan', null)
+            ->where('finalizar.metamap.metadata', null)
+        );
+});
+
+it('supports fallback loans with missing optional data', function () {
+    config()->set('finalizar.legacy_clients.caja.base_url', '');
+
+    $this->get('/finalizar?monto=50000&cuotas=3&nro=ABC-123')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.loan.solicitud', 'ABC-123')
+            ->where('finalizar.loan.nombre', '')
+            ->where('finalizar.loan.monto_total_display', '$ 50.000,00')
+            ->where('finalizar.loan.cuotas', '3')
+            ->where('finalizar.loan.monto_cuota_display', '')
+            ->where('finalizar.loan.prestamo_tna', '')
+            ->where('finalizar.loan.prestamo_tea', '')
+            ->where('finalizar.loan.prestamo_tem', '')
+            ->where('finalizar.loan.prestamo_cft', '')
+            ->where('finalizar.metamap.metadata', null)
+        );
 });
 
 it('uses a hosted pdf as the default terms url', function () {
@@ -153,4 +206,53 @@ it('normalizes the old finalizar terms url to the hosted pdf path', function () 
             ->component('finalizar')
             ->where('settings.terms_url', '/terminos-y-condiciones.pdf')
         );
+});
+
+it('keeps the finalizar visual and identity verification contract', function () {
+    $page = file_get_contents(resource_path('js/pages/finalizar.tsx'));
+    $conventionCard = file_get_contents(resource_path('js/components/convenio-card.tsx'));
+
+    expect($page)
+        ->toContain('ACEPTÁ TU CRÉDITO')
+        ->toContain('Revisá y aceptá tu crédito')
+        ->toContain('Verificá las condiciones de tu crédito antes de')
+        ->toContain('Crédito para')
+        ->toContain('Monto del crédito')
+        ->toContain('Plan de cuotas')
+        ->toContain('Número de solicitud')
+        ->toContain("createElement('metamap-button'")
+        ->toContain('clientid:')
+        ->toContain('flowid:')
+        ->toContain('metadata,')
+        ->toContain("'metamap:userStartedSdk'")
+        ->toContain("'metamap:userFinishedSdk'")
+        ->toContain("'metamap:exitedSdk'")
+        ->toContain("'mati:loaded'")
+        ->toContain("'mati:userFinishedSdk'")
+        ->toContain("'mati:exitedSdk'")
+        ->toContain('Verificar mi identidad y continuar')
+        ->toContain('Validación no disponible')
+        ->toContain('La validación de identidad está en curso.')
+        ->toContain('Identidad validada correctamente')
+        ->toContain('La validación no fue completada.')
+        ->toContain('max-w-2xl')
+        ->toContain('bottom-[calc(0.75rem+env(safe-area-inset-bottom))]')
+        ->toContain('sm:static')
+        ->toContain('pb-32')
+        ->toContain('sm:grid-cols-2')
+        ->not->toContain('Al continuar, revisá')
+        ->not->toContain('ProgressSteps')
+        ->not->toContain('verificationSteps')
+        ->not->toContain('Paso 2');
+
+    expect($conventionCard)
+        ->toContain('Entidad del convenio')
+        ->toContain('Matrícula INAES')
+        ->toContain('regulator.logo_url')
+        ->toContain('La ayuda económica será descontada de su recibo de sueldo')
+        ->toContain('por <strong>{regulator.name}</strong>.')
+        ->not->toContain('El crédito será descontado por esta entidad.')
+        ->not->toContain('crédito')
+        ->not->toContain('RED UNISOL proporciona la infraestructura tecnológica')
+        ->not->toContain('Entidad otorgante');
 });

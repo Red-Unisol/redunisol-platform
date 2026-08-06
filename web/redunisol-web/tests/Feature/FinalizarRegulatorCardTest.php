@@ -68,7 +68,7 @@ it('does not show a convention card when short_name does not match linea', funct
         );
 });
 
-it('does not show a convention card when the matching regulator is inactive', function () {
+it('shows a convention card when the matching regulator is inactive', function () {
     config()->set('finalizar.metamap.client_id', 'public-client-id');
     config()->set('finalizar.legacy_clients.caja.base_url', 'https://fiat.example.test');
 
@@ -86,7 +86,8 @@ it('does not show a convention card when the matching regulator is inactive', fu
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
-            ->where('finalizar.regulator', null)
+            ->where('finalizar.regulator.short_name', 'fiat_celesol')
+            ->where('finalizar.regulator.name', 'Asociación Mutual Fiat Concord')
             ->where('finalizar.metamap.flow_id', '6453f8ecf6fa8c001c7b15e6')
         );
 });
@@ -119,6 +120,9 @@ it('uses the same convention card data shape for a future configured line', func
             ->component('finalizar')
             ->where('finalizar.regulator.short_name', 'Futura')
             ->where('finalizar.regulator.name', 'Asociación Mutual Futura')
+            ->where('finalizar.regulator.cuit', '30-00000000-0')
+            ->where('finalizar.regulator.inaes_mat', '999')
+            ->where('finalizar.regulator.logo_url', null)
             ->where('finalizar.metamap.flow_id', 'future-flow-id')
             ->where('finalizar.metamap.doc_id', 'future-doc-id')
         );

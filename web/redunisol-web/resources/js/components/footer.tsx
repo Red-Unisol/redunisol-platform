@@ -1,5 +1,4 @@
 import { Link, usePage } from '@inertiajs/react';
-
 import {
     FacebookLogo,
     InstagramLogo,
@@ -7,6 +6,7 @@ import {
     MapPin as MapPinIcon,
     YoutubeLogo,
 } from '@phosphor-icons/react';
+
 import WhatsAppButton from './WhatsAppButton';
 
 interface Regulator {
@@ -138,7 +138,11 @@ function RegulatorCard({ reg }: { reg: Regulator }) {
     );
 }
 
-export default function Footer() {
+export default function Footer({
+    showWhatsAppButton = true,
+}: {
+    showWhatsAppButton?: boolean;
+}) {
     const { siteData } = usePage<SharedProps>().props;
     const regulators =
         siteData?.regulators && siteData.regulators.length > 0
@@ -333,7 +337,7 @@ export default function Footer() {
                 </p>
             </div>
 
-            <WhatsAppButton />
+            {showWhatsAppButton && <WhatsAppButton />}
         </footer>
     );
 }
