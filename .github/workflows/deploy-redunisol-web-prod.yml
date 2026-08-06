@@ -1,14 +1,13 @@
 name: Deploy Redunisol Web Prod
 
 on:
-  # Disabled until the production environment and bootstrap are ready.
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'web/redunisol-web/**'
-  #     - '.github/workflows/deploy-redunisol-web-dev.yml'
-  #     - '.github/workflows/deploy-redunisol-web-prod.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/redunisol-web/**'
+      - '.github/workflows/deploy-redunisol-web-dev.yml'
+      - '.github/workflows/deploy-redunisol-web-prod.yml'
   workflow_dispatch:
   workflow_call:
 
