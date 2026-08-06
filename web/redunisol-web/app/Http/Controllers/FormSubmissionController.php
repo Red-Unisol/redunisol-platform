@@ -37,6 +37,13 @@ class FormSubmissionController extends Controller
             PersistFormSubmission::dispatch(
                 input: $input,
                 qualified: $qualified,
+                prequalification: [
+                    'available' => $prequalificationAvailable,
+                    'prequalified' => $qualified,
+                    'reason' => $prequalificationAvailable ? (string) ($prequalification['reason'] ?? '') : 'prequalification_unavailable',
+                    'message' => $prequalificationAvailable ? (string) ($prequalification['message'] ?? '') : '',
+                    'rule_version' => $prequalificationAvailable ? (string) ($prequalification['rule_version'] ?? '') : '',
+                ],
                 clientContext: [
                     'ip' => $request->ip(),
                     'user_agent' => $request->userAgent(),

@@ -10,13 +10,13 @@ REPORT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REPORT)
 
 
-def execution(execution_id, *, outputs=None, parent_id=None, task_runs=None):
+def execution(execution_id, *, outputs=None, parent_id=None, task_runs=None, body=None, start="2026-08-05T10:00:00Z"):
     row = {
         "id": execution_id,
         "flowRevision": 3,
-        "state": {"current": "SUCCESS", "startDate": "2026-08-05T10:00:00Z"},
+        "state": {"current": "SUCCESS", "startDate": start},
         "outputs": outputs or {},
-        "trigger": {"variables": {"body": {"cuil": "20-12345678-9", "province": "Córdoba"}}},
+        "trigger": {"variables": {"body": body or {"cuil": "20-12345678-9", "province": "Córdoba"}}},
         "taskRunList": task_runs or [],
     }
     if parent_id:
@@ -33,7 +33,7 @@ class ManagementFormReportTest(unittest.TestCase):
         row = REPORT.normalized(parent, cross["parent"])
 
         self.assertEqual(row["lead_id"], "42")
-        self.assertEqual(row["category"], "Lead aprobado")
+        self.assertEqual(row["category"], "Sin precalificación histórica")
 
     def test_crosses_legacy_child_using_flow_task_output(self):
         parent = execution("parent", task_runs=[{"taskId": "persistir_bitrix", "outputs": {"executionId": "child"}}])
@@ -43,7 +43,7 @@ class ManagementFormReportTest(unittest.TestCase):
         row = REPORT.normalized(parent, cross["parent"])
 
         self.assertEqual(row["lead_id"], "84")
-        self.assertEqual(row["category"], "Lead rechazado en Bitrix")
+        self.assertEqual(row["category"], "Sin precalificación histórica")
 
     def test_publishes_latest_and_dated_copy_atomically(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -52,6 +52,22 @@ class ManagementFormReportTest(unittest.TestCase):
             self.assertTrue(latest.exists())
             self.assertTrue(dated.exists())
             self.assertEqual(latest.read_bytes(), dated.read_bytes())
+
+    def test_crosses_historical_prequalification_and_treats_external_referral_as_rejected(self):
+        fields = {"province": "Santa Fe", "employment_status": "Policia", "payment_bank": "Otro"}
+        prequalification = execution("pre", body=fields, start="2026-08-05T09:59:58Z", outputs={"prequalified": False, "reason": "external_referral", "message": "Derivación externa."})
+        parent = execution("parent", body=fields, outputs={"action": "ingested", "lead_id": "42"})
+
+        crossed = REPORT.cross_prequalifications([parent], [prequalification])
+        row = REPORT.normalized(parent, None, crossed["parent"])
+
+        self.assertEqual(row["category"], "Rechazado en precalificación")
+        self.assertEqual(row["prequalification_reason"], "external_referral")
+
+    def test_uses_prequalification_embedded_in_new_submissions(self):
+        parent = execution("parent", body={"prequalification_available": True, "prequalified": True, "prequalification_reason": "qualified"}, outputs={"lead_id": "42"})
+        row = REPORT.normalized(parent, None)
+        self.assertEqual(row["category"], "Precalificado")
 
     def test_builds_daily_breakdown_with_chart(self):
         rows = [
@@ -66,8 +82,9 @@ class ManagementFormReportTest(unittest.TestCase):
         self.assertEqual(sheet.cell(2, 2).value, 2)
         self.assertEqual(sheet.cell(2, 3).value, 1)
         self.assertEqual(sheet.cell(2, 4).value, 0.5)
-        self.assertEqual(sheet.cell(2, 5).value, 1)
-        self.assertEqual(sheet.cell(2, 7).value, 1)
+        headers = {cell.value: cell.column for cell in sheet[1]}
+        self.assertEqual(sheet.cell(2, headers["Sin precalificación histórica"]).value, 1)
+        self.assertEqual(sheet.cell(2, headers["Rechazo antes de Bitrix"]).value, 1)
         self.assertEqual(len(sheet._charts), 1)
 
 

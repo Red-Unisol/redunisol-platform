@@ -22,6 +22,7 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
     public function __construct(
         public readonly array $input,
         public readonly bool $qualified,
+        public readonly array $prequalification = [],
         public readonly array $clientContext = [],
     ) {}
 
@@ -29,7 +30,7 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
         SubmitFormToKestra $submitFormToKestra,
         MetaConversionsApiService $metaConversionsApi,
     ): void {
-        $response = $submitFormToKestra->execute($this->input);
+        $response = $submitFormToKestra->execute($this->input, $this->prequalification);
 
         if ($response->failed()) {
             $response->throw();

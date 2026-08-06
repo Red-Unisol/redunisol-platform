@@ -48,6 +48,7 @@ it('queues form persistence after receiving commercial prequalification', functi
 
     Queue::assertPushed(PersistFormSubmission::class, function ($job) {
         return $job->qualified
+            && $job->prequalification['reason'] === 'qualified'
             && $job->input['cuil'] === '20-12345678-3'
             && $job->input['email'] === 'juan.perez@example.com'
             && $job->input['celular'] === '3511234567'
@@ -142,7 +143,8 @@ it('returns not qualified while persistence continues asynchronously', function 
 
     Queue::assertPushed(
         PersistFormSubmission::class,
-        fn ($job) => $job->qualified === false,
+        fn ($job) => $job->qualified === false
+            && $job->prequalification['reason'] === 'payment_bank_not_eligible',
     );
 });
 
@@ -166,7 +168,8 @@ it('shows a neutral result and still queues persistence when prequalification fa
 
     Queue::assertPushed(
         PersistFormSubmission::class,
-        fn ($job) => $job->qualified === false,
+        fn ($job) => $job->qualified === false
+            && $job->prequalification['available'] === false,
     );
 });
 
@@ -193,6 +196,13 @@ it('persists the queued form and sends meta only after bitrix succeeds', functio
             'celular' => '3511234567',
         ],
         qualified: true,
+        prequalification: [
+            'available' => true,
+            'prequalified' => true,
+            'reason' => 'qualified',
+            'message' => 'Califica.',
+            'rule_version' => '2026-07-21',
+        ],
         clientContext: [
             'ip' => '203.0.113.10',
             'user_agent' => 'Form test',
@@ -214,6 +224,10 @@ it('persists the queued form and sends meta only after bitrix succeeds', functio
         && $request['payment_bank'] === 'Banco de la Nacion Argentina'
         && $request['landing_slug'] === '/prestamos-para-policias'
         && $request['lead_source'] === 'Google'
+        && $request['prequalification_available'] === true
+        && $request['prequalified'] === true
+        && $request['prequalification_reason'] === 'qualified'
+        && $request['prequalification_rule_version'] === '2026-07-21'
         && $request['full_name'] === 'Juan Perez');
     Http::assertSent(fn ($request) => str_starts_with(
         $request->url(),
