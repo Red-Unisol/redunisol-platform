@@ -252,10 +252,12 @@ def publish(workbook: Workbook, root: Path, generated_at: datetime) -> tuple[Pat
     try:
         workbook.save(temporary)
         os.replace(temporary, dated)
+        dated.chmod(0o644)
         with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".xlsx", delete=False) as handle:
             latest_temporary = Path(handle.name)
         shutil.copy2(dated, latest_temporary)
         os.replace(latest_temporary, latest)
+        latest.chmod(0o644)
     finally:
         temporary.unlink(missing_ok=True)
     return latest, dated
