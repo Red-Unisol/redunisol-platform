@@ -20,12 +20,12 @@ from .config import load_config
 from .contact_service import upsert_contact
 from .input_parser import normalize_business_input, parse_body
 from .lead_service import (
-    build_submission_from_lead,
     build_lead_contact_birthdate_field,
+    build_prequalification_input_from_lead,
     create_lead,
     get_lead,
     lead_has_commercial_owner,
-    prequalification_title,
+    prequalification_title_from_lead,
     resolve_commercial_owner_enum_id,
     sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
@@ -344,7 +344,7 @@ def classify_lead(
             or lead_has_commercial_owner(client, lead, config, "kestra")
         )
 
-        submission = build_submission_from_lead(lead, config)
+        submission = build_prequalification_input_from_lead(lead, config)
         qualification = evaluate_prequalification(submission)
         active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
 
@@ -373,7 +373,7 @@ def classify_lead(
                 if qualification.outcome == "rejected"
                 else None
             ),
-            title=prequalification_title(submission),
+            title=prequalification_title_from_lead(lead, config, submission),
             commercial_owner_id=(
                 resolve_commercial_owner_enum_id(client, config, "kestra")
                 if take_commercial_ownership

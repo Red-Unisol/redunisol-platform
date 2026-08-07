@@ -4,8 +4,14 @@ from typing import Any
 
 from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
+from .catalogs import ORIGENES_LEAD
 from .config import AppConfig
-from .input_parser import NormalizedInput, normalize_business_input
+from .input_parser import (
+    NormalizedInput,
+    PrequalificationInput,
+    normalize_business_input,
+    normalize_prequalification_input,
+)
 from .logger import Logger
 from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
@@ -154,6 +160,21 @@ def build_submission_from_lead(
     return normalize_business_input(payload)
 
 
+def build_prequalification_input_from_lead(
+    lead: dict[str, Any],
+    config: AppConfig,
+) -> PrequalificationInput:
+    payload = {
+        "province": _required_lead_value(lead, config.fields.lead_province),
+        "employment_status": _required_lead_value(
+            lead,
+            config.fields.lead_employment_status,
+        ),
+        "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
+    }
+    return normalize_prequalification_input(payload)
+
+
 def update_lead_status(
     client: BitrixClient,
     config: AppConfig,
@@ -213,6 +234,26 @@ def prequalification_title(submission: NormalizedInput) -> str:
     if submission.lead_source.key == "finguru":
         return submission.full_name
     return f"{submission.full_name} - {submission.province.label}"
+
+
+def prequalification_title_from_lead(
+    lead: dict[str, Any],
+    config: AppConfig,
+    submission: PrequalificationInput,
+) -> str | None:
+    full_name = _lead_full_name(lead)
+    source_value = _optional_lead_value(lead, config.fields.lead_source)
+    if source_value is not None:
+        try:
+            source = ORIGENES_LEAD.resolve(source_value, "lead_source")
+        except ValueError:
+            source = None
+        if source is not None and source.key == "finguru":
+            return full_name or None
+
+    if full_name:
+        return f"{full_name} - {submission.province.label}"
+    return None
 
 
 def update_lead_bcra_snapshot(
