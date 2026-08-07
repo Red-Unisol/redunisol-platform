@@ -32,11 +32,17 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
-- `ONCRMLEADUPDATE` precalifica un lead en `PRECLASIFICACION (NEW)` solamente cuando `Motor decision comercial = Kestra`; esta decision no interpreta BCRA.
+- `ONCRMLEADUPDATE` precalifica cualquier lead en `PRECLASIFICACION (NEW)` creado desde
+  el corte operativo, sin usar el owner previo como compuerta; esta decision no
+  interpreta BCRA.
 - Todo lead nuevo creado por el intake recibe `Motor decision comercial = Kestra`.
 - Rio Negro, Santa Fe y Neuquen derivan a `NEGOCIACION CON VENDEDOR (13)` cuando cumplen las reglas migradas desde Bitrix.
 - Diego Frias (`ASSIGNED_BY_ID=7`) queda excluido de la precalificacion automatica.
 - Bitrix conserva temporalmente un BP minimo dedicado exclusivamente al email Finguru.
+- Desde `2026-08-07T12:28:19-03:00`, el webhook de actualizacion clasifica cualquier
+  owner comercial y persiste `Motor decision comercial = Kestra` junto con el resultado.
+- Los leads anteriores a ese corte no son reclamados ni clasificados por esta regla.
+- Diego Frias (`ASSIGNED_BY_ID=7`) conserva la exclusion explicita.
 - El mismo listener crea o reutiliza la negociacion cuando el lead llega a `RESULTADO GANADO`.
 - Las negociaciones Catamarca con motor Kestra nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior aplica BCRA y distribuye vendedor solo al aprobar.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.

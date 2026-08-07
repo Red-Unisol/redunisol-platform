@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import os
 from typing import Any
 
@@ -17,6 +18,7 @@ from .logger import create_logger, Logger
 
 
 EXPECTED_EVENT = "ONCRMLEADUPDATE"
+PREQUALIFICATION_CUTOFF_ENV = "BITRIX24_PREQUALIFICATION_CUTOFF"
 
 
 def process_lead_update_event(
@@ -42,15 +44,16 @@ def process_lead_update_event(
         contact_id = _optional_int(lead.get("CONTACT_ID"))
 
         if lead_status == config.lead_statuses.preclassification:
-            if not lead_has_commercial_owner(client, lead, config, "kestra"):
+            cutoff = _optional_str(source.get(PREQUALIFICATION_CUTOFF_ENV))
+            if cutoff and _is_before_cutoff(lead, cutoff):
                 return _event_result(
                     ok=True,
                     action="skipped",
-                    reason="commercial_owner_not_kestra",
+                    reason="lead_before_prequalification_cutoff",
                     lead_id=lead_id,
                     lead_status=lead_status,
                     message=(
-                        "El lead esta en PRECLASIFICACION pero su motor comercial no es Kestra."
+                        "El lead esta en PRECLASIFICACION pero fue creado antes del corte Kestra."
                     ),
                 )
 
@@ -59,6 +62,7 @@ def process_lead_update_event(
                 env=source,
                 bitrix_client=client,
                 logger=active_logger,
+                take_commercial_ownership=True,
             )
             return _event_result(
                 ok=bool(classification.get("ok")),
@@ -256,6 +260,23 @@ def _extract_lead_id(payload: dict[str, Any]) -> int:
         if lead_id is not None:
             return lead_id
     raise ValueError("El evento Bitrix no contiene data.FIELDS.ID.")
+
+
+def _is_before_cutoff(lead: dict[str, Any], cutoff: str) -> bool:
+    date_create = _optional_str(lead.get("DATE_CREATE"))
+    if not date_create:
+        raise ValueError("El lead no contiene DATE_CREATE para aplicar el corte de precalificacion.")
+    return _parse_datetime(date_create) < _parse_datetime(cutoff)
+
+
+def _parse_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"Fecha invalida para el corte de precalificacion: {value}.") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"La fecha de precalificacion no contiene zona horaria: {value}.")
+    return parsed
 
 
 def _nested_get(payload: dict[str, Any], path: tuple[str, ...]) -> Any:

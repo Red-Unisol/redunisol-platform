@@ -14,6 +14,10 @@ corte coordinado.
 ## Politica Implementada
 
 - todos los leads creados por Kestra reciben `Motor decision comercial = Kestra`
+- `bitrix24_lead_won_deal_webhook` toma la decision para cualquier owner comercial si
+  el lead fue creado desde `2026-08-07T12:28:19-03:00`; al persistir el resultado deja
+  `Motor decision comercial = Kestra`
+- los leads creados antes del corte quedan fuera aunque reciban actualizaciones futuras
 - los rechazos terminan en `RESULTADO PERDIDO` y guardan el detalle en `Motivo Rechazo`
 - Catamarca y Cordoba usan las listas ampliadas de Kestra
 - La Rioja conserva la regla observada en Bitrix
@@ -76,18 +80,24 @@ El artefacto importable se puede regenerar desde el export original con:
 php kestra/tools/build_bitrix_finguru_email_bp.php <origen.bpt> <salida.bpt>
 ```
 
-## Corte Unico
+## Corte Operativo
 
-Orden operativo obligatorio:
+El BP comercial anterior fue reemplazado por el BP minimo de correo y Kestra fue
+desplegado a produccion. La frontera que separa casos nuevos de historicos es:
 
-1. desplegar los flows y namespace files nuevos en dev y ejecutar tests de humo
-2. crear y probar el BP minimo de correo Finguru
-3. detener o deshabilitar el BP comercial anterior
-4. desplegar la revision de Kestra a prod
-5. ejecutar `bitrix24_prequalification_cutover` con `dry_run=true`
-6. revisar el listado y ejecutar nuevamente con `dry_run=false`
-7. habilitar el BP minimo de correo
-8. probar un caso aprobado, un rechazo, una derivacion externa, Diego Frias y Finguru
+`2026-08-07T12:28:19-03:00`
+
+El webhook de actualizacion aplica esa frontera antes de tomar ownership o decidir. No
+se debe ejecutar `bitrix24_prequalification_cutover` sin `date_from`: el dry-run global
+del 2026-08-07 encontro `1515` candidatos historicos que no forman parte del corte.
+
+Validacion operativa pendiente:
+
+1. probar un caso aprobado posterior al corte
+2. probar un rechazo posterior al corte
+3. probar una derivacion externa posterior al corte
+4. confirmar que Diego Frias sigue omitido
+5. confirmar que Finguru recibe el correo y luego es clasificado por Kestra
 
 El flow de cutover solo cambia ownership para leads que en ese momento estan en
 `INGRESO` o `PRECLASIFICACION`. No modifica leads ya ganados, perdidos, convertidos o

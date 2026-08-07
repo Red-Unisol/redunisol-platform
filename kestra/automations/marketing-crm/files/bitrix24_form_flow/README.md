@@ -151,6 +151,8 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_PROCESSING_POLICY_SKIP=No procesar`
 - `BITRIX24_LEAD_PROCESSING_POLICY_PROCESS=Procesar`
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD=UF_CRM_COMM_OWNER` (`Motor decision comercial`)
+- `BITRIX24_PREQUALIFICATION_CUTOFF=2026-08-07T12:28:19-03:00` limita la toma de
+  decisiones del webhook a leads creados desde el corte operativo.
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_BITRIX=Bitrix` (`ID=4117`)
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_KESTRA=Kestra` (`ID=4119`)
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL=Manual` (`ID=4121`)
@@ -233,6 +235,11 @@ Para usar este paquete dentro de Kestra, el adaptador recomendado es:
 - `bitrix24_form_flow/kestra_form_intake_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_classification_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_won_deal_entrypoint.py`
+
+El webhook `bitrix24_lead_won_deal_webhook` no usa el owner previo como compuerta para
+leads posteriores al corte. Si el lead esta en `PRECLASIFICACION`, clasifica y guarda
+`Motor decision comercial = Kestra` en la misma actualizacion del estado. Los leads
+anteriores al corte y el responsable Diego Frias (`7`) se omiten.
 - `bitrix24_form_flow/kestra_catamarca_deal_select_entrypoint.py`
 - `bitrix24_form_flow/kestra_catamarca_deal_qualification_entrypoint.py`
 - `bitrix24_form_flow/kestra_webhook_entrypoint.py` como wrapper backward-compatible de la ejecucion end-to-end
