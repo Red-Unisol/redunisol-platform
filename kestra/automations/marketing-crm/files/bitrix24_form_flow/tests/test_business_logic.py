@@ -2572,6 +2572,62 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["lead_status"], "13")
         self.assertEqual(client.leads[308]["TITLE"], "Ana Gomez - Rio Negro")
 
+    def test_classify_lead_allows_invalid_cuil(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[309] = {
+            "ID": "309",
+            "STATUS_ID": "NEW",
+            "TITLE": "Finguru con DNI",
+            "NAME": "Finguru con DNI",
+            "EMAIL": [{"VALUE": "email-invalido"}],
+            "ASSIGNED_BY_ID": "57",
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1693840106704": "12345678",
+            "UF_CRM_1714071903": "3745",
+            "UF_CRM_LEAD_1711458190312": ["437"],
+            "UF_CRM_64E65D2B2136C": "209",
+            "UF_CRM_1722365051": "3729",
+        }
+
+        result = classify_lead(
+            309,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "qualified")
+        self.assertEqual(client.leads[309]["STATUS_ID"], "QUALIFIED")
+        self.assertEqual(client.leads[309]["TITLE"], "Finguru con DNI")
+
+    def test_classify_lead_allows_missing_email(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[310] = {
+            "ID": "310",
+            "STATUS_ID": "NEW",
+            "TITLE": "Lead sin email",
+            "NAME": "Lead sin email",
+            "ASSIGNED_BY_ID": "57",
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1714071903": "1269",
+            "UF_CRM_LEAD_1711458190312": ["459"],
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1722365051": "2425",
+        }
+
+        result = classify_lead(
+            310,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "qualified")
+        self.assertEqual(client.leads[310]["STATUS_ID"], "QUALIFIED")
+        self.assertEqual(client.leads[310]["TITLE"], "Lead sin email - Catamarca")
+
     def test_classify_lead_skips_commercial_decision_when_owner_is_empty(self) -> None:
         client = FakeBitrixClient()
         bcra_client = FakeBcraClient(
