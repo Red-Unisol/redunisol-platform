@@ -111,6 +111,8 @@ ORIGENES_LEAD = Catalog(
         ("Instagram", "2427"),
         ("WhatsApp", "2451"),
         ("E Mail", "2647"),
+        ("Finguru", "3729"),
+        ("Suscripcion News Celesol", "3737"),
         ("YouTube", "3921"),
     ]
 )

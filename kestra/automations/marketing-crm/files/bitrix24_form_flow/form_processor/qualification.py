@@ -11,13 +11,10 @@ class QualificationResult:
     reason: str
     message: str
     rejection_label: str | None = None
+    outcome: str = "rejected"
 
 
-EXTERNAL_REFERRAL_PROVINCES = {
-    "neuquen",
-    "rio_negro",
-    "santa_fe",
-}
+EXTERNAL_REFERRAL_OUTCOME = "external_referral"
 
 
 QUALIFICATION_RULES = {
@@ -61,22 +58,53 @@ QUALIFICATION_RULES = {
             "docente",
         },
     },
+    "rio_negro": {
+        "external_referral": True,
+        "allowed_employment_statuses": {
+            "empleado_publico_provincial",
+            "policia",
+            "jubilado_provincial",
+            "pensionado",
+        },
+        "bank_optional_for": {
+            "empleado_publico_provincial",
+            "policia",
+        },
+        "allowed_banks_by_status": {
+            "jubilado_provincial": {
+                "banco_de_la_nacion_argentina",
+                "banco_patagonia_s_a",
+            },
+            "pensionado": {
+                "banco_de_la_nacion_argentina",
+                "banco_patagonia_s_a",
+            },
+        },
+    },
+    "santa_fe": {
+        "external_referral": True,
+        "allowed_employment_statuses": {
+            "empleado_publico_provincial",
+            "policia",
+            "jubilado_provincial",
+            "pensionado",
+        },
+    },
+    "neuquen": {
+        "external_referral": True,
+        "allowed_employment_statuses": {
+            "empleado_publico_provincial",
+            "empleado_publico_municipal",
+            "policia",
+            "jubilado_provincial",
+        },
+    },
 }
 
 
 def evaluate_prequalification(
     submission: NormalizedInput | PrequalificationInput,
 ) -> QualificationResult:
-    if submission.province.key in EXTERNAL_REFERRAL_PROVINCES:
-        return QualificationResult(
-            qualified=False,
-            reason="external_referral",
-            message=(
-                f'La provincia "{submission.province.label}" se deriva a vendedor externo y no se procesa automaticamente.'
-            ),
-            rejection_label="OTRA PROVINCIA",
-        )
-
     rule = QUALIFICATION_RULES.get(submission.province.key)
     if not rule:
         return QualificationResult(
@@ -84,6 +112,7 @@ def evaluate_prequalification(
             reason="province_not_eligible",
             message=f'La provincia "{submission.province.label}" no califica.',
             rejection_label="OTRA PROVINCIA",
+            outcome="rejected",
         )
 
     if submission.employment_status.key not in rule["allowed_employment_statuses"]:
@@ -96,15 +125,12 @@ def evaluate_prequalification(
                 f"no califica para {submission.province.label}."
             ),
             rejection_label=rejection_label,
+            outcome="rejected",
         )
 
     bank_optional_for = rule.get("bank_optional_for", set())
     if submission.employment_status.key in bank_optional_for:
-        return QualificationResult(
-            qualified=True,
-            reason="qualified",
-            message=f"La persona califica para {submission.province.label}.",
-        )
+        return _approved_result(submission, rule)
 
     allowed_banks_by_status = rule.get("allowed_banks_by_status", {})
     allowed_banks = allowed_banks_by_status.get(submission.employment_status.key)
@@ -114,17 +140,36 @@ def evaluate_prequalification(
             reason="payment_bank_not_eligible",
             message=f'El banco "{submission.payment_bank.label}" no califica para {submission.province.label}.',
             rejection_label="OTRO BANCO",
+            outcome="rejected",
+        )
+
+    return _approved_result(submission, rule)
+
+
+def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
+    return evaluate_prequalification(submission)
+
+
+def _approved_result(
+    submission: NormalizedInput | PrequalificationInput,
+    rule: dict[str, object],
+) -> QualificationResult:
+    if bool(rule.get("external_referral")):
+        return QualificationResult(
+            qualified=False,
+            reason=EXTERNAL_REFERRAL_OUTCOME,
+            message=(
+                f'La persona califica para derivacion a vendedor externo en "{submission.province.label}".'
+            ),
+            outcome=EXTERNAL_REFERRAL_OUTCOME,
         )
 
     return QualificationResult(
         qualified=True,
         reason="qualified",
         message=f"La persona califica para {submission.province.label}.",
+        outcome="qualified",
     )
-
-
-def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
-    return evaluate_prequalification(submission)
 
 
 def _employment_status_rejection_label(employment_status_key: str) -> str:

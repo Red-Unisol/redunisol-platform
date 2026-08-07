@@ -53,7 +53,7 @@ class ManagementFormReportTest(unittest.TestCase):
             self.assertTrue(dated.exists())
             self.assertEqual(latest.read_bytes(), dated.read_bytes())
 
-    def test_crosses_historical_prequalification_and_treats_external_referral_as_rejected(self):
+    def test_crosses_historical_prequalification_and_treats_external_referral_as_referral(self):
         fields = {"province": "Santa Fe", "employment_status": "Policia", "payment_bank": "Otro"}
         prequalification = execution("pre", body=fields, start="2026-08-05T09:59:58Z", outputs={"prequalified": False, "reason": "external_referral", "message": "Derivación externa."})
         parent = execution("parent", body=fields, outputs={"action": "ingested", "lead_id": "42"})
@@ -61,7 +61,7 @@ class ManagementFormReportTest(unittest.TestCase):
         crossed = REPORT.cross_prequalifications([parent], [prequalification])
         row = REPORT.normalized(parent, None, crossed["parent"])
 
-        self.assertEqual(row["category"], "Rechazado en precalificación")
+        self.assertEqual(row["category"], "Derivación a vendedor externo")
         self.assertEqual(row["prequalification_reason"], "external_referral")
 
     def test_uses_prequalification_embedded_in_new_submissions(self):

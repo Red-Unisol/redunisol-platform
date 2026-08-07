@@ -165,6 +165,8 @@ def normalized(row: dict[str, Any], child: dict[str, Any] | None, prequalificati
         category = "Pendiente de verificación"
     elif prequalification_available and prequalified is True:
         category = "Precalificado"
+    elif prequalification_available and prequalification_reason == "external_referral":
+        category = "Derivación a vendedor externo"
     elif prequalification_available:
         category = "Rechazado en precalificación"
     elif lead_id:
@@ -231,6 +233,7 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         ("Formularios recibidos", len(rows)),
         ("Leads confirmados en Bitrix", len({row["lead_id"] for row in leads})),
         ("Formularios precalificados", counts["Precalificado"]),
+        ("Derivaciones a vendedor externo", counts["Derivación a vendedor externo"]),
         ("Formularios rechazados", counts["Rechazado en precalificación"]),
         ("Conversión formulario → lead", len(leads) / len(rows) if rows else 0),
         ("Rechazados antes de Bitrix", counts["Rechazo antes de Bitrix"]),
@@ -247,7 +250,7 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         if summary.cell(number, 1).value == "Conversión formulario → lead":
             summary.cell(number, 2).number_format = "0.00%"
     summary["D1"], summary["E1"] = "Resultado", "Cantidad"
-    category_names = ("Precalificado", "Rechazado en precalificación", "Sin precalificación histórica", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")
+    category_names = ("Precalificado", "Derivación a vendedor externo", "Rechazado en precalificación", "Sin precalificación histórica", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")
     categories = [(key, counts[key]) for key in category_names]
     for index, item in enumerate(categories, 2):
         summary.cell(index, 4, item[0])
