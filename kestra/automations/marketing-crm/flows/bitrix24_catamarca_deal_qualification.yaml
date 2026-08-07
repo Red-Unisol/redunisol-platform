@@ -54,6 +54,11 @@ tasks:
       BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
       BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY: "{{ envs.bitrix24_distribution_business_hours_only ?? 'true' }}"
+      BITRIX24_DISTRIBUTION_TIMEZONE: "{{ envs.bitrix24_distribution_timezone ?? 'America/Argentina/Cordoba' }}"
+      BITRIX24_DISTRIBUTION_WORKDAYS: "{{ envs.bitrix24_distribution_workdays ?? 'MO,TU,WE,TH,FR' }}"
+      BITRIX24_DISTRIBUTION_FROM: "{{ envs.bitrix24_distribution_from ?? '09:00' }}"
+      BITRIX24_DISTRIBUTION_TO: "{{ envs.bitrix24_distribution_to ?? '17:00' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
       - python -m bitrix24_form_flow.kestra_catamarca_deal_select_entrypoint

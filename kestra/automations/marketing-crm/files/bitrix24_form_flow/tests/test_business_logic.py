@@ -29,6 +29,7 @@ from bitrix24_form_flow.form_processor.bcra_client import (
 )
 from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
 from bitrix24_form_flow.form_processor.catamarca_deal_qualification import (
+    _is_within_business_hours,
     qualify_catamarca_deal,
     select_next_pending_catamarca_deal,
 )
@@ -3521,6 +3522,63 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual(bucket_query["filter"]["=ufCrmRouteBucket"], "catamarca_general")
         self.assertEqual(bucket_query["start"], 0)
+
+    def test_catamarca_outside_business_hours_stays_with_maru_for_manual_distribution(
+        self,
+    ) -> None:
+        client = FakeBitrixClient()
+        client.leads[938] = self._catamarca_enriched_lead(938, bcra_entities=[])
+        client.deals[939] = {
+            "id": 939,
+            "title": "Credito fuera de horario",
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 938,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-08-08T12:00:00-03:00",
+        }
+        client.open_line_chats[("contact", 101)] = [780]
+        gated_env = {
+            **self.env,
+            "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY": "true",
+        }
+
+        result = qualify_catamarca_deal(
+            939,
+            env=gated_env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-08T12:00:00-03:00"),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "outside_business_hours")
+        self.assertEqual(result["assigned_by_id"], 57)
+        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[939]["assignedById"], 57)
+        self.assertEqual(client.chat_transfers, [])
+        self.assertFalse(any(method == "user.get" for method, _ in client.calls))
+
+    def test_catamarca_distribution_window_uses_weekdays_from_nine_to_seventeen(
+        self,
+    ) -> None:
+        source: dict[str, str] = {}
+        cases = (
+            ("2026-08-10T08:59:59-03:00", False),
+            ("2026-08-10T09:00:00-03:00", True),
+            ("2026-08-10T16:59:59-03:00", True),
+            ("2026-08-10T17:00:00-03:00", False),
+            ("2026-08-08T12:00:00-03:00", False),
+            ("2026-08-09T12:00:00-03:00", False),
+        )
+
+        for timestamp, expected in cases:
+            with self.subTest(timestamp=timestamp):
+                self.assertEqual(
+                    _is_within_business_hours(source, datetime.fromisoformat(timestamp)),
+                    expected,
+                )
 
     def test_catamarca_bucket_reuses_legacy_catamarca_contact_assignee(self) -> None:
         client = FakeBitrixClient()
