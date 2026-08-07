@@ -83,6 +83,21 @@ Para una negociacion con bucket:
 - la negociacion, el chat y la notificacion comparten el mismo vendedor;
 - la notificacion informa el bucket aplicado.
 
+## Distribucion Fuera De Horario
+
+La distribucion automatica funciona de lunes a viernes entre las 09:00 inclusive y
+las 17:00 exclusive, usando `America/Argentina/Cordoba`.
+
+Si una negociacion pendiente se procesa fuera de esa ventana:
+
+- pasa a `C1:KESTRA_REVIEW`;
+- queda asignada a Maru Lopez (`57`);
+- no se ejecuta round-robin;
+- no se transfiere ningun chat;
+- no vuelve a entrar automaticamente en la cola al comenzar el siguiente dia habil.
+
+La distribucion de esos casos queda a cargo de Maru de forma manual.
+
 Pool actual: Daniel Carrera (`68579`), Patricia Contendi (`10451`), Susana Contenti (`29`), Soledad Moyano (`90231`), Natalia Rojo (`71159`), Claudia Algarbe (`113457`) y Daniela Arias (`113455`).
 
 ## Operacion

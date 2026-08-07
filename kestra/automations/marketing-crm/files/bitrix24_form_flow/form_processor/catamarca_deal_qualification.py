@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, time
 import json
+import os
 import unicodedata
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
@@ -31,6 +34,14 @@ class CatamarcaDecision:
     reason: str
     stage_id: str
     commercial_line: str | None = None
+
+
+BUSINESS_HOURS_ONLY_ENV = "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY"
+BUSINESS_HOURS_TIMEZONE_ENV = "BITRIX24_DISTRIBUTION_TIMEZONE"
+BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
+BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
+BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
+WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
 
 
 def select_next_pending_catamarca_deal(
@@ -86,6 +97,7 @@ def qualify_catamarca_deal(
     env: dict[str, str] | None = None,
     bitrix_client: Any | None = None,
     logger: Logger | None = None,
+    now: datetime | None = None,
 ) -> dict[str, object]:
     active_logger = logger or create_logger()
     config = load_config(env)
@@ -104,6 +116,37 @@ def qualify_catamarca_deal(
             stage_id=current_stage,
             reason="deal_not_pending",
             message="La negociacion ya no esta pendiente de calificacion Kestra.",
+        )
+
+    source = os.environ if env is None else env
+    if _business_hours_gate_enabled(source) and not _is_within_business_hours(source, now):
+        client.call(
+            "crm.item.update",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "id": deal_id_int,
+                "fields": {
+                    "stageId": config.deal.manual_review_stage_id,
+                    "assignedById": config.deal.provisional_user_id,
+                },
+            },
+        )
+        active_logger.info(
+            f"Negociacion {deal_id_int} recibida fuera de horario laboral: "
+            "queda asignada a Maru para distribucion manual."
+        )
+        return _result(
+            action="manual_review",
+            has_pending=False,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=config.deal.manual_review_stage_id,
+            reason="outside_business_hours",
+            assigned_by_id=config.deal.provisional_user_id,
+            message=(
+                "Negociacion fuera de horario laboral; queda en manos de Maru "
+                "para distribucion manual."
+            ),
         )
 
     lead = get_lead(client, lead_id, active_logger)
@@ -345,6 +388,38 @@ def _manual(config: AppConfig, reason: str) -> CatamarcaDecision:
         reason=reason,
         stage_id=config.deal.manual_review_stage_id,
     )
+
+
+def _business_hours_gate_enabled(source: dict[str, str]) -> bool:
+    return str(source.get(BUSINESS_HOURS_ONLY_ENV, "false")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "si",
+        "s",
+    }
+
+
+def _is_within_business_hours(
+    source: dict[str, str],
+    now: datetime | None = None,
+) -> bool:
+    timezone = ZoneInfo(
+        str(source.get(BUSINESS_HOURS_TIMEZONE_ENV, "America/Argentina/Cordoba")).strip()
+    )
+    local_now = now.astimezone(timezone) if now is not None else datetime.now(timezone)
+    workdays = {
+        WEEKDAY_CODES[code.strip()]
+        for code in str(source.get(BUSINESS_HOURS_WORKDAYS_ENV, "MO,TU,WE,TH,FR"))
+        .upper()
+        .split(",")
+        if code.strip() in WEEKDAY_CODES
+    }
+    starts_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_FROM_ENV, "09:00")))
+    ends_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_TO_ENV, "17:00")))
+    local_time = local_now.time().replace(tzinfo=None)
+    return local_now.weekday() in workdays and starts_at <= local_time < ends_at
 
 
 def _normalize_text(value: Any) -> str:
