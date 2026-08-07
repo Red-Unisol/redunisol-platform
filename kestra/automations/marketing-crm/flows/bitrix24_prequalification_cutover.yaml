@@ -16,7 +16,7 @@ inputs:
     defaults: true
   - id: date_from
     type: STRING
-    required: false
+    required: true
     defaults: ""
 
 tasks:
