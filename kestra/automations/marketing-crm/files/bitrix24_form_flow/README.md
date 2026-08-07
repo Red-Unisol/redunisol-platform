@@ -97,6 +97,7 @@ Obligatorias:
 - `BITRIX24_CONTACT_CUIL_FIELD`
 - `BITRIX24_LEAD_STATUS_QUALIFIED`
 - `BITRIX24_LEAD_STATUS_REJECTED`
+- `BITRIX24_LEAD_STATUS_EXTERNAL_REFERRAL` (default `13`, `NEGOCIACION CON VENDEDOR`)
 - `BITRIX24_LEAD_REJECTION_REASON_FIELD`
 
 Opcionales para override de campos del lead:
@@ -217,8 +218,10 @@ Backfill CredixSA de empleador:
 Comportamiento esperado al crear el lead:
 
 - el intake crea el lead con la politica `No procesar`
-- el intake crea leads de Catamarca con `Motor decision comercial = Kestra`
-- el intake crea leads del resto de provincias con `Motor decision comercial = Bitrix` como default conservador
+- el intake crea todos los leads con `Motor decision comercial = Kestra`
+- Rio Negro, Santa Fe y Neuquen usan reglas locales y derivan los casos aceptados a `NEGOCIACION CON VENDEDOR (13)`
+- Diego Frias (`ASSIGNED_BY_ID=7`) queda fuera de la precalificacion automatica, salvo ejecucion forzada
+- Finguru (`ID=3729`) se reconoce en el catalogo; el envio del email sigue a cargo de un BP minimo de Bitrix
 - el flow de clasificacion por `lead_id` solo usa los criterios locales de precalificacion
 - el flow de clasificacion por `lead_id` solo actualiza estado/motivo cuando `Motor decision comercial = Kestra` o cuando se lo fuerza explicitamente
 - `Politica procesamiento` queda como campo legacy/parcial y no define el ownership comercial nuevo
@@ -274,7 +277,7 @@ Los entrypoints:
   Busca el contacto por CUIL y hace create/update según corresponda.
 
 - `bitrix24_form_flow/form_processor/lead_service.py`
-  Crea el lead con la politica `No procesar`, asigna `Motor decision comercial` segun provincia migrada, reconstruye un lead por `lead_id` y expone helpers de ownership comercial.
+  Crea el lead con la politica `No procesar`, asigna `Motor decision comercial = Kestra`, reconstruye un lead por `lead_id` y expone helpers de ownership comercial.
 
 - `bitrix24_form_flow/form_processor/lead_won_deal_service.py`
   Procesa eventos `ONCRMLEADUPDATE`, valida el token de aplicacion de Bitrix y crea negociacion solo si el lead esta en `RESULTADO GANADO`.

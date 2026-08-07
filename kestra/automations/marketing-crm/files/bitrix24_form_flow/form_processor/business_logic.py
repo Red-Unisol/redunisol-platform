@@ -25,9 +25,11 @@ from .lead_service import (
     create_lead,
     get_lead,
     lead_has_commercial_owner,
+    prequalification_title,
     sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
     update_lead_fields,
+    update_lead_prequalification_result,
     update_lead_status,
 )
 from .logger import create_logger, Logger
@@ -42,6 +44,9 @@ from .vimarx_service import (
     resolve_arca_birthdate,
     sync_lead_vimarx_enrichment,
 )
+
+
+PREQUALIFICATION_EXCLUDED_ASSIGNEE_IDS = {7}
 
 
 def process_form_body(
@@ -317,6 +322,20 @@ def classify_lead(
         lead = get_lead(client, lead_id_int, active_logger)
         contact_id = _optional_int(lead.get("CONTACT_ID"))
         lead_status = _optional_str(lead.get("STATUS_ID"))
+
+        assigned_by_id = _optional_int(lead.get("ASSIGNED_BY_ID"))
+        if not force_processing and assigned_by_id in PREQUALIFICATION_EXCLUDED_ASSIGNEE_IDS:
+            active_logger.info(
+                f"Lead {lead_id_int} omitido: responsable excluido de la precalificacion Kestra."
+            )
+            return skipped_result(
+                contact_id=contact_id,
+                lead_id=lead_id_int,
+                lead_status=lead_status,
+                reason="excluded_assignee",
+                message="El responsable del lead esta excluido de la precalificacion automatica.",
+            )
+
         can_take_commercial_decision = force_processing or lead_has_commercial_owner(
             client,
             lead,
@@ -343,13 +362,18 @@ def classify_lead(
                 ),
             )
 
-        lead_status = update_lead_status(
+        lead_status = update_lead_prequalification_result(
             client,
             config,
             lead_id_int,
-            qualification.qualified,
-            qualification.rejection_label if not qualification.qualified else None,
-            active_logger,
+            outcome=qualification.outcome,
+            rejection_reason=(
+                qualification.rejection_label
+                if qualification.outcome == "rejected"
+                else None
+            ),
+            title=prequalification_title(submission),
+            logger=active_logger,
         )
 
         return success_result(
@@ -359,6 +383,7 @@ def classify_lead(
             lead_status=lead_status,
             message=qualification.message,
             reason=qualification.reason,
+            action=qualification.outcome,
         )
     except Exception as exc:
         active_logger.error(str(exc))

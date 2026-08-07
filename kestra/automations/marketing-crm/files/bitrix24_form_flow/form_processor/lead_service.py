@@ -11,9 +11,6 @@ from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
 
 
-KESTRA_COMMERCIAL_OWNER_PROVINCES = {"catamarca"}
-
-
 def create_lead(
     client: BitrixClient,
     config: AppConfig,
@@ -23,7 +20,7 @@ def create_lead(
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
     fields = {
-        "TITLE": submission.full_name,
+        "TITLE": prequalification_title(submission),
         "NAME": submission.full_name,
         "STATUS_ID": config.lead_statuses.new,
         "EMAIL": [{"VALUE": submission.email, "VALUE_TYPE": "WORK"}],
@@ -137,9 +134,7 @@ def lead_enum_label(
 
 
 def determine_commercial_owner(submission: NormalizedInput) -> str:
-    if submission.province.key in KESTRA_COMMERCIAL_OWNER_PROVINCES:
-        return "kestra"
-    return "bitrix"
+    return "kestra"
 
 
 def build_submission_from_lead(
@@ -178,6 +173,43 @@ def update_lead_status(
         )
     client.call("crm.lead.update", {"id": lead_id, "fields": fields})
     return status_id
+
+
+def update_lead_prequalification_result(
+    client: BitrixClient,
+    config: AppConfig,
+    lead_id: int,
+    *,
+    outcome: str,
+    rejection_reason: str | None,
+    title: str | None,
+    logger: Logger,
+) -> str:
+    if outcome == "qualified":
+        status_id = config.lead_statuses.qualified
+    elif outcome == "external_referral":
+        status_id = config.lead_statuses.external_referral
+    else:
+        status_id = config.lead_statuses.rejected
+
+    logger.info(f"Actualizando resultado de precalificacion del lead {lead_id} a {status_id}.")
+    fields = {"STATUS_ID": status_id}
+    if title:
+        fields["TITLE"] = title
+    if outcome == "rejected" and rejection_reason:
+        fields[config.fields.lead_rejection_reason] = _resolve_rejection_reason_enum_id(
+            client,
+            config.fields.lead_rejection_reason,
+            rejection_reason,
+        )
+    client.call("crm.lead.update", {"id": lead_id, "fields": fields})
+    return status_id
+
+
+def prequalification_title(submission: NormalizedInput) -> str:
+    if submission.lead_source.key == "finguru":
+        return submission.full_name
+    return f"{submission.full_name} - {submission.province.label}"
 
 
 def update_lead_bcra_snapshot(

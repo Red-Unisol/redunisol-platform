@@ -66,6 +66,9 @@ from bitrix24_form_flow.form_processor.lead_prefill_service import (
 )
 from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
+from bitrix24_form_flow.form_processor.prequalification_cutover import (
+    centralize_active_prequalification_ownership,
+)
 from bitrix24_form_flow.form_processor.receipt_file import _filename_from_content_disposition
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
 
@@ -522,7 +525,53 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
         self.assertEqual(config.lead_statuses.new, "UC_5N2OEO")
         self.assertEqual(config.lead_statuses.preclassification, "NEW")
+        self.assertEqual(config.lead_statuses.external_referral, "13")
         self.assertEqual(config.fields.lead_backfill_attempts, "UF_CRM_KSTRA_BF_ATTEMPTS")
+
+    def test_prequalification_cutover_dry_run_and_apply(self) -> None:
+        client = FakeBitrixClient()
+        client.leads = {
+            701: {
+                "ID": "701",
+                "STATUS_ID": "UC_5N2OEO",
+                "DATE_CREATE": "2026-08-07T09:00:00-03:00",
+                "UF_CRM_COMM_OWNER": "4117",
+            },
+            702: {
+                "ID": "702",
+                "STATUS_ID": "NEW",
+                "DATE_CREATE": "2026-08-07T09:05:00-03:00",
+                "UF_CRM_COMM_OWNER": "4119",
+            },
+            703: {
+                "ID": "703",
+                "STATUS_ID": "UC_1P8I07",
+                "DATE_CREATE": "2026-08-07T09:10:00-03:00",
+                "UF_CRM_COMM_OWNER": "4117",
+            },
+        }
+
+        preview = centralize_active_prequalification_ownership(
+            dry_run=True,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(preview["candidate_ids"], [701])
+        self.assertEqual(preview["changed_count"], 0)
+        self.assertEqual(client.leads[701]["UF_CRM_COMM_OWNER"], "4117")
+
+        applied = centralize_active_prequalification_ownership(
+            dry_run=False,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(applied["changed_count"], 1)
+        self.assertEqual(client.leads[701]["UF_CRM_COMM_OWNER"], "4119")
+        self.assertEqual(client.leads[703]["UF_CRM_COMM_OWNER"], "4117")
 
     def test_catamarca_selector_emits_empty_strings_for_optional_ids(self) -> None:
         outputs = _kestra_outputs(
@@ -558,7 +607,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertFalse(lead_has_commercial_owner(client, lead, config, "bitrix"))
         self.assertFalse(lead_has_commercial_owner(client, {}, config, "kestra"))
 
-    def test_determine_commercial_owner_routes_catamarca_to_kestra(self) -> None:
+    def test_determine_commercial_owner_routes_all_provinces_to_kestra(self) -> None:
         catamarca_submission = normalize_business_input(
             {
                 "full_name": "Maria Lopez",
@@ -585,7 +634,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(determine_commercial_owner(catamarca_submission), "kestra")
-        self.assertEqual(determine_commercial_owner(cordoba_submission), "bitrix")
+        self.assertEqual(determine_commercial_owner(cordoba_submission), "kestra")
 
     def make_bcra_result(
         self,
@@ -760,7 +809,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.calls[1][0], "crm.contact.add")
         self.assertEqual(client.calls[1][1]["fields"]["NAME"], "JUAN PEREZ")
         lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
-        self.assertEqual(lead_add["fields"]["TITLE"], "JUAN PEREZ")
+        self.assertEqual(lead_add["fields"]["TITLE"], "JUAN PEREZ - Cordoba")
         self.assertEqual(lead_add["fields"]["NAME"], "JUAN PEREZ")
 
     def test_argentina_timestamp_converts_from_utc(self) -> None:
@@ -901,6 +950,65 @@ class BusinessLogicTests(unittest.TestCase):
         result = evaluate_qualification(submission)
 
         self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "external_referral")
+        self.assertEqual(result.outcome, "external_referral")
+
+    def test_rio_negro_rejects_retiree_without_nacion_or_patagonia(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Ana Gomez",
+                "email": "ana@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Rio Negro",
+                "employment_status": "Jubilado Provincial",
+                "payment_bank": "Banco Santander Rio S.A.",
+                "lead_source": "Instagram",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "payment_bank_not_eligible")
+        self.assertEqual(result.rejection_label, "OTRO BANCO")
+
+    def test_santa_fe_rejects_employment_not_allowed_by_bitrix_rule(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Ana Gomez",
+                "email": "ana@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Santa Fe",
+                "employment_status": "Empleado Publico Municipal",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Instagram",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertEqual(result.outcome, "rejected")
+        self.assertEqual(result.reason, "employment_status_not_eligible")
+
+    def test_neuquen_refers_municipal_employee_to_external_seller(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Ana Gomez",
+                "email": "ana@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Neuquen",
+                "employment_status": "Empleado Publico Municipal",
+                "payment_bank": "Banco Provincia del Neuquen Sociedad Anonima",
+                "lead_source": "Instagram",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertEqual(result.outcome, "external_referral")
         self.assertEqual(result.reason, "external_referral")
 
     def test_qualification_rejects_cordoba_policia_without_bancor(self) -> None:
@@ -1153,22 +1261,23 @@ class BusinessLogicTests(unittest.TestCase):
                 "crm.lead.add",
                 "crm.lead.get",
                 "crm.lead.fields",
+                "crm.lead.update",
             ],
         )
         self.assertTrue(result["ok"])
-        self.assertFalse(result["qualified"])
+        self.assertTrue(result["qualified"])
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(result["lead_id"], 202)
-        self.assertEqual(result["lead_status"], "UC_5N2OEO")
-        self.assertEqual(result["action"], "skipped")
-        self.assertEqual(result["reason"], "commercial_owner_not_kestra")
+        self.assertEqual(result["lead_status"], "QUALIFIED")
+        self.assertEqual(result["action"], "qualified")
+        self.assertEqual(result["reason"], "qualified")
         self.assertEqual(bcra_client.calls, [])
         self.assertEqual(client.calls[0][1]["filter"]["UF_CONTACT_CUIL"], "20876543219")
         self.assertEqual(client.calls[1][1]["fields"]["UF_CONTACT_CUIL"], "20876543219")
         lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
         self.assertEqual(lead_add["fields"]["UF_CRM_1693840106704"], "20876543219")
         self.assertEqual(lead_add["fields"]["UF_CRM_PROCESSING_POLICY"], "4041")
-        self.assertEqual(lead_add["fields"]["UF_CRM_COMM_OWNER"], "4117")
+        self.assertEqual(lead_add["fields"]["UF_CRM_COMM_OWNER"], "4119")
         self.assertEqual(lead_add["fields"]["UTM_SOURCE"], "google")
         self.assertEqual(lead_add["fields"]["UTM_MEDIUM"], "cpc")
         self.assertEqual(lead_add["fields"]["UTM_CAMPAIGN"], "policias-abril")
@@ -1580,10 +1689,10 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertFalse(result["qualified"])
-        self.assertEqual(result["action"], "skipped")
-        self.assertEqual(result["reason"], "commercial_owner_not_kestra")
-        self.assertEqual(result["lead_status"], "UC_5N2OEO")
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["action"], "qualified")
+        self.assertEqual(result["reason"], "qualified")
+        self.assertEqual(result["lead_status"], "QUALIFIED")
 
     def test_process_submission_sets_rejection_reason_on_rejected_lead(self) -> None:
         client = FakeBitrixClient()
@@ -1609,14 +1718,13 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertFalse(result["qualified"])
-        self.assertEqual(result["action"], "skipped")
-        self.assertEqual(result["lead_status"], "UC_5N2OEO")
-        self.assertEqual(result["reason"], "commercial_owner_not_kestra")
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["lead_status"], "UC_1P8I07")
+        self.assertEqual(result["reason"], "province_not_eligible")
 
-        self.assertEqual(client.calls[-2][0], "crm.lead.get")
-        self.assertEqual(client.calls[-1][0], "crm.lead.fields")
-        self.assertEqual(client.leads[202]["STATUS_ID"], "UC_5N2OEO")
-        self.assertNotIn("UF_CRM_REJECTION_REASON", client.leads[202])
+        self.assertEqual(client.calls[-1][0], "crm.lead.update")
+        self.assertEqual(client.leads[202]["STATUS_ID"], "UC_1P8I07")
+        self.assertEqual(client.leads[202]["UF_CRM_REJECTION_REASON"], "3933")
 
     def test_prequalify_submission_returns_fast_result_without_bitrix(self) -> None:
         bcra_client = FakeBcraClient(
@@ -1719,7 +1827,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.contacts[101]["NAME"], "DIEGO ALEJANDRO LOZA")
         lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
         self.assertEqual(lead_add["fields"]["NAME"], "DIEGO ALEJANDRO LOZA")
-        self.assertEqual(lead_add["fields"]["TITLE"], "DIEGO ALEJANDRO LOZA")
+        self.assertEqual(lead_add["fields"]["TITLE"], "DIEGO ALEJANDRO LOZA - Catamarca")
 
     def test_resolved_name_overwrites_existing_inferred_contact_name(self) -> None:
         client = FakeBitrixClient()
@@ -2181,7 +2289,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertIn("Credito 419774", client.leads[202]["UF_CRM_VIMARX_CRED_DET"])
         self.assertEqual(client.leads[202]["UF_CRM_VIMARX_CRED_RAW"], '{"ok":true}')
 
-    def test_ingest_submission_sets_processing_policy_to_skip_and_commercial_owner_to_bitrix(
+    def test_ingest_submission_sets_processing_policy_to_skip_and_commercial_owner_to_kestra(
         self,
     ) -> None:
         client = FakeBitrixClient()
@@ -2208,7 +2316,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.calls[-1][0], "crm.lead.add")
         self.assertEqual(client.calls[-1][1]["fields"]["STATUS_ID"], "UC_5N2OEO")
         self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_PROCESSING_POLICY"], "4041")
-        self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_COMM_OWNER"], "4117")
+        self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_COMM_OWNER"], "4119")
         self.assertNotIn("UTM_SOURCE", client.calls[-1][1]["fields"])
         self.assertNotIn("UTM_MEDIUM", client.calls[-1][1]["fields"])
         self.assertNotIn("UTM_CAMPAIGN", client.calls[-1][1]["fields"])
@@ -2304,6 +2412,31 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_PROCESSING_POLICY"], "4041")
         self.assertEqual(client.calls[-1][1]["fields"]["UF_CRM_COMM_OWNER"], "4119")
 
+    def test_ingest_submission_supports_finguru_and_preserves_plain_title(self) -> None:
+        client = FakeBitrixClient()
+
+        result = ingest_submission(
+            {
+                "full_name": "Maria Lopez",
+                "email": "maria@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "Catamarca",
+                "employment_status": "Personal de Salud",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "3729",
+            },
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        fields = client.calls[-1][1]["fields"]
+        self.assertEqual(fields["UF_CRM_1722365051"], "3729")
+        self.assertEqual(fields["UF_CRM_COMM_OWNER"], "4119")
+        self.assertEqual(fields["TITLE"], "Maria Lopez")
+
     def test_ingest_submission_attaches_recibo_file_to_lead(self) -> None:
         client = FakeBitrixClient()
         recibo_url = "https://redunisol-recibos-prod.s3.us-east-2.amazonaws.com/recibos/abc.pdf"
@@ -2365,6 +2498,7 @@ class BusinessLogicTests(unittest.TestCase):
             bitrix_client=client,
             logger=SilentLogger(),
         )
+        client.leads[int(intake["lead_id"])]["UF_CRM_COMM_OWNER"] = "4117"
 
         result = classify_lead(
             intake["lead_id"],
@@ -2381,6 +2515,62 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["lead_status"], "UC_5N2OEO")
         self.assertEqual(bcra_client.calls, [])
         self.assertNotIn("UF_CRM_BCRA_STATUS", client.leads[202])
+
+    def test_classify_lead_skips_diego_frias_by_assignee_id(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[307] = {
+            "ID": "307",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "NEW",
+            "TITLE": "Lead de Diego",
+            "ASSIGNED_BY_ID": "7",
+            "UF_CRM_COMM_OWNER": "4119",
+        }
+
+        result = classify_lead(
+            307,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "skipped")
+        self.assertEqual(result["reason"], "excluded_assignee")
+        self.assertEqual(client.leads[307]["STATUS_ID"], "NEW")
+
+    def test_classify_rio_negro_police_moves_to_external_seller_stage(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[308] = {
+            "ID": "308",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "NEW",
+            "TITLE": "Ana Gomez",
+            "NAME": "Ana",
+            "LAST_NAME": "Gomez",
+            "EMAIL": [{"VALUE": "ana@example.com"}],
+            "PHONE": [{"VALUE": "+5493511234567"}],
+            "ASSIGNED_BY_ID": "57",
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1693840106704": "27123456785",
+            "UF_CRM_1714071903": "1269",
+            "UF_CRM_LEAD_1711458190312": ["445"],
+            "UF_CRM_64E65D2B2136C": "211",
+            "UF_CRM_1722365051": "2423",
+        }
+
+        result = classify_lead(
+            308,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["action"], "external_referral")
+        self.assertEqual(result["lead_status"], "13")
+        self.assertEqual(client.leads[308]["TITLE"], "Ana Gomez - Rio Negro")
 
     def test_classify_lead_skips_commercial_decision_when_owner_is_empty(self) -> None:
         client = FakeBitrixClient()
@@ -2449,13 +2639,13 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertFalse(result["qualified"])
-        self.assertEqual(result["action"], "skipped")
-        self.assertEqual(result["reason"], "commercial_owner_not_kestra")
-        self.assertEqual(result["lead_status"], "UC_5N2OEO")
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["action"], "qualified")
+        self.assertEqual(result["reason"], "qualified")
+        self.assertEqual(result["lead_status"], "QUALIFIED")
         self.assertEqual(bcra_client.calls, [])
         self.assertNotIn("UF_CRM_BCRA_STATUS", client.leads[202])
-        self.assertEqual(client.leads[202]["STATUS_ID"], "UC_5N2OEO")
+        self.assertEqual(client.leads[202]["STATUS_ID"], "QUALIFIED")
 
     def test_classify_lead_ignores_existing_bcra_snapshot(self) -> None:
         client = FakeBitrixClient()

@@ -18,8 +18,8 @@ Formulario
      PRECLASIFICACION (NEW)
             |
             | ONCRMLEADUPDATE
-            | solo precalifica si Motor = Kestra
-            | provincia + situacion laboral + banco
+            | Motor = Kestra para todo lead nuevo
+            | provincia + situacion laboral + banco + responsable
             v
    RESULTADO GANADO / rechazo
             |
@@ -61,21 +61,26 @@ el filtro por estado evita tomar los leads históricos que permanecen en
 Los schedulers independientes de BCRA y CredixSA quedan deshabilitados para evitar
 procesamiento duplicado.
 
-La entrada a `NEW` es el punto de entrega deliberado a las automatizaciones
-reactivas. Las ramas nativas de Bitrix en ese estado deben excluir los leads cuyo
-campo `Motor decision comercial` sea `Kestra`.
+La entrada a `NEW` es el punto de entrega deliberado a Kestra. Todo lead nuevo recibe
+`Motor decision comercial = Kestra`. El BP comercial nativo de Bitrix se retira en un
+corte unico; solo permanece un BP minimo para enviar el correo Finguru.
 
 ## Clasificación Reactiva
 
 El webhook existente de `ONCRMLEADUPDATE` funciona como dispatcher:
 
 - `PRECLASIFICACION (NEW)` y owner Kestra: ejecuta la clasificación
-- `PRECLASIFICACION (NEW)` con otro owner: no hace nada
+- responsable Diego Frias (`7`): omite la clasificación automatica
+- cualquier otro owner: no hace nada y requiere correccion de ownership o ejecucion forzada
 - `RESULTADO GANADO`: crea o reutiliza la negociación
 - cualquier otra etapa: no hace nada
 
 La precalificacion reactiva no consulta ni interpreta BCRA. Usa los mismos criterios
 locales que el endpoint consumido por el formulario.
+
+Rio Negro, Santa Fe y Neuquen conservan sus reglas migradas desde Bitrix y mueven los
+casos aceptados a `NEGOCIACION CON VENDEDOR (13)`. Los rechazos de todas las provincias
+se normalizan en `RESULTADO PERDIDO` con `Motivo Rechazo`.
 
 Para Catamarca, el listener crea la negociacion en una etapa aislada y con responsable
 provisional. `bitrix24_catamarca_deal_qualification` procesa una negociacion pendiente

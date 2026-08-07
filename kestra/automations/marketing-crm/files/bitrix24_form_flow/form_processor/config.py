@@ -132,6 +132,7 @@ class LeadStatusesConfig:
     preclassification: str
     qualified: str
     rejected: str
+    external_referral: str
     converted: str
 
 
@@ -312,6 +313,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             or "NEW",
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
+            external_referral=source.get(
+                "BITRIX24_LEAD_STATUS_EXTERNAL_REFERRAL",
+                "13",
+            ).strip()
+            or "13",
             converted=source.get("BITRIX24_LEAD_STATUS_CONVERTED", "CONVERTED").strip()
             or "CONVERTED",
         ),
