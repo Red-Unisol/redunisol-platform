@@ -26,6 +26,7 @@ from .lead_service import (
     get_lead,
     lead_has_commercial_owner,
     prequalification_title,
+    resolve_commercial_owner_enum_id,
     sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
     update_lead_fields,
@@ -304,6 +305,7 @@ def classify_lead(
     bcra_client: Any | None = None,
     logger: Logger | None = None,
     force_processing: bool = False,
+    take_commercial_ownership: bool = False,
 ) -> dict[str, object]:
     active_logger = logger or create_logger()
     contact_id: int | None = None
@@ -336,11 +338,10 @@ def classify_lead(
                 message="El responsable del lead esta excluido de la precalificacion automatica.",
             )
 
-        can_take_commercial_decision = force_processing or lead_has_commercial_owner(
-            client,
-            lead,
-            config,
-            "kestra",
+        can_take_commercial_decision = (
+            force_processing
+            or take_commercial_ownership
+            or lead_has_commercial_owner(client, lead, config, "kestra")
         )
 
         submission = build_submission_from_lead(lead, config)
@@ -373,6 +374,11 @@ def classify_lead(
                 else None
             ),
             title=prequalification_title(submission),
+            commercial_owner_id=(
+                resolve_commercial_owner_enum_id(client, config, "kestra")
+                if take_commercial_ownership
+                else None
+            ),
             logger=active_logger,
         )
 

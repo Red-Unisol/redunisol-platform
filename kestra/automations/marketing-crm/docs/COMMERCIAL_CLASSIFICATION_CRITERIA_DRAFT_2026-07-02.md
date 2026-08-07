@@ -1,5 +1,11 @@
 # Criterios Provisorios De Clasificacion Comercial
 
+> Actualizacion operativa 2026-08-07: para leads creados desde
+> `2026-08-07T12:28:19-03:00`, el webhook de actualizacion ya no usa
+> `Motor decision comercial` como compuerta. Kestra clasifica cualquier owner previo y
+> guarda owner Kestra junto con el resultado. La excepcion vigente es Diego Frias
+> (`ASSIGNED_BY_ID=7`).
+
 Fecha: 2026-07-02
 
 Estado: borrador operativo en lenguaje natural. Este documento traduce las reglas conocidas hasta ahora a criterios de clasificacion sin dejar alternativas abiertas. Cuando una regla no contempla un caso, o cuando falta un dato necesario para decidir, el lead debe quedar para revision manual.

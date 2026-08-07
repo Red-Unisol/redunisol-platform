@@ -69,9 +69,9 @@ corte unico; solo permanece un BP minimo para enviar el correo Finguru.
 
 El webhook existente de `ONCRMLEADUPDATE` funciona como dispatcher:
 
-- `PRECLASIFICACION (NEW)` y owner Kestra: ejecuta la clasificación
+- `PRECLASIFICACION (NEW)` creado desde `2026-08-07T12:28:19-03:00`: ejecuta la
+  clasificacion para cualquier owner previo y persiste owner Kestra con el resultado
 - responsable Diego Frias (`7`): omite la clasificación automatica
-- cualquier otro owner: no hace nada y requiere correccion de ownership o ejecucion forzada
 - `RESULTADO GANADO`: crea o reutiliza la negociación
 - cualquier otra etapa: no hace nada
 

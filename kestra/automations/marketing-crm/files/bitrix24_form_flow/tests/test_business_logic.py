@@ -3259,7 +3259,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["attempts"], 3)
         self.assertEqual(client.leads[807]["STATUS_ID"], "NEW")
 
-    def test_lead_update_classifies_preclassification_only_for_kestra_owner(self) -> None:
+    def test_lead_update_classifies_preclassification_for_any_owner_after_cutoff(self) -> None:
         client = FakeBitrixClient()
         client.leads[805] = {
             "ID": "805",
@@ -3269,6 +3269,7 @@ class BusinessLogicTests(unittest.TestCase):
             "PHONE": [{"VALUE": "3834123456"}],
             "CONTACT_ID": "901",
             "STATUS_ID": "NEW",
+            "DATE_CREATE": "2026-08-07T12:40:00-03:00",
             "UF_CRM_COMM_OWNER": "4119",
             "UF_CRM_1693840106704": "27555555556",
             "UF_CRM_1714071903": "3745",
@@ -3285,7 +3286,10 @@ class BusinessLogicTests(unittest.TestCase):
 
         result = process_lead_update_event(
             payload,
-            env=self.env,
+            env={
+                **self.env,
+                "BITRIX24_PREQUALIFICATION_CUTOFF": "2026-08-07T12:28:19-03:00",
+            },
             bitrix_client=client,
             expected_application_token="expected-token",
             logger=SilentLogger(),
@@ -3295,23 +3299,85 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "qualified")
         self.assertEqual(client.leads[805]["STATUS_ID"], "QUALIFIED")
 
-        client.leads[806] = {
-            **client.leads[805],
-            "ID": "806",
+        for lead_id, owner_id in ((806, "4117"), (807, "4121"), (808, None)):
+            with self.subTest(owner_id=owner_id):
+                client.leads[lead_id] = {
+                    **client.leads[805],
+                    "ID": str(lead_id),
+                    "STATUS_ID": "NEW",
+                    "DATE_CREATE": "2026-08-07T12:45:00-03:00",
+                    "UF_CRM_COMM_OWNER": owner_id,
+                }
+                payload["data"]["FIELDS"]["ID"] = str(lead_id)
+                classified = process_lead_update_event(
+                    payload,
+                    env={
+                        **self.env,
+                        "BITRIX24_PREQUALIFICATION_CUTOFF": "2026-08-07T12:28:19-03:00",
+                    },
+                    bitrix_client=client,
+                    expected_application_token="expected-token",
+                    logger=SilentLogger(),
+                )
+
+                self.assertEqual(classified["reason"], "qualified")
+                self.assertEqual(client.leads[lead_id]["STATUS_ID"], "QUALIFIED")
+                self.assertEqual(client.leads[lead_id]["UF_CRM_COMM_OWNER"], "4119")
+
+    def test_lead_update_does_not_classify_prequalification_before_cutoff(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[809] = {
+            "ID": "809",
+            "CONTACT_ID": "901",
             "STATUS_ID": "NEW",
+            "DATE_CREATE": "2026-08-07T12:20:00-03:00",
             "UF_CRM_COMM_OWNER": "4117",
         }
-        payload["data"]["FIELDS"]["ID"] = "806"
-        skipped = process_lead_update_event(
-            payload,
-            env=self.env,
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(809),
+            env={
+                **self.env,
+                "BITRIX24_PREQUALIFICATION_CUTOFF": "2026-08-07T12:28:19-03:00",
+            },
             bitrix_client=client,
-            expected_application_token="expected-token",
+            expected_application_token="app-token",
             logger=SilentLogger(),
         )
 
-        self.assertEqual(skipped["reason"], "commercial_owner_not_kestra")
-        self.assertEqual(client.leads[806]["STATUS_ID"], "NEW")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "skipped")
+        self.assertEqual(result["reason"], "lead_before_prequalification_cutoff")
+        self.assertEqual(client.leads[809]["STATUS_ID"], "NEW")
+        self.assertEqual(client.leads[809]["UF_CRM_COMM_OWNER"], "4117")
+
+    def test_lead_update_keeps_diego_frias_excluded_after_cutoff(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[810] = {
+            "ID": "810",
+            "CONTACT_ID": "901",
+            "STATUS_ID": "NEW",
+            "DATE_CREATE": "2026-08-07T12:45:00-03:00",
+            "ASSIGNED_BY_ID": "7",
+            "UF_CRM_COMM_OWNER": "4117",
+        }
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(810),
+            env={
+                **self.env,
+                "BITRIX24_PREQUALIFICATION_CUTOFF": "2026-08-07T12:28:19-03:00",
+            },
+            bitrix_client=client,
+            expected_application_token="app-token",
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "skipped")
+        self.assertEqual(result["reason"], "excluded_assignee")
+        self.assertEqual(client.leads[810]["STATUS_ID"], "NEW")
+        self.assertEqual(client.leads[810]["UF_CRM_COMM_OWNER"], "4117")
 
     def test_catamarca_won_lead_creates_pending_deal_with_maru(self) -> None:
         client = FakeBitrixClient()

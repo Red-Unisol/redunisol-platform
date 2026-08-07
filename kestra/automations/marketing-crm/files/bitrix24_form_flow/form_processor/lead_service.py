@@ -183,6 +183,7 @@ def update_lead_prequalification_result(
     outcome: str,
     rejection_reason: str | None,
     title: str | None,
+    commercial_owner_id: str | None = None,
     logger: Logger,
 ) -> str:
     if outcome == "qualified":
@@ -194,6 +195,8 @@ def update_lead_prequalification_result(
 
     logger.info(f"Actualizando resultado de precalificacion del lead {lead_id} a {status_id}.")
     fields = {"STATUS_ID": status_id}
+    if commercial_owner_id:
+        fields[config.fields.lead_commercial_owner] = commercial_owner_id
     if title:
         fields["TITLE"] = title
     if outcome == "rejected" and rejection_reason:

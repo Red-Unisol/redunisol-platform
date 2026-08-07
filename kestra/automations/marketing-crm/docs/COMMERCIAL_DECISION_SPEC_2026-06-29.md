@@ -1,5 +1,11 @@
 # Especificacion De Decision Comercial Y Derivacion De Leads
 
+> Actualizacion operativa 2026-08-07: la convivencia por owner descripta en este
+> documento queda superada para leads nuevos. Desde
+> `2026-08-07T12:28:19-03:00`, `bitrix24_lead_won_deal_webhook` decide para cualquier
+> owner previo y persiste owner Kestra con el resultado. Los casos anteriores al corte
+> conservan la politica historica y Diego Frias (`ASSIGNED_BY_ID=7`) sigue excluido.
+
 Fecha: 2026-06-29
 
 Estado: borrador funcional para alinear con Marketing, Comercial y Operaciones antes de implementar cambios en Kestra/Bitrix24.
