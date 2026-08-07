@@ -68,6 +68,8 @@ class RegulatorResource extends Resource
             FileUpload::make('logo_path')
                 ->label('Logo')
                 ->image()
+                ->disk('public')
+                ->visibility('public')
                 ->directory('regulators')
                 ->helperText('Imagen del logo del ente regulador.')
                 ->columnSpanFull(),
@@ -90,6 +92,8 @@ class RegulatorResource extends Resource
             ->columns([
                 ImageColumn::make('logo_path')
                     ->label('Logo')
+                    ->disk('public')
+                    ->visibility('public')
                     ->width(60)
                     ->height(30)
                     ->defaultImageUrl(fn () => null),
