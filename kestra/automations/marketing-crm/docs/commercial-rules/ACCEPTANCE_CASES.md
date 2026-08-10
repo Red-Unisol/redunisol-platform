@@ -14,7 +14,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `CAT-CASE-001` — Premium
 
-- **Dado** un no socio de Catamarca, sin créditos activos y con snapshot BCRA válido.
+- **Dado** un no socio de Catamarca con snapshot BCRA válido.
 - **Y** todas las entidades están como máximo en situación 1.
 - **Cuando** Kestra clasifica la negociación.
 - **Entonces** aplica `CAT-LINE-010`.
@@ -22,7 +22,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `CAT-CASE-002` — Especial
 
-- **Dado** un no socio de Catamarca, sin créditos activos y con snapshot BCRA válido.
+- **Dado** un no socio de Catamarca con snapshot BCRA válido.
 - **Y** existe una entidad en situación 2.
 - **Y** no existe ninguna condición de rechazo duro.
 - **Cuando** Kestra clasifica la negociación.
@@ -31,7 +31,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `CAT-CASE-003` — Banco Nación rechazado
 
-- **Dado** un no socio de Catamarca, sin créditos activos y con snapshot BCRA válido.
+- **Dado** un no socio de Catamarca con snapshot BCRA válido.
 - **Y** Banco Nación está en situación 3.
 - **Cuando** Kestra clasifica la negociación.
 - **Entonces** aplica `CAT-BCRA-030`.

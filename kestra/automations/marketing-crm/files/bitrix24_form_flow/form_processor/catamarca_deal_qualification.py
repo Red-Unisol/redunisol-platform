@@ -276,10 +276,7 @@ def _evaluate_catamarca(
     member_label = _normalize_text(
         lead_enum_label(client, lead, config.fields.lead_es_socio)
     )
-    active_credits = _optional_int(
-        lead.get(config.fields.lead_vimarx_creditos_activos_count or "")
-    )
-    if member_label == "si" or (active_credits is not None and active_credits > 0):
+    if member_label == "si":
         return _manual(config, "member_rules_require_manual_review")
     if member_label != "no":
         return _manual(config, "missing_membership_data")

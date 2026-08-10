@@ -8,7 +8,7 @@ Versión: `2026-08-10`
 |---|---|
 | Lead | Registro inicial que atraviesa ingreso, enriquecimiento y precalificación. |
 | Negociación | Oportunidad comercial creada únicamente después de que el lead obtiene un resultado interno ganado. |
-| Socio nuevo / no socio | Persona identificada explícitamente como no socia y sin créditos activos. |
+| No socio | Persona para la que Vimarx no encontró una afiliación. Vimarx informa en ese caso cero créditos activos; el contador no es un criterio comercial independiente. |
 | Socio recurrente | Persona identificada como socia que puede acceder a una línea para clientes existentes. |
 | Crédito vigente | Crédito activo detectado en Vimarx. No equivale por sí solo a renovación, paralelo ni mora. |
 | Snapshot BCRA | Copia persistida de la consulta BCRA usada para que una decisión sea reproducible. |
