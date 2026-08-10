@@ -53,15 +53,10 @@ Estado: **borrador para validación; no implementado**.
 flowchart TD
     A[Negociación Córdoba<br/>ya precalificada] --> B{Situación laboral}
 
-    B -->|Empleado Público Provincial<br/>o Personal de Salud| C{Condición comercial}
-    B -->|Policía| D{Condición comercial}
-    B -->|Docente, Municipal,<br/>Jubilado Nacional o Pensionado| E{Condición comercial}
+    B -->|Policía o<br/>Empleado Público Provincial| D{Condición comercial}
+    B -->|Docente, Municipal, Salud,<br/>Jubilado Nacional o Pensionado| E{Condición comercial}
     B -->|Jubilado Provincial| F{Condición comercial}
     B -->|UNC o DASPU| R[REVISIÓN MANUAL KESTRA]
-
-    C -->|Nuevo o no socio| G[CBU Nuevos]
-    C -->|Recurrente| H[CBU Recurrente]
-    C -->|Renovación, paralelo o mora| R
 
     E -->|Nuevo o no socio| G
     E -->|Recurrente| H
@@ -73,8 +68,9 @@ flowchart TD
     I -->|Rechazo explícito| Q[SIT. NEG. EN BCRA]
     I -->|Datos insuficientes| R
 
-    D -->|Nuevo o sin crédito vigente| K[Cruz del Eje]
-    D -->|Renovación, paralelo o mora| R
+    D -->|Sin préstamo activo<br/>Cruz del Eje| K[Cruz del Eje]
+    D -->|Con préstamo activo<br/>Cruz del Eje| J{Renovación, paralelo<br/>o mora}
+    J --> R
     K --> L{Regla BCRA Cruz del Eje}
     L -->|Premium o Especial válido| S[PRESENTACIÓN<br/>Línea Cruz del Eje]
     L -->|Más de 2 entidades en 4/5| Q
@@ -87,6 +83,11 @@ flowchart TD
     M -->|No cumple o faltan datos| R
     N -->|Selección todavía no definida| R
 ```
+
+Para Policía y Empleado Público Provincial, ser socio o tener préstamos activos de
+líneas CBU propias no cambia el camino: siempre se evalúan por Cruz del Eje. Solamente
+un préstamo activo de una línea Cruz del Eje habilita el análisis de renovación,
+paralelo o mora de esa familia.
 
 Esta vista muestra dónde están las decisiones, pero no contiene todos los límites ni
 prioridades. Para aprobar o implementar Córdoba se debe revisar

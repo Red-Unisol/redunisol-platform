@@ -26,10 +26,11 @@ Para cerrar una decisión se debe registrar:
 | `COR-PEND-006` | ¿Qué diferencia comercial elige Caja General frente a Caja Irregulares cuando ambas admiten situaciones 2 o 3? | Jubilado recurrente con una entidad en situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-007` | ¿Cómo se decide Caja Morosos y qué ocurre si la irregularidad corresponde a Bancor o Macro? | Jubilado recurrente con situación 4 en Bancor. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-008` | ¿Qué etapa final debe usarse para “rechazo por análisis”? | Renovación con mal cumplimiento. | REVISIÓN MANUAL KESTRA | Abierta |
-| `COR-PEND-009` | ¿Qué datos y umbrales definen renovación, paralelo, mora y cumplimiento mínimo? | Socio con un crédito activo y tres cuotas pagadas. | REVISIÓN MANUAL KESTRA | Abierta |
+| `COR-PEND-009` | Para un préstamo activo de Cruz del Eje, ¿qué datos y umbrales definen renovación, paralelo, mora y cumplimiento mínimo? | Policía con un préstamo Cruz del Eje activo y tres cuotas pagadas. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-010` | ¿Qué línea y reglas BCRA corresponden a Empleado de la UNC y DASPU? | Empleado UNC, no socio, BCRA limpio. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-011` | ¿“Solo situación 1” admite un snapshot sin entidades o con situación 0? | Jubilado nuevo sin entidades informadas. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-012` | ¿La categoría Premium/Especial de Cruz del Eje debe persistirse en otro campo o solo como motivo auditable? | Policía aprobado como Especial. | Guardar línea `Cruz del Eje`; categoría solo en motivo | Abierta |
+| `COR-PEND-013` | ¿Qué valores o códigos de línea de Vimarx identifican un préstamo como Cruz del Eje? | Socio con préstamos activos CBU y Cruz del Eje. | REVISIÓN MANUAL KESTRA si no puede identificarse la línea | Abierta |
 
 ## Transversales
 

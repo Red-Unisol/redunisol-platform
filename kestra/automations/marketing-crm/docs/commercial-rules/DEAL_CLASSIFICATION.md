@@ -80,33 +80,27 @@ categorías históricas Propia y Comer fueron eliminadas por `COR-DEC-001`.
 | 40 | `COR-CBU-030` | CBU Nuevos o CBU Recurrente | Banco de cobro en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Banco de cobro no admitido |
 | 50 | `COR-CBU-040` | CBU Nuevos o CBU Recurrente | Hasta 5 entidades, todas hasta situación 1, y banco de cobro hasta situación 1 | Aprobado | PRESENTACIÓN | CBU | CBU aprobada |
 
-### Empleado Público Provincial y Personal de Salud
+### Policía y Empleado Público Provincial
 
-| Prioridad | Regla | Condición de socio/crédito | Evaluación | Decisión inicial | Línea |
-|---:|---|---|---|---|---|
-| 100 | `COR-EPPS-010` | Cliente nuevo o no socio | CBU Nuevos | Aplicar tabla CBU | Según resultado CBU |
-| 110 | `COR-EPPS-020` | Socio sin crédito vigente | CBU Recurrente | Aplicar tabla CBU | Según resultado CBU |
-| 120 | `COR-EPPS-030` | Crédito vigente y corresponde renovación | BCRA REN no definido | REVISIÓN MANUAL KESTRA | Sugerida: REN Premium o REN Especial |
-| 130 | `COR-EPPS-040` | Crédito vigente y corresponde paralelo o mora | Requiere análisis de pagos/regularización | REVISIÓN MANUAL KESTRA | No aplica |
-| 140 | `COR-EPPS-050` | Condición de socio o crédito desconocida | Datos insuficientes | REVISIÓN MANUAL KESTRA | No aplica |
+Ambas situaciones laborales utilizan la misma clasificación comercial de Cruz del
+Eje. Ser socio o tener préstamos activos en líneas CBU propias no deriva el caso a
+CBU ni impide aprobar Cruz del Eje.
 
-### Policía
-
-| Prioridad | Regla | Condición de socio/crédito | Condición BCRA o comercial | Decisión | Etapa | Línea | Motivo |
+| Prioridad | Regla | Préstamos activos Cruz del Eje | Condición BCRA o comercial | Decisión | Etapa | Línea | Motivo |
 |---:|---|---|---|---|---|---|---|
-| 200 | `COR-POL-DATA-010` | Cualquiera | Snapshot BCRA faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Datos BCRA insuficientes |
-| 210 | `COR-POL-REN-010` | Renovación con buen cumplimiento | BCRA REN no definido | Revisión manual | REVISIÓN MANUAL KESTRA | Sugerida: REN Premium o REN Especial | Falta regla BCRA REN |
-| 220 | `COR-POL-CREDIT-010` | Renovación con mal cumplimiento, paralelo o mora | Cierre automático no definido | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Revisión de comportamiento de pago |
-| 230 | `COR-POL-CDE-010` | No socio o sin crédito vigente | Banco de Córdoba en situación 2 o superior | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Regla Banco de Córdoba pendiente |
-| 240 | `COR-POL-CDE-020` | No socio o sin crédito vigente | Más de 2 entidades en situación 4 o 5 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Exceso de entidades negativas |
-| 250 | `COR-POL-CDE-030` | No socio o sin crédito vigente | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Cruz del Eje | Categoría Premium |
-| 260 | `COR-POL-CDE-040` | No socio o sin crédito vigente | Situaciones 2 o 3, o hasta 2 entidades en situación 4/5 | Aprobado provisional | PRESENTACIÓN | Cruz del Eje | Categoría Especial; validar alcance |
-| 270 | `COR-POL-DATA-020` | Desconocido | Cualquiera | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Condición de socio/crédito desconocida |
+| 200 | `COR-CDE-DATA-010` | Cualquiera | Snapshot BCRA faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Datos BCRA insuficientes |
+| 210 | `COR-CDE-REN-010` | Tiene; corresponde renovación con buen cumplimiento | BCRA REN no definido | Revisión manual | REVISIÓN MANUAL KESTRA | Sugerida: REN Premium o REN Especial | Falta regla BCRA REN |
+| 220 | `COR-CDE-CREDIT-010` | Tiene; corresponde renovación con mal cumplimiento, paralelo o mora | Cierre automático no definido | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Revisión de comportamiento de pago |
+| 230 | `COR-CDE-010` | No tiene | Banco de Córdoba en situación 2 o superior | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Regla Banco de Córdoba pendiente |
+| 240 | `COR-CDE-020` | No tiene | Más de 2 entidades en situación 4 o 5 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Exceso de entidades negativas |
+| 250 | `COR-CDE-030` | No tiene | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Cruz del Eje | Categoría Premium |
+| 260 | `COR-CDE-040` | No tiene | Situaciones 2 o 3, o hasta 2 entidades en situación 4/5 | Aprobado provisional | PRESENTACIÓN | Cruz del Eje | Categoría Especial; validar alcance |
+| 270 | `COR-CDE-DATA-020` | Desconocido | Cualquiera | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | No se pudo determinar si existe un préstamo Cruz del Eje activo |
 
-`COR-POL-CDE-040` no debe implementarse hasta confirmar `COR-PEND-004`, porque la
+`COR-CDE-040` no debe implementarse hasta confirmar `COR-PEND-004`, porque la
 cantidad permitida de entidades en situación 2 o 3 no está cerrada.
 
-### Docente, Empleado Público Municipal, Jubilado Nacional y Pensionado
+### Docente, Empleado Público Municipal, Personal de Salud, Jubilado Nacional y Pensionado
 
 | Prioridad | Regla | Condición de socio/crédito | Evaluación | Decisión inicial | Línea |
 |---:|---|---|---|---|---|
