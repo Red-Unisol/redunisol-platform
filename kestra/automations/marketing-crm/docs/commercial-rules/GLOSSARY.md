@@ -11,6 +11,8 @@ Versión: `2026-08-10`
 | No socio | Persona para la que Vimarx no encontró una afiliación. Vimarx informa en ese caso cero créditos activos; el contador no es un criterio comercial independiente. |
 | Socio recurrente | Persona identificada como socia que puede acceder a una línea para clientes existentes. |
 | Crédito vigente | Crédito activo detectado en Vimarx. No equivale por sí solo a renovación, paralelo ni mora. |
+| Préstamo activo Cruz del Eje | Crédito vigente cuya línea de origen pertenece a la familia Cruz del Eje. Es el único tipo de préstamo activo que interviene en una renovación, paralelo o mora de Cruz del Eje. |
+| Préstamo activo CBU propio | Crédito vigente de una línea CBU propia. No convierte ni bloquea la evaluación Cruz del Eje de Policía o Empleado Público Provincial. |
 | Snapshot BCRA | Copia persistida de la consulta BCRA usada para que una decisión sea reproducible. |
 | Entidad | Institución informada dentro del último período del snapshot BCRA. |
 | Situación | Calificación BCRA de una entidad para el período evaluado. |

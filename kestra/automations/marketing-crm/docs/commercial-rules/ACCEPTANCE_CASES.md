@@ -57,7 +57,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `COR-CASE-001` — CBU Nuevos aprobado
 
-- **Dado** un empleado público provincial de Córdoba que no es socio.
+- **Dado** una persona de Personal de Salud de Córdoba que no es socia.
 - **Y** su snapshot contiene cinco entidades, todas en situación 1.
 - **Y** su banco de cobro está en situación 1.
 - **Cuando** se evalúa CBU Nuevos.
@@ -80,7 +80,9 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `COR-CASE-004` — Empleado Público Provincial Premium
 
-- **Dado** un empleado público provincial de Córdoba no socio y sin crédito vigente.
+- **Dado** un empleado público provincial de Córdoba que es socio y tiene un préstamo
+  activo de una línea CBU propia.
+- **Y** no tiene ningún préstamo activo de una línea Cruz del Eje.
 - **Y** todas sus entidades están en situación 1.
 - **Cuando** se evalúa Cruz del Eje común.
 - **Entonces** aplica `COR-CDE-030`.
@@ -89,7 +91,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `COR-CASE-005` — Policía con tres entidades negativas
 
-- **Dado** un policía de Córdoba no socio y sin crédito vigente.
+- **Dado** un policía de Córdoba sin préstamos activos de líneas Cruz del Eje.
 - **Y** tiene tres entidades en situación 4 o 5.
 - **Cuando** se evalúa Cruz del Eje común.
 - **Entonces** aplica `COR-CDE-020`.
@@ -97,7 +99,8 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `COR-CASE-006` — Renovación sin regla BCRA
 
-- **Dado** un policía de Córdoba, socio, con crédito vigente y buen cumplimiento.
+- **Dado** un policía de Córdoba con un préstamo activo de una línea Cruz del Eje y
+  buen cumplimiento.
 - **Cuando** corresponde analizar una renovación.
 - **Entonces** aplica `COR-CDE-REN-010`.
 - **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque BCRA REN no está

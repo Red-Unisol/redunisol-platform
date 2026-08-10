@@ -48,7 +48,22 @@ del árbol activo; Git conserva su historial.
   Cruz del Eje que Policía.
 - **Alcance:** aplica tanto a los resultados Premium y Especial como a sus rechazos y
   revisiones manuales.
-- **Separación:** Personal de Salud conserva el camino CBU documentado; no forma parte
-  de esta modificación.
+- **Separación:** Personal de Salud forma parte del grupo CBU general junto con
+  Docente, Empleado Público Municipal, Jubilado Nacional y Pensionado.
 - **Nomenclatura:** las reglas compartidas dejan de usar el prefijo `COR-POL-*` y pasan
   a `COR-CDE-*`.
+
+## `COR-DEC-003` — Renovaciones Cruz del Eje dependen de la línea del préstamo
+
+- **Fecha:** 2026-08-10
+- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
+  Córdoba.
+- **Decisión:** para Policía y Empleado Público Provincial, solamente un préstamo
+  activo de una línea Cruz del Eje habilita el análisis de renovación, paralelo o
+  mora de Cruz del Eje.
+- **No bloquean:** ser socio y tener préstamos activos en líneas CBU propias no cambian
+  la evaluación a CBU y no impiden obtener una línea Cruz del Eje.
+- **Sin préstamo Cruz del Eje activo:** se aplican las reglas BCRA comunes de Cruz del
+  Eje.
+- **Con préstamo Cruz del Eje activo:** se aplican las reglas de renovación, paralelo
+  o mora, todavía pendientes de completar.
