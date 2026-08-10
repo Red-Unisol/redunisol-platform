@@ -80,7 +80,8 @@ flowchart TD
     F -->|Recurrente| N[Caja General / Irregulares / Morosos]
     F -->|Crédito vigente o condición ambigua| R
     M -->|Solo situación 1| T[PRESENTACIÓN<br/>Línea Caja Nuevo]
-    M -->|No cumple o faltan datos| R
+    M -->|Bancor en situación<br/>mayor que 1| Q
+    M -->|Otra condición no admitida<br/>o faltan datos| R
     N -->|Selección todavía no definida| R
 ```
 

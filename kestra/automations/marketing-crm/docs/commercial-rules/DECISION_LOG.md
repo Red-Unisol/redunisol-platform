@@ -67,3 +67,15 @@ del árbol activo; Git conserva su historial.
   Eje.
 - **Con préstamo Cruz del Eje activo:** se aplican las reglas de renovación, paralelo
   o mora, todavía pendientes de completar.
+
+## `COR-DEC-004` — Caja Nuevo rechaza Bancor mayor que situación 1
+
+- **Fecha:** 2026-08-10
+- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
+  Córdoba.
+- **Precondición:** Jubilado Provincial clasificado como cliente nuevo para Caja Nuevo.
+- **Decisión:** si Bancor está en situación mayor que 1, la negociación se rechaza.
+- **Resultado:** etapa **SIT. NEG. EN BCRA**, sin línea comercial.
+- **Resto de incumplimientos:** cualquier otra condición que no satisfaga la aprobación
+  de Caja Nuevo permanece en **REVISIÓN MANUAL KESTRA** hasta contar con una regla más
+  específica.

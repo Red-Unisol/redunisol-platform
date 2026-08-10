@@ -116,15 +116,20 @@ cantidad permitida de entidades en situación 2 o 3 no está cerrada.
 |---:|---|---|---|---|---|---|
 | 400 | `COR-CAJA-DATA-010` | Cualquiera | Snapshot faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
 | 410 | `COR-CAJA-NEW-010` | Cliente nuevo | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Caja Nuevo |
-| 420 | `COR-CAJA-NEW-020` | Cliente nuevo | Alguna situación distinta de 1 | Revisión manual de cierre | REVISIÓN MANUAL KESTRA | No aplica |
-| 430 | `COR-CAJA-REC-010` | Socio/recurrente sin crédito vigente | Situaciones 1, 2 o 3 | Pendiente de selección de línea | REVISIÓN MANUAL KESTRA | Sugerida: Caja General o Caja Irregulares |
-| 440 | `COR-CAJA-REC-020` | Socio/recurrente sin crédito vigente | Situaciones 4 o 5 | Pendiente de validación | REVISIÓN MANUAL KESTRA | Sugerida: Caja Morosos |
-| 450 | `COR-CAJA-BANK-010` | Cualquiera | Irregularidad con Bancor o Macro | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
-| 460 | `COR-CAJA-CREDIT-010` | Crédito vigente | Paralelo, mora o condición mínima de pago | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 420 | `COR-CAJA-NEW-020` | Cliente nuevo | Bancor en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica |
+| 430 | `COR-CAJA-NEW-030` | Cliente nuevo | Alguna otra situación distinta de 1 | Revisión manual de cierre | REVISIÓN MANUAL KESTRA | No aplica |
+| 440 | `COR-CAJA-REC-010` | Socio/recurrente sin crédito vigente | Situaciones 1, 2 o 3 | Pendiente de selección de línea | REVISIÓN MANUAL KESTRA | Sugerida: Caja General o Caja Irregulares |
+| 450 | `COR-CAJA-REC-020` | Socio/recurrente sin crédito vigente | Situaciones 4 o 5 | Pendiente de validación | REVISIÓN MANUAL KESTRA | Sugerida: Caja Morosos |
+| 460 | `COR-CAJA-BANK-010` | Cualquiera | Irregularidad con Bancor o Macro fuera de Caja Nuevo | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 470 | `COR-CAJA-CREDIT-010` | Crédito vigente | Paralelo, mora o condición mínima de pago | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
 
 Las líneas Caja permanecen manuales salvo `Caja Nuevo` porque se superponen las
 condiciones de `Caja General` y `Caja Irregulares`, y faltan criterios para resolver
 la prioridad y las irregularidades del banco de cobro.
+
+En estas reglas, `Bancor` se refiere a Banco de Córdoba. Para un cliente nuevo, su
+situación mayor que 1 es un rechazo BCRA explícito y tiene prioridad sobre la revisión
+manual genérica.
 
 ### UNC y DASPU
 

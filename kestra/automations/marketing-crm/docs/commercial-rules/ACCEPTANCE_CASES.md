@@ -113,7 +113,14 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** aplica `COR-CAJA-NEW-010`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Nuevo`.
 
-### `COR-CASE-008` — Caja con reglas superpuestas
+### `COR-CASE-008` — Caja Nuevo rechazado por Bancor
+
+- **Dado** un jubilado provincial nuevo cuyo snapshot informa a Bancor en situación 2.
+- **Cuando** se evalúa Caja Nuevo.
+- **Entonces** aplica `COR-CAJA-NEW-020`.
+- **Y** la negociación queda en **SIT. NEG. EN BCRA** sin línea.
+
+### `COR-CASE-009` — Caja con reglas superpuestas
 
 - **Dado** un jubilado provincial recurrente, sin crédito vigente y con entidades en
   situación 2.
@@ -122,7 +129,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** hasta definir la prioridad
   entre ambas líneas.
 
-### `COR-CASE-009` — UNC
+### `COR-CASE-010` — UNC
 
 - **Dado** un empleado de la UNC que ya superó la precalificación.
 - **Cuando** se clasifica su negociación.
@@ -130,7 +137,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque todavía no existe una
   regla de línea comercial.
 
-### `COR-CASE-010` — Dato faltante
+### `COR-CASE-011` — Dato faltante
 
 - **Dado** cualquier negociación de Córdoba que necesita BCRA para decidir.
 - **Y** el snapshot está ausente o es inválido.
@@ -138,7 +145,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** la negociación queda en **REVISIÓN MANUAL KESTRA**.
 - **Y** nunca se aprueba ni rechaza por presunción.
 
-### `COR-CASE-011` — CBU Recurrente unificado
+### `COR-CASE-012` — CBU Recurrente unificado
 
 - **Dado** un socio de Córdoba que encuadra como recurrente.
 - **Cuando** se determina el tipo de evaluación CBU.
