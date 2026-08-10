@@ -180,7 +180,7 @@ def prequalify_submission(
             "contact_id": None,
             "lead_id": None,
             "lead_status": None,
-            "action": "qualified" if qualification.qualified else "rejected",
+            "action": qualification.outcome,
             "reason": qualification.reason,
             "message": qualification.message,
             "rejection_label": qualification.rejection_label,
@@ -526,8 +526,6 @@ def submission_payload_with_original_tracking(
 
 def _should_consult_bcra(submission: Any, qualification: QualificationResult) -> bool:
     if not qualification.qualified:
-        return False
-    if submission.province.key == "la_rioja":
         return False
     return True
 

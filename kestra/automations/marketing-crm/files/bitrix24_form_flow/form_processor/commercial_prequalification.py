@@ -6,7 +6,7 @@ from .input_parser import normalize_prequalification_input
 from .qualification import evaluate_prequalification
 
 
-RULE_VERSION = "2026-08-07-centralized"
+RULE_VERSION = "2026-08-10-la-rioja-external-referral"
 
 
 def prequalify_commercial_fields(payload: dict[str, Any]) -> dict[str, object]:

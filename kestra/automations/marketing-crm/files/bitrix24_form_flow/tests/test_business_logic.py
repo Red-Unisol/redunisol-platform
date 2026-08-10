@@ -1225,6 +1225,26 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertFalse(result.qualified)
         self.assertEqual(result.reason, "employment_status_not_eligible")
 
+    def test_qualification_derives_eligible_la_rioja_to_external_seller(self) -> None:
+        submission = normalize_business_input(
+            {
+                "full_name": "Ana Gomez",
+                "email": "ana@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "27-12345678-5",
+                "province": "La Rioja",
+                "employment_status": "Policia",
+                "payment_bank": "Banco Rioja Sociedad Anonima Unipersonal",
+                "lead_source": "Facebook",
+            }
+        )
+
+        result = evaluate_qualification(submission)
+
+        self.assertFalse(result.qualified)
+        self.assertEqual(result.reason, "external_referral")
+        self.assertEqual(result.outcome, "external_referral")
+
     def test_process_submission_orchestrates_contact_lead_and_status(self) -> None:
         client = FakeBitrixClient()
         bcra_client = FakeBcraClient(
@@ -1865,7 +1885,7 @@ class BusinessLogicTests(unittest.TestCase):
         lead_add = next(payload for method, payload in client.calls if method == "crm.lead.add")
         self.assertEqual(lead_add["fields"]["NAME"], "DIEGO ALEJANDRO LOZA")
 
-    def test_prequalify_submission_skips_bcra_for_la_rioja(self) -> None:
+    def test_prequalify_submission_derives_la_rioja_without_bcra(self) -> None:
         bcra_client = FakeBcraClient({})
 
         result = prequalify_submission(
@@ -1884,7 +1904,9 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
-        self.assertTrue(result["qualified"])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["action"], "external_referral")
+        self.assertEqual(result["reason"], "external_referral")
         self.assertEqual(result["bcra_result"]["outcome"], "skipped")
         self.assertEqual(bcra_client.calls, [])
 
