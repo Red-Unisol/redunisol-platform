@@ -67,27 +67,24 @@ situación laboral y banco de cobro en la precalificación.
 
 ### Reglas comunes de CBU
 
-`CBU Nuevos` y `CBU Propia Recurrentes` son reglas internas de evaluación. Cuando se
-aprueban, ambas guardan `CBU` en el campo Línea.
+`CBU Nuevos` y `CBU Recurrente` son reglas internas de evaluación. Cuando se aprueban,
+ambas guardan `CBU` en el campo Línea. `CBU Recurrente` no tiene subtipos: las
+categorías históricas Propia y Comer fueron eliminadas por `COR-DEC-001`.
 
 | Prioridad | Regla | Tipo de evaluación | Condición BCRA | Decisión | Etapa | Línea | Motivo |
 |---:|---|---|---|---|---|---|---|
 | 10 | `COR-CBU-DATA-010` | Cualquiera | Snapshot faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Datos BCRA insuficientes |
-| 20 | `COR-CBU-OWN-010` | CBU Nuevos o CBU Propia Recurrentes | Más de 5 entidades | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Exceso de entidades |
-| 30 | `COR-CBU-OWN-020` | CBU Nuevos o CBU Propia Recurrentes | Alguna entidad en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Situación BCRA no admitida |
-| 40 | `COR-CBU-OWN-030` | CBU Nuevos o CBU Propia Recurrentes | Banco de cobro en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Banco de cobro no admitido |
-| 50 | `COR-CBU-OWN-040` | CBU Nuevos o CBU Propia Recurrentes | Hasta 5 entidades, todas hasta situación 1, y banco de cobro hasta situación 1 | Aprobado | PRESENTACIÓN | CBU | CBU aprobada |
-| 60 | `COR-CBU-COMER-010` | CBU Comer Recurrentes | No puede calcularse “cupo afectado al 0,1” | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Cálculo comercial no definido |
-
-La variante Comer admite situaciones negativas sin tope conocido, pero no puede
-automatizarse hasta resolver `COR-PEND-002`.
+| 20 | `COR-CBU-010` | CBU Nuevos o CBU Recurrente | Más de 5 entidades | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Exceso de entidades |
+| 30 | `COR-CBU-020` | CBU Nuevos o CBU Recurrente | Alguna entidad en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Situación BCRA no admitida |
+| 40 | `COR-CBU-030` | CBU Nuevos o CBU Recurrente | Banco de cobro en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Banco de cobro no admitido |
+| 50 | `COR-CBU-040` | CBU Nuevos o CBU Recurrente | Hasta 5 entidades, todas hasta situación 1, y banco de cobro hasta situación 1 | Aprobado | PRESENTACIÓN | CBU | CBU aprobada |
 
 ### Empleado Público Provincial y Personal de Salud
 
 | Prioridad | Regla | Condición de socio/crédito | Evaluación | Decisión inicial | Línea |
 |---:|---|---|---|---|---|
 | 100 | `COR-EPPS-010` | Cliente nuevo o no socio | CBU Nuevos | Aplicar tabla CBU | Según resultado CBU |
-| 110 | `COR-EPPS-020` | Socio sin crédito vigente | CBU Recurrentes | Aplicar tabla CBU | Según resultado CBU |
+| 110 | `COR-EPPS-020` | Socio sin crédito vigente | CBU Recurrente | Aplicar tabla CBU | Según resultado CBU |
 | 120 | `COR-EPPS-030` | Crédito vigente y corresponde renovación | BCRA REN no definido | REVISIÓN MANUAL KESTRA | Sugerida: REN Premium o REN Especial |
 | 130 | `COR-EPPS-040` | Crédito vigente y corresponde paralelo o mora | Requiere análisis de pagos/regularización | REVISIÓN MANUAL KESTRA | No aplica |
 | 140 | `COR-EPPS-050` | Condición de socio o crédito desconocida | Datos insuficientes | REVISIÓN MANUAL KESTRA | No aplica |
@@ -113,8 +110,8 @@ cantidad permitida de entidades en situación 2 o 3 no está cerrada.
 | Prioridad | Regla | Condición de socio/crédito | Evaluación | Decisión inicial | Línea |
 |---:|---|---|---|---|---|
 | 300 | `COR-CBU-GEN-010` | Cliente nuevo o no socio | CBU Nuevos | Aplicar tabla CBU | Según resultado CBU |
-| 310 | `COR-CBU-GEN-020` | Socio sin crédito vigente | CBU Recurrentes | Aplicar tabla CBU | Según resultado CBU |
-| 320 | `COR-CBU-GEN-030` | Crédito vigente y encuadra como recurrente | CBU Recurrentes | Aplicar tabla CBU | Según resultado CBU |
+| 310 | `COR-CBU-GEN-020` | Socio sin crédito vigente | CBU Recurrente | Aplicar tabla CBU | Según resultado CBU |
+| 320 | `COR-CBU-GEN-030` | Crédito vigente y encuadra como recurrente | CBU Recurrente | Aplicar tabla CBU | Según resultado CBU |
 | 330 | `COR-CBU-GEN-040` | Crédito vigente y no encuadra como recurrente | Cierre automático no definido | REVISIÓN MANUAL KESTRA | No aplica |
 | 340 | `COR-CBU-GEN-050` | Condición desconocida | Datos insuficientes | REVISIÓN MANUAL KESTRA | No aplica |
 

@@ -16,6 +16,7 @@ Versión: `2026-08-10`
 | Situación | Calificación BCRA de una entidad para el período evaluado. |
 | Banco de cobro | Banco declarado o normalizado donde la persona cobra sus haberes. |
 | Línea | Producto o línea comercial registrada en la negociación. |
+| CBU Recurrente | Evaluación CBU para una persona socia que encuadra como recurrente. No existen subtipos Propia ni Comer en la especificación vigente. |
 | Bucket | Regla de distribución que determina el conjunto de vendedores posibles. No determina aprobación ni línea. |
 
 ## Etapas de negociación

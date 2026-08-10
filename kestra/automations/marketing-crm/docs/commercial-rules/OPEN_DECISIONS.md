@@ -20,8 +20,6 @@ Para cerrar una decisión se debe registrar:
 
 | ID | Decisión requerida | Ejemplo que debe resolverse | Salida segura actual | Estado |
 |---|---|---|---|---|
-| `COR-PEND-001` | ¿Cómo se distingue CBU Propia Recurrentes de CBU Comer Recurrentes y de qué fuente sale ese dato? | Socio sin crédito vigente que cobra por Bancor. | REVISIÓN MANUAL KESTRA | Abierta |
-| `COR-PEND-002` | ¿Qué significa exactamente “cupo afectado al 0,1” y cómo se calcula? | Recurrente Comer con situaciones BCRA negativas. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-003` | ¿Cuáles son las reglas BCRA completas para REN Premium y REN Especial? | Policía con renovación y situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-004` | En Cruz del Eje Especial, ¿hay un límite para entidades en situación 2 o 3? | Diez entidades en situación 2 y ninguna en 4/5. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-005` | ¿Banco de Córdoba en situación 2 o superior siempre impide Cruz del Eje? ¿Se identifica por entidad BCRA o por banco declarado? | Policía cuyo snapshot contiene Banco de Córdoba en situación 2. | REVISIÓN MANUAL KESTRA | Abierta |

@@ -3,8 +3,7 @@
 Estado: criterio acordado, pendiente de implementacion.
 
 Este documento cubre solamente distribución. La clasificación comercial y el proceso
-compartido de aprobación se documentan en
-[`commercial-rules/README.md`](commercial-rules/README.md).
+compartido de aprobación se documentan en [`README.md`](README.md).
 
 ## Alcance
 
