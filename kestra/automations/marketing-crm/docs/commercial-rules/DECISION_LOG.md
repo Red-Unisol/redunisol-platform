@@ -79,3 +79,21 @@ del árbol activo; Git conserva su historial.
 - **Resto de incumplimientos:** cualquier otra condición que no satisfaga la aprobación
   de Caja Nuevo permanece en **REVISIÓN MANUAL KESTRA** hasta contar con una regla más
   específica.
+
+## `COR-DEC-005` — Aprobar Caja Irregulares por edad y BCRA
+
+- **Fecha:** 2026-08-10
+- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
+  Córdoba.
+- **Segmento:** Jubilado Provincial, cliente nuevo o recurrente.
+- **Edad:** hasta 82 años inclusive, calculada a la fecha de clasificación.
+- **BCRA:** todas las entidades como máximo en situación 3 y al menos una entidad en
+  situación 2 o 3.
+- **Banco de cobro:** no interviene en esta evaluación.
+- **Resultado:** etapa **PRESENTACIÓN**, línea `Caja Irregulares`.
+- **Datos o límites incumplidos:** fecha de nacimiento faltante, edad mayor a 82 o una
+  situación 4/5 quedan en **REVISIÓN MANUAL KESTRA** mientras no exista una regla final
+  más específica.
+- **Decisión cerrada:** `COR-PEND-006`; las situaciones 2/3 dentro del límite de edad
+  corresponden a Caja Irregulares y no requieren elegir entre Caja General e
+  Irregulares.

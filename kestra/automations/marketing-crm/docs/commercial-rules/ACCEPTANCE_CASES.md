@@ -120,16 +120,23 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** aplica `COR-CAJA-NEW-020`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA** sin línea.
 
-### `COR-CASE-009` — Caja con reglas superpuestas
+### `COR-CASE-009` — Caja Irregulares en el límite de edad
 
-- **Dado** un jubilado provincial recurrente, sin crédito vigente y con entidades en
-  situación 2.
-- **Cuando** se intenta elegir entre Caja General y Caja Irregulares.
-- **Entonces** aplica `COR-CAJA-REC-010`.
-- **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** hasta definir la prioridad
-  entre ambas líneas.
+- **Dado** un jubilado provincial de 82 años, nuevo o recurrente.
+- **Y** todas sus entidades están como máximo en situación 3 y al menos una está en
+  situación 2 o 3.
+- **Cuando** se evalúa Caja Irregulares.
+- **Entonces** aplica `COR-CAJA-IRREG-010`.
+- **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Irregulares`.
 
-### `COR-CASE-010` — UNC
+### `COR-CASE-010` — Caja Irregulares fuera del límite de edad
+
+- **Dado** el mismo caso con 83 años.
+- **Entonces** aplica `COR-CAJA-IRREG-020`.
+- **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque no está definido el
+  resultado final para una persona que supera el límite de la línea.
+
+### `COR-CASE-011` — UNC
 
 - **Dado** un empleado de la UNC que ya superó la precalificación.
 - **Cuando** se clasifica su negociación.
@@ -137,7 +144,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque todavía no existe una
   regla de línea comercial.
 
-### `COR-CASE-011` — Dato faltante
+### `COR-CASE-012` — Dato faltante
 
 - **Dado** cualquier negociación de Córdoba que necesita BCRA para decidir.
 - **Y** el snapshot está ausente o es inválido.
@@ -145,7 +152,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** la negociación queda en **REVISIÓN MANUAL KESTRA**.
 - **Y** nunca se aprueba ni rechaza por presunción.
 
-### `COR-CASE-012` — CBU Recurrente unificado
+### `COR-CASE-013` — CBU Recurrente unificado
 
 - **Dado** un socio de Córdoba que encuadra como recurrente.
 - **Cuando** se determina el tipo de evaluación CBU.

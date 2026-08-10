@@ -117,19 +117,26 @@ cantidad permitida de entidades en situación 2 o 3 no está cerrada.
 | 400 | `COR-CAJA-DATA-010` | Cualquiera | Snapshot faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
 | 410 | `COR-CAJA-NEW-010` | Cliente nuevo | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Caja Nuevo |
 | 420 | `COR-CAJA-NEW-020` | Cliente nuevo | Bancor en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica |
-| 430 | `COR-CAJA-NEW-030` | Cliente nuevo | Alguna otra situación distinta de 1 | Revisión manual de cierre | REVISIÓN MANUAL KESTRA | No aplica |
-| 440 | `COR-CAJA-REC-010` | Socio/recurrente sin crédito vigente | Situaciones 1, 2 o 3 | Pendiente de selección de línea | REVISIÓN MANUAL KESTRA | Sugerida: Caja General o Caja Irregulares |
-| 450 | `COR-CAJA-REC-020` | Socio/recurrente sin crédito vigente | Situaciones 4 o 5 | Pendiente de validación | REVISIÓN MANUAL KESTRA | Sugerida: Caja Morosos |
-| 460 | `COR-CAJA-BANK-010` | Cualquiera | Irregularidad con Bancor o Macro fuera de Caja Nuevo | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
-| 470 | `COR-CAJA-CREDIT-010` | Crédito vigente | Paralelo, mora o condición mínima de pago | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 430 | `COR-CAJA-IRREG-DATA-010` | Cliente nuevo o recurrente | Alguna situación 2 o 3 y fecha de nacimiento faltante o inválida | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 440 | `COR-CAJA-IRREG-010` | Cliente nuevo o recurrente, hasta 82 años inclusive | Todas las entidades hasta situación 3 y al menos una en situación 2 o 3 | Aprobado | PRESENTACIÓN | Caja Irregulares |
+| 450 | `COR-CAJA-IRREG-020` | Cliente nuevo o recurrente, mayor de 82 años | Alguna situación 2 o 3 | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 460 | `COR-CAJA-REC-010` | Socio/recurrente sin crédito vigente | Solo situaciones 1 | Pendiente de selección de línea | REVISIÓN MANUAL KESTRA | Sugerida: Caja General |
+| 470 | `COR-CAJA-REC-020` | Socio/recurrente sin crédito vigente | Alguna situación 4 o 5 | Pendiente de validación | REVISIÓN MANUAL KESTRA | Sugerida: Caja Morosos |
+| 480 | `COR-CAJA-BANK-010` | Cualquiera | Irregularidad bancaria no resuelta por una regla anterior | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 490 | `COR-CAJA-CREDIT-010` | Crédito vigente | Paralelo, mora o condición mínima de pago | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
 
-Las líneas Caja permanecen manuales salvo `Caja Nuevo` porque se superponen las
-condiciones de `Caja General` y `Caja Irregulares`, y faltan criterios para resolver
-la prioridad y las irregularidades del banco de cobro.
+`Caja Nuevo` y `Caja Irregulares` tienen reglas de aprobación explícitas. `Caja
+General` y `Caja Morosos` permanecen manuales porque todavía faltan criterios para
+cerrar su clasificación.
 
 En estas reglas, `Bancor` se refiere a Banco de Córdoba. Para un cliente nuevo, su
 situación mayor que 1 es un rechazo BCRA explícito y tiene prioridad sobre la revisión
 manual genérica.
+
+Para `Caja Irregulares`, el banco de cobro declarado no interviene. La edad se calcula
+a la fecha de clasificación a partir de la fecha de nacimiento disponible en Bitrix.
+Los montos, plazos y documentación requerida corresponden a la gestión posterior y no
+participan en la clasificación comercial de la negociación.
 
 ### UNC y DASPU
 

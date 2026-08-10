@@ -23,7 +23,6 @@ Para cerrar una decisión se debe registrar:
 | `COR-PEND-003` | ¿Cuáles son las reglas BCRA completas para REN Premium y REN Especial? | Policía con renovación y situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-004` | En Cruz del Eje Especial, ¿hay un límite para entidades en situación 2 o 3? | Diez entidades en situación 2 y ninguna en 4/5. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-005` | ¿Banco de Córdoba en situación 2 o superior siempre impide Cruz del Eje? ¿Se identifica por entidad BCRA o por banco declarado? | Policía cuyo snapshot contiene Banco de Córdoba en situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
-| `COR-PEND-006` | ¿Qué diferencia comercial elige Caja General frente a Caja Irregulares cuando ambas admiten situaciones 2 o 3? | Jubilado recurrente con una entidad en situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-007` | ¿Cómo se decide Caja Morosos y qué ocurre si la irregularidad corresponde a Bancor o Macro? | Jubilado recurrente con situación 4 en Bancor. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-008` | ¿Qué etapa final debe usarse para “rechazo por análisis”? | Renovación con mal cumplimiento. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-009` | Para un préstamo activo de Cruz del Eje, ¿qué datos y umbrales definen renovación, paralelo, mora y cumplimiento mínimo? | Policía con un préstamo Cruz del Eje activo y tres cuotas pagadas. | REVISIÓN MANUAL KESTRA | Abierta |
@@ -31,6 +30,7 @@ Para cerrar una decisión se debe registrar:
 | `COR-PEND-011` | ¿“Solo situación 1” admite un snapshot sin entidades o con situación 0? | Jubilado nuevo sin entidades informadas. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-012` | ¿La categoría Premium/Especial de Cruz del Eje debe persistirse en otro campo o solo como motivo auditable? | Policía aprobado como Especial. | Guardar línea `Cruz del Eje`; categoría solo en motivo | Abierta |
 | `COR-PEND-013` | ¿Qué valores o códigos de línea de Vimarx identifican un préstamo como Cruz del Eje? | Socio con préstamos activos CBU y Cruz del Eje. | REVISIÓN MANUAL KESTRA si no puede identificarse la línea | Abierta |
+| `COR-PEND-014` | Para un cliente nuevo que podría encuadrar en Caja Irregulares, ¿el rechazo por Bancor mayor que 1 mantiene prioridad absoluta? | Jubilado nuevo de 75 años con Bancor en situación 2 y las demás entidades en situación 1. | SIT. NEG. EN BCRA por `COR-DEC-004` | Abierta |
 
 ## Transversales
 
