@@ -101,6 +101,7 @@ tasks:
       CREDIX_CACHE_HIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
       CREDIX_CACHED_AT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
       VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
       VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"

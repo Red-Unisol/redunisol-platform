@@ -280,6 +280,14 @@ def fetch_cuotas_by_cuil(cuil_digits: str, config: VimarxConfig) -> list[dict[st
     )
 
 
+def _build_headers() -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def evaluate_list(
     *,
     config: VimarxConfig,
@@ -303,7 +311,7 @@ def evaluate_list(
         try:
             response = session.post(
                 url,
-                headers={"Content-Type": "application/json"},
+                headers=_build_headers(),
                 json=payload,
                 verify=config.verify_tls,
                 timeout=config.timeout_seconds,

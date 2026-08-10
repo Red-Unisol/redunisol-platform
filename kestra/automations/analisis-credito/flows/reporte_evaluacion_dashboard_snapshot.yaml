@@ -36,6 +36,7 @@ tasks:
       OBJECTIVES_DASHBOARD_SNAPSHOT_PATH: "/data/reporte-evaluacion/dashboard/latest.json"
       OBJECTIVES_YELLOW_THRESHOLD_PCT: "{{ envs.objectives_yellow_threshold_pct ?? '15' }}"
       REPORTE_EVALUACION_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      REPORTE_EVALUACION_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
       REPORTE_EVALUACION_TIMEOUT_SECONDS: "{{ envs.reporte_evaluacion_timeout_seconds ?? '60' }}"
       REPORTE_EVALUACION_PER_DAY_MAX: "{{ envs.reporte_evaluacion_per_day_max ?? '20000' }}"
       REPORTE_EVALUACION_VERIFY_SSL: "false"
