@@ -61,13 +61,13 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Y** su snapshot contiene cinco entidades, todas en situación 1.
 - **Y** su banco de cobro está en situación 1.
 - **Cuando** se evalúa CBU Nuevos.
-- **Entonces** aplica `COR-CBU-OWN-040`.
+- **Entonces** aplica `COR-CBU-040`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `CBU`.
 
 ### `COR-CASE-002` — Límite de entidades CBU
 
 - **Dado** el mismo caso con seis entidades, aunque todas estén en situación 1.
-- **Entonces** aplica `COR-CBU-OWN-010`.
+- **Entonces** aplica `COR-CBU-010`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA**.
 
 ### `COR-CASE-003` — Situación no admitida en CBU
@@ -75,7 +75,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Dado** un docente de Córdoba no socio.
 - **Y** una de sus entidades está en situación 2.
 - **Cuando** se evalúa CBU Nuevos.
-- **Entonces** aplica `COR-CBU-OWN-020`.
+- **Entonces** aplica `COR-CBU-020`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA**.
 
 ### `COR-CASE-004` — Policía Premium
@@ -134,3 +134,11 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Cuando** Kestra intenta clasificarla.
 - **Entonces** la negociación queda en **REVISIÓN MANUAL KESTRA**.
 - **Y** nunca se aprueba ni rechaza por presunción.
+
+### `COR-CASE-011` — CBU Recurrente unificado
+
+- **Dado** un socio de Córdoba que encuadra como recurrente.
+- **Cuando** se determina el tipo de evaluación CBU.
+- **Entonces** se utiliza directamente `CBU Recurrente`.
+- **Y** no se intenta clasificarlo como Propia ni Comer.
+- **Y** se aplican las mismas reglas BCRA estrictas documentadas para CBU Nuevos.

@@ -1,5 +1,10 @@
 # Especificacion De Decision Comercial Y Derivacion De Leads
 
+> Nota de vigencia 2026-08-10: las referencias de este borrador a `CBU Propia
+> Recurrentes` y `CBU Comer Recurrentes` quedaron superadas. La especificación
+> compartida define una única categoría `CBU Recurrente`. Ver
+> [`commercial-rules/DECISION_LOG.md`](commercial-rules/DECISION_LOG.md).
+
 > Actualizacion operativa 2026-08-07: la convivencia por owner descripta en este
 > documento queda superada para leads nuevos. Desde
 > `2026-08-07T12:28:19-03:00`, `bitrix24_lead_won_deal_webhook` decide para cualquier

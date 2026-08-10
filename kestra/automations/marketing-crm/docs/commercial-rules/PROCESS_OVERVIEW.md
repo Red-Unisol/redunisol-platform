@@ -60,7 +60,7 @@ flowchart TD
     B -->|UNC o DASPU| R[REVISIÓN MANUAL KESTRA]
 
     C -->|Nuevo o no socio| G[CBU Nuevos]
-    C -->|Recurrente| H[CBU Recurrentes]
+    C -->|Recurrente| H[CBU Recurrente]
     C -->|Renovación, paralelo o mora| R
 
     E -->|Nuevo o no socio| G
@@ -68,9 +68,7 @@ flowchart TD
     E -->|No encuadra o faltan datos| R
 
     G --> I{Regla BCRA CBU}
-    H --> J{¿Propia o Comer?}
-    J -->|Propia| I
-    J -->|Comer o desconocido| R
+    H --> I
     I -->|Aprueba| P[PRESENTACIÓN<br/>Línea CBU]
     I -->|Rechazo explícito| Q[SIT. NEG. EN BCRA]
     I -->|Datos insuficientes| R

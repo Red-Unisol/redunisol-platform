@@ -38,6 +38,7 @@ documentarse; no se debe reinterpretar silenciosamente la regla.
 | [`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md) | Negocio y Tecnología | Contiene las reglas de clasificación de negociaciones. |
 | [`ACCEPTANCE_CASES.md`](ACCEPTANCE_CASES.md) | Negocio, QA y Tecnología | Permite validar las reglas mediante ejemplos concretos. |
 | [`OPEN_DECISIONS.md`](OPEN_DECISIONS.md) | Business owners | Enumera las definiciones que todavía bloquean automatizaciones. |
+| [`DECISION_LOG.md`](DECISION_LOG.md) | Todos | Conserva las decisiones cerradas y su impacto en las reglas. |
 | [`RULE_CHANGE_TEMPLATE.md`](RULE_CHANGE_TEMPLATE.md) | Quien solicite un cambio | Formato obligatorio para proponer o modificar una regla. |
 
 Documentación complementaria:

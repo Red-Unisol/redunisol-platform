@@ -1,5 +1,10 @@
 # Criterios Provisorios De Clasificacion Comercial
 
+> Nota de vigencia 2026-08-10: las referencias de este borrador a `CBU Propia
+> Recurrentes` y `CBU Comer Recurrentes` quedaron superadas. La especificación
+> compartida define una única categoría `CBU Recurrente`. Ver
+> [`commercial-rules/DECISION_LOG.md`](commercial-rules/DECISION_LOG.md).
+
 > Actualizacion operativa 2026-08-07: para leads creados desde
 > `2026-08-07T12:28:19-03:00`, el webhook de actualizacion ya no usa
 > `Motor decision comercial` como compuerta. Kestra clasifica cualquier owner previo y
