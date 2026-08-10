@@ -53,8 +53,8 @@ Estado: **borrador para validación; no implementado**.
 flowchart TD
     A[Negociación Córdoba<br/>ya precalificada] --> B{Situación laboral}
 
-    B -->|Empleado Público Provincial<br/>o Personal de Salud| C{Condición comercial}
-    B -->|Policía| D{Condición comercial}
+    B -->|Personal de Salud| C{Condición comercial}
+    B -->|Policía o<br/>Empleado Público Provincial| D{Condición comercial}
     B -->|Docente, Municipal,<br/>Jubilado Nacional o Pensionado| E{Condición comercial}
     B -->|Jubilado Provincial| F{Condición comercial}
     B -->|UNC o DASPU| R[REVISIÓN MANUAL KESTRA]

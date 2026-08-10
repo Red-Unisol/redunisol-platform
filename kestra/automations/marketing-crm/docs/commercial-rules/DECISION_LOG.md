@@ -38,3 +38,17 @@ del árbol activo; Git conserva su historial.
 - **Resultado:** `Es socio = Sí` pasa a **REVISIÓN MANUAL KESTRA**; `Es socio = No`
   continúa a las reglas BCRA; un valor desconocido pasa a **REVISIÓN MANUAL KESTRA**.
 - **Regla eliminada:** `CAT-MEMBER-020`.
+
+## `COR-DEC-002` — Empleado Público Provincial utiliza Cruz del Eje
+
+- **Fecha:** 2026-08-10
+- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
+  Córdoba.
+- **Decisión:** Empleado Público Provincial utiliza la misma evaluación comercial de
+  Cruz del Eje que Policía.
+- **Alcance:** aplica tanto a los resultados Premium y Especial como a sus rechazos y
+  revisiones manuales.
+- **Separación:** Personal de Salud conserva el camino CBU documentado; no forma parte
+  de esta modificación.
+- **Nomenclatura:** las reglas compartidas dejan de usar el prefijo `COR-POL-*` y pasan
+  a `COR-CDE-*`.

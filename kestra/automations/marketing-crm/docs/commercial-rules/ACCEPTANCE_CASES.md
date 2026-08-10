@@ -78,12 +78,12 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** aplica `COR-CBU-020`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA**.
 
-### `COR-CASE-004` — Policía Premium
+### `COR-CASE-004` — Empleado Público Provincial Premium
 
-- **Dado** un policía de Córdoba no socio y sin crédito vigente.
+- **Dado** un empleado público provincial de Córdoba no socio y sin crédito vigente.
 - **Y** todas sus entidades están en situación 1.
 - **Cuando** se evalúa Cruz del Eje común.
-- **Entonces** aplica `COR-POL-CDE-030`.
+- **Entonces** aplica `COR-CDE-030`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `Cruz del Eje` y categoría
   Premium.
 
@@ -92,14 +92,14 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Dado** un policía de Córdoba no socio y sin crédito vigente.
 - **Y** tiene tres entidades en situación 4 o 5.
 - **Cuando** se evalúa Cruz del Eje común.
-- **Entonces** aplica `COR-POL-CDE-020`.
+- **Entonces** aplica `COR-CDE-020`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA**.
 
 ### `COR-CASE-006` — Renovación sin regla BCRA
 
 - **Dado** un policía de Córdoba, socio, con crédito vigente y buen cumplimiento.
 - **Cuando** corresponde analizar una renovación.
-- **Entonces** aplica `COR-POL-REN-010`.
+- **Entonces** aplica `COR-CDE-REN-010`.
 - **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque BCRA REN no está
   definido.
 
