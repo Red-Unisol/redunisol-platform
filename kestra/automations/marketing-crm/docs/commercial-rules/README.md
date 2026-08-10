@@ -36,16 +36,17 @@ documentarse; no se debe reinterpretar silenciosamente la regla.
 | [`PROCESS_OVERVIEW.md`](PROCESS_OVERVIEW.md) | Todos | Explica visualmente el proceso y sus responsabilidades. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Todos | Define términos y resultados permitidos. |
 | [`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md) | Negocio y Tecnología | Contiene las reglas de clasificación de negociaciones. |
+| [`DEAL_ROUTING.md`](DEAL_ROUTING.md) | Negocio y Tecnología | Contiene los buckets acordados de distribución. |
 | [`ACCEPTANCE_CASES.md`](ACCEPTANCE_CASES.md) | Negocio, QA y Tecnología | Permite validar las reglas mediante ejemplos concretos. |
 | [`OPEN_DECISIONS.md`](OPEN_DECISIONS.md) | Business owners | Enumera las definiciones que todavía bloquean automatizaciones. |
 | [`DECISION_LOG.md`](DECISION_LOG.md) | Todos | Conserva las decisiones cerradas y su impacto en las reglas. |
 | [`RULE_CHANGE_TEMPLATE.md`](RULE_CHANGE_TEMPLATE.md) | Quien solicite un cambio | Formato obligatorio para proponer o modificar una regla. |
 
-Documentación complementaria:
+Documentación técnica complementaria:
 
-- [`../PREQUALIFICATION_CENTRALIZATION_2026-08-07.md`](../PREQUALIFICATION_CENTRALIZATION_2026-08-07.md): comportamiento de precalificación del lead;
-- [`../DEAL_ROUTING_BUCKETS_PROPOSAL_2026-08-10.md`](../DEAL_ROUTING_BUCKETS_PROPOSAL_2026-08-10.md): distribución propuesta de negociaciones;
-- [`../CATAMARCA_DEAL_QUALIFICATION_2026-07-31.md`](../CATAMARCA_DEAL_QUALIFICATION_2026-07-31.md): implementación técnica vigente de Catamarca.
+- [`../technical/RUNTIME_ARCHITECTURE.md`](../technical/RUNTIME_ARCHITECTURE.md): arquitectura vigente;
+- [`../technical/PREQUALIFICATION_CUTOVER_2026-08-07.md`](../technical/PREQUALIFICATION_CUTOVER_2026-08-07.md): corte operativo de precalificación;
+- [`../technical/CATAMARCA_DEAL_QUALIFICATION.md`](../technical/CATAMARCA_DEAL_QUALIFICATION.md): implementación técnica de Catamarca.
 
 ## Separación de responsabilidades
 

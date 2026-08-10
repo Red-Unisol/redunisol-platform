@@ -16,13 +16,10 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_bcra_backfill.yaml` y `flows/bitrix24_credixsa_employer_backfill.yaml`: schedulers legacy deshabilitados y reemplazados por el prefill unificado.
 - `flows/bitrix24_form_persistence.yaml`: persistencia legacy deshabilitada; ya no participa de la carga web.
 - `files/bitrix24_form_flow/`: namespace files Python usados por el flow.
-- `docs/FORM_WEBHOOK_API.md`: contrato HTTP esperado por el frontend.
-- `docs/COMMERCIAL_PREQUALIFICATION_API.md`: contrato del endpoint de pre-elegibilidad.
-- `docs/LEAD_PIPELINE_ARCHITECTURE_WIP_2026-07-21.md`: arquitectura del pipeline de carga, backfill y clasificacion.
-- `docs/PREQUALIFICATION_CENTRALIZATION_2026-08-07.md`: politica final, BP minimo de correo y runbook del corte unico.
-- `docs/CATAMARCA_DEAL_QUALIFICATION_2026-07-31.md`: circuito y criterios implementados para la calificacion definitiva Catamarca.
-- `docs/COMMERCIAL_DECISION_SPEC_2026-06-29.md`: decisiones y ambiguedades pendientes para automatizar decision comercial y derivacion.
-- `docs/COMMERCIAL_CLASSIFICATION_CRITERIA_DRAFT_2026-07-02.md`: criterios provisorios de clasificacion en lenguaje natural.
+- `docs/README.md`: índice y política documental del dominio.
+- `docs/commercial-rules/`: fuente de verdad funcional compartida.
+- `docs/technical/`: arquitectura, contratos HTTP, referencia técnica y runbooks.
+- `docs/archive/`, `docs/audits/` y `docs/reports/`: evidencia histórica no normativa.
 - `tests/`: reservado para tests del dominio fuera del package si mas adelante conviene separarlos.
 
 ## Criterio

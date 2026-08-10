@@ -22,5 +22,5 @@ históricos vuelvan a incorporarse por error.
 - **Decisiones cerradas:** `COR-PEND-001` y `COR-PEND-002`.
 
 Esta decisión elimina cualquier referencia funcional al cálculo “cupo afectado al
-0,1”. Los documentos de junio y julio que todavía mencionan Propia o Comer se conservan
-únicamente como antecedentes históricos y no son normativos.
+0,1”. Los borradores de junio y julio que mencionaban Propia o Comer fueron eliminados
+del árbol activo; Git conserva su historial.

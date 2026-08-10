@@ -1,6 +1,6 @@
 # Calificacion De Negociaciones Catamarca
 
-Estado: implementado en rama, pendiente de merge y despliegue.
+Estado: implementado y desplegado en producción.
 
 ## Objetivo
 
@@ -27,9 +27,12 @@ Responsable provisional: Maru Lopez (57)
         |
         v
 Calificacion definitiva Catamarca
-        |-- aprobable -> PRESENTACION + vendedor definitivo + linea AMEJUCA
+        |-- aprobable -> PRESENTACION + linea AMEJUCA
         |-- rechazo duro BCRA -> SIT. NEG. EN BCRA
         `-- dato insuficiente/regla ambigua -> REVISION MANUAL KESTRA
+        |
+        `-- dentro de horario y con bucket valido:
+            distribucion + transferencia de chat para cualquier resultado
 ```
 
 ## Etapas Bitrix
@@ -49,13 +52,12 @@ Provisionado en Bitrix el 2026-08-06:
 
 ## Reglas Automatizadas
 
-- Socio recurrente (`Es socio = Si`) o persona con creditos activos: revision manual, sin aplicar rechazo BCRA automatico.
-- Socio nuevo (`Es socio = No`): evaluar snapshot BCRA.
-- Para socios nuevos, mas de cuatro entidades en situacion 4 o 5 en el periodo mas reciente: rechazo BCRA.
-- Para socios nuevos, banco de cobro (Banco Nacion) en situacion mayor a 2: rechazo BCRA duro. Si Banco Nacion no aparece en el snapshot, equivale a situacion 0.
-- Sin situaciones mayores a 1: `AMEJUCA Premium`.
-- Si no corresponde rechazo duro ni `AMEJUCA Premium`: `AMEJUCA Especial`.
-- Snapshot faltante o error de proveedor: revision manual.
+La tabla funcional normativa y sus casos de aceptación se encuentran en:
+
+- [`../commercial-rules/DEAL_CLASSIFICATION.md`](../commercial-rules/DEAL_CLASSIFICATION.md)
+- [`../commercial-rules/ACCEPTANCE_CASES.md`](../commercial-rules/ACCEPTANCE_CASES.md)
+
+Este documento no duplica esas reglas para evitar divergencias futuras.
 
 ## Buckets Y Distribucion
 

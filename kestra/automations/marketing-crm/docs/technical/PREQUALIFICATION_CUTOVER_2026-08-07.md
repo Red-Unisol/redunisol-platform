@@ -1,6 +1,7 @@
 # Centralizacion De Precalificacion En Kestra
 
-Estado: implementado en Git; pendiente de deploy y corte operativo.
+Estado: corte ejecutado y desplegado en producción. Documento conservado como runbook
+y registro de la frontera histórica.
 
 ## Alcance
 
@@ -92,7 +93,7 @@ El webhook de actualizacion aplica esa frontera antes de tomar ownership o decid
 se debe ejecutar `bitrix24_prequalification_cutover` sin `date_from`: el dry-run global
 del 2026-08-07 encontro `1515` candidatos historicos que no forman parte del corte.
 
-Validacion operativa pendiente:
+Checklist para revalidaciones operativas:
 
 1. probar un caso aprobado posterior al corte
 2. probar un rechazo posterior al corte
