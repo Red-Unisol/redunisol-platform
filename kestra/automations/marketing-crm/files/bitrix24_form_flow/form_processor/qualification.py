@@ -51,6 +51,7 @@ QUALIFICATION_RULES = {
         }
     },
     "la_rioja": {
+        "external_referral": True,
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
             "empleado_publico_municipal",

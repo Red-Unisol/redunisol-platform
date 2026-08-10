@@ -20,7 +20,8 @@ corte coordinado.
 - los leads creados antes del corte quedan fuera aunque reciban actualizaciones futuras
 - los rechazos terminan en `RESULTADO PERDIDO` y guardan el detalle en `Motivo Rechazo`
 - Catamarca y Cordoba usan las listas ampliadas de Kestra
-- La Rioja conserva la regla observada en Bitrix
+- La Rioja deriva a vendedor externo cuando cumple sus reglas de elegibilidad; no
+  pasa a `RESULTADO GANADO` ni genera negociacion interna
 - Rio Negro, Santa Fe y Neuquen conservan la derivacion observada en Bitrix a
   `NEGOCIACION CON VENDEDOR (13)` cuando cumplen sus reglas
 - Diego Frias (`ASSIGNED_BY_ID=7`) queda excluido de la precalificacion automatica
