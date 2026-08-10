@@ -2,6 +2,10 @@
 
 Estado: criterio acordado, pendiente de implementacion.
 
+Este documento cubre solamente distribución. La clasificación comercial y el proceso
+compartido de aprobación se documentan en
+[`commercial-rules/README.md`](commercial-rules/README.md).
+
 ## Alcance
 
 - La asignacion comercial se realiza unicamente sobre la negociacion.
@@ -90,4 +94,3 @@ Cuando un bucket contiene mas de un vendedor:
 1. se reutiliza el vendedor anterior del contacto si pertenece al pool y esta disponible;
 2. si no, se aplica round-robin dentro del bucket;
 3. si no hay un vendedor disponible, el caso debe usar `manual_fallback`.
-
