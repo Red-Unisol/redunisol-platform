@@ -24,3 +24,17 @@ históricos vuelvan a incorporarse por error.
 Esta decisión elimina cualquier referencia funcional al cálculo “cupo afectado al
 0,1”. Los borradores de junio y julio que mencionaban Propia o Comer fueron eliminados
 del árbol activo; Git conserva su historial.
+
+## `CAT-DEC-001` — Clasificar la afiliación únicamente por Es socio
+
+- **Fecha:** 2026-08-10
+- **Estado:** Acordado e implementado.
+- **Decisión:** la clasificación de Catamarca utiliza el campo `Es socio` enriquecido
+  por Vimarx. La cantidad de créditos activos no constituye una condición comercial
+  independiente.
+- **Fundamento de datos:** cuando Vimarx no encuentra una afiliación, informa
+  conjuntamente `Es socio = No` y cero créditos activos; cuando la encuentra, informa
+  `Es socio = Sí` y la cantidad correspondiente.
+- **Resultado:** `Es socio = Sí` pasa a **REVISIÓN MANUAL KESTRA**; `Es socio = No`
+  continúa a las reglas BCRA; un valor desconocido pasa a **REVISIÓN MANUAL KESTRA**.
+- **Regla eliminada:** `CAT-MEMBER-020`.

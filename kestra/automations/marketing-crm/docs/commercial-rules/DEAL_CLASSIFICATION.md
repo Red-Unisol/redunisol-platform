@@ -39,22 +39,23 @@ Estado: **vigente e implementado**.
 Precondición funcional: negociación de Catamarca pendiente de clasificación. Las
 reglas de socio se evalúan antes que las reglas BCRA.
 
-| Prioridad | Regla | Es socio | Créditos activos | Snapshot BCRA | Condición BCRA | Decisión | Etapa | Línea | Motivo |
-|---:|---|---|---:|---|---|---|---|---|---|
-| 10 | `CAT-DATA-010` | Desconocido | Cualquiera | Cualquiera | Cualquiera | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | `missing_membership_data` |
-| 20 | `CAT-MEMBER-010` | Sí | Cualquiera | Cualquiera | No aplica | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | `member_rules_require_manual_review` |
-| 30 | `CAT-MEMBER-020` | No | Mayor que 0 | Cualquiera | No aplica | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | `member_rules_require_manual_review` |
-| 40 | `CAT-BCRA-010` | No | 0 | Faltante, inválido o inconcluso | Desconocido | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Snapshot no utilizable |
-| 50 | `CAT-BCRA-020` | No | 0 | Válido | Más de 4 entidades en situación 4 o 5 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Exceso de entidades negativas |
-| 60 | `CAT-BCRA-030` | No | 0 | Válido | Banco Nación en situación mayor que 2 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Banco de cobro en situación no admitida |
-| 70 | `CAT-LINE-010` | No | 0 | Válido | Sin situaciones o todas hasta situación 1 | Aprobado | PRESENTACIÓN | AMEJUCA Premium | `amejuca_premium` |
-| 80 | `CAT-LINE-020` | No | 0 | Válido | Cualquier caso restante que no sea rechazo duro | Aprobado | PRESENTACIÓN | AMEJUCA Especial | `amejuca_special` |
+| Prioridad | Regla | Es socio | Snapshot BCRA | Condición BCRA | Decisión | Etapa | Línea | Motivo |
+|---:|---|---|---|---|---|---|---|---|
+| 10 | `CAT-DATA-010` | Desconocido | Cualquiera | Cualquiera | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | `missing_membership_data` |
+| 20 | `CAT-MEMBER-010` | Sí | Cualquiera | No aplica | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | `member_rules_require_manual_review` |
+| 30 | `CAT-BCRA-010` | No | Faltante, inválido o inconcluso | Desconocido | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | Snapshot no utilizable |
+| 40 | `CAT-BCRA-020` | No | Válido | Más de 4 entidades en situación 4 o 5 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Exceso de entidades negativas |
+| 50 | `CAT-BCRA-030` | No | Válido | Banco Nación en situación mayor que 2 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Banco de cobro en situación no admitida |
+| 60 | `CAT-LINE-010` | No | Válido | Sin situaciones o todas hasta situación 1 | Aprobado | PRESENTACIÓN | AMEJUCA Premium | `amejuca_premium` |
+| 70 | `CAT-LINE-020` | No | Válido | Cualquier caso restante que no sea rechazo duro | Aprobado | PRESENTACIÓN | AMEJUCA Especial | `amejuca_special` |
 
 Notas normativas:
 
 - se utiliza el último período disponible del snapshot;
 - Banco Nación ausente equivale a situación 0 para esta regla;
-- un socio o una persona con créditos activos no recibe rechazo BCRA automático;
+- `Es socio` se obtiene de Vimarx; la cantidad de créditos activos no participa en
+  esta clasificación;
+- un socio no recibe rechazo BCRA automático;
 - los datos base faltantes o inválidos también producen revisión manual mediante las
   validaciones técnicas anteriores a esta tabla.
 

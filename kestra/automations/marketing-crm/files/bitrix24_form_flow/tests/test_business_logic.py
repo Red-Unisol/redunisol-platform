@@ -3972,7 +3972,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[937]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[937]["assignedById"], 68579)
 
-    def test_catamarca_member_with_active_credit_goes_to_manual_review(self) -> None:
+    def test_catamarca_member_goes_to_manual_review(self) -> None:
         client = FakeBitrixClient()
         client.leads[923] = self._catamarca_enriched_lead(923, bcra_entities=[])
         client.leads[923]["UF_CRM_1728998183"] = "2617"
