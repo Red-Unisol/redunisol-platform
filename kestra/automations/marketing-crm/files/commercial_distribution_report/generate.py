@@ -39,6 +39,107 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "not_applicable": "La negociación ya no estaba pendiente",
     "technical_error": "La ejecución terminó con un error técnico",
 }
+REASON_LABELS = {
+    "amejuca_premium": (
+        "Cumple las condiciones BCRA de AMEJUCA Premium: hasta cinco entidades "
+        "en situación 2, ninguna superior a 2 y banco de cobro hasta situación 2."
+    ),
+    "amejuca_special": (
+        "El banco de cobro está en situación 1 y el perfil BCRA corresponde a la "
+        "línea AMEJUCA Especial."
+    ),
+    "amejuca_line_ambiguous_for_payment_bank_two": (
+        "El banco de cobro está en situación 2 y los datos no permiten elegir con "
+        "certeza entre AMEJUCA Premium y Especial."
+    ),
+    "bcra_more_than_four_high_risk_situations": (
+        "Tiene más de cuatro entidades con situación BCRA de riesgo."
+    ),
+    "payment_bank_situation_above_two": "El banco de cobro está en situación BCRA mayor a 2.",
+    "cordoba_bank_situation_above_one": "Bancor está en situación BCRA 2 o superior.",
+    "cde_more_than_two_high_risk_situations": (
+        "Tiene más de dos entidades con situación BCRA entre 2 y 3."
+    ),
+    "cde_premium": (
+        "No tiene un préstamo Cruz del Eje activo y todas las entidades están en situación 1."
+    ),
+    "cde_special": (
+        "No tiene un préstamo Cruz del Eje activo y presenta situaciones BCRA admitidas para Especial."
+    ),
+    "cde_ren_premium": (
+        "Tiene un préstamo Cruz del Eje activo sin atraso y todas las entidades están en situación 1."
+    ),
+    "cde_ren_special": (
+        "Tiene un préstamo Cruz del Eje activo sin atraso y situaciones BCRA admitidas para Especial."
+    ),
+    "cde_parallel_requires_manual_review": (
+        "Tiene más de un préstamo activo de la familia Cruz del Eje."
+    ),
+    "cde_active_loan_in_arrears": "Tiene un préstamo Cruz del Eje activo con días de atraso.",
+    "cbu_more_than_five_entities": "Tiene más de cinco entidades informadas en BCRA.",
+    "cbu_situation_above_one": "Tiene al menos una entidad en situación BCRA mayor a 1.",
+    "cbu_passive_age_80_or_more": "La persona jubilada o pensionada tiene 80 años o más.",
+    "cbu_gender_required_for_age_limit": (
+        "La edad requiere conocer el género para aplicar correctamente el límite de la línea CBU."
+    ),
+    "cbu_approved": (
+        "Tiene hasta cinco entidades, todas en situación BCRA 1, y cumple el límite de edad aplicable."
+    ),
+    "caja_age_80_or_more": "La persona tiene 80 años o más.",
+    "caja_new_payment_bank_above_one": (
+        "Es cliente nuevo y el banco de cobro está en situación BCRA mayor a 1."
+    ),
+    "caja_morosos_payment_bank_above_one": (
+        "El banco de cobro está en situación BCRA mayor a 1 para la línea Caja Morosos."
+    ),
+    "caja_morosos_excluded_entity": (
+        "Tiene una entidad excluida en situación BCRA 4 o 5; requiere revisión comercial."
+    ),
+    "caja_morosos_parallel_minimum_not_met": (
+        "Tiene un préstamo Caja activo con menos de cuatro cuotas pagadas."
+    ),
+    "caja_irregular_parallel_minimum_not_met": (
+        "Tiene un préstamo Caja activo con menos de cuatro cuotas pagadas."
+    ),
+    "caja_general_parallel_minimum_not_met": (
+        "Tiene un préstamo Caja activo sin la primera cuota pagada."
+    ),
+    "caja_morosos": "Presenta situaciones BCRA 4 o 5 y cumple las condiciones de Caja Morosos.",
+    "caja_irregulares": "Presenta situaciones BCRA 2 o 3 y cumple las condiciones de Caja Irregulares.",
+    "caja_general": "Es cliente recurrente, no presenta situaciones BCRA 2 a 5 y cumple el mínimo de cuotas.",
+    "caja_nuevo": "Es cliente nuevo, el banco de cobro está en situación 1 y no presenta situaciones BCRA 2 a 5.",
+    "club_mutual_cbu": "Es socio activo de Club Mutual y cumple las condiciones de edad y BCRA de la línea.",
+    "unc_activity_not_verifiable": "No se pudo confirmar que sea socio activo de Club Mutual.",
+    "unc_gender_required_for_age_limit": "La edad requiere conocer el género para aplicar el límite de la línea UNC.",
+    "unc_more_than_three_high_risk_situations": "Tiene más de tres entidades con situación BCRA entre 2 y 3.",
+    "unc_banco_nacion_irregular": "Banco Nación está en situación BCRA mayor a 1.",
+    "daspu_form_691_or_limit_not_available": "Falta validar el formulario 691 o el límite disponible de DASPU.",
+    "missing_birthdate": "No se pudo determinar la edad porque falta la fecha de nacimiento.",
+    "missing_vimarx_credit_data": "Faltan datos de préstamos de Vimarx para decidir automáticamente.",
+    "missing_bcra_snapshot": "No hay información BCRA suficiente para decidir automáticamente.",
+    "bcra_snapshot_not_conclusive": "La consulta BCRA no produjo información concluyente.",
+    "payment_bank_not_identifiable": "No se pudo identificar el banco de cobro dentro de la información BCRA.",
+    "missing_recurrent_membership_data": "Es socio, pero falta información para evaluar la renovación automáticamente.",
+    "missing_membership_data": "No se pudo confirmar si es socio nuevo o recurrente.",
+    "missing_prequalification_data": "Faltan datos de la precalificación necesarios para evaluar la negociación.",
+    "unsupported_cordoba_employment_status": "La situación laboral no tiene una regla comercial automática en Córdoba.",
+    "province_not_supported_for_deal_classification": "La provincia no tiene clasificación comercial automática.",
+    "missing_routing_data": "Faltan provincia o situación laboral para determinar el grupo de distribución.",
+    "no_matching_bucket": "No existe un grupo de distribución configurado para esos datos.",
+    "outside_business_hours": "La negociación ingresó fuera del horario de distribución automática.",
+    "no_online_sellers": "No había vendedores del grupo conectados en Bitrix.",
+    "deal_not_pending": "La negociación ya había salido de la etapa pendiente cuando Kestra la revisó.",
+    "internal_error": "La ejecución no pudo completar el procesamiento.",
+}
+STAGE_LABELS = {
+    "C1:KESTRA_PENDING": "Preclasificación Kestra",
+    "C1:KESTRA_REVIEW": "Revisión manual Kestra",
+    "C1:KESTRA_ROUTE_REVIEW": "Revisión de enrutamiento Kestra",
+    "C1:NEW": "Presentación",
+    "C1:5": "Situación negativa en BCRA",
+}
+MUTED_FILL = "F2F2F2"
+MUTED_FONT = "7F7F7F"
 
 
 def api_get(session: requests.Session, url: str, **params: Any) -> Any:
@@ -295,6 +396,84 @@ def add_user_displays(
     return enriched
 
 
+def business_decision(row: dict[str, Any]) -> str:
+    action = row["action"]
+    if action == "approved":
+        line = row["commercial_line"] or "comercial definida"
+        return f"Asignado a la línea {line}"
+    if action in {"rejected", "commercial_rejected"}:
+        return "Rechazado"
+    if action == "manual_review":
+        if row["assigned_by_id"] == "57":
+            return "Enviado a revisión manual con Maru"
+        return "Enviado a revisión manual"
+    if action == "routing_review":
+        return "Enviado a revisión de enrutamiento"
+    if row["distribution_status"] == "Sin vendedor disponible":
+        return "No asignado automáticamente"
+    if row["distribution_status"] == "Error técnico":
+        return "Procesamiento incompleto"
+    if action == "skipped":
+        return "Sin cambios"
+    return "Sin decisión comercial"
+
+
+def business_reason(row: dict[str, Any]) -> str:
+    if row["distribution_status"] == "Sin vendedor disponible":
+        return "No había vendedores del grupo conectados en Bitrix."
+    reason = REASON_LABELS.get(row["reason"])
+    if reason:
+        return reason
+    if row["message"]:
+        return row["message"]
+    if row["reason"]:
+        return f"Motivo pendiente de descripción comercial: {row['reason']}."
+    return "La ejecución no dejó información suficiente para explicar la decisión."
+
+
+def add_business_fields(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["business_decision"] = business_decision(item)
+        item["business_reason"] = business_reason(item)
+        item["stage_before_display"] = STAGE_LABELS.get(
+            item["stage_before"], item["stage_before"]
+        )
+        item["stage_after_display"] = STAGE_LABELS.get(
+            item["stage_after"], item["stage_after"]
+        )
+        result.append(item)
+    return result
+
+
+def latest_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for row in sorted(
+        rows, key=lambda item: item["processed_at"] or datetime.min, reverse=True
+    ):
+        key = row["deal_id"] or f"execution:{row['execution_id']}"
+        result.setdefault(key, row)
+    return list(result.values())
+
+
+def current_version(rows: list[dict[str, Any]]) -> tuple[str, Any] | None:
+    for row in sorted(
+        rows, key=lambda item: item["processed_at"] or datetime.min, reverse=True
+    ):
+        if row["rule_version"] and row["revision"] is not None:
+            return row["rule_version"], row["revision"]
+    return None
+
+
+def mute_previous_version(ws, row_number: int, item: dict[str, Any], current) -> None:
+    if current is None or (item["rule_version"], item["revision"]) == current:
+        return
+    for cell in ws[row_number]:
+        cell.fill = PatternFill("solid", fgColor=MUTED_FILL)
+        cell.font = Font(color=MUTED_FONT)
+
+
 def compact(ws, widths: dict[int, int] | None = None) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
@@ -330,25 +509,35 @@ def build(
 ) -> Workbook:
     if rows and "assigned_by" not in rows[0]:
         rows = add_user_displays(rows, {})
+    rows = add_business_fields(rows)
+    cases = latest_cases(rows)
+    version = current_version(rows)
     wb = Workbook()
     summary = wb.active
     summary.title = "Resumen"
-    status_counts = Counter(row["distribution_status"] for row in rows)
+    status_counts = Counter(row["distribution_status"] for row in cases)
     summary.append(["AUDITORÍA COMERCIAL Y DISTRIBUCIÓN", "Valor"])
     summary_rows = (
         ("Eventos incluidos desde", audit_from or "Sin corte configurado"),
-        ("Eventos procesados", len(rows)),
+        ("Negociaciones incluidas", len(cases)),
+        ("Ejecuciones registradas", len(rows)),
         ("Distribuidos", status_counts["Distribuido"]),
         ("Gestión manual con Maru", status_counts["Gestión manual con Maru"]),
-        ("Intentos históricos sin vendedor disponible", status_counts["Sin vendedor disponible"]),
+        ("Sin vendedor disponible", status_counts["Sin vendedor disponible"]),
         ("Sin bucket", status_counts["Sin bucket"]),
         ("Errores técnicos", status_counts["Error técnico"]),
         ("Históricos sin trazabilidad completa", status_counts["Histórico incompleto"]),
-        ("Chats transferidos", sum(row["transferred_chat_count"] for row in rows)),
+        ("Chats transferidos", sum(row["transferred_chat_count"] for row in cases)),
+        ("Versión de reglas vigente", version[0] if version else "Sin datos"),
+        ("Revisión del flujo vigente", version[1] if version else "Sin datos"),
+        (
+            "Lectura de versiones",
+            "Las filas atenuadas fueron procesadas con una versión anterior.",
+        ),
     )
     for item in summary_rows:
         summary.append(item)
-    compact(summary, {1: 38, 2: 20})
+    compact(summary, {1: 38, 2: 72})
     summary.auto_filter.ref = None
     for row_number in range(2, summary.max_row + 1):
         summary.cell(row_number, 1).font = Font(bold=True, color=NAVY)
@@ -356,9 +545,9 @@ def build(
         summary.cell(2, 2).number_format = "dd/mm/yyyy hh:mm:ss"
 
     by_seller = wb.create_sheet("Por vendedor")
-    by_seller.append(["Responsable", "Eventos", "Distribuidos", "Chats"])
+    by_seller.append(["Responsable", "Negociaciones", "Distribuidas", "Chats transferidos"])
     seller_rows: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
+    for row in cases:
         key = row["assigned_by"]
         if key:
             seller_rows.setdefault(key, []).append(row)
@@ -385,16 +574,32 @@ def build(
         )
         by_seller.add_chart(chart, "G2")
 
-    headers = [
-        "fecha_hora", "estado_distribución", "acción", "motivo",
-        "versión_reglas", "revisión_flujo_kestra", "negociación",
-        "título", "lead", "contacto", "provincia", "situación_laboral",
-        "banco_cobro", "etapa_anterior", "etapa_nueva", "línea", "bucket",
-        "responsable_anterior", "responsable", "motivo_asignación", "estrategia_técnica",
-        "pool_configurado", "pool_online", "horario_laboral", "chats_transferidos",
-        "actividades_vinculadas", "ejecución_kestra", "estado_técnico", "mensaje",
+    business_headers = [
+        "Fecha y hora", "Decisión tomada", "Razón de la decisión", "Negociación",
+        "Cliente", "Provincia", "Situación laboral", "Banco de cobro",
+        "Línea comercial", "Grupo de distribución", "Responsable", "Responsable anterior",
+        "Resultado de distribución", "Motivo de asignación", "Etapa anterior",
+        "Etapa resultante", "Chat transferido", "Versión de reglas",
+        "Revisión del flujo Kestra",
     ]
-    keys = [
+    business_keys = [
+        "processed_at", "business_decision", "business_reason", "deal_id", "deal_title",
+        "province", "employment_status", "payment_bank", "commercial_line",
+        "routing_bucket", "assigned_by", "previous_assigned_by", "distribution_status",
+        "assignment_reason", "stage_before_display", "stage_after_display",
+        "chat_transferred_display", "rule_version", "revision",
+    ]
+    technical_headers = [
+        "Fecha y hora", "Estado de distribución", "Acción técnica", "Código de motivo",
+        "Versión de reglas", "Revisión del flujo Kestra", "Negociación", "Título",
+        "Lead", "Contacto", "Provincia", "Situación laboral", "Banco de cobro",
+        "Etapa anterior", "Etapa resultante", "Línea comercial", "Grupo de distribución",
+        "Responsable anterior", "Responsable", "Motivo de asignación", "Estrategia técnica",
+        "Pool configurado", "Pool online", "Dentro del horario laboral",
+        "Chats transferidos", "Actividades vinculadas", "Ejecución Kestra",
+        "Estado técnico", "Mensaje técnico",
+    ]
+    technical_keys = [
         "processed_at", "distribution_status", "action", "reason", "rule_version",
         "revision", "deal_id", "deal_title", "lead_id", "contact_id", "province",
         "employment_status",
@@ -404,36 +609,70 @@ def build(
         "within_business_hours", "transferred_chat_count", "linked_activity_count",
         "execution_id", "technical_state", "message",
     ]
-    events = wb.create_sheet("Eventos")
-    events.append(headers)
+
+    for item in rows:
+        item["chat_transferred_display"] = (
+            "Sí" if item["transferred_chat_count"] > 0 else "No"
+        )
+
+    cases_sheet = wb.create_sheet("Casos")
+    cases_sheet.append(business_headers)
     exceptions = wb.create_sheet("Excepciones")
-    exceptions.append(headers)
+    exceptions.append(business_headers)
+    technical = wb.create_sheet("Trazabilidad técnica")
+    technical.append(technical_headers)
     legacy = wb.create_sheet("Histórico incompleto")
-    legacy.append(headers)
+    legacy.append(technical_headers)
     base = portal_base(bitrix_base_url)
-    for item in sorted(rows, key=lambda row: row["processed_at"] or datetime.min):
-        values = [item[key] for key in keys]
-        events.append(values)
+
+    for item in cases:
+        values = [item[key] for key in business_keys]
+        target_sheets = [cases_sheet]
         if item["distribution_status"] not in {"Distribuido", "Histórico incompleto"}:
-            exceptions.append(values)
-        if item["distribution_status"] == "Histórico incompleto":
-            legacy.append(values)
-        for sheet in (events, exceptions, legacy):
-            if sheet is exceptions and item["distribution_status"] in {
-                "Distribuido", "Histórico incompleto"
-            }:
-                continue
-            if sheet is legacy and item["distribution_status"] != "Histórico incompleto":
-                continue
+            target_sheets.append(exceptions)
+        for sheet in target_sheets:
+            sheet.append(values)
             row_number = sheet.max_row
-            if item["processed_at"]:
-                sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
-            add_link(sheet.cell(row_number, 7), f"{base}/crm/deal/details/{item['deal_id']}/" if base else "")
-            add_link(sheet.cell(row_number, 9), f"{base}/crm/lead/details/{item['lead_id']}/" if base else "")
-    widths = {4: 42, 8: 34, 12: 30, 13: 38, 20: 48, 21: 60, 22: 60, 29: 60}
-    compact(events, widths)
-    compact(exceptions, widths)
-    compact(legacy, widths)
+            sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
+            for cell in sheet[row_number]:
+                cell.alignment = Alignment(vertical="center")
+            sheet.cell(row_number, 3).alignment = Alignment(
+                wrap_text=False, vertical="center"
+            )
+            sheet.row_dimensions[row_number].height = 20
+            mute_previous_version(sheet, row_number, item, version)
+            add_link(
+                sheet.cell(row_number, 4),
+                f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
+            )
+
+    for item in sorted(
+        rows, key=lambda row: row["processed_at"] or datetime.min, reverse=True
+    ):
+        values = [item[key] for key in technical_keys]
+        target_sheets = [technical]
+        if item["distribution_status"] == "Histórico incompleto":
+            target_sheets.append(legacy)
+        for sheet in target_sheets:
+            sheet.append(values)
+            row_number = sheet.max_row
+            sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
+            mute_previous_version(sheet, row_number, item, version)
+            add_link(
+                sheet.cell(row_number, 7),
+                f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
+            )
+            add_link(
+                sheet.cell(row_number, 9),
+                f"{base}/crm/lead/details/{item['lead_id']}/" if base else "",
+            )
+
+    business_widths = {2: 36, 3: 72, 5: 34, 7: 30, 8: 38, 11: 38, 12: 38, 14: 48}
+    technical_widths = {4: 36, 8: 34, 12: 30, 13: 38, 20: 48, 22: 60, 23: 60, 29: 60}
+    compact(cases_sheet, business_widths)
+    compact(exceptions, business_widths)
+    compact(technical, technical_widths)
+    compact(legacy, technical_widths)
     return wb
 
 

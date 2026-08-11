@@ -61,18 +61,25 @@ marketing/distribucion-negociaciones/historico/YYYY-MM-DD.xlsx
 
 El workbook contiene:
 
-- `Resumen`: métricas generales y fecha de inicio del universo auditable;
-- `Por vendedor`: eventos, distribuciones y chats por responsable;
-- `Eventos`: detalle completo y enlaces a Bitrix;
-- `Excepciones`: errores, revisiones y casos que no terminaron como distribución automática;
+- `Resumen`: métricas generales, fecha de inicio y versión vigente;
+- `Casos`: una fila por negociación con su resultado más reciente, ordenada de más
+  nueva a más antigua;
+- `Por vendedor`: negociaciones, distribuciones y chats por responsable;
+- `Excepciones`: última situación de los casos que requieren atención;
+- `Trazabilidad técnica`: todas las ejecuciones e intentos, incluidos los repetidos;
 - `Histórico incompleto`: eventos posteriores al corte que excepcionalmente no tengan
   el contrato completo de trazabilidad, separados para que no se interpreten como
   excepciones comerciales.
 
-En las hojas de detalle, `versión_reglas` y `revisión_flujo_kestra` aparecen junto al
-resultado para distinguir la política comercial aplicada del artefacto técnico que la
-ejecutó. Los responsables y pools se muestran como `Nombre Apellido (ID)`; el nombre se
-resuelve con `user.get` de Bitrix y el ID permanece visible como identificador estable.
+`Casos` separa `Decisión tomada` de `Razón de la decisión`. La primera expresa el
+resultado de negocio, por ejemplo `Asignado a la línea AMEJUCA Premium` o `Rechazado`;
+la segunda explica en lenguaje comercial qué condición produjo ese resultado.
+
+La versión de reglas y la revisión del flujo aparecen junto al resultado para distinguir
+la política comercial aplicada del artefacto técnico que la ejecutó. Las filas de una
+versión anterior se muestran atenuadas, sin ocultarlas. Los responsables y pools se
+muestran como `Nombre Apellido (ID)`; el nombre se resuelve con `user.get` de Bitrix y
+el ID permanece visible como identificador estable.
 
 Filament ya expone cualquier `.xlsx` debajo del volumen de reportes, por lo que no
 requiere una pantalla ni una tabla nueva.
