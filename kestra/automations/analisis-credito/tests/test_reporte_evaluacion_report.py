@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -56,6 +57,8 @@ class ReporteEvaluacionReportTests(unittest.TestCase):
             latest, history = atomic_publish(source, root / "reports", datetime(2026, 8, 1, 7, 15))
             self.assertEqual(latest.read_bytes(), b"first")
             self.assertEqual(history.read_bytes(), b"first")
+            self.assertEqual(stat.S_IMODE(latest.stat().st_mode) & 0o444, 0o444)
+            self.assertEqual(stat.S_IMODE(history.stat().st_mode) & 0o444, 0o444)
 
             source.write_bytes(b"second")
             atomic_publish(source, root / "reports", datetime(2026, 8, 1, 8, 0))

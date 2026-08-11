@@ -80,6 +80,7 @@ def atomic_publish(source: Path, reports_root: Path, now: datetime) -> tuple[Pat
         try:
             shutil.copyfile(source, temporary)
             os.replace(temporary, destination)
+            destination.chmod(0o644)
         finally:
             temporary.unlink(missing_ok=True)
     return latest, dated
