@@ -526,3 +526,44 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_cuad/**`
+
+## reporte_evaluacion_management
+
+Genera el Excel evaluatorio acumulado, lo publica en la carpeta privada consumida por Filament y conserva una copia historica diaria.
+
+### Ejecucion automatica
+
+- corre el dia 1 de cada mes a las 07:15, hora de Buenos Aires
+- toma desde `2025-10` hasta el ultimo mes cerrado
+- el trigger programado solo se despliega en produccion
+
+### Ejecucion manual
+
+Puede ejecutarse desde la UI de Kestra, informando opcionalmente `from_month` y `to_month`, o con un `POST` al webhook:
+
+```json
+{
+  "from_month": "2026-01",
+  "to_month": "2026-07"
+}
+```
+
+El body es opcional y los meses deben estar cerrados. El webhook usa `ANALISIS_CREDITO_WEBHOOK_KEY`, responde de forma asincrona y el resultado se consulta en la ejecucion de Kestra.
+
+### Salidas
+
+- `/reports/analisis-credito/reporte-evaluacion/ultimo.xlsx`
+- `/reports/analisis-credito/reporte-evaluacion/historico/YYYY-MM-DD.xlsx`
+
+Ambos archivos se reemplazan de forma atomica para evitar descargas incompletas.
+
+### Configuracion
+
+- secret `DEVEXPRESS_EVALUATE_API_BASE_URL`
+- secret `ANALISIS_CREDITO_WEBHOOK_KEY`
+- env opcional `reporte_evaluacion_timeout_seconds`
+- env opcional `reporte_evaluacion_per_day_max`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/reporte_evaluacion_report/**`
