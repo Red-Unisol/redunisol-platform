@@ -31,6 +31,7 @@ tasks:
       REPORTS_KESTRA_PASSWORD: "{{ secret('REPORTS_KESTRA_PASSWORD') }}"
       REPORTS_NAMESPACE: "{{ flow.namespace }}"
       REPORTS_BITRIX_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      REPORTS_BITRIX_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       REPORTS_AUDIT_FROM: "{{ envs.commercial_distribution_audit_from ?? '2026-08-11T13:00:00-03:00' }}"
       REPORTS_ROOT: /reports
     commands:

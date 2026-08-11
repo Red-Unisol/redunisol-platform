@@ -87,6 +87,25 @@ class CommercialDistributionReportTests(unittest.TestCase):
         )
         self.assertEqual(row["transferred_chat_count"], 1)
 
+    def test_adds_names_to_responsibles_and_pools_while_preserving_ids(self):
+        row = REPORT.normalized(execution())
+
+        enriched = REPORT.add_user_displays(
+            [row],
+            {
+                "57": "Maru Lopez",
+                "68579": "Daniel Carrera",
+                "10451": "Patricia Contendi",
+            },
+        )[0]
+
+        self.assertEqual(enriched["previous_assigned_by"], "Maru Lopez (57)")
+        self.assertEqual(enriched["assigned_by"], "Daniel Carrera (68579)")
+        self.assertEqual(
+            enriched["configured_pool_display"],
+            "Daniel Carrera (68579), Patricia Contendi (10451)",
+        )
+
     def test_marks_outside_hours_as_manual_with_maru(self):
         row = REPORT.normalized(
             execution(action="manual_review", strategy="outside_hours_manual")
@@ -146,9 +165,11 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertEqual(workbook["Histórico incompleto"].max_row, 1)
         self.assertEqual(workbook["Por vendedor"].max_row, 2)
         self.assertEqual(
-            workbook["Eventos"].cell(2, 5).hyperlink.target,
+            workbook["Eventos"].cell(2, 7).hyperlink.target,
             "https://example.bitrix24.com/crm/deal/details/930/",
         )
+        headers = [cell.value for cell in workbook["Eventos"][1]]
+        self.assertEqual(headers[4:6], ["versión_reglas", "revisión_flujo_kestra"])
 
     def test_publishes_latest_and_historical_copy(self):
         with tempfile.TemporaryDirectory() as directory:

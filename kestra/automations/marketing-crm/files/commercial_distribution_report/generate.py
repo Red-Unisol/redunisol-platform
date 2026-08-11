@@ -55,6 +55,33 @@ def api_get(session: requests.Session, url: str, **params: Any) -> Any:
     raise RuntimeError(f"No se pudo consultar Kestra: {error}")
 
 
+def bitrix_user_names(api_url: str, user_ids: set[str]) -> dict[str, str]:
+    if not api_url or not user_ids:
+        return {}
+    response = requests.post(
+        f"{api_url.rstrip('/')}/user.get.json",
+        json={"FILTER": {"ID": sorted(user_ids, key=int)}},
+        timeout=(10, 60),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("error"):
+        raise RuntimeError(payload.get("error_description") or payload["error"])
+    result = payload.get("result") or []
+    return {
+        str(user.get("ID") or user.get("id")): " ".join(
+            part
+            for part in (
+                str(user.get("NAME") or user.get("name") or "").strip(),
+                str(user.get("LAST_NAME") or user.get("last_name") or "").strip(),
+            )
+            if part
+        )
+        for user in result
+        if user.get("ID") or user.get("id")
+    }
+
+
 def executions(
     session: requests.Session,
     base: str,
@@ -218,6 +245,56 @@ def events_from(
     ]
 
 
+def user_ids_in(rows: list[dict[str, Any]]) -> set[str]:
+    result: set[str] = set()
+    for row in rows:
+        for key in ("previous_assigned_by_id", "assigned_by_id"):
+            value = str(row.get(key) or "").strip()
+            if value.isdigit():
+                result.add(value)
+        for key in ("configured_pool", "online_pool"):
+            result.update(
+                value
+                for value in (part.strip() for part in str(row.get(key) or "").split(","))
+                if value.isdigit()
+            )
+    return result
+
+
+def user_display(user_id: str, names: dict[str, str], fallback_name: str = "") -> str:
+    if not user_id:
+        return ""
+    name = fallback_name.strip() or names.get(user_id, "").strip() or f"Usuario {user_id}"
+    return f"{name} ({user_id})"
+
+
+def pool_display(value: str, names: dict[str, str]) -> str:
+    return ", ".join(
+        user_display(user_id, names)
+        for user_id in (part.strip() for part in value.split(","))
+        if user_id
+    )
+
+
+def add_user_displays(
+    rows: list[dict[str, Any]],
+    names: dict[str, str],
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["previous_assigned_by"] = user_display(
+            item["previous_assigned_by_id"], names
+        )
+        item["assigned_by"] = user_display(
+            item["assigned_by_id"], names, item["assigned_by_name"]
+        )
+        item["configured_pool_display"] = pool_display(item["configured_pool"], names)
+        item["online_pool_display"] = pool_display(item["online_pool"], names)
+        enriched.append(item)
+    return enriched
+
+
 def compact(ws, widths: dict[int, int] | None = None) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
@@ -251,6 +328,8 @@ def build(
     bitrix_base_url: str = "",
     audit_from: datetime | None = None,
 ) -> Workbook:
+    if rows and "assigned_by" not in rows[0]:
+        rows = add_user_displays(rows, {})
     wb = Workbook()
     summary = wb.active
     summary.title = "Resumen"
@@ -277,55 +356,53 @@ def build(
         summary.cell(2, 2).number_format = "dd/mm/yyyy hh:mm:ss"
 
     by_seller = wb.create_sheet("Por vendedor")
-    by_seller.append(["Responsable ID", "Responsable", "Eventos", "Distribuidos", "Chats"])
-    seller_rows: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    by_seller.append(["Responsable", "Eventos", "Distribuidos", "Chats"])
+    seller_rows: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
-        key = (row["assigned_by_id"], row["assigned_by_name"])
-        if key[0]:
+        key = row["assigned_by"]
+        if key:
             seller_rows.setdefault(key, []).append(row)
-    for (seller_id, seller_name), items in sorted(
-        seller_rows.items(), key=lambda item: (-len(item[1]), item[0][1])
+    for seller, items in sorted(
+        seller_rows.items(), key=lambda item: (-len(item[1]), item[0])
     ):
         by_seller.append([
-            seller_id,
-            seller_name,
+            seller,
             len(items),
             sum(item["distribution_status"] == "Distribuido" for item in items),
             sum(item["transferred_chat_count"] for item in items),
         ])
-    compact(by_seller, {2: 30})
+    compact(by_seller, {1: 36})
     if by_seller.max_row > 1:
         chart = BarChart()
         chart.type = "bar"
         chart.title = "Distribuciones por responsable"
         chart.add_data(
-            Reference(by_seller, min_col=4, min_row=1, max_row=by_seller.max_row),
+            Reference(by_seller, min_col=3, min_row=1, max_row=by_seller.max_row),
             titles_from_data=True,
         )
         chart.set_categories(
-            Reference(by_seller, min_col=2, min_row=2, max_row=by_seller.max_row)
+            Reference(by_seller, min_col=1, min_row=2, max_row=by_seller.max_row)
         )
         by_seller.add_chart(chart, "G2")
 
     headers = [
-        "fecha_hora", "estado_distribución", "acción", "motivo", "negociación",
+        "fecha_hora", "estado_distribución", "acción", "motivo",
+        "versión_reglas", "revisión_flujo_kestra", "negociación",
         "título", "lead", "contacto", "provincia", "situación_laboral",
         "banco_cobro", "etapa_anterior", "etapa_nueva", "línea", "bucket",
-        "responsable_anterior", "responsable_id", "responsable", "motivo_asignación",
-        "estrategia_técnica",
+        "responsable_anterior", "responsable", "motivo_asignación", "estrategia_técnica",
         "pool_configurado", "pool_online", "horario_laboral", "chats_transferidos",
-        "actividades_vinculadas", "versión_reglas", "ejecución_kestra",
-        "revisión_flujo", "estado_técnico", "mensaje",
+        "actividades_vinculadas", "ejecución_kestra", "estado_técnico", "mensaje",
     ]
     keys = [
-        "processed_at", "distribution_status", "action", "reason", "deal_id",
-        "deal_title", "lead_id", "contact_id", "province", "employment_status",
+        "processed_at", "distribution_status", "action", "reason", "rule_version",
+        "revision", "deal_id", "deal_title", "lead_id", "contact_id", "province",
+        "employment_status",
         "payment_bank", "stage_before", "stage_after", "commercial_line",
-        "routing_bucket", "previous_assigned_by_id", "assigned_by_id",
-        "assigned_by_name", "assignment_reason", "assignment_strategy",
-        "configured_pool", "online_pool",
+        "routing_bucket", "previous_assigned_by", "assigned_by", "assignment_reason",
+        "assignment_strategy", "configured_pool_display", "online_pool_display",
         "within_business_hours", "transferred_chat_count", "linked_activity_count",
-        "rule_version", "execution_id", "revision", "technical_state", "message",
+        "execution_id", "technical_state", "message",
     ]
     events = wb.create_sheet("Eventos")
     events.append(headers)
@@ -351,11 +428,12 @@ def build(
             row_number = sheet.max_row
             if item["processed_at"]:
                 sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
-            add_link(sheet.cell(row_number, 5), f"{base}/crm/deal/details/{item['deal_id']}/" if base else "")
-            add_link(sheet.cell(row_number, 7), f"{base}/crm/lead/details/{item['lead_id']}/" if base else "")
-    compact(events, {4: 42, 6: 34, 10: 30, 11: 38, 19: 48, 30: 60})
-    compact(exceptions, {4: 42, 6: 34, 10: 30, 11: 38, 19: 48, 30: 60})
-    compact(legacy, {4: 42, 6: 34, 10: 30, 11: 38, 19: 48, 30: 60})
+            add_link(sheet.cell(row_number, 7), f"{base}/crm/deal/details/{item['deal_id']}/" if base else "")
+            add_link(sheet.cell(row_number, 9), f"{base}/crm/lead/details/{item['lead_id']}/" if base else "")
+    widths = {4: 42, 8: 34, 12: 30, 13: 38, 20: 48, 21: 60, 22: 60, 29: 60}
+    compact(events, widths)
+    compact(exceptions, widths)
+    compact(legacy, widths)
     return wb
 
 
@@ -406,6 +484,19 @@ def main() -> None:
         event for row in raw if (event := normalized(row)) is not None
     ]
     rows = events_from(normalized_rows, audit_from)
+    bitrix_api_url = "/".join(
+        part.strip("/")
+        for part in (
+            os.getenv("REPORTS_BITRIX_BASE_URL", ""),
+            os.getenv("REPORTS_BITRIX_WEBHOOK_PATH", ""),
+        )
+        if part.strip("/")
+    )
+    try:
+        names = bitrix_user_names(bitrix_api_url, user_ids_in(rows))
+    except (requests.RequestException, RuntimeError, ValueError):
+        names = {}
+    rows = add_user_displays(rows, names)
     latest, dated = publish(
         build(rows, os.getenv("REPORTS_BITRIX_BASE_URL", ""), audit_from),
         Path(os.getenv("REPORTS_ROOT", "/reports")),
