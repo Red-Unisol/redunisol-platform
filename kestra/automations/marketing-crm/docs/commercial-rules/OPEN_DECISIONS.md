@@ -30,7 +30,6 @@ Para cerrar una decisión se debe registrar:
 | `COR-PEND-011` | ¿“Solo situación 1” admite un snapshot sin entidades o con situación 0? | Jubilado nuevo sin entidades informadas. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-012` | ¿La categoría Premium/Especial de Cruz del Eje debe persistirse en otro campo o solo como motivo auditable? | Policía aprobado como Especial. | Guardar línea `Cruz del Eje`; categoría solo en motivo | Abierta |
 | `COR-PEND-013` | ¿Qué valores o códigos de línea de Vimarx identifican un préstamo como Cruz del Eje? | Socio con préstamos activos CBU y Cruz del Eje. | REVISIÓN MANUAL KESTRA si no puede identificarse la línea | Abierta |
-| `COR-PEND-014` | Para un cliente nuevo que podría encuadrar en Caja Irregulares, ¿el rechazo por Bancor mayor que 1 mantiene prioridad absoluta? | Jubilado nuevo de 75 años con Bancor en situación 2 y las demás entidades en situación 1. | SIT. NEG. EN BCRA por `COR-DEC-004` | Abierta |
 
 ## Transversales
 

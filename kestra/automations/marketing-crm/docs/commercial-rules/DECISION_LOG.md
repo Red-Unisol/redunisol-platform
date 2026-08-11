@@ -68,32 +68,44 @@ del árbol activo; Git conserva su historial.
 - **Con préstamo Cruz del Eje activo:** se aplican las reglas de renovación, paralelo
   o mora, todavía pendientes de completar.
 
-## `COR-DEC-004` — Caja Nuevo rechaza Bancor mayor que situación 1
+## `COR-DEC-004` — Caja Nuevo exige situación 1
 
-- **Fecha:** 2026-08-10
+- **Fecha:** 2026-08-11
 - **Estado:** Acordado, pendiente de implementación junto con la clasificación de
   Córdoba.
 - **Precondición:** Jubilado Provincial clasificado como cliente nuevo para Caja Nuevo.
-- **Decisión:** si Bancor está en situación mayor que 1, la negociación se rechaza.
+- **Decisión:** si cualquier entidad está en situación mayor que 1, la negociación se
+  rechaza. Un cliente nuevo no se evalúa por Caja Irregulares.
 - **Resultado:** etapa **SIT. NEG. EN BCRA**, sin línea comercial.
 - **Resto de incumplimientos:** cualquier otra condición que no satisfaga la aprobación
   de Caja Nuevo permanece en **REVISIÓN MANUAL KESTRA** hasta contar con una regla más
   específica.
 
-## `COR-DEC-005` — Aprobar Caja Irregulares por edad y BCRA
+## `COR-DEC-005` — Aprobar Caja Irregulares para recurrentes
 
-- **Fecha:** 2026-08-10
+- **Fecha:** 2026-08-11
 - **Estado:** Acordado, pendiente de implementación junto con la clasificación de
   Córdoba.
-- **Segmento:** Jubilado Provincial, cliente nuevo o recurrente.
-- **Edad:** hasta 82 años inclusive, calculada a la fecha de clasificación.
+- **Segmento:** Jubilado Provincial que ya es socio recurrente.
+- **Edad:** menor de 80 años, calculada a la fecha de clasificación.
 - **BCRA:** todas las entidades como máximo en situación 3 y al menos una entidad en
   situación 2 o 3.
 - **Banco de cobro:** no interviene en esta evaluación.
 - **Resultado:** etapa **PRESENTACIÓN**, línea `Caja Irregulares`.
-- **Datos o límites incumplidos:** fecha de nacimiento faltante, edad mayor a 82 o una
-  situación 4/5 quedan en **REVISIÓN MANUAL KESTRA** mientras no exista una regla final
-  más específica.
+- **Datos o límites incumplidos:** fecha de nacimiento faltante o una situación 4/5
+  quedan en **REVISIÓN MANUAL KESTRA** mientras no exista una regla final más
+  específica.
 - **Decisión cerrada:** `COR-PEND-006`; las situaciones 2/3 dentro del límite de edad
   corresponden a Caja Irregulares y no requieren elegir entre Caja General e
   Irregulares.
+
+## `COR-DEC-006` — Rechazar Caja desde los 80 años
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
+  Córdoba.
+- **Decisión:** toda persona de 80 años o más se rechaza para las líneas Caja.
+- **Límite inclusivo:** el rechazo aplica desde el día en que cumple 80 años.
+- **Ejecución temporal:** hasta cerrar `COR-PEND-008`, la negociación queda en
+  **REVISIÓN MANUAL KESTRA** con motivo de rechazo por edad para que una persona
+  ejecute el cierre en Bitrix.

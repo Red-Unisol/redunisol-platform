@@ -76,12 +76,14 @@ flowchart TD
     L -->|Más de 2 entidades en 4/5| Q
     L -->|Condición pendiente| R
 
-    F --> U{Cliente nuevo y<br/>Bancor mayor que 1}
-    U -->|Sí| Q
-    U -->|No| O{Edad y situaciones BCRA}
-    O -->|Cliente nuevo y<br/>solo situación 1| T[PRESENTACIÓN<br/>Línea Caja Nuevo]
-    O -->|Hasta 82 años, alguna 2/3<br/>y ninguna mayor que 3| V[PRESENTACIÓN<br/>Línea Caja Irregulares]
-    O -->|Edad faltante o mayor a 82,<br/>situación 4/5 u otro caso| R
+    F --> W{Edad}
+    W -->|Faltante| R
+    W -->|80 años o más| X[RECHAZO COMERCIAL<br/>cierre manual]
+    W -->|Menor de 80| O{Nuevo o recurrente<br/>y situaciones BCRA}
+    O -->|Nuevo y solo situación 1| T[PRESENTACIÓN<br/>Línea Caja Nuevo]
+    O -->|Nuevo y alguna situación<br/>mayor que 1| Q
+    O -->|Recurrente, alguna 2/3<br/>y ninguna mayor que 3| V[PRESENTACIÓN<br/>Línea Caja Irregulares]
+    O -->|Otro caso recurrente| R
 ```
 
 Para Policía y Empleado Público Provincial, ser socio o tener préstamos activos de

@@ -108,33 +108,35 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 
 ### `COR-CASE-007` — Caja Nuevo
 
-- **Dado** un jubilado provincial nuevo cuyo snapshot solamente contiene situación 1.
+- **Dado** un jubilado provincial nuevo de 79 años cuyo snapshot solamente contiene
+  situación 1.
 - **Cuando** se evalúa Caja Nuevo.
 - **Entonces** aplica `COR-CAJA-NEW-010`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Nuevo`.
 
-### `COR-CASE-008` — Caja Nuevo rechazado por Bancor
+### `COR-CASE-008` — Caja Nuevo exige situación 1
 
-- **Dado** un jubilado provincial nuevo cuyo snapshot informa a Bancor en situación 2.
+- **Dado** un jubilado provincial nuevo de 79 años cuyo snapshot informa una entidad
+  en situación 2.
 - **Cuando** se evalúa Caja Nuevo.
 - **Entonces** aplica `COR-CAJA-NEW-020`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA** sin línea.
 
-### `COR-CASE-009` — Caja Irregulares en el límite de edad
+### `COR-CASE-009` — Caja Irregulares recurrente
 
-- **Dado** un jubilado provincial de 82 años, nuevo o recurrente.
+- **Dado** un jubilado provincial recurrente de 79 años.
 - **Y** todas sus entidades están como máximo en situación 3 y al menos una está en
   situación 2 o 3.
 - **Cuando** se evalúa Caja Irregulares.
 - **Entonces** aplica `COR-CAJA-IRREG-010`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Irregulares`.
 
-### `COR-CASE-010` — Caja Irregulares fuera del límite de edad
+### `COR-CASE-010` — Rechazo desde los 80 años
 
-- **Dado** el mismo caso con 83 años.
-- **Entonces** aplica `COR-CAJA-IRREG-020`.
-- **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque no está definido el
-  resultado final para una persona que supera el límite de la línea.
+- **Dado** el mismo caso el día que la persona cumple 80 años.
+- **Entonces** aplica `COR-CAJA-AGE-010` y la decisión comercial es rechazo por edad.
+- **Y** la negociación queda temporalmente en **REVISIÓN MANUAL KESTRA** para ejecutar
+  el cierre hasta definir la etapa de rechazo no-BCRA.
 
 ### `COR-CASE-011` — UNC
 
