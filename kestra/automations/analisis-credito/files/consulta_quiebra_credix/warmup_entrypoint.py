@@ -32,7 +32,6 @@ from .service import (
 )
 from .sqlite_cache import write_cache_entries
 
-
 DEFAULT_MAX_PER_RUN = 5
 DEFAULT_CORE_TIMEOUT_SECONDS = 60
 DEFAULT_CREDIX_TIMEOUT_SECONDS = 90
@@ -83,9 +82,13 @@ def main() -> int:
 def run_warmup() -> dict[str, Any]:
     core_config = load_core_config()
     credix_config = load_credix_config()
-    local_tz = ZoneInfo(os.getenv("LOCAL_TZ", DEFAULT_LOCAL_TZ).strip() or DEFAULT_LOCAL_TZ)
+    local_tz = ZoneInfo(
+        os.getenv("LOCAL_TZ", DEFAULT_LOCAL_TZ).strip() or DEFAULT_LOCAL_TZ
+    )
     today = datetime.now(local_tz).date()
-    daily_index = decode_daily_index(os.getenv("CREDIX_DAILY_INDEX_JSON", ""), today.isoformat())
+    daily_index = decode_daily_index(
+        os.getenv("CREDIX_DAILY_INDEX_JSON", ""), today.isoformat()
+    )
     max_per_run = parse_int_env("CREDIX_WARMUP_MAX_PER_RUN", DEFAULT_MAX_PER_RUN)
 
     solicitudes = fetch_today_solicitudes(core_config, today)
@@ -184,12 +187,18 @@ def load_core_config() -> CoreConfig:
     base_url = os.getenv("VIMARX_EVAL_BASE_URL", "").strip().rstrip("/")
     if not base_url:
         raise ValueError("Missing VIMARX_EVAL_BASE_URL.")
-    verify_tls = os.getenv("VIMARX_VERIFY_TLS", "false").strip().lower() in {"1", "true", "yes"}
+    verify_tls = os.getenv("VIMARX_VERIFY_TLS", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if not verify_tls:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return CoreConfig(
         base_url=base_url,
-        timeout_seconds=parse_int_env("VIMARX_TIMEOUT_SECONDS", DEFAULT_CORE_TIMEOUT_SECONDS),
+        timeout_seconds=parse_int_env(
+            "VIMARX_TIMEOUT_SECONDS", DEFAULT_CORE_TIMEOUT_SECONDS
+        ),
         verify_tls=verify_tls,
     )
 
@@ -200,14 +209,19 @@ def load_credix_config() -> CredixConfig:
     password = os.getenv("CREDIX_PASS", "").strip()
     if not cliente or not usuario or not password:
         raise ValueError("Missing CREDIX_CLIENTE, CREDIX_USER or CREDIX_PASS.")
-    timeout_seconds = parse_int_env("CREDIX_TIMEOUT_SECONDS", DEFAULT_CREDIX_TIMEOUT_SECONDS)
+    timeout_seconds = parse_int_env(
+        "CREDIX_TIMEOUT_SECONDS", DEFAULT_CREDIX_TIMEOUT_SECONDS
+    )
     return CredixConfig(
         cliente=cliente,
         usuario=usuario,
         password=password,
-        login_url=os.getenv("CREDIX_LOGIN_URL", "https://www.credixsa.com/nuevo/login.php").strip(),
+        login_url=os.getenv(
+            "CREDIX_LOGIN_URL", "https://www.credixsa.com/nuevo/login.php"
+        ).strip(),
         timeout_ms=timeout_seconds * 1000,
-        debug_enabled=os.getenv("CREDIX_DEBUG", "").strip().lower() in {"1", "true", "yes"},
+        debug_enabled=os.getenv("CREDIX_DEBUG", "").strip().lower()
+        in {"1", "true", "yes"},
         debug_dir=os.getenv("CREDIX_DEBUG_DIR", "").strip(),
     )
 
@@ -233,13 +247,19 @@ def fetch_today_solicitudes(config: CoreConfig, today: Any) -> list[CoreSolicitu
             documento=normalize_cuit(value_at(row, 4)),
             nombre=normalize_name(value_at(row, 5)),
         )
-        if solicitud.oid and (solicitud.cuil or solicitud.documento or solicitud.nombre):
+        if solicitud.oid and (
+            solicitud.cuil or solicitud.documento or solicitud.nombre
+        ):
             solicitudes.append(solicitud)
     return solicitudes
 
 
-def complete_missing_cuils(config: CoreConfig, solicitudes: list[CoreSolicitud]) -> list[CoreSolicitud]:
-    docs = sorted({item.documento for item in solicitudes if not item.cuil and item.documento})
+def complete_missing_cuils(
+    config: CoreConfig, solicitudes: list[CoreSolicitud]
+) -> list[CoreSolicitud]:
+    docs = sorted(
+        {item.documento for item in solicitudes if not item.cuil and item.documento}
+    )
     if not docs:
         return solicitudes
 
@@ -316,8 +336,12 @@ def select_candidates(
     return selected
 
 
-def consultar_with_retry(solicitud: CoreSolicitud, config: CredixConfig) -> dict[str, Any]:
-    request = SearchRequest(cuit=solicitud.cuil, nombre="" if solicitud.cuil else solicitud.nombre)
+def consultar_with_retry(
+    solicitud: CoreSolicitud, config: CredixConfig
+) -> dict[str, Any]:
+    request = SearchRequest(
+        cuit=solicitud.cuil, nombre="" if solicitud.cuil else solicitud.nombre
+    )
     attempts = parse_int_env("CREDIX_WARMUP_RETRY_ATTEMPTS", 2)
     last_error: Exception | None = None
     for attempt in range(attempts):
@@ -332,7 +356,9 @@ def consultar_with_retry(solicitud: CoreSolicitud, config: CredixConfig) -> dict
     raise last_error
 
 
-def mark_daily_index(daily_index: dict[str, Any], solicitud: CoreSolicitud, output: dict[str, Any]) -> None:
+def mark_daily_index(
+    daily_index: dict[str, Any], solicitud: CoreSolicitud, output: dict[str, Any]
+) -> None:
     append_unique(daily_index.setdefault("processed_oids", []), solicitud.oid)
     if solicitud.cuil:
         append_unique(daily_index.setdefault("cuils", []), solicitud.cuil)
@@ -341,7 +367,9 @@ def mark_daily_index(daily_index: dict[str, Any], solicitud: CoreSolicitud, outp
         append_unique(daily_index.setdefault("name_keys", []), name_key)
 
 
-def register_cache_entry(cache_entries: list[dict[str, str]], key: str, value: str) -> None:
+def register_cache_entry(
+    cache_entries: list[dict[str, str]], key: str, value: str
+) -> None:
     if not key or not value:
         return
     if any(entry["key"] == key for entry in cache_entries):
@@ -374,7 +402,9 @@ def build_success_output(
         "skipped_count": str(skipped_count),
         "error_count": str(error_count),
         "cache_entry_count": str(len(cache_entries)),
-        "daily_index_json": json.dumps(daily_index, ensure_ascii=True, separators=(",", ":")),
+        "daily_index_json": json.dumps(
+            daily_index, ensure_ascii=True, separators=(",", ":")
+        ),
         "daily_index_ttl": "P2D",
         "error": "; ".join(errors[:5]),
     }
@@ -430,6 +460,14 @@ def decode_daily_index(raw_value: str, today: str) -> dict[str, Any]:
     return payload
 
 
+def _build_headers() -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def evaluate_list(config: CoreConfig, payload: dict[str, Any]) -> list[Any]:
     url = f"{config.base_url}/api/Empresa/EvaluateList"
     session = requests.Session()
@@ -437,6 +475,7 @@ def evaluate_list(config: CoreConfig, payload: dict[str, Any]) -> list[Any]:
     response = session.post(
         url,
         json=payload,
+        headers=_build_headers(),
         timeout=config.timeout_seconds,
         verify=config.verify_tls,
     )

@@ -76,14 +76,23 @@ class EvaluateApiClient:
         if not verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def evaluate_list(self, cmd: str, tipo: str, campos: str, max_rows: int) -> list[list[Any]]:
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        token = os.getenv("REPORTE_EVALUACION_BEARER_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def evaluate_list(
+        self, cmd: str, tipo: str, campos: str, max_rows: int
+    ) -> list[list[Any]]:
         response = self.session.request(
             method="POST",
             url=f"{self.base_url}/api/Empresa/EvaluateList",
             json={"cmd": cmd, "tipo": tipo, "campos": campos, "max": max_rows},
             timeout=self.timeout,
             verify=self.verify_ssl,
-            headers={"Content-Type": "application/json"},
+            headers=self._build_headers(),
         )
         response.raise_for_status()
         data = response.json()
@@ -122,7 +131,9 @@ def to_int(value: Optional[Any]) -> Optional[int]:
         return None
 
 
-def pick_nro_socio(solicitud_socio_nro: Optional[Any], solicitud_nro_socio: Optional[Any]) -> Optional[int]:
+def pick_nro_socio(
+    solicitud_socio_nro: Optional[Any], solicitud_nro_socio: Optional[Any]
+) -> Optional[int]:
     socio_nro = to_int(solicitud_socio_nro)
     legacy_nro = to_int(solicitud_nro_socio)
     if socio_nro is not None and socio_nro > 0:
@@ -135,7 +146,9 @@ def pick_nro_socio(solicitud_socio_nro: Optional[Any], solicitud_nro_socio: Opti
 def parse_created_description(created_description: Optional[str]) -> Optional[datetime]:
     if not created_description:
         return None
-    match = re.match(r"^\s*(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", created_description)
+    match = re.match(
+        r"^\s*(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", created_description
+    )
     if not match:
         return None
     return datetime.strptime(match.group(1), "%d/%m/%y %H:%M:%S")
@@ -292,7 +305,9 @@ def business_seconds_between(start_dt: datetime, end_dt: datetime) -> float:
     return total_seconds
 
 
-def events_by_solicitud(events: Sequence[NovedadEvent]) -> dict[int, list[NovedadEvent]]:
+def events_by_solicitud(
+    events: Sequence[NovedadEvent],
+) -> dict[int, list[NovedadEvent]]:
     grouped: dict[int, list[NovedadEvent]] = {}
     for event in events:
         grouped.setdefault(event.solicitud_oid, []).append(event)
@@ -300,7 +315,9 @@ def events_by_solicitud(events: Sequence[NovedadEvent]) -> dict[int, list[Noveda
 
 
 def sorted_state_events(items: Sequence[NovedadEvent]) -> list[NovedadEvent]:
-    events = [event for event in items if event.created_at is not None and event.parsed_state]
+    events = [
+        event for event in items if event.created_at is not None and event.parsed_state
+    ]
     events.sort(key=lambda event: (event.created_at, event.event_id))
     return events
 
@@ -320,7 +337,9 @@ def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float
         if first_rr_index is None:
             continue
         first_rr_event = state_events[first_rr_index]
-        if is_excluded_line(first_rr_event.linea_descripcion, FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS):
+        if is_excluded_line(
+            first_rr_event.linea_descripcion, FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS
+        ):
             continue
         response_event = next(
             (
@@ -332,7 +351,12 @@ def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float
         )
         if response_event is None:
             continue
-        values.append(business_seconds_between(first_rr_event.created_at, response_event.created_at) / 60.0)
+        values.append(
+            business_seconds_between(
+                first_rr_event.created_at, response_event.created_at
+            )
+            / 60.0
+        )
     return values
 
 
@@ -353,20 +377,35 @@ def compute_transfer_minutes(events: Sequence[NovedadEvent]) -> list[float]:
         )
         if not paid_currently:
             continue
-        linea = next((event.linea_descripcion for event in with_datetime if event.linea_descripcion), None)
+        linea = next(
+            (
+                event.linea_descripcion
+                for event in with_datetime
+                if event.linea_descripcion
+            ),
+            None,
+        )
         if is_excluded_line(linea, TRANSFER_EXCLUDED_LINE_KEYWORDS):
             continue
         transfer_events = [
-            event for event in with_datetime if normalize_text(event.parsed_state) == TRANSFER_START_STATE
+            event
+            for event in with_datetime
+            if normalize_text(event.parsed_state) == TRANSFER_START_STATE
         ]
         paid_events = [
-            event for event in with_datetime if normalize_text(event.parsed_state) == TRANSFER_END_STATE
+            event
+            for event in with_datetime
+            if normalize_text(event.parsed_state) == TRANSFER_END_STATE
         ]
         if not transfer_events or not paid_events:
             continue
-        last_paid = max(paid_events, key=lambda event: (event.created_at, event.event_id))
+        last_paid = max(
+            paid_events, key=lambda event: (event.created_at, event.event_id)
+        )
         transfer_before_last_paid = [
-            event for event in transfer_events if event.created_at <= last_paid.created_at
+            event
+            for event in transfer_events
+            if event.created_at <= last_paid.created_at
         ]
         if not transfer_before_last_paid:
             continue
@@ -374,7 +413,12 @@ def compute_transfer_minutes(events: Sequence[NovedadEvent]) -> list[float]:
             transfer_before_last_paid,
             key=lambda event: (event.created_at, event.event_id),
         )
-        values.append(business_seconds_between(transfer_for_measure.created_at, last_paid.created_at) / 60.0)
+        values.append(
+            business_seconds_between(
+                transfer_for_measure.created_at, last_paid.created_at
+            )
+            / 60.0
+        )
     return values
 
 
@@ -384,7 +428,9 @@ def average(values: Sequence[float]) -> Optional[float]:
     return sum(values) / len(values)
 
 
-def classify_state(actual: Optional[float], target: Optional[float], yellow_threshold_pct: float) -> str:
+def classify_state(
+    actual: Optional[float], target: Optional[float], yellow_threshold_pct: float
+) -> str:
     if actual is None or target is None or target <= 0:
         return "neutral"
     if actual <= target:
@@ -461,7 +507,9 @@ def fetch_history_by_month(
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(path.suffix + ".tmp")
-    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     temp_path.replace(path)
 
 
@@ -518,7 +566,9 @@ def build_snapshot() -> tuple[Path, dict[str, Any], list[str]]:
         "reglas": {
             "primera_respuesta": "desde primera RevisionRiesgo hasta primer cambio de estado posterior, solo horario laboral lunes a viernes 08:00-17:00",
             "transferencia": "ultimo Pagada y A Transferir inmediatamente anterior, solo horario laboral lunes a viernes 08:00-17:00",
-            "lineas_excluidas_primera_respuesta": list(FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS),
+            "lineas_excluidas_primera_respuesta": list(
+                FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS
+            ),
             "lineas_excluidas_transferencia": list(TRANSFER_EXCLUDED_LINE_KEYWORDS),
         },
         "thresholds": {
@@ -544,7 +594,12 @@ def build_snapshot() -> tuple[Path, dict[str, Any], list[str]]:
         ],
     }
 
-    output_path = Path(env("OBJECTIVES_DASHBOARD_SNAPSHOT_PATH", "/data/reporte-evaluacion/dashboard/latest.json"))
+    output_path = Path(
+        env(
+            "OBJECTIVES_DASHBOARD_SNAPSHOT_PATH",
+            "/data/reporte-evaluacion/dashboard/latest.json",
+        )
+    )
     return output_path, snapshot, warnings
 
 
@@ -599,9 +654,7 @@ def _append_warning(warnings: list[str], message: str) -> None:
 
 
 def _log_event(event: str, **fields: Any) -> None:
-    sys.stdout.write(
-        json.dumps({"event": event, **fields}, ensure_ascii=True) + "\n"
-    )
+    sys.stdout.write(json.dumps({"event": event, **fields}, ensure_ascii=True) + "\n")
 
 
 if __name__ == "__main__":

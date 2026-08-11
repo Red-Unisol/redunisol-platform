@@ -22,7 +22,6 @@ from openpyxl.utils import get_column_letter
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 DEFAULT_API_BASE_URL = "https://celesol.dyndns.org:5050"
@@ -177,7 +176,9 @@ def get_report_headers(only_high_matches: bool) -> list[str]:
     return HIGH_MATCH_REPORT_HEADERS if only_high_matches else FULL_REPORT_HEADERS
 
 
-def filter_report_rows(rows: list[dict[str, Any]], only_high_matches: bool) -> list[dict[str, Any]]:
+def filter_report_rows(
+    rows: list[dict[str, Any]], only_high_matches: bool
+) -> list[dict[str, Any]]:
     if not only_high_matches:
         return rows
     return [row for row in rows if row.get("MatchEstado") == "alto"]
@@ -359,7 +360,9 @@ class Candidate:
         return self.fecha_prestamo or self.fecha_solicitud
 
     def comparison_amount(self) -> Decimal | None:
-        return first_positive_decimal(self.monto_desembolso, self.monto_solicitud, self.monto_prestamo)
+        return first_positive_decimal(
+            self.monto_desembolso, self.monto_solicitud, self.monto_prestamo
+        )
 
     def merge_from(self, other: "Candidate") -> None:
         for item in fields(self):
@@ -368,7 +371,9 @@ class Candidate:
             if is_blank(current) and not is_blank(incoming):
                 setattr(self, item.name, incoming)
         if other.source and other.source not in self.source.split("+"):
-            self.source = "+".join(sorted(set(self.source.split("+")) | set(other.source.split("+"))))
+            self.source = "+".join(
+                sorted(set(self.source.split("+")) | set(other.source.split("+")))
+            )
 
 
 @dataclass(slots=True)
@@ -399,12 +404,19 @@ def map_rows(field_names: list[str], rows: list[Any]) -> list[dict[str, Any]]:
             continue
         if not isinstance(row, list):
             raise ValueError(f"Respuesta inesperada de la API: {row!r}")
-        mapped.append({field: row[index] if index < len(row) else None for index, field in enumerate(field_names)})
+        mapped.append(
+            {
+                field: row[index] if index < len(row) else None
+                for index, field in enumerate(field_names)
+            }
+        )
     return mapped
 
 
 class VimarxClient:
-    def __init__(self, base_url: str, timeout: int, max_rows: int, cache_dir: Path | None) -> None:
+    def __init__(
+        self, base_url: str, timeout: int, max_rows: int, cache_dir: Path | None
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_rows = max_rows
@@ -423,7 +435,16 @@ class VimarxClient:
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def evaluate_list(self, tipo: str, campos: list[str], cmd: str, max_rows: int | None = None) -> list[dict[str, Any]]:
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def evaluate_list(
+        self, tipo: str, campos: list[str], cmd: str, max_rows: int | None = None
+    ) -> list[dict[str, Any]]:
         payload = {
             "cmd": cmd,
             "tipo": tipo,
@@ -433,6 +454,7 @@ class VimarxClient:
         response = self.session.post(
             f"{self.base_url}/api/Empresa/EvaluateList",
             json=payload,
+            headers=self._build_headers(),
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -465,7 +487,13 @@ class VimarxClient:
 
         queries = [
             ("socio", "F.Module.SocioMutual", SOCIO_FIELDS, f"[CUIT]={cuit}", 5),
-            ("solicitudes", "PreSolicitud.Module.Solicitud", SOLICITUD_FIELDS, f"[CUIT]={cuit}", self.max_rows),
+            (
+                "solicitudes",
+                "PreSolicitud.Module.Solicitud",
+                SOLICITUD_FIELDS,
+                f"[CUIT]={cuit}",
+                self.max_rows,
+            ),
             (
                 "prestamos",
                 "F.Module.Cuentas.Prestamos.Prestamo",
@@ -477,7 +505,9 @@ class VimarxClient:
 
         for label, tipo, campos, cmd, max_rows in queries:
             try:
-                rows = self.evaluate_list(tipo=tipo, campos=campos, cmd=cmd, max_rows=max_rows)
+                rows = self.evaluate_list(
+                    tipo=tipo, campos=campos, cmd=cmd, max_rows=max_rows
+                )
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{label}: {exc}")
                 continue
@@ -516,7 +546,9 @@ class VimarxClient:
 def load_movements(input_dir: Path, pattern: str) -> list[Movement]:
     movements: list[Movement] = []
     for path in sorted(input_dir.glob(pattern)):
-        reader = csv.DictReader(io.StringIO(read_text_with_fallback(path)), delimiter=";")
+        reader = csv.DictReader(
+            io.StringIO(read_text_with_fallback(path)), delimiter=";"
+        )
         for row in reader:
             cuit = normalize_cuit(row.get("cuitTercero"))
             if not cuit:
@@ -555,37 +587,72 @@ def build_candidates(bundle: ApiBundle) -> list[Candidate]:
 
     for row in bundle.solicitudes:
         prestamo_id = stringify_identifier(row.get("Prestamo.ID"))
-        key = ("prestamo", prestamo_id) if prestamo_id else ("solicitud", stringify_identifier(row.get("Oid")))
+        key = (
+            ("prestamo", prestamo_id)
+            if prestamo_id
+            else ("solicitud", stringify_identifier(row.get("Oid")))
+        )
         candidate = Candidate(
             source="solicitud",
             nombre=clean_text(socio.get("NombreCompleto")),
-            nro_socio=stringify_identifier(first_non_blank(row.get("NroSocio"), socio.get("NroSocio"))),
-            nro_documento=stringify_identifier(first_non_blank(row.get("NroDocumento"), socio.get("NroDoc"))),
-            cuit=stringify_identifier(first_non_blank(row.get("CUIT"), socio.get("CUIT"))),
+            nro_socio=stringify_identifier(
+                first_non_blank(row.get("NroSocio"), socio.get("NroSocio"))
+            ),
+            nro_documento=stringify_identifier(
+                first_non_blank(row.get("NroDocumento"), socio.get("NroDoc"))
+            ),
+            cuit=stringify_identifier(
+                first_non_blank(row.get("CUIT"), socio.get("CUIT"))
+            ),
             solicitud_oid=stringify_identifier(row.get("Oid")),
             nro_solicitud=stringify_identifier(row.get("NroSolicitud")),
             nro_asiento=stringify_identifier(row.get("Prestamo.Asiento.NroAsiento")),
             fecha_solicitud=parse_date(row.get("Fecha")),
-            estado_solicitud=clean_text(first_non_blank(row.get("Estado.Descripcion"), row.get("EstadoBase"))),
+            estado_solicitud=clean_text(
+                first_non_blank(row.get("Estado.Descripcion"), row.get("EstadoBase"))
+            ),
             prestamo_id=prestamo_id,
             nro_prestamo=stringify_identifier(row.get("Prestamo.NroCuenta")),
             referencia_prestamo=stringify_identifier(row.get("Prestamo.Referencia")),
             fecha_prestamo=parse_date(row.get("Prestamo.FechaEmision")),
-            monto_solicitud=first_positive_decimal(row.get("MontoAFinanciar"), row.get("MontoOriginal"), row.get("Capital")),
-            monto_desembolso=first_positive_decimal(row.get("MontoADesembolsar"), row.get("Prestamo.MontoADesembolsar")),
+            monto_solicitud=first_positive_decimal(
+                row.get("MontoAFinanciar"), row.get("MontoOriginal"), row.get("Capital")
+            ),
+            monto_desembolso=first_positive_decimal(
+                row.get("MontoADesembolsar"), row.get("Prestamo.MontoADesembolsar")
+            ),
             monto_prestamo=parse_decimal(row.get("Prestamo.MontoPrestamo")),
         )
         upsert(key, candidate)
 
     for row in bundle.prestamos:
         prestamo_id = stringify_identifier(row.get("ID"))
-        key = ("prestamo", prestamo_id) if prestamo_id else ("prestamo", stringify_identifier(row.get("NroCuenta")))
+        key = (
+            ("prestamo", prestamo_id)
+            if prestamo_id
+            else ("prestamo", stringify_identifier(row.get("NroCuenta")))
+        )
         candidate = Candidate(
             source="prestamo",
-            nombre=clean_text(first_non_blank(row.get("SocioTitular.Socio.NombreCompleto"), socio.get("NombreCompleto"))),
-            nro_socio=stringify_identifier(first_non_blank(row.get("SocioTitular.Socio.NroSocio"), socio.get("NroSocio"))),
-            nro_documento=stringify_identifier(first_non_blank(row.get("SocioTitular.Socio.NroDoc"), socio.get("NroDoc"))),
-            cuit=stringify_identifier(first_non_blank(row.get("SocioTitular.Socio.CUIT"), socio.get("CUIT"))),
+            nombre=clean_text(
+                first_non_blank(
+                    row.get("SocioTitular.Socio.NombreCompleto"),
+                    socio.get("NombreCompleto"),
+                )
+            ),
+            nro_socio=stringify_identifier(
+                first_non_blank(
+                    row.get("SocioTitular.Socio.NroSocio"), socio.get("NroSocio")
+                )
+            ),
+            nro_documento=stringify_identifier(
+                first_non_blank(
+                    row.get("SocioTitular.Socio.NroDoc"), socio.get("NroDoc")
+                )
+            ),
+            cuit=stringify_identifier(
+                first_non_blank(row.get("SocioTitular.Socio.CUIT"), socio.get("CUIT"))
+            ),
             solicitud_oid=stringify_identifier(row.get("Solicitud.Oid")),
             nro_solicitud=stringify_identifier(row.get("Solicitud.NroSolicitud")),
             nro_asiento=stringify_identifier(row.get("Asiento.NroAsiento")),
@@ -594,9 +661,15 @@ def build_candidates(bundle: ApiBundle) -> list[Candidate]:
             nro_prestamo=stringify_identifier(row.get("NroCuenta")),
             referencia_prestamo=stringify_identifier(row.get("Referencia")),
             fecha_prestamo=parse_date(row.get("FechaEmision")),
-            monto_solicitud=first_positive_decimal(row.get("Solicitud.MontoAFinanciar")),
-            monto_desembolso=first_positive_decimal(row.get("MontoADesembolsar"), row.get("Solicitud.MontoADesembolsar")),
-            monto_prestamo=first_positive_decimal(row.get("MontoPrestamo"), row.get("Capital")),
+            monto_solicitud=first_positive_decimal(
+                row.get("Solicitud.MontoAFinanciar")
+            ),
+            monto_desembolso=first_positive_decimal(
+                row.get("MontoADesembolsar"), row.get("Solicitud.MontoADesembolsar")
+            ),
+            monto_prestamo=first_positive_decimal(
+                row.get("MontoPrestamo"), row.get("Capital")
+            ),
             saldo_prestamo=parse_decimal(row.get("SaldoPrestamo")),
             estado_prestamo=stringify_identifier(row.get("Estado")),
         )
@@ -605,7 +678,9 @@ def build_candidates(bundle: ApiBundle) -> list[Candidate]:
     return list(candidates.values())
 
 
-def classify_match(days_diff: int | None, amount_diff_pct: Decimal | None, date_window_days: int) -> str:
+def classify_match(
+    days_diff: int | None, amount_diff_pct: Decimal | None, date_window_days: int
+) -> str:
     if days_diff is None or amount_diff_pct is None:
         return "sin_match_confiable"
     if days_diff <= 7 and amount_diff_pct <= Decimal("0.02"):
@@ -617,13 +692,23 @@ def classify_match(days_diff: int | None, amount_diff_pct: Decimal | None, date_
     return "sin_match_confiable"
 
 
-def evaluate_candidate(movement: Movement, candidate: Candidate, date_window_days: int) -> MatchEvaluation:
+def evaluate_candidate(
+    movement: Movement, candidate: Candidate, date_window_days: int
+) -> MatchEvaluation:
     comparison_date = candidate.comparison_date()
     comparison_amount = candidate.comparison_amount()
 
-    days_diff = abs((movement.fecha_movimiento - comparison_date).days) if movement.fecha_movimiento and comparison_date else None
+    days_diff = (
+        abs((movement.fecha_movimiento - comparison_date).days)
+        if movement.fecha_movimiento and comparison_date
+        else None
+    )
 
-    amount_diff = abs(movement.monto - comparison_amount) if comparison_amount is not None else None
+    amount_diff = (
+        abs(movement.monto - comparison_amount)
+        if comparison_amount is not None
+        else None
+    )
     amount_diff_pct: Decimal | None = None
     if comparison_amount is not None:
         base = max(abs(movement.monto), abs(comparison_amount))
@@ -636,10 +721,17 @@ def evaluate_candidate(movement: Movement, candidate: Candidate, date_window_day
 
     date_component = 0.0
     if days_diff is not None and date_window_days > 0:
-        date_component = max(0.0, 1.0 - min(days_diff, date_window_days * 2) / float(date_window_days * 2))
+        date_component = max(
+            0.0,
+            1.0 - min(days_diff, date_window_days * 2) / float(date_window_days * 2),
+        )
 
     score = round((amount_component * 0.7) + (date_component * 0.3), 6)
-    match_estado = classify_match(days_diff=days_diff, amount_diff_pct=amount_diff_pct, date_window_days=date_window_days)
+    match_estado = classify_match(
+        days_diff=days_diff,
+        amount_diff_pct=amount_diff_pct,
+        date_window_days=date_window_days,
+    )
 
     return MatchEvaluation(
         candidate=candidate,
@@ -653,11 +745,18 @@ def evaluate_candidate(movement: Movement, candidate: Candidate, date_window_day
     )
 
 
-def select_best_match(movement: Movement, candidates: list[Candidate], date_window_days: int) -> MatchEvaluation | None:
+def select_best_match(
+    movement: Movement, candidates: list[Candidate], date_window_days: int
+) -> MatchEvaluation | None:
     if not candidates:
         return None
-    evaluations = [evaluate_candidate(movement, candidate, date_window_days) for candidate in candidates]
-    preferred = [item for item in evaluations if item.match_estado != "sin_match_confiable"]
+    evaluations = [
+        evaluate_candidate(movement, candidate, date_window_days)
+        for candidate in candidates
+    ]
+    preferred = [
+        item for item in evaluations if item.match_estado != "sin_match_confiable"
+    ]
     pool = preferred if preferred else evaluations
     pool.sort(
         key=lambda item: (
@@ -669,11 +768,19 @@ def select_best_match(movement: Movement, candidates: list[Candidate], date_wind
     return pool[0]
 
 
-def build_report_rows(movements: list[Movement], bundles: dict[str, ApiBundle], date_window_days: int) -> list[dict[str, Any]]:
+def build_report_rows(
+    movements: list[Movement], bundles: dict[str, ApiBundle], date_window_days: int
+) -> list[dict[str, Any]]:
     report_rows: list[dict[str, Any]] = []
 
-    for movement in sorted(movements, key=lambda item: (item.fecha_movimiento or date.min, item.nro_transaccion)):
-        bundle = bundles.get(movement.cuit_tercero, ApiBundle(socio=None, solicitudes=[], prestamos=[], errors=[]))
+    for movement in sorted(
+        movements,
+        key=lambda item: (item.fecha_movimiento or date.min, item.nro_transaccion),
+    ):
+        bundle = bundles.get(
+            movement.cuit_tercero,
+            ApiBundle(socio=None, solicitudes=[], prestamos=[], errors=[]),
+        )
         candidates = build_candidates(bundle)
         best = select_best_match(movement, candidates, date_window_days)
 
@@ -725,8 +832,14 @@ def build_report_rows(movements: list[Movement], bundles: dict[str, ApiBundle], 
                 "MatchScore": best.score if best else None,
                 "DiasDiferencia": best.days_diff if best else None,
                 "DiferenciaMonto": to_excel_number(best.amount_diff if best else None),
-                "DiferenciaMontoPct": float(best.amount_diff_pct) if best and best.amount_diff_pct is not None else None,
-                "MontoUsadoParaMatch": to_excel_number(best.comparison_amount if best else None),
+                "DiferenciaMontoPct": (
+                    float(best.amount_diff_pct)
+                    if best and best.amount_diff_pct is not None
+                    else None
+                ),
+                "MontoUsadoParaMatch": to_excel_number(
+                    best.comparison_amount if best else None
+                ),
                 "FechaUsadaParaMatch": best.comparison_date if best else None,
                 "FuenteMatch": candidate.source,
                 "ErrorAPI": " | ".join(bundle.errors),
@@ -736,7 +849,9 @@ def build_report_rows(movements: list[Movement], bundles: dict[str, ApiBundle], 
     return report_rows
 
 
-def write_excel(output_path: Path, rows: list[dict[str, Any]], headers: list[str]) -> None:
+def write_excel(
+    output_path: Path, rows: list[dict[str, Any]], headers: list[str]
+) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "Cruce"
@@ -756,7 +871,7 @@ def write_excel(output_path: Path, rows: list[dict[str, Any]], headers: list[str
         for column_index, header in enumerate(headers, start=1):
             cell = ws.cell(row=row_index, column=column_index, value=row.get(header))
             if header in MONEY_COLUMNS:
-                cell.number_format = '#,##0.00'
+                cell.number_format = "#,##0.00"
             elif header in DATE_COLUMNS:
                 cell.number_format = "yyyy-mm-dd"
             elif header in DATETIME_COLUMNS:
@@ -771,15 +886,23 @@ def write_excel(output_path: Path, rows: list[dict[str, Any]], headers: list[str
         for cell in ws[get_column_letter(column_index)]:
             if cell.value is None:
                 continue
-            cell_value = cell.value.strftime("%Y-%m-%d %H:%M:%S") if isinstance(cell.value, datetime) else str(cell.value)
+            cell_value = (
+                cell.value.strftime("%Y-%m-%d %H:%M:%S")
+                if isinstance(cell.value, datetime)
+                else str(cell.value)
+            )
             max_length = max(max_length, len(cell_value))
-        ws.column_dimensions[get_column_letter(column_index)].width = min(max_length + 2, 28)
+        ws.column_dimensions[get_column_letter(column_index)].width = min(
+            max_length + 2, 28
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
 
 
-def print_summary(rows: list[dict[str, Any]], output_path: Path, only_high_matches: bool) -> None:
+def print_summary(
+    rows: list[dict[str, Any]], output_path: Path, only_high_matches: bool
+) -> None:
     counter = Counter(row["MatchEstado"] for row in rows)
     print(f"Excel generado: {output_path}")
     if only_high_matches:
@@ -793,8 +916,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Cruza los archivos mov_emp con la API Vimarx y exporta un Excel consolidado."
     )
-    parser.add_argument("--input-dir", type=Path, default=Path("."), help="Directorio con los archivos mov_emp.")
-    parser.add_argument("--pattern", default="mov_emp_*.txt", help="Patrón glob para localizar archivos de entrada.")
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        default=Path("."),
+        help="Directorio con los archivos mov_emp.",
+    )
+    parser.add_argument(
+        "--pattern",
+        default="mov_emp_*.txt",
+        help="Patrón glob para localizar archivos de entrada.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -806,8 +938,18 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("VIMARX_BASE_URL", DEFAULT_API_BASE_URL),
         help="Base URL de la API Evaluate.",
     )
-    parser.add_argument("--timeout", type=int, default=30, help="Timeout de cada request a la API, en segundos.")
-    parser.add_argument("--max-rows", type=int, default=200, help="Máximo de filas por consulta EvaluateList.")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=30,
+        help="Timeout de cada request a la API, en segundos.",
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=200,
+        help="Máximo de filas por consulta EvaluateList.",
+    )
     parser.add_argument(
         "--date-window-days",
         type=int,
@@ -820,7 +962,9 @@ def parse_args() -> argparse.Namespace:
         default=Path(".cache_vimarx"),
         help="Directorio para cachear respuestas por CUIT.",
     )
-    parser.add_argument("--no-cache", action="store_true", help="Desactiva la cache local.")
+    parser.add_argument(
+        "--no-cache", action="store_true", help="Desactiva la cache local."
+    )
     parser.add_argument(
         "--only-high-matches",
         "--solo-match-alto",
@@ -835,7 +979,10 @@ def main() -> int:
     args = parse_args()
     movements = load_movements(args.input_dir, args.pattern)
     if not movements:
-        print("No se encontraron movimientos con cuitTercero en los archivos indicados.", file=sys.stderr)
+        print(
+            "No se encontraron movimientos con cuitTercero en los archivos indicados.",
+            file=sys.stderr,
+        )
         return 1
 
     unique_cuits = sorted({movement.cuit_tercero for movement in movements})

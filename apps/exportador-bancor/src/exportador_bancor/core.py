@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Refactored pipeline for generating ARC export workbooks."""
+
 from __future__ import annotations
 
 import calendar as _cal
@@ -7,6 +8,7 @@ import datetime as _dt
 import json
 import logging
 import math
+import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, ROUND_FLOOR, getcontext
@@ -38,6 +40,7 @@ CLUB_MUTUAL_LINEA_SUPERIOR = "LINEAS CLUB MUTUAL"
 LINEA_SUPERIOR_FIELD = "Prestamo.LineaPrestamo.Superior.Descripcion"
 
 API_URL = "https://celesol.dyndns.org:5050/api/Empresa/EvaluateList"
+API_BEARER_TOKEN_ENV = "EXPORTADOR_BANCOR_CORE_EVALUATE_API_BEARER_TOKEN"
 FILTER_TEMPLATE = (
     "[NroCuota] > 0 AND [SaldoCuota] > 0.0m AND [Fecha] <= #{cutoff_date}# "
     f"AND [{LINEA_SUPERIOR_FIELD}] = '{{linea_superior}}'"
@@ -173,6 +176,14 @@ _API_ROW_KEYS = (
     "linea_superior",
 )
 
+
+def _build_headers() -> dict[str, str]:
+    token = os.getenv(API_BEARER_TOKEN_ENV, "").strip()
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
 def month_end_for(date_value: _dt.date) -> _dt.date:
     last_day = _cal.monthrange(date_value.year, date_value.month)[1]
     return _dt.date(date_value.year, date_value.month, last_day)
@@ -227,11 +238,17 @@ class AttemptSummary:
 
     @property
     def entered_amounts(self) -> List[Decimal]:
-        return [attempt.amount for attempt in self.attempts if attempt.entered and attempt.amount > Decimal("0")]
+        return [
+            attempt.amount
+            for attempt in self.attempts
+            if attempt.entered and attempt.amount > Decimal("0")
+        ]
 
     @property
     def all_amounts(self) -> List[Decimal]:
-        return [attempt.amount for attempt in self.attempts if attempt.amount > Decimal("0")]
+        return [
+            attempt.amount for attempt in self.attempts if attempt.amount > Decimal("0")
+        ]
 
     @property
     def has_forbidden_responses(self) -> bool:
@@ -296,7 +313,9 @@ class ConsolidatedPlanilla:
 
 @dataclass
 class ClassificationOutcome:
-    category: Literal["a-enviar", "bancor-pero-no-enviamos", "posiblemente-bancor", "no-bancor"]
+    category: Literal[
+        "a-enviar", "bancor-pero-no-enviamos", "posiblemente-bancor", "no-bancor"
+    ]
     shots: List[Decimal] = field(default_factory=list)
     reason: Optional[str] = None
     estado_cbu: str = "Regular"
@@ -319,7 +338,9 @@ class ExportResult:
 
     @property
     def total_rows(self) -> int:
-        return sum(result.row_count for key, result in self.files.items() if key != "reporte")
+        return sum(
+            result.row_count for key, result in self.files.items() if key != "reporte"
+        )
 
     @property
     def base_files(self) -> Dict[str, ExportFileResult]:
@@ -347,7 +368,9 @@ def _round_to_thousand(value: Decimal) -> Decimal:
     if value <= Decimal("0"):
         return Decimal("0")
     units = value / THOUSAND
-    rounded = _quantize_currency(units.to_integral_value(rounding="ROUND_CEILING") * THOUSAND)
+    rounded = _quantize_currency(
+        units.to_integral_value(rounding="ROUND_CEILING") * THOUSAND
+    )
     return rounded
 
 
@@ -367,7 +390,9 @@ def _normalize_shot_amount(value: Decimal) -> Decimal:
     return _quantize_currency(rounded)
 
 
-def _round_base_shot(base_value: Decimal, installment_value: Decimal, max_shots: int) -> Decimal:
+def _round_base_shot(
+    base_value: Decimal, installment_value: Decimal, max_shots: int
+) -> Decimal:
     if installment_value <= Decimal("0") or max_shots <= 0:
         return _quantize_currency(base_value)
     rounded = _round_to_thousand(base_value)
@@ -397,6 +422,7 @@ def _normalize_club_mutual_shot_amount(
     if amount_to_collect >= CLUB_MUTUAL_SHOT_MIN and rounded < CLUB_MUTUAL_SHOT_MIN:
         rounded = CLUB_MUTUAL_SHOT_MIN
     return _quantize_currency(rounded)
+
 
 def _to_decimal(value: object) -> Decimal:
     if value is None:
@@ -510,7 +536,9 @@ def read_excel_attempts(path: Path) -> Dict[str, AttemptSummary]:
     required = {"planilla", "respuesta", "importe"}
     if not required.issubset(column_lookup):
         missing = required.difference(column_lookup)
-        raise ValueError(f"Excel file missing required columns: {', '.join(sorted(missing))}")
+        raise ValueError(
+            f"Excel file missing required columns: {', '.join(sorted(missing))}"
+        )
 
     planilla_col = column_lookup["planilla"]
     respuesta_col = column_lookup["respuesta"]
@@ -547,7 +575,13 @@ def fetch_rows(
         "max": max_rows,
     }
     logger.debug("Posting EvaluateList payload with max=%s", max_rows)
-    response = requests.post(API_URL, json=payload, timeout=timeout, verify=False)
+    response = requests.post(
+        API_URL,
+        json=payload,
+        headers=_build_headers(),
+        timeout=timeout,
+        verify=False,
+    )
     response.raise_for_status()
     raw_text = response.text
     data = response.json()
@@ -556,7 +590,6 @@ def fetch_rows(
     if return_raw_text:
         return data, raw_text  # type: ignore[return-value]
     return data  # type: ignore[return-value]
-
 
 
 def load_rows_from_dump(path: Path) -> tuple[list[Sequence[object]], str]:
@@ -620,7 +653,11 @@ def filter_api_rows_for_mode(
     if not club_mutual_mode:
         return list(api_rows)
 
-    filtered = [row for row in api_rows if row.linea_superior.strip() == CLUB_MUTUAL_LINEA_SUPERIOR]
+    filtered = [
+        row
+        for row in api_rows
+        if row.linea_superior.strip() == CLUB_MUTUAL_LINEA_SUPERIOR
+    ]
     if filtered:
         return filtered
 
@@ -657,8 +694,16 @@ def consolidate_planillas(
 
     consolidated: List[ConsolidatedPlanilla] = []
     for planilla, rows in grouped_rows.items():
-        outstanding = _quantize_currency(sum((row.saldo_cuota for row in rows), Decimal("0")))
-        newest = max(rows, key=lambda item: (_coerce_timestamp(item.fecha_cuota), item.nro_cuota or -1))
+        outstanding = _quantize_currency(
+            sum((row.saldo_cuota for row in rows), Decimal("0"))
+        )
+        newest = max(
+            rows,
+            key=lambda item: (
+                _coerce_timestamp(item.fecha_cuota),
+                item.nro_cuota or -1,
+            ),
+        )
         attempts = attempts_by_planilla.get(planilla, AttemptSummary.empty())
         loan_status: Literal["new", "old"] = (
             "new" if len(rows) == 1 and (rows[0].nro_cuota == 1) else "old"
@@ -732,13 +777,18 @@ def _compute_standard_shots(planilla: ConsolidatedPlanilla) -> List[Decimal]:
         shots = [amount_to_collect]
 
     if len(shots) > max_shots:
-        if planilla.installment_value > Decimal("0") and amount_to_collect >= planilla.installment_value:
+        if (
+            planilla.installment_value > Decimal("0")
+            and amount_to_collect >= planilla.installment_value
+        ):
             cap_total = _quantize_currency(shot_amount * Decimal(max_shots))
             if cap_total >= planilla.installment_value:
                 shots = [shot_amount] * max_shots
             else:
                 base_value = planilla.installment_value / Decimal(max_shots)
-                base_shot = _round_base_shot(base_value, planilla.installment_value, max_shots)
+                base_shot = _round_base_shot(
+                    base_value, planilla.installment_value, max_shots
+                )
                 shots = [base_shot] * (max_shots - 1)
                 remainder_value = planilla.installment_value - sum(shots, Decimal("0"))
                 if remainder_value > Decimal("0"):
@@ -769,7 +819,9 @@ def _compute_standard_shots(planilla: ConsolidatedPlanilla) -> List[Decimal]:
         if k <= 1:
             shots = [amount_to_collect]
         else:
-            candidate = _normalize_shot_amount(_quantize_currency(planilla.installment_value / Decimal(k)))
+            candidate = _normalize_shot_amount(
+                _quantize_currency(planilla.installment_value / Decimal(k))
+            )
             target_shot = max(shot_amount, candidate)
             adjusted = [target_shot] * (k - 1)
             subtotal = _quantize_currency(sum(adjusted, Decimal("0")))
@@ -839,7 +891,9 @@ def _compute_club_mutual_shots(planilla: ConsolidatedPlanilla) -> List[Decimal]:
 
     max_shots = _max_shots_for_planilla(planilla)
     if amount_to_collect >= CLUB_MUTUAL_SHOT_MIN:
-        max_shots = min(max_shots, max(1, int(amount_to_collect // CLUB_MUTUAL_SHOT_MIN)))
+        max_shots = min(
+            max_shots, max(1, int(amount_to_collect // CLUB_MUTUAL_SHOT_MIN))
+        )
     max_shots = max(1, max_shots)
 
     n_full = int(amount_to_collect // shot_amount)
@@ -862,7 +916,11 @@ def _compute_club_mutual_shots(planilla: ConsolidatedPlanilla) -> List[Decimal]:
         else:
             shots = [tail_sum]
 
-    if amount_to_collect >= CLUB_MUTUAL_SHOT_MIN and len(shots) > 1 and shots[-1] < CLUB_MUTUAL_SHOT_MIN:
+    if (
+        amount_to_collect >= CLUB_MUTUAL_SHOT_MIN
+        and len(shots) > 1
+        and shots[-1] < CLUB_MUTUAL_SHOT_MIN
+    ):
         shots[0] = _quantize_currency(shots[0] + shots[-1])
         shots.pop()
 
@@ -890,7 +948,9 @@ def determine_planilla_outcome(
 ) -> ClassificationOutcome:
     cbu_clean = planilla.cbu.strip() if planilla.cbu else ""
     estado_cbu = _describe_cbu_status(cbu_clean, club_mutual_mode=club_mutual_mode)
-    caja40_permitido = _is_caja40_allowed(planilla.caja40_int, arrastre_mode=arrastre_mode)
+    caja40_permitido = _is_caja40_allowed(
+        planilla.caja40_int, arrastre_mode=arrastre_mode
+    )
     caja40_clasificacion = _clasificar_caja40(planilla.caja40_int)
 
     if estado_cbu == "Especial":
@@ -1002,12 +1062,22 @@ def _build_report_record(
     club_mutual_mode: bool = False,
 ) -> Dict[str, object]:
     shots = [_quantize_currency(shot) for shot in outcome.shots]
-    monto_total_enviado = _quantize_currency(sum(shots, Decimal("0"))) if shots else Decimal("0.00")
-    disparo_maximo_mes_actual = _quantize_currency(max(shots)) if shots else Decimal("0.00")
+    monto_total_enviado = (
+        _quantize_currency(sum(shots, Decimal("0"))) if shots else Decimal("0.00")
+    )
+    disparo_maximo_mes_actual = (
+        _quantize_currency(max(shots)) if shots else Decimal("0.00")
+    )
     se_envia_mes_actual = "SI" if monto_total_enviado > Decimal("0") else "NO"
 
-    excel_amounts = [_quantize_currency(amount) for amount in planilla.attempts.all_amounts]
-    importe_mes_anterior = _quantize_currency(sum(excel_amounts, Decimal("0"))) if excel_amounts else Decimal("0.00")
+    excel_amounts = [
+        _quantize_currency(amount) for amount in planilla.attempts.all_amounts
+    ]
+    importe_mes_anterior = (
+        _quantize_currency(sum(excel_amounts, Decimal("0")))
+        if excel_amounts
+        else Decimal("0.00")
+    )
     se_envio_mes_anterior = "SI" if importe_mes_anterior > Decimal("0") else "NO"
     entered_amounts = [
         _quantize_currency(attempt.amount)
@@ -1022,14 +1092,16 @@ def _build_report_record(
     total_cobrado = _quantize_currency(sum(entered_amounts, Decimal("0")))
     total_no_cobrado = _quantize_currency(sum(not_entered_amounts, Decimal("0")))
 
-    detalle_disparos_actual = ", ".join(format(shot, '.2f') for shot in shots) if shots else ""
+    detalle_disparos_actual = (
+        ", ".join(format(shot, ".2f") for shot in shots) if shots else ""
+    )
 
     detalle_pasado_parts: List[str] = []
     for attempt in planilla.attempts.attempts:
         amount = _quantize_currency(attempt.amount)
         if amount <= Decimal("0"):
             continue
-        part = format(amount, '.2f')
+        part = format(amount, ".2f")
         response = attempt.response.strip()
         if response:
             part = f"{part} ({response})"
@@ -1038,19 +1110,33 @@ def _build_report_record(
 
     cuota_y_media = _quantize_currency(planilla.installment_value * Decimal("1.5"))
     intentos_total = len(planilla.attempts.attempts)
-    respuestas = ", ".join(sorted(planilla.attempts.responses)) if planilla.attempts.responses else ""
-    ultimo_importe_cobrado = _quantize_currency(max(entered_amounts)) if entered_amounts else Decimal("0.00")
+    respuestas = (
+        ", ".join(sorted(planilla.attempts.responses))
+        if planilla.attempts.responses
+        else ""
+    )
+    ultimo_importe_cobrado = (
+        _quantize_currency(max(entered_amounts)) if entered_amounts else Decimal("0.00")
+    )
     tiene_r8 = "SI" if planilla.attempts.has_forbidden_responses else "NO"
-    category_labels = CLUB_MUTUAL_CATEGORY_LABELS if club_mutual_mode else CATEGORY_LABELS
+    category_labels = (
+        CLUB_MUTUAL_CATEGORY_LABELS if club_mutual_mode else CATEGORY_LABELS
+    )
     clasificacion = category_labels.get(outcome.category, outcome.category)
     estado_prestamo = "Nuevo" if planilla.loan_status == "new" else "Viejo"
-    cbu_labels = CLUB_MUTUAL_CBU_CLASSIFICATION_LABELS if club_mutual_mode else CBU_CLASSIFICATION_LABELS
+    cbu_labels = (
+        CLUB_MUTUAL_CBU_CLASSIFICATION_LABELS
+        if club_mutual_mode
+        else CBU_CLASSIFICATION_LABELS
+    )
     estado_cbu = cbu_labels.get(outcome.estado_cbu, outcome.estado_cbu)
     motivo_labels = MOTIVO_LABELS
     if club_mutual_mode and outcome.reason == "cbu_fuera_de_regla":
         motivo_clasificacion = "CBU fuera de Nacion"
     else:
-        motivo_clasificacion = motivo_labels.get(outcome.reason or "", "Incluido en Criterio de Envío")
+        motivo_clasificacion = motivo_labels.get(
+            outcome.reason or "", "Incluido en Criterio de Envío"
+        )
 
     return {
         "Número Planilla": planilla.planilla,
@@ -1072,7 +1158,9 @@ def _build_report_record(
         "Mes Pasado - Total Enviado": importe_mes_anterior,
         "Mes Actual - Cantidad Disparos": len(shots),
         "Mes Actual - Detalle Disparos": detalle_disparos_actual,
-        "Monto Vencido Mas Última Cuota": _quantize_currency(planilla.outstanding_amount),
+        "Monto Vencido Mas Última Cuota": _quantize_currency(
+            planilla.outstanding_amount
+        ),
         "Valor Cuota": _quantize_currency(planilla.installment_value),
         "Cuota y Media": cuota_y_media,
         "Número Cuota Actual": planilla.latest_nro_cuota or "",
@@ -1093,7 +1181,9 @@ def classify_planillas(
     dev_mode: bool = False,
     arrastre_mode: bool = False,
     club_mutual_mode: bool = False,
-) -> Tuple[Dict[str, List[Dict[str, object]]], List[Dict[str, object]], List[Dict[str, object]]]:
+) -> Tuple[
+    Dict[str, List[Dict[str, object]]], List[Dict[str, object]], List[Dict[str, object]]
+]:
     outputs: Dict[str, List[Dict[str, object]]] = {key: [] for key in EXPORT_FILENAMES}
     discarded_entries: List[Dict[str, object]] = []
     report_rows: List[Dict[str, object]] = []
@@ -1133,7 +1223,11 @@ def classify_planillas(
                     reason=outcome.reason or "",
                 )
             )
-            logger.debug("Planilla %s clasificada como descartada (%s)", planilla.planilla, outcome.reason)
+            logger.debug(
+                "Planilla %s clasificada como descartada (%s)",
+                planilla.planilla,
+                outcome.reason,
+            )
             continue
 
         if outcome.category in ("bancor-pero-no-enviamos", "posiblemente-bancor"):
@@ -1156,10 +1250,16 @@ def classify_planillas(
         if outcome.category == "a-enviar":
             for idx, shot in enumerate(outcome.shots):
                 ven_date = report_date - _dt.timedelta(days=30 * idx)
-                outputs[outcome.category].append(_build_export_record(planilla, shot, report_date, ven_date_override=ven_date))
+                outputs[outcome.category].append(
+                    _build_export_record(
+                        planilla, shot, report_date, ven_date_override=ven_date
+                    )
+                )
         else:
             for shot in outcome.shots:
-                outputs[outcome.category].append(_build_export_record(planilla, shot, report_date))
+                outputs[outcome.category].append(
+                    _build_export_record(planilla, shot, report_date)
+                )
         logger.debug(
             "Planilla %s -> %s con %s disparos",
             planilla.planilla,
@@ -1234,7 +1334,11 @@ def write_report_file(
     output_dir: Path,
 ) -> ExportFileResult:
     output_dir.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(report_rows) if report_rows else pd.DataFrame(columns=REPORT_COLUMNS)
+    df = (
+        pd.DataFrame(report_rows)
+        if report_rows
+        else pd.DataFrame(columns=REPORT_COLUMNS)
+    )
     df = df.reindex(columns=REPORT_COLUMNS)
     for column in REPORT_DECIMAL_COLUMNS:
         if column in df.columns:
@@ -1268,7 +1372,10 @@ def write_report_file(
             def iter_rows(col_name: str) -> list[str]:
                 col_idx = column_lookup[col_name]
                 col_letter = get_column_letter(col_idx)
-                return [f"{col_letter}{row}" for row in range(data_start_row, data_end_row + 1)]
+                return [
+                    f"{col_letter}{row}"
+                    for row in range(data_start_row, data_end_row + 1)
+                ]
 
             for col_name in monetary_columns:
                 if col_name in column_lookup:
@@ -1294,16 +1401,24 @@ def write_report_file(
                 "Mes Pasado - Cantidad Disparos",
                 "Mes Pasado - Respuestas",
                 "Mes Pasado - Detalle Disparos",
-    "Mes Pasado - Total Cobrado",
-    "Mes Pasado - Total sin Cobrar",
+                "Mes Pasado - Total Cobrado",
+                "Mes Pasado - Total sin Cobrar",
             ]
 
-            current_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-            past_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+            current_fill = PatternFill(
+                start_color="E2EFDA", end_color="E2EFDA", fill_type="solid"
+            )
+            past_fill = PatternFill(
+                start_color="FCE4D6", end_color="FCE4D6", fill_type="solid"
+            )
             header_font = Font(bold=True)
 
-            column_span_current = [column_lookup[name] for name in current_block if name in column_lookup]
-            column_span_past = [column_lookup[name] for name in past_block if name in column_lookup]
+            column_span_current = [
+                column_lookup[name] for name in current_block if name in column_lookup
+            ]
+            column_span_past = [
+                column_lookup[name] for name in past_block if name in column_lookup
+            ]
             for col_name in df.columns:
                 col_idx = column_lookup[col_name]
                 header_cell = worksheet.cell(row=2, column=col_idx)
@@ -1321,7 +1436,9 @@ def write_report_file(
 
             if column_span_current:
                 start_idx, end_idx = min(column_span_current), max(column_span_current)
-                worksheet.merge_cells(start_row=1, start_column=start_idx, end_row=1, end_column=end_idx)
+                worksheet.merge_cells(
+                    start_row=1, start_column=start_idx, end_row=1, end_column=end_idx
+                )
                 top_cell = worksheet.cell(row=1, column=start_idx, value="Mes Actual")
                 top_cell.font = header_font
                 top_cell.fill = current_fill
@@ -1330,7 +1447,9 @@ def write_report_file(
 
             if column_span_past:
                 start_idx, end_idx = min(column_span_past), max(column_span_past)
-                worksheet.merge_cells(start_row=1, start_column=start_idx, end_row=1, end_column=end_idx)
+                worksheet.merge_cells(
+                    start_row=1, start_column=start_idx, end_row=1, end_column=end_idx
+                )
                 top_cell = worksheet.cell(row=1, column=start_idx, value="Mes Pasado")
                 top_cell.font = header_font
                 top_cell.fill = past_fill
@@ -1348,7 +1467,9 @@ def write_report_file(
                     top_cell.value = header_value
                     top_cell.font = header_font
 
-            def apply_conditional(column_name: str, true_color: str, false_color: str) -> None:
+            def apply_conditional(
+                column_name: str, true_color: str, false_color: str
+            ) -> None:
                 if column_name not in column_lookup:
                     return
                 col_idx = column_lookup[column_name]
@@ -1359,7 +1480,11 @@ def write_report_file(
                     CellIsRule(
                         operator="equal",
                         formula=['"SI"'],
-                        fill=PatternFill(start_color=true_color, end_color=true_color, fill_type="solid"),
+                        fill=PatternFill(
+                            start_color=true_color,
+                            end_color=true_color,
+                            fill_type="solid",
+                        ),
                     ),
                 )
                 worksheet.conditional_formatting.add(
@@ -1367,10 +1492,13 @@ def write_report_file(
                     CellIsRule(
                         operator="equal",
                         formula=['"NO"'],
-                        fill=PatternFill(start_color=false_color, end_color=false_color, fill_type="solid"),
+                        fill=PatternFill(
+                            start_color=false_color,
+                            end_color=false_color,
+                            fill_type="solid",
+                        ),
                     ),
                 )
-
 
             def apply_value_fill(column_name: str, color_map: Dict[str, str]) -> None:
                 if column_name not in column_lookup:
@@ -1384,7 +1512,9 @@ def write_report_file(
                         CellIsRule(
                             operator="equal",
                             formula=[f'"{value}"'],
-                            fill=PatternFill(start_color=color, end_color=color, fill_type="solid"),
+                            fill=PatternFill(
+                                start_color=color, end_color=color, fill_type="solid"
+                            ),
                         ),
                     )
 
@@ -1403,7 +1533,11 @@ def write_report_file(
             )
             apply_value_fill(
                 "Clasificación Caja40",
-                {"GRUPOS 1-20": "BDD7EE", "ARRASTRE": "DDEBF7", "CAJAS SIN USO": "FFC7CE"},
+                {
+                    "GRUPOS 1-20": "BDD7EE",
+                    "ARRASTRE": "DDEBF7",
+                    "CAJAS SIN USO": "FFC7CE",
+                },
             )
 
             last_column_letter = get_column_letter(len(df.columns))
@@ -1413,7 +1547,9 @@ def write_report_file(
     return ExportFileResult(path=path, row_count=len(df))
 
 
-def log_discarded_entries(entries: List[Dict[str, object]], output_dir: Path) -> Optional[Path]:
+def log_discarded_entries(
+    entries: List[Dict[str, object]], output_dir: Path
+) -> Optional[Path]:
     if not entries:
         return None
     log_path = output_dir / DISCARDED_LOG_NAME
@@ -1490,7 +1626,9 @@ def generate_report(
                 "EvaluateList no devolvio cuotas para la linea superior "
                 f"{CLUB_MUTUAL_LINEA_SUPERIOR}."
             )
-        raise RuntimeError("EvaluateList returned no parsable rows for the given criteria.")
+        raise RuntimeError(
+            "EvaluateList returned no parsable rows for the given criteria."
+        )
     planillas = consolidate_planillas(api_rows, attempts)
 
     notify(0.6, f"Clasificando {len(planillas)} planillas...")
@@ -1507,7 +1645,9 @@ def generate_report(
     report_file_result = write_report_file(report_rows, output_dir_path)
     file_results["reporte"] = report_file_result
 
-    discarded_log_path = log_discarded_entries(discarded_entries, output_dir_path) if dev_mode else None
+    discarded_log_path = (
+        log_discarded_entries(discarded_entries, output_dir_path) if dev_mode else None
+    )
 
     notify(1.0, "Exportacion completada.")
     return ExportResult(
