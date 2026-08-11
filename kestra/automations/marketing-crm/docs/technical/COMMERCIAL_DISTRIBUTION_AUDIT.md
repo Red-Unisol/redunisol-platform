@@ -39,9 +39,15 @@ el inicio del universo en la hoja `Resumen`.
 | `round_robin_initial` | No existe antecedente; toma el primer vendedor online del pool. |
 | `single_seller` | El bucket tiene un único vendedor configurado. |
 | `outside_hours_manual` | Fuera de horario queda con Maru. |
+| `no_online_sellers_manual` | Ningún vendedor del bucket está online; queda con Maru. |
 | `commercial_rejection_manual` | Rechazo comercial con fallback manual en Maru. |
 | `no_matching_bucket` | No pudo determinarse un bucket. |
 | `technical_error` | La ejecución no pudo completar la operación. |
+
+Si una ejecución histórica registró el mensaje `No hay vendedores online disponibles`,
+el reporte la identifica como `Sin vendedor disponible` y no como error técnico. Desde
+la versión vigente, esa condición mueve la negociación a revisión manual, conserva la
+línea y el bucket determinados, y la deja asignada a Maru sin transferir el chat.
 
 ## Reporte
 
@@ -62,6 +68,11 @@ El workbook contiene:
 - `Histórico incompleto`: eventos posteriores al corte que excepcionalmente no tengan
   el contrato completo de trazabilidad, separados para que no se interpreten como
   excepciones comerciales.
+
+En las hojas de detalle, `versión_reglas` y `revisión_flujo_kestra` aparecen junto al
+resultado para distinguir la política comercial aplicada del artefacto técnico que la
+ejecutó. Los responsables y pools se muestran como `Nombre Apellido (ID)`; el nombre se
+resuelve con `user.get` de Bitrix y el ID permanece visible como identificador estable.
 
 Filament ya expone cualquier `.xlsx` debajo del volumen de reportes, por lo que no
 requiere una pantalla ni una tabla nueva.

@@ -107,13 +107,13 @@ outputs:
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.reason : '' }}"
   - id: assigned_by_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars.assigned_by_id is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
   - id: assigned_by_name
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_name : '' }}"
   - id: previous_assigned_by_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.previous_assigned_by_id : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars.previous_assigned_by_id is defined ? outputs.calificar_negociacion.vars.previous_assigned_by_id : '' }}"
   - id: routing_bucket
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.routing_bucket : '' }}"
@@ -125,7 +125,7 @@ outputs:
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.processed_at : '' }}"
   - id: contact_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.contact_id : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars.contact_id is defined ? outputs.calificar_negociacion.vars.contact_id : '' }}"
   - id: deal_title
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.deal_title : '' }}"
