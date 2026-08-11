@@ -8,6 +8,7 @@ DEFAULT_LEAD_FIELDS = {
     "processing_policy": "UF_CRM_PROCESSING_POLICY",
     "commercial_owner": "UF_CRM_COMM_OWNER",
     "cuil": "UF_CRM_1693840106704",
+    "dni": "UF_CRM_LEAD_1711392404332",
     "situacion_laboral": "UF_CRM_1714071903",
     "banco_cobro": "UF_CRM_LEAD_1711458190312",
     "provincia": "UF_CRM_64E65D2B2136C",
@@ -74,6 +75,7 @@ class BitrixFieldsConfig:
     lead_processing_policy: str
     lead_commercial_owner: str
     lead_cuil: str
+    lead_dni: str
     lead_employment_status: str
     lead_payment_bank: str
     lead_province: str
@@ -204,6 +206,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_LEAD_FIELDS["commercial_owner"],
             ),
             lead_cuil=source.get("BITRIX24_LEAD_CUIL_FIELD", DEFAULT_LEAD_FIELDS["cuil"]),
+            lead_dni=source.get("BITRIX24_LEAD_DNI_FIELD", DEFAULT_LEAD_FIELDS["dni"]),
             lead_employment_status=source.get(
                 "BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD",
                 DEFAULT_LEAD_FIELDS["situacion_laboral"],

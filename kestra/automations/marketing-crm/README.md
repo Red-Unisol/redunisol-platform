@@ -8,7 +8,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 - `flows/bitrix24_form_webhook.yaml`: flow de intake del formulario y respuesta al frontend.
 - `flows/commercial_prequalification_webhook.yaml`: endpoint de pre-elegibilidad sin persistencia ni consultas externas.
-- `flows/bitrix24_lead_prefill.yaml`: backfill de leads en `INGRESO (UC_5N2OEO)` con ARCA, CredixSA, Vimarx y BCRA.
+- `flows/bitrix24_lead_prefill.yaml`: backfill de leads en `INGRESO (UC_5N2OEO)` con CredixSA, ARCA, Vimarx y BCRA. Para Finguru sanea primero el DNI copiado como CUIL, vincula el contacto y luego ejecuta el enriquecimiento normal.
 - `flows/bitrix24_lead_classification.yaml`: flow interno de clasificacion por `lead_id`.
 - `flows/bitrix24_prequalification_cutover.yaml`: cutover manual, con dry-run, del ownership activo hacia Kestra.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: receptor de `ONCRMLEADUPDATE`; clasifica `PRECLASIFICACION (NEW)` y crea negociaciones desde `RESULTADO GANADO`.
@@ -31,6 +31,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
+- Finguru se identifica por `origenFormulario=3729`. Si DNI y CUIL contienen los mismos ocho digitos, CredixSA puede resolver el CUIL; solo se persiste cuando la respuesta es unica, contiene ese DNI y supera la validacion de checksum.
+- Una identidad Finguru ambigua o no encontrada no produce un CUIL inventado ni un rechazo comercial. Queda como enriquecimiento parcial bajo la politica normal de reintentos.
 - `ONCRMLEADUPDATE` precalifica cualquier lead en `PRECLASIFICACION (NEW)` creado desde
   el corte operativo, sin usar el owner previo como compuerta; esta decision no
   interpreta BCRA.

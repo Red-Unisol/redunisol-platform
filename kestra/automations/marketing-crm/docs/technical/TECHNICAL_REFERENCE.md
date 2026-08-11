@@ -18,6 +18,7 @@ una operación se deben verificar los flows y el ambiente desplegado.
 | CONVERTIDO | `CONVERTED` |
 | Motor de decisión comercial | `UF_CRM_COMM_OWNER` |
 | CUIL | `UF_CRM_1693840106704` |
+| DNI | `UF_CRM_LEAD_1711392404332` |
 | Situación laboral | `UF_CRM_1714071903` |
 | Banco de cobro | `UF_CRM_LEAD_1711458190312` |
 | Provincia | `UF_CRM_64E65D2B2136C` |
@@ -26,6 +27,21 @@ una operación se deben verificar los flows y el ambiente desplegado.
 | Es socio | `UF_CRM_1728998183` |
 | Cantidad de créditos activos Vimarx | `UF_CRM_VIMARX_CRED_ACT_CNT` |
 | Intentos de prefill | `UF_CRM_KSTRA_BF_ATTEMPTS` |
+
+## Saneamiento Finguru en el prefill
+
+Para `origenFormulario=3729`, el prefill detecta el caso conocido donde Finguru
+escribe el mismo DNI de ocho digitos en los campos DNI y CUIL. CredixSA se consulta
+primero con ese DNI. El CUIL devuelto solo reemplaza el campo CUIL cuando:
+
+- el resultado es unico (`single`);
+- tiene once digitos y checksum valido;
+- sus ocho digitos centrales coinciden exactamente con el DNI consultado.
+
+Con un CUIL resuelto, el prefill reutiliza el upsert normal de contactos por CUIL,
+vincula `CONTACT_ID` y continua con ARCA, Vimarx y BCRA. Ante resultados ambiguos,
+inexistentes o tecnicos no sintetiza un identificador ni rechaza comercialmente al
+lead; conserva el comportamiento de reintentos y avance parcial.
 
 Los campos de snapshot BCRA se resuelven por configuración de runtime y no tienen un
 default confiable en Git; no deben copiarse desde documentos históricos.
