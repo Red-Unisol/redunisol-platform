@@ -114,31 +114,40 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** aplica `COR-CAJA-NEW-010`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Nuevo`.
 
-### `COR-CASE-008` — Caja Nuevo exige situación 1
+### `COR-CASE-008` — Cliente nuevo rechazado por el banco de cobro
 
-- **Dado** un jubilado provincial nuevo de 79 años cuyo snapshot informa una entidad
-  en situación 2.
-- **Cuando** se evalúa Caja Nuevo.
+- **Dado** un jubilado provincial nuevo de 79 años cuyo banco de cobro está en
+  situación 2.
+- **Cuando** se evalúan las líneas Caja.
 - **Entonces** aplica `COR-CAJA-NEW-020`.
 - **Y** la negociación queda en **SIT. NEG. EN BCRA** sin línea.
 
-### `COR-CASE-009` — Caja Irregulares recurrente
+### `COR-CASE-009` — Caja Irregulares para cliente nuevo
+
+- **Dado** un jubilado provincial nuevo de 79 años cuyo banco de cobro está en
+  situación 1.
+- **Y** otra entidad está en situación 2 y ninguna entidad supera situación 3.
+- **Cuando** se evalúa Caja Irregulares.
+- **Entonces** aplica `COR-CAJA-IRREG-NEW-010`.
+- **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Irregulares`.
+
+### `COR-CASE-010` — Caja Irregulares recurrente
 
 - **Dado** un jubilado provincial recurrente de 79 años.
 - **Y** todas sus entidades están como máximo en situación 3 y al menos una está en
   situación 2 o 3.
 - **Cuando** se evalúa Caja Irregulares.
-- **Entonces** aplica `COR-CAJA-IRREG-010`.
+- **Entonces** aplica `COR-CAJA-IRREG-REC-010`.
 - **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Irregulares`.
 
-### `COR-CASE-010` — Rechazo desde los 80 años
+### `COR-CASE-011` — Rechazo desde los 80 años
 
 - **Dado** el mismo caso el día que la persona cumple 80 años.
 - **Entonces** aplica `COR-CAJA-AGE-010` y la decisión comercial es rechazo por edad.
 - **Y** la negociación queda temporalmente en **REVISIÓN MANUAL KESTRA** para ejecutar
   el cierre hasta definir la etapa de rechazo no-BCRA.
 
-### `COR-CASE-011` — UNC
+### `COR-CASE-012` — UNC
 
 - **Dado** un empleado de la UNC que ya superó la precalificación.
 - **Cuando** se clasifica su negociación.
@@ -146,7 +155,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque todavía no existe una
   regla de línea comercial.
 
-### `COR-CASE-012` — Dato faltante
+### `COR-CASE-013` — Dato faltante
 
 - **Dado** cualquier negociación de Córdoba que necesita BCRA para decidir.
 - **Y** el snapshot está ausente o es inválido.
@@ -154,7 +163,7 @@ Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus l�
 - **Entonces** la negociación queda en **REVISIÓN MANUAL KESTRA**.
 - **Y** nunca se aprueba ni rechaza por presunción.
 
-### `COR-CASE-013` — CBU Recurrente unificado
+### `COR-CASE-014` — CBU Recurrente unificado
 
 - **Dado** un socio de Córdoba que encuadra como recurrente.
 - **Cuando** se determina el tipo de evaluación CBU.

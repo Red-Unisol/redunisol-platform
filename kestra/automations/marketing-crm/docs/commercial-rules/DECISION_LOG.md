@@ -68,29 +68,31 @@ del árbol activo; Git conserva su historial.
 - **Con préstamo Cruz del Eje activo:** se aplican las reglas de renovación, paralelo
   o mora, todavía pendientes de completar.
 
-## `COR-DEC-004` — Caja Nuevo exige situación 1
+## `COR-DEC-004` — Banco de cobro para clientes nuevos de Caja
 
 - **Fecha:** 2026-08-11
 - **Estado:** Acordado, pendiente de implementación junto con la clasificación de
   Córdoba.
-- **Precondición:** Jubilado Provincial clasificado como cliente nuevo para Caja Nuevo.
-- **Decisión:** si cualquier entidad está en situación mayor que 1, la negociación se
-  rechaza. Un cliente nuevo no se evalúa por Caja Irregulares.
-- **Resultado:** etapa **SIT. NEG. EN BCRA**, sin línea comercial.
-- **Resto de incumplimientos:** cualquier otra condición que no satisfaga la aprobación
-  de Caja Nuevo permanece en **REVISIÓN MANUAL KESTRA** hasta contar con una regla más
-  específica.
+- **Precondición:** Jubilado Provincial nuevo, menor de 80 años.
+- **Caja Nuevo:** si todas las entidades están en situación 1, se aprueba como `Caja
+  Nuevo`.
+- **Caja Irregulares:** puede tener otras entidades en situación 2/3, siempre que el
+  banco de cobro permanezca en situación 1 y ninguna entidad supere situación 3.
+- **Rechazo:** si el banco de cobro está en situación mayor que 1, la negociación queda
+  en **SIT. NEG. EN BCRA**, sin línea comercial.
 
-## `COR-DEC-005` — Aprobar Caja Irregulares para recurrentes
+## `COR-DEC-005` — Aprobar Caja Irregulares para nuevos y recurrentes
 
 - **Fecha:** 2026-08-11
 - **Estado:** Acordado, pendiente de implementación junto con la clasificación de
   Córdoba.
-- **Segmento:** Jubilado Provincial que ya es socio recurrente.
+- **Segmento:** Jubilado Provincial nuevo o recurrente.
 - **Edad:** menor de 80 años, calculada a la fecha de clasificación.
-- **BCRA:** todas las entidades como máximo en situación 3 y al menos una entidad en
-  situación 2 o 3.
-- **Banco de cobro:** no interviene en esta evaluación.
+- **BCRA común:** todas las entidades como máximo en situación 3 y al menos una entidad
+  en situación 2 o 3.
+- **Cliente nuevo:** el banco de cobro debe estar en situación 1; las situaciones 2/3
+  deben pertenecer a otras entidades.
+- **Socio recurrente:** el banco de cobro también puede estar en situación 2/3.
 - **Resultado:** etapa **PRESENTACIÓN**, línea `Caja Irregulares`.
 - **Datos o límites incumplidos:** fecha de nacimiento faltante o una situación 4/5
   quedan en **REVISIÓN MANUAL KESTRA** mientras no exista una regla final más

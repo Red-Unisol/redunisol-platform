@@ -81,9 +81,10 @@ flowchart TD
     W -->|80 años o más| X[RECHAZO COMERCIAL<br/>cierre manual]
     W -->|Menor de 80| O{Nuevo o recurrente<br/>y situaciones BCRA}
     O -->|Nuevo y solo situación 1| T[PRESENTACIÓN<br/>Línea Caja Nuevo]
-    O -->|Nuevo y alguna situación<br/>mayor que 1| Q
-    O -->|Recurrente, alguna 2/3<br/>y ninguna mayor que 3| V[PRESENTACIÓN<br/>Línea Caja Irregulares]
-    O -->|Otro caso recurrente| R
+    O -->|Nuevo, banco de cobro mayor que 1| Q
+    O -->|Nuevo, banco de cobro en 1<br/>y otras entidades en 2/3| V[PRESENTACIÓN<br/>Línea Caja Irregulares]
+    O -->|Recurrente, alguna 2/3<br/>y ninguna mayor que 3| V
+    O -->|Otro caso| R
 ```
 
 Para Policía y Empleado Público Provincial, ser socio o tener préstamos activos de
