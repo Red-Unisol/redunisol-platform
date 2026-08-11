@@ -12,6 +12,7 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
 from .deal_service import (
     DEAL_ENTITY_TYPE_ID,
+    NoOnlineSellersError,
     assign_open_line_chats_to_user,
     bind_open_line_activities_to_deal,
     notify_distribution_supervisor,
@@ -257,17 +258,66 @@ def qualify_catamarca_deal(
             assignment_strategy="commercial_rejection_manual",
             message="Rechazo comercial aplicado sin distribución automática.",
         )
-    assignment = resolve_round_robin_assignee(
-        client,
-        config,
-        contact_id=contact_id,
-        lead_id=lead_id,
-        bucket_key=bucket.key,
-        bucket_field=config.deal.routing_bucket_field,
-        pool=bucket.seller_ids,
-        legacy_province_label=bucket.legacy_province_label,
-        logger=active_logger,
-    )
+    try:
+        assignment = resolve_round_robin_assignee(
+            client,
+            config,
+            contact_id=contact_id,
+            lead_id=lead_id,
+            bucket_key=bucket.key,
+            bucket_field=config.deal.routing_bucket_field,
+            pool=bucket.seller_ids,
+            legacy_province_label=bucket.legacy_province_label,
+            logger=active_logger,
+        )
+    except NoOnlineSellersError as exc:
+        update_fields: dict[str, Any] = {
+            "stageId": config.deal.manual_review_stage_id,
+            "assignedById": config.deal.provisional_user_id,
+            config.deal.routing_bucket_field: bucket.key,
+        }
+        if decision.commercial_line is not None:
+            update_fields[config.deal.commercial_line_field] = decision.commercial_line
+        client.call(
+            "crm.item.update",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "id": deal_id_int,
+                "fields": update_fields,
+            },
+        )
+        active_logger.info(
+            f"Negociacion {deal_id_int} sin vendedores online en {bucket.key}: "
+            "queda asignada a Maru para gestion manual."
+        )
+        return _result(
+            action="manual_review",
+            has_pending=False,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=config.deal.manual_review_stage_id,
+            reason="no_online_sellers",
+            assigned_by_id=config.deal.provisional_user_id,
+            assigned_by_name="Maru Lopez",
+            routing_bucket=bucket.key,
+            commercial_line=decision.commercial_line,
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            within_business_hours=within_business_hours,
+            assignment_strategy="no_online_sellers_manual",
+            configured_pool=exc.configured_pool,
+            online_pool=(),
+            message=(
+                "No habia vendedores online disponibles; la negociacion queda "
+                "asignada a Maru para gestion manual."
+            ),
+        )
     assigned_by_id = assignment.assigned_by_id
     assigned_by_name = user_display_name(
         client,

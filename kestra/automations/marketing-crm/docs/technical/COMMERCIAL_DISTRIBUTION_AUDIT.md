@@ -39,9 +39,15 @@ el inicio del universo en la hoja `Resumen`.
 | `round_robin_initial` | No existe antecedente; toma el primer vendedor online del pool. |
 | `single_seller` | El bucket tiene un único vendedor configurado. |
 | `outside_hours_manual` | Fuera de horario queda con Maru. |
+| `no_online_sellers_manual` | Ningún vendedor del bucket está online; queda con Maru. |
 | `commercial_rejection_manual` | Rechazo comercial con fallback manual en Maru. |
 | `no_matching_bucket` | No pudo determinarse un bucket. |
 | `technical_error` | La ejecución no pudo completar la operación. |
+
+Si una ejecución histórica registró el mensaje `No hay vendedores online disponibles`,
+el reporte la identifica como `Sin vendedor disponible` y no como error técnico. Desde
+la versión vigente, esa condición mueve la negociación a revisión manual, conserva la
+línea y el bucket determinados, y la deja asignada a Maru sin transferir el chat.
 
 ## Reporte
 

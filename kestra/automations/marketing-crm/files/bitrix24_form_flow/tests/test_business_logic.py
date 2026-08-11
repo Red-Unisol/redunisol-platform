@@ -4099,6 +4099,35 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["online_pool"], "74365")
         self.assertEqual(client.deals[940]["ufCrm_659EBB0445E8E"], "Cruz del Eje")
 
+    def test_cordoba_publico_without_online_seller_stays_with_maru(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[948] = self._cordoba_enriched_lead(
+            948,
+            employment_id="1239",
+            bcra_entities=[{"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 1}],
+        )
+        client.deals[948] = self._pending_deal(948, 948)
+
+        result = qualify_catamarca_deal(
+            948,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "no_online_sellers")
+        self.assertEqual(result["assignment_strategy"], "no_online_sellers_manual")
+        self.assertEqual(result["assigned_by_id"], 57)
+        self.assertEqual(result["routing_bucket"], "cordoba_publico_policia")
+        self.assertEqual(result["configured_pool"], "74365")
+        self.assertEqual(result["online_pool"], "")
+        self.assertEqual(client.deals[948]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[948]["assignedById"], 57)
+        self.assertEqual(client.deals[948]["ufCrmRouteBucket"], "cordoba_publico_policia")
+        self.assertEqual(client.deals[948]["ufCrm_659EBB0445E8E"], "Cruz del Eje")
+        self.assertEqual(client.chat_transfers, [])
+
     def test_cordoba_active_cbu_loan_does_not_block_cruz_del_eje(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids.add(74365)

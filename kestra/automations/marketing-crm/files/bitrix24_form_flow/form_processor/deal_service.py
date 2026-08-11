@@ -15,6 +15,14 @@ LEAD_ENTITY_TYPE_ID = 1
 CONTACT_ENTITY_TYPE_ID = 3
 OPEN_LINE_ACTIVITY_PROVIDER_ID = "IMOPENLINES_SESSION"
 
+
+class NoOnlineSellersError(RuntimeError):
+    """Raised when a configured routing pool has no currently available seller."""
+
+    def __init__(self, configured_pool: tuple[int, ...]) -> None:
+        super().__init__("No hay vendedores online disponibles para asignar la negociacion.")
+        self.configured_pool = configured_pool
+
 DEAL_DIRECT_FIELD_MAPPINGS = {
     "cuil": "ufCrm_64FF4F9B5C195",
     "bcra_status": "ufCrm_69E0D50649FEB",
@@ -187,7 +195,7 @@ def resolve_round_robin_assignee(
 
     online_pool = _online_pool_users(client, pool=pool, logger=logger)
     if not online_pool:
-        raise RuntimeError("No hay vendedores online disponibles para asignar la negociacion.")
+        raise NoOnlineSellersError(pool)
 
     legacy_filter = _legacy_bucket_filter(client, province_label=legacy_province_label)
     if contact_id is not None:

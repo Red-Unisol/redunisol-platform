@@ -94,6 +94,23 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertEqual(row["distribution_status"], "Gestión manual con Maru")
 
+    def test_marks_no_online_fallback_as_manual_with_maru(self):
+        row = REPORT.normalized(
+            execution(action="manual_review", strategy="no_online_sellers_manual")
+        )
+
+        self.assertEqual(row["distribution_status"], "Gestión manual con Maru")
+
+    def test_does_not_present_historical_no_online_attempt_as_technical_error(self):
+        item = execution(action="error", strategy="technical_error")
+        item["outputs"]["message"] = (
+            "No hay vendedores online disponibles para asignar la negociacion."
+        )
+
+        row = REPORT.normalized(item)
+
+        self.assertEqual(row["distribution_status"], "Sin vendedor disponible")
+
     def test_omits_scheduler_runs_without_pending_deal(self):
         row = execution(action="no_pending", strategy="")
         row["outputs"]["deal_id"] = ""

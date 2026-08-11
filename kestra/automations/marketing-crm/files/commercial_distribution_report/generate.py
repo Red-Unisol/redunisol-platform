@@ -33,6 +33,7 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "round_robin_initial": "Primer vendedor online por falta de antecedentes",
     "single_seller": "Único vendedor configurado para el bucket",
     "outside_hours_manual": "Fuera de horario laboral; gestión manual con Maru",
+    "no_online_sellers_manual": "Sin vendedores online; gestión manual con Maru",
     "commercial_rejection_manual": "Rechazo comercial; gestión manual con Maru",
     "no_matching_bucket": "No existe un bucket aplicable",
     "not_applicable": "La negociación ya no estaba pendiente",
@@ -113,10 +114,24 @@ def parse_int(value: Any) -> int:
         return 0
 
 
-def distribution_status(action: str, strategy: str, technical_state: str) -> str:
+def distribution_status(
+    action: str,
+    strategy: str,
+    technical_state: str,
+    message: str = "",
+) -> str:
     if technical_state in {"FAILED", "KILLED"} or action == "error":
+        if (
+            technical_state == "SUCCESS"
+            and "no hay vendedores online disponibles" in message.lower()
+        ):
+            return "Sin vendedor disponible"
         return "Error técnico"
-    if strategy in {"outside_hours_manual", "commercial_rejection_manual"}:
+    if strategy in {
+        "outside_hours_manual",
+        "commercial_rejection_manual",
+        "no_online_sellers_manual",
+    }:
         return "Gestión manual con Maru"
     if strategy == "no_matching_bucket" or action == "routing_review":
         return "Sin bucket"
@@ -153,7 +168,8 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
     processed_at = parse_datetime(outputs.get("processed_at")) or parse_datetime(
         (row.get("state") or {}).get("startDate")
     )
-    status = distribution_status(action, strategy, technical_state)
+    message = str(outputs.get("message") or "")
+    status = distribution_status(action, strategy, technical_state, message)
     if not strategy and not rule_version and technical_state == "SUCCESS":
         status = "Histórico incompleto"
     return {
@@ -164,7 +180,7 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         "action": action,
         "distribution_status": status,
         "reason": str(outputs.get("reason") or ""),
-        "message": str(outputs.get("message") or ""),
+        "message": message,
         "rule_version": rule_version,
         "deal_id": deal_id,
         "deal_title": str(outputs.get("deal_title") or ""),
@@ -245,6 +261,7 @@ def build(
         ("Eventos procesados", len(rows)),
         ("Distribuidos", status_counts["Distribuido"]),
         ("Gestión manual con Maru", status_counts["Gestión manual con Maru"]),
+        ("Intentos históricos sin vendedor disponible", status_counts["Sin vendedor disponible"]),
         ("Sin bucket", status_counts["Sin bucket"]),
         ("Errores técnicos", status_counts["Error técnico"]),
         ("Históricos sin trazabilidad completa", status_counts["Histórico incompleto"]),
