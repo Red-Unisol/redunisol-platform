@@ -229,6 +229,7 @@ def build(rows: list[dict[str, Any]], bitrix_base_url: str = "") -> Workbook:
         ("Gestión manual con Maru", status_counts["Gestión manual con Maru"]),
         ("Sin bucket", status_counts["Sin bucket"]),
         ("Errores técnicos", status_counts["Error técnico"]),
+        ("Históricos sin trazabilidad completa", status_counts["Histórico incompleto"]),
         ("Chats transferidos", sum(row["transferred_chat_count"] for row in rows)),
     )
     for item in summary_rows:
@@ -293,14 +294,22 @@ def build(rows: list[dict[str, Any]], bitrix_base_url: str = "") -> Workbook:
     events.append(headers)
     exceptions = wb.create_sheet("Excepciones")
     exceptions.append(headers)
+    legacy = wb.create_sheet("Histórico incompleto")
+    legacy.append(headers)
     base = portal_base(bitrix_base_url)
     for item in sorted(rows, key=lambda row: row["processed_at"] or datetime.min):
         values = [item[key] for key in keys]
         events.append(values)
-        if item["distribution_status"] != "Distribuido":
+        if item["distribution_status"] not in {"Distribuido", "Histórico incompleto"}:
             exceptions.append(values)
-        for sheet in (events, exceptions):
-            if sheet is exceptions and item["distribution_status"] == "Distribuido":
+        if item["distribution_status"] == "Histórico incompleto":
+            legacy.append(values)
+        for sheet in (events, exceptions, legacy):
+            if sheet is exceptions and item["distribution_status"] in {
+                "Distribuido", "Histórico incompleto"
+            }:
+                continue
+            if sheet is legacy and item["distribution_status"] != "Histórico incompleto":
                 continue
             row_number = sheet.max_row
             if item["processed_at"]:
@@ -309,6 +318,7 @@ def build(rows: list[dict[str, Any]], bitrix_base_url: str = "") -> Workbook:
             add_link(sheet.cell(row_number, 7), f"{base}/crm/lead/details/{item['lead_id']}/" if base else "")
     compact(events, {4: 42, 6: 34, 10: 30, 11: 38, 19: 48, 30: 60})
     compact(exceptions, {4: 42, 6: 34, 10: 30, 11: 38, 19: 48, 30: 60})
+    compact(legacy, {4: 42, 6: 34, 10: 30, 11: 38, 19: 48, 30: 60})
     return wb
 
 

@@ -75,6 +75,20 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertIsNone(REPORT.normalized(row))
 
+    def test_separates_legacy_events_from_real_exceptions(self):
+        legacy_execution = execution(strategy="")
+        legacy_execution["outputs"]["rule_version"] = ""
+        legacy_execution["outputs"]["processed_at"] = ""
+        legacy = REPORT.normalized(legacy_execution)
+        manual = REPORT.normalized(
+            execution(action="manual_review", strategy="outside_hours_manual")
+        )
+
+        workbook = REPORT.build([legacy, manual])
+
+        self.assertEqual(workbook["Histórico incompleto"].max_row, 2)
+        self.assertEqual(workbook["Excepciones"].max_row, 2)
+
     def test_builds_event_exception_and_seller_sheets_with_links(self):
         distributed = REPORT.normalized(execution())
         manual = REPORT.normalized(
@@ -87,6 +101,7 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertEqual(workbook["Eventos"].max_row, 3)
         self.assertEqual(workbook["Excepciones"].max_row, 2)
+        self.assertEqual(workbook["Histórico incompleto"].max_row, 1)
         self.assertEqual(workbook["Por vendedor"].max_row, 2)
         self.assertEqual(
             workbook["Eventos"].cell(2, 5).hyperlink.target,

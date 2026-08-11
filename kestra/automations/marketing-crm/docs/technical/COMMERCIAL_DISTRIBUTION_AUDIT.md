@@ -47,7 +47,9 @@ El workbook contiene:
 - `Resumen`: métricas generales;
 - `Por vendedor`: eventos, distribuciones y chats por responsable;
 - `Eventos`: detalle completo y enlaces a Bitrix;
-- `Excepciones`: todo lo que no terminó como distribución automática.
+- `Excepciones`: errores, revisiones y casos que no terminaron como distribución automática;
+- `Histórico incompleto`: ejecuciones anteriores al contrato auditable, separadas para
+  que no se interpreten como excepciones comerciales.
 
 Filament ya expone cualquier `.xlsx` debajo del volumen de reportes, por lo que no
 requiere una pantalla ni una tabla nueva.
