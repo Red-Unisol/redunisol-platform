@@ -50,6 +50,31 @@ def execution(*, action="approved", strategy="round_robin", state="SUCCESS"):
 
 
 class CommercialDistributionReportTests(unittest.TestCase):
+    def test_keeps_only_events_at_or_after_audit_cutoff(self):
+        before = REPORT.normalized(execution())
+        before["processed_at"] = REPORT.datetime(2026, 8, 11, 12, 59, 59)
+        at_cutoff = REPORT.normalized(execution())
+        at_cutoff["processed_at"] = REPORT.datetime(2026, 8, 11, 13, 0, 0)
+
+        rows = REPORT.events_from(
+            [before, at_cutoff],
+            REPORT.datetime(2026, 8, 11, 13, 0, 0),
+        )
+
+        self.assertEqual(rows, [at_cutoff])
+
+    def test_shows_audit_cutoff_in_summary(self):
+        cutoff = REPORT.datetime(2026, 8, 11, 13, 0, 0)
+
+        workbook = REPORT.build([], audit_from=cutoff)
+
+        self.assertEqual(workbook["Resumen"].cell(2, 1).value, "Eventos incluidos desde")
+        self.assertEqual(workbook["Resumen"].cell(2, 2).value, cutoff)
+        self.assertEqual(
+            workbook["Resumen"].cell(2, 2).number_format,
+            "dd/mm/yyyy hh:mm:ss",
+        )
+
     def test_normalizes_complete_distribution_event(self):
         row = REPORT.normalized(execution())
 
@@ -75,6 +100,20 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertIsNone(REPORT.normalized(row))
 
+    def test_separates_legacy_events_from_real_exceptions(self):
+        legacy_execution = execution(strategy="")
+        legacy_execution["outputs"]["rule_version"] = ""
+        legacy_execution["outputs"]["processed_at"] = ""
+        legacy = REPORT.normalized(legacy_execution)
+        manual = REPORT.normalized(
+            execution(action="manual_review", strategy="outside_hours_manual")
+        )
+
+        workbook = REPORT.build([legacy, manual])
+
+        self.assertEqual(workbook["Histórico incompleto"].max_row, 2)
+        self.assertEqual(workbook["Excepciones"].max_row, 2)
+
     def test_builds_event_exception_and_seller_sheets_with_links(self):
         distributed = REPORT.normalized(execution())
         manual = REPORT.normalized(
@@ -87,6 +126,7 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertEqual(workbook["Eventos"].max_row, 3)
         self.assertEqual(workbook["Excepciones"].max_row, 2)
+        self.assertEqual(workbook["Histórico incompleto"].max_row, 1)
         self.assertEqual(workbook["Por vendedor"].max_row, 2)
         self.assertEqual(
             workbook["Eventos"].cell(2, 5).hyperlink.target,
