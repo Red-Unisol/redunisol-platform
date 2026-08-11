@@ -17,6 +17,17 @@ runs `no_pending`, que no procesan una negociación, no forman parte del informe
 Los datos incluyen IDs y contexto operativo, pero no copian CUIL, DNI ni el snapshot
 BCRA completo al Excel.
 
+## Inicio del universo auditable
+
+El reporte operativo incluye únicamente eventos procesados desde el
+`2026-08-11 13:00:00` de Argentina, inclusive. De esta forma, la medición comienza con
+las reglas comerciales vigentes y no mezcla decisiones tomadas anteriormente con
+otras versiones de la lógica.
+
+El corte se configura mediante `REPORTS_AUDIT_FROM` y su valor predeterminado es
+`2026-08-11T13:00:00-03:00`. El generador descarta toda ejecución anterior y muestra
+el inicio del universo en la hoja `Resumen`.
+
 ## Estrategias de asignación
 
 | Valor | Significado |
@@ -44,12 +55,13 @@ marketing/distribucion-negociaciones/historico/YYYY-MM-DD.xlsx
 
 El workbook contiene:
 
-- `Resumen`: métricas generales;
+- `Resumen`: métricas generales y fecha de inicio del universo auditable;
 - `Por vendedor`: eventos, distribuciones y chats por responsable;
 - `Eventos`: detalle completo y enlaces a Bitrix;
 - `Excepciones`: errores, revisiones y casos que no terminaron como distribución automática;
-- `Histórico incompleto`: ejecuciones anteriores al contrato auditable, separadas para
-  que no se interpreten como excepciones comerciales.
+- `Histórico incompleto`: eventos posteriores al corte que excepcionalmente no tengan
+  el contrato completo de trazabilidad, separados para que no se interpreten como
+  excepciones comerciales.
 
 Filament ya expone cualquier `.xlsx` debajo del volumen de reportes, por lo que no
 requiere una pantalla ni una tabla nueva.

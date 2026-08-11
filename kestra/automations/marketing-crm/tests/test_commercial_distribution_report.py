@@ -50,6 +50,31 @@ def execution(*, action="approved", strategy="round_robin", state="SUCCESS"):
 
 
 class CommercialDistributionReportTests(unittest.TestCase):
+    def test_keeps_only_events_at_or_after_audit_cutoff(self):
+        before = REPORT.normalized(execution())
+        before["processed_at"] = REPORT.datetime(2026, 8, 11, 12, 59, 59)
+        at_cutoff = REPORT.normalized(execution())
+        at_cutoff["processed_at"] = REPORT.datetime(2026, 8, 11, 13, 0, 0)
+
+        rows = REPORT.events_from(
+            [before, at_cutoff],
+            REPORT.datetime(2026, 8, 11, 13, 0, 0),
+        )
+
+        self.assertEqual(rows, [at_cutoff])
+
+    def test_shows_audit_cutoff_in_summary(self):
+        cutoff = REPORT.datetime(2026, 8, 11, 13, 0, 0)
+
+        workbook = REPORT.build([], audit_from=cutoff)
+
+        self.assertEqual(workbook["Resumen"].cell(2, 1).value, "Eventos incluidos desde")
+        self.assertEqual(workbook["Resumen"].cell(2, 2).value, cutoff)
+        self.assertEqual(
+            workbook["Resumen"].cell(2, 2).number_format,
+            "dd/mm/yyyy hh:mm:ss",
+        )
+
     def test_normalizes_complete_distribution_event(self):
         row = REPORT.normalized(execution())
 

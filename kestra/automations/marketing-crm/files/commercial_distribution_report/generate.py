@@ -24,6 +24,7 @@ from openpyxl.utils import get_column_letter
 NAVY, WHITE = "17365D", "FFFFFF"
 FLOW_ID = "bitrix24_catamarca_deal_qualification"
 ARGENTINA_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
+DEFAULT_AUDIT_FROM = "2026-08-11T13:00:00-03:00"
 ASSIGNMENT_STRATEGY_LABELS = {
     "contact_history": "Continuidad con vendedor anterior del contacto",
     "legacy_contact_history": "Continuidad con vendedor histórico del contacto",
@@ -189,6 +190,18 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def events_from(
+    rows: list[dict[str, Any]],
+    audit_from: datetime,
+) -> list[dict[str, Any]]:
+    """Keep only auditable events at or after the Argentina-local cutoff."""
+    return [
+        row
+        for row in rows
+        if row["processed_at"] is not None and row["processed_at"] >= audit_from
+    ]
+
+
 def compact(ws, widths: dict[int, int] | None = None) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
@@ -217,13 +230,18 @@ def add_link(cell, url: str) -> None:
     cell.style = "Hyperlink"
 
 
-def build(rows: list[dict[str, Any]], bitrix_base_url: str = "") -> Workbook:
+def build(
+    rows: list[dict[str, Any]],
+    bitrix_base_url: str = "",
+    audit_from: datetime | None = None,
+) -> Workbook:
     wb = Workbook()
     summary = wb.active
     summary.title = "Resumen"
     status_counts = Counter(row["distribution_status"] for row in rows)
     summary.append(["AUDITORÍA COMERCIAL Y DISTRIBUCIÓN", "Valor"])
     summary_rows = (
+        ("Eventos incluidos desde", audit_from or "Sin corte configurado"),
         ("Eventos procesados", len(rows)),
         ("Distribuidos", status_counts["Distribuido"]),
         ("Gestión manual con Maru", status_counts["Gestión manual con Maru"]),
@@ -238,6 +256,8 @@ def build(rows: list[dict[str, Any]], bitrix_base_url: str = "") -> Workbook:
     summary.auto_filter.ref = None
     for row_number in range(2, summary.max_row + 1):
         summary.cell(row_number, 1).font = Font(bold=True, color=NAVY)
+    if audit_from is not None:
+        summary.cell(2, 2).number_format = "dd/mm/yyyy hh:mm:ss"
 
     by_seller = wb.create_sheet("Por vendedor")
     by_seller.append(["Responsable ID", "Responsable", "Eventos", "Distribuidos", "Chats"])
@@ -357,15 +377,26 @@ def main() -> None:
         os.environ["REPORTS_KESTRA_USERNAME"],
         os.environ["REPORTS_KESTRA_PASSWORD"],
     )
+    audit_from_value = os.getenv("REPORTS_AUDIT_FROM", DEFAULT_AUDIT_FROM)
+    audit_from = parse_datetime(audit_from_value)
+    if audit_from is None:
+        raise RuntimeError(
+            "REPORTS_AUDIT_FROM debe ser una fecha ISO válida; "
+            f"valor recibido: {audit_from_value!r}"
+        )
     raw = executions(session, base, tenant, namespace, FLOW_ID)
-    rows = [event for row in raw if (event := normalized(row)) is not None]
+    normalized_rows = [
+        event for row in raw if (event := normalized(row)) is not None
+    ]
+    rows = events_from(normalized_rows, audit_from)
     latest, dated = publish(
-        build(rows, os.getenv("REPORTS_BITRIX_BASE_URL", "")),
+        build(rows, os.getenv("REPORTS_BITRIX_BASE_URL", ""), audit_from),
         Path(os.getenv("REPORTS_ROOT", "/reports")),
         datetime.now(ARGENTINA_TIMEZONE).replace(tzinfo=None),
     )
     print(json.dumps({
         "ok": True,
+        "audit_from": audit_from.isoformat(),
         "events": len(rows),
         "latest": str(latest),
         "history": str(dated),
