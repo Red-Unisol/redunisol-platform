@@ -1,6 +1,6 @@
 # Reglas Comerciales Compartidas
 
-Versión documental: `2026-08-10`
+Versión documental: `2026-08-11`
 
 ## Propósito
 
@@ -38,7 +38,7 @@ documentarse; no se debe reinterpretar silenciosamente la regla.
 | [`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md) | Negocio y Tecnología | Contiene las reglas de clasificación de negociaciones. |
 | [`DEAL_ROUTING.md`](DEAL_ROUTING.md) | Negocio y Tecnología | Contiene los buckets acordados de distribución. |
 | [`ACCEPTANCE_CASES.md`](ACCEPTANCE_CASES.md) | Negocio, QA y Tecnología | Permite validar las reglas mediante ejemplos concretos. |
-| [`OPEN_DECISIONS.md`](OPEN_DECISIONS.md) | Business owners | Enumera las definiciones que todavía bloquean automatizaciones. |
+| [`OPEN_DECISIONS.md`](OPEN_DECISIONS.md) | Business owners y Tecnología | Enumera las decisiones y dependencias que todavía bloquean automatizaciones. |
 | [`DECISION_LOG.md`](DECISION_LOG.md) | Todos | Conserva las decisiones cerradas y su impacto en las reglas. |
 | [`RULE_CHANGE_TEMPLATE.md`](RULE_CHANGE_TEMPLATE.md) | Quien solicite un cambio | Formato obligatorio para proponer o modificar una regla. |
 
@@ -104,6 +104,6 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
-| 2026-08-10 | Catamarca | Vigente e implementado | Pendiente de formalizar en este formato | Producción |
-| 2026-08-10 | Córdoba | Borrador para validación | Pendiente | No implementado |
+| 2026-08-11 | Catamarca | Acordado, pendiente de implementación | Criterios incorporados; aprobador formal pendiente de registrar | Producción conserva la versión anterior |
+| 2026-08-11 | Córdoba | Acordado, pendiente de implementación | Criterios incorporados; aprobador formal pendiente de registrar | No implementado |
 | 2026-08-10 | Distribución de negociaciones | Acordado, pendiente de implementación | Criterio acordado | No implementado |

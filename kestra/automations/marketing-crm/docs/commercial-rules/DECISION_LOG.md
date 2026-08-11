@@ -1,6 +1,6 @@
 # Registro de Decisiones Comerciales
 
-Versión: `2026-08-10`
+Versión: `2026-08-11`
 
 Este documento conserva decisiones funcionales cerradas para evitar que conceptos
 históricos vuelvan a incorporarse por error.
@@ -28,7 +28,8 @@ del árbol activo; Git conserva su historial.
 ## `CAT-DEC-001` — Clasificar la afiliación únicamente por Es socio
 
 - **Fecha:** 2026-08-10
-- **Estado:** Acordado e implementado.
+- **Estado:** Histórica para el resultado; ampliada por `CAT-DEC-003`. Continúa
+  describiendo el runtime hasta implementar la nueva clasificación.
 - **Decisión:** la clasificación de Catamarca utiliza el campo `Es socio` enriquecido
   por Vimarx. La cantidad de créditos activos no constituye una condición comercial
   independiente.
@@ -56,8 +57,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-003` — Renovaciones Cruz del Eje dependen de la línea del préstamo
 
 - **Fecha:** 2026-08-10
-- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
-  Córdoba.
+- **Estado:** Ampliada por `COR-DEC-007`, pendiente de implementación.
 - **Decisión:** para Policía y Empleado Público Provincial, solamente un préstamo
   activo de una línea Cruz del Eje habilita el análisis de renovación, paralelo o
   mora de Cruz del Eje.
@@ -84,8 +84,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-005` — Aprobar Caja Irregulares para nuevos y recurrentes
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
-  Córdoba.
+- **Estado:** Ampliada por `COR-DEC-008`, pendiente de implementación.
 - **Segmento:** Jubilado Provincial nuevo o recurrente.
 - **Edad:** menor de 80 años, calculada a la fecha de clasificación.
 - **BCRA común:** todas las entidades como máximo en situación 3 y al menos una entidad
@@ -108,6 +107,107 @@ del árbol activo; Git conserva su historial.
   Córdoba.
 - **Decisión:** toda persona de 80 años o más se rechaza para las líneas Caja.
 - **Límite inclusivo:** el rechazo aplica desde el día en que cumple 80 años.
-- **Ejecución temporal:** hasta cerrar `COR-PEND-008`, la negociación queda en
-  **REVISIÓN MANUAL KESTRA** con motivo de rechazo por edad para que una persona
-  ejecute el cierre en Bitrix.
+- **Ejecución temporal:** hasta crear la etapa definida en `GEN-DEC-002`, la
+  negociación queda en **REVISIÓN MANUAL KESTRA** con motivo de rechazo por edad para
+  que una persona ejecute el cierre en Bitrix.
+
+## `GEN-DEC-001` — Preferir revisión manual frente a rechazo ambiguo
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado.
+- **Decisión:** antes de rechazar se evalúan todas las familias habilitadas para el
+  perfil. Un dato faltante, una combinación no cubierta o una identificación dudosa
+  producen **REVISIÓN MANUAL KESTRA**.
+- **Rechazo:** solamente se ejecuta ante una exclusión explícita y verificable.
+- **Snapshot limpio:** un banco identificable ausente de un snapshot válido equivale a
+  situación 0.
+
+## `CAT-DEC-002` — Nueva frontera Premium y Especial AMEJUCA
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de implementación.
+- **Premium:** situaciones 1 sin límite, hasta cinco entidades en situación 2, ninguna
+  situación 3/4/5 y banco de cobro hasta situación 2.
+- **Especial:** banco de cobro hasta situación 1, situaciones 1/2/3 sin límite o hasta
+  cuatro entidades en situación 4/5, cuando no aplica Premium.
+- **Revisión manual:** banco de cobro en situación 2 cuando el perfil no cumple
+  Premium; incluye más de cinco entidades en situación 2.
+- **Rechazos comunes:** más de cuatro entidades en situación 4/5 o banco de cobro por
+  encima de situación 2.
+- **Alcance:** los rechazos comunes aplican a socios y no socios.
+
+## `CAT-DEC-003` — Reglas conservadoras para socios AMEJUCA
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de implementación.
+- **Buen comportamiento:** cuota social al día, cero días de atraso y cuotas vencidas
+  pagadas.
+- **Premium Recurrentes:** requiere buen comportamiento y BCRA Premium.
+- **Paralelos:** mínimo cuatro cuotas pagadas para Premium y dos para Especial.
+- **Renovación con dos créditos:** 50% pagado del crédito a cancelar y segunda cuota
+  pagada del crédito más reciente.
+- **Incumplimiento o dato faltante:** revisión manual, no rechazo automático.
+
+## `COR-DEC-007` — Cerrar reglas Cruz del Eje y REN
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de implementación.
+- **Premium:** solo situaciones 1.
+- **Especial:** situaciones 2/3 sin límite o hasta dos entidades en situación 4/5.
+- **Rechazos:** más de dos entidades en situación 4/5 o Banco de Córdoba en situación
+  2 o superior.
+- **REN:** utiliza la misma separación BCRA, requiere cero días de atraso y cuotas
+  vencidas pagadas.
+- **Mora y paralelos:** revisión manual; la mora se resuelve antes de evaluar una línea
+  común y no se aprueba un paralelo automáticamente.
+- **Persistencia:** el campo Línea guarda `Cruz del Eje`; Premium, Especial y REN se
+  registran en el motivo auditable.
+- **Decisiones cerradas:** `COR-PEND-003`, `COR-PEND-004`, `COR-PEND-005`,
+  `COR-PEND-009` y `COR-PEND-012`.
+
+## `COR-DEC-008` — Completar líneas Caja
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de implementación.
+- **Caja General:** recurrente menor de 80 con situaciones 0/1 o snapshot válido sin
+  entidades.
+- **Caja Morosos:** nuevo o recurrente menor de 80, alguna situación 4/5, banco de
+  cobro hasta situación 1 y ninguna entidad excluyente.
+- **Banco irregular:** en Caja Morosos produce rechazo BCRA.
+- **Entidad excluyente:** produce revisión manual exhaustiva, no rechazo.
+- **Paralelos:** menos de una cuota pagada para General, o menos de cuatro para
+  Irregulares/Morosos, producen revisión manual.
+- **Refinanciación Morosos:** revisión manual; no se aprueba automáticamente.
+- **Decisiones cerradas:** `COR-PEND-007` y `COR-PEND-011`.
+
+## `COR-DEC-009` — Separar DASPU Haberes y Club Mutual CBU
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de implementación.
+- **DASPU Haberes:** activo DASPU, formulario 691 válido y cupo mayor que cero; no tiene
+  rechazo BCRA automático documentado.
+- **Club Mutual CBU:** docente/no docente activo UNC dentro del límite etario, hasta
+  tres entidades en situación 4/5 y sin mora con Banco Nación.
+- **Datos faltantes, Banco Nación irregular o cuatro entidades 4/5 o más:** revisión
+  manual, no rechazo.
+- **Decisión cerrada:** `COR-PEND-010`.
+
+## `GEN-DEC-002` — Etapa para rechazos comerciales
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado, pendiente de configuración en Bitrix.
+- **Etapa objetivo:** **NO CALIFICA COMERCIAL KESTRA**.
+- **Fallback:** hasta crearla, usar **REVISIÓN MANUAL KESTRA** con motivo de rechazo
+  para que una persona ejecute el cierre.
+- **Decisión cerrada:** `COR-PEND-008`.
+
+## `GEN-DEC-003` — Tratamiento de revisión manual
+
+- **Fecha:** 2026-08-11
+- **Estado:** Acordado.
+- **Distribución:** dentro de horario utiliza el bucket normal; fuera de horario queda
+  con Maru.
+- **Línea oficial:** permanece vacía.
+- **Sugerencia:** se registra únicamente en el resultado auditable.
+- **Vencimiento:** una revisión manual nunca se rechaza automáticamente por demora.
+- **Decisiones cerradas:** `GEN-PEND-002` y `GEN-PEND-003`.

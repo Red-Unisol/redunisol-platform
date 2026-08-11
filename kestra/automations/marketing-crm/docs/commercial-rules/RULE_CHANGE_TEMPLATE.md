@@ -34,11 +34,15 @@ corresponda.
 
 ## Resultado esperado
 
-- **Decisión:** Aprobado / Rechazo BCRA / Revisión manual
+- **Decisión:** Aprobado / Rechazo BCRA / Rechazo comercial / Revisión manual
 - **Etapa de negociación:**
 - **Línea:**
 - **Motivo visible o auditable:**
 - **¿Debe cerrarse automáticamente?:**
+
+Un rechazo comercial explícito usa **NO CALIFICA COMERCIAL KESTRA**. Mientras esa
+etapa no exista en Bitrix, se deriva a **REVISIÓN MANUAL KESTRA** para ejecutar el
+cierre sin confundirlo con un rechazo BCRA.
 
 La asignación de responsable se define únicamente si el proceso elegido es
 Distribución.
@@ -58,7 +62,13 @@ Distribución.
 - Cuando:
 - Entonces:
 
-### Caso que debe rechazar
+### Caso que debe rechazar por BCRA
+
+- Dado:
+- Cuando:
+- Entonces:
+
+### Caso que debe rechazar comercialmente
 
 - Dado:
 - Cuando:
