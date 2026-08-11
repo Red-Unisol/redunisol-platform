@@ -1,6 +1,6 @@
 # Referencia Técnica de Bitrix24 y Kestra
 
-Versión: `2026-08-10`
+Versión: `2026-08-11`
 
 Esta referencia consolida datos técnicos que antes estaban mezclados con borradores
 funcionales. Los defaults pueden ser reemplazados por variables del runtime; antes de
@@ -62,3 +62,25 @@ default confiable en Git; no deben copiarse desde documentos históricos.
 
 Los buckets propuestos y sus órdenes completos se encuentran en
 [`../commercial-rules/DEAL_ROUTING.md`](../commercial-rules/DEAL_ROUTING.md).
+
+## Trazabilidad comercial
+
+El flow de calificación expone un evento estructurado por negociación procesada con:
+
+- negociación, lead y contacto;
+- fecha y hora local;
+- etapa anterior y resultante;
+- decisión, motivo, línea y versión de reglas;
+- bucket, pool configurado y vendedores online;
+- responsable anterior y elegido;
+- estrategia de asignación;
+- actividades vinculadas y chats transferidos.
+
+El flow `commercial_distribution_report_daily` consulta esas ejecuciones y publica:
+
+- `/srv/redunisol-reports/marketing/distribucion-negociaciones/ultimo.xlsx`;
+- `/srv/redunisol-reports/marketing/distribucion-negociaciones/historico/YYYY-MM-DD.xlsx`.
+
+Filament descubre ambos archivos automáticamente mediante `ReportRepository`. El
+detalle operativo está en
+[`COMMERCIAL_DISTRIBUTION_AUDIT.md`](COMMERCIAL_DISTRIBUTION_AUDIT.md).

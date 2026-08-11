@@ -1,6 +1,6 @@
 # Buckets De Distribucion De Negociaciones
 
-Estado: criterio acordado, pendiente de implementacion.
+Estado: implementado en el PR #218, pendiente de deploy y auditoria en produccion.
 
 Este documento cubre solamente distribución. La clasificación comercial y el proceso
 compartido de aprobación se documentan en [`README.md`](README.md).

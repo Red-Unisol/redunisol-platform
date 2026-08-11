@@ -1,0 +1,61 @@
+# Auditoría De Clasificación Y Distribución Comercial
+
+Versión: `2026-08-11`
+
+## Objetivo
+
+Conservar una evidencia legible de cada negociación procesada por Kestra sin acoplar
+la distribución a la generación del reporte. Una falla del Excel no bloquea ni revierte
+una decisión comercial en Bitrix24.
+
+## Fuente de datos
+
+Cada ejecución de `bitrix24_catamarca_deal_qualification` publica un resultado
+estructurado. La ejecución Kestra y su revisión identifican el evento original. Los
+runs `no_pending`, que no procesan una negociación, no forman parte del informe.
+
+Los datos incluyen IDs y contexto operativo, pero no copian CUIL, DNI ni el snapshot
+BCRA completo al Excel.
+
+## Estrategias de asignación
+
+| Valor | Significado |
+|---|---|
+| `contact_history` | Conserva al vendedor previo del mismo contacto y bucket. |
+| `legacy_contact_history` | Conserva al vendedor previo usando la provincia histórica. |
+| `round_robin` | Continúa el round-robin del bucket. |
+| `legacy_round_robin` | Continúa el round-robin usando negociaciones históricas sin bucket. |
+| `round_robin_initial` | No existe antecedente; toma el primer vendedor online del pool. |
+| `single_seller` | El bucket tiene un único vendedor configurado. |
+| `outside_hours_manual` | Fuera de horario queda con Maru. |
+| `commercial_rejection_manual` | Rechazo comercial con fallback manual en Maru. |
+| `no_matching_bucket` | No pudo determinarse un bucket. |
+| `technical_error` | La ejecución no pudo completar la operación. |
+
+## Reporte
+
+`commercial_distribution_report_daily` se ejecuta todos los días a las 07:25 de
+Argentina y consulta las ejecuciones mediante la API de Kestra. Publica:
+
+```text
+marketing/distribucion-negociaciones/ultimo.xlsx
+marketing/distribucion-negociaciones/historico/YYYY-MM-DD.xlsx
+```
+
+El workbook contiene:
+
+- `Resumen`: métricas generales;
+- `Por vendedor`: eventos, distribuciones y chats por responsable;
+- `Eventos`: detalle completo y enlaces a Bitrix;
+- `Excepciones`: todo lo que no terminó como distribución automática.
+
+Filament ya expone cualquier `.xlsx` debajo del volumen de reportes, por lo que no
+requiere una pantalla ni una tabla nueva.
+
+## Retención y límites
+
+El histórico diario conserva una fotografía del reporte generado. La fuente primaria
+del detalle es la ejecución de Kestra mientras esté dentro de su política de retención.
+Si en el futuro se necesita retención indefinida, consultas interactivas o grandes
+volúmenes, estos mismos eventos deben persistirse en una tabla append-only sin cambiar
+el contrato del reporte.

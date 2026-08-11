@@ -8,8 +8,7 @@ históricos vuelvan a incorporarse por error.
 ## `COR-DEC-001` — Unificar CBU Recurrente
 
 - **Fecha:** 2026-08-10
-- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
-  Córdoba.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Decisión:** `CBU Comer Recurrente` no entra en ningún caso y se elimina de la
   especificación.
 - **Nombre resultante:** la categoría restante se denomina `CBU Recurrente`; se elimina
@@ -43,8 +42,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-002` — Empleado Público Provincial utiliza Cruz del Eje
 
 - **Fecha:** 2026-08-10
-- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
-  Córdoba.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Decisión:** Empleado Público Provincial utiliza la misma evaluación comercial de
   Cruz del Eje que Policía.
 - **Alcance:** aplica tanto a los resultados Premium y Especial como a sus rechazos y
@@ -57,7 +55,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-003` — Renovaciones Cruz del Eje dependen de la línea del préstamo
 
 - **Fecha:** 2026-08-10
-- **Estado:** Ampliada por `COR-DEC-007`, pendiente de implementación.
+- **Estado:** Ampliada por `COR-DEC-007` e implementada en el PR #218; pendiente de deploy.
 - **Decisión:** para Policía y Empleado Público Provincial, solamente un préstamo
   activo de una línea Cruz del Eje habilita el análisis de renovación, paralelo o
   mora de Cruz del Eje.
@@ -71,8 +69,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-004` — Banco de cobro para clientes nuevos de Caja
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
-  Córdoba.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Precondición:** Jubilado Provincial nuevo, menor de 80 años.
 - **Caja Nuevo:** si todas las entidades están en situación 1, se aprueba como `Caja
   Nuevo`.
@@ -84,7 +81,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-005` — Aprobar Caja Irregulares para nuevos y recurrentes
 
 - **Fecha:** 2026-08-11
-- **Estado:** Ampliada por `COR-DEC-008`, pendiente de implementación.
+- **Estado:** Ampliada por `COR-DEC-008` e implementada en el PR #218; pendiente de deploy.
 - **Segmento:** Jubilado Provincial nuevo o recurrente.
 - **Edad:** menor de 80 años, calculada a la fecha de clasificación.
 - **BCRA común:** todas las entidades como máximo en situación 3 y al menos una entidad
@@ -103,8 +100,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-006` — Rechazar Caja desde los 80 años
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación junto con la clasificación de
-  Córdoba.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Decisión:** toda persona de 80 años o más se rechaza para las líneas Caja.
 - **Límite inclusivo:** el rechazo aplica desde el día en que cumple 80 años.
 - **Ejecución temporal:** hasta crear la etapa definida en `GEN-DEC-002`, la
@@ -125,7 +121,7 @@ del árbol activo; Git conserva su historial.
 ## `CAT-DEC-002` — Nueva frontera Premium y Especial AMEJUCA
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Premium:** situaciones 1 sin límite, hasta cinco entidades en situación 2, ninguna
   situación 3/4/5 y banco de cobro hasta situación 2.
 - **Especial:** banco de cobro hasta situación 1, situaciones 1/2/3 sin límite o hasta
@@ -139,7 +135,8 @@ del árbol activo; Git conserva su historial.
 ## `CAT-DEC-003` — Reglas conservadoras para socios AMEJUCA
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación.
+- **Estado:** Implementado con salida manual por falta de cuota social en el PR #218;
+  pendiente de deploy.
 - **Buen comportamiento:** cuota social al día, cero días de atraso y cuotas vencidas
   pagadas.
 - **Premium Recurrentes:** requiere buen comportamiento y BCRA Premium.
@@ -151,7 +148,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-007` — Cerrar reglas Cruz del Eje y REN
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Premium:** solo situaciones 1.
 - **Especial:** situaciones 2/3 sin límite o hasta dos entidades en situación 4/5.
 - **Rechazos:** más de dos entidades en situación 4/5 o Banco de Córdoba en situación
@@ -168,7 +165,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-008` — Completar líneas Caja
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación.
+- **Estado:** Implementado en el PR #218; pendiente de deploy.
 - **Caja General:** recurrente menor de 80 con situaciones 0/1 o snapshot válido sin
   entidades.
 - **Caja Morosos:** nuevo o recurrente menor de 80, alguna situación 4/5, banco de
@@ -183,7 +180,8 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-009` — Separar DASPU Haberes y Club Mutual CBU
 
 - **Fecha:** 2026-08-11
-- **Estado:** Acordado, pendiente de implementación.
+- **Estado:** Implementado con las salidas manuales documentadas en el PR #218;
+  pendiente de deploy.
 - **DASPU Haberes:** activo DASPU, formulario 691 válido y cupo mayor que cero; no tiene
   rechazo BCRA automático documentado.
 - **Club Mutual CBU:** docente/no docente activo UNC dentro del límite etario, hasta
