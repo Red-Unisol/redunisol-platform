@@ -10,6 +10,11 @@ from zoneinfo import ZoneInfo
 
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
+from .commercial_trace import (
+    TRACE_SCHEMA_VERSION,
+    business_decision,
+    business_reason,
+)
 from .deal_service import (
     DEAL_ENTITY_TYPE_ID,
     NoOnlineSellersError,
@@ -116,6 +121,16 @@ def qualify_catamarca_deal(
     previous_assignee_id = _optional_int(
         deal.get("assignedById") or deal.get("ASSIGNED_BY_ID")
     )
+    lead = get_lead(client, lead_id, active_logger)
+    contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
+    province = lead_enum_label(client, lead, config.fields.lead_province) or ""
+    employment_status = lead_enum_label(
+        client, lead, config.fields.lead_employment_status
+    ) or ""
+    payment_bank = (
+        lead_enum_label(client, lead, config.fields.lead_payment_bank) or ""
+    )
+    source_label = lead_enum_label(client, lead, config.fields.lead_source) or ""
 
     if current_stage != config.deal.pending_qualification_stage_id:
         return _result(
@@ -130,6 +145,10 @@ def qualify_catamarca_deal(
             deal_title=deal_title,
             stage_before=current_stage,
             previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            source=source_label,
             within_business_hours=within_business_hours,
             assignment_strategy="not_applicable",
             message="La negociacion ya no esta pendiente de calificacion Kestra.",
@@ -164,6 +183,10 @@ def qualify_catamarca_deal(
             deal_title=deal_title,
             stage_before=current_stage,
             previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            source=source_label,
             within_business_hours=False,
             assignment_strategy="outside_hours_manual",
             message=(
@@ -172,14 +195,8 @@ def qualify_catamarca_deal(
             ),
         )
 
-    lead = get_lead(client, lead_id, active_logger)
-    contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
     routing = resolve_routing_bucket(config, lead)
-    province = routing.province
-    employment_status = lead_enum_label(
-        client, lead, config.fields.lead_employment_status
-    )
-    payment_bank = lead_enum_label(client, lead, config.fields.lead_payment_bank)
+    province = routing.province or province
     if routing.bucket is None:
         client.call(
             "crm.item.update",
@@ -217,6 +234,7 @@ def qualify_catamarca_deal(
             province=province,
             employment_status=employment_status,
             payment_bank=payment_bank,
+            source=source_label,
             within_business_hours=within_business_hours,
             assignment_strategy="no_matching_bucket",
             message="Negociacion enviada a revision por no tener bucket de distribucion.",
@@ -254,6 +272,7 @@ def qualify_catamarca_deal(
             province=province,
             employment_status=employment_status,
             payment_bank=payment_bank,
+            source=source_label,
             within_business_hours=within_business_hours,
             assignment_strategy="commercial_rejection_manual",
             message="Rechazo comercial aplicado sin distribución automática.",
@@ -309,6 +328,7 @@ def qualify_catamarca_deal(
             province=province,
             employment_status=employment_status,
             payment_bank=payment_bank,
+            source=source_label,
             within_business_hours=within_business_hours,
             assignment_strategy="no_online_sellers_manual",
             configured_pool=exc.configured_pool,
@@ -390,6 +410,7 @@ def qualify_catamarca_deal(
         province=province,
         employment_status=employment_status,
         payment_bank=payment_bank,
+        source=source_label,
         within_business_hours=within_business_hours,
         assignment_strategy=assignment.strategy,
         configured_pool=assignment.configured_pool,
@@ -776,6 +797,82 @@ def _commercial_rejected(config: AppConfig, reason: str) -> CatamarcaDecision:
     )
 
 
+def technical_deal_trace(
+    deal_id: int | str | None,
+    error: Exception,
+    *,
+    env: dict[str, str] | None = None,
+    bitrix_client: Any | None = None,
+    logger: Logger | None = None,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Build a best-effort, read-only trace for a failed deal execution."""
+    active_logger = logger or create_logger()
+    source = os.environ if env is None else env
+    processed_at = _local_datetime(source, now)
+    deal_id_int = _optional_int(deal_id)
+    context: dict[str, Any] = {}
+
+    if deal_id_int is not None:
+        try:
+            config = load_config(env)
+            client = bitrix_client or BitrixClient(config, active_logger)
+            deal = _get_deal(client, deal_id_int)
+            lead_id = _optional_int(deal.get("leadId") or deal.get("LEAD_ID"))
+            contact_id = _optional_int(
+                deal.get("contactId") or deal.get("CONTACT_ID")
+            )
+            context = {
+                "lead_id": lead_id,
+                "contact_id": contact_id,
+                "deal_title": str(
+                    deal.get("title") or deal.get("TITLE") or ""
+                ).strip(),
+                "stage_id": str(
+                    deal.get("stageId") or deal.get("STAGE_ID") or ""
+                ).strip(),
+                "previous_assigned_by_id": _optional_int(
+                    deal.get("assignedById") or deal.get("ASSIGNED_BY_ID")
+                ),
+            }
+            context["stage_before"] = context["stage_id"]
+            if lead_id is not None:
+                lead = get_lead(client, lead_id, active_logger)
+                context["contact_id"] = contact_id or _optional_int(
+                    lead.get("CONTACT_ID")
+                )
+                context["province"] = lead_enum_label(
+                    client, lead, config.fields.lead_province
+                ) or ""
+                context["employment_status"] = lead_enum_label(
+                    client, lead, config.fields.lead_employment_status
+                ) or ""
+                context["payment_bank"] = lead_enum_label(
+                    client, lead, config.fields.lead_payment_bank
+                ) or ""
+                context["source"] = lead_enum_label(
+                    client, lead, config.fields.lead_source
+                ) or ""
+        except Exception as hydration_error:
+            active_logger.error(
+                "No se pudo completar el contexto de trazabilidad para la "
+                f"negociacion {deal_id_int}: {hydration_error}"
+            )
+
+    return _result(
+        ok=False,
+        action="error",
+        has_pending=True,
+        deal_id=deal_id_int,
+        reason="internal_error",
+        processed_at=processed_at,
+        within_business_hours=_is_within_business_hours(source, processed_at),
+        assignment_strategy="technical_error",
+        message=str(error),
+        **context,
+    )
+
+
 def _get_deal(client: Any, deal_id: int) -> dict[str, Any]:
     result = client.call(
         "crm.item.get",
@@ -886,10 +983,18 @@ def _result(
     online_pool: tuple[int, ...] = (),
     linked_activity_count: int = 0,
     transferred_chat_count: int = 0,
+    source: str = "",
+    ok: bool = True,
 ) -> dict[str, object]:
+    decision_label = business_decision(action, commercial_line, assigned_by_id)
+    reason_label = business_reason(reason, message)
     return {
-        "ok": True,
+        "ok": ok,
+        "trace_schema_version": TRACE_SCHEMA_VERSION,
+        "event_type": "deal_commercial_decision",
         "action": action,
+        "business_decision": decision_label,
+        "business_reason": reason_label,
         "has_pending": has_pending,
         "message": message,
         "deal_id": deal_id,
@@ -908,6 +1013,7 @@ def _result(
         "province": province,
         "employment_status": employment_status,
         "payment_bank": payment_bank,
+        "source": source,
         "within_business_hours": within_business_hours,
         "assignment_strategy": assignment_strategy,
         "configured_pool": ",".join(str(user_id) for user_id in configured_pool),

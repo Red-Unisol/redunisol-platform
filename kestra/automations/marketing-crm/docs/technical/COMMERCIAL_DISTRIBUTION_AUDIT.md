@@ -14,6 +14,21 @@ Cada ejecución de `bitrix24_catamarca_deal_qualification` publica un resultado
 estructurado. La ejecución Kestra y su revisión identifican el evento original. Los
 runs `no_pending`, que no procesan una negociación, no forman parte del informe.
 
+Desde el contrato `deal-commercial-trace.v1`, el evento se construye dentro del mismo
+flujo que toma la decisión. Es autosuficiente: el reporte no vuelve a consultar Bitrix
+ni intenta reconstruir posteriormente qué ocurrió.
+
+Cada evento de negociación contiene cuatro grupos de información:
+
+- identidad: negociación, lead, contacto y título;
+- contexto de entrada: provincia, situación laboral, banco de cobro y origen;
+- decisión de negocio: acción, línea, bucket, responsable, etapa y explicación legible;
+- operación: versión de reglas, fecha, horario, estrategia, pools y transferencia de chat.
+
+Los resultados fuera de horario, ya procesados y con error técnico respetan el mismo
+contrato. Ante un error, el flujo hace una recuperación de contexto de solo lectura y
+emite el evento antes de terminar; no modifica nuevamente la negociación.
+
 Los datos incluyen IDs y contexto operativo, pero no copian CUIL, DNI ni el snapshot
 BCRA completo al Excel.
 
