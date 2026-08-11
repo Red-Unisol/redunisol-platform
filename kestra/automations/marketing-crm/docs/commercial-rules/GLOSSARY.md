@@ -59,5 +59,6 @@ principal en las reuniones funcionales.
 | Concepto | Campo Bitrix24 |
 |---|---|
 | Línea de la negociación | `ufCrm_659EBB0445E8E` |
+| Fecha de nacimiento del lead | `BIRTHDATE` |
 | Bucket de distribución | `ufCrmRouteBucket` |
 | Motor de decisión comercial del lead | `UF_CRM_COMM_OWNER` |

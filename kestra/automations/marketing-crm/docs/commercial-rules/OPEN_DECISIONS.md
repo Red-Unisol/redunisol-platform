@@ -23,7 +23,6 @@ Para cerrar una decisión se debe registrar:
 | `COR-PEND-003` | ¿Cuáles son las reglas BCRA completas para REN Premium y REN Especial? | Policía con renovación y situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-004` | En Cruz del Eje Especial, ¿hay un límite para entidades en situación 2 o 3? | Diez entidades en situación 2 y ninguna en 4/5. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-005` | ¿Banco de Córdoba en situación 2 o superior siempre impide Cruz del Eje? ¿Se identifica por entidad BCRA o por banco declarado? | Policía cuyo snapshot contiene Banco de Córdoba en situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
-| `COR-PEND-006` | ¿Qué diferencia comercial elige Caja General frente a Caja Irregulares cuando ambas admiten situaciones 2 o 3? | Jubilado recurrente con una entidad en situación 2. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-007` | ¿Cómo se decide Caja Morosos y qué ocurre si la irregularidad corresponde a Bancor o Macro? | Jubilado recurrente con situación 4 en Bancor. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-008` | ¿Qué etapa final debe usarse para “rechazo por análisis”? | Renovación con mal cumplimiento. | REVISIÓN MANUAL KESTRA | Abierta |
 | `COR-PEND-009` | Para un préstamo activo de Cruz del Eje, ¿qué datos y umbrales definen renovación, paralelo, mora y cumplimiento mínimo? | Policía con un préstamo Cruz del Eje activo y tres cuotas pagadas. | REVISIÓN MANUAL KESTRA | Abierta |

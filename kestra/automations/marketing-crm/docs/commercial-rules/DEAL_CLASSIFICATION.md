@@ -114,17 +114,35 @@ cantidad permitida de entidades en situación 2 o 3 no está cerrada.
 
 | Prioridad | Regla | Condición de socio/crédito | Condición BCRA o comercial | Decisión | Etapa | Línea |
 |---:|---|---|---|---|---|---|
-| 400 | `COR-CAJA-DATA-010` | Cualquiera | Snapshot faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
-| 410 | `COR-CAJA-NEW-010` | Cliente nuevo | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Caja Nuevo |
-| 420 | `COR-CAJA-NEW-020` | Cliente nuevo | Alguna situación distinta de 1 | Revisión manual de cierre | REVISIÓN MANUAL KESTRA | No aplica |
-| 430 | `COR-CAJA-REC-010` | Socio/recurrente sin crédito vigente | Situaciones 1, 2 o 3 | Pendiente de selección de línea | REVISIÓN MANUAL KESTRA | Sugerida: Caja General o Caja Irregulares |
-| 440 | `COR-CAJA-REC-020` | Socio/recurrente sin crédito vigente | Situaciones 4 o 5 | Pendiente de validación | REVISIÓN MANUAL KESTRA | Sugerida: Caja Morosos |
-| 450 | `COR-CAJA-BANK-010` | Cualquiera | Irregularidad con Bancor o Macro | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
-| 460 | `COR-CAJA-CREDIT-010` | Crédito vigente | Paralelo, mora o condición mínima de pago | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 400 | `COR-CAJA-AGE-DATA-010` | Cualquiera | Fecha de nacimiento faltante o inválida | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 410 | `COR-CAJA-AGE-010` | Cualquiera, 80 años o más | Rechazo comercial por edad | Rechazo con cierre manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 420 | `COR-CAJA-DATA-010` | Cualquiera, menor de 80 años | Snapshot faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 430 | `COR-CAJA-NEW-010` | Cliente nuevo, menor de 80 años | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Caja Nuevo |
+| 440 | `COR-CAJA-NEW-020` | Cliente nuevo, menor de 80 años | Banco de cobro en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica |
+| 450 | `COR-CAJA-IRREG-NEW-010` | Cliente nuevo, menor de 80 años | Banco de cobro en situación 1; las demás entidades hasta situación 3 y al menos una en situación 2 o 3 | Aprobado | PRESENTACIÓN | Caja Irregulares |
+| 460 | `COR-CAJA-IRREG-REC-010` | Socio recurrente, menor de 80 años | Todas las entidades hasta situación 3 y al menos una en situación 2 o 3 | Aprobado | PRESENTACIÓN | Caja Irregulares |
+| 470 | `COR-CAJA-REC-010` | Socio recurrente, menor de 80 años | Solo situaciones 1 | Pendiente de selección de línea | REVISIÓN MANUAL KESTRA | Sugerida: Caja General |
+| 480 | `COR-CAJA-REC-020` | Socio recurrente, menor de 80 años | Alguna situación 4 o 5 | Pendiente de validación | REVISIÓN MANUAL KESTRA | Sugerida: Caja Morosos |
+| 490 | `COR-CAJA-BANK-010` | Cualquiera | Irregularidad bancaria no resuelta por una regla anterior | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
+| 495 | `COR-CAJA-CREDIT-010` | Crédito vigente | Paralelo, mora o condición mínima de pago | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica |
 
-Las líneas Caja permanecen manuales salvo `Caja Nuevo` porque se superponen las
-condiciones de `Caja General` y `Caja Irregulares`, y faltan criterios para resolver
-la prioridad y las irregularidades del banco de cobro.
+`Caja Nuevo` y `Caja Irregulares` tienen reglas de aprobación explícitas. `Caja
+General` y `Caja Morosos` permanecen manuales porque todavía faltan criterios para
+cerrar su clasificación.
+
+Un cliente nuevo puede aprobar Caja Irregulares si su banco de cobro está en situación
+1 y las situaciones 2/3 pertenecen a otras entidades. Si el banco de cobro está por
+encima de situación 1, se rechaza.
+
+Para un socio recurrente, el banco de cobro puede estar en situación 2/3 y se evalúa
+junto con las demás entidades. La edad se calcula a la fecha de clasificación a partir
+de la fecha de nacimiento disponible en Bitrix. Los montos, plazos y documentación
+requerida corresponden a la gestión posterior y no participan en la clasificación
+comercial de la negociación.
+
+Cumplir 80 años produce rechazo comercial. Hasta definir una etapa específica para
+rechazos no-BCRA en `COR-PEND-008`, Kestra debe dejar la negociación en **REVISIÓN
+MANUAL KESTRA** para ejecutar el cierre, registrando el motivo de edad.
 
 ### UNC y DASPU
 
