@@ -3660,6 +3660,28 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_PENDING")
         self.assertFalse(any(method == "crm.item.update" for method, _ in client.calls))
 
+    def test_trace_hydration_does_not_block_outside_hours_manual_assignment(self) -> None:
+        client = FakeBitrixClient()
+        client.deals[939] = self._pending_deal(939, 999999)
+        gated_env = {
+            **self.env,
+            "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY": "true",
+        }
+
+        result = qualify_catamarca_deal(
+            939,
+            env=gated_env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-08T12:00:00-03:00"),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "outside_business_hours")
+        self.assertEqual(result["province"], "")
+        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[939]["assignedById"], 57)
+
     def test_catamarca_distribution_window_uses_weekdays_from_nine_to_seventeen(
         self,
     ) -> None:

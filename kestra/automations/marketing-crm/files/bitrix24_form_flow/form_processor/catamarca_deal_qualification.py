@@ -121,18 +121,13 @@ def qualify_catamarca_deal(
     previous_assignee_id = _optional_int(
         deal.get("assignedById") or deal.get("ASSIGNED_BY_ID")
     )
-    lead = get_lead(client, lead_id, active_logger)
-    contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
-    province = lead_enum_label(client, lead, config.fields.lead_province) or ""
-    employment_status = lead_enum_label(
-        client, lead, config.fields.lead_employment_status
-    ) or ""
-    payment_bank = (
-        lead_enum_label(client, lead, config.fields.lead_payment_bank) or ""
-    )
-    source_label = lead_enum_label(client, lead, config.fields.lead_source) or ""
 
     if current_stage != config.deal.pending_qualification_stage_id:
+        trace_context = _lead_trace_context(
+            client, config, lead_id, active_logger
+        )
+        trace_contact_id = _optional_int(trace_context.pop("contact_id"))
+        contact_id = contact_id or trace_contact_id
         return _result(
             action="skipped",
             has_pending=False,
@@ -145,13 +140,10 @@ def qualify_catamarca_deal(
             deal_title=deal_title,
             stage_before=current_stage,
             previous_assigned_by_id=previous_assignee_id,
-            province=province,
-            employment_status=employment_status,
-            payment_bank=payment_bank,
-            source=source_label,
             within_business_hours=within_business_hours,
             assignment_strategy="not_applicable",
             message="La negociacion ya no esta pendiente de calificacion Kestra.",
+            **trace_context,
         )
 
     if _business_hours_gate_enabled(source) and not within_business_hours:
@@ -170,6 +162,11 @@ def qualify_catamarca_deal(
             f"Negociacion {deal_id_int} recibida fuera de horario laboral: "
             "queda asignada a Maru para distribucion manual."
         )
+        trace_context = _lead_trace_context(
+            client, config, lead_id, active_logger
+        )
+        trace_contact_id = _optional_int(trace_context.pop("contact_id"))
+        contact_id = contact_id or trace_contact_id
         return _result(
             action="manual_review",
             has_pending=False,
@@ -183,18 +180,25 @@ def qualify_catamarca_deal(
             deal_title=deal_title,
             stage_before=current_stage,
             previous_assigned_by_id=previous_assignee_id,
-            province=province,
-            employment_status=employment_status,
-            payment_bank=payment_bank,
-            source=source_label,
             within_business_hours=False,
             assignment_strategy="outside_hours_manual",
             message=(
                 "Negociacion fuera de horario laboral; queda en manos de Maru "
                 "para distribucion manual."
             ),
+            **trace_context,
         )
 
+    lead = get_lead(client, lead_id, active_logger)
+    contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
+    province = lead_enum_label(client, lead, config.fields.lead_province) or ""
+    employment_status = lead_enum_label(
+        client, lead, config.fields.lead_employment_status
+    ) or ""
+    payment_bank = (
+        lead_enum_label(client, lead, config.fields.lead_payment_bank) or ""
+    )
+    source_label = lead_enum_label(client, lead, config.fields.lead_source) or ""
     routing = resolve_routing_bucket(config, lead)
     province = routing.province or province
     if routing.bucket is None:
@@ -795,6 +799,44 @@ def _commercial_rejected(config: AppConfig, reason: str) -> CatamarcaDecision:
     return CatamarcaDecision(
         "commercial_rejected", reason, config.deal.commercial_rejected_stage_id
     )
+
+
+def _lead_trace_context(
+    client: Any,
+    config: AppConfig,
+    lead_id: int,
+    logger: Logger,
+) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "contact_id": None,
+        "province": "",
+        "employment_status": "",
+        "payment_bank": "",
+        "source": "",
+    }
+    try:
+        lead = get_lead(client, lead_id, logger)
+        context.update(
+            contact_id=_optional_int(lead.get("CONTACT_ID")),
+            province=lead_enum_label(
+                client, lead, config.fields.lead_province
+            ) or "",
+            employment_status=lead_enum_label(
+                client, lead, config.fields.lead_employment_status
+            ) or "",
+            payment_bank=lead_enum_label(
+                client, lead, config.fields.lead_payment_bank
+            ) or "",
+            source=lead_enum_label(
+                client, lead, config.fields.lead_source
+            ) or "",
+        )
+    except Exception as error:
+        logger.error(
+            f"No se pudo completar el contexto del lead {lead_id} para la "
+            f"trazabilidad: {error}"
+        )
+    return context
 
 
 def technical_deal_trace(
