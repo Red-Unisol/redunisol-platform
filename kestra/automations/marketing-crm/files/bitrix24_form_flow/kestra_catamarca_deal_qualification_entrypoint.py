@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime
 
 from .form_processor.catamarca_deal_qualification import qualify_catamarca_deal
 
@@ -30,8 +31,24 @@ def main() -> int:
             "stage_id": "",
             "reason": "internal_error",
             "assigned_by_id": "",
+            "assigned_by_name": "",
+            "previous_assigned_by_id": "",
             "routing_bucket": "",
             "commercial_line": "",
+            "processed_at": datetime.now().astimezone().isoformat(),
+            "contact_id": "",
+            "deal_title": "",
+            "stage_before": "",
+            "province": "",
+            "employment_status": "",
+            "payment_bank": "",
+            "within_business_hours": "",
+            "assignment_strategy": "technical_error",
+            "configured_pool": "",
+            "online_pool": "",
+            "linked_activity_count": 0,
+            "transferred_chat_count": 0,
+            "rule_version": "2026-08-11",
             "message": str(exc),
         }
 

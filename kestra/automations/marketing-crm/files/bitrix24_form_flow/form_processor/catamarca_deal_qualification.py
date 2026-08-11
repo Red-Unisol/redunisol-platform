@@ -17,6 +17,7 @@ from .deal_service import (
     notify_distribution_supervisor,
     notify_unmatched_routing,
     resolve_round_robin_assignee,
+    user_display_name,
 )
 from .lead_service import (
     build_submission_from_lead,
@@ -41,6 +42,7 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
+COMMERCIAL_RULE_VERSION = "2026-08-11"
 
 
 def select_next_pending_catamarca_deal(
@@ -101,10 +103,18 @@ def qualify_catamarca_deal(
     active_logger = logger or create_logger()
     config = load_config(env)
     client = bitrix_client or BitrixClient(config, active_logger)
+    source = os.environ if env is None else env
+    processed_at = _local_datetime(source, now)
+    within_business_hours = _is_within_business_hours(source, processed_at)
     deal_id_int = int(str(deal_id))
     deal = _get_deal(client, deal_id_int)
     lead_id = _required_int(deal.get("leadId") or deal.get("LEAD_ID"), "leadId")
+    contact_id = _optional_int(deal.get("contactId") or deal.get("CONTACT_ID"))
+    deal_title = str(deal.get("title") or deal.get("TITLE") or "").strip()
     current_stage = str(deal.get("stageId") or deal.get("STAGE_ID") or "").strip()
+    previous_assignee_id = _optional_int(
+        deal.get("assignedById") or deal.get("ASSIGNED_BY_ID")
+    )
 
     if current_stage != config.deal.pending_qualification_stage_id:
         return _result(
@@ -114,11 +124,17 @@ def qualify_catamarca_deal(
             lead_id=lead_id,
             stage_id=current_stage,
             reason="deal_not_pending",
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            within_business_hours=within_business_hours,
+            assignment_strategy="not_applicable",
             message="La negociacion ya no esta pendiente de calificacion Kestra.",
         )
 
-    source = os.environ if env is None else env
-    if _business_hours_gate_enabled(source) and not _is_within_business_hours(source, now):
+    if _business_hours_gate_enabled(source) and not within_business_hours:
         client.call(
             "crm.item.update",
             {
@@ -142,6 +158,13 @@ def qualify_catamarca_deal(
             stage_id=config.deal.manual_review_stage_id,
             reason="outside_business_hours",
             assigned_by_id=config.deal.provisional_user_id,
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            within_business_hours=False,
+            assignment_strategy="outside_hours_manual",
             message=(
                 "Negociacion fuera de horario laboral; queda en manos de Maru "
                 "para distribucion manual."
@@ -149,9 +172,13 @@ def qualify_catamarca_deal(
         )
 
     lead = get_lead(client, lead_id, active_logger)
-    contact_id = _optional_int(deal.get("contactId") or lead.get("CONTACT_ID"))
-    deal_title = str(deal.get("title") or deal.get("TITLE") or "").strip()
+    contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
     routing = resolve_routing_bucket(config, lead)
+    province = routing.province
+    employment_status = lead_enum_label(
+        client, lead, config.fields.lead_employment_status
+    )
+    payment_bank = lead_enum_label(client, lead, config.fields.lead_payment_bank)
     if routing.bucket is None:
         client.call(
             "crm.item.update",
@@ -181,6 +208,16 @@ def qualify_catamarca_deal(
             lead_id=lead_id,
             stage_id=config.deal.routing_review_stage_id,
             reason=routing.reason,
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            within_business_hours=within_business_hours,
+            assignment_strategy="no_matching_bucket",
             message="Negociacion enviada a revision por no tener bucket de distribucion.",
         )
 
@@ -207,9 +244,20 @@ def qualify_catamarca_deal(
             stage_id=decision.stage_id,
             reason=decision.reason,
             assigned_by_id=config.deal.provisional_user_id,
+            assigned_by_name="Maru Lopez",
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            within_business_hours=within_business_hours,
+            assignment_strategy="commercial_rejection_manual",
             message="Rechazo comercial aplicado sin distribución automática.",
         )
-    assigned_by_id = resolve_round_robin_assignee(
+    assignment = resolve_round_robin_assignee(
         client,
         config,
         contact_id=contact_id,
@@ -218,6 +266,12 @@ def qualify_catamarca_deal(
         bucket_field=config.deal.routing_bucket_field,
         pool=bucket.seller_ids,
         legacy_province_label=bucket.legacy_province_label,
+        logger=active_logger,
+    )
+    assigned_by_id = assignment.assigned_by_id
+    assigned_by_name = user_display_name(
+        client,
+        assigned_by_id=assigned_by_id,
         logger=active_logger,
     )
     update_fields: dict[str, Any] = {
@@ -236,7 +290,7 @@ def qualify_catamarca_deal(
             "fields": update_fields,
         },
     )
-    bind_open_line_activities_to_deal(
+    linked_activity_count = bind_open_line_activities_to_deal(
         client,
         lead_id=lead_id,
         contact_id=contact_id,
@@ -258,6 +312,7 @@ def qualify_catamarca_deal(
         deal_title=deal_title,
         bucket_label=bucket.label,
         assigned_by_id=assigned_by_id,
+        assigned_by_name=assigned_by_name,
         action=decision.action,
         chat_transferred=transferred_chat_count > 0,
         logger=active_logger,
@@ -274,8 +329,23 @@ def qualify_catamarca_deal(
         stage_id=decision.stage_id,
         reason=decision.reason,
         assigned_by_id=assigned_by_id,
+        assigned_by_name=assigned_by_name,
         routing_bucket=bucket.key,
         commercial_line=decision.commercial_line,
+        processed_at=processed_at,
+        contact_id=contact_id,
+        deal_title=deal_title,
+        stage_before=current_stage,
+        previous_assigned_by_id=previous_assignee_id,
+        province=province,
+        employment_status=employment_status,
+        payment_bank=payment_bank,
+        within_business_hours=within_business_hours,
+        assignment_strategy=assignment.strategy,
+        configured_pool=assignment.configured_pool,
+        online_pool=assignment.online_pool,
+        linked_activity_count=linked_activity_count,
+        transferred_chat_count=transferred_chat_count,
         message="Clasificación comercial aplicada a la negociación.",
     )
 
@@ -707,6 +777,16 @@ def _is_within_business_hours(
     return local_now.weekday() in workdays and starts_at <= local_time < ends_at
 
 
+def _local_datetime(
+    source: dict[str, str],
+    now: datetime | None = None,
+) -> datetime:
+    timezone = ZoneInfo(
+        str(source.get(BUSINESS_HOURS_TIMEZONE_ENV, "America/Argentina/Cordoba")).strip()
+    )
+    return now.astimezone(timezone) if now is not None else datetime.now(timezone)
+
+
 def _normalize_text(value: Any) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or ""))
     ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
@@ -739,8 +819,23 @@ def _result(
     stage_id: str = "",
     reason: str = "",
     assigned_by_id: int | None = None,
+    assigned_by_name: str = "",
     routing_bucket: str = "",
     commercial_line: str | None = None,
+    processed_at: datetime | None = None,
+    contact_id: int | None = None,
+    deal_title: str = "",
+    stage_before: str = "",
+    previous_assigned_by_id: int | None = None,
+    province: str = "",
+    employment_status: str = "",
+    payment_bank: str = "",
+    within_business_hours: bool | None = None,
+    assignment_strategy: str = "",
+    configured_pool: tuple[int, ...] = (),
+    online_pool: tuple[int, ...] = (),
+    linked_activity_count: int = 0,
+    transferred_chat_count: int = 0,
 ) -> dict[str, object]:
     return {
         "ok": True,
@@ -752,6 +847,22 @@ def _result(
         "stage_id": stage_id,
         "reason": reason,
         "assigned_by_id": assigned_by_id,
+        "assigned_by_name": assigned_by_name,
+        "previous_assigned_by_id": previous_assigned_by_id,
         "routing_bucket": routing_bucket,
         "commercial_line": commercial_line,
+        "processed_at": processed_at.isoformat() if processed_at else "",
+        "contact_id": contact_id,
+        "deal_title": deal_title,
+        "stage_before": stage_before,
+        "province": province,
+        "employment_status": employment_status,
+        "payment_bank": payment_bank,
+        "within_business_hours": within_business_hours,
+        "assignment_strategy": assignment_strategy,
+        "configured_pool": ",".join(str(user_id) for user_id in configured_pool),
+        "online_pool": ",".join(str(user_id) for user_id in online_pool),
+        "linked_activity_count": linked_activity_count,
+        "transferred_chat_count": transferred_chat_count,
+        "rule_version": COMMERCIAL_RULE_VERSION,
     }

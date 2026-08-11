@@ -12,10 +12,12 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_lead_classification.yaml`: flow interno de clasificacion por `lead_id`.
 - `flows/bitrix24_prequalification_cutover.yaml`: cutover manual, con dry-run, del ownership activo hacia Kestra.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: receptor de `ONCRMLEADUPDATE`; clasifica `PRECLASIFICACION (NEW)` y crea negociaciones desde `RESULTADO GANADO`.
-- `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones Catamarca pendientes.
+- `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca y Cordoba; conserva el ID historico.
+- `flows/commercial_distribution_report_daily.yaml`: genera el Excel diario auditable de clasificacion y distribucion visible en Filament.
 - `flows/bitrix24_bcra_backfill.yaml` y `flows/bitrix24_credixsa_employer_backfill.yaml`: schedulers legacy deshabilitados y reemplazados por el prefill unificado.
 - `flows/bitrix24_form_persistence.yaml`: persistencia legacy deshabilitada; ya no participa de la carga web.
 - `files/bitrix24_form_flow/`: namespace files Python usados por el flow.
+- `files/commercial_distribution_report/`: generador del informe de trazabilidad comercial.
 - `docs/README.md`: índice y política documental del dominio.
 - `docs/commercial-rules/`: fuente de verdad funcional compartida.
 - `docs/technical/`: arquitectura, contratos HTTP, referencia técnica y runbooks.
@@ -41,6 +43,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - Los leads anteriores a ese corte no son reclamados ni clasificados por esta regla.
 - Diego Frias (`ASSIGNED_BY_ID=7`) conserva la exclusion explicita.
 - El mismo listener crea o reutiliza la negociacion cuando el lead llega a `RESULTADO GANADO`.
-- Las negociaciones Catamarca con motor Kestra nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior aplica BCRA y distribuye vendedor solo al aprobar.
+- Las negociaciones internas Catamarca y Cordoba nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior clasifica y distribuye segun el resultado y el horario.
+- Cada resultado terminal publica datos auditables en la ejecucion Kestra. El reporte diario los transforma en `marketing/distribucion-negociaciones/ultimo.xlsx` y conserva una copia historica por fecha.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.
 - Aunque el dominio se llame `marketing-crm`, la integracion actual sigue siendo con Bitrix24, por eso se mantienen nombres internos `bitrix24_*` donde ya forman parte del contrato tecnico.

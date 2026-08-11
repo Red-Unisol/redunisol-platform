@@ -3610,6 +3610,8 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "manual_review")
         self.assertEqual(result["reason"], "outside_business_hours")
         self.assertEqual(result["assigned_by_id"], 57)
+        self.assertEqual(result["assignment_strategy"], "outside_hours_manual")
+        self.assertFalse(result["within_business_hours"])
         self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[939]["assignedById"], 57)
         self.assertEqual(client.chat_transfers, [])
@@ -3699,6 +3701,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "approved")
         self.assertEqual(client.deals[931]["assignedById"], 71159)
+        self.assertEqual(result["assignment_strategy"], "contact_history")
 
     def test_catamarca_bucket_ignores_legacy_cordoba_contact_assignee(self) -> None:
         client = FakeBitrixClient()
@@ -3722,7 +3725,7 @@ class BusinessLogicTests(unittest.TestCase):
             "assignedById": 57,
         }
 
-        qualify_catamarca_deal(
+        result = qualify_catamarca_deal(
             931,
             env=self.env,
             bitrix_client=client,
@@ -3730,6 +3733,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(client.deals[931]["assignedById"], 68579)
+        self.assertEqual(result["assignment_strategy"], "round_robin_initial")
 
     def test_catamarca_skips_offline_recurrent_assignee_and_uses_next_online(self) -> None:
         client = FakeBitrixClient()
@@ -3774,9 +3778,20 @@ class BusinessLogicTests(unittest.TestCase):
         }
         client.open_line_chats[("contact", 101)] = [777]
 
-        qualify_catamarca_deal(930, env=self.env, bitrix_client=client, logger=SilentLogger())
+        result = qualify_catamarca_deal(
+            930,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
 
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+        self.assertEqual(result["transferred_chat_count"], 1)
+        self.assertEqual(result["previous_assigned_by_id"], 57)
+        self.assertEqual(result["lead_id"], 920)
+        self.assertEqual(result["contact_id"], 101)
+        self.assertEqual(result["rule_version"], "2026-08-11")
+        self.assertTrue(result["processed_at"])
         chat_queries = [
             payload
             for method, payload in client.calls
@@ -4079,6 +4094,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "cde_premium")
         self.assertEqual(result["routing_bucket"], "cordoba_publico_policia")
         self.assertEqual(result["assigned_by_id"], 74365)
+        self.assertEqual(result["assignment_strategy"], "single_seller")
+        self.assertEqual(result["configured_pool"], "74365")
+        self.assertEqual(result["online_pool"], "74365")
         self.assertEqual(client.deals[940]["ufCrm_659EBB0445E8E"], "Cruz del Eje")
 
     def test_cordoba_active_cbu_loan_does_not_block_cruz_del_eje(self) -> None:
