@@ -1,99 +1,101 @@
 # Vista General del Proceso Comercial
 
-Versión: `2026-08-10`
+Versión: `2026-08-11`
 
-Estado: vista explicativa del modelo objetivo. Las tablas de decisión son la
-especificación normativa.
-
-Actualmente Catamarca ejecuta el ciclo completo de clasificación sobre la negociación.
-Córdoba todavía crea la negociación directamente en PRESENTACIÓN; su paso por
-PENDIENTE CALIFICACIÓN KESTRA corresponde al diseño que se está validando y aún no fue
-implementado.
+Estado: vista explicativa. Las tablas de `DEAL_CLASSIFICATION.md` son normativas.
+Catamarca requiere actualizar el runtime; Córdoba todavía no fue implementada.
 
 ## Proceso completo
 
 ```mermaid
 flowchart TD
-    A[Ingreso del lead] --> B[Enriquecimiento]
-    B --> C{Precalificación}
-    C -->|No elegible| D[RESULTADO PERDIDO<br/>con motivo]
-    C -->|Derivación externa| E[Vendedor externo<br/>sin negociación interna]
-    C -->|Elegible interno| F[RESULTADO GANADO]
-    F --> G[Crear negociación]
-    G --> H[PENDIENTE CALIFICACIÓN KESTRA]
-    H --> I{Clasificación comercial}
-    I -->|Aprobado| J[PRESENTACIÓN<br/>con Línea]
-    I -->|Rechazo BCRA explícito| K[SIT. NEG. EN BCRA]
-    I -->|Dato o regla insuficiente| L[REVISIÓN MANUAL KESTRA]
-    J --> M{Distribución}
+    A[Ingreso y enriquecimiento] --> B{Precalificación}
+    B -->|No elegible| C[RESULTADO PERDIDO<br/>con motivo]
+    B -->|Derivación externa| D[Vendedor externo]
+    B -->|Elegible interno| E[RESULTADO GANADO]
+    E --> F[Crear negociación]
+    F --> G[PENDIENTE CALIFICACIÓN KESTRA]
+    G --> H{Clasificación comercial}
+    H -->|Aprobado| I[PRESENTACIÓN<br/>con Línea]
+    H -->|Rechazo BCRA explícito| J[SIT. NEG. EN BCRA]
+    H -->|Rechazo comercial explícito| K[NO CALIFICA COMERCIAL KESTRA<br/>o fallback manual]
+    H -->|Dato o regla insuficiente| L[REVISIÓN MANUAL KESTRA]
+    I --> M[Distribución]
+    J --> M
     K --> M
     L --> M
-    M -->|Dentro de horario| N[Bucket y vendedor]
-    M -->|Fuera de horario| O[Maru<br/>sin distribución automática]
 ```
 
-## Lectura por responsabilidad
+Antes de rechazar por una línea, Kestra evalúa las demás familias habilitadas. La
+ausencia de datos nunca se interpreta como rechazo.
 
-```mermaid
-flowchart LR
-    A[Precalificación] -->|Autoriza negociación| B[Clasificación comercial]
-    B -->|Define etapa y línea| C[Distribución]
-    C -->|Define responsable y chat| D[Gestión comercial]
-```
-
-- **Precalificación** no elige vendedores ni líneas.
-- **Clasificación comercial** no elige vendedores.
-- **Distribución** no cambia aprobación, etapa comercial ni línea.
-
-## Clasificación de Córdoba — vista resumida
-
-Estado: **borrador para validación; no implementado**.
+## Catamarca — AMEJUCA
 
 ```mermaid
 flowchart TD
-    A[Negociación Córdoba<br/>ya precalificada] --> B{Situación laboral}
-
-    B -->|Policía o<br/>Empleado Público Provincial| D{Condición comercial}
-    B -->|Docente, Municipal, Salud,<br/>Jubilado Nacional o Pensionado| E{Condición comercial}
-    B -->|Jubilado Provincial| F{Condición comercial}
-    B -->|UNC o DASPU| R[REVISIÓN MANUAL KESTRA]
-
-    E -->|Nuevo o no socio| G
-    E -->|Recurrente| H
-    E -->|No encuadra o faltan datos| R
-
-    G --> I{Regla BCRA CBU}
-    H --> I
-    I -->|Aprueba| P[PRESENTACIÓN<br/>Línea CBU]
-    I -->|Rechazo explícito| Q[SIT. NEG. EN BCRA]
-    I -->|Datos insuficientes| R
-
-    D -->|Sin préstamo activo<br/>Cruz del Eje| K[Cruz del Eje]
-    D -->|Con préstamo activo<br/>Cruz del Eje| J{Renovación, paralelo<br/>o mora}
-    J --> R
-    K --> L{Regla BCRA Cruz del Eje}
-    L -->|Premium o Especial válido| S[PRESENTACIÓN<br/>Línea Cruz del Eje]
-    L -->|Más de 2 entidades en 4/5| Q
-    L -->|Condición pendiente| R
-
-    F --> W{Edad}
-    W -->|Faltante| R
-    W -->|80 años o más| X[RECHAZO COMERCIAL<br/>cierre manual]
-    W -->|Menor de 80| O{Nuevo o recurrente<br/>y situaciones BCRA}
-    O -->|Nuevo y solo situación 1| T[PRESENTACIÓN<br/>Línea Caja Nuevo]
-    O -->|Nuevo, banco de cobro mayor que 1| Q
-    O -->|Nuevo, banco de cobro en 1<br/>y otras entidades en 2/3| V[PRESENTACIÓN<br/>Línea Caja Irregulares]
-    O -->|Recurrente, alguna 2/3<br/>y ninguna mayor que 3| V
-    O -->|Otro caso| R
+    A[Negociación Catamarca] --> B{Snapshot y banco<br/>identificables}
+    B -->|No| R[REVISIÓN MANUAL KESTRA]
+    B -->|Sí| C{Más de 4 entidades<br/>en situación 4/5}
+    C -->|Sí| X[SIT. NEG. EN BCRA]
+    C -->|No| D{Banco de cobro<br/>mayor que 2}
+    D -->|Sí| X
+    D -->|No| E{Socio recurrente}
+    E -->|Sí| F{Afiliación, cuota social<br/>y comportamiento completos}
+    F -->|No| R
+    F -->|Sí y BCRA Premium| RP[PRESENTACIÓN<br/>AMEJUCA Premium Recurrentes]
+    F -->|No cumple recurrente| R
+    E -->|No| G{Cumple Premium}
+    G -->|Sí| P[PRESENTACIÓN<br/>AMEJUCA Premium]
+    G -->|No| H{Banco de cobro<br/>hasta situación 1}
+    H -->|Sí y cumple Especial| S[PRESENTACIÓN<br/>AMEJUCA Especial]
+    H -->|No o combinación ambigua| R
 ```
 
-Para Policía y Empleado Público Provincial, ser socio o tener préstamos activos de
-líneas CBU propias no cambia el camino: siempre se evalúan por Cruz del Eje. Solamente
-un préstamo activo de una línea Cruz del Eje habilita el análisis de renovación,
-paralelo o mora de esa familia.
+## Córdoba
 
-Esta vista muestra dónde están las decisiones, pero no contiene todos los límites ni
-prioridades. Para aprobar o implementar Córdoba se debe revisar
-[`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md),
-[`ACCEPTANCE_CASES.md`](ACCEPTANCE_CASES.md) y
-[`OPEN_DECISIONS.md`](OPEN_DECISIONS.md).
+```mermaid
+flowchart TD
+    A[Negociación Córdoba] --> B{Situación laboral}
+    B -->|Policía o Empleado<br/>Público Provincial| C[Cruz del Eje]
+    B -->|Docente, Municipal, Salud,<br/>Jubilado Nacional o Pensionado| D[CBU]
+    B -->|Jubilado Provincial| E[Caja]
+    B -->|DASPU| F[DASPU Haberes]
+    B -->|UNC docente/no docente| G[Club Mutual CBU]
+
+    C --> C1{Préstamo activo<br/>Cruz del Eje}
+    C1 -->|No| C2[BCRA común]
+    C1 -->|Sí y buen comportamiento| C3[BCRA REN]
+    C1 -->|Mora, paralelo o dato dudoso| R[REVISIÓN MANUAL KESTRA]
+    C2 --> Z{Premium, Especial<br/>o rechazo explícito}
+    C3 --> Z
+
+    D --> D1[Evaluar primero cualquier<br/>familia alternativa habilitada]
+    D1 -->|Ninguna aplica| D2[BCRA CBU]
+    D1 -->|Alguna aplica| ALT[Continuar por la familia<br/>comercial específica]
+
+    E --> E1{Edad}
+    E1 -->|Faltante| R
+    E1 -->|80 o más| RC[RECHAZO COMERCIAL]
+    E1 -->|Menor de 80| E2{Nuevo o recurrente<br/>y BCRA}
+    E2 -->|Nuevo limpio| N[Caja Nuevo]
+    E2 -->|Nuevo, banco 1<br/>y otras 2/3| I[Caja Irregulares]
+    E2 -->|Recurrente limpio| GA[Caja General]
+    E2 -->|Recurrente 2/3| I
+    E2 -->|4/5, banco limpio<br/>sin entidad excluyente| MO[Caja Morosos]
+    E2 -->|Entidad excluyente<br/>o datos dudosos| R
+
+    F --> F1{Activo, formulario 691<br/>y cupo positivo}
+    F1 -->|Sí| DH[PRESENTACIÓN<br/>DASPU Haberes]
+    F1 -->|No o dudoso| R
+
+    G --> G1{Edad, actividad y BCRA<br/>verificables}
+    G1 -->|Hasta 3 entidades 4/5<br/>sin mora Banco Nación| UC[PRESENTACIÓN<br/>Club Mutual CBU]
+    G1 -->|No o dudoso| R
+```
+
+## Distribución
+
+- Dentro del horario laboral, los casos aprobados y de revisión manual se distribuyen
+  según su bucket.
+- Fuera del horario laboral quedan con Maru para gestión manual.
+- La distribución no modifica etapa, aprobación ni línea comercial.

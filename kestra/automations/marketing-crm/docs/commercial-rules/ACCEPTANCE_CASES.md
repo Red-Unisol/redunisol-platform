@@ -1,172 +1,197 @@
 # Casos de Aceptación Comercial
 
-Versión: `2026-08-10`
+Versión: `2026-08-11`
 
-## Cómo usar este documento
+Cada caso expresa una expectativa verificable en formato Dado / Cuando / Entonces.
+Un caso no reemplaza la tabla normativa de clasificación.
 
-Cada caso expresa una expectativa verificable en formato **Dado / Cuando / Entonces**.
-Negocio debe aprobar el resultado esperado. Tecnología debe convertir cada caso
-aprobado en una prueba automatizada antes de implementar la regla.
+## Catamarca — cambio acordado, pendiente de implementación
 
-Un caso no reemplaza la tabla de decisión: demuestra una fila concreta y sus límites.
+### `CAT-CASE-001` — Premium limpio
 
-## Catamarca — vigentes
+- **Dado** un no socio con snapshot válido, banco de cobro en situación 1 y todas las
+  entidades en situación 1.
+- **Entonces** aplica `CAT-LINE-010` y queda en **PRESENTACIÓN**, línea `AMEJUCA
+  Premium`.
 
-### `CAT-CASE-001` — Premium
+### `CAT-CASE-002` — Una situación 2 también es Premium
 
-- **Dado** un no socio de Catamarca con snapshot BCRA válido.
-- **Y** todas las entidades están como máximo en situación 1.
-- **Cuando** Kestra clasifica la negociación.
-- **Entonces** aplica `CAT-LINE-010`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `AMEJUCA Premium`.
+- **Dado** un no socio con banco de cobro en situación 1 y una entidad en situación 2.
+- **Entonces** aplica `CAT-LINE-010` y queda en `AMEJUCA Premium`.
 
-### `CAT-CASE-002` — Especial
+### `CAT-CASE-003` — Límite Premium de situaciones 2
 
-- **Dado** un no socio de Catamarca con snapshot BCRA válido.
-- **Y** existe una entidad en situación 2.
-- **Y** no existe ninguna condición de rechazo duro.
-- **Cuando** Kestra clasifica la negociación.
-- **Entonces** aplica `CAT-LINE-020`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `AMEJUCA Especial`.
+- **Dado** un no socio con banco de cobro en situación 2 y exactamente cinco entidades
+  en situación 2.
+- **Entonces** aplica `CAT-LINE-010` y queda en `AMEJUCA Premium`.
 
-### `CAT-CASE-003` — Banco Nación rechazado
+### `CAT-CASE-004` — Más de cinco situaciones 2 pasa a Especial
 
-- **Dado** un no socio de Catamarca con snapshot BCRA válido.
-- **Y** Banco Nación está en situación 3.
-- **Cuando** Kestra clasifica la negociación.
-- **Entonces** aplica `CAT-BCRA-030`.
-- **Y** la negociación queda en **SIT. NEG. EN BCRA** sin línea.
+- **Dado** un no socio con banco de cobro en situación 1 y seis entidades en situación
+  2.
+- **Entonces** aplica `CAT-LINE-020` y queda en `AMEJUCA Especial`.
 
-### `CAT-CASE-004` — Límite de entidades negativas
+### `CAT-CASE-005` — Cruce ambiguo del banco de cobro
 
-- **Dado** un no socio de Catamarca y un snapshot con exactamente cuatro entidades en
-  situación 4 o 5.
-- **Entonces** no se rechaza por `CAT-BCRA-020`.
-- **Pero dado** el mismo caso con cinco entidades en situación 4 o 5.
+- **Dado** el mismo caso anterior, pero con banco de cobro en situación 2.
+- **Entonces** aplica `CAT-LINE-030` y queda en **REVISIÓN MANUAL KESTRA**.
+
+### `CAT-CASE-006` — Situación 3 es Especial
+
+- **Dado** un no socio con banco de cobro en situación 1 y una entidad en situación 3.
+- **Entonces** aplica `CAT-LINE-020` y queda en `AMEJUCA Especial`.
+
+### `CAT-CASE-007` — Límite de entidades 4/5
+
+- **Dado** un perfil con exactamente cuatro entidades en situación 4/5 y banco de
+  cobro en situación 1.
+- **Entonces** no se rechaza por cantidad y puede aplicar Especial.
+- **Pero dado** el mismo perfil con cinco entidades en situación 4/5.
+- **Entonces** aplica `CAT-BCRA-010` y queda en **SIT. NEG. EN BCRA**.
+
+### `CAT-CASE-008` — Banco de cobro rechazado
+
+- **Dado** un perfil cuyo banco de cobro está en situación 3.
 - **Entonces** aplica `CAT-BCRA-020` y queda en **SIT. NEG. EN BCRA**.
 
-### `CAT-CASE-005` — Socio recurrente
+### `CAT-CASE-009` — Rechazo duro también para socios
 
-- **Dado** un socio de Catamarca, aunque su snapshot cumpla una condición de rechazo
-  BCRA.
-- **Cuando** Kestra clasifica la negociación.
-- **Entonces** aplica `CAT-MEMBER-010` antes que las reglas BCRA.
-- **Y** la negociación queda en **REVISIÓN MANUAL KESTRA**.
+- **Dado** un socio con cinco entidades en situación 4/5.
+- **Entonces** aplica `CAT-BCRA-010` antes que las reglas recurrentes.
 
-## Córdoba — borradores para validación
+### `CAT-CASE-010` — Premium Recurrentes
 
-### `COR-CASE-001` — CBU Nuevos aprobado
+- **Dado** un socio activo, cuota social al día, cero días de atraso, cuotas vencidas
+  pagadas y BCRA Premium.
+- **Entonces** aplica `CAT-REC-010` y queda en **PRESENTACIÓN**, línea `AMEJUCA Premium
+  Recurrentes`.
 
-- **Dado** una persona de Personal de Salud de Córdoba que no es socia.
-- **Y** su snapshot contiene cinco entidades, todas en situación 1.
-- **Y** su banco de cobro está en situación 1.
-- **Cuando** se evalúa CBU Nuevos.
-- **Entonces** aplica `COR-CBU-040`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `CBU`.
+### `CAT-CASE-011` — Recurrencia incompleta
 
-### `COR-CASE-002` — Límite de entidades CBU
+- **Dado** un socio cuya cuota social o comportamiento no puede verificarse.
+- **Entonces** aplica `CAT-REC-DATA-010` y queda en **REVISIÓN MANUAL KESTRA**.
 
-- **Dado** el mismo caso con seis entidades, aunque todas estén en situación 1.
-- **Entonces** aplica `COR-CBU-010`.
-- **Y** la negociación queda en **SIT. NEG. EN BCRA**.
+## Córdoba — acordados, no implementados
 
-### `COR-CASE-003` — Situación no admitida en CBU
+### `COR-CASE-001` — CBU aprobado
 
-- **Dado** un docente de Córdoba no socio.
-- **Y** una de sus entidades está en situación 2.
-- **Cuando** se evalúa CBU Nuevos.
-- **Entonces** aplica `COR-CBU-020`.
-- **Y** la negociación queda en **SIT. NEG. EN BCRA**.
+- **Dado** un perfil CBU con cinco entidades, todas en situación 1, y banco de cobro en
+  situación 1.
+- **Entonces** aplica `COR-CBU-040` y queda en **PRESENTACIÓN**, línea `CBU`.
 
-### `COR-CASE-004` — Empleado Público Provincial Premium
+### `COR-CASE-002` — CBU con seis entidades
 
-- **Dado** un empleado público provincial de Córdoba que es socio y tiene un préstamo
-  activo de una línea CBU propia.
-- **Y** no tiene ningún préstamo activo de una línea Cruz del Eje.
-- **Y** todas sus entidades están en situación 1.
-- **Cuando** se evalúa Cruz del Eje común.
-- **Entonces** aplica `COR-CDE-030`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `Cruz del Eje` y categoría
+- **Dado** el mismo perfil con seis entidades.
+- **Y** no existe otra familia comercial habilitada.
+- **Entonces** aplica `COR-CBU-010` y queda en **SIT. NEG. EN BCRA**.
+
+### `COR-CASE-003` — Cruz del Eje Premium
+
+- **Dado** un Policía o Empleado Público Provincial sin préstamo Cruz del Eje activo y
+  con todas las entidades en situación 1.
+- **Entonces** aplica `COR-CDE-LINE-010`, queda en `Cruz del Eje` y registra categoría
   Premium.
 
-### `COR-CASE-005` — Policía con tres entidades negativas
+### `COR-CASE-004` — Cruz del Eje Especial sin límite 2/3
 
-- **Dado** un policía de Córdoba sin préstamos activos de líneas Cruz del Eje.
-- **Y** tiene tres entidades en situación 4 o 5.
-- **Cuando** se evalúa Cruz del Eje común.
-- **Entonces** aplica `COR-CDE-020`.
-- **Y** la negociación queda en **SIT. NEG. EN BCRA**.
+- **Dado** el mismo perfil con diez entidades en situación 2 y ninguna en 4/5.
+- **Entonces** aplica `COR-CDE-LINE-020` y registra categoría Especial.
 
-### `COR-CASE-006` — Renovación sin regla BCRA
+### `COR-CASE-005` — Rechazo por entidades 4/5
 
-- **Dado** un policía de Córdoba con un préstamo activo de una línea Cruz del Eje y
-  buen cumplimiento.
-- **Cuando** corresponde analizar una renovación.
-- **Entonces** aplica `COR-CDE-REN-010`.
-- **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque BCRA REN no está
-  definido.
+- **Dado** un perfil Cruz del Eje con tres entidades en situación 4/5.
+- **Entonces** aplica `COR-CDE-BCRA-010` y queda en **SIT. NEG. EN BCRA**.
 
-### `COR-CASE-007` — Caja Nuevo
+### `COR-CASE-006` — Rechazo por Banco de Córdoba
 
-- **Dado** un jubilado provincial nuevo de 79 años cuyo snapshot solamente contiene
-  situación 1.
-- **Cuando** se evalúa Caja Nuevo.
-- **Entonces** aplica `COR-CAJA-NEW-010`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Nuevo`.
+- **Dado** un perfil Cruz del Eje con Banco de Córdoba en situación 2.
+- **Entonces** aplica `COR-CDE-BANK-010` y queda en **SIT. NEG. EN BCRA**.
 
-### `COR-CASE-008` — Cliente nuevo rechazado por el banco de cobro
+### `COR-CASE-007` — Préstamo CBU no bloquea Cruz del Eje
 
-- **Dado** un jubilado provincial nuevo de 79 años cuyo banco de cobro está en
-  situación 2.
-- **Cuando** se evalúan las líneas Caja.
-- **Entonces** aplica `COR-CAJA-NEW-020`.
-- **Y** la negociación queda en **SIT. NEG. EN BCRA** sin línea.
+- **Dado** un Empleado Público Provincial socio con préstamo CBU activo, sin préstamo
+  Cruz del Eje activo y con BCRA Premium.
+- **Entonces** se evalúa Cruz del Eje común y queda aprobado.
 
-### `COR-CASE-009` — Caja Irregulares para cliente nuevo
+### `COR-CASE-008` — REN Premium
 
-- **Dado** un jubilado provincial nuevo de 79 años cuyo banco de cobro está en
-  situación 1.
-- **Y** otra entidad está en situación 2 y ninguna entidad supera situación 3.
-- **Cuando** se evalúa Caja Irregulares.
-- **Entonces** aplica `COR-CAJA-IRREG-NEW-010`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Irregulares`.
+- **Dado** un préstamo Cruz del Eje activo, cero días de atraso, cuotas vencidas
+  pagadas y BCRA Premium.
+- **Entonces** aplica `COR-CDE-REN-010`, queda en línea `Cruz del Eje` y registra
+  categoría `REN Premium`.
 
-### `COR-CASE-010` — Caja Irregulares recurrente
+### `COR-CASE-009` — Renovación con mora
 
-- **Dado** un jubilado provincial recurrente de 79 años.
-- **Y** todas sus entidades están como máximo en situación 3 y al menos una está en
-  situación 2 o 3.
-- **Cuando** se evalúa Caja Irregulares.
-- **Entonces** aplica `COR-CAJA-IRREG-REC-010`.
-- **Y** la negociación queda en **PRESENTACIÓN** con línea `Caja Irregulares`.
+- **Dado** un préstamo Cruz del Eje activo con mora.
+- **Entonces** aplica `COR-CDE-MORA-010` y queda en **REVISIÓN MANUAL KESTRA** para
+  resolver la deuda antes de evaluar una línea común.
 
-### `COR-CASE-011` — Rechazo desde los 80 años
+### `COR-CASE-010` — Caja Nuevo sin entidades BCRA
 
-- **Dado** el mismo caso el día que la persona cumple 80 años.
-- **Entonces** aplica `COR-CAJA-AGE-010` y la decisión comercial es rechazo por edad.
-- **Y** la negociación queda temporalmente en **REVISIÓN MANUAL KESTRA** para ejecutar
-  el cierre hasta definir la etapa de rechazo no-BCRA.
+- **Dado** un Jubilado Provincial nuevo de 79 años con snapshot válido sin entidades.
+- **Entonces** aplica `COR-CAJA-NEW-010` y queda en `Caja Nuevo`.
 
-### `COR-CASE-012` — UNC
+### `COR-CASE-011` — Caja Irregulares para nuevo
 
-- **Dado** un empleado de la UNC que ya superó la precalificación.
-- **Cuando** se clasifica su negociación.
-- **Entonces** aplica `COR-UNC-010`.
-- **Y** la negociación queda en **REVISIÓN MANUAL KESTRA** porque todavía no existe una
-  regla de línea comercial.
+- **Dado** un Jubilado Provincial nuevo de 79 años, banco de cobro en situación 1 y
+  otra entidad en situación 2.
+- **Entonces** aplica `COR-CAJA-IRREG-NEW-010` y queda en `Caja Irregulares`.
 
-### `COR-CASE-013` — Dato faltante
+### `COR-CASE-012` — Caja Irregulares para recurrente
 
-- **Dado** cualquier negociación de Córdoba que necesita BCRA para decidir.
-- **Y** el snapshot está ausente o es inválido.
-- **Cuando** Kestra intenta clasificarla.
-- **Entonces** la negociación queda en **REVISIÓN MANUAL KESTRA**.
-- **Y** nunca se aprueba ni rechaza por presunción.
+- **Dado** un Jubilado Provincial recurrente de 79 años cuyo banco de cobro está en
+  situación 2 y ninguna entidad supera situación 3.
+- **Entonces** aplica `COR-CAJA-IRREG-REC-010` y queda en `Caja Irregulares`.
 
-### `COR-CASE-014` — CBU Recurrente unificado
+### `COR-CASE-013` — Caja General
 
-- **Dado** un socio de Córdoba que encuadra como recurrente.
-- **Cuando** se determina el tipo de evaluación CBU.
-- **Entonces** se utiliza directamente `CBU Recurrente`.
-- **Y** no se intenta clasificarlo como Propia ni Comer.
-- **Y** se aplican las mismas reglas BCRA estrictas documentadas para CBU Nuevos.
+- **Dado** un Jubilado Provincial recurrente de 79 años con todas las situaciones en
+  0/1.
+- **Entonces** aplica `COR-CAJA-GENERAL-010` y queda en `Caja General`.
+
+### `COR-CASE-014` — Caja Morosos
+
+- **Dado** un Jubilado Provincial de 79 años con una entidad en situación 4, banco de
+  cobro en situación 1 y ninguna entidad excluyente.
+- **Entonces** aplica `COR-CAJA-MORA-010` y queda en `Caja Morosos`.
+
+### `COR-CASE-015` — Caja Morosos con entidad excluyente
+
+- **Dado** el mismo caso cuya situación irregular pertenece a Banco del Sol.
+- **Entonces** aplica `COR-CAJA-MORA-REVIEW-010` y queda en **REVISIÓN MANUAL KESTRA**.
+
+### `COR-CASE-016` — Caja rechaza desde los 80
+
+- **Dado** un Jubilado Provincial el día que cumple 80 años.
+- **Entonces** aplica `COR-CAJA-AGE-010` y la decisión es rechazo comercial.
+- **Y** usa el fallback manual hasta que exista **NO CALIFICA COMERCIAL KESTRA**.
+
+### `COR-CASE-017` — DASPU Haberes
+
+- **Dado** un empleado activo de DASPU con formulario 691 válido y cupo mayor que cero.
+- **Entonces** aplica `COR-DASPU-010` y queda en **PRESENTACIÓN**, línea `DASPU
+  Haberes`.
+
+### `COR-CASE-018` — DASPU sin formulario
+
+- **Dado** un empleado DASPU sin formulario 691 verificable.
+- **Entonces** aplica `COR-DASPU-DATA-010` y queda en **REVISIÓN MANUAL KESTRA**.
+
+### `COR-CASE-019` — Club Mutual CBU
+
+- **Dado** un docente/no docente activo UNC dentro del límite etario, sin mora con
+  Banco Nación y con tres entidades en situación 4/5.
+- **Entonces** aplica `COR-UNC-010` y queda en **PRESENTACIÓN**, línea `Club Mutual
+  CBU`.
+
+### `COR-CASE-020` — UNC con cuatro entidades negativas
+
+- **Dado** el mismo perfil con cuatro entidades en situación 4/5.
+- **Entonces** aplica `COR-UNC-BCRA-010` y queda en **REVISIÓN MANUAL KESTRA**, no
+  rechazado.
+
+### `COR-CASE-021` — Datos insuficientes
+
+- **Dado** cualquier negociación que necesita edad, afiliación, banco o BCRA para
+  decidir y el dato no es confiable.
+- **Entonces** queda en **REVISIÓN MANUAL KESTRA** y nunca se rechaza por presunción.

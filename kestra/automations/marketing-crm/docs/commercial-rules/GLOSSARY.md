@@ -1,6 +1,6 @@
 # Glosario Comercial
 
-Versión: `2026-08-10`
+Versión: `2026-08-11`
 
 ## Entidades
 
@@ -13,10 +13,12 @@ Versión: `2026-08-10`
 | Crédito vigente | Crédito activo detectado en Vimarx. No equivale por sí solo a renovación, paralelo ni mora. |
 | Préstamo activo Cruz del Eje | Crédito vigente cuya línea de origen pertenece a la familia Cruz del Eje. Es el único tipo de préstamo activo que interviene en una renovación, paralelo o mora de Cruz del Eje. |
 | Préstamo activo CBU propio | Crédito vigente de una línea CBU propia. No convierte ni bloquea la evaluación Cruz del Eje de Policía o Empleado Público Provincial. |
+| Buen comportamiento | Cero días de atraso y todas las cuotas vencidas pagadas; cuando la línea lo exige, también cuota social al día. |
 | Snapshot BCRA | Copia persistida de la consulta BCRA usada para que una decisión sea reproducible. |
 | Entidad | Institución informada dentro del último período del snapshot BCRA. |
 | Situación | Calificación BCRA de una entidad para el período evaluado. |
 | Banco de cobro | Banco declarado o normalizado donde la persona cobra sus haberes. |
+| Banco ausente del snapshot | Banco de cobro identificable que no aparece entre las entidades de un snapshot BCRA válido; equivale a situación 0. |
 | Línea | Producto o línea comercial registrada en la negociación. |
 | CBU Recurrente | Evaluación CBU para una persona socia que encuadra como recurrente. No existen subtipos Propia ni Comer en la especificación vigente. |
 | Bucket | Regla de distribución que determina el conjunto de vendedores posibles. No determina aprobación ni línea. |
@@ -30,6 +32,7 @@ Versión: `2026-08-10`
 | REVISIÓN MANUAL KESTRA | No existe información o regla suficiente para una decisión automática segura. |
 | REVISIÓN DE ENRUTAMIENTO KESTRA | La decisión comercial puede existir, pero no puede ejecutarse la distribución. |
 | SIT. NEG. EN BCRA | Una regla BCRA explícita determinó un rechazo duro. |
+| NO CALIFICA COMERCIAL KESTRA | Etapa objetivo para un rechazo explícito no originado en BCRA. Hasta crearla, se utiliza REVISIÓN MANUAL KESTRA para ejecutar el cierre. |
 
 ## Resultados de clasificación
 
@@ -37,7 +40,8 @@ Versión: `2026-08-10`
 |---|---|---|
 | Aprobado | PRESENTACIÓN | Obligatorio. |
 | Rechazo BCRA | SIT. NEG. EN BCRA | Vacío, salvo decisión comercial explícita en contrario. |
-| Revisión manual | REVISIÓN MANUAL KESTRA | Vacío o sugerido; debe indicarse cuál de las dos alternativas corresponde. |
+| Rechazo comercial | NO CALIFICA COMERCIAL KESTRA; fallback temporal manual | Vacío. |
+| Revisión manual | REVISIÓN MANUAL KESTRA | Vacío. Una línea sugerida solamente puede registrarse en el resultado auditable. |
 
 ## Valores especiales
 
