@@ -130,6 +130,32 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertEqual(row["distribution_status"], "Sin vendedor disponible")
 
+    def test_explains_business_decision_and_reason_in_plain_language(self):
+        row = REPORT.add_business_fields([REPORT.normalized(execution())])[0]
+
+        self.assertEqual(row["business_decision"], "Asignado a la línea AMEJUCA Premium")
+        self.assertIn("situación 2", row["business_reason"])
+        self.assertNotIn("amejuca_premium", row["business_reason"])
+
+    def test_explains_age_rejection_in_plain_language(self):
+        raw = execution(action="commercial_rejected")
+        raw["outputs"]["reason"] = "caja_age_80_or_more"
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+
+        self.assertEqual(row["business_decision"], "Rechazado")
+        self.assertEqual(row["business_reason"], "La persona tiene 80 años o más.")
+
+    def test_consolidates_cases_and_orders_newest_first(self):
+        older = REPORT.normalized(execution())
+        newer_execution = execution(action="manual_review", strategy="outside_hours_manual")
+        newer_execution["outputs"]["processed_at"] = "2026-08-11T11:00:00-03:00"
+        newer = REPORT.normalized(newer_execution)
+
+        cases = REPORT.latest_cases([older, newer])
+
+        self.assertEqual(len(cases), 1)
+        self.assertEqual(cases[0]["action"], "manual_review")
+
     def test_omits_scheduler_runs_without_pending_deal(self):
         row = execution(action="no_pending", strategy="")
         row["outputs"]["deal_id"] = ""
@@ -144,6 +170,7 @@ class CommercialDistributionReportTests(unittest.TestCase):
         manual = REPORT.normalized(
             execution(action="manual_review", strategy="outside_hours_manual")
         )
+        manual["deal_id"] = "931"
 
         workbook = REPORT.build([legacy, manual])
 
@@ -155,21 +182,45 @@ class CommercialDistributionReportTests(unittest.TestCase):
         manual = REPORT.normalized(
             execution(action="manual_review", strategy="outside_hours_manual")
         )
+        manual["deal_id"] = "931"
         workbook = REPORT.build(
             [distributed, manual],
             "https://example.bitrix24.com/rest",
         )
 
-        self.assertEqual(workbook["Eventos"].max_row, 3)
+        self.assertEqual(workbook["Casos"].max_row, 3)
+        self.assertEqual(workbook["Trazabilidad técnica"].max_row, 3)
         self.assertEqual(workbook["Excepciones"].max_row, 2)
         self.assertEqual(workbook["Histórico incompleto"].max_row, 1)
         self.assertEqual(workbook["Por vendedor"].max_row, 2)
         self.assertEqual(
-            workbook["Eventos"].cell(2, 7).hyperlink.target,
+            workbook["Casos"].cell(2, 4).hyperlink.target,
             "https://example.bitrix24.com/crm/deal/details/930/",
         )
-        headers = [cell.value for cell in workbook["Eventos"][1]]
-        self.assertEqual(headers[4:6], ["versión_reglas", "revisión_flujo_kestra"])
+        headers = [cell.value for cell in workbook["Casos"][1]]
+        self.assertEqual(
+            headers[:4],
+            ["Fecha y hora", "Decisión tomada", "Razón de la decisión", "Negociación"],
+        )
+        self.assertFalse(workbook["Casos"].cell(2, 3).alignment.wrap_text)
+        self.assertEqual(workbook["Casos"].row_dimensions[2].height, 20)
+        self.assertFalse(workbook["Excepciones"].cell(2, 3).alignment.wrap_text)
+        self.assertEqual(workbook["Excepciones"].row_dimensions[2].height, 20)
+
+    def test_mutes_rows_from_previous_versions(self):
+        current = REPORT.normalized(execution())
+        current["revision"] = 9
+        old = REPORT.normalized(execution())
+        old["deal_id"] = "929"
+        old["revision"] = 8
+        old["processed_at"] = REPORT.datetime(2026, 8, 11, 9, 0)
+
+        workbook = REPORT.build([current, old])
+
+        self.assertEqual(
+            workbook["Casos"].cell(3, 1).fill.fgColor.rgb[-6:],
+            REPORT.MUTED_FILL,
+        )
 
     def test_publishes_latest_and_historical_copy(self):
         with tempfile.TemporaryDirectory() as directory:
