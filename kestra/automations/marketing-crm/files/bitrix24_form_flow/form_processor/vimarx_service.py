@@ -30,6 +30,13 @@ SOCIO_FIELDS = [
     "NroSocio",
     "NroDoc",
     "CUIT",
+    "FechaDeNacimiento",
+    "Edad",
+    "Sexo",
+    "DadoDeBaja",
+    "CategoriaActual.ID",
+    "CategoriaActual.Nombre",
+    "CuentaBancariaHabitual.CBU",
 ]
 
 CUOTA_FIELDS = [
@@ -46,7 +53,12 @@ CUOTA_FIELDS = [
     "Prestamo.Cuenta.Estado",
     "Prestamo.Estado",
     "Prestamo.EstadoPrestamo",
+    "Prestamo.LineaPrestamo.ID",
+    "Prestamo.LineaPrestamo.Codigo",
     "Prestamo.LineaPrestamo.Descripcion",
+    "Prestamo.LineaPrestamo.Superior.ID",
+    "Prestamo.LineaPrestamo.Superior.Codigo",
+    "Prestamo.LineaPrestamo.Superior.Descripcion",
     "Prestamo.SocioTitular.Socio.ID",
     "Prestamo.SocioTitular.Socio.NroSocio",
     "Prestamo.SocioTitular.Socio.NroDoc",
@@ -260,6 +272,13 @@ def fetch_socio_by_cuil(cuil_digits: str, config: VimarxConfig) -> dict[str, Any
         "dni": stringify(row.get("NroDoc")),
         "cuil": stringify(row.get("CUIT")),
         "nombre": stringify(row.get("NombreCompleto")),
+        "fecha_nacimiento": normalize_date_text(row.get("FechaDeNacimiento")),
+        "edad": parse_int(row.get("Edad")),
+        "sexo_codigo": stringify(row.get("Sexo")),
+        "dado_de_baja": parse_bool(row.get("DadoDeBaja")),
+        "categoria_id": stringify(row.get("CategoriaActual.ID")),
+        "categoria": stringify(row.get("CategoriaActual.Nombre")),
+        "cbu_habitual": only_digits(row.get("CuentaBancariaHabitual.CBU")),
     }
 
 
@@ -387,6 +406,17 @@ def build_creditos_activos(
                 "nro_cuenta": stringify(first.get("Prestamo.NroCuenta")),
                 "referencia": stringify(first.get("Prestamo.Referencia")),
                 "linea": stringify(first.get("Prestamo.LineaPrestamo.Descripcion")),
+                "linea_id": stringify(first.get("Prestamo.LineaPrestamo.ID")),
+                "linea_codigo": stringify(first.get("Prestamo.LineaPrestamo.Codigo")),
+                "linea_superior_id": stringify(
+                    first.get("Prestamo.LineaPrestamo.Superior.ID")
+                ),
+                "linea_superior_codigo": stringify(
+                    first.get("Prestamo.LineaPrestamo.Superior.Codigo")
+                ),
+                "linea_superior": stringify(
+                    first.get("Prestamo.LineaPrestamo.Superior.Descripcion")
+                ),
                 "fecha_emision": normalize_date_text(first.get("Prestamo.FechaEmision")),
                 "cuotas_totales": cuotas_totales,
                 "cuotas_pagas": cuotas_pagas,

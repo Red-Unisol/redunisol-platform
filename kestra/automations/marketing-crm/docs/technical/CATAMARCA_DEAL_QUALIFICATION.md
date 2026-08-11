@@ -1,6 +1,7 @@
-# Calificacion De Negociaciones Catamarca
+# Calificacion Comercial De Negociaciones
 
-Estado: implementado y desplegado en producción.
+Estado: Catamarca historico desplegado; ampliacion Catamarca/Cordoba implementada en
+el PR #218 y pendiente de deploy.
 
 ## Objetivo
 
@@ -9,7 +10,8 @@ Separar dos decisiones que antes ocurrian sobre el lead:
 1. La precalificacion usa solamente provincia, situacion laboral y banco.
 2. La calificacion comercial definitiva usa los datos enriquecidos y ocurre despues de crear la negociacion.
 
-Kestra solo toma estas decisiones para leads con `Motor decision comercial = Kestra`.
+La clasificacion se ejecuta sobre negociaciones internas Catamarca y Cordoba que
+llegan a la etapa pendiente. El owner comercial previo del lead no actua como gate.
 
 ## Circuito
 
@@ -26,9 +28,10 @@ Etapa: PENDIENTE CALIFICACION KESTRA
 Responsable provisional: Maru Lopez (57)
         |
         v
-Calificacion definitiva Catamarca
-        |-- aprobable -> PRESENTACION + linea AMEJUCA
+Calificacion definitiva Catamarca o Cordoba
+        |-- aprobable -> PRESENTACION + linea comercial
         |-- rechazo duro BCRA -> SIT. NEG. EN BCRA
+        |-- rechazo comercial -> etapa configurada o fallback manual
         `-- dato insuficiente/regla ambigua -> REVISION MANUAL KESTRA
         |
         `-- dentro de horario y con bucket valido:
@@ -64,17 +67,13 @@ Este documento no duplica esas reglas para evitar divergencias futuras.
 La negociacion nace asignada a Maru. Antes de distribuir, Kestra resuelve un bucket
 con los datos enriquecidos disponibles en la negociacion y su lead vinculado.
 
-Bucket actual:
+Los buckets Catamarca y Cordoba, sus criterios y pools se definen en
+[`../commercial-rules/DEAL_ROUTING.md`](../commercial-rules/DEAL_ROUTING.md). El bucket
+se persiste en `UF_CRM_ROUTE_BUCKET` (`ufCrmRouteBucket` en CRM universal).
 
-- clave: `catamarca_general`
-- etiqueta: `Catamarca - General`
-- criterio: provincia Catamarca
-- campo de deal: `UF_CRM_ROUTE_BUCKET` (`ufCrmRouteBucket` en CRM universal)
-
-Si la provincia no coincide con ningun bucket, la negociacion pasa a
+Si la provincia o situacion laboral no coincide con ningun bucket, la negociacion pasa a
 `C1:KESTRA_ROUTE_REVIEW`: no cambia de responsable, no transfiere el chat y Maru
-recibe una notificacion explicita. Esto evita que Córdoba u otras provincias entren
-al pool Catamarca aunque hayan llegado a `C1:KESTRA_PENDING`.
+recibe una notificacion explicita.
 
 Para una negociacion con bucket:
 
@@ -100,8 +99,9 @@ Si una negociacion pendiente se procesa fuera de esa ventana:
 
 La distribucion de esos casos queda a cargo de Maru de forma manual.
 
-Pool actual: Daniel Carrera (`68579`), Patricia Contendi (`10451`), Susana Contenti (`29`), Soledad Moyano (`90231`), Natalia Rojo (`71159`), Claudia Algarbe (`113457`) y Daniela Arias (`113455`).
-
 ## Operacion
 
-El flow `bitrix24_catamarca_deal_qualification` procesa una negociacion pendiente por minuto. Es idempotente por etapa: si la negociacion ya salio de `C1:KESTRA_PENDING`, no vuelve a decidir ni reasignar.
+El flow conserva el ID historico `bitrix24_catamarca_deal_qualification` para evitar
+migrar el scheduler. Procesa una negociacion interna pendiente por minuto. Es
+idempotente por etapa: si ya salio de `C1:KESTRA_PENDING`, no vuelve a decidir ni
+reasignar.

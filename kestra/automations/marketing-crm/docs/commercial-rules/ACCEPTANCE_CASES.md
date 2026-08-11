@@ -5,7 +5,7 @@ Versión: `2026-08-11`
 Cada caso expresa una expectativa verificable en formato Dado / Cuando / Entonces.
 Un caso no reemplaza la tabla normativa de clasificación.
 
-## Catamarca — cambio acordado, pendiente de implementación
+## Catamarca — implementado en PR #218, pendiente de deploy
 
 ### `CAT-CASE-001` — Premium limpio
 
@@ -71,7 +71,7 @@ Un caso no reemplaza la tabla normativa de clasificación.
 - **Dado** un socio cuya cuota social o comportamiento no puede verificarse.
 - **Entonces** aplica `CAT-REC-DATA-010` y queda en **REVISIÓN MANUAL KESTRA**.
 
-## Córdoba — acordados, no implementados
+## Córdoba — implementado en PR #218, pendiente de deploy
 
 ### `COR-CASE-001` — CBU aprobado
 

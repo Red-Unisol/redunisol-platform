@@ -54,12 +54,17 @@ DEFAULT_DEAL_CONFIG = {
     "manual_review_stage_id": "C1:KESTRA_REVIEW",
     "routing_review_stage_id": "C1:KESTRA_ROUTE_REVIEW",
     "bcra_rejected_stage_id": "C1:5",
+    "commercial_rejected_stage_id": "C1:KESTRA_REVIEW",
     "provisional_user_id": 57,
     "distribution_notification_user_id": 57,
     "commercial_line_field": "ufCrm_659EBB0445E8E",
     "routing_bucket_field": "ufCrmRouteBucket",
     "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
     "round_robin_lookback_days": 30,
+    "cordoba_publico_policia_user_ids": (74365,),
+    "cordoba_jubilados_user_ids": (10451, 71159, 68579, 90231, 29, 110059),
+    "cordoba_unc_user_ids": (53121,),
+    "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29),
 }
 
 
@@ -157,12 +162,17 @@ class DealConfig:
     manual_review_stage_id: str
     routing_review_stage_id: str
     bcra_rejected_stage_id: str
+    commercial_rejected_stage_id: str
     provisional_user_id: int
     distribution_notification_user_id: int
     commercial_line_field: str
     routing_bucket_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
+    cordoba_publico_policia_user_ids: tuple[int, ...]
+    cordoba_jubilados_user_ids: tuple[int, ...]
+    cordoba_unc_user_ids: tuple[int, ...]
+    cordoba_general_user_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -373,6 +383,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
+            commercial_rejected_stage_id=source.get(
+                "BITRIX24_DEAL_COMMERCIAL_REJECTED_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["commercial_rejected_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["commercial_rejected_stage_id"],
             provisional_user_id=_optional_int(
                 source,
                 "BITRIX24_DEAL_PROVISIONAL_USER_ID",
@@ -402,6 +417,26 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS",
                 default=DEFAULT_DEAL_CONFIG["round_robin_lookback_days"],
+            ),
+            cordoba_publico_policia_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_PUBLICO_POLICIA_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_publico_policia_user_ids"],
+            ),
+            cordoba_jubilados_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_jubilados_user_ids"],
+            ),
+            cordoba_unc_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_UNC_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_unc_user_ids"],
+            ),
+            cordoba_general_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),

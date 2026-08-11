@@ -2,8 +2,9 @@
 
 Versión: `2026-08-11`
 
-Estado: vista explicativa. Las tablas de `DEAL_CLASSIFICATION.md` son normativas.
-Catamarca requiere actualizar el runtime; Córdoba todavía no fue implementada.
+Estado: vista explicativa. Las tablas de `DEAL_CLASSIFICATION.md` son normativas. La
+clasificación de Catamarca y Córdoba está implementada en el PR #218 y pendiente de
+deploy y auditoría en producción.
 
 ## Proceso completo
 
@@ -18,11 +19,10 @@ flowchart TD
     G --> H{Clasificación comercial}
     H -->|Aprobado| I[PRESENTACIÓN<br/>con Línea]
     H -->|Rechazo BCRA explícito| J[SIT. NEG. EN BCRA]
-    H -->|Rechazo comercial explícito| K[NO CALIFICA COMERCIAL KESTRA<br/>o fallback manual]
+    H -->|Rechazo comercial explícito| K[NO CALIFICA COMERCIAL KESTRA<br/>o fallback manual con Maru]
     H -->|Dato o regla insuficiente| L[REVISIÓN MANUAL KESTRA]
     I --> M[Distribución]
     J --> M
-    K --> M
     L --> M
 ```
 

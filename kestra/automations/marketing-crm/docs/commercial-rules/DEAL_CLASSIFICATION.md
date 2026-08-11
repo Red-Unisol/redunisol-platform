@@ -40,8 +40,8 @@ con el motivo de rechazo para que una persona ejecute el cierre.
 
 ## Catamarca — AMEJUCA
 
-Estado: **cambio acordado, pendiente de implementación**. El runtime todavía aplica
-la versión anterior, que envía toda situación 2 a Especial y todo socio a revisión.
+Estado: **implementado en el PR #218, pendiente de deploy y auditoría en producción**.
+El runtime productivo conserva la versión anterior hasta completar ese deploy.
 
 Se utiliza el último período disponible del snapshot BCRA. El banco evaluado es el
 banco de cobro declarado; si no aparece en un snapshot válido equivale a situación 0.
@@ -88,7 +88,7 @@ superarlos queda en revisión manual.
 
 ## Córdoba
 
-Estado: **especificación acordada; no implementada**.
+Estado: **implementado en el PR #218, pendiente de deploy y auditoría en producción**.
 
 Precondición: negociación que ya superó provincia, situación laboral y banco de cobro
 en la precalificación.

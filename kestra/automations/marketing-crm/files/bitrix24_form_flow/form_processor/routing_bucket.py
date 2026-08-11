@@ -47,6 +47,38 @@ def resolve_routing_bucket(
             reason="province_catamarca",
         )
 
+    if submission.province.key == "cordoba":
+        employment = submission.employment_status.key
+        if employment in {"empleado_publico_provincial", "policia"}:
+            key, label, sellers = (
+                "cordoba_publico_policia",
+                "Córdoba - Público provincial y Policía",
+                config.deal.cordoba_publico_policia_user_ids,
+            )
+        elif employment in {"jubilado_provincial", "jubilado_nacional", "pensionado"}:
+            key, label, sellers = (
+                "cordoba_jubilados",
+                "Córdoba - Jubilados y pensionados",
+                config.deal.cordoba_jubilados_user_ids,
+            )
+        elif employment in {"empleado_de_la_unc", "daspu"}:
+            key, label, sellers = (
+                "cordoba_unc",
+                "Córdoba - UNC y DASPU",
+                config.deal.cordoba_unc_user_ids,
+            )
+        else:
+            key, label, sellers = (
+                "cordoba_general",
+                "Córdoba - General",
+                config.deal.cordoba_general_user_ids,
+            )
+        return RoutingResolution(
+            bucket=RoutingBucket(key=key, label=label, seller_ids=sellers),
+            province=submission.province.label,
+            reason="province_cordoba",
+        )
+
     return RoutingResolution(
         bucket=None,
         province=submission.province.label,

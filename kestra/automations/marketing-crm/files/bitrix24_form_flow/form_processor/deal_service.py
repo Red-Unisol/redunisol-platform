@@ -487,7 +487,7 @@ def notify_distribution_supervisor(
     assignee_name = _user_display_name(client, assigned_by_id=assigned_by_id, logger=logger)
     chat_label = "Sí" if chat_transferred else "No"
     message = (
-        "[B]Nueva negociacion de Catamarca asignada[/B]\n"
+        "[B]Nueva negociación comercial asignada[/B]\n"
         f"Nombre: {safe_deal_title}\n"
         f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
         f"Bucket: {_notification_text(bucket_label)}\n"
@@ -496,7 +496,7 @@ def notify_distribution_supervisor(
         f"Chat transferido: {chat_label}"
     )
     message_out = (
-        f"Nueva negociacion de Catamarca asignada. Nombre: {safe_deal_title}. "
+        f"Nueva negociación comercial asignada. Nombre: {safe_deal_title}. "
         f"Negociacion #{deal_id}. Bucket: {_notification_text(bucket_label)}. "
         f"Resultado: {action_label}. "
         f"Responsable: {assignee_name}. Chat transferido: {chat_label}. {deal_url}"

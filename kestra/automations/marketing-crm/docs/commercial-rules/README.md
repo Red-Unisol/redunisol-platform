@@ -25,9 +25,10 @@ Los diagramas ayudan a conversar sobre el proceso, pero no reemplazan las tablas
 diagrama puede omitir condiciones, prioridades o datos faltantes para mantenerse
 legible.
 
-El código es la fuente de verdad del comportamiento actualmente desplegado. Si una
-tabla aprobada y el código no coinciden, existe una desviación que debe corregirse o
-documentarse; no se debe reinterpretar silenciosamente la regla.
+El código de `main` y el runtime verificado son la fuente de verdad del comportamiento
+desplegado. Una rama o PR puede contener una implementación todavía no desplegada; ese
+estado debe declararse explícitamente. Si una tabla aprobada y producción no coinciden,
+existe una desviación que debe corregirse o documentarse.
 
 ## Documentos
 
@@ -68,6 +69,8 @@ Cada conjunto de reglas debe usar uno de estos estados:
 - **Vigente e implementado:** está aprobado y coincide con producción.
 - **Acordado, pendiente de implementación:** fue aprobado pero el runtime todavía no
   lo ejecuta.
+- **Implementado, pendiente de deploy:** existe código y pruebas en una rama o PR, pero
+  producción todavía no fue actualizada ni auditada.
 - **Borrador para validación:** permite conversar, pero no autoriza implementación.
 - **Pendiente de definición:** no existe una decisión comercial suficiente.
 - **Histórico:** conserva contexto, pero no debe usarse para cambios nuevos.
@@ -104,6 +107,6 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
-| 2026-08-11 | Catamarca | Acordado, pendiente de implementación | Criterios incorporados; aprobador formal pendiente de registrar | Producción conserva la versión anterior |
-| 2026-08-11 | Córdoba | Acordado, pendiente de implementación | Criterios incorporados; aprobador formal pendiente de registrar | No implementado |
-| 2026-08-10 | Distribución de negociaciones | Acordado, pendiente de implementación | Criterio acordado | No implementado |
+| 2026-08-11 | Catamarca | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218; producción conserva la versión anterior |
+| 2026-08-11 | Córdoba | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218 |
+| 2026-08-10 | Distribución de negociaciones | Implementado, pendiente de deploy | Criterio acordado | PR #218 |
