@@ -63,7 +63,7 @@ tasks:
       BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY: "{{ envs.bitrix24_distribution_business_hours_only ?? 'true' }}"
       BITRIX24_DISTRIBUTION_TIMEZONE: "{{ envs.bitrix24_distribution_timezone ?? 'America/Argentina/Cordoba' }}"
       BITRIX24_DISTRIBUTION_WORKDAYS: "{{ envs.bitrix24_distribution_workdays ?? 'MO,TU,WE,TH,FR' }}"
-      BITRIX24_DISTRIBUTION_FROM: "{{ envs.bitrix24_distribution_from ?? '09:00' }}"
+      BITRIX24_DISTRIBUTION_FROM: "{{ envs.bitrix24_distribution_from ?? '00:00' }}"
       BITRIX24_DISTRIBUTION_TO: "{{ envs.bitrix24_distribution_to ?? '17:00' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:

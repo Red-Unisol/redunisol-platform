@@ -4049,15 +4049,17 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[939]["assignedById"], 57)
         self.assertFalse(any(method == "crm.item.update" for method, _ in client.calls))
 
-    def test_catamarca_distribution_window_uses_weekdays_from_nine_to_seventeen(
+    def test_catamarca_distribution_window_runs_continuously_monday_to_friday(
         self,
     ) -> None:
         source: dict[str, str] = {}
         cases = (
-            ("2026-08-10T08:59:59-03:00", False),
-            ("2026-08-10T09:00:00-03:00", True),
-            ("2026-08-10T16:59:59-03:00", True),
-            ("2026-08-10T17:00:00-03:00", False),
+            ("2026-08-09T23:59:59-03:00", False),
+            ("2026-08-10T00:00:00-03:00", True),
+            ("2026-08-11T02:00:00-03:00", True),
+            ("2026-08-13T23:59:59-03:00", True),
+            ("2026-08-14T16:59:59-03:00", True),
+            ("2026-08-14T17:00:00-03:00", False),
             ("2026-08-08T12:00:00-03:00", False),
             ("2026-08-09T12:00:00-03:00", False),
         )

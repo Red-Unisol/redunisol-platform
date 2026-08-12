@@ -66,9 +66,10 @@ Dentro del horario configurado, todo resultado con bucket válido —aprobado, r
 manual o rechazo BCRA— participa de la distribución y transferencia de chat. Un
 rechazo comercial queda con Maru y no se distribuye.
 
-Fuera de lunes a viernes de 09:00 inclusive a 17:00 exclusive, la negociación queda en
-REVISIÓN MANUAL KESTRA con Maru (`57`), sin round-robin ni transferencia automática de
-chat. No se redistribuye automáticamente al siguiente día hábil.
+La ventana de distribución es continua desde el lunes a las 00:00 inclusive hasta el
+viernes a las 17:00 exclusive. Fuera de ella, la negociación queda en REVISIÓN MANUAL
+KESTRA con Maru (`57`), sin round-robin ni transferencia automática de chat. No se
+redistribuye automáticamente al siguiente día hábil.
 
 Zona horaria: `America/Argentina/Cordoba`.
 

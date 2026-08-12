@@ -77,8 +77,9 @@ su provincia. Un caso no elegible conserva su rechazo correspondiente.
 
 ## Fuera De Horario
 
-Fuera de lunes a viernes, desde las 09:00 inclusive hasta las 17:00 exclusive, toda
-negociacion interna queda con Maru Lopez (`57`) para gestion manual.
+Fuera de la ventana continua que comienza el lunes a las 00:00 inclusive y termina
+el viernes a las 17:00 exclusive, toda negociacion interna queda con Maru Lopez
+(`57`) para gestion manual.
 
 - no se ejecuta round-robin;
 - no se transfiere el chat;

@@ -1212,17 +1212,29 @@ def _is_within_business_hours(
         str(source.get(BUSINESS_HOURS_TIMEZONE_ENV, "America/Argentina/Cordoba")).strip()
     )
     local_now = now.astimezone(timezone) if now is not None else datetime.now(timezone)
-    workdays = {
-        WEEKDAY_CODES[code.strip()]
-        for code in str(source.get(BUSINESS_HOURS_WORKDAYS_ENV, "MO,TU,WE,TH,FR"))
-        .upper()
-        .split(",")
-        if code.strip() in WEEKDAY_CODES
-    }
-    starts_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_FROM_ENV, "09:00")))
+    workdays = list(
+        dict.fromkeys(
+            WEEKDAY_CODES[code.strip()]
+            for code in str(source.get(BUSINESS_HOURS_WORKDAYS_ENV, "MO,TU,WE,TH,FR"))
+            .upper()
+            .split(",")
+            if code.strip() in WEEKDAY_CODES
+        )
+    )
+    starts_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_FROM_ENV, "00:00")))
     ends_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_TO_ENV, "17:00")))
     local_time = local_now.time().replace(tzinfo=None)
-    return local_now.weekday() in workdays and starts_at <= local_time < ends_at
+    weekday = local_now.weekday()
+
+    if weekday not in workdays:
+        return False
+    if len(workdays) == 1:
+        return starts_at <= local_time < ends_at
+    if weekday == workdays[0]:
+        return local_time >= starts_at
+    if weekday == workdays[-1]:
+        return local_time < ends_at
+    return True
 
 
 def _local_datetime(
