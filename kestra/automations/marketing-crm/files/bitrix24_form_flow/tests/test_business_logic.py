@@ -3643,6 +3643,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["source"], "Google")
         self.assertEqual(client.deals[930]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[930]["assignedById"], 68579)
+        self.assertEqual(client.leads[920]["ASSIGNED_BY_ID"], 68579)
         self.assertEqual(client.deals[930]["ufCrmRouteBucket"], "catamarca_general")
         self.assertEqual(client.deals[930]["ufCrm_659EBB0445E8E"], "AMEJUCA Premium")
         routing_queries = [
@@ -3791,6 +3792,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[939]["assignedById"], 57)
+        self.assertEqual(client.leads[938]["ASSIGNED_BY_ID"], 57)
         self.assertEqual(client.chat_transfers, [])
         self.assertFalse(any(method == "user.get" for method, _ in client.calls))
 
@@ -3819,7 +3821,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_PENDING")
         self.assertFalse(any(method == "crm.item.update" for method, _ in client.calls))
 
-    def test_trace_hydration_does_not_block_outside_hours_manual_assignment(self) -> None:
+    def test_missing_lead_blocks_assignment_to_preserve_owner_sync(self) -> None:
         client = FakeBitrixClient()
         client.deals[939] = self._pending_deal(939, 999999)
         gated_env = {
@@ -3827,19 +3829,18 @@ class BusinessLogicTests(unittest.TestCase):
             "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY": "true",
         }
 
-        result = qualify_catamarca_deal(
-            939,
-            env=gated_env,
-            bitrix_client=client,
-            logger=SilentLogger(),
-            now=datetime.fromisoformat("2026-08-08T12:00:00-03:00"),
-        )
+        with self.assertRaises(KeyError):
+            qualify_catamarca_deal(
+                939,
+                env=gated_env,
+                bitrix_client=client,
+                logger=SilentLogger(),
+                now=datetime.fromisoformat("2026-08-08T12:00:00-03:00"),
+            )
 
-        self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "outside_business_hours")
-        self.assertEqual(result["province"], "")
-        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_PENDING")
         self.assertEqual(client.deals[939]["assignedById"], 57)
+        self.assertFalse(any(method == "crm.item.update" for method, _ in client.calls))
 
     def test_catamarca_distribution_window_uses_weekdays_from_nine_to_seventeen(
         self,
@@ -4348,6 +4349,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["online_pool"], "")
         self.assertEqual(client.deals[948]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[948]["assignedById"], 57)
+        self.assertEqual(client.leads[948]["ASSIGNED_BY_ID"], 57)
         self.assertEqual(client.deals[948]["ufCrmRouteBucket"], "cordoba_publico_policia")
         self.assertEqual(client.deals[948]["ufCrm_659EBB0445E8E"], "Cruz del Eje")
         self.assertEqual(client.chat_transfers, [])
@@ -4436,6 +4438,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "caja_age_80_or_more")
         self.assertEqual(result["assigned_by_id"], 57)
         self.assertEqual(result["routing_bucket"], "")
+        self.assertEqual(client.leads[942]["ASSIGNED_BY_ID"], 57)
         self.assertEqual(client.chat_transfers, [])
 
     def test_cordoba_caja_uses_core_birthdate_when_lead_birthdate_is_missing(self) -> None:
