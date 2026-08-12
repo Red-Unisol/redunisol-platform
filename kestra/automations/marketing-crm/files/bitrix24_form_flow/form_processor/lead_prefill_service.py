@@ -35,7 +35,10 @@ def select_next_new_lead_for_prefill(
         "crm.lead.list",
         {
             "filter": lead_filter,
-            "order": {"ID": "ASC"},
+            "order": {
+                config.fields.lead_backfill_attempts: "ASC",
+                "ID": "ASC",
+            },
             "select": [
                 "ID",
                 "CONTACT_ID",
@@ -105,6 +108,26 @@ def prefill_lead(
         )
 
     previous_attempts = _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0
+    cuil = _optional_str(lead.get(config.fields.lead_cuil))
+
+    if cuil is None:
+        update_lead_fields(
+            client,
+            lead_id_int,
+            {"STATUS_ID": config.lead_statuses.preclassification},
+        )
+        return _result(
+            action="advanced_partial",
+            lead_id=lead_id_int,
+            lead_status=config.lead_statuses.preclassification,
+            attempts=previous_attempts,
+            errors=["missing_cuil"],
+            message=(
+                "Lead sin CUIL; se omite el enriquecimiento dependiente del CUIL "
+                "y se avanza a PRECLASIFICACION."
+            ),
+        )
+
     if previous_attempts >= max_attempts:
         update_lead_fields(
             client,
@@ -124,78 +147,90 @@ def prefill_lead(
         )
 
     attempts = previous_attempts + 1
-    update_lead_fields(
-        client,
-        lead_id_int,
-        {config.fields.lead_backfill_attempts: attempts},
-    )
+    counter_persisted = False
+    try:
+        update_lead_fields(
+            client,
+            lead_id_int,
+            {config.fields.lead_backfill_attempts: attempts},
+        )
+        refreshed_lead = get_lead(client, lead_id_int, active_logger)
+        persisted_attempts = (
+            _optional_int(
+                refreshed_lead.get(config.fields.lead_backfill_attempts)
+            ) or 0
+        )
+        counter_persisted = persisted_attempts >= attempts
+    except Exception as exc:
+        active_logger.error(
+            f"No se pudo persistir o verificar el contador del lead "
+            f"{lead_id_int}: {exc}"
+        )
     errors: list[str] = []
-    cuil = _optional_str(lead.get(config.fields.lead_cuil))
+    if not counter_persisted:
+        errors.append("attempt_counter_not_persisted")
 
-    if cuil is None:
-        errors.append("missing_cuil")
-    else:
-        arca_applied = False
-        try:
-            arca_applied = _apply_arca_output(client, config, lead, arca_output, active_logger)
-            if not arca_applied:
-                errors.append("arca")
-        except Exception as exc:
-            active_logger.error(f"Fallo ARCA para el lead {lead_id_int}: {exc}")
+    arca_applied = False
+    try:
+        arca_applied = _apply_arca_output(client, config, lead, arca_output, active_logger)
+        if not arca_applied:
             errors.append("arca")
+    except Exception as exc:
+        active_logger.error(f"Fallo ARCA para el lead {lead_id_int}: {exc}")
+        errors.append("arca")
 
-        try:
-            credix_result = update_lead_with_credixsa_output(
-                lead_id=lead_id_int,
-                credixsa_output=credixsa_output,
-                env=env,
-                bitrix_client=client,
-                logger=active_logger,
-            )
-            if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
-                errors.append("credixsa")
-        except Exception as exc:
-            active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
+    try:
+        credix_result = update_lead_with_credixsa_output(
+            lead_id=lead_id_int,
+            credixsa_output=credixsa_output,
+            env=env,
+            bitrix_client=client,
+            logger=active_logger,
+        )
+        if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
             errors.append("credixsa")
+    except Exception as exc:
+        active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
+        errors.append("credixsa")
 
-        try:
-            if not sync_lead_vimarx_enrichment(
-                client,
-                config,
-                lead_id_int,
-                cuil,
-                active_logger,
-            ):
-                errors.append("vimarx")
-        except Exception as exc:
-            active_logger.error(f"Fallo Vimarx para el lead {lead_id_int}: {exc}")
+    try:
+        if not sync_lead_vimarx_enrichment(
+            client,
+            config,
+            lead_id_int,
+            cuil,
+            active_logger,
+        ):
             errors.append("vimarx")
+    except Exception as exc:
+        active_logger.error(f"Fallo Vimarx para el lead {lead_id_int}: {exc}")
+        errors.append("vimarx")
 
-        try:
-            bcra_result = sync_lead_bcra(
+    try:
+        bcra_result = sync_lead_bcra(
+            client,
+            config,
+            lead_id_int,
+            cuil,
+            active_logger,
+            bcra_client=bcra_client,
+        )
+        if not arca_applied and bcra_result.denominacion:
+            _apply_bcra_name_fallback(
                 client,
-                config,
-                lead_id_int,
-                cuil,
+                lead,
+                bcra_result.denominacion,
                 active_logger,
-                bcra_client=bcra_client,
             )
-            if not arca_applied and bcra_result.denominacion:
-                _apply_bcra_name_fallback(
-                    client,
-                    lead,
-                    bcra_result.denominacion,
-                    active_logger,
-                )
-            if not bcra_result.is_persistable:
-                errors.append("bcra")
-        except Exception as exc:
-            active_logger.error(f"Fallo BCRA para el lead {lead_id_int}: {exc}")
+        if not bcra_result.is_persistable:
             errors.append("bcra")
+    except Exception as exc:
+        active_logger.error(f"Fallo BCRA para el lead {lead_id_int}: {exc}")
+        errors.append("bcra")
 
     errors = list(dict.fromkeys(errors))
     exhausted = attempts >= max_attempts
-    should_advance = not errors or exhausted
+    should_advance = not errors or exhausted or not counter_persisted
     next_status = current_status
     if should_advance:
         next_status = config.lead_statuses.preclassification
@@ -204,12 +239,18 @@ def prefill_lead(
     if not errors:
         action = "advanced"
         message = "Backfill completo; lead movido a PRECLASIFICACION."
-    elif exhausted:
+    elif exhausted or not counter_persisted:
         action = "advanced_partial"
-        message = (
-            "Backfill parcial luego de agotar reintentos; "
-            "lead movido a PRECLASIFICACION."
-        )
+        if exhausted:
+            message = (
+                "Backfill parcial luego de agotar reintentos; "
+                "lead movido a PRECLASIFICACION."
+            )
+        else:
+            message = (
+                "No se pudo persistir el contador de reintentos; "
+                "para no bloquear la cola, el lead se movio a PRECLASIFICACION."
+            )
     else:
         action = "retry_pending"
         message = "Backfill incompleto; el lead permanece en INGRESO para reintentar."

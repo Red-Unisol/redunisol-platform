@@ -1,6 +1,6 @@
 # Referencia Técnica de Bitrix24 y Kestra
 
-Versión: `2026-08-11`
+Versión: `2026-08-12`
 
 Esta referencia consolida datos técnicos que antes estaban mezclados con borradores
 funcionales. Los defaults pueden ser reemplazados por variables del runtime; antes de
@@ -29,6 +29,21 @@ una operación se deben verificar los flows y el ambiente desplegado.
 
 Los campos de snapshot BCRA se resuelven por configuración de runtime y no tienen un
 default confiable en Git; no deben copiarse desde documentos históricos.
+
+### Prefill no bloqueante
+
+`bitrix24_lead_prefill` procesa primero los leads con menos intentos y, entre ellos,
+el ID más antiguo. Un lead sin CUIL avanza directamente a PRECLASIFICACIÓN con
+enriquecimiento parcial: el CUIL no es requisito para la decisión comercial.
+
+Los errores transitorios de ARCA, CredixSA, Vimarx o BCRA admiten hasta tres intentos.
+Al agotarlos, el lead también avanza con los datos disponibles. Si Bitrix no persiste
+el contador de intentos, Kestra lo detecta después de escribirlo y avanza el lead para
+evitar que un único registro monopolice la cola.
+
+El campo `UF_CRM_KSTRA_BF_ATTEMPTS` debe aceptar valores de `0` a `3`. La defensa del
+flujo evita el bloqueo si esa configuración se rompe, pero no reemplaza la corrección
+del campo en Bitrix.
 
 ## Negociaciones VENTAS
 
