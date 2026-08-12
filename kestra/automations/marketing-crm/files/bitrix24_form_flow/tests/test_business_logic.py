@@ -63,7 +63,12 @@ from bitrix24_form_flow.form_processor.lead_service import (
     resolve_commercial_owner_enum_id,
 )
 from bitrix24_form_flow.form_processor.lead_prefill_service import (
+    IDENTITY_SANITIZED,
+    IDENTITY_UNCHANGED,
+    IDENTITY_UNRESOLVED,
+    credix_identifier_for_prefill,
     prefill_lead,
+    resolve_prefill_identity,
     select_next_new_lead_for_prefill,
 )
 from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
@@ -530,6 +535,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.lead_statuses.preclassification, "NEW")
         self.assertEqual(config.lead_statuses.external_referral, "13")
         self.assertEqual(config.fields.lead_backfill_attempts, "UF_CRM_KSTRA_BF_ATTEMPTS")
+        self.assertEqual(config.fields.lead_dni, "UF_CRM_LEAD_1711392404332")
 
     def test_prequalification_cutover_dry_run_and_apply(self) -> None:
         client = FakeBitrixClient()
@@ -3090,6 +3096,8 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertTrue(result["has_pending"])
         self.assertEqual(result["lead_id"], "802")
         self.assertEqual(result["cuil"], "20222222223")
+        self.assertEqual(result["credix_identifier"], "20222222223")
+        self.assertFalse(result["needs_identity_sanitization"])
         self.assertEqual(
             client.calls[0][1]["filter"][">=DATE_CREATE"],
             "2026-07-21T00:00:00-03:00",
@@ -3123,6 +3131,178 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["attempts"], 0)
         self.assertEqual(client.leads[802]["STATUS_ID"], "NEW")
         self.assertEqual(client.leads[802]["UF_CRM_KSTRA_BF_ATTEMPTS"], 0)
+
+    def test_prefill_selects_finguru_dni_as_credix_identifier(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[808] = {
+            "ID": "808",
+            "STATUS_ID": "UC_5N2OEO",
+            "DATE_CREATE": "2026-08-11T17:00:00-03:00",
+            "UF_CRM_1693840106704": "12345678",
+            "UF_CRM_LEAD_1711392404332": "12.345.678",
+            "UF_CRM_1722365051": "3729",
+        }
+
+        result = select_next_new_lead_for_prefill(
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["credix_identifier"], "12345678")
+        self.assertTrue(result["needs_identity_sanitization"])
+        self.assertEqual(result["source_id"], "3729")
+        self.assertEqual(result["dni"], "12345678")
+
+    def test_resolves_finguru_dni_to_valid_credix_cuil(self) -> None:
+        result = resolve_prefill_identity(
+            source_id="3729",
+            cuil="12345678",
+            dni="12.345.678",
+            credixsa_output={"ok": True, "status": "single", "cuit": "20-12345678-6"},
+        )
+
+        self.assertEqual(result["status"], IDENTITY_SANITIZED)
+        self.assertEqual(result["effective_cuil"], "20123456786")
+        self.assertTrue(result["sanitized"])
+
+    def test_does_not_invent_finguru_cuil_for_ambiguous_or_mismatched_results(self) -> None:
+        cases = (
+            ({"ok": True, "status": "multiple", "cuit": "12345678"}, "credixsa_not_single"),
+            (
+                {"ok": True, "status": "single", "cuit": "20-87654321-5"},
+                "returned_cuil_dni_mismatch",
+            ),
+        )
+        for credixsa_output, reason in cases:
+            with self.subTest(reason=reason):
+                result = resolve_prefill_identity(
+                    source_id="3729",
+                    cuil="12345678",
+                    dni="12345678",
+                    credixsa_output=credixsa_output,
+                )
+                self.assertEqual(result["status"], IDENTITY_UNRESOLVED)
+                self.assertEqual(result["effective_cuil"], "")
+                self.assertEqual(result["reason"], reason)
+
+    def test_keeps_non_finguru_identification_unchanged(self) -> None:
+        result = resolve_prefill_identity(
+            source_id="2423",
+            cuil="20-12345678-3",
+            dni="",
+            credixsa_output={},
+        )
+
+        self.assertEqual(result["status"], IDENTITY_UNCHANGED)
+        self.assertEqual(result["effective_cuil"], "20123456783")
+        self.assertEqual(
+            credix_identifier_for_prefill(
+                source_id="2423",
+                cuil="20-12345678-3",
+                dni="",
+            ),
+            "20123456783",
+        )
+
+    def test_prefill_sanitizes_finguru_and_reuses_contact_upsert(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[809] = {
+            "ID": "809",
+            "TITLE": "Maria Lopez",
+            "NAME": "Maria",
+            "LAST_NAME": "Lopez",
+            "EMAIL": [{"VALUE": "maria@example.com", "VALUE_TYPE": "WORK"}],
+            "PHONE": [{"VALUE": "+5493511234567", "VALUE_TYPE": "WORK"}],
+            "CONTACT_ID": "",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "12345678",
+            "UF_CRM_LEAD_1711392404332": "12345678",
+            "UF_CRM_1722365051": "3729",
+            "UF_CRM_1714071903": "1239",
+            "UF_CRM_LEAD_1711458190312": ["437"],
+            "UF_CRM_64E65D2B2136C": "209",
+        }
+        bcra = FakeBcraClient(
+            {
+                "20123456786": self.make_bcra_result(
+                    identification="20123456786",
+                    status_field_value="OK",
+                    should_reject=False,
+                )
+            }
+        )
+
+        result = prefill_lead(
+            809,
+            arca_output={
+                "ok": True,
+                "nombre": "Maria",
+                "apellido": "Lopez",
+                "fecha_nacimiento": "1990-05-10",
+            },
+            credixsa_output={
+                "ok": True,
+                "status": "single",
+                "cuit": "20-12345678-6",
+                "normalized_json": "{}",
+            },
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "advanced")
+        self.assertEqual(client.leads[809]["UF_CRM_1693840106704"], "20123456786")
+        self.assertEqual(client.leads[809]["CONTACT_ID"], 101)
+        self.assertEqual(client.leads[809]["LAST_NAME"], "")
+        self.assertEqual(client.leads[809]["UF_CRM_PROCESSING_POLICY"], "4041")
+        self.assertEqual(client.contacts[101]["UF_CONTACT_CUIL"], "20123456786")
+        self.assertEqual(client.contacts[101]["BIRTHDATE"], "1990-05-10")
+        self.assertEqual(bcra.calls, ["20123456786"])
+
+    def test_prefill_links_finguru_contact_when_cuil_was_already_sanitized(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[810] = {
+            "ID": "810",
+            "TITLE": "Maria Lopez",
+            "NAME": "Maria Lopez",
+            "LAST_NAME": "",
+            "EMAIL": [{"VALUE": "maria@example.com", "VALUE_TYPE": "WORK"}],
+            "PHONE": [{"VALUE": "+5493511234567", "VALUE_TYPE": "WORK"}],
+            "CONTACT_ID": "",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "20123456786",
+            "UF_CRM_LEAD_1711392404332": "12345678",
+            "UF_CRM_1722365051": "3729",
+            "UF_CRM_1714071903": "1239",
+            "UF_CRM_LEAD_1711458190312": ["437"],
+            "UF_CRM_64E65D2B2136C": "209",
+        }
+        bcra = FakeBcraClient(
+            {
+                "20123456786": self.make_bcra_result(
+                    identification="20123456786",
+                    status_field_value="OK",
+                    should_reject=False,
+                )
+            }
+        )
+
+        result = prefill_lead(
+            810,
+            arca_output={"ok": True, "nombre": "Maria", "apellido": "Lopez"},
+            credixsa_output={"ok": True, "status": "none"},
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "advanced")
+        self.assertEqual(client.leads[810]["CONTACT_ID"], 101)
+        self.assertEqual(client.contacts[101]["UF_CONTACT_CUIL"], "20123456786")
 
     def test_prefill_advances_complete_lead_to_preclassification(self) -> None:
         client = FakeBitrixClient()

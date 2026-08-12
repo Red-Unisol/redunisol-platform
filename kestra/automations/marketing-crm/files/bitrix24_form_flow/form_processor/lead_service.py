@@ -104,6 +104,20 @@ def resolve_commercial_owner_enum_id(
     return _resolve_enum_id(client, config.fields.lead_commercial_owner, owner_label)
 
 
+def resolve_processing_policy_enum_id(
+    client: BitrixClient,
+    config: AppConfig,
+    policy: str,
+) -> str:
+    normalized = policy.strip().casefold()
+    label = (
+        config.processing_policy.skip
+        if normalized in {"skip", "no procesar"}
+        else config.processing_policy.process
+    )
+    return _resolve_enum_id(client, config.fields.lead_processing_policy, label)
+
+
 def lead_has_commercial_owner(
     client: BitrixClient,
     lead: dict[str, Any],
