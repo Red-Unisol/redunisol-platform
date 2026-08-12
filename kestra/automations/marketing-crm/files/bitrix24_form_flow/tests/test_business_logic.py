@@ -77,6 +77,7 @@ from bitrix24_form_flow.form_processor.prequalification_cutover import (
     centralize_active_prequalification_ownership,
 )
 from bitrix24_form_flow.form_processor.receipt_file import _filename_from_content_disposition
+from bitrix24_form_flow.form_processor.routing_bucket import resolve_routing_bucket
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
 
 
@@ -507,6 +508,32 @@ class BusinessLogicTests(unittest.TestCase):
             "BITRIX24_LEAD_BCRA_DATA_RAW_FIELD": "UF_CRM_BCRA_DATA_RAW",
             "BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD": "UF_CRM_BCRA_CHECKED_AT",
         }
+
+    def test_routing_ignores_identity_and_contact_fields(self) -> None:
+        config = load_config(self.env)
+        routing = resolve_routing_bucket(
+            config,
+            {
+                config.fields.lead_province: "209",
+                config.fields.lead_employment_status: "1239",
+                config.fields.lead_cuil: "12345678",
+                "EMAIL": [],
+                "PHONE": [],
+            },
+        )
+
+        self.assertEqual(routing.reason, "province_cordoba")
+        self.assertEqual(routing.bucket.key, "cordoba_publico_policia")
+
+    def test_routing_still_requires_employment_status(self) -> None:
+        config = load_config(self.env)
+        routing = resolve_routing_bucket(
+            config,
+            {config.fields.lead_province: "209"},
+        )
+
+        self.assertEqual(routing.reason, "missing_routing_data")
+        self.assertIsNone(routing.bucket)
 
     def test_config_defaults_commercial_owner_field_and_labels(self) -> None:
         config = load_config(self.env)

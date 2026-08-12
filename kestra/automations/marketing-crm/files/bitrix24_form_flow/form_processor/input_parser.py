@@ -36,6 +36,12 @@ class PrequalificationInput:
     payment_bank: CatalogItem
 
 
+@dataclass(frozen=True)
+class RoutingInput:
+    province: CatalogItem
+    employment_status: CatalogItem
+
+
 def parse_body(body: str, content_type: str | None = None) -> dict[str, Any]:
     body = body or ""
     content_type = (content_type or "").lower()
@@ -107,6 +113,22 @@ def normalize_prequalification_input(payload: dict[str, Any]) -> Prequalificatio
         payment_bank=BANCOS.resolve(
             _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]),
             "payment_bank",
+        ),
+    )
+
+
+def normalize_routing_input(payload: dict[str, Any]) -> RoutingInput:
+    if not isinstance(payload, dict):
+        raise ValueError("El payload debe ser un objeto JSON.")
+
+    return RoutingInput(
+        province=PROVINCIAS.resolve(
+            _first(payload, ["province", "provincia", "ProvinciaDeContacto"]),
+            "province",
+        ),
+        employment_status=SITUACIONES_LABORALES.resolve(
+            _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]),
+            "employment_status",
         ),
     )
 
