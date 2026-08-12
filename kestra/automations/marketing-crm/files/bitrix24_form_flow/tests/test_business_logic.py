@@ -32,6 +32,7 @@ from bitrix24_form_flow.form_processor.catamarca_deal_qualification import (
     _is_within_business_hours,
     qualify_catamarca_deal,
     select_next_pending_catamarca_deal,
+    technical_deal_trace,
 )
 from bitrix24_form_flow.form_processor.commercial_prequalification import (
     RULE_VERSION,
@@ -3556,6 +3557,14 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "approved")
         self.assertEqual(result["reason"], "amejuca_premium")
+        self.assertEqual(result["trace_schema_version"], "deal-commercial-trace.v1")
+        self.assertEqual(result["event_type"], "deal_commercial_decision")
+        self.assertEqual(result["business_decision"], "Asignado a la línea AMEJUCA Premium")
+        self.assertEqual(
+            result["business_reason"],
+            "Cumple las condiciones BCRA de AMEJUCA Premium.",
+        )
+        self.assertEqual(result["source"], "Google")
         self.assertEqual(client.deals[930]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[930]["assignedById"], 68579)
         self.assertEqual(client.deals[930]["ufCrmRouteBucket"], "catamarca_general")
@@ -3612,10 +3621,66 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["assigned_by_id"], 57)
         self.assertEqual(result["assignment_strategy"], "outside_hours_manual")
         self.assertFalse(result["within_business_hours"])
+        self.assertEqual(result["province"], "Catamarca")
+        self.assertEqual(result["employment_status"], "Docente")
+        self.assertEqual(result["payment_bank"], "BANCO DE LA NACION ARGENTINA")
+        self.assertEqual(result["source"], "Google")
+        self.assertEqual(result["business_decision"], "Enviado a revisión manual con Maru")
+        self.assertEqual(
+            result["business_reason"],
+            "La negociación ingresó fuera del horario de distribución automática.",
+        )
         self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[939]["assignedById"], 57)
         self.assertEqual(client.chat_transfers, [])
         self.assertFalse(any(method == "user.get" for method, _ in client.calls))
+
+    def test_technical_trace_hydrates_business_context_without_mutating_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[938] = self._catamarca_enriched_lead(938, bcra_entities=[])
+        client.deals[939] = self._pending_deal(939, 938)
+
+        result = technical_deal_trace(
+            939,
+            RuntimeError("Falla simulada"),
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "error")
+        self.assertEqual(result["business_decision"], "Procesamiento incompleto")
+        self.assertEqual(result["deal_id"], 939)
+        self.assertEqual(result["lead_id"], 938)
+        self.assertEqual(result["province"], "Catamarca")
+        self.assertEqual(result["employment_status"], "Docente")
+        self.assertEqual(result["payment_bank"], "BANCO DE LA NACION ARGENTINA")
+        self.assertEqual(result["source"], "Google")
+        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_PENDING")
+        self.assertFalse(any(method == "crm.item.update" for method, _ in client.calls))
+
+    def test_trace_hydration_does_not_block_outside_hours_manual_assignment(self) -> None:
+        client = FakeBitrixClient()
+        client.deals[939] = self._pending_deal(939, 999999)
+        gated_env = {
+            **self.env,
+            "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY": "true",
+        }
+
+        result = qualify_catamarca_deal(
+            939,
+            env=gated_env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-08T12:00:00-03:00"),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "outside_business_hours")
+        self.assertEqual(result["province"], "")
+        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[939]["assignedById"], 57)
 
     def test_catamarca_distribution_window_uses_weekdays_from_nine_to_seventeen(
         self,
