@@ -163,6 +163,12 @@ def qualify_catamarca_deal(
         )
 
     if _business_hours_gate_enabled(source) and not within_business_hours:
+        _assign_lead_responsible(
+            client,
+            lead_id=lead_id,
+            assigned_by_id=config.deal.provisional_user_id,
+            logger=active_logger,
+        )
         client.call(
             "crm.item.update",
             {
@@ -281,6 +287,12 @@ def qualify_catamarca_deal(
     }
     decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
     if decision.action == "commercial_rejected":
+        _assign_lead_responsible(
+            client,
+            lead_id=lead_id,
+            assigned_by_id=config.deal.provisional_user_id,
+            logger=active_logger,
+        )
         client.call(
             "crm.item.update",
             {
@@ -336,6 +348,12 @@ def qualify_catamarca_deal(
         }
         if decision.commercial_line is not None:
             update_fields[config.deal.commercial_line_field] = decision.commercial_line
+        _assign_lead_responsible(
+            client,
+            lead_id=lead_id,
+            assigned_by_id=config.deal.provisional_user_id,
+            logger=active_logger,
+        )
         client.call(
             "crm.item.update",
             {
@@ -392,6 +410,12 @@ def qualify_catamarca_deal(
     if decision.commercial_line is not None:
         update_fields[config.deal.commercial_line_field] = decision.commercial_line
 
+    _assign_lead_responsible(
+        client,
+        lead_id=lead_id,
+        assigned_by_id=assigned_by_id,
+        logger=active_logger,
+    )
     client.call(
         "crm.item.update",
         {
@@ -459,6 +483,26 @@ def qualify_catamarca_deal(
         transferred_chat_count=transferred_chat_count,
         message="Clasificación comercial aplicada a la negociación.",
         **bcra_trace,
+    )
+
+
+def _assign_lead_responsible(
+    client: Any,
+    *,
+    lead_id: int,
+    assigned_by_id: int,
+    logger: Logger,
+) -> None:
+    client.call(
+        "crm.lead.update",
+        {
+            "id": lead_id,
+            "fields": {"ASSIGNED_BY_ID": assigned_by_id},
+        },
+    )
+    logger.info(
+        f"Prospecto {lead_id} sincronizado con responsable {assigned_by_id} "
+        "de la negociacion."
     )
 
 
