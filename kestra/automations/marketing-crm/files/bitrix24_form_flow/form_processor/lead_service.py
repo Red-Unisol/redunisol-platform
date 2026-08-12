@@ -9,8 +9,10 @@ from .config import AppConfig
 from .input_parser import (
     NormalizedInput,
     PrequalificationInput,
+    RoutingInput,
     normalize_business_input,
     normalize_prequalification_input,
+    normalize_routing_input,
 )
 from .logger import Logger
 from .normalization import normalize_birthdate
@@ -187,6 +189,20 @@ def build_prequalification_input_from_lead(
         "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
     }
     return normalize_prequalification_input(payload)
+
+
+def build_routing_input_from_lead(
+    lead: dict[str, Any],
+    config: AppConfig,
+) -> RoutingInput:
+    payload = {
+        "province": _required_lead_value(lead, config.fields.lead_province),
+        "employment_status": _required_lead_value(
+            lead,
+            config.fields.lead_employment_status,
+        ),
+    }
+    return normalize_routing_input(payload)
 
 
 def update_lead_status(

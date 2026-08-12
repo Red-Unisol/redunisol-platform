@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import AppConfig
-from .lead_service import build_submission_from_lead
+from .lead_service import build_routing_input_from_lead
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ def resolve_routing_bucket(
     lead: dict[str, Any],
 ) -> RoutingResolution:
     try:
-        submission = build_submission_from_lead(lead, config)
+        submission = build_routing_input_from_lead(lead, config)
     except ValueError:
         return RoutingResolution(
             bucket=None,
