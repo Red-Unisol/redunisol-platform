@@ -3094,6 +3094,35 @@ class BusinessLogicTests(unittest.TestCase):
             client.calls[0][1]["filter"][">=DATE_CREATE"],
             "2026-07-21T00:00:00-03:00",
         )
+        self.assertEqual(
+            client.calls[0][1]["order"],
+            {"UF_CRM_KSTRA_BF_ATTEMPTS": "ASC", "ID": "ASC"},
+        )
+
+    def test_prefill_missing_cuil_advances_immediately_without_retry(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[802] = {
+            "ID": "802",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "",
+            "UF_CRM_KSTRA_BF_ATTEMPTS": 0,
+        }
+
+        result = prefill_lead(
+            802,
+            arca_output={"ok": False, "error": "not_executed"},
+            credixsa_output={"ok": False, "error": "not_executed"},
+            max_attempts=3,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "advanced_partial")
+        self.assertEqual(result["errors"], ["missing_cuil"])
+        self.assertEqual(result["attempts"], 0)
+        self.assertEqual(client.leads[802]["STATUS_ID"], "NEW")
+        self.assertEqual(client.leads[802]["UF_CRM_KSTRA_BF_ATTEMPTS"], 0)
 
     def test_prefill_advances_complete_lead_to_preclassification(self) -> None:
         client = FakeBitrixClient()
@@ -3267,6 +3296,51 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(partial_result["action"], "advanced_partial")
         self.assertEqual(client.leads[804]["STATUS_ID"], "NEW")
         self.assertEqual(client.leads[804]["UF_CRM_KSTRA_BF_ATTEMPTS"], 3)
+
+    def test_prefill_counter_failure_advances_instead_of_blocking_queue(self) -> None:
+        class NonPersistingCounterClient(FakeBitrixClient):
+            def call(self, method: str, payload: dict):
+                if method == "crm.lead.update" and set(payload["fields"]) == {
+                    "UF_CRM_KSTRA_BF_ATTEMPTS"
+                }:
+                    self.calls.append((method, payload))
+                    return True
+                return super().call(method, payload)
+
+        client = NonPersistingCounterClient()
+        client.leads[805] = {
+            "ID": "805",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "20555555556",
+            "UF_CRM_KSTRA_BF_ATTEMPTS": 0,
+        }
+        temporary_bcra = FakeBcraClient(
+            {
+                "20555555556": self.make_bcra_result(
+                    identification="20555555556",
+                    status_field_value=None,
+                    should_reject=False,
+                    outcome="temporary_error",
+                    http_status=503,
+                )
+            }
+        )
+
+        result = prefill_lead(
+            805,
+            arca_output={"ok": False, "error": "timeout"},
+            credixsa_output={"ok": False, "status": "error", "error": "timeout"},
+            max_attempts=3,
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=temporary_bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "advanced_partial")
+        self.assertIn("attempt_counter_not_persisted", result["errors"])
+        self.assertEqual(client.leads[805]["STATUS_ID"], "NEW")
+        self.assertEqual(client.leads[805]["UF_CRM_KSTRA_BF_ATTEMPTS"], 0)
 
     def test_prefill_counts_provider_exceptions_and_advances_on_last_attempt(self) -> None:
         client = FakeBitrixClient()
