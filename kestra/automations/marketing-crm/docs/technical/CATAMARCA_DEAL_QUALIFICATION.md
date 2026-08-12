@@ -86,8 +86,9 @@ Para una negociacion con bucket:
 
 ## Distribucion Fuera De Horario
 
-La distribucion automatica funciona de lunes a viernes entre las 09:00 inclusive y
-las 17:00 exclusive, usando `America/Argentina/Cordoba`.
+La distribucion automatica funciona de forma continua desde el lunes a las 00:00
+inclusive hasta el viernes a las 17:00 exclusive, usando
+`America/Argentina/Cordoba`.
 
 Si una negociacion pendiente se procesa fuera de esa ventana:
 
