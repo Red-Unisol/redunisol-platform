@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 import json
@@ -8,6 +9,7 @@ import unicodedata
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
 from .commercial_trace import (
@@ -16,6 +18,7 @@ from .commercial_trace import (
     business_reason,
 )
 from .deal_service import (
+    DEAL_DIRECT_FIELD_MAPPINGS,
     DEAL_ENTITY_TYPE_ID,
     NoOnlineSellersError,
     assign_open_line_chats_to_user,
@@ -42,13 +45,25 @@ class CatamarcaDecision:
     commercial_line: str | None = None
 
 
+@dataclass(frozen=True)
+class BcraSnapshotResolution:
+    lead: dict[str, Any]
+    decision_override: CatamarcaDecision | None
+    checked_at: str
+    age_days: float | None
+    refreshed: bool
+    refresh_outcome: str
+
+
 BUSINESS_HOURS_ONLY_ENV = "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY"
 BUSINESS_HOURS_TIMEZONE_ENV = "BITRIX24_DISTRIBUTION_TIMEZONE"
 BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-11"
+COMMERCIAL_RULE_VERSION = "2026-08-12"
+BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
+BCRA_MAX_AGE_DAYS_DEFAULT = 7
 
 
 def select_next_pending_catamarca_deal(
@@ -103,6 +118,7 @@ def qualify_catamarca_deal(
     *,
     env: dict[str, str] | None = None,
     bitrix_client: Any | None = None,
+    bcra_client: Any | None = None,
     logger: Logger | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
@@ -245,7 +261,25 @@ def qualify_catamarca_deal(
         )
 
     bucket = routing.bucket
-    decision = _evaluate_deal(client, config, lead)
+    bcra_resolution = _resolve_bcra_snapshot(
+        client,
+        config,
+        lead,
+        lead_id=lead_id,
+        deal_id=deal_id_int,
+        source=source,
+        processed_at=processed_at,
+        logger=active_logger,
+        bcra_client=bcra_client,
+    )
+    lead = bcra_resolution.lead
+    bcra_trace = {
+        "bcra_snapshot_checked_at": bcra_resolution.checked_at,
+        "bcra_snapshot_age_days": bcra_resolution.age_days,
+        "bcra_snapshot_refreshed": bcra_resolution.refreshed,
+        "bcra_refresh_outcome": bcra_resolution.refresh_outcome,
+    }
+    decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
     if decision.action == "commercial_rejected":
         client.call(
             "crm.item.update",
@@ -280,6 +314,7 @@ def qualify_catamarca_deal(
             within_business_hours=within_business_hours,
             assignment_strategy="commercial_rejection_manual",
             message="Rechazo comercial aplicado sin distribución automática.",
+            **bcra_trace,
         )
     try:
         assignment = resolve_round_robin_assignee(
@@ -341,6 +376,7 @@ def qualify_catamarca_deal(
                 "No habia vendedores online disponibles; la negociacion queda "
                 "asignada a Maru para gestion manual."
             ),
+            **bcra_trace,
         )
     assigned_by_id = assignment.assigned_by_id
     assigned_by_name = user_display_name(
@@ -422,7 +458,186 @@ def qualify_catamarca_deal(
         linked_activity_count=linked_activity_count,
         transferred_chat_count=transferred_chat_count,
         message="Clasificación comercial aplicada a la negociación.",
+        **bcra_trace,
     )
+
+
+def _resolve_bcra_snapshot(
+    client: Any,
+    config: AppConfig,
+    lead: dict[str, Any],
+    *,
+    lead_id: int,
+    deal_id: int,
+    source: Mapping[str, str],
+    processed_at: datetime,
+    logger: Logger,
+    bcra_client: Any | None,
+) -> BcraSnapshotResolution:
+    checked_at = _lead_bcra_checked_at(lead, config)
+    parsed_checked_at = _parse_snapshot_datetime(checked_at, processed_at)
+    age_days = _snapshot_age_days(parsed_checked_at, processed_at)
+    max_age_days = _bcra_max_age_days(source)
+
+    if age_days is not None and age_days < max_age_days:
+        logger.info(
+            f"Snapshot BCRA del lead {lead_id} vigente: "
+            f"antiguedad={age_days:.3f} dias."
+        )
+        return BcraSnapshotResolution(
+            lead=lead,
+            decision_override=None,
+            checked_at=checked_at,
+            age_days=age_days,
+            refreshed=False,
+            refresh_outcome="reused_fresh",
+        )
+
+    identification = str(lead.get(config.fields.lead_cuil) or "").strip()
+    if not identification:
+        logger.error(
+            f"No se puede refrescar BCRA para el lead {lead_id}: falta CUIL."
+        )
+        return BcraSnapshotResolution(
+            lead=lead,
+            decision_override=_manual(config, "bcra_refresh_missing_cuil"),
+            checked_at=checked_at,
+            age_days=age_days,
+            refreshed=False,
+            refresh_outcome="missing_cuil",
+        )
+
+    logger.info(
+        f"Refrescando snapshot BCRA del lead {lead_id}: "
+        f"antiguedad={age_days if age_days is not None else 'desconocida'} dias."
+    )
+    try:
+        result = sync_lead_bcra(
+            client,
+            config,
+            lead_id,
+            identification,
+            logger,
+            bcra_client=bcra_client,
+        )
+    except Exception as exc:
+        logger.error(f"No se pudo refrescar BCRA para el lead {lead_id}: {exc}")
+        return BcraSnapshotResolution(
+            lead=lead,
+            decision_override=_manual(config, "bcra_refresh_failed"),
+            checked_at=checked_at,
+            age_days=age_days,
+            refreshed=False,
+            refresh_outcome="error",
+        )
+
+    if not result.is_persistable:
+        logger.error(
+            f"BCRA no produjo un snapshot persistible para el lead {lead_id}: "
+            f"outcome={result.outcome}."
+        )
+        return BcraSnapshotResolution(
+            lead=lead,
+            decision_override=_manual(config, "bcra_refresh_failed"),
+            checked_at=checked_at,
+            age_days=age_days,
+            refreshed=False,
+            refresh_outcome=result.outcome or "not_persistable",
+        )
+
+    refreshed_lead = get_lead(client, lead_id, logger)
+    _persist_deal_bcra_snapshot(client, config, deal_id, refreshed_lead, logger)
+    refreshed_checked_at = _lead_bcra_checked_at(refreshed_lead, config) or result.checked_at
+    refreshed_datetime = _parse_snapshot_datetime(refreshed_checked_at, processed_at)
+    refreshed_age_days = _snapshot_age_days(refreshed_datetime, processed_at)
+    logger.info(
+        f"Snapshot BCRA del lead {lead_id} actualizado para clasificacion: "
+        f"outcome={result.outcome}."
+    )
+    return BcraSnapshotResolution(
+        lead=refreshed_lead,
+        decision_override=None,
+        checked_at=refreshed_checked_at,
+        age_days=refreshed_age_days,
+        refreshed=True,
+        refresh_outcome=result.outcome or "refreshed",
+    )
+
+
+def _lead_bcra_checked_at(lead: dict[str, Any], config: AppConfig) -> str:
+    checked_at_field = config.fields.lead_bcra_checked_at
+    if checked_at_field:
+        checked_at = str(lead.get(checked_at_field) or "").strip()
+        if checked_at:
+            return checked_at
+
+    raw_field = config.fields.lead_bcra_data_raw
+    raw_value = lead.get(raw_field) if raw_field else None
+    try:
+        payload = json.loads(str(raw_value or ""))
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("queried_at") or "").strip()
+
+
+def _parse_snapshot_datetime(value: str, reference: datetime) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=reference.tzinfo)
+    return parsed.astimezone(reference.tzinfo)
+
+
+def _snapshot_age_days(checked_at: datetime | None, reference: datetime) -> float | None:
+    if checked_at is None:
+        return None
+    return max(0.0, (reference - checked_at).total_seconds() / 86_400)
+
+
+def _bcra_max_age_days(source: Mapping[str, str]) -> int:
+    raw_value = str(source.get(BCRA_MAX_AGE_DAYS_ENV) or BCRA_MAX_AGE_DAYS_DEFAULT).strip()
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{BCRA_MAX_AGE_DAYS_ENV} debe ser un entero.") from exc
+    if value <= 0:
+        raise ValueError(f"{BCRA_MAX_AGE_DAYS_ENV} debe ser mayor a cero.")
+    return value
+
+
+def _persist_deal_bcra_snapshot(
+    client: Any,
+    config: AppConfig,
+    deal_id: int,
+    lead: dict[str, Any],
+    logger: Logger,
+) -> None:
+    fields: dict[str, Any] = {}
+    for lead_field, deal_field in (
+        (config.fields.lead_bcra_status, DEAL_DIRECT_FIELD_MAPPINGS["bcra_status"]),
+        (config.fields.lead_bcra_result, DEAL_DIRECT_FIELD_MAPPINGS["bcra_result"]),
+        (config.fields.lead_bcra_data_raw, DEAL_DIRECT_FIELD_MAPPINGS["bcra_data_raw"]),
+        (config.fields.lead_bcra_checked_at, DEAL_DIRECT_FIELD_MAPPINGS["bcra_checked_at"]),
+    ):
+        if lead_field and lead.get(lead_field) is not None:
+            fields[deal_field] = lead.get(lead_field)
+    if not fields:
+        return
+    client.call(
+        "crm.item.update",
+        {
+            "entityTypeId": DEAL_ENTITY_TYPE_ID,
+            "id": deal_id,
+            "fields": fields,
+        },
+    )
+    logger.info(f"Snapshot BCRA actualizado en la negociacion {deal_id}.")
 
 
 def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> CatamarcaDecision:
@@ -1025,6 +1240,10 @@ def _result(
     online_pool: tuple[int, ...] = (),
     linked_activity_count: int = 0,
     transferred_chat_count: int = 0,
+    bcra_snapshot_checked_at: str = "",
+    bcra_snapshot_age_days: float | None = None,
+    bcra_snapshot_refreshed: bool = False,
+    bcra_refresh_outcome: str = "not_evaluated",
     source: str = "",
     ok: bool = True,
 ) -> dict[str, object]:
@@ -1062,5 +1281,13 @@ def _result(
         "online_pool": ",".join(str(user_id) for user_id in online_pool),
         "linked_activity_count": linked_activity_count,
         "transferred_chat_count": transferred_chat_count,
+        "bcra_snapshot_checked_at": bcra_snapshot_checked_at,
+        "bcra_snapshot_age_days": (
+            round(bcra_snapshot_age_days, 3)
+            if bcra_snapshot_age_days is not None
+            else ""
+        ),
+        "bcra_snapshot_refreshed": bcra_snapshot_refreshed,
+        "bcra_refresh_outcome": bcra_refresh_outcome,
         "rule_version": COMMERCIAL_RULE_VERSION,
     }

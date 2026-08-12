@@ -55,6 +55,7 @@ tasks:
       BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
       BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_DEAL_BCRA_MAX_AGE_DAYS: "{{ envs.bitrix24_deal_bcra_max_age_days ?? '7' }}"
       BITRIX24_DEAL_CORDOBA_PUBLICO_POLICIA_USER_IDS: "{{ envs.bitrix24_deal_cordoba_publico_policia_user_ids ?? '74365' }}"
       BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS: "{{ envs.bitrix24_deal_cordoba_jubilados_user_ids ?? '10451,71159,68579,90231,29,110059' }}"
       BITRIX24_DEAL_CORDOBA_UNC_USER_IDS: "{{ envs.bitrix24_deal_cordoba_unc_user_ids ?? '53121' }}"
@@ -177,6 +178,18 @@ outputs:
   - id: rule_version
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.rule_version : '' }}"
+  - id: bcra_snapshot_checked_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_snapshot_checked_at : '' }}"
+  - id: bcra_snapshot_age_days
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_snapshot_age_days : '' }}"
+  - id: bcra_snapshot_refreshed
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_snapshot_refreshed : false }}"
+  - id: bcra_refresh_outcome
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_refresh_outcome : 'not_evaluated' }}"
   - id: message
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.message : outputs.seleccionar_negociacion.vars.message }}"
