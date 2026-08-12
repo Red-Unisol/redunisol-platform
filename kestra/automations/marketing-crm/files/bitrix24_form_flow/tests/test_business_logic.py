@@ -3631,6 +3631,8 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "approved")
         self.assertEqual(result["reason"], "amejuca_premium")
+        self.assertFalse(result["bcra_snapshot_refreshed"])
+        self.assertEqual(result["bcra_refresh_outcome"], "reused_fresh")
         self.assertEqual(result["trace_schema_version"], "deal-commercial-trace.v1")
         self.assertEqual(result["event_type"], "deal_commercial_decision")
         self.assertEqual(result["business_decision"], "Asignado a la línea AMEJUCA Premium")
@@ -3660,6 +3662,89 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual(bucket_query["filter"]["=ufCrmRouteBucket"], "catamarca_general")
         self.assertEqual(bucket_query["start"], 0)
+
+    def test_stale_bcra_snapshot_is_refreshed_before_deal_classification(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[948] = self._catamarca_enriched_lead(
+            948,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 4}
+            ],
+        )
+        client.leads[948]["UF_CRM_BCRA_CHECKED_AT"] = "2026-06-04T17:27:33-03:00"
+        client.deals[948] = self._pending_deal(948, 948)
+        refreshed = self._deal_bcra_result(
+            identification="27555555556",
+            checked_at="2026-08-12T11:00:00-03:00",
+            entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 1}
+            ],
+        )
+        bcra_client = FakeBcraClient({"27555555556": refreshed})
+
+        result = qualify_catamarca_deal(
+            948,
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra_client,
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-12T11:30:00-03:00"),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "amejuca_premium")
+        self.assertTrue(result["bcra_snapshot_refreshed"])
+        self.assertEqual(result["bcra_refresh_outcome"], "ok")
+        self.assertEqual(result["bcra_snapshot_checked_at"], refreshed.checked_at)
+        self.assertEqual(bcra_client.calls, ["27555555556"])
+        self.assertEqual(
+            client.leads[948]["UF_CRM_BCRA_CHECKED_AT"],
+            refreshed.checked_at,
+        )
+        self.assertEqual(
+            client.deals[948]["ufCrm_69E0D5067FD95"],
+            refreshed.checked_at,
+        )
+
+    def test_failed_bcra_refresh_uses_manual_review_instead_of_stale_rejection(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[949] = self._catamarca_enriched_lead(
+            949,
+            bcra_entities=[
+                {"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 4}
+            ],
+        )
+        client.leads[949]["UF_CRM_BCRA_CHECKED_AT"] = "2026-06-04T17:27:33-03:00"
+        client.deals[949] = self._pending_deal(949, 949)
+        temporary_error = BcraConsultationResult(
+            outcome="temporary_error",
+            checked_at="2026-08-12T11:00:00-03:00",
+            identification="27555555556",
+            http_status=None,
+            formatted_field_value=None,
+            summary_field_value=None,
+            raw_field_value=None,
+            should_reject=False,
+            negative_entity_count=0,
+            negative_entities=(),
+            message="BCRA no disponible",
+        )
+
+        result = qualify_catamarca_deal(
+            949,
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=FakeBcraClient({"27555555556": temporary_error}),
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-12T11:30:00-03:00"),
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "bcra_refresh_failed")
+        self.assertEqual(result["bcra_refresh_outcome"], "temporary_error")
+        self.assertFalse(result["bcra_snapshot_refreshed"])
+        self.assertEqual(client.deals[949]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertNotEqual(client.deals[949]["stageId"], "C1:5")
 
     def test_catamarca_outside_business_hours_stays_with_maru_for_manual_distribution(
         self,
@@ -3929,7 +4014,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["previous_assigned_by_id"], 57)
         self.assertEqual(result["lead_id"], 920)
         self.assertEqual(result["contact_id"], 101)
-        self.assertEqual(result["rule_version"], "2026-08-11")
+        self.assertEqual(result["rule_version"], "2026-08-12")
         self.assertTrue(result["processed_at"])
         chat_queries = [
             payload
@@ -4478,6 +4563,7 @@ class BusinessLogicTests(unittest.TestCase):
         *,
         bcra_entities: list[dict],
     ) -> dict:
+        checked_at = datetime.now(timezone.utc).isoformat()
         return {
             "ID": str(lead_id),
             "CONTACT_ID": "101",
@@ -4498,6 +4584,7 @@ class BusinessLogicTests(unittest.TestCase):
             "UF_CRM_BCRA_DATA_RAW": json.dumps(
                 {
                     "outcome": "ok",
+                    "queried_at": checked_at,
                     "payload": {
                         "results": {
                             "periodos": [
@@ -4507,7 +4594,42 @@ class BusinessLogicTests(unittest.TestCase):
                     },
                 }
             ),
+            "UF_CRM_BCRA_CHECKED_AT": checked_at,
         }
+
+    def _deal_bcra_result(
+        self,
+        *,
+        identification: str,
+        checked_at: str,
+        entities: list[dict],
+    ) -> BcraConsultationResult:
+        raw = json.dumps(
+            {
+                "source": "bcra_central_deudores_v1",
+                "queried_at": checked_at,
+                "outcome": "ok",
+                "payload": {
+                    "results": {
+                        "periodos": [
+                            {"periodo": "202607", "entidades": entities}
+                        ]
+                    }
+                },
+            }
+        )
+        return BcraConsultationResult(
+            outcome="ok",
+            checked_at=checked_at,
+            identification=identification,
+            http_status=200,
+            formatted_field_value="Consulta BCRA actualizada",
+            summary_field_value="Estado: OK",
+            raw_field_value=raw,
+            should_reject=False,
+            negative_entity_count=0,
+            negative_entities=(),
+        )
 
 
 if __name__ == "__main__":

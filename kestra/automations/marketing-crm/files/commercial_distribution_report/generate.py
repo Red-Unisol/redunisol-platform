@@ -118,6 +118,8 @@ REASON_LABELS = {
     "missing_vimarx_credit_data": "Faltan datos de préstamos de Vimarx para decidir automáticamente.",
     "missing_bcra_snapshot": "No hay información BCRA suficiente para decidir automáticamente.",
     "bcra_snapshot_not_conclusive": "La consulta BCRA no produjo información concluyente.",
+    "bcra_refresh_missing_cuil": "No se pudo actualizar BCRA porque falta el CUIL.",
+    "bcra_refresh_failed": "No fue posible actualizar BCRA; el dato anterior no se utilizó.",
     "payment_bank_not_identifiable": "No se pudo identificar el banco de cobro dentro de la información BCRA.",
     "missing_recurrent_membership_data": "Es socio, pero falta información para evaluar la renovación automáticamente.",
     "missing_membership_data": "No se pudo confirmar si es socio nuevo o recurrente.",
@@ -331,6 +333,14 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         "within_business_hours": parse_bool(outputs.get("within_business_hours")),
         "linked_activity_count": parse_int(outputs.get("linked_activity_count")),
         "transferred_chat_count": parse_int(outputs.get("transferred_chat_count")),
+        "bcra_snapshot_checked_at": parse_datetime(
+            outputs.get("bcra_snapshot_checked_at")
+        ),
+        "bcra_snapshot_age_days": outputs.get("bcra_snapshot_age_days", ""),
+        "bcra_snapshot_refreshed": parse_bool(
+            outputs.get("bcra_snapshot_refreshed")
+        ),
+        "bcra_refresh_outcome": str(outputs.get("bcra_refresh_outcome") or ""),
     }
 
 
@@ -577,6 +587,7 @@ def build(
     business_headers = [
         "Fecha y hora", "Decisión tomada", "Razón de la decisión", "Negociación",
         "Cliente", "Provincia", "Situación laboral", "Banco de cobro",
+        "Estado de consulta BCRA", "Fecha de consulta BCRA", "Antigüedad BCRA (días)",
         "Línea comercial", "Grupo de distribución", "Responsable", "Responsable anterior",
         "Resultado de distribución", "Motivo de asignación", "Etapa anterior",
         "Etapa resultante", "Chat transferido", "Versión de reglas",
@@ -584,7 +595,8 @@ def build(
     ]
     business_keys = [
         "processed_at", "business_decision", "business_reason", "deal_id", "deal_title",
-        "province", "employment_status", "payment_bank", "commercial_line",
+        "province", "employment_status", "payment_bank", "bcra_refresh_display",
+        "bcra_snapshot_checked_at", "bcra_snapshot_age_days", "commercial_line",
         "routing_bucket", "assigned_by", "previous_assigned_by", "distribution_status",
         "assignment_reason", "stage_before_display", "stage_after_display",
         "chat_transferred_display", "rule_version", "revision",
@@ -593,6 +605,7 @@ def build(
         "Fecha y hora", "Estado de distribución", "Acción técnica", "Código de motivo",
         "Versión de reglas", "Revisión del flujo Kestra", "Negociación", "Título",
         "Lead", "Contacto", "Provincia", "Situación laboral", "Banco de cobro",
+        "Estado de consulta BCRA", "Fecha de consulta BCRA", "Antigüedad BCRA (días)",
         "Etapa anterior", "Etapa resultante", "Línea comercial", "Grupo de distribución",
         "Responsable anterior", "Responsable", "Motivo de asignación", "Estrategia técnica",
         "Pool configurado", "Pool online", "Dentro del horario laboral",
@@ -603,7 +616,8 @@ def build(
         "processed_at", "distribution_status", "action", "reason", "rule_version",
         "revision", "deal_id", "deal_title", "lead_id", "contact_id", "province",
         "employment_status",
-        "payment_bank", "stage_before", "stage_after", "commercial_line",
+        "payment_bank", "bcra_refresh_display", "bcra_snapshot_checked_at",
+        "bcra_snapshot_age_days", "stage_before", "stage_after", "commercial_line",
         "routing_bucket", "previous_assigned_by", "assigned_by", "assignment_reason",
         "assignment_strategy", "configured_pool_display", "online_pool_display",
         "within_business_hours", "transferred_chat_count", "linked_activity_count",
@@ -614,6 +628,17 @@ def build(
         item["chat_transferred_display"] = (
             "Sí" if item["transferred_chat_count"] > 0 else "No"
         )
+        item["bcra_refresh_display"] = {
+            "reused_fresh": "Consulta vigente reutilizada",
+            "ok": "Consulta actualizada",
+            "not_found": "Consulta actualizada sin datos",
+            "invalid_identification": "Identificación inválida",
+            "missing_cuil": "No se pudo consultar: falta CUIL",
+            "temporary_error": "No se pudo actualizar",
+            "rate_limited": "No se pudo actualizar: límite del servicio",
+            "error": "No se pudo actualizar",
+            "not_evaluated": "No evaluada",
+        }.get(item["bcra_refresh_outcome"], item["bcra_refresh_outcome"] or "No evaluada")
 
     cases_sheet = wb.create_sheet("Casos")
     cases_sheet.append(business_headers)

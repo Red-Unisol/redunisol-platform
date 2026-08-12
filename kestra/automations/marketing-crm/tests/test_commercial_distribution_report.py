@@ -45,6 +45,10 @@ def execution(*, action="approved", strategy="round_robin", state="SUCCESS"):
             "linked_activity_count": "1",
             "transferred_chat_count": "1",
             "rule_version": "2026-08-11",
+            "bcra_snapshot_checked_at": "2026-08-11T09:55:00-03:00",
+            "bcra_snapshot_age_days": "0.014",
+            "bcra_snapshot_refreshed": False,
+            "bcra_refresh_outcome": "reused_fresh",
         },
     }
 
@@ -86,6 +90,8 @@ class CommercialDistributionReportTests(unittest.TestCase):
             "Siguiente vendedor del round-robin",
         )
         self.assertEqual(row["transferred_chat_count"], 1)
+        self.assertFalse(row["bcra_snapshot_refreshed"])
+        self.assertEqual(row["bcra_refresh_outcome"], "reused_fresh")
 
     def test_adds_names_to_responsibles_and_pools_while_preserving_ids(self):
         row = REPORT.normalized(execution())

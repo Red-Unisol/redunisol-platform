@@ -44,6 +44,8 @@ REASON_LABELS = {
     "missing_vimarx_credit_data": "Faltan datos de préstamos de Vimarx para decidir automáticamente.",
     "missing_bcra_snapshot": "No hay información BCRA suficiente para decidir automáticamente.",
     "bcra_snapshot_not_conclusive": "La consulta BCRA no produjo información concluyente.",
+    "bcra_refresh_missing_cuil": "No se pudo actualizar BCRA porque falta el CUIL.",
+    "bcra_refresh_failed": "No fue posible actualizar BCRA; el dato anterior no se utilizó.",
     "payment_bank_not_identifiable": "No se pudo identificar el banco de cobro dentro de la información BCRA.",
     "missing_recurrent_membership_data": "Falta información para evaluar la renovación automáticamente.",
     "missing_membership_data": "No se pudo confirmar si es socio nuevo o recurrente.",
