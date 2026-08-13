@@ -103,7 +103,9 @@ vendedores online, queda con Maru en `COLA DE DISTRIBUCION KESTRA`.
 - el remanente no vuelve a entrar automaticamente el lunes.
 
 Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola.
-Los casos de revision comercial o de enrutamiento mantienen sus circuitos propios.
+Los rechazos se aplican directamente, sin buscar vendedor, asignar, transferir chat
+ni ingresar a la cola. Los casos de revision comercial o de enrutamiento mantienen
+sus circuitos propios.
 
 ## Seleccion Dentro De Un Pool
 

@@ -305,7 +305,7 @@ def qualify_catamarca_deal(
         "bcra_refresh_outcome": bcra_resolution.refresh_outcome,
     }
     decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
-    if decision.action == "commercial_rejected":
+    if decision.action in {"rejected", "commercial_rejected"}:
         _assign_lead_responsible(
             client,
             lead_id=lead_id,
@@ -321,6 +321,11 @@ def qualify_catamarca_deal(
                     "stageId": decision.stage_id,
                     "assignedById": config.deal.provisional_user_id,
                     config.deal.commercial_line_field: "",
+                    config.deal.routing_bucket_field: bucket.key,
+                    config.deal.queue_action_field: "",
+                    config.deal.queue_reason_field: "",
+                    config.deal.queue_target_stage_field: "",
+                    config.deal.queue_enqueued_at_field: "",
                 },
             },
         )
@@ -333,6 +338,7 @@ def qualify_catamarca_deal(
             reason=decision.reason,
             assigned_by_id=config.deal.provisional_user_id,
             assigned_by_name="Maru Lopez",
+            routing_bucket=bucket.key,
             processed_at=processed_at,
             contact_id=contact_id,
             deal_title=deal_title,
@@ -343,8 +349,8 @@ def qualify_catamarca_deal(
             payment_bank=payment_bank,
             source=source_label,
             within_business_hours=within_business_hours,
-            assignment_strategy="commercial_rejection_manual",
-            message="Rechazo comercial aplicado sin distribución automática.",
+            assignment_strategy="rejection_without_distribution",
+            message="Rechazo aplicado sin buscar vendedor ni distribuir el chat.",
             **bcra_trace,
         )
     try:

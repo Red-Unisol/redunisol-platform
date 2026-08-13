@@ -42,6 +42,7 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "assignment_queue_closed_manual": "Cierre semanal; gestión manual con Maru",
     "assignment_queue_error": "El reintento de la cola no pudo completarse",
     "commercial_rejection_manual": "Rechazo comercial; gestión manual con Maru",
+    "rejection_without_distribution": "Rechazo directo; no requiere vendedor",
     "no_matching_bucket": "No existe un bucket aplicable",
     "not_applicable": "La negociación ya no estaba pendiente",
     "technical_error": "La ejecución terminó con un error técnico",
@@ -276,6 +277,8 @@ def distribution_status(
         "assignment_queue_closed_manual",
     }:
         return "Gestión manual con Maru"
+    if strategy == "rejection_without_distribution":
+        return "Rechazado sin distribución"
     if strategy == "assignment_queue":
         return "En cola de distribución"
     if strategy == "no_matching_bucket" or action == "routing_review":

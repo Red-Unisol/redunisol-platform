@@ -106,6 +106,10 @@ la negociacion pasa a `C1:KESTRA_QUEUE`. El flow
 bucket de manera independiente. No vuelve a ejecutar la clasificacion comercial ni
 las consultas BCRA: usa la decision persistida al encolar.
 
+Las decisiones de rechazo BCRA o comercial no participan de la distribucion: Kestra
+aplica directamente la etapa correspondiente, conserva a Maru como responsable y no
+busca vendedor, no transfiere el chat y no las incorpora a la cola.
+
 Al cerrar la ventana semanal, el mismo flow mueve todo remanente a
 `C1:KESTRA_REVIEW` con Maru y lo retira definitivamente de la distribucion automatica.
 

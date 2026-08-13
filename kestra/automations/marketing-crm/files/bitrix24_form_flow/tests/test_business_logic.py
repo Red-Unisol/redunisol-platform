@@ -4308,7 +4308,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(client.chat_transfers, [])
 
-    def test_catamarca_hard_bcra_rejection_is_distributed(self) -> None:
+    def test_catamarca_hard_bcra_rejection_is_not_distributed(self) -> None:
         client = FakeBitrixClient()
         client.leads[922] = self._catamarca_enriched_lead(
             922,
@@ -4335,7 +4335,10 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "rejected")
         self.assertEqual(client.deals[932]["stageId"], "C1:5")
-        self.assertEqual(client.deals[932]["assignedById"], 68579)
+        self.assertEqual(result["assignment_strategy"], "rejection_without_distribution")
+        self.assertEqual(client.deals[932]["assignedById"], 57)
+        self.assertEqual(client.leads[922]["ASSIGNED_BY_ID"], 57)
+        self.assertEqual(client.chat_transfers, [])
 
     def test_catamarca_absent_banco_nacion_is_situation_zero(self) -> None:
         client = FakeBitrixClient()
@@ -4422,7 +4425,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "rejected")
         self.assertEqual(result["reason"], "payment_bank_situation_above_two")
         self.assertEqual(client.deals[936]["stageId"], "C1:5")
-        self.assertEqual(client.deals[936]["assignedById"], 68579)
+        self.assertEqual(client.deals[936]["assignedById"], 57)
 
     def test_catamarca_six_situation_two_entities_with_clean_bank_is_special(self) -> None:
         client = FakeBitrixClient()
@@ -4481,7 +4484,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "rejected")
         self.assertEqual(result["reason"], "payment_bank_situation_above_two")
         self.assertEqual(client.deals[937]["stageId"], "C1:5")
-        self.assertEqual(client.deals[937]["assignedById"], 68579)
+        self.assertEqual(client.deals[937]["assignedById"], 57)
 
     def test_catamarca_member_goes_to_manual_review(self) -> None:
         client = FakeBitrixClient()
@@ -4770,7 +4773,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "commercial_rejected")
         self.assertEqual(result["reason"], "caja_age_80_or_more")
         self.assertEqual(result["assigned_by_id"], 57)
-        self.assertEqual(result["routing_bucket"], "")
+        self.assertEqual(result["routing_bucket"], "cordoba_jubilados")
         self.assertEqual(client.leads[942]["ASSIGNED_BY_ID"], 57)
         self.assertEqual(client.chat_transfers, [])
 
@@ -4815,6 +4818,41 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "rejected")
         self.assertEqual(result["reason"], "cbu_situation_above_one")
         self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(result["assignment_strategy"], "rejection_without_distribution")
+        self.assertEqual(client.deals[943]["stageId"], "C1:5")
+        self.assertEqual(client.deals[943]["assignedById"], 57)
+        self.assertEqual(client.leads[943]["ASSIGNED_BY_ID"], 57)
+        self.assertEqual(client.chat_transfers, [])
+
+    def test_cordoba_rejection_never_enters_queue_without_sellers(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids.clear()
+        client.leads[967] = self._cordoba_enriched_lead(
+            967,
+            employment_id="4069",
+            birthdate="1974-01-01",
+            bcra_entities=[
+                {"entidad": "BANCO DE LA PROVINCIA DE CORDOBA S.A.", "situacion": 1},
+                {"entidad": "OTRA ENTIDAD", "situacion": 3},
+            ],
+        )
+        client.deals[967] = self._pending_deal(967, 967)
+
+        result = qualify_catamarca_deal(
+            967,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-13T10:00:00-03:00"),
+        )
+
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "cbu_situation_above_one")
+        self.assertEqual(result["assignment_strategy"], "rejection_without_distribution")
+        self.assertEqual(client.deals[967]["stageId"], "C1:5")
+        self.assertEqual(client.deals[967]["assignedById"], 57)
+        self.assertEqual(client.deals[967]["ufCrmKqAction"], "")
+        self.assertEqual(client.chat_transfers, [])
 
     def test_cordoba_daspu_stays_manual_but_routes_to_gloria(self) -> None:
         client = FakeBitrixClient()

@@ -93,6 +93,18 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertFalse(row["bcra_snapshot_refreshed"])
         self.assertEqual(row["bcra_refresh_outcome"], "reused_fresh")
 
+    def test_marks_direct_rejection_as_not_distributed(self):
+        raw = execution(action="rejected", strategy="rejection_without_distribution")
+        raw["outputs"]["reason"] = "cbu_situation_above_one"
+
+        row = REPORT.normalized(raw)
+
+        self.assertEqual(row["distribution_status"], "Rechazado sin distribución")
+        self.assertEqual(
+            row["assignment_reason"],
+            "Rechazo directo; no requiere vendedor",
+        )
+
     def test_expands_queue_events_and_omits_repeated_waiting_attempts(self):
         waiting = dict(execution()["outputs"])
         waiting.update(
