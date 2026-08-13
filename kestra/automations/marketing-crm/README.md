@@ -13,6 +13,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_prequalification_cutover.yaml`: cutover manual, con dry-run, del ownership activo hacia Kestra.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: receptor de `ONCRMLEADUPDATE`; clasifica `PRECLASIFICACION (NEW)` y crea negociaciones desde `RESULTADO GANADO`.
 - `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca y Cordoba; conserva el ID historico.
+- `flows/bitrix24_deal_assignment_queue.yaml`: reintenta por bucket las negociaciones sin vendedor y cierra el remanente semanal con Maru.
 - `flows/commercial_distribution_report_daily.yaml`: genera el Excel diario auditable de clasificacion y distribucion visible en Filament.
 - `flows/bitrix24_bcra_backfill.yaml` y `flows/bitrix24_credixsa_employer_backfill.yaml`: schedulers legacy deshabilitados y reemplazados por el prefill unificado.
 - `flows/bitrix24_form_persistence.yaml`: persistencia legacy deshabilitada; ya no participa de la carga web.

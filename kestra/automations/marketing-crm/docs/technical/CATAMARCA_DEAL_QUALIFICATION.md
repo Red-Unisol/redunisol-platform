@@ -100,6 +100,19 @@ Si una negociacion pendiente se procesa fuera de esa ventana:
 
 La distribucion de esos casos queda a cargo de Maru de forma manual.
 
+Cuando el unico impedimento dentro de la ventana es la falta de vendedores online,
+la negociacion pasa a `C1:KESTRA_QUEUE`. El flow
+`bitrix24_deal_assignment_queue` procesa una vez por minuto el caso FIFO de cada
+bucket de manera independiente. No vuelve a ejecutar la clasificacion comercial ni
+las consultas BCRA: usa la decision persistida al encolar.
+
+Las decisiones de rechazo BCRA o comercial no participan de la distribucion: Kestra
+aplica directamente la etapa correspondiente, conserva a Maru como responsable y no
+busca vendedor, no transfiere el chat y no las incorpora a la cola.
+
+Al cerrar la ventana semanal, el mismo flow mueve todo remanente a
+`C1:KESTRA_REVIEW` con Maru y lo retira definitivamente de la distribucion automatica.
+
 ## Operacion
 
 El flow conserva el ID historico `bitrix24_catamarca_deal_qualification` para evitar

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import json
 import os
 import unicodedata
@@ -34,7 +34,7 @@ from .lead_service import (
     lead_enum_label,
 )
 from .logger import Logger, create_logger
-from .routing_bucket import resolve_routing_bucket
+from .routing_bucket import resolve_routing_bucket, routing_bucket_by_key
 
 
 @dataclass(frozen=True)
@@ -61,9 +61,16 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-12"
+COMMERCIAL_RULE_VERSION = "2026-08-13"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
+QUEUE_BUCKET_KEYS = (
+    "catamarca_general",
+    "cordoba_publico_policia",
+    "cordoba_jubilados",
+    "cordoba_unc",
+    "cordoba_general",
+)
 
 
 def select_next_pending_catamarca_deal(
@@ -138,6 +145,16 @@ def qualify_catamarca_deal(
         deal.get("assignedById") or deal.get("ASSIGNED_BY_ID")
     )
 
+
+    created_at = _parse_bitrix_datetime(
+        deal.get("createdTime") or deal.get("CREATED_TIME"),
+        source,
+    )
+    created_within_distribution_window = _is_within_business_hours(
+        source,
+        created_at or processed_at,
+    )
+
     if current_stage != config.deal.pending_qualification_stage_id:
         trace_context = _lead_trace_context(
             client, config, lead_id, active_logger
@@ -162,7 +179,9 @@ def qualify_catamarca_deal(
             **trace_context,
         )
 
-    if _business_hours_gate_enabled(source) and not within_business_hours:
+    if _business_hours_gate_enabled(source) and (
+        not within_business_hours or not created_within_distribution_window
+    ):
         _assign_lead_responsible(
             client,
             lead_id=lead_id,
@@ -286,7 +305,7 @@ def qualify_catamarca_deal(
         "bcra_refresh_outcome": bcra_resolution.refresh_outcome,
     }
     decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
-    if decision.action == "commercial_rejected":
+    if decision.action in {"rejected", "commercial_rejected"}:
         _assign_lead_responsible(
             client,
             lead_id=lead_id,
@@ -302,6 +321,11 @@ def qualify_catamarca_deal(
                     "stageId": decision.stage_id,
                     "assignedById": config.deal.provisional_user_id,
                     config.deal.commercial_line_field: "",
+                    config.deal.routing_bucket_field: bucket.key,
+                    config.deal.queue_action_field: "",
+                    config.deal.queue_reason_field: "",
+                    config.deal.queue_target_stage_field: "",
+                    config.deal.queue_enqueued_at_field: "",
                 },
             },
         )
@@ -314,6 +338,7 @@ def qualify_catamarca_deal(
             reason=decision.reason,
             assigned_by_id=config.deal.provisional_user_id,
             assigned_by_name="Maru Lopez",
+            routing_bucket=bucket.key,
             processed_at=processed_at,
             contact_id=contact_id,
             deal_title=deal_title,
@@ -324,8 +349,8 @@ def qualify_catamarca_deal(
             payment_bank=payment_bank,
             source=source_label,
             within_business_hours=within_business_hours,
-            assignment_strategy="commercial_rejection_manual",
-            message="Rechazo comercial aplicado sin distribución automática.",
+            assignment_strategy="rejection_without_distribution",
+            message="Rechazo aplicado sin buscar vendedor ni distribuir el chat.",
             **bcra_trace,
         )
     try:
@@ -341,11 +366,28 @@ def qualify_catamarca_deal(
             logger=active_logger,
         )
     except NoOnlineSellersError as exc:
+        can_enqueue = (
+            not _business_hours_gate_enabled(source)
+            or (within_business_hours and created_within_distribution_window)
+        )
         update_fields: dict[str, Any] = {
-            "stageId": config.deal.manual_review_stage_id,
+            "stageId": (
+                config.deal.assignment_queue_stage_id
+                if can_enqueue
+                else config.deal.manual_review_stage_id
+            ),
             "assignedById": config.deal.provisional_user_id,
             config.deal.routing_bucket_field: bucket.key,
         }
+        if can_enqueue:
+            update_fields.update(
+                {
+                    config.deal.queue_action_field: decision.action,
+                    config.deal.queue_reason_field: decision.reason,
+                    config.deal.queue_target_stage_field: decision.stage_id,
+                    config.deal.queue_enqueued_at_field: processed_at.isoformat(),
+                }
+            )
         if decision.commercial_line is not None:
             update_fields[config.deal.commercial_line_field] = decision.commercial_line
         _assign_lead_responsible(
@@ -362,17 +404,18 @@ def qualify_catamarca_deal(
                 "fields": update_fields,
             },
         )
-        active_logger.info(
-            f"Negociacion {deal_id_int} sin vendedores online en {bucket.key}: "
-            "queda asignada a Maru para gestion manual."
+        queue_stage = (
+            config.deal.assignment_queue_stage_id
+            if can_enqueue
+            else config.deal.manual_review_stage_id
         )
         return _result(
-            action="manual_review",
+            action="queued" if can_enqueue else "manual_review",
             has_pending=False,
             deal_id=deal_id_int,
             lead_id=lead_id,
-            stage_id=config.deal.manual_review_stage_id,
-            reason="no_online_sellers",
+            stage_id=queue_stage,
+            reason="assignment_queued" if can_enqueue else "no_online_sellers",
             assigned_by_id=config.deal.provisional_user_id,
             assigned_by_name="Maru Lopez",
             routing_bucket=bucket.key,
@@ -387,12 +430,15 @@ def qualify_catamarca_deal(
             payment_bank=payment_bank,
             source=source_label,
             within_business_hours=within_business_hours,
-            assignment_strategy="no_online_sellers_manual",
+            assignment_strategy=(
+                "assignment_queue" if can_enqueue else "no_online_sellers_manual"
+            ),
             configured_pool=exc.configured_pool,
             online_pool=(),
             message=(
-                "No habia vendedores online disponibles; la negociacion queda "
-                "asignada a Maru para gestion manual."
+                "No habia vendedores disponibles; la negociacion queda en cola temporal."
+                if can_enqueue
+                else "No habia vendedores disponibles; queda con Maru para gestion manual."
             ),
             **bcra_trace,
         )
@@ -485,6 +531,335 @@ def qualify_catamarca_deal(
         **bcra_trace,
     )
 
+
+def process_distribution_queue(
+    *,
+    env: dict[str, str] | None = None,
+    bitrix_client: Any | None = None,
+    logger: Logger | None = None,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Retry one oldest negotiation per bucket without cross-bucket blocking."""
+    active_logger = logger or create_logger()
+    config = load_config(env)
+    client = bitrix_client or BitrixClient(config, active_logger)
+    source = os.environ if env is None else env
+    processed_at = _local_datetime(source, now)
+    queued = _list_queued_deals(client, config)
+    events: list[dict[str, object]] = []
+
+    if not _is_within_business_hours(source, processed_at):
+        for deal in queued:
+            try:
+                events.append(
+                    _close_queued_deal(
+                        client, config, deal, active_logger, processed_at
+                    )
+                )
+            except Exception as exc:
+                active_logger.error(
+                    f"No se pudo cerrar la negociacion {_optional_int(deal.get('id'))}: {exc}"
+                )
+                events.append(
+                    _queue_error_result(config, deal, processed_at, exc)
+                )
+        return _queue_batch_result(events, processed_at)
+
+    current_week_start = (
+        processed_at - timedelta(days=processed_at.weekday())
+    ).replace(hour=0, minute=0, second=0, microsecond=0)
+    current: dict[str, list[dict[str, Any]]] = {
+        key: [] for key in QUEUE_BUCKET_KEYS
+    }
+    for deal in queued:
+        enqueued_at = _parse_bitrix_datetime(
+            deal.get(config.deal.queue_enqueued_at_field), source
+        )
+        bucket_key = str(deal.get(config.deal.routing_bucket_field) or "").strip()
+        if enqueued_at is None or enqueued_at < current_week_start or bucket_key not in current:
+            try:
+                events.append(
+                    _close_queued_deal(
+                        client, config, deal, active_logger, processed_at
+                    )
+                )
+            except Exception as exc:
+                active_logger.error(
+                    f"No se pudo retirar la negociacion {_optional_int(deal.get('id'))} "
+                    f"de la cola: {exc}"
+                )
+                events.append(
+                    _queue_error_result(config, deal, processed_at, exc)
+                )
+            continue
+        current[bucket_key].append(deal)
+
+    for bucket_key in QUEUE_BUCKET_KEYS:
+        bucket_deals = current[bucket_key]
+        if not bucket_deals:
+            continue
+        oldest = min(
+            bucket_deals,
+            key=lambda item: (
+                str(item.get("createdTime") or ""),
+                int(str(item.get("id") or "0")),
+            ),
+        )
+        try:
+            events.append(
+                _retry_queued_deal(
+                    client, config, oldest, active_logger, processed_at
+                )
+            )
+        except Exception as exc:
+            active_logger.error(
+                f"No se pudo procesar la cola {bucket_key}: {exc}"
+            )
+            events.append(
+                _queue_error_result(config, oldest, processed_at, exc)
+            )
+    return _queue_batch_result(events, processed_at)
+
+
+def _list_queued_deals(client: Any, config: AppConfig) -> list[dict[str, Any]]:
+    queued: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        response = client.call_full(
+            "crm.item.list",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "filter": {
+                    "=categoryId": config.deal.category_id,
+                    "=stageId": config.deal.assignment_queue_stage_id,
+                },
+                "order": {"createdTime": "ASC", "id": "ASC"},
+                "select": [
+                    "id", "leadId", "contactId", "title", "stageId",
+                    "assignedById", "createdTime",
+                    config.deal.routing_bucket_field,
+                    config.deal.commercial_line_field,
+                    config.deal.queue_action_field,
+                    config.deal.queue_reason_field,
+                    config.deal.queue_target_stage_field,
+                    config.deal.queue_enqueued_at_field,
+                ],
+                "start": start,
+            },
+        )
+        result = response.get("result")
+        items = result.get("items") if isinstance(result, dict) else result
+        if not isinstance(items, list):
+            raise RuntimeError("crm.item.list devolvio una cola invalida.")
+        queued.extend(items)
+        next_start = response.get("next")
+        if next_start is None and isinstance(result, dict):
+            next_start = result.get("next")
+        if next_start is None:
+            break
+        start = int(next_start)
+    return queued
+
+
+def _retry_queued_deal(
+    client: Any,
+    config: AppConfig,
+    deal: dict[str, Any],
+    logger: Logger,
+    processed_at: datetime,
+) -> dict[str, object]:
+    deal_id = _required_int(deal.get("id"), "id")
+    lead_id = _required_int(deal.get("leadId"), "leadId")
+    contact_id = _optional_int(deal.get("contactId"))
+    bucket_key = str(deal.get(config.deal.routing_bucket_field) or "").strip()
+    bucket = routing_bucket_by_key(config, bucket_key)
+    if bucket is None:
+        return _close_queued_deal(client, config, deal, logger, processed_at)
+
+    try:
+        assignment = resolve_round_robin_assignee(
+            client,
+            config,
+            contact_id=contact_id,
+            lead_id=lead_id,
+            bucket_key=bucket.key,
+            bucket_field=config.deal.routing_bucket_field,
+            pool=bucket.seller_ids,
+            legacy_province_label=bucket.legacy_province_label,
+            logger=logger,
+        )
+    except NoOnlineSellersError as exc:
+        return _queue_context_result(
+            client, config, deal, logger,
+            action="queue_waiting",
+            reason="assignment_queue_waiting",
+            processed_at=processed_at,
+            assignment_strategy="assignment_queue_waiting",
+            configured_pool=exc.configured_pool,
+            online_pool=(),
+            message="El bucket continúa sin vendedores disponibles.",
+        )
+
+    assigned_by_id = assignment.assigned_by_id
+    assigned_by_name = user_display_name(
+        client, assigned_by_id=assigned_by_id, logger=logger
+    )
+    target_stage = str(
+        deal.get(config.deal.queue_target_stage_field)
+        or config.deal.manual_review_stage_id
+    )
+    _assign_lead_responsible(
+        client, lead_id=lead_id, assigned_by_id=assigned_by_id, logger=logger
+    )
+    client.call(
+        "crm.item.update",
+        {
+            "entityTypeId": DEAL_ENTITY_TYPE_ID,
+            "id": deal_id,
+            "fields": {
+                "stageId": target_stage,
+                "assignedById": assigned_by_id,
+                config.deal.queue_action_field: "",
+                config.deal.queue_reason_field: "",
+                config.deal.queue_target_stage_field: "",
+                config.deal.queue_enqueued_at_field: "",
+            },
+        },
+    )
+    linked = bind_open_line_activities_to_deal(
+        client, lead_id=lead_id, contact_id=contact_id,
+        deal_id=deal_id, logger=logger,
+    )
+    transferred = assign_open_line_chats_to_user(
+        client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
+        assigned_by_id=assigned_by_id, logger=logger,
+    )
+    notify_distribution_supervisor(
+        client, config, deal_id=deal_id,
+        deal_title=str(deal.get("title") or ""), bucket_label=bucket.label,
+        assigned_by_id=assigned_by_id, assigned_by_name=assigned_by_name,
+        action=str(deal.get(config.deal.queue_action_field) or "approved"),
+        chat_transferred=transferred > 0, logger=logger,
+    )
+    return _queue_context_result(
+        client, config, deal, logger,
+        action="queue_distributed",
+        reason="assignment_queue_distributed",
+        processed_at=processed_at,
+        assigned_by_id=assigned_by_id,
+        assigned_by_name=assigned_by_name,
+        stage_id=target_stage,
+        assignment_strategy=assignment.strategy,
+        configured_pool=assignment.configured_pool,
+        online_pool=assignment.online_pool,
+        linked_activity_count=linked,
+        transferred_chat_count=transferred,
+        message="Negociación distribuida desde la cola temporal.",
+    )
+
+
+def _close_queued_deal(
+    client: Any,
+    config: AppConfig,
+    deal: dict[str, Any],
+    logger: Logger,
+    processed_at: datetime,
+) -> dict[str, object]:
+    deal_id = _required_int(deal.get("id"), "id")
+    lead_id = _required_int(deal.get("leadId"), "leadId")
+    _assign_lead_responsible(
+        client, lead_id=lead_id,
+        assigned_by_id=config.deal.provisional_user_id, logger=logger,
+    )
+    client.call(
+        "crm.item.update",
+        {
+            "entityTypeId": DEAL_ENTITY_TYPE_ID,
+            "id": deal_id,
+            "fields": {
+                "stageId": config.deal.manual_review_stage_id,
+                "assignedById": config.deal.provisional_user_id,
+            },
+        },
+    )
+    return _queue_context_result(
+        client, config, deal, logger,
+        action="queue_closed",
+        reason="assignment_queue_closed",
+        processed_at=processed_at,
+        assigned_by_id=config.deal.provisional_user_id,
+        assigned_by_name="Maru Lopez",
+        stage_id=config.deal.manual_review_stage_id,
+        assignment_strategy="assignment_queue_closed_manual",
+        message="Sin vendedor disponible al cierre de la ventana semanal.",
+    )
+
+
+def _queue_context_result(
+    client: Any,
+    config: AppConfig,
+    deal: dict[str, Any],
+    logger: Logger,
+    **overrides: Any,
+) -> dict[str, object]:
+    lead_id = _optional_int(deal.get("leadId"))
+    context = (
+        _lead_trace_context(client, config, lead_id, logger)
+        if lead_id is not None else {}
+    )
+    contact_id = _optional_int(context.pop("contact_id", None)) or _optional_int(
+        deal.get("contactId")
+    )
+    return _result(
+        has_pending=overrides.get("action") == "queue_waiting",
+        deal_id=_optional_int(deal.get("id")),
+        lead_id=lead_id,
+        contact_id=contact_id,
+        deal_title=str(deal.get("title") or ""),
+        stage_before=config.deal.assignment_queue_stage_id,
+        routing_bucket=str(deal.get(config.deal.routing_bucket_field) or ""),
+        commercial_line=str(deal.get(config.deal.commercial_line_field) or "") or None,
+        previous_assigned_by_id=_optional_int(deal.get("assignedById")),
+        within_business_hours=overrides.get("action") != "queue_closed",
+        **context,
+        **overrides,
+    )
+
+
+def _queue_batch_result(
+    events: list[dict[str, object]], processed_at: datetime
+) -> dict[str, object]:
+    return {
+        "ok": not any(not bool(event.get("ok")) for event in events),
+        "processed_at": processed_at.isoformat(),
+        "event_count": len(events),
+        "distributed_count": sum(event.get("action") == "queue_distributed" for event in events),
+        "waiting_count": sum(event.get("action") == "queue_waiting" for event in events),
+        "closed_count": sum(event.get("action") == "queue_closed" for event in events),
+        "events": events,
+        "events_json": json.dumps(events, ensure_ascii=False),
+    }
+
+
+def _queue_error_result(
+    config: AppConfig,
+    deal: dict[str, Any],
+    processed_at: datetime,
+    exc: Exception,
+) -> dict[str, object]:
+    return _result(
+        action="error",
+        has_pending=True,
+        deal_id=_optional_int(deal.get("id")),
+        lead_id=_optional_int(deal.get("leadId")),
+        stage_id=config.deal.assignment_queue_stage_id,
+        reason="internal_error",
+        processed_at=processed_at,
+        routing_bucket=str(deal.get(config.deal.routing_bucket_field) or ""),
+        assignment_strategy="assignment_queue_error",
+        message=str(exc),
+        ok=False,
+    )
 
 def _assign_lead_responsible(
     client: Any,
@@ -1245,6 +1620,25 @@ def _local_datetime(
         str(source.get(BUSINESS_HOURS_TIMEZONE_ENV, "America/Argentina/Cordoba")).strip()
     )
     return now.astimezone(timezone) if now is not None else datetime.now(timezone)
+
+
+def _parse_bitrix_datetime(
+    value: Any,
+    source: dict[str, str],
+) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    timezone = ZoneInfo(
+        str(source.get(BUSINESS_HOURS_TIMEZONE_ENV, "America/Argentina/Cordoba")).strip()
+    )
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone)
+    return parsed.astimezone(timezone)
 
 
 def _normalize_text(value: Any) -> str:

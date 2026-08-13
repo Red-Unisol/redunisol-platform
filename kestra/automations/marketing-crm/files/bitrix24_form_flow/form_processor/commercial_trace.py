@@ -56,6 +56,10 @@ REASON_LABELS = {
     "no_matching_bucket": "No existe un grupo de distribución configurado para esos datos.",
     "outside_business_hours": "La negociación ingresó fuera del horario de distribución automática.",
     "no_online_sellers": "No había vendedores del grupo conectados en Bitrix.",
+    "assignment_queued": "No había vendedores disponibles; la negociación quedó en cola temporal.",
+    "assignment_queue_waiting": "La negociación continúa en cola porque su grupo no tiene vendedores disponibles.",
+    "assignment_queue_distributed": "Apareció un vendedor disponible y la negociación salió de la cola.",
+    "assignment_queue_closed": "La negociación salió de la cola al cerrar la ventana semanal.",
     "deal_not_pending": "La negociación ya había salido de la etapa pendiente cuando Kestra la revisó.",
     "internal_error": "La ejecución no pudo completar el procesamiento.",
 }
@@ -74,6 +78,14 @@ def business_decision(
         return "Enviado a revisión manual con Maru" if assigned_by_id == 57 else "Enviado a revisión manual"
     if action == "routing_review":
         return "Enviado a revisión de enrutamiento"
+    if action == "queued":
+        return "En cola temporal de distribución"
+    if action == "queue_distributed":
+        return f"Distribuido desde la cola a la línea {commercial_line or 'comercial definida'}"
+    if action == "queue_closed":
+        return "Retirado de la cola y enviado a Maru"
+    if action == "queue_waiting":
+        return "Continúa en cola de distribución"
     if action == "error":
         return "Procesamiento incompleto"
     if action == "skipped":

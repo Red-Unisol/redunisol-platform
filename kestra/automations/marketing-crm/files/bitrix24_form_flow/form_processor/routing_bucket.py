@@ -84,3 +84,35 @@ def resolve_routing_bucket(
         province=submission.province.label,
         reason="no_matching_bucket",
     )
+
+
+def routing_bucket_by_key(config: AppConfig, key: str) -> RoutingBucket | None:
+    definitions = {
+        "catamarca_general": RoutingBucket(
+            "catamarca_general",
+            "Catamarca - General",
+            config.deal.round_robin_user_ids,
+            "Catamarca",
+        ),
+        "cordoba_publico_policia": RoutingBucket(
+            "cordoba_publico_policia",
+            "Córdoba - Público provincial y Policía",
+            config.deal.cordoba_publico_policia_user_ids,
+        ),
+        "cordoba_jubilados": RoutingBucket(
+            "cordoba_jubilados",
+            "Córdoba - Jubilados y pensionados",
+            config.deal.cordoba_jubilados_user_ids,
+        ),
+        "cordoba_unc": RoutingBucket(
+            "cordoba_unc",
+            "Córdoba - UNC y DASPU",
+            config.deal.cordoba_unc_user_ids,
+        ),
+        "cordoba_general": RoutingBucket(
+            "cordoba_general",
+            "Córdoba - General",
+            config.deal.cordoba_general_user_ids,
+        ),
+    }
+    return definitions.get(str(key or "").strip())
