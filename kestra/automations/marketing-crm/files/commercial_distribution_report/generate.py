@@ -22,7 +22,10 @@ from openpyxl.utils import get_column_letter
 
 
 NAVY, WHITE = "17365D", "FFFFFF"
-FLOW_ID = "bitrix24_catamarca_deal_qualification"
+FLOW_IDS = (
+    "bitrix24_catamarca_deal_qualification",
+    "bitrix24_deal_assignment_queue",
+)
 ARGENTINA_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 DEFAULT_AUDIT_FROM = "2026-08-11T13:00:00-03:00"
 ASSIGNMENT_STRATEGY_LABELS = {
@@ -34,6 +37,10 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "single_seller": "Único vendedor configurado para el bucket",
     "outside_hours_manual": "Fuera de horario laboral; gestión manual con Maru",
     "no_online_sellers_manual": "Sin vendedores online; gestión manual con Maru",
+    "assignment_queue": "En cola temporal hasta que haya un vendedor disponible",
+    "assignment_queue_waiting": "El bucket continúa sin vendedores disponibles",
+    "assignment_queue_closed_manual": "Cierre semanal; gestión manual con Maru",
+    "assignment_queue_error": "El reintento de la cola no pudo completarse",
     "commercial_rejection_manual": "Rechazo comercial; gestión manual con Maru",
     "no_matching_bucket": "No existe un bucket aplicable",
     "not_applicable": "La negociación ya no estaba pendiente",
@@ -130,6 +137,10 @@ REASON_LABELS = {
     "no_matching_bucket": "No existe un grupo de distribución configurado para esos datos.",
     "outside_business_hours": "La negociación ingresó fuera del horario de distribución automática.",
     "no_online_sellers": "No había vendedores del grupo conectados en Bitrix.",
+    "assignment_queued": "No había vendedores disponibles; quedó en cola temporal.",
+    "assignment_queue_waiting": "El bucket continúa sin vendedores disponibles.",
+    "assignment_queue_distributed": "Apareció un vendedor y se distribuyó desde la cola.",
+    "assignment_queue_closed": "La cola cerró y el caso quedó con Maru.",
     "deal_not_pending": "La negociación ya había salido de la etapa pendiente cuando Kestra la revisó.",
     "internal_error": "La ejecución no pudo completar el procesamiento.",
 }
@@ -137,6 +148,7 @@ STAGE_LABELS = {
     "C1:KESTRA_PENDING": "Preclasificación Kestra",
     "C1:KESTRA_REVIEW": "Revisión manual Kestra",
     "C1:KESTRA_ROUTE_REVIEW": "Revisión de enrutamiento Kestra",
+    "C1:KESTRA_QUEUE": "Cola de distribución Kestra",
     "C1:NEW": "Presentación",
     "C1:5": "Situación negativa en BCRA",
 }
@@ -261,8 +273,11 @@ def distribution_status(
         "outside_hours_manual",
         "commercial_rejection_manual",
         "no_online_sellers_manual",
+        "assignment_queue_closed_manual",
     }:
         return "Gestión manual con Maru"
+    if strategy == "assignment_queue":
+        return "En cola de distribución"
     if strategy == "no_matching_bucket" or action == "routing_review":
         return "Sin bucket"
     if action == "skipped":
@@ -342,6 +357,35 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         ),
         "bcra_refresh_outcome": str(outputs.get("bcra_refresh_outcome") or ""),
     }
+
+
+def normalized_events(row: dict[str, Any]) -> list[dict[str, Any]]:
+    outputs = row.get("outputs") or {}
+    raw_events = outputs.get("events_json")
+    if not raw_events:
+        event = normalized(row)
+        return [event] if event is not None else []
+    try:
+        queue_events = json.loads(raw_events)
+    except (TypeError, ValueError):
+        return []
+    result: list[dict[str, Any]] = []
+    for index, event_outputs in enumerate(queue_events):
+        if not isinstance(event_outputs, dict):
+            continue
+        # El estado "waiting" se reintenta cada minuto; conservarlo inflaría el
+        # informe sin agregar una nueva decisión comercial.
+        if event_outputs.get("action") == "queue_waiting":
+            continue
+        child = {
+            **row,
+            "id": f"{row.get('id')}:queue:{index}",
+            "outputs": event_outputs,
+        }
+        event = normalized(child)
+        if event is not None:
+            result.append(event)
+    return result
 
 
 def events_from(
@@ -743,9 +787,15 @@ def main() -> None:
             "REPORTS_AUDIT_FROM debe ser una fecha ISO válida; "
             f"valor recibido: {audit_from_value!r}"
         )
-    raw = executions(session, base, tenant, namespace, FLOW_ID)
+    raw = [
+        row
+        for flow_id in FLOW_IDS
+        for row in executions(session, base, tenant, namespace, flow_id)
+    ]
     normalized_rows = [
-        event for row in raw if (event := normalized(row)) is not None
+        event
+        for row in raw
+        for event in normalized_events(row)
     ]
     rows = events_from(normalized_rows, audit_from)
     bitrix_api_url = "/".join(

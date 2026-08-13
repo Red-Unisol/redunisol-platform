@@ -93,6 +93,30 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertFalse(row["bcra_snapshot_refreshed"])
         self.assertEqual(row["bcra_refresh_outcome"], "reused_fresh")
 
+    def test_expands_queue_events_and_omits_repeated_waiting_attempts(self):
+        waiting = dict(execution()["outputs"])
+        waiting.update(
+            action="queue_waiting",
+            reason="assignment_queue_waiting",
+            assignment_strategy="assignment_queue_waiting",
+        )
+        distributed = dict(execution()["outputs"])
+        distributed.update(
+            action="queue_distributed",
+            reason="assignment_queue_distributed",
+            assignment_strategy="round_robin",
+        )
+        raw = execution()
+        raw["outputs"] = {
+            "events_json": REPORT.json.dumps([waiting, distributed])
+        }
+
+        rows = REPORT.normalized_events(raw)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["action"], "queue_distributed")
+        self.assertEqual(rows[0]["distribution_status"], "Distribuido")
+
     def test_adds_names_to_responsibles_and_pools_while_preserving_ids(self):
         row = REPORT.normalized(execution())
 

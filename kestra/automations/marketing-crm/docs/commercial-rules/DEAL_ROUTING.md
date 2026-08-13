@@ -87,6 +87,24 @@ el viernes a las 17:00 exclusive, toda negociacion interna queda con Maru Lopez
 
 Zona horaria: `America/Argentina/Cordoba`.
 
+## Cola Temporal Por Falta De Vendedor
+
+Si una negociacion creada y procesada dentro de la ventana semanal no encuentra
+vendedores online, queda con Maru en `COLA DE DISTRIBUCION KESTRA`.
+
+- cada minuto se reintenta como maximo el caso mas antiguo de cada bucket;
+- el orden es FIFO dentro de cada bucket, no existe una cola global;
+- un bucket sin vendedores no bloquea los otros buckets;
+- la clasificacion, linea y etapa destino originales quedan persistidas y no se
+  recalculan durante el reintento;
+- al distribuir, se sincronizan negociacion y prospecto y se transfiere el chat;
+- el viernes a las 17:00, todo remanente sale definitivamente de la cola y queda en
+  `REVISION MANUAL KESTRA` con Maru;
+- el remanente no vuelve a entrar automaticamente el lunes.
+
+Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola.
+Los casos de revision comercial o de enrutamiento mantienen sus circuitos propios.
+
 ## Seleccion Dentro De Un Pool
 
 Cuando un bucket contiene mas de un vendedor:

@@ -73,6 +73,11 @@ redistribuye automáticamente al siguiente día hábil.
 
 Zona horaria: `America/Argentina/Cordoba`.
 
+La falta temporal de vendedores dentro de la ventana usa una etapa separada,
+`C1:KESTRA_QUEUE`. `bitrix24_deal_assignment_queue` reintenta un caso FIFO por bucket
+y por minuto. El viernes a las 17:00 vacia la cola hacia revision manual con Maru; esos
+casos no se reactivan el lunes.
+
 ## Especificaciones relacionadas
 
 - [Clasificación comercial](../commercial-rules/DEAL_CLASSIFICATION.md)

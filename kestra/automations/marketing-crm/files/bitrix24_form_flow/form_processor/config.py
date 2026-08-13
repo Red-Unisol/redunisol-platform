@@ -54,12 +54,17 @@ DEFAULT_DEAL_CONFIG = {
     "pending_qualification_stage_id": "C1:KESTRA_PENDING",
     "manual_review_stage_id": "C1:KESTRA_REVIEW",
     "routing_review_stage_id": "C1:KESTRA_ROUTE_REVIEW",
+    "assignment_queue_stage_id": "C1:KESTRA_QUEUE",
     "bcra_rejected_stage_id": "C1:5",
     "commercial_rejected_stage_id": "C1:KESTRA_REVIEW",
     "provisional_user_id": 57,
     "distribution_notification_user_id": 57,
     "commercial_line_field": "ufCrm_659EBB0445E8E",
     "routing_bucket_field": "ufCrmRouteBucket",
+    "queue_action_field": "ufCrmKqAction",
+    "queue_reason_field": "ufCrmKqReason",
+    "queue_target_stage_field": "ufCrmKqStage",
+    "queue_enqueued_at_field": "ufCrmKqAt",
     "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
     "round_robin_lookback_days": 30,
     "cordoba_publico_policia_user_ids": (74365,),
@@ -163,12 +168,17 @@ class DealConfig:
     pending_qualification_stage_id: str
     manual_review_stage_id: str
     routing_review_stage_id: str
+    assignment_queue_stage_id: str
     bcra_rejected_stage_id: str
     commercial_rejected_stage_id: str
     provisional_user_id: int
     distribution_notification_user_id: int
     commercial_line_field: str
     routing_bucket_field: str
+    queue_action_field: str
+    queue_reason_field: str
+    queue_target_stage_field: str
+    queue_enqueued_at_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
     cordoba_publico_policia_user_ids: tuple[int, ...]
@@ -381,6 +391,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
+            assignment_queue_stage_id=source.get(
+                "BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["assignment_queue_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["assignment_queue_stage_id"],
             bcra_rejected_stage_id=source.get(
                 "BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID",
                 DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
@@ -411,6 +426,26 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["routing_bucket_field"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["routing_bucket_field"],
+            queue_action_field=source.get(
+                "BITRIX24_DEAL_QUEUE_ACTION_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_action_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_action_field"],
+            queue_reason_field=source.get(
+                "BITRIX24_DEAL_QUEUE_REASON_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_reason_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_reason_field"],
+            queue_target_stage_field=source.get(
+                "BITRIX24_DEAL_QUEUE_TARGET_STAGE_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_target_stage_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_target_stage_field"],
+            queue_enqueued_at_field=source.get(
+                "BITRIX24_DEAL_QUEUE_ENQUEUED_AT_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_enqueued_at_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_enqueued_at_field"],
             round_robin_user_ids=_optional_int_tuple(
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
