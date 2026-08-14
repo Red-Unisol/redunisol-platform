@@ -12,6 +12,7 @@ venv/
 .local-secrets/
 kestra/platform/infra/kestra-runtime.env
 web/herramientas/deploy/*.env
+web/solicitudes-web/deploy/*.env
 .DS_Store
 Thumbs.db
 *.log

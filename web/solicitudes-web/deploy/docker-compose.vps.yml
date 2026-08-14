@@ -1,0 +1,105 @@
+# Define los contenedores de solicitudes-web en la VPS.
+#
+# Los valores concretos (imagenes, puertos, credenciales) llegan por el archivo
+# .env que el workflow deja al lado. Este archivo describe la forma; el .env
+# describe el ambiente.
+#
+# Referencia del patron: web/redunisol-web/deploy/docker-compose.vps.yml
+
+services:
+
+  # ----------------------------------------------------------
+  # frontend -- nginx sirviendo la SPA compilada
+  # ----------------------------------------------------------
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    pull_policy: always
+    ports:
+      - "${FRONTEND_BIND}"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ----------------------------------------------------------
+  # backend -- la API Node/Express
+  # ----------------------------------------------------------
+  backend:
+    image: ${BACKEND_IMAGE}
+    pull_policy: always
+    ports:
+      - "${BACKEND_BIND}"
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: 3001
+      APP_NAME: ${APP_NAME}
+      APP_ORIGIN: ${APP_ORIGIN}
+
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET}
+      ACCESS_TOKEN_TTL_MINUTES: ${ACCESS_TOKEN_TTL_MINUTES}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS}
+      EMAIL_VERIFICATION_CODE_TTL_MINUTES: ${EMAIL_VERIFICATION_CODE_TTL_MINUTES}
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES}
+      EMAIL_SEND_RATE_LIMIT_MAX: ${EMAIL_SEND_RATE_LIMIT_MAX}
+      EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES: ${EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES}
+
+      LEGACY_API_BASE_URL: ${LEGACY_API_BASE_URL}
+      LEGACY_API_TIMEOUT_MS: ${LEGACY_API_TIMEOUT_MS}
+
+      ADJUNTOS_ALLOWED_EXTENSIONS: ${ADJUNTOS_ALLOWED_EXTENSIONS}
+      ADJUNTOS_ALLOWED_MIME_TYPES: ${ADJUNTOS_ALLOWED_MIME_TYPES}
+      ADJUNTOS_MAX_FILE_SIZE_BYTES: ${ADJUNTOS_MAX_FILE_SIZE_BYTES}
+
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_PORT: ${MINIO_PORT}
+      MINIO_USE_SSL: ${MINIO_USE_SSL}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET_SOLICITUDES: ${MINIO_BUCKET_SOLICITUDES}
+
+      MAIL_ENABLED: ${MAIL_ENABLED}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      DEFAULT_MAIL_SENDER: ${DEFAULT_MAIL_SENDER}
+
+      # "postgres" es el nombre del servicio de abajo. Docker lo resuelve por
+      # su DNS interno. No es localhost ni una IP.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----------------------------------------------------------
+  # postgres -- la base de datos
+  #
+  # SIN "ports:" a proposito. Solo la usa el backend, que esta en la misma red
+  # interna de Docker. Publicarla seria exponerla sin necesidad.
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# --------------------------------------------------------------
+# El volumen con nombre es lo unico que sobrevive a un redeploy. Los
+# contenedores se destruyen y se recrean; esto no.
+# --------------------------------------------------------------
+volumes:
+  postgres-data:

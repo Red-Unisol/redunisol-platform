@@ -1,0 +1,23 @@
+export type SolicitudAdjunto = {
+  id: string;
+  solicitudId: string;
+  archivoNombre: string | null;
+  archivoPath: string | null;
+  archivoMimeType: string | null;
+  archivoSizeBytes: number | null;
+  storageBucket: string | null;
+  tipoAdjunto: string | null;
+  estadoAdjunto: string | null;
+  descripcion: string | null;
+  adicional: string | null;
+  comentario: string | null;
+  nroDocumento: string | null;
+  restringido: boolean;
+  uploadedBy: string | null;
+  uploadedByName?: string | null;
+  uploadedAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
+};

@@ -149,15 +149,46 @@
       "problemMatcher": []
     },
     {
+      "label": "Runtime Env: Decrypt Solicitudes Web",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "kestra/tools/manage_encrypted_env.py",
+        "decrypt-many",
+        "--key-file",
+        ".local-secrets/runtime-env.key",
+        "--pair",
+        "web/solicitudes-web/deploy/solicitudes-web.dev.env.enc=web/solicitudes-web/deploy/solicitudes-web.dev.env",
+        "--force"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Runtime Env: Encrypt Solicitudes Web",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "kestra/tools/manage_encrypted_env.py",
+        "encrypt-many",
+        "--key-file",
+        ".local-secrets/runtime-env.key",
+        "--pair",
+        "web/solicitudes-web/deploy/solicitudes-web.dev.env=web/solicitudes-web/deploy/solicitudes-web.dev.env.enc",
+        "--force"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Herramientas: Laravel Serve",
       "type": "shell",
       "command": "php",
-      "args": [
-        "artisan",
-        "serve",
-        "--host=127.0.0.1",
-        "--port=3010"
-      ],
+      "args": ["artisan", "serve", "--host=127.0.0.1", "--port=3010"],
       "options": {
         "cwd": "${workspaceFolder}/web/herramientas"
       },
@@ -178,15 +209,7 @@
       "label": "Herramientas: Vite Dev",
       "type": "shell",
       "command": "npm",
-      "args": [
-        "run",
-        "dev",
-        "--",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "5173"
-      ],
+      "args": ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
       "options": {
         "cwd": "${workspaceFolder}/web/herramientas"
       },
@@ -205,10 +228,7 @@
     },
     {
       "label": "Herramientas: Start Local Dev",
-      "dependsOn": [
-        "Herramientas: Laravel Serve",
-        "Herramientas: Vite Dev"
-      ],
+      "dependsOn": ["Herramientas: Laravel Serve", "Herramientas: Vite Dev"],
       "dependsOrder": "parallel",
       "problemMatcher": []
     },
@@ -216,10 +236,7 @@
       "label": "Herramientas: Build Frontend",
       "type": "shell",
       "command": "npm",
-      "args": [
-        "run",
-        "build"
-      ],
+      "args": ["run", "build"],
       "options": {
         "cwd": "${workspaceFolder}/web/herramientas"
       },
@@ -229,11 +246,7 @@
       "label": "Herramientas: Docker Up",
       "type": "shell",
       "command": "docker",
-      "args": [
-        "compose",
-        "up",
-        "--build"
-      ],
+      "args": ["compose", "up", "--build"],
       "options": {
         "cwd": "${workspaceFolder}/web/herramientas"
       },
@@ -243,9 +256,7 @@
       "label": "Kestra: Webhook URLs",
       "type": "shell",
       "command": "python",
-      "args": [
-        "kestra/tools/list_webhook_urls.py"
-      ],
+      "args": ["kestra/tools/list_webhook_urls.py"],
       "options": {
         "cwd": "${workspaceFolder}"
       },

@@ -1,0 +1,101 @@
+export type CreateSolicitudTitularInput = {
+  apellidoDenominacion: string;
+  cbu?: string;
+  celular?: string;
+  cuit?: string;
+  domicilioCalle?: string;
+  email?: string;
+  localidad?: string;
+  estadoCivil?: string;
+  fechaNacimiento?: string;
+  nacionalidad?: string;
+  nombre: string;
+  nroDocumento: string;
+  nroPuerta?: string;
+  nroSocio?: string;
+  personaExpuestaPoliticamente?: boolean;
+  sexo?: string;
+  telefonoFijo?: string;
+  tipoDocumento: string;
+};
+
+export type CreateSolicitudDatosLaboralesInput = {
+  actividadLaboral?: string;
+  antiguedadLaboralMeses?: number;
+  descuentosSueldo?: number;
+  domicilioLaboralCalle?: string;
+  domicilioLaboralLocalidad?: string;
+  domicilioLaboralNroPuerta?: string;
+  domicilioLaboralPisoDepto?: string;
+  empleador?: string;
+  fechaIngresoLaboral?: string;
+  montoRecibo?: number;
+  relacionLaboral?: string;
+  tarjetas?: string;
+  vehiculo?: string;
+  vivienda?: string;
+};
+
+export type CreateSolicitudConyugeInput = {
+  actividad?: string;
+  apellido?: string;
+  fechaNacimiento?: string;
+  ingresosMensuales?: number;
+  nacionalidad?: string;
+  nombre?: string;
+  nroDocumento?: string;
+  sexo?: string;
+  tipoDocumento?: string;
+};
+
+export type CreateSolicitudGarantiaInput = {
+  antiguedadLaboralMeses?: number;
+  casadoConTitular?: boolean;
+  celular?: string;
+  cuit?: string;
+  denominacion?: string;
+  domicilio?: string;
+  edad?: number;
+  email?: string;
+  estadoCivil?: string;
+  fechaIngresoLaboral?: string;
+  fechaNacimiento?: string;
+  ingresoMensual?: number;
+  nacionalidad?: string;
+  nombre?: string;
+  nombreCompleto?: string;
+  nroDocumento?: string;
+  nroSocio?: string;
+  observaciones?: string;
+  ocupacion?: string;
+  persona?: string;
+  sexo?: string;
+  sumaIngresos?: boolean;
+  telefono?: string;
+  tipoDocumento?: string;
+  tipoGarantia?: string;
+  tipoRelacion?: string;
+};
+
+export type CreateSolicitudInput = {
+  createdBy: string;
+  createdByLegacyUser: string;
+  authenticatedSellerName: string;
+  cupoTitular?: number;
+  cuotaResultante?: string;
+  cuotas?: number;
+  ejecutivoSolicitud?: string;
+  linkFirmaDigital?: string | null;
+  firmaDigitalmente?: boolean;
+  garantias?: CreateSolicitudGarantiaInput[];
+  lineaPrestamoLegacyOid: string;
+  montoAFinanciar?: number;
+  motivo?: string;
+  observaciones?: string;
+  fechaPrimerVencimiento?: string;
+  conyuge?: CreateSolicitudConyugeInput;
+  datosLaborales: CreateSolicitudDatosLaboralesInput;
+  nroOperacion?: string;
+  titular: CreateSolicitudTitularInput;
+  vendedorSolicitud?: string;
+};
