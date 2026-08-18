@@ -154,6 +154,19 @@ Si queres cambiar la ubicacion, defini:
 
 - `TRANSFERENCIAS_DEBUG_LOG_PATH`
 
+Cada transferencia deja eventos JSON correlacionables en ese mismo archivo con el target
+`transfer_audit`. La traza incluye:
+
+- solicitud, operador, tipo manual/automatico y snapshots usados para validar
+- payload completo enviado a Coinag
+- respuesta inicial completa
+- `idTrxCliente` e `idCoelsa`
+- clasificacion inicial y resultado de cada intento de confirmacion
+- resultado final y ruta o error de generacion del PDF
+
+Los requests y responses operativos de Coinag tambien se registran completos con el target
+`coinag_http`. Se omiten solamente el body OAuth, tokens, passwords y claves SSH.
+
 ## Smoke en debug
 
 En builds `debug`, el boton `Transferir` no pega al endpoint real de transferencia de Coinag.
@@ -214,5 +227,13 @@ Antes de habilitar `Transferir`, la app consulta Coinag por `idTrxCliente` deriv
 
 - si Coinag responde `SIN_REGISTROS`, permite transferir
 - si Coinag responde estado `1`, bloquea como `YA TRANSFERIDA`
-- si Coinag responde estado `2`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
+- si Coinag responde estado `2`, bloquea como `NO COMPLETADA`
+- si Coinag responde estado `3`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
 - para cualquier otra respuesta, bloquea como `ERROR`
+
+La confirmacion por estado Coelsa reconoce:
+
+- `00` o `ACREDITADO / 0600`: transferencia confirmada
+- `0601`, `0602`, `0612`, `2100` o `2000`: transferencia pendiente; continua el polling
+- estados explicitos de error/rechazo/no completada: transferencia rechazada
+- estados desconocidos: se mantienen pendientes para evitar falsos rechazos

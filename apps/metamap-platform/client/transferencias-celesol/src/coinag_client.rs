@@ -278,9 +278,21 @@ impl CoinagClient {
             ),
             RequestBody::default(),
         )?;
+        let status = classify_coelsa_transfer_status(&body);
+        log::info!(
+            target: "transfer_audit",
+            "{}",
+            json!({
+                "event": "coinag_confirmation_lookup",
+                "id_coelsa": id_coelsa,
+                "classification": coelsa_status_label(&status),
+                "classification_detail": coelsa_status_detail(&status),
+                "response": body,
+            })
+        );
         Ok(CoelsaTransferLookupResponse {
             id_coelsa: id_coelsa.to_owned(),
-            status: classify_coelsa_transfer_status(&body),
+            status,
             body,
         })
     }
@@ -528,21 +540,38 @@ impl CoinagClient {
         headers: Vec<(String, String)>,
         body: RequestBody,
     ) -> Result<TransportResponse> {
+        let method_name = method.to_string();
+        let is_token_request =
+            url.trim_end_matches('/') == self.config.token_url.trim_end_matches('/');
+        if !is_token_request {
+            log::info!(
+                target: "coinag_http",
+                "{}",
+                json!({
+                    "event": "http_request",
+                    "method": method_name,
+                    "url": url,
+                    "body": String::from_utf8_lossy(&body.bytes),
+                })
+            );
+        }
+
         if let Some(ssh_http) = &self.ssh_http {
             log::debug!("Coinag via SSH: {} {}", method, url);
-            return ssh_http.execute(TransportRequest {
+            let response = ssh_http.execute(TransportRequest {
                 method,
                 url: url.to_owned(),
                 headers,
                 body: body.bytes,
-            });
+            })?;
+            log_coinag_http_response(&method_name, url, &response, is_token_request);
+            return Ok(response);
         }
 
         let direct_http = self
             .direct_http
             .as_ref()
             .ok_or_else(|| anyhow!("No hay transporte HTTP disponible para Coinag."))?;
-        let method_name = method.to_string();
         let mut request = direct_http.request(method, url);
         for (name, value) in headers {
             request = request.header(name, value);
@@ -557,7 +586,9 @@ impl CoinagClient {
             .context("No se pudo leer la respuesta HTTP de Coinag.")?
             .to_vec();
         log::debug!("Coinag respondio {} para {} {}.", status, method_name, url);
-        Ok(TransportResponse { status, body })
+        let response = TransportResponse { status, body };
+        log_coinag_http_response(&method_name, url, &response, is_token_request);
+        Ok(response)
     }
 
     fn ensure_token(&self, force_refresh: bool) -> Result<String> {
@@ -877,10 +908,10 @@ fn is_transfer_not_found_error(error: &anyhow::Error) -> bool {
 fn map_transfer_guard_status(body: &Value) -> CoinagTransferGuard {
     match extract_transfer_status_code(body).as_deref() {
         Some("1") => CoinagTransferGuard::YaTransferida,
-        Some("2") => CoinagTransferGuard::EnProceso,
-        Some("3") => CoinagTransferGuard::Error {
-            detail: "Coinag devolvio estado 3 para la solicitud.".to_owned(),
+        Some("2") => CoinagTransferGuard::Error {
+            detail: "Coinag devolvio estado 2 (No Completada) para la solicitud.".to_owned(),
         },
+        Some("3") => CoinagTransferGuard::EnProceso,
         Some(other) => CoinagTransferGuard::Error {
             detail: format!("Coinag devolvio un estado no esperado: {other}."),
         },
@@ -903,14 +934,14 @@ fn classify_coelsa_transfer_status(body: &Value) -> CoelsaTransferStatus {
             detail: "Coinag no devolvio estado Coelsa interpretable.".to_owned(),
         };
     };
-    if status.code.as_deref() == Some("00") {
+    if status.is_confirmed() {
         return CoelsaTransferStatus::Confirmed;
     }
     let detail = status.detail();
-    if status.code.is_some() {
-        CoelsaTransferStatus::Rejected { detail }
-    } else {
+    if status.is_pending() || !status.is_explicit_rejection() {
         CoelsaTransferStatus::Pending { detail }
+    } else {
+        CoelsaTransferStatus::Rejected { detail }
     }
 }
 
@@ -921,6 +952,76 @@ struct CoelsaStatus {
 }
 
 impl CoelsaStatus {
+    fn normalized_text(&self) -> String {
+        [
+            self.code.as_deref(),
+            self.description.as_deref(),
+            self.error_coelsa.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|value| value.trim().to_uppercase())
+        .collect::<Vec<_>>()
+        .join(" | ")
+    }
+
+    fn numeric_codes(&self) -> Vec<String> {
+        [
+            self.code.as_deref(),
+            self.description.as_deref(),
+            self.error_coelsa.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .flat_map(|value| {
+            value
+                .split(|character: char| !character.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+    }
+
+    fn is_confirmed(&self) -> bool {
+        let code = self.code.as_deref().map(str::trim).map(str::to_uppercase);
+        code.as_deref() == Some("00")
+            || code.as_deref() == Some("ACREDITADO")
+            || self
+                .numeric_codes()
+                .iter()
+                .any(|value| matches!(value.as_str(), "00" | "0600"))
+    }
+
+    fn is_pending(&self) -> bool {
+        const PENDING_CODES: [&str; 5] = ["0601", "0602", "0612", "2100", "2000"];
+        let text = self.normalized_text();
+        text.contains("EN CURSO")
+            || text.contains("PENDIENTE")
+            || text == "INICIADO"
+            || self
+                .numeric_codes()
+                .iter()
+                .any(|value| PENDING_CODES.contains(&value.as_str()))
+    }
+
+    fn is_explicit_rejection(&self) -> bool {
+        let text = self.normalized_text();
+        text.contains("ERROR")
+            || text.contains("RECHAZ")
+            || text.contains("NO COMPLET")
+            || text.contains("EXPIRAD")
+            || text.contains("ANULAD")
+            || text.contains("INEXISTENTE")
+            || text.contains("NO HABILITAD")
+            || text.contains("INVALID")
+            || text.contains("INCORRECT")
+            || text.contains("NO COINCID")
+            || text.contains("NO PERMITID")
+            || text.contains("INSUFICIENTE")
+            || self.error_coelsa.is_some()
+    }
+
     fn detail(&self) -> String {
         match (
             self.code.as_deref(),
@@ -939,6 +1040,52 @@ impl CoelsaStatus {
             (None, None, None) => "Estado Coelsa no informado.".to_owned(),
         }
     }
+}
+
+fn coelsa_status_label(status: &CoelsaTransferStatus) -> &'static str {
+    match status {
+        CoelsaTransferStatus::Confirmed => "confirmed",
+        CoelsaTransferStatus::Rejected { .. } => "rejected",
+        CoelsaTransferStatus::Pending { .. } => "pending",
+    }
+}
+
+fn coelsa_status_detail(status: &CoelsaTransferStatus) -> Option<&str> {
+    match status {
+        CoelsaTransferStatus::Confirmed => None,
+        CoelsaTransferStatus::Rejected { detail } | CoelsaTransferStatus::Pending { detail } => {
+            Some(detail)
+        }
+    }
+}
+
+fn log_coinag_http_response(
+    method: &str,
+    url: &str,
+    response: &TransportResponse,
+    is_token_request: bool,
+) {
+    if is_token_request {
+        log::info!(
+            target: "coinag_http",
+            "OAuth respondio status={} para {} {}. Body omitido por contener credenciales de sesion.",
+            response.status,
+            method,
+            url
+        );
+        return;
+    }
+    log::info!(
+        target: "coinag_http",
+        "{}",
+        json!({
+            "event": "http_response",
+            "method": method,
+            "url": url,
+            "status": response.status.as_u16(),
+            "body": String::from_utf8_lossy(&response.body),
+        })
+    );
 }
 
 fn extract_coelsa_status(body: &Value) -> Option<CoelsaStatus> {
@@ -1000,7 +1147,7 @@ mod tests {
 
     use super::{
         CoelsaTransferStatus, CoinagClient, TokenCache, build_request_based_transaction_suffix,
-        classify_coelsa_transfer_status, extract_cbu_account_type_code,
+        classify_coelsa_transfer_status, extract_cbu_account_type_code, map_transfer_guard_status,
     };
     use crate::{
         config::CoinagConfig,
@@ -1093,6 +1240,110 @@ mod tests {
     }
 
     #[test]
+    fn coelsa_accredited_0600_is_confirmed() {
+        let body = json!({
+            "estado": {
+                "codigo": "ACREDITADO",
+                "descripcion": "0600 - ACREDITADO",
+                "errorCoelsa": null
+            }
+        });
+
+        assert_eq!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Confirmed
+        );
+    }
+
+    #[test]
+    fn coelsa_accredited_0600_is_confirmed_inside_response_wrapper() {
+        let body = json!({
+            "response": {
+                "estado": {
+                    "codigo": " acreditado ",
+                    "descripcion": "0600 - ACREDITADO"
+                }
+            }
+        });
+
+        assert_eq!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Confirmed
+        );
+    }
+
+    #[test]
+    fn coelsa_initial_zero_with_description_is_confirmed() {
+        let body = json!({
+            "estado": {
+                "codigo": "00 Garantia Correcta",
+                "descripcion": "Garantia Correcta"
+            }
+        });
+
+        assert_eq!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Confirmed
+        );
+    }
+
+    #[test]
+    fn documented_coelsa_pending_codes_remain_pending() {
+        for (code, label) in [
+            ("0601", "ACREDITACION EN CURSO"),
+            ("0602", "CREDITO PENDIENTE"),
+            ("0612", "ACREDITACION PENDIENTE CON GARANTIA"),
+            ("2100", "INICIADO"),
+            ("2000", "CREACION PENDIENTE"),
+        ] {
+            let body = json!({
+                "estado": {
+                    "codigo": label,
+                    "descripcion": format!("{code} - {label}"),
+                    "errorCoelsa": null
+                }
+            });
+
+            assert!(matches!(
+                classify_coelsa_transfer_status(&body),
+                CoelsaTransferStatus::Pending { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn unknown_coelsa_status_remains_pending_instead_of_false_rejection() {
+        let body = json!({
+            "estado": {
+                "codigo": "ESTADO NUEVO",
+                "descripcion": "Respuesta aun no catalogada",
+                "errorCoelsa": null
+            }
+        });
+
+        assert!(matches!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Pending { .. }
+        ));
+    }
+
+    #[test]
+    fn documented_expired_status_is_rejected() {
+        let body = json!({
+            "estado": {
+                "codigo": "EXPIRADO",
+                "descripcion": "0370 - EXPIRADO",
+                "errorCoelsa": null
+            }
+        });
+
+        assert!(matches!(
+            classify_coelsa_transfer_status(&body),
+            CoelsaTransferStatus::Rejected { .. }
+        ));
+    }
+
+    #[test]
     fn coelsa_non_zero_status_is_rejected() {
         let body = json!({
             "estado": {
@@ -1108,5 +1359,21 @@ mod tests {
                     .to_owned()
             }
         );
+    }
+
+    #[test]
+    fn id_trx_cliente_status_codes_follow_coinag_documentation() {
+        assert!(matches!(
+            map_transfer_guard_status(&json!({ "estado": "1" })),
+            crate::models::CoinagTransferGuard::YaTransferida
+        ));
+        assert!(matches!(
+            map_transfer_guard_status(&json!({ "estado": "2" })),
+            crate::models::CoinagTransferGuard::Error { .. }
+        ));
+        assert!(matches!(
+            map_transfer_guard_status(&json!({ "estado": "3" })),
+            crate::models::CoinagTransferGuard::EnProceso
+        ));
     }
 }

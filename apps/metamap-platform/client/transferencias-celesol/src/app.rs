@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use chrono::Local;
 use eframe::egui::{self, Color32, Key, RichText, TextEdit};
 use egui_extras::{Column, TableBuilder};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::{
     APP_NAME_WITH_TAG,
@@ -961,6 +961,73 @@ impl TransferKind {
     }
 }
 
+fn coelsa_status_audit_value(status: &CoelsaTransferStatus) -> Value {
+    match status {
+        CoelsaTransferStatus::Confirmed => json!({
+            "classification": "confirmed",
+            "detail": null,
+        }),
+        CoelsaTransferStatus::Rejected { detail } => json!({
+            "classification": "rejected",
+            "detail": detail,
+        }),
+        CoelsaTransferStatus::Pending { detail } => json!({
+            "classification": "pending",
+            "detail": detail,
+        }),
+    }
+}
+
+fn log_transfer_audit(event: &str, request_oid: &str, transfer_kind: TransferKind, data: Value) {
+    log::info!(
+        target: "transfer_audit",
+        "{}",
+        json!({
+            "event": event,
+            "request_oid": request_oid,
+            "transfer_kind": transfer_kind.label(),
+            "data": data,
+        })
+    );
+}
+
+fn finish_receipt_trace(
+    request_oid: &str,
+    transfer_kind: TransferKind,
+    final_state: &str,
+    result: Result<PathBuf>,
+) -> Option<PathBuf> {
+    match result {
+        Ok(path) => {
+            log_transfer_audit(
+                "receipt_written",
+                request_oid,
+                transfer_kind,
+                json!({
+                    "final_state": final_state,
+                    "path": path,
+                }),
+            );
+            Some(path)
+        }
+        Err(error) => {
+            log::error!(
+                "No se pudo generar el PDF {final_state} para solicitud {request_oid}: {error:#}"
+            );
+            log_transfer_audit(
+                "receipt_write_failed",
+                request_oid,
+                transfer_kind,
+                json!({
+                    "final_state": final_state,
+                    "error": format!("{error:#}"),
+                }),
+            );
+            None
+        }
+    }
+}
+
 impl TransferConfirmation {
     fn for_case(item: &HydratedCase) -> Self {
         let resolution = item.transfer_amount_resolution();
@@ -1447,6 +1514,24 @@ impl AppServices {
     }
 
     fn execute_transfer(&self, case: HydratedCase, transfer_kind: TransferKind) -> WorkerEvent {
+        log_transfer_audit(
+            "transfer_started",
+            case.request_oid(),
+            transfer_kind,
+            json!({
+                "operator": self.operator_name,
+                "applicant": case.display_name(),
+                "document": case.document_display(),
+                "cuil": case.cuil_display(),
+                "cbu": case.cbu_display(),
+                "request_amount": case.core_amount_display(),
+                "transfer_amount": case.transfer_amount_display(),
+                "credit_line": case.core.credit_line_description,
+                "verification_id": case.server_validation.verification_id,
+                "blockers": case.validation.blockers,
+                "warnings": case.validation.warnings,
+            }),
+        );
         let Some(coinag) = &self.coinag else {
             log::warn!(
                 "Transferencia bloqueada para solicitud {}: Coinag no configurado.",
@@ -1467,6 +1552,21 @@ impl AppServices {
         };
 
         let refreshed = self.refresh_case(&case);
+        log_transfer_audit(
+            "pre_transfer_validation",
+            case.request_oid(),
+            transfer_kind,
+            json!({
+                "can_transfer": refreshed.validation.can_transfer(),
+                "blockers": refreshed.validation.blockers,
+                "warnings": refreshed.validation.warnings,
+                "core_status": refreshed.core.request_status,
+                "core_snapshot": format!("{:?}", refreshed.core),
+                "metamap_snapshot": format!("{:?}", refreshed.metamap),
+                "server_validation": format!("{:?}", refreshed.server_validation),
+                "coinag_guard": format!("{:?}", refreshed.transfer_guard),
+            }),
+        );
         if !refreshed.validation.can_transfer()
             || (transfer_kind.is_automatic()
                 && (!refreshed.validation.warnings.is_empty()
@@ -1518,6 +1618,12 @@ impl AppServices {
                 };
             }
         };
+        log_transfer_audit(
+            "transfer_payload_built",
+            case.request_oid(),
+            transfer_kind,
+            json!({ "payload": transfer_payload }),
+        );
 
         let mut automatic_quota_consumed = false;
         if transfer_kind.is_automatic() {
@@ -1548,6 +1654,12 @@ impl AppServices {
                 };
             }
         };
+        log_transfer_audit(
+            "transfer_response_received",
+            case.request_oid(),
+            transfer_kind,
+            json!({ "response": transfer_response }),
+        );
 
         let is_smoke = coinag.transfer_is_smoke();
         let smoke_output_path = transfer_response
@@ -1618,14 +1730,37 @@ impl AppServices {
         };
 
         let initial_status = CoinagClient::classify_transfer_response(&transfer_response);
-        let confirmation_status =
-            self.wait_for_coelsa_confirmation(coinag, external_transfer_id, initial_status);
+        log_transfer_audit(
+            "initial_response_classified",
+            case.request_oid(),
+            transfer_kind,
+            json!({
+                "id_coelsa": external_transfer_id,
+                "status": coelsa_status_audit_value(&initial_status),
+            }),
+        );
+        let confirmation_status = self.wait_for_coelsa_confirmation(
+            coinag,
+            case.request_oid(),
+            transfer_kind,
+            external_transfer_id,
+            initial_status,
+        );
+        log_transfer_audit(
+            "confirmation_finished",
+            case.request_oid(),
+            transfer_kind,
+            json!({
+                "id_coelsa": external_transfer_id,
+                "status": coelsa_status_audit_value(&confirmation_status),
+            }),
+        );
 
         let (message, receipt_path) = match confirmation_status {
             CoelsaTransferStatus::Confirmed => {
                 updated.transfer_guard = CoinagTransferGuard::YaTransferida;
                 updated.message = Some("YA TRANSFERIDA".to_owned());
-                let receipt_path = match transfer_kind {
+                let receipt_result = match transfer_kind {
                     TransferKind::Manual => receipt::write_receipt(
                         &self.receipts_dir,
                         &self.operator_name,
@@ -1638,8 +1773,13 @@ impl AppServices {
                         &updated,
                         external_transfer_id,
                     ),
-                }
-                .ok();
+                };
+                let receipt_path = finish_receipt_trace(
+                    case.request_oid(),
+                    transfer_kind,
+                    "confirmed",
+                    receipt_result,
+                );
                 log::info!(
                     "Transferencia confirmada para solicitud {} con idCoelsa {}.",
                     case.request_oid(),
@@ -1659,7 +1799,7 @@ impl AppServices {
                     detail: detail.clone(),
                 };
                 updated.message = Some(format!("ERROR: {detail}"));
-                let receipt_path = match transfer_kind {
+                let receipt_result = match transfer_kind {
                     TransferKind::Manual => receipt::write_error_receipt(
                         &self.receipts_dir,
                         &self.operator_name,
@@ -1674,8 +1814,13 @@ impl AppServices {
                         external_transfer_id,
                         &detail,
                     ),
-                }
-                .ok();
+                };
+                let receipt_path = finish_receipt_trace(
+                    case.request_oid(),
+                    transfer_kind,
+                    "rejected",
+                    receipt_result,
+                );
                 log::warn!(
                     "Transferencia rechazada para solicitud {} con idCoelsa {}: {}.",
                     case.request_oid(),
@@ -1735,10 +1880,31 @@ impl AppServices {
     fn wait_for_coelsa_confirmation(
         &self,
         coinag: &CoinagClient,
+        request_oid: &str,
+        transfer_kind: TransferKind,
         id_coelsa: &str,
         initial_status: CoelsaTransferStatus,
     ) -> CoelsaTransferStatus {
         if matches!(initial_status, CoelsaTransferStatus::Rejected { .. }) {
+            log_transfer_audit(
+                "confirmation_poll_skipped_terminal_rejection",
+                request_oid,
+                transfer_kind,
+                json!({
+                    "id_coelsa": id_coelsa,
+                    "status": coelsa_status_audit_value(&initial_status),
+                }),
+            );
+            return initial_status;
+        }
+
+        if matches!(initial_status, CoelsaTransferStatus::Confirmed) {
+            log_transfer_audit(
+                "confirmation_poll_skipped_already_confirmed",
+                request_oid,
+                transfer_kind,
+                json!({ "id_coelsa": id_coelsa }),
+            );
             return initial_status;
         }
 
@@ -1757,6 +1923,17 @@ impl AppServices {
             match coinag.lookup_transfer_by_id_coelsa(id_coelsa) {
                 Ok(lookup) => {
                     last_status = lookup.status;
+                    log_transfer_audit(
+                        "confirmation_poll_result",
+                        request_oid,
+                        transfer_kind,
+                        json!({
+                            "id_coelsa": id_coelsa,
+                            "attempt": attempt + 1,
+                            "status": coelsa_status_audit_value(&last_status),
+                            "response": lookup.body,
+                        }),
+                    );
                     if !matches!(last_status, CoelsaTransferStatus::Pending { .. }) {
                         return last_status;
                     }
@@ -1770,6 +1947,16 @@ impl AppServices {
                     last_status = CoelsaTransferStatus::Pending {
                         detail: error.to_string(),
                     };
+                    log_transfer_audit(
+                        "confirmation_poll_error",
+                        request_oid,
+                        transfer_kind,
+                        json!({
+                            "id_coelsa": id_coelsa,
+                            "attempt": attempt + 1,
+                            "error": format!("{error:#}"),
+                        }),
+                    );
                 }
             }
         }

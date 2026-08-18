@@ -261,7 +261,7 @@ impl AppConfig {
             },
             core: CoreConfig {
                 base_url: optional_value(values, "TRANSFERENCIAS_CORE_BASE_URL")
-                    .unwrap_or_else(|| "https://celesol.dyndns.org:5050".to_owned()),
+                    .unwrap_or_else(|| "https://celesol.dyndns.org:5002".to_owned()),
                 allow_invalid_certs: parse_bool_value(
                     values,
                     "TRANSFERENCIAS_CORE_ALLOW_INVALID_CERTS",
