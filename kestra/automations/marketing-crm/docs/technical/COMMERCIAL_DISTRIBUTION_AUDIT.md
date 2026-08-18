@@ -1,6 +1,6 @@
 # Auditoría De Clasificación Y Distribución Comercial
 
-Versión: `2026-08-11`
+Versión: `2026-08-18`
 
 ## Objetivo
 
@@ -14,7 +14,7 @@ Cada ejecución de `bitrix24_catamarca_deal_qualification` publica un resultado
 estructurado. La ejecución Kestra y su revisión identifican el evento original. Los
 runs `no_pending`, que no procesan una negociación, no forman parte del informe.
 
-Desde el contrato `deal-commercial-trace.v1`, el evento se construye dentro del mismo
+Desde el contrato `deal-commercial-distribution-trace.v2`, el evento se construye dentro del mismo
 flujo que toma la decisión. Es autosuficiente: el reporte no vuelve a consultar Bitrix
 ni intenta reconstruir posteriormente qué ocurrió.
 
@@ -22,8 +22,18 @@ Cada evento de negociación contiene cuatro grupos de información:
 
 - identidad: negociación, lead, contacto y título;
 - contexto de entrada: provincia, situación laboral, banco de cobro y origen;
-- decisión de negocio: acción, línea, bucket, responsable, etapa y explicación legible;
-- operación: versión de reglas, fecha, horario, estrategia, pools y transferencia de chat.
+- decisión comercial: acción, razón, línea y etapa comercial resultante;
+- decisión de distribución: acción, razón, bucket, responsable y estrategia;
+- operación: versión de reglas, fecha, horario, pools y transferencia de chat.
+
+La clasificación comercial y la distribución son dos ejes independientes. Por
+ejemplo, una negociación puede quedar aprobada para una línea y, al mismo tiempo,
+quedar en cola o con Maru porque todavía no existe un vendedor disponible. La
+distribución nunca reemplaza la decisión ni la razón comercial.
+
+Los eventos emitidos al reintentar o cerrar una cola conservan la decisión comercial
+original almacenada en la negociación. De esta manera, la trazabilidad no reclasifica
+un caso por el resultado operativo de un intento posterior de asignación.
 
 Los resultados fuera de horario, ya procesados y con error técnico respetan el mismo
 contrato. Ante un error, el flujo hace una recuperación de contexto de solo lectura y
@@ -54,15 +64,18 @@ el inicio del universo en la hoja `Resumen`.
 | `round_robin_initial` | No existe antecedente; toma el primer vendedor online del pool. |
 | `single_seller` | El bucket tiene un único vendedor configurado. |
 | `outside_hours_manual` | Fuera de horario queda con Maru. |
-| `no_online_sellers_manual` | Ningún vendedor del bucket está online; queda con Maru. |
-| `commercial_rejection_manual` | Rechazo comercial con fallback manual en Maru. |
+| `assignment_queue_waiting` | Ningún vendedor del bucket está disponible; espera en la cola de ese bucket. |
+| `assignment_queue_distributed` | Un reintento de la cola encontró vendedor y completó la asignación. |
+| `assignment_queue_closed_manual` | Cerró la ventana semanal; sale de la cola y queda con Maru. |
+| `rejection_without_distribution` | Rechazo comercial aplicado sin buscar vendedor. |
 | `no_matching_bucket` | No pudo determinarse un bucket. |
 | `technical_error` | La ejecución no pudo completar la operación. |
 
 Si una ejecución histórica registró el mensaje `No hay vendedores online disponibles`,
-el reporte la identifica como `Sin vendedor disponible` y no como error técnico. Desde
-la versión vigente, esa condición mueve la negociación a revisión manual, conserva la
-línea y el bucket determinados, y la deja asignada a Maru sin transferir el chat.
+el reporte la identifica como `Sin vendedor disponible` y no como error técnico. En
+la versión vigente, los casos creados dentro de la ventana de distribución esperan en
+una cola independiente por bucket. Al cerrar la ventana semanal salen de la cola y
+quedan con Maru, sin perder la línea ni la explicación comercial originales.
 
 ## Reporte
 

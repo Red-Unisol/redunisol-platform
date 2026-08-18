@@ -105,6 +105,21 @@ outputs:
   - id: action
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.action : outputs.seleccionar_negociacion.vars.action }}"
+  - id: commercial_action
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_action : outputs.seleccionar_negociacion.vars.commercial_action }}"
+  - id: commercial_reason
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_reason : outputs.seleccionar_negociacion.vars.commercial_reason }}"
+  - id: commercial_stage_id
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_stage_id : outputs.seleccionar_negociacion.vars.commercial_stage_id }}"
+  - id: distribution_action
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.distribution_action : outputs.seleccionar_negociacion.vars.distribution_action }}"
+  - id: distribution_reason
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.distribution_reason : outputs.seleccionar_negociacion.vars.distribution_reason }}"
   - id: business_decision
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.business_decision : outputs.seleccionar_negociacion.vars.business_decision }}"

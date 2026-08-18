@@ -3842,8 +3842,19 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "amejuca_premium")
         self.assertFalse(result["bcra_snapshot_refreshed"])
         self.assertEqual(result["bcra_refresh_outcome"], "reused_fresh")
-        self.assertEqual(result["trace_schema_version"], "deal-commercial-trace.v1")
-        self.assertEqual(result["event_type"], "deal_commercial_decision")
+        self.assertEqual(
+            result["trace_schema_version"],
+            "deal-commercial-distribution-trace.v2",
+        )
+        self.assertEqual(
+            result["event_type"],
+            "deal_commercial_distribution_decision",
+        )
+        self.assertEqual(result["commercial_action"], "approved")
+        self.assertEqual(result["commercial_reason"], "amejuca_premium")
+        self.assertEqual(result["commercial_stage_id"], "C1:NEW")
+        self.assertEqual(result["distribution_action"], "assigned")
+        self.assertEqual(result["distribution_reason"], "seller_selected")
         self.assertEqual(result["business_decision"], "Asignado a la línea AMEJUCA Premium")
         self.assertEqual(
             result["business_reason"],
@@ -3985,8 +3996,13 @@ class BusinessLogicTests(unittest.TestCase):
             now=datetime.fromisoformat("2026-08-08T12:00:00-03:00"),
         )
 
-        self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "outside_business_hours")
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "amejuca_premium")
+        self.assertEqual(result["commercial_action"], "approved")
+        self.assertEqual(result["commercial_reason"], "amejuca_premium")
+        self.assertEqual(result["commercial_stage_id"], "C1:NEW")
+        self.assertEqual(result["distribution_action"], "manual_owner")
+        self.assertEqual(result["distribution_reason"], "outside_business_hours")
         self.assertEqual(result["assigned_by_id"], 57)
         self.assertEqual(result["assignment_strategy"], "outside_hours_manual")
         self.assertFalse(result["within_business_hours"])
@@ -3994,12 +4010,13 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["employment_status"], "Docente")
         self.assertEqual(result["payment_bank"], "BANCO DE LA NACION ARGENTINA")
         self.assertEqual(result["source"], "Google")
-        self.assertEqual(result["business_decision"], "Enviado a revisión manual con Maru")
+        self.assertEqual(result["business_decision"], "Asignado a la línea AMEJUCA Premium")
         self.assertEqual(
             result["business_reason"],
-            "La negociación ingresó fuera del horario de distribución automática.",
+            "Cumple las condiciones BCRA de AMEJUCA Premium.",
         )
-        self.assertEqual(client.deals[939]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(client.deals[939]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[939]["ufCrm_659EBB0445E8E"], "AMEJUCA Premium")
         self.assertEqual(client.deals[939]["assignedById"], 57)
         self.assertEqual(client.leads[938]["ASSIGNED_BY_ID"], 57)
         self.assertEqual(client.chat_transfers, [])
@@ -4226,7 +4243,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["previous_assigned_by_id"], 57)
         self.assertEqual(result["lead_id"], 920)
         self.assertEqual(result["contact_id"], 101)
-        self.assertEqual(result["rule_version"], "2026-08-13")
+        self.assertEqual(result["rule_version"], "2026-08-18")
         self.assertTrue(result["processed_at"])
         chat_queries = [
             payload
@@ -4557,6 +4574,11 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "queued")
         self.assertEqual(result["reason"], "assignment_queued")
         self.assertEqual(result["assignment_strategy"], "assignment_queue")
+        self.assertEqual(result["commercial_action"], "approved")
+        self.assertEqual(result["commercial_reason"], "cde_premium")
+        self.assertEqual(result["commercial_stage_id"], "C1:NEW")
+        self.assertEqual(result["distribution_action"], "queued")
+        self.assertEqual(result["distribution_reason"], "assignment_queued")
         self.assertEqual(result["assigned_by_id"], 57)
         self.assertEqual(result["routing_bucket"], "cordoba_publico_policia")
         self.assertEqual(result["configured_pool"], "74365")
@@ -4600,6 +4622,19 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[961]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[961]["assignedById"], 74365)
         self.assertEqual(client.leads[961]["ASSIGNED_BY_ID"], 74365)
+        distributed = next(
+            event
+            for event in result["events"]
+            if event["action"] == "queue_distributed"
+        )
+        self.assertEqual(distributed["commercial_action"], "approved")
+        self.assertEqual(distributed["commercial_reason"], "cde_premium")
+        self.assertEqual(distributed["commercial_stage_id"], "C1:NEW")
+        self.assertEqual(distributed["distribution_action"], "assigned")
+        self.assertEqual(
+            distributed["distribution_reason"],
+            "assignment_queue_distributed",
+        )
 
     def test_assignment_queue_is_fifo_within_each_bucket(self) -> None:
         client = FakeBitrixClient()
@@ -4645,6 +4680,12 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["closed_count"], 1)
         self.assertEqual(result["distributed_count"], 0)
+        closed = result["events"][0]
+        self.assertEqual(closed["commercial_action"], "approved")
+        self.assertEqual(closed["commercial_reason"], "cde_premium")
+        self.assertEqual(closed["commercial_stage_id"], "C1:NEW")
+        self.assertEqual(closed["distribution_action"], "manual_owner")
+        self.assertEqual(closed["distribution_reason"], "assignment_queue_closed")
         self.assertEqual(client.deals[964]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[964]["assignedById"], 57)
         self.assertEqual(client.chat_transfers, [])
@@ -4665,8 +4706,33 @@ class BusinessLogicTests(unittest.TestCase):
             now=datetime.fromisoformat("2026-08-17T00:01:00-03:00"),
         )
 
-        self.assertEqual(result["reason"], "outside_business_hours")
-        self.assertEqual(client.deals[965]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(result["commercial_action"], "approved")
+        self.assertEqual(result["commercial_reason"], "cde_premium")
+        self.assertEqual(result["distribution_action"], "manual_owner")
+        self.assertEqual(result["distribution_reason"], "outside_business_hours")
+        self.assertEqual(client.deals[965]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[965]["assignedById"], 57)
+
+    def test_missing_routing_data_does_not_hide_commercial_evaluation(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[968] = self._catamarca_enriched_lead(968, bcra_entities=[])
+        client.leads[968]["UF_CRM_64E65D2B2136C"] = ""
+        client.deals[968] = self._pending_deal(968, 968)
+
+        result = qualify_catamarca_deal(
+            968,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "routing_review")
+        self.assertEqual(result["commercial_action"], "manual_review")
+        self.assertEqual(result["commercial_reason"], "missing_prequalification_data")
+        self.assertEqual(result["commercial_stage_id"], "C1:KESTRA_REVIEW")
+        self.assertEqual(result["distribution_action"], "routing_review")
+        self.assertEqual(result["distribution_reason"], "missing_routing_data")
+        self.assertEqual(client.deals[968]["stageId"], "C1:KESTRA_ROUTE_REVIEW")
 
     def test_previous_week_queue_is_not_reopened_on_monday(self) -> None:
         client = FakeBitrixClient()
@@ -4772,6 +4838,11 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "commercial_rejected")
         self.assertEqual(result["reason"], "caja_age_80_or_more")
+        self.assertEqual(result["commercial_action"], "commercial_rejected")
+        self.assertEqual(result["commercial_reason"], "caja_age_80_or_more")
+        self.assertEqual(result["commercial_stage_id"], "C1:KESTRA_REVIEW")
+        self.assertEqual(result["distribution_action"], "not_applicable")
+        self.assertEqual(result["distribution_reason"], "commercial_rejection")
         self.assertEqual(result["assigned_by_id"], 57)
         self.assertEqual(result["routing_bucket"], "cordoba_jubilados")
         self.assertEqual(client.leads[942]["ASSIGNED_BY_ID"], 57)

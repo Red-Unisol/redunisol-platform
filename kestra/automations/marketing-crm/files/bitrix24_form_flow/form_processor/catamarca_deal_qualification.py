@@ -38,7 +38,7 @@ from .routing_bucket import resolve_routing_bucket, routing_bucket_by_key
 
 
 @dataclass(frozen=True)
-class CatamarcaDecision:
+class CommercialDecision:
     action: str
     reason: str
     stage_id: str
@@ -46,9 +46,16 @@ class CatamarcaDecision:
 
 
 @dataclass(frozen=True)
+class DistributionDecision:
+    action: str
+    reason: str
+    strategy: str
+
+
+@dataclass(frozen=True)
 class BcraSnapshotResolution:
     lead: dict[str, Any]
-    decision_override: CatamarcaDecision | None
+    decision_override: CommercialDecision | None
     checked_at: str
     age_days: float | None
     refreshed: bool
@@ -61,7 +68,7 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-13"
+COMMERCIAL_RULE_VERSION = "2026-08-18"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
@@ -179,57 +186,6 @@ def qualify_catamarca_deal(
             **trace_context,
         )
 
-    if _business_hours_gate_enabled(source) and (
-        not within_business_hours or not created_within_distribution_window
-    ):
-        _assign_lead_responsible(
-            client,
-            lead_id=lead_id,
-            assigned_by_id=config.deal.provisional_user_id,
-            logger=active_logger,
-        )
-        client.call(
-            "crm.item.update",
-            {
-                "entityTypeId": DEAL_ENTITY_TYPE_ID,
-                "id": deal_id_int,
-                "fields": {
-                    "stageId": config.deal.manual_review_stage_id,
-                    "assignedById": config.deal.provisional_user_id,
-                },
-            },
-        )
-        active_logger.info(
-            f"Negociacion {deal_id_int} recibida fuera de horario laboral: "
-            "queda asignada a Maru para distribucion manual."
-        )
-        trace_context = _lead_trace_context(
-            client, config, lead_id, active_logger
-        )
-        trace_contact_id = _optional_int(trace_context.pop("contact_id"))
-        contact_id = contact_id or trace_contact_id
-        return _result(
-            action="manual_review",
-            has_pending=False,
-            deal_id=deal_id_int,
-            lead_id=lead_id,
-            stage_id=config.deal.manual_review_stage_id,
-            reason="outside_business_hours",
-            assigned_by_id=config.deal.provisional_user_id,
-            processed_at=processed_at,
-            contact_id=contact_id,
-            deal_title=deal_title,
-            stage_before=current_stage,
-            previous_assigned_by_id=previous_assignee_id,
-            within_business_hours=False,
-            assignment_strategy="outside_hours_manual",
-            message=(
-                "Negociacion fuera de horario laboral; queda en manos de Maru "
-                "para distribucion manual."
-            ),
-            **trace_context,
-        )
-
     lead = get_lead(client, lead_id, active_logger)
     contact_id = contact_id or _optional_int(lead.get("CONTACT_ID"))
     province = lead_enum_label(client, lead, config.fields.lead_province) or ""
@@ -240,52 +196,6 @@ def qualify_catamarca_deal(
         lead_enum_label(client, lead, config.fields.lead_payment_bank) or ""
     )
     source_label = lead_enum_label(client, lead, config.fields.lead_source) or ""
-    routing = resolve_routing_bucket(config, lead)
-    province = routing.province or province
-    if routing.bucket is None:
-        client.call(
-            "crm.item.update",
-            {
-                "entityTypeId": DEAL_ENTITY_TYPE_ID,
-                "id": deal_id_int,
-                "fields": {"stageId": config.deal.routing_review_stage_id},
-            },
-        )
-        notify_unmatched_routing(
-            client,
-            config,
-            deal_id=deal_id_int,
-            deal_title=deal_title,
-            province=routing.province,
-            reason=routing.reason,
-            logger=active_logger,
-        )
-        active_logger.info(
-            f"Negociacion {deal_id_int} sin bucket: {routing.reason}; "
-            "no se asigna vendedor ni se transfiere chat."
-        )
-        return _result(
-            action="routing_review",
-            has_pending=False,
-            deal_id=deal_id_int,
-            lead_id=lead_id,
-            stage_id=config.deal.routing_review_stage_id,
-            reason=routing.reason,
-            processed_at=processed_at,
-            contact_id=contact_id,
-            deal_title=deal_title,
-            stage_before=current_stage,
-            previous_assigned_by_id=previous_assignee_id,
-            province=province,
-            employment_status=employment_status,
-            payment_bank=payment_bank,
-            source=source_label,
-            within_business_hours=within_business_hours,
-            assignment_strategy="no_matching_bucket",
-            message="Negociacion enviada a revision por no tener bucket de distribucion.",
-        )
-
-    bucket = routing.bucket
     bcra_resolution = _resolve_bcra_snapshot(
         client,
         config,
@@ -305,7 +215,16 @@ def qualify_catamarca_deal(
         "bcra_refresh_outcome": bcra_resolution.refresh_outcome,
     }
     decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
+    routing = resolve_routing_bucket(config, lead)
+    province = routing.province or province
+    bucket = routing.bucket
+    routing_bucket_key = bucket.key if bucket is not None else ""
     if decision.action in {"rejected", "commercial_rejected"}:
+        distribution = DistributionDecision(
+            "not_applicable",
+            "commercial_rejection",
+            "rejection_without_distribution",
+        )
         _assign_lead_responsible(
             client,
             lead_id=lead_id,
@@ -321,7 +240,7 @@ def qualify_catamarca_deal(
                     "stageId": decision.stage_id,
                     "assignedById": config.deal.provisional_user_id,
                     config.deal.commercial_line_field: "",
-                    config.deal.routing_bucket_field: bucket.key,
+                    config.deal.routing_bucket_field: routing_bucket_key,
                     config.deal.queue_action_field: "",
                     config.deal.queue_reason_field: "",
                     config.deal.queue_target_stage_field: "",
@@ -338,7 +257,7 @@ def qualify_catamarca_deal(
             reason=decision.reason,
             assigned_by_id=config.deal.provisional_user_id,
             assigned_by_name="Maru Lopez",
-            routing_bucket=bucket.key,
+            routing_bucket=routing_bucket_key,
             processed_at=processed_at,
             contact_id=contact_id,
             deal_title=deal_title,
@@ -349,8 +268,137 @@ def qualify_catamarca_deal(
             payment_bank=payment_bank,
             source=source_label,
             within_business_hours=within_business_hours,
-            assignment_strategy="rejection_without_distribution",
+            assignment_strategy=distribution.strategy,
+            commercial_action=decision.action,
+            commercial_reason=decision.reason,
+            commercial_stage_id=decision.stage_id,
+            distribution_action=distribution.action,
+            distribution_reason=distribution.reason,
             message="Rechazo aplicado sin buscar vendedor ni distribuir el chat.",
+            **bcra_trace,
+        )
+
+    outside_distribution_window = _business_hours_gate_enabled(source) and (
+        not within_business_hours or not created_within_distribution_window
+    )
+    if outside_distribution_window:
+        distribution = DistributionDecision(
+            "manual_owner",
+            "outside_business_hours",
+            "outside_hours_manual",
+        )
+        update_fields: dict[str, Any] = {
+            "stageId": decision.stage_id,
+            "assignedById": config.deal.provisional_user_id,
+            config.deal.routing_bucket_field: routing_bucket_key,
+            config.deal.queue_action_field: "",
+            config.deal.queue_reason_field: "",
+            config.deal.queue_target_stage_field: "",
+            config.deal.queue_enqueued_at_field: "",
+        }
+        if decision.commercial_line is not None:
+            update_fields[config.deal.commercial_line_field] = decision.commercial_line
+        _assign_lead_responsible(
+            client,
+            lead_id=lead_id,
+            assigned_by_id=config.deal.provisional_user_id,
+            logger=active_logger,
+        )
+        client.call(
+            "crm.item.update",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "id": deal_id_int,
+                "fields": update_fields,
+            },
+        )
+        return _result(
+            action=decision.action,
+            has_pending=False,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=decision.stage_id,
+            reason=decision.reason,
+            assigned_by_id=config.deal.provisional_user_id,
+            assigned_by_name="Maru Lopez",
+            routing_bucket=routing_bucket_key,
+            commercial_line=decision.commercial_line,
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            source=source_label,
+            within_business_hours=False,
+            assignment_strategy=distribution.strategy,
+            commercial_action=decision.action,
+            commercial_reason=decision.reason,
+            commercial_stage_id=decision.stage_id,
+            distribution_action=distribution.action,
+            distribution_reason=distribution.reason,
+            message=(
+                "Clasificacion comercial aplicada; la distribucion queda con Maru "
+                "por estar fuera de la ventana automatica."
+            ),
+            **bcra_trace,
+        )
+
+    if bucket is None:
+        distribution = DistributionDecision(
+            "routing_review",
+            routing.reason,
+            "no_matching_bucket",
+        )
+        client.call(
+            "crm.item.update",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "id": deal_id_int,
+                "fields": {
+                    "stageId": config.deal.routing_review_stage_id,
+                    "assignedById": config.deal.provisional_user_id,
+                },
+            },
+        )
+        notify_unmatched_routing(
+            client,
+            config,
+            deal_id=deal_id_int,
+            deal_title=deal_title,
+            province=routing.province,
+            reason=routing.reason,
+            logger=active_logger,
+        )
+        return _result(
+            action="routing_review",
+            has_pending=False,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=config.deal.routing_review_stage_id,
+            reason=routing.reason,
+            assigned_by_id=config.deal.provisional_user_id,
+            assigned_by_name="Maru Lopez",
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            source=source_label,
+            within_business_hours=within_business_hours,
+            assignment_strategy=distribution.strategy,
+            commercial_action=decision.action,
+            commercial_reason=decision.reason,
+            commercial_stage_id=decision.stage_id,
+            commercial_line=decision.commercial_line,
+            distribution_action=distribution.action,
+            distribution_reason=distribution.reason,
+            message="La clasificacion comercial se conservo; falta resolver el enrutamiento.",
             **bcra_trace,
         )
     try:
@@ -369,6 +417,11 @@ def qualify_catamarca_deal(
         can_enqueue = (
             not _business_hours_gate_enabled(source)
             or (within_business_hours and created_within_distribution_window)
+        )
+        distribution = DistributionDecision(
+            "queued" if can_enqueue else "manual_owner",
+            "assignment_queued" if can_enqueue else "no_online_sellers",
+            "assignment_queue" if can_enqueue else "no_online_sellers_manual",
         )
         update_fields: dict[str, Any] = {
             "stageId": (
@@ -430,11 +483,14 @@ def qualify_catamarca_deal(
             payment_bank=payment_bank,
             source=source_label,
             within_business_hours=within_business_hours,
-            assignment_strategy=(
-                "assignment_queue" if can_enqueue else "no_online_sellers_manual"
-            ),
+            assignment_strategy=distribution.strategy,
             configured_pool=exc.configured_pool,
             online_pool=(),
+            commercial_action=decision.action,
+            commercial_reason=decision.reason,
+            commercial_stage_id=decision.stage_id,
+            distribution_action=distribution.action,
+            distribution_reason=distribution.reason,
             message=(
                 "No habia vendedores disponibles; la negociacion queda en cola temporal."
                 if can_enqueue
@@ -442,6 +498,11 @@ def qualify_catamarca_deal(
             ),
             **bcra_trace,
         )
+    distribution = DistributionDecision(
+        "assigned",
+        "seller_selected",
+        assignment.strategy,
+    )
     assigned_by_id = assignment.assigned_by_id
     assigned_by_name = user_display_name(
         client,
@@ -522,9 +583,14 @@ def qualify_catamarca_deal(
         payment_bank=payment_bank,
         source=source_label,
         within_business_hours=within_business_hours,
-        assignment_strategy=assignment.strategy,
+        assignment_strategy=distribution.strategy,
         configured_pool=assignment.configured_pool,
         online_pool=assignment.online_pool,
+        commercial_action=decision.action,
+        commercial_reason=decision.reason,
+        commercial_stage_id=decision.stage_id,
+        distribution_action=distribution.action,
+        distribution_reason=distribution.reason,
         linked_activity_count=linked_activity_count,
         transferred_chat_count=transferred_chat_count,
         message="Clasificación comercial aplicada a la negociación.",
@@ -810,6 +876,12 @@ def _queue_context_result(
     contact_id = _optional_int(context.pop("contact_id", None)) or _optional_int(
         deal.get("contactId")
     )
+    legacy_action = str(overrides.get("action") or "")
+    distribution_action = {
+        "queue_waiting": "queued",
+        "queue_distributed": "assigned",
+        "queue_closed": "manual_owner",
+    }.get(legacy_action, legacy_action)
     return _result(
         has_pending=overrides.get("action") == "queue_waiting",
         deal_id=_optional_int(deal.get("id")),
@@ -821,6 +893,13 @@ def _queue_context_result(
         commercial_line=str(deal.get(config.deal.commercial_line_field) or "") or None,
         previous_assigned_by_id=_optional_int(deal.get("assignedById")),
         within_business_hours=overrides.get("action") != "queue_closed",
+        commercial_action=str(deal.get(config.deal.queue_action_field) or ""),
+        commercial_reason=str(deal.get(config.deal.queue_reason_field) or ""),
+        commercial_stage_id=str(
+            deal.get(config.deal.queue_target_stage_field) or ""
+        ),
+        distribution_action=distribution_action,
+        distribution_reason=str(overrides.get("reason") or ""),
         **context,
         **overrides,
     )
@@ -857,6 +936,11 @@ def _queue_error_result(
         processed_at=processed_at,
         routing_bucket=str(deal.get(config.deal.routing_bucket_field) or ""),
         assignment_strategy="assignment_queue_error",
+        commercial_action=str(deal.get(config.deal.queue_action_field) or ""),
+        commercial_reason=str(deal.get(config.deal.queue_reason_field) or ""),
+        commercial_stage_id=str(deal.get(config.deal.queue_target_stage_field) or ""),
+        distribution_action="error",
+        distribution_reason="internal_error",
         message=str(exc),
         ok=False,
     )
@@ -1059,7 +1143,7 @@ def _persist_deal_bcra_snapshot(
     logger.info(f"Snapshot BCRA actualizado en la negociacion {deal_id}.")
 
 
-def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> CatamarcaDecision:
+def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> CommercialDecision:
     try:
         submission = build_submission_from_lead(lead, config)
     except ValueError:
@@ -1082,7 +1166,7 @@ def _evaluate_catamarca(
     config: AppConfig,
     lead: dict[str, Any],
     payment_bank: str,
-) -> CatamarcaDecision:
+) -> CommercialDecision:
     entities = _bcra_entities(config, lead)
     if entities is None:
         return _manual(config, "bcra_snapshot_not_conclusive")
@@ -1122,7 +1206,7 @@ def _evaluate_cordoba(
     lead: dict[str, Any],
     employment: str,
     payment_bank: str,
-) -> CatamarcaDecision:
+) -> CommercialDecision:
     entities = _bcra_entities(config, lead)
     if entities is None:
         return _manual(config, "missing_bcra_snapshot")
@@ -1151,7 +1235,7 @@ def _evaluate_cruz_del_eje(
     config: AppConfig,
     entities: list[dict[str, Any]],
     vimarx: dict[str, Any] | None,
-) -> CatamarcaDecision:
+) -> CommercialDecision:
     bank_situation = _named_bank_situation(entities, "cordoba")
     if bank_situation >= 2:
         return _bcra_rejected(config, "cordoba_bank_situation_above_one")
@@ -1182,7 +1266,7 @@ def _evaluate_cbu(
     entities: list[dict[str, Any]],
     employment: str,
     vimarx: dict[str, Any] | None,
-) -> CatamarcaDecision:
+) -> CommercialDecision:
     if len(entities) > 5:
         return _bcra_rejected(config, "cbu_more_than_five_entities")
     if any(value > 1 for value in _situations(entities)):
@@ -1204,7 +1288,7 @@ def _evaluate_caja(
     entities: list[dict[str, Any]],
     vimarx: dict[str, Any] | None,
     payment_bank: str,
-) -> CatamarcaDecision:
+) -> CommercialDecision:
     age = _age_from_lead(lead, vimarx)
     if age is None:
         return _manual(config, "missing_birthdate")
@@ -1247,7 +1331,7 @@ def _evaluate_unc(
     lead: dict[str, Any],
     entities: list[dict[str, Any]],
     vimarx: dict[str, Any] | None,
-) -> CatamarcaDecision:
+) -> CommercialDecision:
     if vimarx is None or not isinstance(vimarx.get("socio"), dict):
         return _manual(config, "unc_activity_not_verifiable")
     socio = vimarx["socio"]
@@ -1313,7 +1397,7 @@ def _common_bcra_rejection(
     payment_situation: int,
     max_high_risk: int,
     max_payment_situation: int,
-) -> CatamarcaDecision | None:
+) -> CommercialDecision | None:
     if _high_risk_count(entities) > max_high_risk:
         return _bcra_rejected(config, "bcra_more_than_four_high_risk_situations")
     if payment_situation > max_payment_situation:
@@ -1421,16 +1505,16 @@ def _paid_installments(credits: list[dict[str, Any]]) -> list[int]:
     return [_optional_int(credit.get("cuotas_pagas")) or 0 for credit in credits]
 
 
-def _approved(config: AppConfig, reason: str, line: str) -> CatamarcaDecision:
-    return CatamarcaDecision("approved", reason, config.deal.stage_id, line)
+def _approved(config: AppConfig, reason: str, line: str) -> CommercialDecision:
+    return CommercialDecision("approved", reason, config.deal.stage_id, line)
 
 
-def _bcra_rejected(config: AppConfig, reason: str) -> CatamarcaDecision:
-    return CatamarcaDecision("rejected", reason, config.deal.bcra_rejected_stage_id)
+def _bcra_rejected(config: AppConfig, reason: str) -> CommercialDecision:
+    return CommercialDecision("rejected", reason, config.deal.bcra_rejected_stage_id)
 
 
-def _commercial_rejected(config: AppConfig, reason: str) -> CatamarcaDecision:
-    return CatamarcaDecision(
+def _commercial_rejected(config: AppConfig, reason: str) -> CommercialDecision:
+    return CommercialDecision(
         "commercial_rejected", reason, config.deal.commercial_rejected_stage_id
     )
 
@@ -1560,8 +1644,8 @@ def _get_deal(client: Any, deal_id: int) -> dict[str, Any]:
     return item
 
 
-def _manual(config: AppConfig, reason: str) -> CatamarcaDecision:
-    return CatamarcaDecision(
+def _manual(config: AppConfig, reason: str) -> CommercialDecision:
+    return CommercialDecision(
         action="manual_review",
         reason=reason,
         stage_id=config.deal.manual_review_stage_id,
@@ -1695,15 +1779,29 @@ def _result(
     bcra_snapshot_refreshed: bool = False,
     bcra_refresh_outcome: str = "not_evaluated",
     source: str = "",
+    commercial_action: str = "",
+    commercial_reason: str = "",
+    commercial_stage_id: str = "",
+    distribution_action: str = "",
+    distribution_reason: str = "",
     ok: bool = True,
 ) -> dict[str, object]:
-    decision_label = business_decision(action, commercial_line, assigned_by_id)
-    reason_label = business_reason(reason, message)
+    decision_label = business_decision(
+        commercial_action or action,
+        commercial_line,
+        assigned_by_id,
+    )
+    reason_label = business_reason(commercial_reason or reason, message)
     return {
         "ok": ok,
         "trace_schema_version": TRACE_SCHEMA_VERSION,
-        "event_type": "deal_commercial_decision",
+        "event_type": "deal_commercial_distribution_decision",
         "action": action,
+        "commercial_action": commercial_action,
+        "commercial_reason": commercial_reason,
+        "commercial_stage_id": commercial_stage_id,
+        "distribution_action": distribution_action,
+        "distribution_reason": distribution_reason,
         "business_decision": decision_label,
         "business_reason": reason_label,
         "has_pending": has_pending,

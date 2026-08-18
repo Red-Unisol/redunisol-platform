@@ -62,14 +62,15 @@ cumplen la elegibilidad de su provincia conservan el rechazo correspondiente.
 
 ## Distribución y horario laboral
 
-Dentro del horario configurado, todo resultado con bucket válido —aprobado, revisión
-manual o rechazo BCRA— participa de la distribución y transferencia de chat. Un
-rechazo comercial queda con Maru y no se distribuye.
+La clasificacion comercial se ejecuta antes de aplicar las politicas de distribucion.
+Los rechazos BCRA o comerciales quedan con Maru y no se distribuyen. Las aprobaciones
+y revisiones manuales con bucket valido pueden participar de la distribucion y
+transferencia de chat.
 
 La ventana de distribución es continua desde el lunes a las 00:00 inclusive hasta el
-viernes a las 17:00 exclusive. Fuera de ella, la negociación queda en REVISIÓN MANUAL
-KESTRA con Maru (`57`), sin round-robin ni transferencia automática de chat. No se
-redistribuye automáticamente al siguiente día hábil.
+viernes a las 17:00 exclusive. Fuera de ella, se conserva la linea, motivo y etapa
+comercial, pero la negociación queda con Maru (`57`), sin round-robin ni transferencia
+automática de chat. No se redistribuye automáticamente al siguiente día hábil.
 
 Zona horaria: `America/Argentina/Cordoba`.
 
@@ -77,6 +78,9 @@ La falta temporal de vendedores dentro de la ventana usa una etapa separada,
 `C1:KESTRA_QUEUE`. `bitrix24_deal_assignment_queue` reintenta un caso FIFO por bucket
 y por minuto. El viernes a las 17:00 vacia la cola hacia revision manual con Maru; esos
 casos no se reactivan el lunes.
+
+La traza v2 separa `commercial_*` de `distribution_*`. Horario, bucket, cola y
+disponibilidad de vendedores ya no impiden ni sobreescriben la evaluacion comercial.
 
 ## Especificaciones relacionadas
 

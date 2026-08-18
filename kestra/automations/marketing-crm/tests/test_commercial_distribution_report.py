@@ -129,6 +129,46 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["action"], "queue_distributed")
         self.assertEqual(rows[0]["distribution_status"], "Distribuido")
 
+    def test_v2_keeps_commercial_reason_when_distribution_enters_queue(self):
+        raw = execution(action="queued", strategy="assignment_queue")
+        raw["outputs"].update(
+            reason="assignment_queued",
+            stage_id="C1:KESTRA_QUEUE",
+            commercial_line="",
+            commercial_action="manual_review",
+            commercial_reason="missing_bcra_snapshot",
+            commercial_stage_id="C1:KESTRA_REVIEW",
+            distribution_action="queued",
+            distribution_reason="assignment_queued",
+        )
+
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+
+        self.assertEqual(row["distribution_status"], "En cola de distribución")
+        self.assertEqual(row["business_decision"], "Enviado a revisión manual")
+        self.assertEqual(
+            row["business_reason"],
+            "No hay información BCRA suficiente para decidir automáticamente.",
+        )
+        self.assertEqual(row["commercial_stage_id"], "C1:KESTRA_REVIEW")
+
+    def test_v2_approved_outside_hours_preserves_both_decisions(self):
+        raw = execution(action="approved", strategy="outside_hours_manual")
+        raw["outputs"].update(
+            commercial_action="approved",
+            commercial_reason="amejuca_premium",
+            commercial_stage_id="C1:NEW",
+            distribution_action="manual_owner",
+            distribution_reason="outside_business_hours",
+            assigned_by_id="57",
+            assigned_by_name="Maru Lopez",
+        )
+
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+
+        self.assertEqual(row["business_decision"], "Asignado a la línea AMEJUCA Premium")
+        self.assertEqual(row["distribution_status"], "Gestión manual con Maru")
+
     def test_adds_names_to_responsibles_and_pools_while_preserving_ids(self):
         row = REPORT.normalized(execution())
 
