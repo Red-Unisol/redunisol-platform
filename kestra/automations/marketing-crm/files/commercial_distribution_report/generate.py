@@ -262,6 +262,7 @@ def distribution_status(
     strategy: str,
     technical_state: str,
     message: str = "",
+    distribution_action: str = "",
 ) -> str:
     if technical_state in {"FAILED", "KILLED"} or action == "error":
         if (
@@ -270,6 +271,18 @@ def distribution_status(
         ):
             return "Sin vendedor disponible"
         return "Error técnico"
+    if distribution_action == "assigned":
+        return "Distribuido"
+    if distribution_action == "queued":
+        return "En cola de distribución"
+    if distribution_action == "manual_owner":
+        return "Gestión manual con Maru"
+    if distribution_action == "routing_review":
+        return "Sin bucket"
+    if distribution_action == "error":
+        return "Error técnico"
+    if distribution_action == "not_applicable":
+        return "Rechazado sin distribución"
     if strategy in {
         "outside_hours_manual",
         "commercial_rejection_manual",
@@ -308,6 +321,16 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     strategy = str(outputs.get("assignment_strategy") or "").strip()
+    commercial_action = str(outputs.get("commercial_action") or "").strip().lower()
+    if not commercial_action and action in {
+        "approved", "rejected", "commercial_rejected", "manual_review"
+    }:
+        commercial_action = action
+    commercial_reason = str(outputs.get("commercial_reason") or "").strip()
+    if not commercial_reason and commercial_action:
+        commercial_reason = str(outputs.get("reason") or "").strip()
+    distribution_action = str(outputs.get("distribution_action") or "").strip()
+    distribution_reason = str(outputs.get("distribution_reason") or "").strip()
     rule_version = str(outputs.get("rule_version") or "").strip()
     assigned_by_id = str(outputs.get("assigned_by_id") or "").strip()
     assigned_by_name = str(outputs.get("assigned_by_name") or "").strip()
@@ -317,7 +340,13 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         (row.get("state") or {}).get("startDate")
     )
     message = str(outputs.get("message") or "")
-    status = distribution_status(action, strategy, technical_state, message)
+    status = distribution_status(
+        action,
+        strategy,
+        technical_state,
+        message,
+        distribution_action,
+    )
     if not strategy and not rule_version and technical_state == "SUCCESS":
         status = "Histórico incompleto"
     return {
@@ -326,6 +355,11 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         "revision": row.get("flowRevision"),
         "technical_state": technical_state,
         "action": action,
+        "commercial_action": commercial_action,
+        "commercial_reason": commercial_reason,
+        "commercial_stage_id": str(outputs.get("commercial_stage_id") or ""),
+        "distribution_action": distribution_action,
+        "distribution_reason": distribution_reason,
         "distribution_status": status,
         "reason": str(outputs.get("reason") or ""),
         "message": message,
@@ -454,7 +488,7 @@ def add_user_displays(
 
 
 def business_decision(row: dict[str, Any]) -> str:
-    action = row["action"]
+    action = row["commercial_action"]
     if action == "approved":
         line = row["commercial_line"] or "comercial definida"
         return f"Asignado a la línea {line}"
@@ -478,13 +512,13 @@ def business_decision(row: dict[str, Any]) -> str:
 def business_reason(row: dict[str, Any]) -> str:
     if row["distribution_status"] == "Sin vendedor disponible":
         return "No había vendedores del grupo conectados en Bitrix."
-    reason = REASON_LABELS.get(row["reason"])
+    reason = REASON_LABELS.get(row["commercial_reason"])
     if reason:
         return reason
     if row["message"]:
         return row["message"]
-    if row["reason"]:
-        return f"Motivo pendiente de descripción comercial: {row['reason']}."
+    if row["commercial_reason"]:
+        return f"Motivo pendiente de descripción comercial: {row['commercial_reason']}."
     return "La ejecución no dejó información suficiente para explicar la decisión."
 
 
@@ -650,6 +684,8 @@ def build(
     ]
     technical_headers = [
         "Fecha y hora", "Estado de distribución", "Acción técnica", "Código de motivo",
+        "Decisión comercial", "Motivo comercial", "Etapa comercial objetivo",
+        "Acción de distribución", "Motivo de distribución",
         "Versión de reglas", "Revisión del flujo Kestra", "Negociación", "Título",
         "Lead", "Contacto", "Provincia", "Situación laboral", "Banco de cobro",
         "Estado de consulta BCRA", "Fecha de consulta BCRA", "Antigüedad BCRA (días)",
@@ -660,7 +696,9 @@ def build(
         "Estado técnico", "Mensaje técnico",
     ]
     technical_keys = [
-        "processed_at", "distribution_status", "action", "reason", "rule_version",
+        "processed_at", "distribution_status", "action", "reason",
+        "commercial_action", "commercial_reason", "commercial_stage_id",
+        "distribution_action", "distribution_reason", "rule_version",
         "revision", "deal_id", "deal_title", "lead_id", "contact_id", "province",
         "employment_status",
         "payment_bank", "bcra_refresh_display", "bcra_snapshot_checked_at",
@@ -731,16 +769,19 @@ def build(
             sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
             mute_previous_version(sheet, row_number, item, version)
             add_link(
-                sheet.cell(row_number, 7),
+                sheet.cell(row_number, 12),
                 f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
             )
             add_link(
-                sheet.cell(row_number, 9),
+                sheet.cell(row_number, 14),
                 f"{base}/crm/lead/details/{item['lead_id']}/" if base else "",
             )
 
     business_widths = {2: 36, 3: 72, 5: 34, 7: 30, 8: 38, 11: 38, 12: 38, 14: 48}
-    technical_widths = {4: 36, 8: 34, 12: 30, 13: 38, 20: 48, 22: 60, 23: 60, 29: 60}
+    technical_widths = {
+        4: 36, 6: 48, 9: 48, 13: 34, 17: 30, 18: 38,
+        25: 48, 27: 60, 28: 60, 34: 60, 37: 60,
+    }
     compact(cases_sheet, business_widths)
     compact(exceptions, business_widths)
     compact(technical, technical_widths)

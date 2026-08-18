@@ -34,8 +34,8 @@ Calificacion definitiva Catamarca o Cordoba
         |-- rechazo comercial -> etapa configurada o fallback manual
         `-- dato insuficiente/regla ambigua -> REVISION MANUAL KESTRA
         |
-        `-- dentro de horario y con bucket valido:
-            distribucion + transferencia de chat para cualquier resultado
+        `-- aprobacion o revision que requiere vendedor:
+            politica independiente de distribucion, horario, bucket y chat
 ```
 
 ## Etapas Bitrix
@@ -92,7 +92,8 @@ inclusive hasta el viernes a las 17:00 exclusive, usando
 
 Si una negociacion pendiente se procesa fuera de esa ventana:
 
-- pasa a `C1:KESTRA_REVIEW`;
+- Kestra ejecuta y conserva igualmente la clasificacion comercial;
+- aplica la linea y etapa comercial que correspondan;
 - queda asignada a Maru Lopez (`57`);
 - no se ejecuta round-robin;
 - no se transfiere ningun chat;
@@ -112,6 +113,20 @@ busca vendedor, no transfiere el chat y no las incorpora a la cola.
 
 Al cerrar la ventana semanal, el mismo flow mueve todo remanente a
 `C1:KESTRA_REVIEW` con Maru y lo retira definitivamente de la distribucion automatica.
+
+## Contrato De Decisiones Y Trazabilidad
+
+La revision `deal-commercial-distribution-trace.v2` registra dos decisiones
+independientes e inmutables:
+
+- `commercial_action`, `commercial_reason`, `commercial_stage_id` y
+  `commercial_line` describen exclusivamente la clasificacion comercial;
+- `distribution_action`, `distribution_reason`, `assignment_strategy`, bucket y
+  responsable describen exclusivamente la distribucion.
+
+Los campos historicos `action` y `reason` se conservan temporalmente por
+compatibilidad, pero el informe usa primero el contrato separado. Entrar o salir de
+la cola no reemplaza el motivo comercial original.
 
 ## Operacion
 

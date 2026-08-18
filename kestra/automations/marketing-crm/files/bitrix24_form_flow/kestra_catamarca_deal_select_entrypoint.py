@@ -23,7 +23,12 @@ def main() -> int:
         result = {
             "ok": False,
             "trace_schema_version": TRACE_SCHEMA_VERSION,
-            "event_type": "deal_commercial_decision",
+            "event_type": "deal_commercial_distribution_decision",
+            "commercial_action": "",
+            "commercial_reason": "",
+            "commercial_stage_id": "",
+            "distribution_action": "error",
+            "distribution_reason": "selection_error",
             "action": "error",
             "business_decision": "Procesamiento incompleto",
             "business_reason": "No se pudo seleccionar la negociación a procesar.",

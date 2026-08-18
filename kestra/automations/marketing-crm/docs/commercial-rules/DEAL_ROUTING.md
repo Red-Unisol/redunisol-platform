@@ -78,8 +78,9 @@ su provincia. Un caso no elegible conserva su rechazo correspondiente.
 ## Fuera De Horario
 
 Fuera de la ventana continua que comienza el lunes a las 00:00 inclusive y termina
-el viernes a las 17:00 exclusive, toda negociacion interna queda con Maru Lopez
-(`57`) para gestion manual.
+el viernes a las 17:00 exclusive, Kestra conserva y aplica la decision comercial,
+pero toda negociacion que requiera distribucion queda con Maru Lopez (`57`) para
+gestion manual.
 
 - no se ejecuta round-robin;
 - no se transfiere el chat;
@@ -106,6 +107,10 @@ Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola
 Los rechazos se aplican directamente, sin buscar vendedor, asignar, transferir chat
 ni ingresar a la cola. Los casos de revision comercial o de enrutamiento mantienen
 sus circuitos propios.
+
+La decision de distribucion nunca reemplaza la decision comercial en la traza. Una
+negociacion puede, por ejemplo, quedar `manual_review / missing_bcra_snapshot` en lo
+comercial y `queued / assignment_queued` en distribucion.
 
 ## Seleccion Dentro De Un Pool
 
