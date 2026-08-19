@@ -9,7 +9,13 @@ import unicodedata
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .bcra_service import sync_lead_bcra
+from .bcra_service import (
+    BCRA_RETRY_EXHAUSTED_OUTCOME,
+    BCRA_RETRY_PENDING_OUTCOMES,
+    bcra_retry_state_from_lead,
+    bcra_retry_waiting,
+    sync_lead_bcra,
+)
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
 from .commercial_trace import (
@@ -60,6 +66,9 @@ class BcraSnapshotResolution:
     age_days: float | None
     refreshed: bool
     refresh_outcome: str
+    pending: bool = False
+    retry_attempts: int = 0
+    next_retry_at: str = ""
 
 
 BUSINESS_HOURS_ONLY_ENV = "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY"
@@ -68,7 +77,7 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-18"
+COMMERCIAL_RULE_VERSION = "2026-08-19-bcra-retry-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
@@ -85,40 +94,65 @@ def select_next_pending_catamarca_deal(
     env: dict[str, str] | None = None,
     bitrix_client: Any | None = None,
     logger: Logger | None = None,
+    now: datetime | None = None,
 ) -> dict[str, object]:
     active_logger = logger or create_logger()
     config = load_config(env)
     client = bitrix_client or BitrixClient(config, active_logger)
-    response = client.call_full(
-        "crm.item.list",
-        {
-            "entityTypeId": DEAL_ENTITY_TYPE_ID,
-            "filter": {
-                "=categoryId": config.deal.category_id,
-                "=stageId": config.deal.pending_qualification_stage_id,
-            },
-            "order": {"id": "ASC"},
-            "select": ["id", "leadId", "contactId", "stageId"],
-            "start": 0,
-        },
+    current_time = _local_datetime(
+        dict(os.environ if env is None else env),
+        now,
     )
-    result = response.get("result")
-    items = result.get("items") if isinstance(result, dict) else result
-    if not isinstance(items, list):
-        raise RuntimeError("crm.item.list devolvio un payload invalido.")
-
-    for deal in items:
-        deal_id = _optional_int(deal.get("id") or deal.get("ID"))
-        lead_id = _optional_int(deal.get("leadId") or deal.get("LEAD_ID"))
-        if deal_id is None or lead_id is None:
-            continue
-        return _result(
-            action="selected",
-            has_pending=True,
-            deal_id=deal_id,
-            lead_id=lead_id,
-            message=f"Negociacion {deal_id} seleccionada para clasificación comercial.",
+    start = 0
+    while True:
+        response = client.call_full(
+            "crm.item.list",
+            {
+                "entityTypeId": DEAL_ENTITY_TYPE_ID,
+                "filter": {
+                    "=categoryId": config.deal.category_id,
+                    "=stageId": config.deal.pending_qualification_stage_id,
+                },
+                "order": {"id": "ASC"},
+                "select": ["id", "leadId", "contactId", "stageId"],
+                "start": start,
+            },
         )
+        result = response.get("result")
+        items = result.get("items") if isinstance(result, dict) else result
+        if not isinstance(items, list):
+            raise RuntimeError("crm.item.list devolvio un payload invalido.")
+
+        for deal in items:
+            deal_id = _optional_int(deal.get("id") or deal.get("ID"))
+            lead_id = _optional_int(deal.get("leadId") or deal.get("LEAD_ID"))
+            if deal_id is None or lead_id is None:
+                continue
+            lead = get_lead(client, lead_id, active_logger)
+            if bcra_retry_waiting(
+                lead,
+                config,
+                now=current_time,
+            ):
+                active_logger.info(
+                    f"Negociacion {deal_id} omitida por ahora: "
+                    "la consulta BCRA tiene un reintento programado."
+                )
+                continue
+            return _result(
+                action="selected",
+                has_pending=True,
+                deal_id=deal_id,
+                lead_id=lead_id,
+                message=f"Negociacion {deal_id} seleccionada para clasificación comercial.",
+            )
+
+        next_page = response.get("next")
+        if next_page is None and isinstance(result, dict):
+            next_page = result.get("next")
+        if next_page is None:
+            break
+        start = int(next_page)
 
     return _result(
         action="no_pending",
@@ -213,7 +247,39 @@ def qualify_catamarca_deal(
         "bcra_snapshot_age_days": bcra_resolution.age_days,
         "bcra_snapshot_refreshed": bcra_resolution.refreshed,
         "bcra_refresh_outcome": bcra_resolution.refresh_outcome,
+        "bcra_retry_attempts": bcra_resolution.retry_attempts,
+        "bcra_next_retry_at": bcra_resolution.next_retry_at,
     }
+    if bcra_resolution.pending:
+        return _result(
+            action="bcra_pending",
+            has_pending=True,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=config.deal.pending_qualification_stage_id,
+            reason="bcra_retry_scheduled",
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            source=source_label,
+            within_business_hours=within_business_hours,
+            assignment_strategy="commercial_data_pending",
+            commercial_action="pending_data",
+            commercial_reason="bcra_retry_scheduled",
+            commercial_stage_id=config.deal.pending_qualification_stage_id,
+            distribution_action="not_applicable",
+            distribution_reason="commercial_data_pending",
+            message=(
+                "La decisión comercial queda pendiente; Kestra volverá a consultar BCRA "
+                "automáticamente."
+            ),
+            **bcra_trace,
+        )
     decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
     routing = resolve_routing_bucket(config, lead)
     province = routing.province or province
@@ -977,12 +1043,36 @@ def _resolve_bcra_snapshot(
     logger: Logger,
     bcra_client: Any | None,
 ) -> BcraSnapshotResolution:
+    retry_state = bcra_retry_state_from_lead(lead, config)
+    if retry_state is not None and retry_state.is_exhausted:
+        return BcraSnapshotResolution(
+            lead=lead,
+            decision_override=_manual(config, "bcra_retry_exhausted"),
+            checked_at=_lead_bcra_checked_at(lead, config),
+            age_days=None,
+            refreshed=False,
+            refresh_outcome=BCRA_RETRY_EXHAUSTED_OUTCOME,
+            retry_attempts=retry_state.attempts,
+        )
+
     checked_at = _lead_bcra_checked_at(lead, config)
     parsed_checked_at = _parse_snapshot_datetime(checked_at, processed_at)
     age_days = _snapshot_age_days(parsed_checked_at, processed_at)
     max_age_days = _bcra_max_age_days(source)
 
-    if age_days is not None and age_days < max_age_days:
+    raw_outcome = _lead_bcra_outcome(lead, config)
+    if raw_outcome in {"not_found", "invalid_identification"}:
+        reason = "bcra_not_found" if raw_outcome == "not_found" else "bcra_invalid_identification"
+        return BcraSnapshotResolution(
+            lead=lead,
+            decision_override=_manual(config, reason),
+            checked_at=checked_at,
+            age_days=age_days,
+            refreshed=False,
+            refresh_outcome=f"reused_{raw_outcome}",
+        )
+
+    if age_days is not None and age_days < max_age_days and raw_outcome == "ok":
         logger.info(
             f"Snapshot BCRA del lead {lead_id} vigente: "
             f"antiguedad={age_days:.3f} dias."
@@ -1022,6 +1112,8 @@ def _resolve_bcra_snapshot(
             identification,
             logger,
             bcra_client=bcra_client,
+            lead=lead,
+            now=processed_at,
         )
     except Exception as exc:
         logger.error(f"No se pudo refrescar BCRA para el lead {lead_id}: {exc}")
@@ -1032,6 +1124,40 @@ def _resolve_bcra_snapshot(
             age_days=age_days,
             refreshed=False,
             refresh_outcome="error",
+        )
+
+    if result.outcome in BCRA_RETRY_PENDING_OUTCOMES:
+        refreshed_lead = get_lead(client, lead_id, logger)
+        refreshed_retry_state = bcra_retry_state_from_lead(refreshed_lead, config)
+        _persist_deal_bcra_snapshot(client, config, deal_id, refreshed_lead, logger)
+        return BcraSnapshotResolution(
+            lead=refreshed_lead,
+            decision_override=None,
+            checked_at=_lead_bcra_checked_at(refreshed_lead, config),
+            age_days=None,
+            refreshed=False,
+            refresh_outcome=result.outcome,
+            pending=True,
+            retry_attempts=refreshed_retry_state.attempts if refreshed_retry_state else 0,
+            next_retry_at=(
+                refreshed_retry_state.next_retry_at.isoformat()
+                if refreshed_retry_state and refreshed_retry_state.next_retry_at
+                else ""
+            ),
+        )
+
+    if result.outcome == BCRA_RETRY_EXHAUSTED_OUTCOME:
+        refreshed_lead = get_lead(client, lead_id, logger)
+        refreshed_retry_state = bcra_retry_state_from_lead(refreshed_lead, config)
+        _persist_deal_bcra_snapshot(client, config, deal_id, refreshed_lead, logger)
+        return BcraSnapshotResolution(
+            lead=refreshed_lead,
+            decision_override=_manual(config, "bcra_retry_exhausted"),
+            checked_at=_lead_bcra_checked_at(refreshed_lead, config),
+            age_days=None,
+            refreshed=False,
+            refresh_outcome=result.outcome,
+            retry_attempts=refreshed_retry_state.attempts if refreshed_retry_state else 0,
         )
 
     if not result.is_persistable:
@@ -1059,12 +1185,29 @@ def _resolve_bcra_snapshot(
     )
     return BcraSnapshotResolution(
         lead=refreshed_lead,
-        decision_override=None,
+        decision_override=(
+            _manual(config, "bcra_not_found")
+            if result.outcome == "not_found"
+            else _manual(config, "bcra_invalid_identification")
+            if result.outcome == "invalid_identification"
+            else None
+        ),
         checked_at=refreshed_checked_at,
         age_days=refreshed_age_days,
         refreshed=True,
         refresh_outcome=result.outcome or "refreshed",
     )
+
+
+def _lead_bcra_outcome(lead: dict[str, Any], config: AppConfig) -> str:
+    raw_field = config.fields.lead_bcra_data_raw
+    try:
+        payload = json.loads(str(lead.get(raw_field or "") or ""))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("outcome") or "").strip()
 
 
 def _lead_bcra_checked_at(lead: dict[str, Any], config: AppConfig) -> str:
@@ -1778,6 +1921,8 @@ def _result(
     bcra_snapshot_age_days: float | None = None,
     bcra_snapshot_refreshed: bool = False,
     bcra_refresh_outcome: str = "not_evaluated",
+    bcra_retry_attempts: int = 0,
+    bcra_next_retry_at: str = "",
     source: str = "",
     commercial_action: str = "",
     commercial_reason: str = "",
@@ -1837,5 +1982,7 @@ def _result(
         ),
         "bcra_snapshot_refreshed": bcra_snapshot_refreshed,
         "bcra_refresh_outcome": bcra_refresh_outcome,
+        "bcra_retry_attempts": bcra_retry_attempts,
+        "bcra_next_retry_at": bcra_next_retry_at,
         "rule_version": COMMERCIAL_RULE_VERSION,
     }
