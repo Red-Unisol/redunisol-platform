@@ -27,7 +27,11 @@ from bitrix24_form_flow.form_processor.bcra_client import (
     _argentina_timestamp,
     serialize_bcra_result,
 )
-from bitrix24_form_flow.form_processor.bcra_service import backfill_bcra_for_today
+from bitrix24_form_flow.form_processor.bcra_service import (
+    backfill_bcra_for_today,
+    bcra_retry_state_from_lead,
+    sync_lead_bcra,
+)
 from bitrix24_form_flow.form_processor.catamarca_deal_qualification import (
     _is_within_business_hours,
     process_distribution_queue,
@@ -2855,7 +2859,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertTrue(result["rate_limited"])
         self.assertEqual(bcra_client.calls, ["20876543219", "20333333334"])
         self.assertIn("Estado: OK", client.leads[501]["UF_CRM_BCRA_STATUS"])
-        self.assertEqual(client.leads[503].get("UF_CRM_BCRA_DATA_RAW", ""), "")
+        retry_state = bcra_retry_state_from_lead(client.leads[503], load_config(self.env))
+        self.assertIsNotNone(retry_state)
+        self.assertEqual(retry_state.outcome, "rate_limited")
+        self.assertEqual(retry_state.attempts, 1)
 
     def test_backfill_only_rejects_bcra_negative_when_commercial_owner_is_kestra(self) -> None:
         client = FakeBitrixClient()
@@ -3844,7 +3851,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["bcra_refresh_outcome"], "reused_fresh")
         self.assertEqual(
             result["trace_schema_version"],
-            "deal-commercial-distribution-trace.v2",
+            "deal-commercial-distribution-trace.v3",
         )
         self.assertEqual(
             result["event_type"],
@@ -3927,7 +3934,7 @@ class BusinessLogicTests(unittest.TestCase):
             refreshed.checked_at,
         )
 
-    def test_failed_bcra_refresh_uses_manual_review_instead_of_stale_rejection(self) -> None:
+    def test_failed_bcra_refresh_stays_pending_for_retry(self) -> None:
         client = FakeBitrixClient()
         client.leads[949] = self._catamarca_enriched_lead(
             949,
@@ -3960,12 +3967,166 @@ class BusinessLogicTests(unittest.TestCase):
             now=datetime.fromisoformat("2026-08-12T11:30:00-03:00"),
         )
 
-        self.assertEqual(result["action"], "manual_review")
-        self.assertEqual(result["reason"], "bcra_refresh_failed")
+        self.assertEqual(result["action"], "bcra_pending")
+        self.assertEqual(result["reason"], "bcra_retry_scheduled")
         self.assertEqual(result["bcra_refresh_outcome"], "temporary_error")
         self.assertFalse(result["bcra_snapshot_refreshed"])
-        self.assertEqual(client.deals[949]["stageId"], "C1:KESTRA_REVIEW")
+        self.assertEqual(result["bcra_retry_attempts"], 1)
+        self.assertTrue(result["bcra_next_retry_at"])
+        self.assertEqual(client.deals[949]["stageId"], "C1:KESTRA_PENDING")
         self.assertNotEqual(client.deals[949]["stageId"], "C1:5")
+
+    def test_bcra_retry_waits_until_due_and_then_recovers(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[950] = self._catamarca_enriched_lead(950, bcra_entities=[])
+        client.leads[950]["UF_CRM_BCRA_DATA_RAW"] = ""
+        client.leads[950]["UF_CRM_BCRA_CHECKED_AT"] = ""
+        temporary_error = BcraConsultationResult(
+            outcome="temporary_error",
+            checked_at="2026-08-12T11:00:00-03:00",
+            identification="27555555556",
+            http_status=503,
+            formatted_field_value=None,
+            summary_field_value=None,
+            raw_field_value=None,
+            should_reject=False,
+            negative_entity_count=0,
+            negative_entities=(),
+            message="BCRA no disponible",
+        )
+        recovered = self._deal_bcra_result(
+            identification="27555555556",
+            checked_at="2026-08-12T11:06:00-03:00",
+            entities=[{"entidad": "BANCO DE LA NACION ARGENTINA", "situacion": 1}],
+        )
+        first_client = FakeBcraClient({"27555555556": temporary_error})
+
+        first = sync_lead_bcra(
+            client,
+            load_config(self.env),
+            950,
+            "27555555556",
+            SilentLogger(),
+            bcra_client=first_client,
+            lead=client.leads[950],
+            now=datetime.fromisoformat("2026-08-12T11:00:00-03:00"),
+        )
+        waiting_client = FakeBcraClient({"27555555556": recovered})
+        waiting = sync_lead_bcra(
+            client,
+            load_config(self.env),
+            950,
+            "27555555556",
+            SilentLogger(),
+            bcra_client=waiting_client,
+            lead=client.leads[950],
+            now=datetime.fromisoformat("2026-08-12T11:04:00-03:00"),
+        )
+        recovered_result = sync_lead_bcra(
+            client,
+            load_config(self.env),
+            950,
+            "27555555556",
+            SilentLogger(),
+            bcra_client=waiting_client,
+            lead=client.leads[950],
+            now=datetime.fromisoformat("2026-08-12T11:06:00-03:00"),
+        )
+
+        self.assertEqual(first.outcome, "temporary_error")
+        self.assertEqual(waiting.outcome, "retry_scheduled")
+        self.assertEqual(waiting_client.calls, ["27555555556"])
+        self.assertEqual(recovered_result.outcome, "ok")
+        self.assertEqual(
+            json.loads(client.leads[950]["UF_CRM_BCRA_DATA_RAW"])["outcome"],
+            "ok",
+        )
+
+    def test_pending_bcra_deal_does_not_block_next_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[951] = self._catamarca_enriched_lead(951, bcra_entities=[])
+        client.leads[952] = self._catamarca_enriched_lead(952, bcra_entities=[])
+        client.deals[951] = self._pending_deal(951, 951)
+        client.deals[952] = self._pending_deal(952, 952)
+        temporary_error = BcraConsultationResult(
+            outcome="temporary_error",
+            checked_at="2026-08-12T11:00:00-03:00",
+            identification="27555555556",
+            http_status=503,
+            formatted_field_value=None,
+            summary_field_value=None,
+            raw_field_value=None,
+            should_reject=False,
+            negative_entity_count=0,
+            negative_entities=(),
+            message="BCRA no disponible",
+        )
+        sync_lead_bcra(
+            client,
+            load_config(self.env),
+            951,
+            "27555555556",
+            SilentLogger(),
+            bcra_client=FakeBcraClient({"27555555556": temporary_error}),
+            lead=client.leads[951],
+            now=datetime.fromisoformat("2026-08-12T11:00:00-03:00"),
+        )
+
+        selected = select_next_pending_catamarca_deal(
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-08-12T11:01:00-03:00"),
+        )
+
+        self.assertEqual(selected["deal_id"], 952)
+
+    def test_bcra_retry_becomes_manual_only_after_24_hour_window(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[953] = self._catamarca_enriched_lead(953, bcra_entities=[])
+        client.leads[953]["UF_CRM_BCRA_DATA_RAW"] = ""
+        client.leads[953]["UF_CRM_BCRA_CHECKED_AT"] = ""
+        temporary_error = BcraConsultationResult(
+            outcome="temporary_error",
+            checked_at="2026-08-12T11:00:00-03:00",
+            identification="27555555556",
+            http_status=503,
+            formatted_field_value=None,
+            summary_field_value=None,
+            raw_field_value=None,
+            should_reject=False,
+            negative_entity_count=0,
+            negative_entities=(),
+            message="BCRA no disponible",
+        )
+        bcra_client = FakeBcraClient({"27555555556": temporary_error})
+        config = load_config(self.env)
+        sync_lead_bcra(
+            client,
+            config,
+            953,
+            "27555555556",
+            SilentLogger(),
+            bcra_client=bcra_client,
+            lead=client.leads[953],
+            now=datetime.fromisoformat("2026-08-12T11:00:00-03:00"),
+        )
+
+        exhausted = sync_lead_bcra(
+            client,
+            config,
+            953,
+            "27555555556",
+            SilentLogger(),
+            bcra_client=bcra_client,
+            lead=client.leads[953],
+            now=datetime.fromisoformat("2026-08-13T11:00:00-03:00"),
+        )
+
+        retry_state = bcra_retry_state_from_lead(client.leads[953], config)
+        self.assertEqual(exhausted.outcome, "retry_exhausted")
+        self.assertTrue(retry_state.is_exhausted)
+        self.assertEqual(retry_state.attempts, 2)
 
     def test_catamarca_outside_business_hours_stays_with_maru_for_manual_distribution(
         self,
@@ -4243,7 +4404,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["previous_assigned_by_id"], 57)
         self.assertEqual(result["lead_id"], 920)
         self.assertEqual(result["contact_id"], 101)
-        self.assertEqual(result["rule_version"], "2026-08-18")
+        self.assertEqual(result["rule_version"], "2026-08-19-bcra-retry-v1")
         self.assertTrue(result["processed_at"])
         chat_queries = [
             payload

@@ -45,6 +45,7 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "rejection_without_distribution": "Rechazo directo; no requiere vendedor",
     "no_matching_bucket": "No existe un bucket aplicable",
     "not_applicable": "La negociación ya no estaba pendiente",
+    "commercial_data_pending": "Pendiente de información BCRA; todavía no corresponde distribuir",
     "technical_error": "La ejecución terminó con un error técnico",
 }
 REASON_LABELS = {
@@ -128,6 +129,10 @@ REASON_LABELS = {
     "bcra_snapshot_not_conclusive": "La consulta BCRA no produjo información concluyente.",
     "bcra_refresh_missing_cuil": "No se pudo actualizar BCRA porque falta el CUIL.",
     "bcra_refresh_failed": "No fue posible actualizar BCRA; el dato anterior no se utilizó.",
+    "bcra_retry_scheduled": "BCRA no respondió; Kestra programó un nuevo intento sin tomar una decisión comercial.",
+    "bcra_retry_exhausted": "BCRA no respondió durante la ventana de reintentos; el caso requiere revisión manual.",
+    "bcra_not_found": "BCRA no devolvió información para el CUIL consultado.",
+    "bcra_invalid_identification": "BCRA informó que la identificación consultada no es válida.",
     "payment_bank_not_identifiable": "No se pudo identificar el banco de cobro dentro de la información BCRA.",
     "missing_recurrent_membership_data": "Es socio, pero falta información para evaluar la renovación automáticamente.",
     "missing_membership_data": "No se pudo confirmar si es socio nuevo o recurrente.",
@@ -271,6 +276,8 @@ def distribution_status(
         ):
             return "Sin vendedor disponible"
         return "Error técnico"
+    if action == "bcra_pending":
+        return "Pendiente BCRA"
     if distribution_action == "assigned":
         return "Distribuido"
     if distribution_action == "queued":
@@ -393,6 +400,8 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
             outputs.get("bcra_snapshot_refreshed")
         ),
         "bcra_refresh_outcome": str(outputs.get("bcra_refresh_outcome") or ""),
+        "bcra_retry_attempts": parse_int(outputs.get("bcra_retry_attempts")),
+        "bcra_next_retry_at": parse_datetime(outputs.get("bcra_next_retry_at")),
     }
 
 
@@ -489,6 +498,8 @@ def add_user_displays(
 
 def business_decision(row: dict[str, Any]) -> str:
     action = row["commercial_action"]
+    if action == "pending_data":
+        return "Pendiente de información BCRA"
     if action == "approved":
         line = row["commercial_line"] or "comercial definida"
         return f"Asignado a la línea {line}"
@@ -669,6 +680,7 @@ def build(
         "Fecha y hora", "Decisión tomada", "Razón de la decisión", "Negociación",
         "Cliente", "Provincia", "Situación laboral", "Banco de cobro",
         "Estado de consulta BCRA", "Fecha de consulta BCRA", "Antigüedad BCRA (días)",
+        "Intentos BCRA", "Próximo intento BCRA",
         "Línea comercial", "Grupo de distribución", "Responsable", "Responsable anterior",
         "Resultado de distribución", "Motivo de asignación", "Etapa anterior",
         "Etapa resultante", "Chat transferido", "Versión de reglas",
@@ -677,7 +689,8 @@ def build(
     business_keys = [
         "processed_at", "business_decision", "business_reason", "deal_id", "deal_title",
         "province", "employment_status", "payment_bank", "bcra_refresh_display",
-        "bcra_snapshot_checked_at", "bcra_snapshot_age_days", "commercial_line",
+        "bcra_snapshot_checked_at", "bcra_snapshot_age_days", "bcra_retry_attempts",
+        "bcra_next_retry_at", "commercial_line",
         "routing_bucket", "assigned_by", "previous_assigned_by", "distribution_status",
         "assignment_reason", "stage_before_display", "stage_after_display",
         "chat_transferred_display", "rule_version", "revision",
@@ -689,6 +702,7 @@ def build(
         "Versión de reglas", "Revisión del flujo Kestra", "Negociación", "Título",
         "Lead", "Contacto", "Provincia", "Situación laboral", "Banco de cobro",
         "Estado de consulta BCRA", "Fecha de consulta BCRA", "Antigüedad BCRA (días)",
+        "Intentos BCRA", "Próximo intento BCRA",
         "Etapa anterior", "Etapa resultante", "Línea comercial", "Grupo de distribución",
         "Responsable anterior", "Responsable", "Motivo de asignación", "Estrategia técnica",
         "Pool configurado", "Pool online", "Dentro del horario laboral",
@@ -702,7 +716,8 @@ def build(
         "revision", "deal_id", "deal_title", "lead_id", "contact_id", "province",
         "employment_status",
         "payment_bank", "bcra_refresh_display", "bcra_snapshot_checked_at",
-        "bcra_snapshot_age_days", "stage_before", "stage_after", "commercial_line",
+        "bcra_snapshot_age_days", "bcra_retry_attempts", "bcra_next_retry_at",
+        "stage_before", "stage_after", "commercial_line",
         "routing_bucket", "previous_assigned_by", "assigned_by", "assignment_reason",
         "assignment_strategy", "configured_pool_display", "online_pool_display",
         "within_business_hours", "transferred_chat_count", "linked_activity_count",
@@ -721,6 +736,8 @@ def build(
             "missing_cuil": "No se pudo consultar: falta CUIL",
             "temporary_error": "No se pudo actualizar",
             "rate_limited": "No se pudo actualizar: límite del servicio",
+            "retry_scheduled": "Reintento programado",
+            "retry_exhausted": "Reintentos agotados",
             "error": "No se pudo actualizar",
             "not_evaluated": "No evaluada",
         }.get(item["bcra_refresh_outcome"], item["bcra_refresh_outcome"] or "No evaluada")
@@ -744,6 +761,8 @@ def build(
             sheet.append(values)
             row_number = sheet.max_row
             sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
+            sheet.cell(row_number, 23).number_format = "dd/mm/yyyy hh:mm:ss"
+            sheet.cell(row_number, 13).number_format = "dd/mm/yyyy hh:mm:ss"
             for cell in sheet[row_number]:
                 cell.alignment = Alignment(vertical="center")
             sheet.cell(row_number, 3).alignment = Alignment(

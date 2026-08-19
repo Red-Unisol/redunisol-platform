@@ -37,7 +37,10 @@ tasks:
       BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
       BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
       BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_BCRA_STATUS_FIELD: "{{ envs.bitrix24_lead_bcra_status_field }}"
+      BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
       BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
+      BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
       BITRIX24_LEAD_ES_SOCIO_FIELD: "{{ envs.bitrix24_lead_es_socio_field ?? 'UF_CRM_1728998183' }}"
       BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_COUNT_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_count_field ?? 'UF_CRM_VIMARX_CRED_ACT_CNT' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
@@ -210,6 +213,12 @@ outputs:
   - id: bcra_refresh_outcome
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_refresh_outcome : 'not_evaluated' }}"
+  - id: bcra_retry_attempts
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_retry_attempts : '0' }}"
+  - id: bcra_next_retry_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_next_retry_at : '' }}"
   - id: message
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.message : outputs.seleccionar_negociacion.vars.message }}"

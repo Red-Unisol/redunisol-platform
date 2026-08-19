@@ -169,6 +169,27 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertEqual(row["business_decision"], "Asignado a la línea AMEJUCA Premium")
         self.assertEqual(row["distribution_status"], "Gestión manual con Maru")
 
+    def test_bcra_pending_is_not_presented_as_rejection_or_distribution(self):
+        raw = execution(action="bcra_pending", strategy="commercial_data_pending")
+        raw["outputs"].update(
+            commercial_action="pending_data",
+            commercial_reason="bcra_retry_scheduled",
+            commercial_stage_id="C1:KESTRA_PENDING",
+            distribution_action="not_applicable",
+            distribution_reason="commercial_data_pending",
+            bcra_refresh_outcome="temporary_error",
+            bcra_retry_attempts="2",
+            bcra_next_retry_at="2026-08-11T14:00:00-03:00",
+        )
+
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+
+        self.assertEqual(row["distribution_status"], "Pendiente BCRA")
+        self.assertEqual(row["business_decision"], "Pendiente de información BCRA")
+        self.assertIn("programó un nuevo intento", row["business_reason"])
+        self.assertEqual(row["bcra_retry_attempts"], 2)
+        self.assertIsNotNone(row["bcra_next_retry_at"])
+
     def test_adds_names_to_responsibles_and_pools_while_preserving_ids(self):
         row = REPORT.normalized(execution())
 

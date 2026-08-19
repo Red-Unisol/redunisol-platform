@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-TRACE_SCHEMA_VERSION = "deal-commercial-distribution-trace.v2"
+TRACE_SCHEMA_VERSION = "deal-commercial-distribution-trace.v3"
 
 
 REASON_LABELS = {
@@ -46,6 +46,10 @@ REASON_LABELS = {
     "bcra_snapshot_not_conclusive": "La consulta BCRA no produjo información concluyente.",
     "bcra_refresh_missing_cuil": "No se pudo actualizar BCRA porque falta el CUIL.",
     "bcra_refresh_failed": "No fue posible actualizar BCRA; el dato anterior no se utilizó.",
+    "bcra_retry_scheduled": "BCRA no respondió; Kestra programó un nuevo intento sin tomar una decisión comercial.",
+    "bcra_retry_exhausted": "BCRA no respondió durante la ventana de reintentos; el caso requiere revisión manual.",
+    "bcra_not_found": "BCRA no devolvió información para el CUIL consultado.",
+    "bcra_invalid_identification": "BCRA informó que la identificación consultada no es válida.",
     "payment_bank_not_identifiable": "No se pudo identificar el banco de cobro dentro de la información BCRA.",
     "missing_recurrent_membership_data": "Falta información para evaluar la renovación automáticamente.",
     "missing_membership_data": "No se pudo confirmar si es socio nuevo o recurrente.",
@@ -86,6 +90,8 @@ def business_decision(
         return "Retirado de la cola y enviado a Maru"
     if action == "queue_waiting":
         return "Continúa en cola de distribución"
+    if action in {"bcra_pending", "pending_data"}:
+        return "Pendiente de información BCRA"
     if action == "error":
         return "Procesamiento incompleto"
     if action == "skipped":
