@@ -2,14 +2,28 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
+from time import monotonic
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import PlainTextResponse
 
 from . import __version__
 from .config import AppSettings, load_settings_from_env
 from .db import create_db_engine
-from .metamap_resource import extract_validation_enrichment, fetch_metamap_resource
+from .enrichment import BackgroundEnricher
+from .metamap_resource import MetaMapResourceClient, extract_validation_enrichment
+from .metrics import MetricsRegistry
 from .security import AuthenticatedClient, AuthenticationError, verify_metamap_signature
 from .store_sql import SqlValidationStore
 from .workflow import (
@@ -41,8 +55,20 @@ def create_app(
     metamap_resource_fetcher: Any | None = None,
 ) -> FastAPI:
     resolved_settings = settings or load_settings_from_env()
-    app = FastAPI(title="MetaMap Platform Server", version=__version__)
+
+    @asynccontextmanager
+    async def lifespan(current_app: FastAPI):
+        _queue_pending_enrichments(current_app)
+        yield
+        current_app.state.background_enricher.shutdown()
+
+    app = FastAPI(
+        title="MetaMap Platform Server",
+        version=__version__,
+        lifespan=lifespan,
+    )
     app.state.settings = resolved_settings
+    app.state.metrics = MetricsRegistry()
 
     if store is None:
         engine = create_db_engine(resolved_settings.database_url)
@@ -56,19 +82,60 @@ def create_app(
     if metamap_resource_fetcher is not None:
         app.state.metamap_resource_fetcher = metamap_resource_fetcher
     elif resolved_settings.metamap_client_id and resolved_settings.metamap_client_secret:
-        app.state.metamap_resource_fetcher = lambda resource_url: fetch_metamap_resource(
-            resource_url,
+        resource_client = MetaMapResourceClient(
             client_id=resolved_settings.metamap_client_id,
             client_secret=resolved_settings.metamap_client_secret,
+            timeout_seconds=resolved_settings.metamap_timeout_seconds,
+            max_attempts=resolved_settings.metamap_max_attempts,
+            retry_backoff_seconds=resolved_settings.metamap_retry_backoff_seconds,
+            oauth_token_ttl_seconds=resolved_settings.metamap_oauth_token_ttl_seconds,
+            metrics=app.state.metrics,
         )
+        app.state.metamap_resource_fetcher = resource_client.fetch
     elif resolved_settings.metamap_api_token:
-        app.state.metamap_resource_fetcher = lambda resource_url: fetch_metamap_resource(
-            resource_url,
+        resource_client = MetaMapResourceClient(
             api_token=resolved_settings.metamap_api_token,
             auth_scheme=resolved_settings.metamap_auth_scheme,
+            timeout_seconds=resolved_settings.metamap_timeout_seconds,
+            max_attempts=resolved_settings.metamap_max_attempts,
+            retry_backoff_seconds=resolved_settings.metamap_retry_backoff_seconds,
+            metrics=app.state.metrics,
         )
+        app.state.metamap_resource_fetcher = resource_client.fetch
     else:
         app.state.metamap_resource_fetcher = None
+
+    app.state.background_enricher = BackgroundEnricher(
+        store=app.state.validation_store,
+        resource_fetcher=app.state.metamap_resource_fetcher,
+        metrics=app.state.metrics,
+        max_workers=resolved_settings.enrichment_workers,
+        queue_size=resolved_settings.enrichment_queue_size,
+    )
+
+    @app.middleware("http")
+    async def observe_http_request(request: Request, call_next):
+        started_at = monotonic()
+        response_status = 500
+        try:
+            response = await call_next(request)
+            response_status = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", "__unmatched__")
+            labels = {
+                "method": request.method,
+                "path": route_path,
+                "status": str(response_status),
+            }
+            app.state.metrics.increment("metamap_http_requests_total", **labels)
+            app.state.metrics.observe_duration(
+                "metamap_http_request_duration_seconds",
+                monotonic() - started_at,
+                method=request.method,
+                path=route_path,
+            )
 
     def _store_dependency() -> Any:
         return get_store(app)
@@ -113,9 +180,14 @@ def create_app(
             "git_sha": resolved_settings.git_sha,
         }
 
+    @app.get("/metrics", response_class=PlainTextResponse)
+    def metrics() -> str:
+        return app.state.metrics.render_prometheus()
+
     @app.post("/api/v1/metamap/webhooks")
     async def ingest_metamap_webhook(
         request: Request,
+        background_tasks: BackgroundTasks,
         validation_store: Any = Depends(_store_dependency),
         settings_value: AppSettings = Depends(_settings_dependency),
         x_signature: str | None = Header(None, alias="x-signature"),
@@ -158,19 +230,6 @@ def create_app(
 
             if verification_id:
                 enrichment = extract_validation_enrichment(parsed_payload)
-                if resource_url and app.state.metamap_resource_fetcher is not None:
-                    try:
-                        resource_payload = app.state.metamap_resource_fetcher(resource_url)
-                    except Exception as exc:
-                        logger.warning(
-                            "MetaMap resource hydration failed: verification_id=%s resource=%s error=%s",
-                            verification_id,
-                            resource_url,
-                            exc,
-                        )
-                    else:
-                        resource_enrichment = extract_validation_enrichment(resource_payload)
-                        enrichment = resource_enrichment.merged_with(enrichment)
                 validation = validation_store.upsert_validation_from_metamap_event(
                     event_name=event_name,
                     verification_id=verification_id,
@@ -187,6 +246,16 @@ def create_app(
                     document_number=enrichment.document_number,
                 )
                 processing_status = "stored"
+                if (
+                    resource_url
+                    and app.state.metamap_resource_fetcher is not None
+                    and _validation_needs_enrichment(validation)
+                ):
+                    background_tasks.add_task(
+                        app.state.background_enricher.submit,
+                        verification_id=verification_id,
+                        resource_url=resource_url,
+                    )
             else:
                 if normalized_status == ValidationStatus.COMPLETED.value:
                     processing_status = "invalid_payload"
@@ -298,14 +367,6 @@ def create_app(
             normalized_status=normalized_status,
             q=q,
         )
-        items = [
-            _maybe_backfill_validation_enrichment(
-                app=app,
-                validation_store=validation_store,
-                validation=item,
-            )
-            for item in items
-        ]
         return {
             "items": [item.to_dict(include_payload=include_payload) for item in items],
             "pagination": {
@@ -338,11 +399,6 @@ def create_app(
             validation = validation_store.get_validation(verification_id)
         except WorkflowError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        validation = _maybe_backfill_validation_enrichment(
-            app=app,
-            validation_store=validation_store,
-            validation=validation,
-        )
         return {"validation": validation.to_dict(include_payload=include_payload)}
 
     @app.post("/api/v1/validations/{verification_id}/review")
@@ -419,64 +475,6 @@ def _extract_metamap_event_name(payload: dict) -> str | None:
     return event_name or None
 
 
-def _maybe_backfill_validation_enrichment(
-    *,
-    app: FastAPI,
-    validation_store: Any,
-    validation: Any,
-) -> Any:
-    if app.state.metamap_resource_fetcher is None:
-        return validation
-    if not validation.resource_url or not _validation_needs_enrichment(validation):
-        return validation
-
-    try:
-        resource_payload = app.state.metamap_resource_fetcher(validation.resource_url)
-    except Exception as exc:
-        logger.warning(
-            "MetaMap resource backfill failed: verification_id=%s resource=%s error=%s",
-            validation.verification_id,
-            validation.resource_url,
-            exc,
-        )
-        return validation
-
-    enrichment = extract_validation_enrichment(resource_payload)
-    if not any(
-        [
-            enrichment.request_number,
-            enrichment.loan_number,
-            enrichment.amount_raw,
-            enrichment.amount_value,
-            enrichment.requested_amount_raw,
-            enrichment.requested_amount_value,
-            enrichment.applicant_name,
-            enrichment.document_number,
-        ]
-    ):
-        return validation
-
-    try:
-        return validation_store.update_validation_enrichment(
-            verification_id=validation.verification_id,
-            request_number=enrichment.request_number,
-            loan_number=enrichment.loan_number,
-            amount_raw=enrichment.amount_raw,
-            amount_value=enrichment.amount_value,
-            requested_amount_raw=enrichment.requested_amount_raw,
-            requested_amount_value=enrichment.requested_amount_value,
-            applicant_name=enrichment.applicant_name,
-            document_number=enrichment.document_number,
-        )
-    except Exception as exc:
-        logger.warning(
-            "MetaMap resource backfill persist failed: verification_id=%s error=%s",
-            validation.verification_id,
-            exc,
-        )
-        return validation
-
-
 def _validation_needs_enrichment(validation: Any) -> bool:
     return any(
         [
@@ -487,3 +485,27 @@ def _validation_needs_enrichment(validation: Any) -> bool:
             not validation.document_number,
         ]
     )
+
+
+def _queue_pending_enrichments(app: FastAPI) -> None:
+    if app.state.metamap_resource_fetcher is None:
+        return
+    settings: AppSettings = app.state.settings
+    limit = settings.enrichment_workers + settings.enrichment_queue_size
+    pending = app.state.validation_store.list_validations_needing_enrichment(limit)
+    submitted = 0
+    for validation in pending:
+        if not validation.resource_url:
+            continue
+        if app.state.background_enricher.submit(
+            verification_id=validation.verification_id,
+            resource_url=validation.resource_url,
+        ):
+            submitted += 1
+    if pending:
+        logger.info(
+            "Queued pending MetaMap enrichments at startup: found=%s submitted=%s limit=%s",
+            len(pending),
+            submitted,
+            limit,
+        )
