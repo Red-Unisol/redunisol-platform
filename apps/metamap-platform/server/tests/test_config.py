@@ -26,6 +26,12 @@ class MetaMapServerConfigTests(unittest.TestCase):
             "METAMAP_SERVER_METAMAP_CLIENT_SECRET": "meta-client-secret",
             "METAMAP_SERVER_METAMAP_API_TOKEN": "meta-token",
             "METAMAP_SERVER_METAMAP_AUTH_SCHEME": "Bearer",
+            "METAMAP_SERVER_METAMAP_TIMEOUT_SECONDS": "7.5",
+            "METAMAP_SERVER_METAMAP_MAX_ATTEMPTS": "4",
+            "METAMAP_SERVER_METAMAP_RETRY_BACKOFF_SECONDS": "0.25",
+            "METAMAP_SERVER_METAMAP_OAUTH_TOKEN_TTL_SECONDS": "600",
+            "METAMAP_SERVER_ENRICHMENT_WORKERS": "3",
+            "METAMAP_SERVER_ENRICHMENT_QUEUE_SIZE": "75",
             "METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON": (
                 '[{"client_id":"validador-dev-1","client_secret":"abc","role":"validador"}]'
             ),
@@ -40,6 +46,12 @@ class MetaMapServerConfigTests(unittest.TestCase):
         self.assertEqual(settings.metamap_client_secret, "meta-client-secret")
         self.assertEqual(settings.metamap_api_token, "meta-token")
         self.assertEqual(settings.metamap_auth_scheme, "Bearer")
+        self.assertEqual(settings.metamap_timeout_seconds, 7.5)
+        self.assertEqual(settings.metamap_max_attempts, 4)
+        self.assertEqual(settings.metamap_retry_backoff_seconds, 0.25)
+        self.assertEqual(settings.metamap_oauth_token_ttl_seconds, 600)
+        self.assertEqual(settings.enrichment_workers, 3)
+        self.assertEqual(settings.enrichment_queue_size, 75)
         self.assertEqual(len(settings.bootstrap_clients), 1)
 
     def test_load_settings_from_env_keeps_backward_compatibility_with_old_webhook_token(self) -> None:

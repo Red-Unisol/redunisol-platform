@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import json
+import logging
+import socket
+import time
 from base64 import b64encode
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from threading import Lock
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from .metrics import MetricsRegistry
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -42,53 +52,194 @@ def fetch_metamap_resource(
     client_secret: str | None = None,
     timeout_seconds: float = 10.0,
 ) -> Any:
-    if client_id and client_secret:
-        api_token = _fetch_access_token(
-            client_id=client_id,
-            client_secret=client_secret,
-            timeout_seconds=timeout_seconds,
-        )
-        auth_scheme = "Bearer"
-    elif not api_token:
-        raise ValueError(
-            "MetaMap resource fetch requires client credentials or an API token."
-        )
-
-    request = Request(
-        resource_url,
-        headers={
-            "Authorization": f"{auth_scheme} {api_token}",
-            "Accept": "application/json",
-        },
-        method="GET",
+    client = MetaMapResourceClient(
+        api_token=api_token,
+        auth_scheme=auth_scheme,
+        client_id=client_id,
+        client_secret=client_secret,
+        timeout_seconds=timeout_seconds,
+        max_attempts=1,
     )
-    with urlopen(request, timeout=timeout_seconds) as response:
-        return json.load(response)
+    return client.fetch(resource_url)
 
 
-def _fetch_access_token(
-    *,
-    client_id: str,
-    client_secret: str,
-    timeout_seconds: float,
-) -> str:
-    basic = b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
-    request = Request(
-        "https://api.prod.metamap.com/oauth/",
-        data=urlencode({"grant_type": "client_credentials"}).encode("utf-8"),
-        headers={
-            "Authorization": f"Basic {basic}",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-    with urlopen(request, timeout=timeout_seconds) as response:
-        payload = json.load(response)
-    access_token = payload.get("access_token")
-    if not access_token:
-        raise ValueError("MetaMap OAuth response did not include access_token.")
-    return str(access_token)
+class MetaMapResourceClient:
+    def __init__(
+        self,
+        *,
+        api_token: str | None = None,
+        auth_scheme: str = "Token",
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        timeout_seconds: float = 10.0,
+        max_attempts: int = 3,
+        retry_backoff_seconds: float = 0.5,
+        oauth_token_ttl_seconds: float = 300.0,
+        metrics: MetricsRegistry | None = None,
+    ) -> None:
+        if not ((client_id and client_secret) or api_token):
+            raise ValueError(
+                "MetaMap resource fetch requires client credentials or an API token."
+            )
+        self._api_token = api_token
+        self._auth_scheme = auth_scheme
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._timeout_seconds = timeout_seconds
+        self._max_attempts = max_attempts
+        self._retry_backoff_seconds = retry_backoff_seconds
+        self._oauth_token_ttl_seconds = oauth_token_ttl_seconds
+        self._metrics = metrics
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be greater than or equal to 1.")
+        self._token_lock = Lock()
+        self._cached_access_token: str | None = None
+        self._access_token_expires_at = 0.0
+
+    def fetch(self, resource_url: str) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            token, scheme = self._authorization()
+            request = Request(
+                resource_url,
+                headers={
+                    "Authorization": f"{scheme} {token}",
+                    "Accept": "application/json",
+                },
+                method="GET",
+            )
+            try:
+                return self._open_json(request, operation="resource")
+            except HTTPError as exc:
+                last_error = exc
+                if exc.code == 401 and self._client_id and self._client_secret:
+                    self._invalidate_access_token()
+                    if attempt < self._max_attempts:
+                        self._sleep_before_retry(attempt, "resource", last_error)
+                        continue
+                if not _is_retryable_error(exc) or attempt == self._max_attempts:
+                    raise
+            except (URLError, TimeoutError, socket.timeout) as exc:
+                last_error = exc
+                if attempt == self._max_attempts:
+                    raise
+            self._sleep_before_retry(attempt, "resource", last_error)
+        raise RuntimeError("MetaMap resource retry loop ended unexpectedly.") from last_error
+
+    def _authorization(self) -> tuple[str, str]:
+        if not (self._client_id and self._client_secret):
+            return str(self._api_token), self._auth_scheme
+        return self._get_access_token(), "Bearer"
+
+    def _get_access_token(self) -> str:
+        now = time.monotonic()
+        with self._token_lock:
+            if self._cached_access_token and now < self._access_token_expires_at:
+                self._increment_metric("metamap_oauth_cache_total", outcome="hit")
+                return self._cached_access_token
+            self._increment_metric("metamap_oauth_cache_total", outcome="miss")
+            payload = self._fetch_access_token_payload()
+            access_token = payload.get("access_token")
+            if not access_token:
+                raise ValueError("MetaMap OAuth response did not include access_token.")
+            raw_expires_in = payload.get("expires_in", self._oauth_token_ttl_seconds)
+            try:
+                expires_in = max(1.0, float(raw_expires_in))
+            except (TypeError, ValueError):
+                expires_in = self._oauth_token_ttl_seconds
+            refresh_margin = min(30.0, expires_in * 0.1)
+            self._cached_access_token = str(access_token)
+            self._access_token_expires_at = time.monotonic() + expires_in - refresh_margin
+            return self._cached_access_token
+
+    def _fetch_access_token_payload(self) -> dict:
+        basic = b64encode(
+            f"{self._client_id}:{self._client_secret}".encode("utf-8")
+        ).decode("ascii")
+        request = Request(
+            "https://api.prod.metamap.com/oauth/",
+            data=urlencode({"grant_type": "client_credentials"}).encode("utf-8"),
+            headers={
+                "Authorization": f"Basic {basic}",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        last_error: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                payload = self._open_json(request, operation="oauth")
+                if not isinstance(payload, dict):
+                    raise ValueError("MetaMap OAuth response must be a JSON object.")
+                return payload
+            except HTTPError as exc:
+                last_error = exc
+                if not _is_retryable_error(exc) or attempt == self._max_attempts:
+                    raise
+            except (URLError, TimeoutError, socket.timeout) as exc:
+                last_error = exc
+                if attempt == self._max_attempts:
+                    raise
+            self._sleep_before_retry(attempt, "oauth", last_error)
+        raise RuntimeError("MetaMap OAuth retry loop ended unexpectedly.") from last_error
+
+    def _open_json(self, request: Request, *, operation: str) -> Any:
+        started_at = time.monotonic()
+        outcome = "success"
+        try:
+            with urlopen(request, timeout=self._timeout_seconds) as response:
+                return json.load(response)
+        except HTTPError as exc:
+            outcome = f"http_{exc.code}"
+            raise
+        except json.JSONDecodeError:
+            outcome = "invalid_json"
+            raise
+        except (URLError, TimeoutError, socket.timeout):
+            outcome = "network_error"
+            raise
+        finally:
+            if self._metrics is not None:
+                self._metrics.increment(
+                    "metamap_external_requests_total",
+                    operation=operation,
+                    outcome=outcome,
+                )
+                self._metrics.observe_duration(
+                    "metamap_external_request_duration_seconds",
+                    time.monotonic() - started_at,
+                    operation=operation,
+                )
+
+    def _invalidate_access_token(self) -> None:
+        with self._token_lock:
+            self._cached_access_token = None
+            self._access_token_expires_at = 0.0
+
+    def _sleep_before_retry(
+        self, attempt: int, operation: str, error: Exception | None
+    ) -> None:
+        delay = self._retry_backoff_seconds * (2 ** (attempt - 1))
+        self._increment_metric("metamap_external_retries_total", operation=operation)
+        logger.warning(
+            "Retrying MetaMap %s request: attempt=%s/%s delay=%.3fs error=%s",
+            operation,
+            attempt + 1,
+            self._max_attempts,
+            delay,
+            error,
+        )
+        if delay:
+            time.sleep(delay)
+
+    def _increment_metric(self, name: str, **labels: str) -> None:
+        if self._metrics is not None:
+            self._metrics.increment(name, **labels)
+
+
+def _is_retryable_error(error: HTTPError) -> bool:
+    return error.code == 429 or 500 <= error.code < 600
 
 
 def extract_validation_enrichment(payload: Any) -> ValidationEnrichment:

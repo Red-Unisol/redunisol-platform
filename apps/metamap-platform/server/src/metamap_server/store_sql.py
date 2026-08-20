@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Integer, String, Text, delete, func, inspect, or_, select, text
+from sqlalchemy import (
+    Boolean,
+    Integer,
+    String,
+    Text,
+    and_,
+    delete,
+    func,
+    inspect,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.types import JSON
@@ -371,6 +383,36 @@ class SqlValidationStore:
             rows = session.execute(stmt).scalars().all()
             total = session.execute(count_stmt).scalar_one()
             return [self._to_validation_record(row) for row in rows], int(total)
+
+    def list_validations_needing_enrichment(self, limit: int) -> list[ValidationRecord]:
+        with self._session_factory() as session:
+            stmt = (
+                select(ValidationRow)
+                .where(
+                    ValidationRow.resource_url.is_not(None),
+                    func.trim(ValidationRow.resource_url) != "",
+                    or_(
+                        ValidationRow.request_number.is_(None),
+                        func.trim(ValidationRow.request_number) == "",
+                        and_(
+                            ValidationRow.amount_raw.is_(None),
+                            ValidationRow.amount_value.is_(None),
+                        ),
+                        and_(
+                            ValidationRow.requested_amount_raw.is_(None),
+                            ValidationRow.requested_amount_value.is_(None),
+                        ),
+                        ValidationRow.applicant_name.is_(None),
+                        func.trim(ValidationRow.applicant_name) == "",
+                        ValidationRow.document_number.is_(None),
+                        func.trim(ValidationRow.document_number) == "",
+                    ),
+                )
+                .order_by(ValidationRow.last_received_at.desc())
+                .limit(limit)
+            )
+            rows = session.execute(stmt).scalars().all()
+            return [self._to_validation_record(row) for row in rows]
 
     def _prune_old_metamap_webhook_receipts(self, session: Session) -> bool:
         threshold = (datetime.now(timezone.utc) - METAMAP_WEBHOOK_RECEIPT_RETENTION).isoformat()

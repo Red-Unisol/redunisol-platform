@@ -13,8 +13,11 @@ Este corte deja resuelto:
 
 - API FastAPI inicial
 - persistencia durable en SQL de una proyeccion `validation` por `verification_id`
-- enriquecimiento opcional desde `resource_url` para indexar solicitud, numero de prestamo e importe
-- enriquecimiento opcional desde `resource_url` para indexar solicitud, numero de prestamo, importe total e importe solicitado
+- enriquecimiento asincronico y acotado desde `resource_url` para indexar solicitud, numero de prestamo, importes, persona y documento
+- lecturas servidas exclusivamente desde SQL, sin llamadas laterales a MetaMap
+- cache en memoria del token OAuth de MetaMap y reintentos limitados para errores transitorios
+- recuperacion al iniciar de validaciones legacy que todavia necesiten enriquecimiento
+- metricas Prometheus de latencia HTTP, cola de enriquecimiento y llamadas externas
 - listado, busqueda y fetch puntual de validaciones
 - bootstrap de clientes autenticados por rol
 - retencion de receipts/logs de MetaMap por 7 dias
@@ -66,6 +69,18 @@ Copiar `.env.example` y ajustar:
   - opcional; fallback legacy si no se configuran credenciales OAuth. Si existe, el server hace fetch best-effort del `resource_url` de MetaMap para extraer `request_number`, `loan_number` e `amount`
 - `METAMAP_SERVER_METAMAP_AUTH_SCHEME`
   - opcional; default `Token`, usado solo con `METAMAP_SERVER_METAMAP_API_TOKEN`
+- `METAMAP_SERVER_METAMAP_TIMEOUT_SECONDS`
+  - timeout por intento contra OAuth o recursos MetaMap; default `10`
+- `METAMAP_SERVER_METAMAP_MAX_ATTEMPTS`
+  - maximo de intentos para errores de red, HTTP `429` y HTTP `5xx`; default `3`; los errores terminales como `404` no se reintentan
+- `METAMAP_SERVER_METAMAP_RETRY_BACKOFF_SECONDS`
+  - backoff exponencial inicial entre intentos; default `0.5`
+- `METAMAP_SERVER_METAMAP_OAUTH_TOKEN_TTL_SECONDS`
+  - TTL de respaldo si OAuth no informa `expires_in`; default `300`
+- `METAMAP_SERVER_ENRICHMENT_WORKERS`
+  - concurrencia maxima de enriquecimientos; default `4`
+- `METAMAP_SERVER_ENRICHMENT_QUEUE_SIZE`
+  - cantidad maxima de trabajos en espera, aparte de los workers; default `200`
 
 Para runtime cifrado versionado en Git:
 
@@ -110,8 +125,14 @@ Endpoint publico protegido por token compartido:
   - header `x-signature`
   - todos los eventos quedan logueados como receipts
   - si se puede resolver `verification_id`, el evento actualiza la validacion consolidada
-  - si estan configuradas las credenciales MetaMap, el server obtiene un JWT y enriquece la validacion desde `resource_url`
+  - si estan configuradas las credenciales MetaMap, el server confirma primero la persistencia y enriquece la validacion en segundo plano desde `resource_url`
   - si no hay credenciales OAuth pero si `METAMAP_SERVER_METAMAP_API_TOKEN`, usa ese token como fallback legacy
+
+Endpoint publico de observabilidad:
+
+- `GET /metrics`
+  - formato de texto compatible con Prometheus
+  - no expone payloads, credenciales ni identificadores de validaciones
 
 ## Contrato HTTP actual
 
@@ -150,6 +171,8 @@ Valores de `processing_status` actuales:
 
 ### `GET /api/v1/validations`
 
+La consulta usa exclusivamente el snapshot persistido en SQL. Nunca espera ni dispara una consulta externa a MetaMap.
+
 Filtros soportados:
 
 - `verification_id`
@@ -170,7 +193,11 @@ Filtros soportados:
 
 ### `GET /api/v1/validations/{verification_id}`
 
-Devuelve la validacion consolidada para un `verification_id`.
+Devuelve la validacion consolidada para un `verification_id`, exclusivamente desde SQL.
+
+## Compatibilidad y consistencia
+
+Se conservan las rutas, cabeceras de autenticacion, codigos HTTP, filtros y estructuras JSON existentes. El enriquecimiento externo pasa a ser eventualmente consistente: la respuesta del webhook puede contener inicialmente `null` en campos que solo existan en el recurso remoto, y las lecturas posteriores los exponen cuando termina el trabajo en segundo plano.
 
 ### `POST /api/v1/validations/{verification_id}/review`
 
