@@ -61,7 +61,7 @@ tasks:
       CREDIX_DAILY_INDEX_JSON: "{{ outputs.ejecutar_sondeo.vars.indice_diario_json }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "90"
-      CREDIX_DEBUG: "{{ envs.credix_debug ?? 'true' }}"
+      CREDIX_DEBUG: "{{ envs.credix_debug ?? 'false' }}"
       CREDIX_DEBUG_DIR: "/data/credixsa-cache/debug"
       CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
       CREDIX_USER: "{{ secret('CREDIX_USER') }}"

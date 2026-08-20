@@ -183,13 +183,13 @@ Ejemplo:
 
 ```json
 {
-	"_bridge_forward_url": "http://host.docker.internal:8787/metamap",
-	"_bridge_timeout_seconds": 5,
-	"event": "verification.finished",
-	"lead_id": "abc123",
-	"result": {
-		"status": "approved"
-	}
+  "_bridge_forward_url": "http://host.docker.internal:8787/metamap",
+  "_bridge_timeout_seconds": 5,
+  "event": "verification.finished",
+  "lead_id": "abc123",
+  "result": {
+    "status": "approved"
+  }
 }
 ```
 
@@ -322,7 +322,7 @@ Config en `envs`:
 - `vimarx_timeout_seconds`
 - `vimarx_verify_tls`
 - `local_tz` opcional, default `America/Argentina/Buenos_Aires`
-- `credix_debug` opcional, default `true` en los tasks del flow
+- `credix_debug` opcional, default `false` en los tasks del flow
 - `credixsa_warmup_max_per_run` opcional, default `5`
 - `credixsa_warmup_core_max_rows` opcional, default `1000`
 - `credixsa_warmup_retry_attempts` opcional, default `2`
