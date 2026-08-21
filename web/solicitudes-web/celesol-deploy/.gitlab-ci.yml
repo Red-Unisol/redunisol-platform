@@ -1,0 +1,10 @@
+image: docker:27
+
+stages:
+  - validate
+
+validate-compose:
+  stage: validate
+  script:
+    - cp .env.example .env
+    - docker compose config

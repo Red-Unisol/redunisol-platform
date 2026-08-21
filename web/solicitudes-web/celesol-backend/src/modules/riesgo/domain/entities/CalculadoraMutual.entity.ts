@@ -1,0 +1,23 @@
+export type CalculadoraMutualDatos = {
+  antiguedadLaboral: number | null;
+  compromisoMensualVigente: number | null;
+  convenio: string | null;
+  cuitTitular: string | null;
+  cuotaResultante: number | null;
+  cuotas: number | null;
+  cupoDisponibleVendedor: number | null;
+  dniTitular: string | null;
+  fechaPrimerVencimiento: string | null;
+  fechaSolicitud: string | null;
+  ingresos: number | null;
+  lineaDescripcion: string | null;
+  lineaId: number | null;
+  montoAFinanciar: number | null;
+  nombreCompletoTitular: string | null;
+  nroSolicitud: string | null;
+  rechazosDelMes: number | null;
+  saldoPrestamosVigentes: number | null;
+  situacionSocio: string | null;
+  titularNuevo: boolean | null;
+  vendedor: string | null;
+};

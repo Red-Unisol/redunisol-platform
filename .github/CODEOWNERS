@@ -10,6 +10,9 @@
 /web/herramientas/docker/ @Nasst
 /web/redunisol-web/deploy/ @Nasst
 /web/redunisol-web/docker/ @Nasst
+/web/solicitudes-web/deploy/ @Nasst
+/web/solicitudes-web/celesol-backend/docker/ @Nasst
+/web/solicitudes-web/celesol-frontend/docker/ @Nasst
 
 # Configuracion sensible versionada
 *.env.enc @Nasst

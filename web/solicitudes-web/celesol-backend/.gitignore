@@ -1,0 +1,6 @@
+node_modules/
+dist/
+  docs/superpowers/
+.env
+npm-debug.log*
+scripts/out/
