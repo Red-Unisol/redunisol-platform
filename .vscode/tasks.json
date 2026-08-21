@@ -159,6 +159,9 @@
         ".local-secrets/runtime-env.key",
         "--pair",
         "web/solicitudes-web/deploy/solicitudes-web.dev.env.enc=web/solicitudes-web/deploy/solicitudes-web.dev.env",
+        "--pair",
+        "web/solicitudes-web/deploy/solicitudes-web.prod.env.enc=web/solicitudes-web/deploy/solicitudes-web.prod.env",
+
         "--force"
       ],
       "options": {
@@ -177,6 +180,9 @@
         ".local-secrets/runtime-env.key",
         "--pair",
         "web/solicitudes-web/deploy/solicitudes-web.dev.env=web/solicitudes-web/deploy/solicitudes-web.dev.env.enc",
+        "--pair",
+        "web/solicitudes-web/deploy/solicitudes-web.prod.env=web/solicitudes-web/deploy/solicitudes-web.prod.env.enc",
+
         "--force"
       ],
       "options": {
