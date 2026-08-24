@@ -77,7 +77,7 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-19-bcra-retry-v1"
+COMMERCIAL_RULE_VERSION = "2026-08-24-cordoba-municipal-caja-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
@@ -1357,7 +1357,7 @@ def _evaluate_cordoba(
 
     if employment in {"empleado_publico_provincial", "policia"}:
         return _evaluate_cruz_del_eje(config, entities, vimarx)
-    if employment == "jubilado_provincial":
+    if employment in {"jubilado_provincial", "jubilado_municipal"}:
         return _evaluate_caja(config, lead, entities, vimarx, payment_bank)
     if employment == "daspu":
         return _manual(config, "daspu_form_691_or_limit_not_available")

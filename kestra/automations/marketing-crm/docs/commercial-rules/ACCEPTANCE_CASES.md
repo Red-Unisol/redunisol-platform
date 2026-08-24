@@ -128,7 +128,8 @@ Un caso no reemplaza la tabla normativa de clasificación.
 
 ### `COR-CASE-010` — Caja Nuevo sin entidades BCRA
 
-- **Dado** un Jubilado Provincial nuevo de 79 años con snapshot válido sin entidades.
+- **Dado** un Jubilado Provincial o Municipal nuevo de 79 años con snapshot válido sin
+  entidades.
 - **Entonces** aplica `COR-CAJA-NEW-010` y queda en `Caja Nuevo`.
 
 ### `COR-CASE-011` — Caja Irregulares para nuevo

@@ -33,7 +33,8 @@ compartido de aprobación se documentan en [`README.md`](README.md).
 
 ### `cordoba_jubilados`
 
-- Criterio: Cordoba + `Jubilado Provincial`, `Jubilado Nacional` o `Pensionado`.
+- Criterio: Cordoba + `Jubilado Provincial`, `Jubilado Nacional`, `Jubilado Municipal`
+  o `Pensionado`.
 - Responsables, en orden:
   - Patricia Contendi (`10451`)
   - Natalia Rojo Moyano (`71159`)

@@ -29,9 +29,10 @@ QUALIFICATION_RULES = {
             "daspu",
             "jubilado_provincial",
             "jubilado_nacional",
+            "jubilado_municipal",
             "pensionado",
         },
-        "bank_optional_for": {"jubilado_provincial"},
+        "bank_optional_for": {"jubilado_provincial", "pensionado"},
         "allowed_banks_by_status": {
             "empleado_publico_provincial": {"banco_de_la_provincia_de_cordoba_s_a"},
             "empleado_publico_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
@@ -39,7 +40,7 @@ QUALIFICATION_RULES = {
             "docente": {"banco_de_la_provincia_de_cordoba_s_a"},
             "personal_de_salud": {"banco_de_la_provincia_de_cordoba_s_a"},
             "jubilado_nacional": {"banco_de_la_provincia_de_cordoba_s_a"},
-            "pensionado": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "jubilado_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
         },
     },
     "catamarca": {

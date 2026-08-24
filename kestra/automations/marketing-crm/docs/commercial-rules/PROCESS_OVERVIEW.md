@@ -58,7 +58,7 @@ flowchart TD
     A[Negociación Córdoba] --> B{Situación laboral}
     B -->|Policía o Empleado<br/>Público Provincial| C[Cruz del Eje]
     B -->|Docente, Municipal, Salud,<br/>Jubilado Nacional o Pensionado| D[CBU]
-    B -->|Jubilado Provincial| E[Caja]
+    B -->|Jubilado Provincial<br/>o Municipal| E[Caja]
     B -->|DASPU| F[DASPU Haberes]
     B -->|UNC docente/no docente| G[Club Mutual CBU]
 
