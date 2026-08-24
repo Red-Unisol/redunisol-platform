@@ -122,6 +122,7 @@ export function createSolicitudesCoreRouter(
     accessKey: env.MINIO_ACCESS_KEY,
     endPoint: env.MINIO_ENDPOINT,
     port: env.MINIO_PORT,
+    region: env.MINIO_REGION,
     secretKey: env.MINIO_SECRET_KEY,
     useSSL: env.MINIO_USE_SSL,
   });
@@ -147,7 +148,8 @@ export function createSolicitudesCoreRouter(
   const workflowPlanExecutor = new SolicitudWorkflowPlanExecutor({
     repository: solicitudWorkflowRepository,
   });
-  const workflowCapabilitiesService = new SolicitudWorkflowCapabilitiesService();
+  const workflowCapabilitiesService =
+    new SolicitudWorkflowCapabilitiesService();
   const workflowEngine = new SolicitudWorkflowEngine({
     capabilitiesService: workflowCapabilitiesService,
     planBuilder: workflowPlanBuilder,
@@ -209,15 +211,20 @@ export function createSolicitudesCoreRouter(
   const getSolicitudesStatsUseCase = new GetSolicitudesStatsUseCase({
     repository: solicitudesCoreRepository,
   });
-  const getVendedorDashboardStatsUseCase = new GetVendedorDashboardStatsUseCase({
-    repository: solicitudesCoreRepository,
-  });
-  const getAnalistaDashboardStatsUseCase = new GetAnalistaDashboardStatsUseCase({
-    repository: solicitudesCoreRepository,
-  });
-  const getAnalistaDashboardStatsV2UseCase = new GetAnalistaDashboardStatsV2UseCase({
-    repository: solicitudesCoreRepository,
-  });
+  const getVendedorDashboardStatsUseCase = new GetVendedorDashboardStatsUseCase(
+    {
+      repository: solicitudesCoreRepository,
+    },
+  );
+  const getAnalistaDashboardStatsUseCase = new GetAnalistaDashboardStatsUseCase(
+    {
+      repository: solicitudesCoreRepository,
+    },
+  );
+  const getAnalistaDashboardStatsV2UseCase =
+    new GetAnalistaDashboardStatsV2UseCase({
+      repository: solicitudesCoreRepository,
+    });
   const simularPrestamoUseCase = new SimularPrestamoUseCase({
     gateway: prestamosSimulacionGateway,
     lineasPrestamoCatalog,
@@ -232,16 +239,17 @@ export function createSolicitudesCoreRouter(
     solicitudesRepository: solicitudesCoreRepository,
     storageBucket: env.MINIO_BUCKET_SOLICITUDES,
   });
-  const uploadSolicitudAdjuntosBatchUseCase = new UploadSolicitudAdjuntosBatchUseCase({
-    allowedExtensions: env.ADJUNTOS_ALLOWED_EXTENSIONS,
-    allowedMimeTypes: env.ADJUNTOS_ALLOWED_MIME_TYPES,
-    fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
-    maxFileSizeBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
-    objectStorage: adjuntosObjectStorage,
-    repository: solicitudAdjuntoRepository,
-    solicitudesRepository: solicitudesCoreRepository,
-    storageBucket: env.MINIO_BUCKET_SOLICITUDES,
-  });
+  const uploadSolicitudAdjuntosBatchUseCase =
+    new UploadSolicitudAdjuntosBatchUseCase({
+      allowedExtensions: env.ADJUNTOS_ALLOWED_EXTENSIONS,
+      allowedMimeTypes: env.ADJUNTOS_ALLOWED_MIME_TYPES,
+      fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
+      maxFileSizeBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
+      objectStorage: adjuntosObjectStorage,
+      repository: solicitudAdjuntoRepository,
+      solicitudesRepository: solicitudesCoreRepository,
+      storageBucket: env.MINIO_BUCKET_SOLICITUDES,
+    });
   const listSolicitudAdjuntosUseCase = new ListSolicitudAdjuntosUseCase({
     repository: solicitudAdjuntoRepository,
     solicitudesRepository: solicitudesCoreRepository,
@@ -314,13 +322,15 @@ export function createSolicitudesCoreRouter(
     uploadSolicitudAdjuntoUseCase,
     uploadSolicitudAdjuntosBatchUseCase,
   });
-  const solicitudCancelacionesController = new SolicitudCancelacionesController({
-    createSolicitudCancelacionUseCase,
-    deleteSolicitudCancelacionUseCase,
-    getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
-    listSolicitudCancelacionesUseCase,
-    updateSolicitudCancelacionUseCase,
-  });
+  const solicitudCancelacionesController = new SolicitudCancelacionesController(
+    {
+      createSolicitudCancelacionUseCase,
+      deleteSolicitudCancelacionUseCase,
+      getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+      listSolicitudCancelacionesUseCase,
+      updateSolicitudCancelacionUseCase,
+    },
+  );
 
   return SolicitudesCoreRoutes.create(
     solicitudesCoreController,
@@ -341,7 +351,9 @@ export function createSolicitudesCoreAdminRouter(
       solicitudFieldAccessAdminDatasource,
     );
   const workflowTransitionAdminRepository =
-    new WorkflowTransitionAdminRepositoryImpl(workflowTransitionAdminDatasource);
+    new WorkflowTransitionAdminRepositoryImpl(
+      workflowTransitionAdminDatasource,
+    );
 
   const fieldAccessAdminController = new FieldAccessAdminController({
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,

@@ -53,7 +53,9 @@ const envSchema = z.object({
     .int("EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES must be an integer")
     .positive("EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES must be greater than 0")
     .default(15),
-  LEGACY_API_BASE_URL: z.string().url("LEGACY_API_BASE_URL must be a valid URL"),
+  LEGACY_API_BASE_URL: z
+    .string()
+    .url("LEGACY_API_BASE_URL must be a valid URL"),
   LEGACY_API_TIMEOUT_MS: z.coerce
     .number()
     .int("LEGACY_API_TIMEOUT_MS must be an integer")
@@ -72,6 +74,7 @@ const envSchema = z.object({
     .number()
     .int("MINIO_PORT must be an integer")
     .positive("MINIO_PORT must be greater than 0"),
+  MINIO_REGION: z.string().default(""),
   MINIO_SECRET_KEY: z.string().min(1, "MINIO_SECRET_KEY is required"),
   MINIO_USE_SSL: z
     .enum(["true", "false"])
