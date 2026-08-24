@@ -17,6 +17,11 @@ labels:
   schedule_scope: prod_only
 
 inputs:
+  - id: run_mode
+    type: STRING
+    required: true
+    defaults: manual
+    description: Modo interno de la ejecucion (manual, monthly o resume).
   - id: force_refresh
     type: BOOLEAN
     required: true
@@ -46,7 +51,7 @@ tasks:
     beforeCommands:
       - python -c "import openpyxl" 2>/dev/null || pip install --no-cache-dir openpyxl==3.1.5 > /dev/null
     env:
-      TRIGGER_ID: "{{ (trigger is defined and trigger.id is defined) ? trigger.id : 'manual' }}"
+      RUN_MODE: "{{ inputs.run_mode }}"
       TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'force_refresh': inputs.force_refresh ?? false, 'retry_errors': inputs.retry_errors ?? false} | json) }}"
       MUDON_STATE_DB_PATH: /data/credixsa-cache/mudon-report.sqlite
       CREDIX_CACHE_SQLITE_PATH: /data/credixsa-cache/credixsa.sqlite
@@ -111,13 +116,19 @@ triggers:
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "30 7 1 * *"
     timezone: America/Argentina/Buenos_Aires
+    inputs:
+      run_mode: monthly
   - id: reanudar_corrida
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "*/10 * * * *"
     timezone: America/Argentina/Buenos_Aires
+    inputs:
+      run_mode: resume
   - id: webhook_manual
     type: io.kestra.plugin.core.trigger.Webhook
     key: "{{ secret('ANALISIS_CREDITO_WEBHOOK_KEY') }}"
+    inputs:
+      run_mode: manual
     wait: false
     returnOutputs: false
     responseContentType: application/json

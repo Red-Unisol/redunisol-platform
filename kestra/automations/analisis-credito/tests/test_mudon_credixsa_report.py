@@ -38,6 +38,14 @@ class FlowConfigTests(unittest.TestCase):
         flow = flow_path.read_text(encoding="utf-8")
         self.assertEqual(flow.count("    required: true\n    defaults: false"), 2)
 
+    def test_schedules_pass_an_explicit_run_mode(self) -> None:
+        flow_path = Path(__file__).resolve().parents[1] / "flows/mudon_credixsa_report.yaml"
+        flow = flow_path.read_text(encoding="utf-8")
+        self.assertIn('RUN_MODE: "{{ inputs.run_mode }}"', flow)
+        self.assertIn("      run_mode: monthly", flow)
+        self.assertIn("      run_mode: resume", flow)
+        self.assertNotIn("trigger.id", flow)
+
 
 class CoreTests(unittest.TestCase):
     def test_filter_contains_both_lines_and_active_balance(self) -> None:
@@ -225,6 +233,23 @@ class ExcelTests(unittest.TestCase):
 
 
 class EntrypointTests(unittest.TestCase):
+    def test_resume_mode_never_creates_a_run_when_none_is_active(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "state.sqlite")
+            with patch.object(
+                entrypoint,
+                "fetch_active_mudon_members",
+                side_effect=AssertionError("resume must not query Core"),
+            ):
+                run = entrypoint.ensure_run(
+                    store,
+                    "resume",
+                    {},
+                    datetime(2026, 8, 24, 12, 0, 0, tzinfo=timezone.utc),
+                )
+
+        self.assertIsNone(run)
+
     @patch("mudon_credixsa_report.entrypoint.load_shared_cache")
     @patch("mudon_credixsa_report.entrypoint.fetch_active_mudon_members")
     def test_manual_run_completes_from_fresh_cache_and_publishes(
@@ -253,7 +278,7 @@ class EntrypointTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             variables = {
-                "TRIGGER_ID": "webhook_manual",
+                "RUN_MODE": "manual",
                 "TRIGGER_BODY_JSON": "{}",
                 "MUDON_STATE_DB_PATH": str(root / "state.sqlite"),
                 "CREDIX_CACHE_SQLITE_PATH": str(root / "credix.sqlite"),

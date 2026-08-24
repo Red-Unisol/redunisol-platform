@@ -594,6 +594,8 @@ logica que lo administra viven en Git.
 - `reanudar_corrida`: cada 10 minutos, solo en produccion; sale como `idle` si no hay corrida activa;
 - `webhook_manual`: asincrono y protegido por `ANALISIS_CREDITO_WEBHOOK_KEY`.
 
+Cada trigger fija explicitamente el input interno `run_mode` (`monthly`, `resume` o `manual`). El worker no infiere el modo desde metadatos del trigger: `resume` nunca crea una corrida nueva y solo continua una corrida activa.
+
 Body manual opcional:
 
 ```json

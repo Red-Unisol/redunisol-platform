@@ -109,7 +109,7 @@ def public_run(run: dict[str, Any] | None, stats: dict[str, int] | None = None) 
     }
 
 
-def ensure_run(store: StateStore, trigger_id: str, payload: dict[str, Any], now: datetime) -> dict[str, Any] | None:
+def ensure_run(store: StateStore, run_mode: str, payload: dict[str, Any], now: datetime) -> dict[str, Any] | None:
     active = store.find_active_run()
     if active:
         return active
@@ -117,9 +117,9 @@ def ensure_run(store: StateStore, trigger_id: str, payload: dict[str, Any], now:
         reopened = store.reopen_latest_errors()
         if reopened:
             return reopened
-    if trigger_id == "reanudar_corrida":
+    if run_mode == "resume":
         return None
-    source = "monthly" if trigger_id == "primer_dia_del_mes" else "manual"
+    source = "monthly" if run_mode == "monthly" else "manual"
     run_id = new_run_id(source, now)
     existing = store.get_run(run_id)
     if existing:
@@ -177,13 +177,13 @@ def publish_if_ready(store: StateStore, run: dict[str, Any], stats: dict[str, in
 def run_batch(now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(LOCAL_TZ)
     payload = parse_trigger_body(env("TRIGGER_BODY_JSON", "{}"))
-    trigger_id = env("TRIGGER_ID", "manual")
+    run_mode = env("RUN_MODE", env("TRIGGER_ID", "manual")).strip().lower()
     store = StateStore(env("MUDON_STATE_DB_PATH", "/data/credixsa-cache/mudon-report.sqlite"))
     if str(payload.get("mode") or "").lower() == "status":
         latest = store.latest_run()
         return public_run(latest, store.stats(str(latest["run_id"])) if latest else None)
 
-    run = ensure_run(store, trigger_id, payload, now)
+    run = ensure_run(store, run_mode, payload, now)
     if not run:
         return public_run(None)
     run_id = str(run["run_id"])
