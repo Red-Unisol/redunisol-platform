@@ -567,3 +567,80 @@ Ambos archivos se reemplazan de forma atomica para evitar descargas incompletas.
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/reporte_evaluacion_report/**`
+
+## mudon_credixsa_report
+
+Genera el padron de socios con credito activo en las lineas `MUDON HABERES` y
+`MUDON HABERES SOCIOS NUEVOS`, enriquece cada CUIL con CredixSA y publica un
+Excel para Cobranzas.
+
+### Operacion reanudable
+
+- crea un snapshot mensual de socios desde `F.Module.Cuentas.Prestamos.Prestamo`;
+- deduplica por CUIL y conserva todas las cuentas activas del socio;
+- reutiliza resultados CredixSA de hasta 7 dias;
+- procesa por defecto 5 socios por lote y espera 15 segundos entre consultas online;
+- persiste cada resultado en `/data/credixsa-cache/mudon-report.sqlite`;
+- recupera automaticamente leases de ejecuciones interrumpidas;
+- reintenta errores tecnicos hasta 3 veces en lotes posteriores;
+- publica el Excel aunque existan errores definitivos, marcandolos por fila.
+
+El estado SQLite es runtime mutable. El esquema, las migraciones y toda la
+logica que lo administra viven en Git.
+
+### Triggers
+
+- `primer_dia_del_mes`: dia 1 a las 07:30, solo en produccion;
+- `reanudar_corrida`: cada 10 minutos, solo en produccion; sale como `idle` si no hay corrida activa;
+- `webhook_manual`: asincrono y protegido por `ANALISIS_CREDITO_WEBHOOK_KEY`.
+
+Body manual opcional:
+
+```json
+{
+  "force_refresh": false,
+  "retry_errors": false
+}
+```
+
+`force_refresh` solo afecta una corrida nueva. `retry_errors` reabre los errores
+definitivos de la ultima corrida. Para consultar estado sin procesar un lote:
+
+```json
+{ "mode": "status" }
+```
+
+### Salidas
+
+- `/reports/cobranzas/mudon-jubilados/ultimo.xlsx`
+- `/reports/cobranzas/mudon-jubilados/historico/YYYY-MM-DD.xlsx`
+
+El workbook contiene las hojas `Resumen` y `Socios`. La publicacion de ambos
+archivos es atomica.
+
+### Configuracion
+
+Secrets reutilizados:
+
+- `DEVEXPRESS_EVALUATE_API_BASE_URL` (puerto operativo 5002)
+- `DEVEXPRESS_EVALUATE_API_BEARER_TOKEN`
+- `CREDIX_CLIENTE`
+- `CREDIX_USER`
+- `CREDIX_PASS`
+- `ANALISIS_CREDITO_WEBHOOK_KEY`
+
+Variables:
+
+- `mudon_core_timeout_seconds` (default `60`)
+- `mudon_core_verify_tls` (default `false`)
+- `mudon_core_max_rows` (default `5000`; alcanzar el limite aborta la corrida)
+- `mudon_loan_lines`
+- `mudon_credixsa_batch_size` (default `5`, maximo `10`)
+- `mudon_credixsa_delay_seconds` (default `15`)
+- `mudon_credixsa_cache_max_age_days` (default `7`)
+- `mudon_credixsa_max_attempts` (default `3`)
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/mudon_credixsa_report/**`
+- reutiliza `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`

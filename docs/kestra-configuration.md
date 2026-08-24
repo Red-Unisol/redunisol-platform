@@ -456,7 +456,7 @@ Incorporado a partir de la documentacion tecnica bajo `untracked/`.
 
 Ejemplo de host para documentacion publica:
 
-- `https://internal-api.example.local:5050`
+- `https://internal-api.example.local:5002`
 
 Endpoints documentados:
   - `/api/Empresa/Evaluate`
@@ -481,6 +481,24 @@ Importante:
 - se guarda solo el base URL
 - los paths concretos de la API siguen definidos por la automatizacion que la consuma
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
+
+### Runtime reporte MUDON CredixSA: variables no sensibles
+
+Referenciadas desde `kestra/automations/analisis-credito/flows/mudon_credixsa_report.yaml`:
+
+- `mudon_core_timeout_seconds`
+- `mudon_core_verify_tls`
+- `mudon_core_max_rows`
+- `mudon_loan_lines`
+- `mudon_credixsa_batch_size`
+- `mudon_credixsa_delay_seconds`
+- `mudon_credixsa_cache_max_age_days`
+- `mudon_credixsa_max_attempts`
+
+En infraestructura corresponden a las mismas claves en mayusculas con prefijo
+`ENV_`. El reporte reutiliza los secrets DevExpress, CredixSA y el webhook
+general de Analisis Credito. El endpoint DevExpress operativo usa el puerto
+`5002`.
 
 ### Runtime Analisis Credito: webhook secret
 
