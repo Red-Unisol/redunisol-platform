@@ -75,3 +75,6 @@ jobs:
 
       - name: Build Consulta CUAD image
         run: docker build kestra/automations/analisis-credito/docker/consulta-cuad -t analisis-credito-consulta-cuad:test
+
+      - name: Build CredixSA worker image
+        run: docker build kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2 -t analisis-credito-credixsa:test
