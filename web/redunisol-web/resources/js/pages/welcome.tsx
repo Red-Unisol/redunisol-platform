@@ -43,6 +43,10 @@ interface HomePageProps {
     meta_description?: string;
     keyword?: string;
     index?: boolean;
+    seo?: {
+        robots?: string;
+        canonical?: string;
+    };
     [key: string]: unknown;
 }
 
@@ -94,6 +98,7 @@ export default function Page() {
         meta_description,
         keyword,
         index,
+        seo,
     } = usePage<HomePageProps>().props;
 
     const [activeTab, setActiveTab] = useState('unset');
@@ -232,7 +237,9 @@ export default function Page() {
     const seoTitle = meta_title || title;
     const seoDescription =
         meta_description || `${title} - Soluciones de crédito personalizadas`;
-    const robots = index === false ? 'noindex, nofollow' : 'index, follow';
+    const robots =
+        seo?.robots ??
+        (index === false ? 'noindex, nofollow' : 'index, follow');
 
     return (
         <>
@@ -241,11 +248,7 @@ export default function Page() {
                 description={seoDescription}
                 keyword={keyword}
                 robots={robots}
-                canonical={
-                    typeof window !== 'undefined'
-                        ? window.location.href
-                        : undefined
-                }
+                canonical={seo?.canonical}
                 ogTitle={seoTitle}
                 ogDescription={seoDescription}
                 schemas={schemas}
