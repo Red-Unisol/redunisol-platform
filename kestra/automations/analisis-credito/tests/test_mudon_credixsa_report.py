@@ -32,6 +32,13 @@ from mudon_credixsa_report import entrypoint  # noqa: E402
 from mudon_credixsa_report.state import StateStore  # noqa: E402
 
 
+class FlowConfigTests(unittest.TestCase):
+    def test_defaulted_inputs_are_required_by_kestra(self) -> None:
+        flow_path = Path(__file__).resolve().parents[1] / "flows/mudon_credixsa_report.yaml"
+        flow = flow_path.read_text(encoding="utf-8")
+        self.assertEqual(flow.count("    required: true\n    defaults: false"), 2)
+
+
 class CoreTests(unittest.TestCase):
     def test_filter_contains_both_lines_and_active_balance(self) -> None:
         value = build_active_loan_filter(

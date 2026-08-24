@@ -19,12 +19,12 @@ labels:
 inputs:
   - id: force_refresh
     type: BOOLEAN
-    required: false
+    required: true
     defaults: false
     description: Ignora caches vigentes al iniciar una corrida manual nueva.
   - id: retry_errors
     type: BOOLEAN
-    required: false
+    required: true
     defaults: false
     description: Reabre los errores definitivos de la ultima corrida.
 
