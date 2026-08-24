@@ -190,6 +190,16 @@ del árbol activo; Git conserva su historial.
   manual, no rechazo.
 - **Decisión cerrada:** `COR-PEND-010`.
 
+## `COR-DEC-010` — Ampliar aceptación de jubilados y pensionados
+
+- **Fecha:** 2026-08-24.
+- **Origen:** tarea Bitrix24 `22745`.
+- **Pensionado:** se considera pensionado provincial y precalifica con cualquier banco.
+- **Jubilado Municipal:** precalifica únicamente con Bancor.
+- **Negociación:** Jubilado Municipal usa las reglas de Caja y el bucket de jubilados,
+  igual que Jubilado Provincial.
+- **Compatibilidad:** ningún caso previamente aceptado pasa a rechazarse.
+
 ## `GEN-DEC-002` — Etapa para rechazos comerciales
 
 - **Fecha:** 2026-08-11

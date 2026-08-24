@@ -55,7 +55,12 @@ def resolve_routing_bucket(
                 "Córdoba - Público provincial y Policía",
                 config.deal.cordoba_publico_policia_user_ids,
             )
-        elif employment in {"jubilado_provincial", "jubilado_nacional", "pensionado"}:
+        elif employment in {
+            "jubilado_provincial",
+            "jubilado_nacional",
+            "jubilado_municipal",
+            "pensionado",
+        }:
             key, label, sellers = (
                 "cordoba_jubilados",
                 "Córdoba - Jubilados y pensionados",

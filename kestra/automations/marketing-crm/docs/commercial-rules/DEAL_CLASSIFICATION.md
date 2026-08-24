@@ -152,10 +152,11 @@ autorización verificable queda en revisión manual.
 | 320 | `COR-CBU-GEN-030` | Crédito vigente que encuadra como recurrente | CBU Recurrente | Aplicar tabla CBU |
 | 330 | `COR-CBU-GEN-040` | Condición de recurrencia o datos insuficientes | Revisión manual | Sin línea |
 
-### Jubilado Provincial — Caja
+### Jubilado Provincial y Jubilado Municipal — Caja
 
-La edad se calcula al momento de clasificar. Desde los 80 años inclusive corresponde
-rechazo comercial. Fecha de nacimiento faltante produce revisión manual.
+Ambas situaciones laborales siguen las mismas reglas de Caja. La edad se calcula al
+momento de clasificar. Desde los 80 años inclusive corresponde rechazo comercial.
+Fecha de nacimiento faltante produce revisión manual.
 
 | Prioridad | Regla | Perfil y condición | Decisión | Etapa | Línea |
 |---:|---|---|---|---|---|

@@ -1129,6 +1129,62 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertFalse(result.qualified)
         self.assertEqual(result.reason, "payment_bank_not_eligible")
 
+    def test_qualification_accepts_cordoba_retiree_cases(self) -> None:
+        cases = (
+            ("Jubilado Provincial", "Banco Santander Rio S.A."),
+            ("Jubilado Nacional", "Banco de la Provincia de Cordoba S.A."),
+            ("Jubilado Municipal", "Banco de la Provincia de Cordoba S.A."),
+            ("Pensionado", "Banco de la Provincia de Cordoba S.A."),
+            ("Pensionado", "Banco Santander Rio S.A."),
+        )
+
+        for employment_status, payment_bank in cases:
+            with self.subTest(
+                employment_status=employment_status,
+                payment_bank=payment_bank,
+            ):
+                submission = normalize_business_input(
+                    {
+                        "full_name": "Maria Lopez",
+                        "email": "maria@example.com",
+                        "whatsapp": "3511234567",
+                        "cuil": "27-12345678-5",
+                        "province": "Cordoba",
+                        "employment_status": employment_status,
+                        "payment_bank": payment_bank,
+                        "lead_source": "Google",
+                    }
+                )
+
+                result = evaluate_qualification(submission)
+
+                self.assertTrue(result.qualified)
+                self.assertEqual(result.reason, "qualified")
+
+    def test_qualification_keeps_cordoba_bank_restrictions_for_municipal_and_national_retirees(
+        self,
+    ) -> None:
+        for employment_status in ("Jubilado Municipal", "Jubilado Nacional"):
+            with self.subTest(employment_status=employment_status):
+                submission = normalize_business_input(
+                    {
+                        "full_name": "Maria Lopez",
+                        "email": "maria@example.com",
+                        "whatsapp": "3511234567",
+                        "cuil": "27-12345678-5",
+                        "province": "Cordoba",
+                        "employment_status": employment_status,
+                        "payment_bank": "Banco Santander Rio S.A.",
+                        "lead_source": "Google",
+                    }
+                )
+
+                result = evaluate_qualification(submission)
+
+                self.assertFalse(result.qualified)
+                self.assertEqual(result.reason, "payment_bank_not_eligible")
+                self.assertEqual(result.rejection_label, "OTRO BANCO")
+
     def test_qualification_accepts_catamarca_personal_de_salud_without_bank_filter(self) -> None:
         submission = normalize_business_input(
             {
@@ -4404,7 +4460,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["previous_assigned_by_id"], 57)
         self.assertEqual(result["lead_id"], 920)
         self.assertEqual(result["contact_id"], 101)
-        self.assertEqual(result["rule_version"], "2026-08-19-bcra-retry-v1")
+        self.assertEqual(
+            result["rule_version"],
+            "2026-08-24-cordoba-municipal-caja-v1",
+        )
         self.assertTrue(result["processed_at"])
         chat_queries = [
             payload
@@ -4958,6 +5017,32 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "caja_irregulares")
         self.assertEqual(result["routing_bucket"], "cordoba_jubilados")
         self.assertEqual(client.deals[941]["ufCrm_659EBB0445E8E"], "Caja Irregulares")
+
+    def test_cordoba_jubilado_municipal_uses_caja_and_jubilados_bucket(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[949] = self._cordoba_enriched_lead(
+            949,
+            employment_id="3129",
+            payment_bank_id="437",
+            birthdate="1960-01-01",
+            bcra_entities=[
+                {"entidad": "BANCO DE LA PROVINCIA DE CORDOBA", "situacion": 1},
+                {"entidad": "OTRA ENTIDAD", "situacion": 2},
+            ],
+        )
+        client.deals[949] = self._pending_deal(949, 949)
+
+        result = qualify_catamarca_deal(
+            949,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "caja_irregulares")
+        self.assertEqual(result["routing_bucket"], "cordoba_jubilados")
+        self.assertEqual(client.deals[949]["ufCrm_659EBB0445E8E"], "Caja Irregulares")
 
     def test_cordoba_caja_recurrent_clean_is_caja_general(self) -> None:
         client = FakeBitrixClient()
