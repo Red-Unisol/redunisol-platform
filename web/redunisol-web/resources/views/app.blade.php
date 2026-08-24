@@ -62,6 +62,8 @@
 
         <title inertia>{{ config('app.name', 'Red Unisol') }}</title>
         <meta name="description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
+        <meta inertia="robots" name="robots" content="{{ data_get($page, 'props.seo.robots', 'index, follow') }}">
+        <link inertia="canonical" rel="canonical" href="{{ data_get($page, 'props.seo.canonical', request()->url()) }}">
         <meta property="og:site_name" content="{{ config('app.name', 'Red Unisol') }}">
         <meta property="og:type" content="website">
         <meta property="og:title" content="{{ config('app.name', 'Red Unisol') }}">

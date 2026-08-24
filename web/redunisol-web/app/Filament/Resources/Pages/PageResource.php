@@ -62,6 +62,11 @@ class PageResource extends Resource
                         ->label('Indexar en buscadores')
                         ->helperText('Permitir que Google indexe esta página')
                         ->default(true),
+
+                    TextInput::make('canonical_url')
+                        ->label('URL canonical')
+                        ->helperText('Opcional. Puede ser una ruta interna (/pagina-principal) o una URL absoluta.')
+                        ->maxLength(2048),
                 ])
                 ->columns(2),
 

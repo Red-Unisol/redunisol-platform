@@ -13,10 +13,12 @@ class Page extends Model
         'meta_description',
         'keyword',
         'index',
+        'canonical_url',
         'sections',
     ];
 
     protected $casts = [
+        'index' => 'boolean',
         'sections' => 'array',
     ];
 }
