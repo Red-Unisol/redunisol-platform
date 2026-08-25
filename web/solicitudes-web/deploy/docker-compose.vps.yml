@@ -51,6 +51,10 @@ services:
 
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
       MINIO_PORT: ${MINIO_PORT}
+      # Opcional: solo hace falta contra AWS S3, que rechaza la firma si la
+      # region no coincide con la del bucket. El ":-" la deja vacia cuando no
+      # esta definida, para que dev -- que usa MinIO -- no tire advertencia.
+      MINIO_REGION: ${MINIO_REGION:-}
       MINIO_USE_SSL: ${MINIO_USE_SSL}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
