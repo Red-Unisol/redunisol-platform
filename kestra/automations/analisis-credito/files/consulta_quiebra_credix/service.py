@@ -836,8 +836,7 @@ def _run_visible_online_update_requests(page: "Page") -> list[dict[str, Any]]:
                 },
             ].filter((update) => document.querySelector(update.selector));
 
-            const results = [];
-            for (const update of updates) {
+            const results = await Promise.all(updates.map(async (update) => {
                 const t0 = Date.now();
                 try {
                     const response = await fetch(update.url, {
@@ -856,22 +855,22 @@ def _run_visible_online_update_requests(page: "Page") -> list[dict[str, Any]]:
                     } catch (error) {
                         payload = text.slice(0, 200);
                     }
-                    results.push({
+                    return {
                         name: update.name,
                         ok: response.ok,
                         status: response.status,
                         payload,
                         ms: Date.now() - t0,
-                    });
+                    };
                 } catch (error) {
-                    results.push({
+                    return {
                         name: update.name,
                         ok: false,
                         error: String(error),
                         ms: Date.now() - t0,
-                    });
+                    };
                 }
-            }
+            }));
             return results;
         }
         """
