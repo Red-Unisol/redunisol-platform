@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 import json
 from typing import Any
 
@@ -345,7 +346,10 @@ def classify_lead(
         )
 
         submission = build_prequalification_input_from_lead(lead, config)
-        qualification = evaluate_prequalification(submission)
+        qualification = evaluate_prequalification(
+            submission,
+            evaluated_at=_lead_created_at(lead),
+        )
         active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
 
         if not can_take_commercial_decision:
@@ -471,6 +475,16 @@ def _extract_should_reject_from_raw(raw_payload: str) -> bool | None:
         return bool(payload["should_reject"])
 
     return None
+
+
+def _lead_created_at(lead: dict[str, object]) -> datetime | None:
+    raw_value = str(lead.get("DATE_CREATE") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _evaluate_submission_with_bcra(

@@ -267,12 +267,17 @@ class FakeBitrixClient:
                         {"ID": "3939", "VALUE": "OTRO BANCO"},
                         {"ID": "3953", "VALUE": "PUBLICO NACIONAL"},
                         {"ID": "3967", "VALUE": "NO SON SOCIOS NI QUIEREN PRESTAMO"},
+                        {
+                            "ID": "4175",
+                            "VALUE": "POLICÍA FEDERAL CABA - PERÍODO INICIAL",
+                        },
                     ]
                 },
                 "UF_CRM_1714071903": {
                     "items": [
                         {"ID": "1239", "VALUE": "Empleado Publico Provincial"},
                         {"ID": "3745", "VALUE": "Docente"},
+                        {"ID": "4165", "VALUE": "Policía Federal"},
                     ]
                 },
                 "UF_CRM_LEAD_1711458190312": {
@@ -936,6 +941,7 @@ class BusinessLogicTests(unittest.TestCase):
             ("Personal de Salud", "personal_de_salud", "4069"),
             ("Empleado de la UNC", "empleado_de_la_unc", "4071"),
             ("DASPU", "daspu", "4073"),
+            ("Policía Federal", "policia_federal", "4165"),
         ]
 
         for raw_status, expected_key, expected_bitrix_id in cases:
@@ -1218,6 +1224,54 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertTrue(result["route_to_whatsapp"])
         self.assertEqual(result["reason"], "qualified")
         self.assertEqual(result["rule_version"], RULE_VERSION)
+
+    def test_policia_federal_caba_initial_period_counts_without_whatsapp(self) -> None:
+        result = prequalify_commercial_fields(
+            {
+                "province": "Ciudad Autónoma de Buenos Aires",
+                "employment_status": "Policía Federal",
+                "payment_bank": "Banco de la Nacion Argentina",
+            },
+            evaluated_at=datetime(2026, 8, 31, 3, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["prequalified"])
+        self.assertFalse(result["route_to_whatsapp"])
+        self.assertEqual(result["reason"], "policia_federal_caba_initial_period")
+
+    def test_policia_federal_caba_is_regular_rejection_outside_initial_period(self) -> None:
+        for evaluated_at in (
+            datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 9, 14, 3, 0, tzinfo=timezone.utc),
+        ):
+            with self.subTest(evaluated_at=evaluated_at):
+                result = prequalify_commercial_fields(
+                    {
+                        "province": "Ciudad Autónoma de Buenos Aires",
+                        "employment_status": "Policía Federal",
+                        "payment_bank": "Banco de la Nacion Argentina",
+                    },
+                    evaluated_at=evaluated_at,
+                )
+
+                self.assertFalse(result["prequalified"])
+                self.assertFalse(result["route_to_whatsapp"])
+                self.assertEqual(result["reason"], "province_not_eligible")
+
+    def test_policia_federal_requires_caba(self) -> None:
+        result = prequalify_commercial_fields(
+            {
+                "province": "Cordoba",
+                "employment_status": "Policía Federal",
+                "payment_bank": "Banco de la Provincia de Cordoba S.A.",
+            },
+            evaluated_at=datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(result["prequalified"])
+        self.assertFalse(result["route_to_whatsapp"])
+        self.assertEqual(result["reason"], "employment_status_not_eligible")
 
     def test_commercial_prequalification_reuses_bank_rule(self) -> None:
         result = prequalify_commercial_fields(
@@ -2691,6 +2745,41 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "external_referral")
         self.assertEqual(result["lead_status"], "13")
         self.assertEqual(client.leads[308]["TITLE"], "Ana Gomez - Rio Negro")
+
+    def test_classify_initial_policia_federal_caba_as_rejected_with_specific_reason(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[311] = {
+            "ID": "311",
+            "CONTACT_ID": "101",
+            "STATUS_ID": "NEW",
+            "DATE_CREATE": "2026-09-13T23:59:59-03:00",
+            "TITLE": "Policía Federal CABA",
+            "NAME": "Ana",
+            "LAST_NAME": "Gomez",
+            "EMAIL": [{"VALUE": "ana@example.com"}],
+            "PHONE": [{"VALUE": "+5491112345678"}],
+            "ASSIGNED_BY_ID": "57",
+            "UF_CRM_COMM_OWNER": "4119",
+            "UF_CRM_1693840106704": "27123456785",
+            "UF_CRM_1714071903": "4165",
+            "UF_CRM_LEAD_1711458190312": ["439"],
+            "UF_CRM_64E65D2B2136C": "4145",
+            "UF_CRM_1722365051": "2423",
+        }
+
+        result = classify_lead(
+            311,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "policia_federal_caba_initial_period")
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["lead_status"], "UC_1P8I07")
+        self.assertEqual(client.leads[311]["UF_CRM_REJECTION_REASON"], "4175")
 
     def test_classify_lead_allows_invalid_cuil(self) -> None:
         client = FakeBitrixClient()
