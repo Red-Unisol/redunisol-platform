@@ -18,6 +18,10 @@ inputs:
 tasks:
   - id: consultar_tope
     type: io.kestra.plugin.scripts.python.Commands
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 2
     namespaceFiles:
       enabled: true
       include:
