@@ -158,9 +158,11 @@ def main() -> int:
 
         movements = load_movements(input_dir, remote_pattern)
         if not movements:
-            raise RuntimeError("No se encontraron movimientos con cuitTercero en los archivos descargados.")
+            raise RuntimeError("No se encontraron movimientos bancarios en los archivos descargados.")
 
-        unique_cuits = sorted({movement.cuit_tercero for movement in movements})
+        unique_cuits = sorted(
+            {movement.cuit_tercero for movement in movements if movement.cuit_tercero}
+        )
         client = VimarxClient(
             base_url=env("VIMARX_BASE_URL", DEFAULT_API_BASE_URL),
             timeout=int(env("VIMARX_TIMEOUT_SECONDS", "30")),
@@ -195,6 +197,12 @@ def main() -> int:
             "downloaded_files": downloaded,
             "downloaded_file_count": len(downloaded),
             "movement_count": len(movements),
+            "movements_without_cuit_count": sum(
+                1 for movement in movements if not movement.cuit_tercero
+            ),
+            "movements_without_amount_count": sum(
+                1 for movement in movements if movement.monto is None
+            ),
             "unique_cuit_count": len(unique_cuits),
             "full_row_count": len(report_rows),
             "high_match_row_count": len(high_rows),
