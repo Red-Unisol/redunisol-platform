@@ -61,11 +61,19 @@ jobs:
         env:
           PYTHONPATH: kestra/automations/analisis-credito/files
 
+      - name: Run Contabilidad unit tests
+        run: python -m unittest discover -s kestra/automations/contabilidad/tests -p "test_*.py"
+        env:
+          PYTHONPATH: kestra/automations/contabilidad/files
+
       - name: Dry-run Marketing CRM deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain marketing-crm --dry-run
 
       - name: Dry-run Analisis Credito deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain analisis-credito --dry-run
+
+      - name: Dry-run Contabilidad deploy
+        run: python kestra/tools/deploy_kestra.py --environment dev --domain contabilidad --dry-run
 
       - name: Dry-run System deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --target system --dry-run

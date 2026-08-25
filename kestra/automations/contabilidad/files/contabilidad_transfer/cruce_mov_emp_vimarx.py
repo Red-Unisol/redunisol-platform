@@ -327,7 +327,7 @@ class Movement:
     tipo_transaccion: str
     origen_transaccion: str
     id_origen_transaccion: str
-    monto: Decimal
+    monto: Decimal | None
     valor_firmado: Decimal | None
     nro_transaccion: str
     cuit_tercero: str
@@ -550,12 +550,6 @@ def load_movements(input_dir: Path, pattern: str) -> list[Movement]:
             io.StringIO(read_text_with_fallback(path)), delimiter=";"
         )
         for row in reader:
-            cuit = normalize_cuit(row.get("cuitTercero"))
-            if not cuit:
-                continue
-            monto = parse_decimal(row.get("importe"))
-            if monto is None:
-                continue
             movements.append(
                 Movement(
                     source_file=path.name,
@@ -564,10 +558,10 @@ def load_movements(input_dir: Path, pattern: str) -> list[Movement]:
                     tipo_transaccion=clean_text(row.get("tipoTransaccion")),
                     origen_transaccion=clean_text(row.get("origenTransaccion")),
                     id_origen_transaccion=clean_text(row.get("idOrigenTransaccion")),
-                    monto=monto,
+                    monto=parse_decimal(row.get("importe")),
                     valor_firmado=parse_decimal(row.get("valor")),
                     nro_transaccion=clean_text(row.get("nroTransaccion")),
-                    cuit_tercero=cuit,
+                    cuit_tercero=normalize_cuit(row.get("cuitTercero")) or "",
                     titular_tercero=clean_text(row.get("titularTercero")),
                 )
             )
@@ -706,11 +700,11 @@ def evaluate_candidate(
 
     amount_diff = (
         abs(movement.monto - comparison_amount)
-        if comparison_amount is not None
+        if movement.monto is not None and comparison_amount is not None
         else None
     )
     amount_diff_pct: Decimal | None = None
-    if comparison_amount is not None:
+    if movement.monto is not None and comparison_amount is not None:
         base = max(abs(movement.monto), abs(comparison_amount))
         if base != 0:
             amount_diff_pct = (amount_diff or Decimal("0")) / base
@@ -777,17 +771,27 @@ def build_report_rows(
         movements,
         key=lambda item: (item.fecha_movimiento or date.min, item.nro_transaccion),
     ):
-        bundle = bundles.get(
-            movement.cuit_tercero,
-            ApiBundle(socio=None, solicitudes=[], prestamos=[], errors=[]),
-        )
-        candidates = build_candidates(bundle)
-        best = select_best_match(movement, candidates, date_window_days)
+        empty_bundle = ApiBundle(socio=None, solicitudes=[], prestamos=[], errors=[])
+        bundle = bundles.get(movement.cuit_tercero, empty_bundle)
+        best: MatchEvaluation | None = None
 
-        if best:
+        if not movement.cuit_tercero:
+            candidate = Candidate(source="")
+            match_estado = "sin_cuit_para_consultar"
+        else:
+            candidates = build_candidates(bundle)
+            best = select_best_match(movement, candidates, date_window_days)
+
+        if best and best.match_estado != "sin_match_confiable":
             candidate = best.candidate
             match_estado = best.match_estado
-        elif bundle.socio:
+        elif best:
+            # A weak candidate is not a Vimarx match. Keep the banking movement,
+            # but do not expose unrelated loan data as if it were a coincidence.
+            candidate = Candidate(source="")
+            match_estado = best.match_estado
+            best = None
+        elif movement.cuit_tercero and bundle.socio:
             candidate = Candidate(
                 source="socio",
                 nombre=clean_text(bundle.socio.get("NombreCompleto")),
@@ -796,7 +800,7 @@ def build_report_rows(
                 cuit=stringify_identifier(bundle.socio.get("CUIT")),
             )
             match_estado = "sin_creditos"
-        else:
+        elif movement.cuit_tercero:
             candidate = Candidate(source="")
             match_estado = "sin_socio"
 
