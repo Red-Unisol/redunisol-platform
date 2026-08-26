@@ -32,6 +32,8 @@ class FormSubmissionController extends Controller
             && ($prequalification['ok'] ?? false) === true;
         $qualified = $prequalificationAvailable
             && ($prequalification['prequalified'] ?? false) === true;
+        $routeToWhatsapp = $qualified
+            && ($prequalification['route_to_whatsapp'] ?? true) === true;
 
         try {
             PersistFormSubmission::dispatch(
@@ -40,6 +42,7 @@ class FormSubmissionController extends Controller
                 prequalification: [
                     'available' => $prequalificationAvailable,
                     'prequalified' => $qualified,
+                    'route_to_whatsapp' => $routeToWhatsapp,
                     'reason' => $prequalificationAvailable ? (string) ($prequalification['reason'] ?? '') : 'prequalification_unavailable',
                     'message' => $prequalificationAvailable ? (string) ($prequalification['message'] ?? '') : '',
                     'rule_version' => $prequalificationAvailable ? (string) ($prequalification['rule_version'] ?? '') : '',
@@ -62,6 +65,7 @@ class FormSubmissionController extends Controller
                 'ok' => true,
                 'qualified' => false,
                 'prequalified' => false,
+                'route_to_whatsapp' => false,
                 'action' => 'not_qualified',
                 'reason' => 'prequalification_unavailable',
                 'message' => 'Recibimos tu solicitud, pero no pudimos verificarla automáticamente. La revisaremos de forma manual.',
@@ -73,7 +77,8 @@ class FormSubmissionController extends Controller
             'ok' => true,
             'qualified' => $qualified,
             'prequalified' => $qualified,
-            'action' => $qualified ? 'qualified' : 'rejected',
+            'route_to_whatsapp' => $routeToWhatsapp,
+            'action' => $routeToWhatsapp ? 'qualified' : 'rejected',
             'reason' => (string) ($prequalification['reason'] ?? ''),
             'message' => (string) ($prequalification['message'] ?? ''),
             'rule_version' => (string) ($prequalification['rule_version'] ?? ''),

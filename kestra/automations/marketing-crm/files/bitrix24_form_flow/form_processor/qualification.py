@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from .input_parser import NormalizedInput, PrequalificationInput
 
@@ -12,9 +14,28 @@ class QualificationResult:
     message: str
     rejection_label: str | None = None
     outcome: str = "rejected"
+    measurement_qualified: bool | None = None
+    route_to_whatsapp: bool | None = None
+
+    @property
+    def is_measurement_qualified(self) -> bool:
+        if self.measurement_qualified is None:
+            return self.qualified
+        return self.measurement_qualified
+
+    @property
+    def should_route_to_whatsapp(self) -> bool:
+        if self.route_to_whatsapp is None:
+            return self.qualified
+        return self.route_to_whatsapp
 
 
 EXTERNAL_REFERRAL_OUTCOME = "external_referral"
+BUENOS_AIRES_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
+POLICIA_FEDERAL_INITIAL_START = date(2026, 8, 31)
+POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE = date(2026, 9, 14)
+POLICIA_FEDERAL_INITIAL_REASON = "policia_federal_caba_initial_period"
+POLICIA_FEDERAL_INITIAL_REJECTION_LABEL = "POLICÍA FEDERAL CABA - PERÍODO INICIAL"
 
 
 QUALIFICATION_RULES = {
@@ -106,7 +127,20 @@ QUALIFICATION_RULES = {
 
 def evaluate_prequalification(
     submission: NormalizedInput | PrequalificationInput,
+    *,
+    evaluated_at: datetime | None = None,
 ) -> QualificationResult:
+    if _is_policia_federal_caba_initial_period(submission, evaluated_at=evaluated_at):
+        return QualificationResult(
+            qualified=False,
+            reason=POLICIA_FEDERAL_INITIAL_REASON,
+            message="Tu situación no califica para esta solicitud.",
+            rejection_label=POLICIA_FEDERAL_INITIAL_REJECTION_LABEL,
+            outcome="rejected",
+            measurement_qualified=True,
+            route_to_whatsapp=False,
+        )
+
     rule = QUALIFICATION_RULES.get(submission.province.key)
     if not rule:
         return QualificationResult(
@@ -148,8 +182,34 @@ def evaluate_prequalification(
     return _approved_result(submission, rule)
 
 
-def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
-    return evaluate_prequalification(submission)
+def evaluate_qualification(
+    submission: NormalizedInput,
+    *,
+    evaluated_at: datetime | None = None,
+) -> QualificationResult:
+    return evaluate_prequalification(submission, evaluated_at=evaluated_at)
+
+
+def _is_policia_federal_caba_initial_period(
+    submission: NormalizedInput | PrequalificationInput,
+    *,
+    evaluated_at: datetime | None,
+) -> bool:
+    if submission.province.key not in {"caba", "ciudad_autonoma_de_buenos_aires"}:
+        return False
+    if submission.employment_status.key != "policia_federal":
+        return False
+
+    local_date = _as_buenos_aires_date(evaluated_at)
+    return POLICIA_FEDERAL_INITIAL_START <= local_date < POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE
+
+
+def _as_buenos_aires_date(value: datetime | None) -> date:
+    if value is None:
+        return datetime.now(BUENOS_AIRES_TIMEZONE).date()
+    if value.tzinfo is None:
+        return value.replace(tzinfo=BUENOS_AIRES_TIMEZONE).date()
+    return value.astimezone(BUENOS_AIRES_TIMEZONE).date()
 
 
 def _approved_result(

@@ -82,6 +82,7 @@ const situacionesLaborales = [
     'Jubilado Provincial',
     'Empleado Público Provincial',
     'Policía',
+    'Policía Federal',
     'Docente',
     'Personal de Salud',
     'Jubilado Nacional',
@@ -1190,6 +1191,7 @@ export default function FormSection({
                       ok?: boolean;
                       message?: string;
                       qualified?: boolean;
+                      route_to_whatsapp?: boolean;
                       errors?: Record<string, string[]>;
                   })
                 : null;
@@ -1241,6 +1243,7 @@ export default function FormSection({
                 ok?: boolean;
                 message?: string;
                 qualified?: boolean;
+                route_to_whatsapp?: boolean;
             };
 
             if (responseData.qualified === false) {
@@ -1256,6 +1259,13 @@ export default function FormSection({
                 landing_slug: landingSlug,
                 landing_title: landingTitle,
             });
+
+            if (responseData.route_to_whatsapp === false) {
+                setErrorMessage(responseData.message ?? null);
+                setResult('not_qualified');
+                return;
+            }
+
             setResult('success');
         } catch {
             setErrorMessage(
