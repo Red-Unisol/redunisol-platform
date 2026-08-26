@@ -18,6 +18,7 @@ SPEC.loader.exec_module(REPORT)
 def execution(*, action="approved", strategy="round_robin", state="SUCCESS"):
     return {
         "id": "exec-123",
+        "flowId": "bitrix24_catamarca_deal_qualification",
         "flowRevision": 8,
         "state": {"current": state, "startDate": "2026-08-11T13:15:00Z"},
         "outputs": {
@@ -300,6 +301,14 @@ class CommercialDistributionReportTests(unittest.TestCase):
             workbook["Casos"].cell(2, 4).hyperlink.target,
             "https://example.bitrix24.com/crm/deal/details/930/",
         )
+        self.assertEqual(
+            workbook["Trazabilidad técnica"].cell(2, 13).hyperlink.target,
+            "https://example.bitrix24.com/crm/deal/details/930/",
+        )
+        self.assertEqual(
+            workbook["Trazabilidad técnica"].cell(2, 15).hyperlink.target,
+            "https://example.bitrix24.com/crm/lead/details/920/",
+        )
         headers = [cell.value for cell in workbook["Casos"][1]]
         self.assertEqual(
             headers[:4],
@@ -324,6 +333,47 @@ class CommercialDistributionReportTests(unittest.TestCase):
             workbook["Casos"].cell(3, 1).fill.fgColor.rgb[-6:],
             REPORT.MUTED_FILL,
         )
+
+    def test_does_not_compare_revisions_from_different_flows(self):
+        main = REPORT.normalized(execution())
+        main["revision"] = 15
+        queue_execution = execution()
+        queue_execution["flowId"] = "bitrix24_deal_assignment_queue"
+        queue_execution["flowRevision"] = 1
+        queue_execution["outputs"]["deal_id"] = "929"
+        queue = REPORT.normalized(queue_execution)
+
+        workbook = REPORT.build([main, queue])
+
+        self.assertNotEqual(
+            workbook["Casos"].cell(2, 1).fill.fgColor.rgb[-6:],
+            REPORT.MUTED_FILL,
+        )
+        self.assertNotEqual(
+            workbook["Casos"].cell(3, 1).fill.fgColor.rgb[-6:],
+            REPORT.MUTED_FILL,
+        )
+
+    def test_displays_chat_trace_details(self):
+        raw = execution()
+        raw["outputs"].update(
+            chat_transfer_status="partially_transferred",
+            found_chat_ids="777,779",
+            transferred_chat_ids="777",
+            skipped_chat_ids="779",
+            skipped_chat_reasons="779:no_current_transferable_session",
+        )
+
+        workbook = REPORT.build([REPORT.normalized(raw)])
+        headers = [cell.value for cell in workbook["Casos"][1]]
+        row = [cell.value for cell in workbook["Casos"][2]]
+        values = dict(zip(headers, row))
+
+        self.assertEqual(values["Resultado de chats"], "Transferencia parcial")
+        self.assertEqual(values["Chats encontrados"], "777,779")
+        self.assertEqual(values["Chats transferidos"], "777")
+        self.assertEqual(values["Chats no transferidos"], "779")
+        self.assertIn("sin sesión actual transferible", values["Motivo sin transferencia"])
 
     def test_publishes_latest_and_historical_copy(self):
         with tempfile.TemporaryDirectory() as directory:

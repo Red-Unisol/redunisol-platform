@@ -160,6 +160,18 @@ STAGE_LABELS = {
 }
 MUTED_FILL = "F2F2F2"
 MUTED_FONT = "7F7F7F"
+CHAT_TRANSFER_STATUS_LABELS = {
+    "transferred": "Todos los chats encontrados fueron transferidos",
+    "partially_transferred": "Transferencia parcial",
+    "no_chats_found": "No se encontraron chats asociados",
+    "no_transferable_session": "Chats encontrados sin sesión transferible",
+    "not_evaluated": "No aplica: no hubo transferencia de chat",
+}
+CHAT_SKIP_REASON_LABELS = {
+    "inspection_error": "no se pudo inspeccionar el chat",
+    "invalid_dialog": "Bitrix devolvió un diálogo inválido",
+    "no_current_transferable_session": "sin sesión actual transferible",
+}
 
 
 def api_get(session: requests.Session, url: str, **params: Any) -> Any:
@@ -359,6 +371,7 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "processed_at": processed_at,
         "execution_id": str(row.get("id") or ""),
+        "flow_id": str(row.get("flowId") or ""),
         "revision": row.get("flowRevision"),
         "technical_state": technical_state,
         "action": action,
@@ -392,6 +405,11 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         "within_business_hours": parse_bool(outputs.get("within_business_hours")),
         "linked_activity_count": parse_int(outputs.get("linked_activity_count")),
         "transferred_chat_count": parse_int(outputs.get("transferred_chat_count")),
+        "chat_transfer_status": str(outputs.get("chat_transfer_status") or ""),
+        "found_chat_ids": str(outputs.get("found_chat_ids") or ""),
+        "transferred_chat_ids": str(outputs.get("transferred_chat_ids") or ""),
+        "skipped_chat_ids": str(outputs.get("skipped_chat_ids") or ""),
+        "skipped_chat_reasons": str(outputs.get("skipped_chat_reasons") or ""),
         "bcra_snapshot_checked_at": parse_datetime(
             outputs.get("bcra_snapshot_checked_at")
         ),
@@ -559,17 +577,36 @@ def latest_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(result.values())
 
 
-def current_version(rows: list[dict[str, Any]]) -> tuple[str, Any] | None:
+def current_versions(rows: list[dict[str, Any]]) -> dict[str, tuple[str, Any]]:
+    result: dict[str, tuple[str, Any]] = {}
     for row in sorted(
         rows, key=lambda item: item["processed_at"] or datetime.min, reverse=True
     ):
         if row["rule_version"] and row["revision"] is not None:
-            return row["rule_version"], row["revision"]
-    return None
+            result.setdefault(
+                row["flow_id"] or "Flow sin identificar",
+                (row["rule_version"], row["revision"]),
+            )
+    return result
 
 
-def mute_previous_version(ws, row_number: int, item: dict[str, Any], current) -> None:
-    if current is None or (item["rule_version"], item["revision"]) == current:
+def latest_rule_version(rows: list[dict[str, Any]]) -> str:
+    for row in sorted(
+        rows, key=lambda item: item["processed_at"] or datetime.min, reverse=True
+    ):
+        if row["rule_version"]:
+            return row["rule_version"]
+    return ""
+
+
+def mute_previous_version(
+    ws,
+    row_number: int,
+    item: dict[str, Any],
+    current: dict[str, tuple[str, Any]],
+) -> None:
+    flow_version = current.get(item["flow_id"] or "Flow sin identificar")
+    if flow_version is None or (item["rule_version"], item["revision"]) == flow_version:
         return
     for cell in ws[row_number]:
         cell.fill = PatternFill("solid", fgColor=MUTED_FILL)
@@ -604,6 +641,29 @@ def add_link(cell, url: str) -> None:
     cell.style = "Hyperlink"
 
 
+def chat_transfer_display(item: dict[str, Any]) -> str:
+    status = item["chat_transfer_status"]
+    if status:
+        return CHAT_TRANSFER_STATUS_LABELS.get(status, status)
+    if item["transferred_chat_count"] > 0:
+        return "Transferido; detalle no disponible en la traza histórica"
+    if item["distribution_status"] == "Distribuido":
+        return "Sin detalle histórico"
+    return "No aplica: no hubo distribución"
+
+
+def skipped_chat_reason_display(value: str) -> str:
+    result: list[str] = []
+    for entry in value.split(";"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        chat_id, separator, reason = entry.partition(":")
+        label = CHAT_SKIP_REASON_LABELS.get(reason, reason)
+        result.append(f"Chat {chat_id}: {label}" if separator else entry)
+    return "; ".join(result)
+
+
 def build(
     rows: list[dict[str, Any]],
     bitrix_base_url: str = "",
@@ -613,7 +673,8 @@ def build(
         rows = add_user_displays(rows, {})
     rows = add_business_fields(rows)
     cases = latest_cases(rows)
-    version = current_version(rows)
+    versions = current_versions(rows)
+    rule_version = latest_rule_version(rows)
     wb = Workbook()
     summary = wb.active
     summary.title = "Resumen"
@@ -630,11 +691,17 @@ def build(
         ("Errores técnicos", status_counts["Error técnico"]),
         ("Históricos sin trazabilidad completa", status_counts["Histórico incompleto"]),
         ("Chats transferidos", sum(row["transferred_chat_count"] for row in cases)),
-        ("Versión de reglas vigente", version[0] if version else "Sin datos"),
-        ("Revisión del flujo vigente", version[1] if version else "Sin datos"),
+        ("Versión de reglas vigente", rule_version or "Sin datos"),
+        (
+            "Flows y revisiones vigentes",
+            "; ".join(
+                f"{flow_id}: rev. {version[1]}"
+                for flow_id, version in sorted(versions.items())
+            ) or "Sin datos",
+        ),
         (
             "Lectura de versiones",
-            "Las filas atenuadas fueron procesadas con una versión anterior.",
+            "Las filas se atenúan solo si usaron una revisión anterior del mismo flow.",
         ),
     )
     for item in summary_rows:
@@ -683,8 +750,10 @@ def build(
         "Intentos BCRA", "Próximo intento BCRA",
         "Línea comercial", "Grupo de distribución", "Responsable", "Responsable anterior",
         "Resultado de distribución", "Motivo de asignación", "Etapa anterior",
-        "Etapa resultante", "Chat transferido", "Versión de reglas",
-        "Revisión del flujo Kestra",
+        "Etapa resultante", "Chat transferido", "Resultado de chats",
+        "Chats encontrados", "Chats transferidos", "Chats no transferidos",
+        "Motivo sin transferencia", "Versión de reglas", "Flow Kestra",
+        "Revisión del flow Kestra",
     ]
     business_keys = [
         "processed_at", "business_decision", "business_reason", "deal_id", "deal_title",
@@ -693,26 +762,31 @@ def build(
         "bcra_next_retry_at", "commercial_line",
         "routing_bucket", "assigned_by", "previous_assigned_by", "distribution_status",
         "assignment_reason", "stage_before_display", "stage_after_display",
-        "chat_transferred_display", "rule_version", "revision",
+        "chat_transferred_display", "chat_transfer_display", "found_chat_ids_display",
+        "transferred_chat_ids_display", "skipped_chat_ids_display",
+        "skipped_chat_reason_display", "rule_version", "flow_id", "revision",
     ]
     technical_headers = [
         "Fecha y hora", "Estado de distribución", "Acción técnica", "Código de motivo",
         "Decisión comercial", "Motivo comercial", "Etapa comercial objetivo",
         "Acción de distribución", "Motivo de distribución",
-        "Versión de reglas", "Revisión del flujo Kestra", "Negociación", "Título",
+        "Versión de reglas", "Flow Kestra", "Revisión del flow Kestra",
+        "Negociación", "Título",
         "Lead", "Contacto", "Provincia", "Situación laboral", "Banco de cobro",
         "Estado de consulta BCRA", "Fecha de consulta BCRA", "Antigüedad BCRA (días)",
         "Intentos BCRA", "Próximo intento BCRA",
         "Etapa anterior", "Etapa resultante", "Línea comercial", "Grupo de distribución",
         "Responsable anterior", "Responsable", "Motivo de asignación", "Estrategia técnica",
         "Pool configurado", "Pool online", "Dentro del horario laboral",
-        "Chats transferidos", "Actividades vinculadas", "Ejecución Kestra",
+        "Resultado de chats", "Chats encontrados", "Chats transferidos",
+        "Chats no transferidos", "Motivo sin transferencia",
+        "Actividades vinculadas", "Ejecución Kestra",
         "Estado técnico", "Mensaje técnico",
     ]
     technical_keys = [
         "processed_at", "distribution_status", "action", "reason",
         "commercial_action", "commercial_reason", "commercial_stage_id",
-        "distribution_action", "distribution_reason", "rule_version",
+        "distribution_action", "distribution_reason", "rule_version", "flow_id",
         "revision", "deal_id", "deal_title", "lead_id", "contact_id", "province",
         "employment_status",
         "payment_bank", "bcra_refresh_display", "bcra_snapshot_checked_at",
@@ -720,13 +794,34 @@ def build(
         "stage_before", "stage_after", "commercial_line",
         "routing_bucket", "previous_assigned_by", "assigned_by", "assignment_reason",
         "assignment_strategy", "configured_pool_display", "online_pool_display",
-        "within_business_hours", "transferred_chat_count", "linked_activity_count",
-        "execution_id", "technical_state", "message",
+        "within_business_hours", "chat_transfer_display", "found_chat_ids_display",
+        "transferred_chat_ids_display", "skipped_chat_ids_display",
+        "skipped_chat_reason_display", "linked_activity_count", "execution_id",
+        "technical_state", "message",
     ]
 
     for item in rows:
-        item["chat_transferred_display"] = (
-            "Sí" if item["transferred_chat_count"] > 0 else "No"
+        has_current_chat_trace = bool(item["chat_transfer_status"])
+        item["chat_transferred_display"] = "Sí" if (
+            item["chat_transfer_status"] in {"transferred", "partially_transferred"}
+            if has_current_chat_trace
+            else item["transferred_chat_count"] > 0
+        ) else "No"
+        item["chat_transfer_display"] = chat_transfer_display(item)
+        historical_transfer_without_ids = (
+            not has_current_chat_trace and item["transferred_chat_count"] > 0
+        )
+        item["found_chat_ids_display"] = (
+            item["found_chat_ids"]
+            or ("No registrado" if historical_transfer_without_ids else "")
+        )
+        item["transferred_chat_ids_display"] = (
+            item["transferred_chat_ids"]
+            or ("No registrado" if historical_transfer_without_ids else "")
+        )
+        item["skipped_chat_ids_display"] = item["skipped_chat_ids"]
+        item["skipped_chat_reason_display"] = skipped_chat_reason_display(
+            item["skipped_chat_reasons"]
         )
         item["bcra_refresh_display"] = {
             "reused_fresh": "Consulta vigente reutilizada",
@@ -761,7 +856,6 @@ def build(
             sheet.append(values)
             row_number = sheet.max_row
             sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
-            sheet.cell(row_number, 23).number_format = "dd/mm/yyyy hh:mm:ss"
             sheet.cell(row_number, 13).number_format = "dd/mm/yyyy hh:mm:ss"
             for cell in sheet[row_number]:
                 cell.alignment = Alignment(vertical="center")
@@ -769,7 +863,7 @@ def build(
                 wrap_text=False, vertical="center"
             )
             sheet.row_dimensions[row_number].height = 20
-            mute_previous_version(sheet, row_number, item, version)
+            mute_previous_version(sheet, row_number, item, versions)
             add_link(
                 sheet.cell(row_number, 4),
                 f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
@@ -786,13 +880,13 @@ def build(
             sheet.append(values)
             row_number = sheet.max_row
             sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
-            mute_previous_version(sheet, row_number, item, version)
+            mute_previous_version(sheet, row_number, item, versions)
             add_link(
-                sheet.cell(row_number, 12),
+                sheet.cell(row_number, 13),
                 f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
             )
             add_link(
-                sheet.cell(row_number, 14),
+                sheet.cell(row_number, 15),
                 f"{base}/crm/lead/details/{item['lead_id']}/" if base else "",
             )
 
@@ -851,7 +945,7 @@ def main() -> None:
             f"valor recibido: {audit_from_value!r}"
         )
     raw = [
-        row
+        {**row, "flowId": row.get("flowId") or flow_id}
         for flow_id in FLOW_IDS
         for row in executions(session, base, tenant, namespace, flow_id)
     ]

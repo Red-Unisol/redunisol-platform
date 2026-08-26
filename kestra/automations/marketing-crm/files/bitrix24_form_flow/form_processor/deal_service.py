@@ -65,6 +65,27 @@ class AssignmentResolution:
     online_pool: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class ChatTransferResult:
+    found_chat_ids: tuple[int, ...]
+    transferred_chat_ids: tuple[int, ...]
+    skipped_chats: tuple[tuple[int, str], ...]
+
+    @property
+    def transferred_count(self) -> int:
+        return len(self.transferred_chat_ids)
+
+    @property
+    def status(self) -> str:
+        if not self.found_chat_ids:
+            return "no_chats_found"
+        if self.transferred_chat_ids and self.skipped_chats:
+            return "partially_transferred"
+        if self.transferred_chat_ids:
+            return "transferred"
+        return "no_transferable_session"
+
+
 def ensure_won_lead_deal(
     client: BitrixClient,
     config: AppConfig,
@@ -447,7 +468,7 @@ def assign_open_line_chats_to_user(
     deal_id: int,
     assigned_by_id: int,
     logger: Logger,
-) -> int:
+) -> ChatTransferResult:
     chat_ids: list[int] = []
     for entity_type, entity_id in (
         ("lead", lead_id),
@@ -466,33 +487,43 @@ def assign_open_line_chats_to_user(
             if isinstance(chat, dict) and _is_positive_int(chat.get("CHAT_ID") or chat.get("chat_id")):
                 chat_ids.append(int(str(chat.get("CHAT_ID") or chat.get("chat_id"))))
 
-    transferred = 0
-    for chat_id in dict.fromkeys(chat_ids):
-        if not _has_current_open_line_session(client, chat_id=chat_id, logger=logger):
+    found_chat_ids = tuple(dict.fromkeys(chat_ids))
+    transferred_chat_ids: list[int] = []
+    skipped_chats: list[tuple[int, str]] = []
+    for chat_id in found_chat_ids:
+        transferable, reason = _open_line_session_transferability(
+            client, chat_id=chat_id, logger=logger
+        )
+        if not transferable:
+            skipped_chats.append((chat_id, reason))
             continue
         client.call(
             "imopenlines.operator.transfer",
             {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
         )
-        transferred += 1
+        transferred_chat_ids.append(chat_id)
         logger.info(f"Chat Open Lines {chat_id} transferido al vendedor {assigned_by_id}.")
-    return transferred
+    return ChatTransferResult(
+        found_chat_ids=found_chat_ids,
+        transferred_chat_ids=tuple(transferred_chat_ids),
+        skipped_chats=tuple(skipped_chats),
+    )
 
 
-def _has_current_open_line_session(
+def _open_line_session_transferability(
     client: BitrixClient,
     *,
     chat_id: int,
     logger: Logger,
-) -> bool:
+) -> tuple[bool, str]:
     try:
         dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
     except RuntimeError as exc:
         logger.error(f"No se pudo inspeccionar el chat Open Lines {chat_id}: {exc}")
-        return False
+        return False, "inspection_error"
     if not isinstance(dialog, dict):
         logger.error(f"imopenlines.dialog.get devolvio un payload invalido para el chat {chat_id}.")
-        return False
+        return False, "invalid_dialog"
 
     entity_data = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "")
     parts = entity_data.split("|")
@@ -501,7 +532,8 @@ def _has_current_open_line_session(
     has_session = _is_positive_int(session_id) and text_enabled in (True, "Y", "y", 1)
     if not has_session:
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
-    return has_session
+        return False, "no_current_transferable_session"
+    return True, "transferable"
 
 
 def notify_distribution_supervisor(
