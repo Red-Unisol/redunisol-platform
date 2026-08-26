@@ -55,6 +55,7 @@ tasks:
       BITRIX24_DEAL_COMMERCIAL_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_commercial_rejected_stage_id ?? 'C1:KESTRA_REVIEW' }}"
       BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
       BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID: "{{ envs.bitrix24_deal_distribution_notification_user_id ?? '57' }}"
+      BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS: "{{ envs.bitrix24_distributable_open_line_ids ?? '1' }}"
       BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
       BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
       BITRIX24_DEAL_QUEUE_ACTION_FIELD: "{{ envs.bitrix24_deal_queue_action_field ?? 'ufCrmKqAction' }}"
@@ -213,6 +214,9 @@ outputs:
   - id: skipped_chat_reasons
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_chat_reasons : '' }}"
+  - id: skipped_non_distributable_chat_count
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_non_distributable_chat_count : '0' }}"
   - id: rule_version
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.rule_version : '' }}"

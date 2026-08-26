@@ -23,6 +23,7 @@ class NoOnlineSellersError(RuntimeError):
         super().__init__("No hay vendedores online disponibles para asignar la negociacion.")
         self.configured_pool = configured_pool
 
+
 DEAL_DIRECT_FIELD_MAPPINGS = {
     "cuil": "ufCrm_64FF4F9B5C195",
     "bcra_status": "ufCrm_69E0D50649FEB",
@@ -76,6 +77,13 @@ class ChatTransferResult:
         return len(self.transferred_chat_ids)
 
     @property
+    def skipped_non_distributable_count(self) -> int:
+        return sum(
+            reason == "non_distributable_open_line"
+            for _chat_id, reason in self.skipped_chats
+        )
+
+    @property
     def status(self) -> str:
         if not self.found_chat_ids:
             return "no_chats_found"
@@ -83,6 +91,11 @@ class ChatTransferResult:
             return "partially_transferred"
         if self.transferred_chat_ids:
             return "transferred"
+        if self.skipped_chats and all(
+            reason == "non_distributable_open_line"
+            for _chat_id, reason in self.skipped_chats
+        ):
+            return "non_distributable_open_line"
         return "no_transferable_session"
 
 
@@ -467,6 +480,7 @@ def assign_open_line_chats_to_user(
     contact_id: int | None,
     deal_id: int,
     assigned_by_id: int,
+    distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
 ) -> ChatTransferResult:
     chat_ids: list[int] = []
@@ -492,7 +506,10 @@ def assign_open_line_chats_to_user(
     skipped_chats: list[tuple[int, str]] = []
     for chat_id in found_chat_ids:
         transferable, reason = _open_line_session_transferability(
-            client, chat_id=chat_id, logger=logger
+            client,
+            chat_id=chat_id,
+            distributable_open_line_ids=distributable_open_line_ids,
+            logger=logger,
         )
         if not transferable:
             skipped_chats.append((chat_id, reason))
@@ -514,6 +531,7 @@ def _open_line_session_transferability(
     client: BitrixClient,
     *,
     chat_id: int,
+    distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
 ) -> tuple[bool, str]:
     try:
@@ -525,6 +543,20 @@ def _open_line_session_transferability(
         logger.error(f"imopenlines.dialog.get devolvio un payload invalido para el chat {chat_id}.")
         return False, "invalid_dialog"
 
+    open_line_id = _open_line_id(dialog)
+    if open_line_id is None:
+        logger.error(
+            f"Chat Open Lines {chat_id} sin identificador de linea valido; "
+            "se omite por seguridad."
+        )
+        return False, "non_distributable_open_line"
+    if open_line_id not in distributable_open_line_ids:
+        logger.info(
+            f"Chat Open Lines {chat_id} omitido: linea {open_line_id} no habilitada "
+            "para distribucion comercial."
+        )
+        return False, "non_distributable_open_line"
+
     entity_data = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "")
     parts = entity_data.split("|")
     session_id = parts[5] if len(parts) > 5 else ""
@@ -534,6 +566,14 @@ def _open_line_session_transferability(
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
         return False, "no_current_transferable_session"
     return True, "transferable"
+
+
+def _open_line_id(dialog: dict[str, Any]) -> int | None:
+    entity_id = str(dialog.get("entity_id") or dialog.get("ENTITY_ID") or "")
+    parts = entity_id.split("|")
+    if len(parts) < 2 or not _is_positive_int(parts[1]):
+        return None
+    return int(parts[1])
 
 
 def notify_distribution_supervisor(

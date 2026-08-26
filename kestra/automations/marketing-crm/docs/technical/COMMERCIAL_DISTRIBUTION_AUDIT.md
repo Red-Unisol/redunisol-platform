@@ -32,6 +32,11 @@ si no tenía una sesión transferible o si Bitrix no permitió inspeccionarlo. L
 anteriores mantienen el contador disponible y el Excel los identifica como trazabilidad
 histórica sin detalle, sin inferir una causa que no fue registrada.
 
+Los chats se transfieren únicamente cuando pertenecen a una línea de Open Lines
+incluida en `BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`. La configuración usa una
+allowlist y omite de forma segura cualquier línea desconocida, mal formada o no
+comercial. El evento registra cuántos chats no distribuibles fueron omitidos.
+
 La clasificación comercial y la distribución son dos ejes independientes. Por
 ejemplo, una negociación puede quedar aprobada para una línea y, al mismo tiempo,
 quedar en cola o con Maru porque todavía no existe un vendedor disponible. La

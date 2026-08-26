@@ -410,6 +410,9 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         "transferred_chat_ids": str(outputs.get("transferred_chat_ids") or ""),
         "skipped_chat_ids": str(outputs.get("skipped_chat_ids") or ""),
         "skipped_chat_reasons": str(outputs.get("skipped_chat_reasons") or ""),
+        "skipped_non_distributable_chat_count": parse_int(
+            outputs.get("skipped_non_distributable_chat_count")
+        ),
         "bcra_snapshot_checked_at": parse_datetime(
             outputs.get("bcra_snapshot_checked_at")
         ),
@@ -691,6 +694,10 @@ def build(
         ("Errores técnicos", status_counts["Error técnico"]),
         ("Históricos sin trazabilidad completa", status_counts["Histórico incompleto"]),
         ("Chats transferidos", sum(row["transferred_chat_count"] for row in cases)),
+        (
+            "Chats no comerciales omitidos",
+            sum(row["skipped_non_distributable_chat_count"] for row in cases),
+        ),
         ("Versión de reglas vigente", rule_version or "Sin datos"),
         (
             "Flows y revisiones vigentes",
@@ -780,6 +787,7 @@ def build(
         "Pool configurado", "Pool online", "Dentro del horario laboral",
         "Resultado de chats", "Chats encontrados", "Chats transferidos",
         "Chats no transferidos", "Motivo sin transferencia",
+        "Chats no comerciales omitidos",
         "Actividades vinculadas", "Ejecución Kestra",
         "Estado técnico", "Mensaje técnico",
     ]
@@ -796,8 +804,8 @@ def build(
         "assignment_strategy", "configured_pool_display", "online_pool_display",
         "within_business_hours", "chat_transfer_display", "found_chat_ids_display",
         "transferred_chat_ids_display", "skipped_chat_ids_display",
-        "skipped_chat_reason_display", "linked_activity_count", "execution_id",
-        "technical_state", "message",
+        "skipped_chat_reason_display", "skipped_non_distributable_chat_count",
+        "linked_activity_count", "execution_id", "technical_state", "message",
     ]
 
     for item in rows:
