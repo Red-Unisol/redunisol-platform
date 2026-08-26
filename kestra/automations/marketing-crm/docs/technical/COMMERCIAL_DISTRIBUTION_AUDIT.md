@@ -1,6 +1,6 @@
 # Auditoría De Clasificación Y Distribución Comercial
 
-Versión: `2026-08-18`
+Versión: `2026-08-26`
 
 ## Objetivo
 
@@ -24,7 +24,13 @@ Cada evento de negociación contiene cuatro grupos de información:
 - contexto de entrada: provincia, situación laboral, banco de cobro y origen;
 - decisión comercial: acción, razón, línea y etapa comercial resultante;
 - decisión de distribución: acción, razón, bucket, responsable y estrategia;
-- operación: versión de reglas, fecha, horario, pools y transferencia de chat.
+- operación: versión de reglas, fecha, horario, pools y detalle de transferencia de chats.
+
+Desde `deal-commercial-distribution-trace.v4`, cada distribución conserva los IDs de
+los chats encontrados, transferidos y omitidos. Para cada chat omitido también registra
+si no tenía una sesión transferible o si Bitrix no permitió inspeccionarlo. Los eventos
+anteriores mantienen el contador disponible y el Excel los identifica como trazabilidad
+histórica sin detalle, sin inferir una causa que no fue registrada.
 
 La clasificación comercial y la distribución son dos ejes independientes. Por
 ejemplo, una negociación puede quedar aprobada para una línea y, al mismo tiempo,
@@ -103,9 +109,11 @@ El workbook contiene:
 resultado de negocio, por ejemplo `Asignado a la línea AMEJUCA Premium` o `Rechazado`;
 la segunda explica en lenguaje comercial qué condición produjo ese resultado.
 
-La versión de reglas y la revisión del flujo aparecen junto al resultado para distinguir
-la política comercial aplicada del artefacto técnico que la ejecutó. Las filas de una
-versión anterior se muestran atenuadas, sin ocultarlas. Los responsables y pools se
+La versión de reglas, el ID del flow y su revisión aparecen junto al resultado para
+distinguir la política comercial aplicada del artefacto técnico que la ejecutó. Las
+revisiones se comparan dentro de cada flow: la revisión del clasificador no se compara
+con la revisión independiente del procesador de cola. Las filas de una revisión anterior
+del mismo flow se muestran atenuadas, sin ocultarlas. Los responsables y pools se
 muestran como `Nombre Apellido (ID)`; el nombre se resuelve con `user.get` de Bitrix y
 el ID permanece visible como identificador estable.
 

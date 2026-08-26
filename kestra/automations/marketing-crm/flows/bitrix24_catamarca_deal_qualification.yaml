@@ -198,6 +198,21 @@ outputs:
   - id: transferred_chat_count
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.transferred_chat_count : '0' }}"
+  - id: chat_transfer_status
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.chat_transfer_status : 'not_evaluated' }}"
+  - id: found_chat_ids
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.found_chat_ids : '' }}"
+  - id: transferred_chat_ids
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.transferred_chat_ids : '' }}"
+  - id: skipped_chat_ids
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_chat_ids : '' }}"
+  - id: skipped_chat_reasons
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_chat_reasons : '' }}"
   - id: rule_version
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.rule_version : '' }}"

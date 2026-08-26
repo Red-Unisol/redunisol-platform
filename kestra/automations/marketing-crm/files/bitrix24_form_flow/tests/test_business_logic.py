@@ -3996,7 +3996,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["bcra_refresh_outcome"], "reused_fresh")
         self.assertEqual(
             result["trace_schema_version"],
-            "deal-commercial-distribution-trace.v3",
+            "deal-commercial-distribution-trace.v4",
         )
         self.assertEqual(
             result["event_type"],
@@ -4546,6 +4546,10 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
         self.assertEqual(result["transferred_chat_count"], 1)
+        self.assertEqual(result["chat_transfer_status"], "transferred")
+        self.assertEqual(result["found_chat_ids"], "777")
+        self.assertEqual(result["transferred_chat_ids"], "777")
+        self.assertEqual(result["skipped_chat_ids"], "")
         self.assertEqual(result["previous_assigned_by_id"], 57)
         self.assertEqual(result["lead_id"], 920)
         self.assertEqual(result["contact_id"], 101)
@@ -4630,9 +4634,19 @@ class BusinessLogicTests(unittest.TestCase):
             "manager_list": [],
         }
 
-        qualify_catamarca_deal(930, env=self.env, bitrix_client=client, logger=SilentLogger())
+        result = qualify_catamarca_deal(
+            930, env=self.env, bitrix_client=client, logger=SilentLogger()
+        )
 
         self.assertEqual(client.chat_transfers, [])
+        self.assertEqual(result["chat_transfer_status"], "no_transferable_session")
+        self.assertEqual(result["found_chat_ids"], "779")
+        self.assertEqual(result["transferred_chat_ids"], "")
+        self.assertEqual(result["skipped_chat_ids"], "779")
+        self.assertEqual(
+            result["skipped_chat_reasons"],
+            "779:no_current_transferable_session",
+        )
 
     def test_catamarca_hard_bcra_rejection_is_not_distributed(self) -> None:
         client = FakeBitrixClient()

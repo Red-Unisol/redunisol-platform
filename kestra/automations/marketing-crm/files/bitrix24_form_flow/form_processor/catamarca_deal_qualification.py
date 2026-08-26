@@ -604,7 +604,7 @@ def qualify_catamarca_deal(
         deal_id=deal_id_int,
         logger=active_logger,
     )
-    transferred_chat_count = assign_open_line_chats_to_user(
+    chat_transfer = assign_open_line_chats_to_user(
         client,
         lead_id=lead_id,
         contact_id=contact_id,
@@ -621,7 +621,7 @@ def qualify_catamarca_deal(
         assigned_by_id=assigned_by_id,
         assigned_by_name=assigned_by_name,
         action=decision.action,
-        chat_transferred=transferred_chat_count > 0,
+        chat_transferred=chat_transfer.transferred_count > 0,
         logger=active_logger,
     )
     active_logger.info(
@@ -658,7 +658,11 @@ def qualify_catamarca_deal(
         distribution_action=distribution.action,
         distribution_reason=distribution.reason,
         linked_activity_count=linked_activity_count,
-        transferred_chat_count=transferred_chat_count,
+        transferred_chat_count=chat_transfer.transferred_count,
+        chat_transfer_status=chat_transfer.status,
+        found_chat_ids=chat_transfer.found_chat_ids,
+        transferred_chat_ids=chat_transfer.transferred_chat_ids,
+        skipped_chats=chat_transfer.skipped_chats,
         message="Clasificación comercial aplicada a la negociación.",
         **bcra_trace,
     )
@@ -862,7 +866,7 @@ def _retry_queued_deal(
         client, lead_id=lead_id, contact_id=contact_id,
         deal_id=deal_id, logger=logger,
     )
-    transferred = assign_open_line_chats_to_user(
+    chat_transfer = assign_open_line_chats_to_user(
         client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
         assigned_by_id=assigned_by_id, logger=logger,
     )
@@ -871,7 +875,7 @@ def _retry_queued_deal(
         deal_title=str(deal.get("title") or ""), bucket_label=bucket.label,
         assigned_by_id=assigned_by_id, assigned_by_name=assigned_by_name,
         action=str(deal.get(config.deal.queue_action_field) or "approved"),
-        chat_transferred=transferred > 0, logger=logger,
+        chat_transferred=chat_transfer.transferred_count > 0, logger=logger,
     )
     return _queue_context_result(
         client, config, deal, logger,
@@ -885,7 +889,11 @@ def _retry_queued_deal(
         configured_pool=assignment.configured_pool,
         online_pool=assignment.online_pool,
         linked_activity_count=linked,
-        transferred_chat_count=transferred,
+        transferred_chat_count=chat_transfer.transferred_count,
+        chat_transfer_status=chat_transfer.status,
+        found_chat_ids=chat_transfer.found_chat_ids,
+        transferred_chat_ids=chat_transfer.transferred_chat_ids,
+        skipped_chats=chat_transfer.skipped_chats,
         message="Negociación distribuida desde la cola temporal.",
     )
 
@@ -1917,6 +1925,10 @@ def _result(
     online_pool: tuple[int, ...] = (),
     linked_activity_count: int = 0,
     transferred_chat_count: int = 0,
+    chat_transfer_status: str = "not_evaluated",
+    found_chat_ids: tuple[int, ...] = (),
+    transferred_chat_ids: tuple[int, ...] = (),
+    skipped_chats: tuple[tuple[int, str], ...] = (),
     bcra_snapshot_checked_at: str = "",
     bcra_snapshot_age_days: float | None = None,
     bcra_snapshot_refreshed: bool = False,
@@ -1974,6 +1986,17 @@ def _result(
         "online_pool": ",".join(str(user_id) for user_id in online_pool),
         "linked_activity_count": linked_activity_count,
         "transferred_chat_count": transferred_chat_count,
+        "chat_transfer_status": chat_transfer_status,
+        "found_chat_ids": ",".join(str(chat_id) for chat_id in found_chat_ids),
+        "transferred_chat_ids": ",".join(
+            str(chat_id) for chat_id in transferred_chat_ids
+        ),
+        "skipped_chat_ids": ",".join(
+            str(chat_id) for chat_id, _reason in skipped_chats
+        ),
+        "skipped_chat_reasons": "; ".join(
+            f"{chat_id}:{reason}" for chat_id, reason in skipped_chats
+        ),
         "bcra_snapshot_checked_at": bcra_snapshot_checked_at,
         "bcra_snapshot_age_days": (
             round(bcra_snapshot_age_days, 3)
