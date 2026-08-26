@@ -45,6 +45,7 @@ def execution(*, action="approved", strategy="round_robin", state="SUCCESS"):
             "online_pool": "68579,10451",
             "linked_activity_count": "1",
             "transferred_chat_count": "1",
+            "skipped_non_distributable_chat_count": "2",
             "rule_version": "2026-08-11",
             "bcra_snapshot_checked_at": "2026-08-11T09:55:00-03:00",
             "bcra_snapshot_age_days": "0.014",
@@ -91,6 +92,7 @@ class CommercialDistributionReportTests(unittest.TestCase):
             "Siguiente vendedor del round-robin",
         )
         self.assertEqual(row["transferred_chat_count"], 1)
+        self.assertEqual(row["skipped_non_distributable_chat_count"], 2)
         self.assertFalse(row["bcra_snapshot_refreshed"])
         self.assertEqual(row["bcra_refresh_outcome"], "reused_fresh")
 

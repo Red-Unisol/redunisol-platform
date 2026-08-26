@@ -610,6 +610,7 @@ def qualify_catamarca_deal(
         contact_id=contact_id,
         deal_id=deal_id_int,
         assigned_by_id=assigned_by_id,
+        distributable_open_line_ids=config.deal.distributable_open_line_ids,
         logger=active_logger,
     )
     notify_distribution_supervisor(
@@ -663,6 +664,9 @@ def qualify_catamarca_deal(
         found_chat_ids=chat_transfer.found_chat_ids,
         transferred_chat_ids=chat_transfer.transferred_chat_ids,
         skipped_chats=chat_transfer.skipped_chats,
+        skipped_non_distributable_chat_count=(
+            chat_transfer.skipped_non_distributable_count
+        ),
         message="Clasificación comercial aplicada a la negociación.",
         **bcra_trace,
     )
@@ -868,7 +872,9 @@ def _retry_queued_deal(
     )
     chat_transfer = assign_open_line_chats_to_user(
         client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id,
-        assigned_by_id=assigned_by_id, logger=logger,
+        assigned_by_id=assigned_by_id,
+        distributable_open_line_ids=config.deal.distributable_open_line_ids,
+        logger=logger,
     )
     notify_distribution_supervisor(
         client, config, deal_id=deal_id,
@@ -894,6 +900,9 @@ def _retry_queued_deal(
         found_chat_ids=chat_transfer.found_chat_ids,
         transferred_chat_ids=chat_transfer.transferred_chat_ids,
         skipped_chats=chat_transfer.skipped_chats,
+        skipped_non_distributable_chat_count=(
+            chat_transfer.skipped_non_distributable_count
+        ),
         message="Negociación distribuida desde la cola temporal.",
     )
 
@@ -1929,6 +1938,7 @@ def _result(
     found_chat_ids: tuple[int, ...] = (),
     transferred_chat_ids: tuple[int, ...] = (),
     skipped_chats: tuple[tuple[int, str], ...] = (),
+    skipped_non_distributable_chat_count: int = 0,
     bcra_snapshot_checked_at: str = "",
     bcra_snapshot_age_days: float | None = None,
     bcra_snapshot_refreshed: bool = False,
@@ -1996,6 +2006,9 @@ def _result(
         ),
         "skipped_chat_reasons": "; ".join(
             f"{chat_id}:{reason}" for chat_id, reason in skipped_chats
+        ),
+        "skipped_non_distributable_chat_count": (
+            skipped_non_distributable_chat_count
         ),
         "bcra_snapshot_checked_at": bcra_snapshot_checked_at,
         "bcra_snapshot_age_days": (

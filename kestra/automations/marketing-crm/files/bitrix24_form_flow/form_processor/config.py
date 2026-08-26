@@ -59,6 +59,7 @@ DEFAULT_DEAL_CONFIG = {
     "commercial_rejected_stage_id": "C1:KESTRA_REVIEW",
     "provisional_user_id": 57,
     "distribution_notification_user_id": 57,
+    "distributable_open_line_ids": (1,),
     "commercial_line_field": "ufCrm_659EBB0445E8E",
     "routing_bucket_field": "ufCrmRouteBucket",
     "queue_action_field": "ufCrmKqAction",
@@ -173,6 +174,7 @@ class DealConfig:
     commercial_rejected_stage_id: str
     provisional_user_id: int
     distribution_notification_user_id: int
+    distributable_open_line_ids: tuple[int, ...]
     commercial_line_field: str
     routing_bucket_field: str
     queue_action_field: str
@@ -415,6 +417,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 source,
                 "BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID",
                 default=DEFAULT_DEAL_CONFIG["distribution_notification_user_id"],
+            ),
+            distributable_open_line_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS",
+                default=DEFAULT_DEAL_CONFIG["distributable_open_line_ids"],
             ),
             commercial_line_field=source.get(
                 "BITRIX24_DEAL_COMMERCIAL_LINE_FIELD",

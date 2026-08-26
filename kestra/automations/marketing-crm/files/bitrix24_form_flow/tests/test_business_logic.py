@@ -194,6 +194,7 @@ class FakeBitrixClient:
                     chat_id,
                     {
                         "id": chat_id,
+                        "entity_id": f"whatsappbyedna|1|contact-{chat_id}|guest",
                         "entity_data_1": f"Y|CONTACT|101|N|N|{chat_id + 1000}|0|0|0|DEFAULT",
                         "text_field_enabled": True,
                         "owner": 0,
@@ -562,6 +563,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.commercial_rejected_stage_id, "C1:KESTRA_REVIEW")
         self.assertEqual(config.deal.provisional_user_id, 57)
         self.assertEqual(config.deal.distribution_notification_user_id, 57)
+        self.assertEqual(config.deal.distributable_open_line_ids, (1,))
         self.assertEqual(config.deal.commercial_line_field, "ufCrm_659EBB0445E8E")
         self.assertEqual(config.deal.routing_bucket_field, "ufCrmRouteBucket")
         self.assertEqual(
@@ -4550,6 +4552,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["found_chat_ids"], "777")
         self.assertEqual(result["transferred_chat_ids"], "777")
         self.assertEqual(result["skipped_chat_ids"], "")
+        self.assertEqual(result["skipped_non_distributable_chat_count"], 0)
         self.assertEqual(result["previous_assigned_by_id"], 57)
         self.assertEqual(result["lead_id"], 920)
         self.assertEqual(result["contact_id"], 101)
@@ -4628,6 +4631,7 @@ class BusinessLogicTests(unittest.TestCase):
         client.open_line_chats[("contact", 101)] = [779]
         client.open_line_dialogs[779] = {
             "id": 779,
+            "entity_id": "whatsappbyedna|1|sales-contact|guest",
             "entity_data_1": "Y|CONTACT|101|N|N|0|0|0|0|DEFAULT",
             "text_field_enabled": True,
             "owner": 0,
@@ -4646,6 +4650,89 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(
             result["skipped_chat_reasons"],
             "779:no_current_transferable_session",
+        )
+
+    def test_catamarca_only_transfers_chats_from_distributable_open_lines(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {68579}
+        client.leads[920] = self._catamarca_enriched_lead(920, bcra_entities=[])
+        client.deals[930] = {
+            "id": 930,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 920,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+        client.open_line_chats[("contact", 101)] = [777, 778]
+        client.open_line_dialogs[777] = {
+            "id": 777,
+            "entity_id": "whatsappbyedna|1|sales-contact|guest",
+            "entity_data_1": "Y|CONTACT|101|N|N|1777|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+        }
+        client.open_line_dialogs[778] = {
+            "id": 778,
+            "entity_id": "whatsappbyedna|3|collections-contact|guest",
+            "entity_data_1": "Y|CONTACT|101|N|N|1778|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+        }
+
+        result = qualify_catamarca_deal(
+            930,
+            env={**self.env, "BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS": "1"},
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(client.chat_transfers, [{"CHAT_ID": 777, "USER_ID": 68579}])
+        self.assertEqual(result["transferred_chat_count"], 1)
+        self.assertEqual(result["skipped_non_distributable_chat_count"], 1)
+        self.assertEqual(result["chat_transfer_status"], "partially_transferred")
+        self.assertEqual(result["found_chat_ids"], "777,778")
+        self.assertEqual(result["transferred_chat_ids"], "777")
+        self.assertEqual(result["skipped_chat_ids"], "778")
+        self.assertEqual(
+            result["skipped_chat_reasons"],
+            "778:non_distributable_open_line",
+        )
+
+    def test_catamarca_skips_chat_with_unknown_open_line(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {68579}
+        client.leads[920] = self._catamarca_enriched_lead(920, bcra_entities=[])
+        client.deals[930] = {
+            "id": 930,
+            "categoryId": 1,
+            "stageId": "C1:KESTRA_PENDING",
+            "leadId": 920,
+            "contactId": 101,
+            "assignedById": 57,
+            "createdTime": "2026-07-31T12:00:00+00:00",
+        }
+        client.open_line_chats[("contact", 101)] = [779]
+        client.open_line_dialogs[779] = {
+            "id": 779,
+            "entity_data_1": "Y|CONTACT|101|N|N|1779|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+        }
+
+        result = qualify_catamarca_deal(
+            930,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(client.chat_transfers, [])
+        self.assertEqual(result["transferred_chat_count"], 0)
+        self.assertEqual(result["skipped_non_distributable_chat_count"], 1)
+        self.assertEqual(result["chat_transfer_status"], "non_distributable_open_line")
+        self.assertEqual(result["skipped_chat_ids"], "779")
+        self.assertEqual(
+            result["skipped_chat_reasons"],
+            "779:non_distributable_open_line",
         )
 
     def test_catamarca_hard_bcra_rejection_is_not_distributed(self) -> None:
@@ -4931,6 +5018,13 @@ class BusinessLogicTests(unittest.TestCase):
         client.deals[961] = self._queued_deal(
             961, 961, "cordoba_publico_policia", queued_at
         )
+        client.open_line_chats[("deal", 961)] = [116891]
+        client.open_line_dialogs[116891] = {
+            "id": 116891,
+            "entity_id": "whatsappbyedna|3|collections-contact|guest",
+            "entity_data_1": "Y|CONTACT|101|N|N|117891|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+        }
 
         result = process_distribution_queue(
             env=self.env,
@@ -4954,6 +5048,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(distributed["commercial_reason"], "cde_premium")
         self.assertEqual(distributed["commercial_stage_id"], "C1:NEW")
         self.assertEqual(distributed["distribution_action"], "assigned")
+        self.assertEqual(distributed["transferred_chat_count"], 0)
+        self.assertEqual(distributed["skipped_non_distributable_chat_count"], 1)
+        self.assertEqual(client.chat_transfers, [])
         self.assertEqual(
             distributed["distribution_reason"],
             "assignment_queue_distributed",
