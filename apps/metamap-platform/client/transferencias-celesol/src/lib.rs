@@ -7,6 +7,7 @@ pub mod coinag_client;
 pub mod completed_log;
 pub mod config;
 pub mod core_client;
+pub mod credit_lines;
 pub mod logging;
 pub mod mark_paid_client;
 pub mod models;

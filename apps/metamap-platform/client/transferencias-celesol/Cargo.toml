@@ -1,6 +1,6 @@
 [package]
 name = "transferencias-celesol"
-version = "1.7.0"
+version = "1.8.0"
 edition = "2024"
 
 [dependencies]
@@ -28,7 +28,11 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 serde_urlencoded = "0.7.1"
 sha2 = "0.10.9"
+toml = "0.9.8"
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["logging", "ring", "tls12"] }
 url = "2.5.7"
 webpki-roots = "1.0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }

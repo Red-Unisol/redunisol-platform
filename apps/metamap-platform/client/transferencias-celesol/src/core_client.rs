@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{
     config::CoreConfig,
+    credit_lines::CreditLineCatalogEntry,
     models::CoreSnapshot,
     validation::{normalize_digits, parse_decimal},
 };
@@ -41,7 +42,7 @@ impl CoreClient {
         let result = self.evaluate_obj(json!({
             "cmd": criteria,
             "tipo": "PreSolicitud.Module.Solicitud",
-            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba]",
+            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.ID;Prestamo.LineaPrestamo.Codigo;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba]",
         }))?;
         let mut snapshot = parse_core_snapshot(&result);
         if snapshot.request_oid.is_empty() {
@@ -76,7 +77,7 @@ impl CoreClient {
         let result = self.evaluate_list(json!({
             "cmd": "[Estado.Descripcion]='A Transferir'",
             "tipo": "PreSolicitud.Module.Solicitud",
-            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba]",
+            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.ID;Prestamo.LineaPrestamo.Codigo;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba]",
             "max": 5000,
         }))?;
 
@@ -97,6 +98,38 @@ impl CoreClient {
             items.len()
         );
         Ok(items)
+    }
+
+    pub fn fetch_credit_line_catalog(&self) -> Result<Vec<CreditLineCatalogEntry>> {
+        log::info!("Consultando catalogo de lineas de prestamo en el core.");
+        let result = self.evaluate_list(json!({
+            "cmd": "",
+            "tipo": "F.Module.Cuentas.Prestamos.LineaPrestamo",
+            "campos": "ID;Codigo;Descripcion",
+            "max": 5000,
+        }))?;
+        let Value::Array(rows) = result else {
+            return Err(anyhow!(
+                "EvaluateList del catalogo de lineas no devolvio una lista"
+            ));
+        };
+
+        let mut catalog = Vec::with_capacity(rows.len());
+        for row in rows {
+            let raw_id = read_indexed_value(&row, 0, &["ID", "Id", "id"])
+                .ok_or_else(|| anyhow!("El core devolvio una linea sin ID: {row}"))?;
+            let id = raw_id
+                .parse::<u64>()
+                .with_context(|| format!("El core devolvio un ID de linea invalido: {raw_id}"))?;
+            catalog.push(CreditLineCatalogEntry {
+                id,
+                codigo: read_indexed_value(&row, 1, &["Codigo", "codigo"]).unwrap_or_default(),
+                descripcion: read_indexed_value(&row, 2, &["Descripcion", "descripcion"])
+                    .unwrap_or_default(),
+            });
+        }
+        log::info!("Core devolvio {} lineas de prestamo.", catalog.len());
+        Ok(catalog)
     }
 
     pub fn fetch_system_cuil_by_document(&self, document: &str) -> Result<Option<String>> {
@@ -184,24 +217,43 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
             3,
             &["NombreCompleto", "nombreCompleto", "Socio.NombreCompleto"],
         ),
-        credit_line_description: read_indexed_value(
+        credit_line_id: read_indexed_value(
             value,
             4,
+            &[
+                "Prestamo.LineaPrestamo.ID",
+                "LineaPrestamo.ID",
+                "lineaPrestamo.id",
+            ],
+        )
+        .and_then(|raw| raw.parse::<u64>().ok()),
+        credit_line_code: read_indexed_value(
+            value,
+            5,
+            &[
+                "Prestamo.LineaPrestamo.Codigo",
+                "LineaPrestamo.Codigo",
+                "lineaPrestamo.codigo",
+            ],
+        ),
+        credit_line_description: read_indexed_value(
+            value,
+            6,
             &[
                 "Prestamo.LineaPrestamo.Descripcion",
                 "LineaPrestamo.Descripcion",
                 "lineaPrestamo.descripcion",
             ],
         ),
-        request_cuil: read_indexed_value(value, 5, &["CUIT", "Cuit", "cuit"]),
+        request_cuil: read_indexed_value(value, 7, &["CUIT", "Cuit", "cuit"]),
         request_document: read_indexed_value(
             value,
-            6,
+            8,
             &["NroDocumento", "nroDocumento", "NroDoc", "nroDoc"],
         ),
         transfer_cbu: read_indexed_value(
             value,
-            7,
+            9,
             &[
                 "Prestamo.[CBU transferencia]",
                 "Prestamo.CBU transferencia",
@@ -210,15 +262,15 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
         ),
         bank_cmf_amount_raw: read_indexed_value(
             value,
-            8,
+            10,
             &["Prestamo.[Bco CMF]", "Prestamo.Bco CMF"],
         ),
-        bank_cmf_amount: read_indexed_value(value, 8, &["Prestamo.[Bco CMF]", "Prestamo.Bco CMF"])
+        bank_cmf_amount: read_indexed_value(value, 10, &["Prestamo.[Bco CMF]", "Prestamo.Bco CMF"])
             .as_deref()
             .and_then(parse_decimal),
         bank_coinag_cba_amount_raw: read_indexed_value(
             value,
-            9,
+            11,
             &[
                 "Prestamo.[Bco Coinag Cba]",
                 "Prestamo.Bco Coinag Cba",
@@ -227,7 +279,7 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
         ),
         bank_coinag_cba_amount: read_indexed_value(
             value,
-            9,
+            11,
             &[
                 "Prestamo.[Bco Coinag Cba]",
                 "Prestamo.Bco Coinag Cba",
@@ -295,7 +347,9 @@ fn mask_value(value: &str, visible_suffix: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_eval_criteria, build_numeric_eval_criteria};
+    use serde_json::json;
+
+    use super::{build_eval_criteria, build_numeric_eval_criteria, parse_core_snapshot};
 
     #[test]
     fn numeric_criteria_strips_non_digits() {
@@ -315,5 +369,31 @@ mod tests {
             build_eval_criteria("Oid", "SOL-123").as_deref(),
             Some("[Oid]='SOL-123'")
         );
+    }
+
+    #[test]
+    fn snapshot_reads_credit_line_identity_from_indexed_response() {
+        let snapshot = parse_core_snapshot(&json!([
+            248948,
+            "A Transferir",
+            100000,
+            "Persona",
+            2771,
+            11523,
+            "AMEJUCA RECURRENTE PREMIUM",
+            "20123456789",
+            "12345678",
+            "0200000000000000000000",
+            0,
+            100000
+        ]));
+
+        assert_eq!(snapshot.credit_line_id, Some(2771));
+        assert_eq!(snapshot.credit_line_code.as_deref(), Some("11523"));
+        assert_eq!(
+            snapshot.credit_line_description.as_deref(),
+            Some("AMEJUCA RECURRENTE PREMIUM")
+        );
+        assert_eq!(snapshot.request_document.as_deref(), Some("12345678"));
     }
 }

@@ -39,6 +39,8 @@ pub struct ValidationSnapshot {
 pub struct CoreSnapshot {
     pub request_oid: String,
     pub request_name: Option<String>,
+    pub credit_line_id: Option<u64>,
+    pub credit_line_code: Option<String>,
     pub credit_line_description: Option<String>,
     pub request_status: Option<String>,
     pub request_amount_raw: Option<String>,
