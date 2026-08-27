@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use anyhow::{Context, Result, anyhow};
+use chrono::{Local, Months};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 
@@ -101,12 +104,20 @@ impl CoreClient {
     }
 
     pub fn fetch_credit_line_catalog(&self) -> Result<Vec<CreditLineCatalogEntry>> {
-        log::info!("Consultando catalogo de lineas de prestamo en el core.");
+        let from_date = Local::now()
+            .date_naive()
+            .checked_sub_months(Months::new(3))
+            .ok_or_else(|| anyhow!("No se pudo calcular la fecha desde para consultar lineas"))?;
+        let criteria = format!("[Fecha] >= #{}#", from_date.format("%Y-%m-%d"));
+        log::info!(
+            "Consultando lineas con solicitudes desde {} en el core.",
+            from_date.format("%Y-%m-%d")
+        );
         let result = self.evaluate_list(json!({
-            "cmd": "",
-            "tipo": "F.Module.Cuentas.Prestamos.LineaPrestamo",
-            "campos": "ID;Codigo;Descripcion",
-            "max": 5000,
+            "cmd": criteria,
+            "tipo": "PreSolicitud.Module.Solicitud",
+            "campos": "LineaPrestamo.ID;LineaPrestamo.Codigo;LineaPrestamo.Descripcion",
+            "max": 50000,
         }))?;
         let Value::Array(rows) = result else {
             return Err(anyhow!(
@@ -114,21 +125,60 @@ impl CoreClient {
             ));
         };
 
-        let mut catalog = Vec::with_capacity(rows.len());
+        let total_rows = rows.len();
+        let mut catalog = BTreeMap::<u64, CreditLineCatalogEntry>::new();
         for row in rows {
-            let raw_id = read_indexed_value(&row, 0, &["ID", "Id", "id"])
-                .ok_or_else(|| anyhow!("El core devolvio una linea sin ID: {row}"))?;
+            let Some(raw_id) = read_indexed_value(
+                &row,
+                0,
+                &["LineaPrestamo.ID", "lineaPrestamo.id", "ID", "Id", "id"],
+            ) else {
+                continue;
+            };
             let id = raw_id
                 .parse::<u64>()
                 .with_context(|| format!("El core devolvio un ID de linea invalido: {raw_id}"))?;
-            catalog.push(CreditLineCatalogEntry {
+            let codigo = read_indexed_value(
+                &row,
+                1,
+                &[
+                    "LineaPrestamo.Codigo",
+                    "lineaPrestamo.codigo",
+                    "Codigo",
+                    "codigo",
+                ],
+            )
+            .unwrap_or_default();
+            let descripcion = read_indexed_value(
+                &row,
+                2,
+                &[
+                    "LineaPrestamo.Descripcion",
+                    "lineaPrestamo.descripcion",
+                    "Descripcion",
+                    "descripcion",
+                ],
+            )
+            .unwrap_or_default();
+            let line = catalog.entry(id).or_insert_with(|| CreditLineCatalogEntry {
                 id,
-                codigo: read_indexed_value(&row, 1, &["Codigo", "codigo"]).unwrap_or_default(),
-                descripcion: read_indexed_value(&row, 2, &["Descripcion", "descripcion"])
-                    .unwrap_or_default(),
+                codigo: codigo.clone(),
+                descripcion: descripcion.clone(),
             });
+            if line.codigo.is_empty() && !codigo.is_empty() {
+                line.codigo = codigo;
+            }
+            if line.descripcion.is_empty() && !descripcion.is_empty() {
+                line.descripcion = descripcion;
+            }
         }
-        log::info!("Core devolvio {} lineas de prestamo.", catalog.len());
+        let catalog = catalog.into_values().collect::<Vec<_>>();
+        log::info!(
+            "Core devolvio {} solicitudes y {} lineas distintas con actividad desde {}.",
+            total_rows,
+            catalog.len(),
+            from_date.format("%Y-%m-%d")
+        );
         Ok(catalog)
     }
 

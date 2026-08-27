@@ -45,8 +45,6 @@ pub struct CreditLineEntry {
     #[serde(default)]
     pub descripcion: String,
     pub modo: CreditLineMode,
-    #[serde(skip)]
-    pub present_in_core: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -126,7 +124,6 @@ impl CreditLinesFile {
                 }
                 line.codigo = catalog_line.codigo;
                 line.descripcion = catalog_line.descripcion;
-                line.present_in_core = Some(true);
                 refreshed.push(line);
             } else {
                 summary.added += 1;
@@ -135,16 +132,11 @@ impl CreditLinesFile {
                     codigo: catalog_line.codigo,
                     descripcion: catalog_line.descripcion,
                     modo: CreditLineMode::Inhabilitada,
-                    present_in_core: Some(true),
                 });
             }
         }
 
-        summary.missing = existing.len();
-        for (_, mut line) in existing {
-            line.present_in_core = Some(false);
-            refreshed.push(line);
-        }
+        summary.removed = existing.len();
         self.lineas = refreshed;
         self.validate_and_normalize()?;
         Ok(summary)
@@ -153,9 +145,6 @@ impl CreditLinesFile {
     pub fn save_atomic(&self, path: &Path) -> Result<()> {
         let mut normalized = self.clone();
         normalized.validate_and_normalize()?;
-        for line in &mut normalized.lineas {
-            line.present_in_core = None;
-        }
         let serialized = toml::to_string_pretty(&normalized)
             .context("No se pudo serializar la configuracion de lineas")?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
@@ -216,7 +205,7 @@ impl CreditLinesFile {
 pub struct ReconcileSummary {
     pub added: usize,
     pub updated: usize,
-    pub missing: usize,
+    pub removed: usize,
 }
 
 fn validate_catalog(catalog: &[CreditLineCatalogEntry]) -> Result<()> {
@@ -309,7 +298,6 @@ mod tests {
                 codigo: "old".to_owned(),
                 descripcion: "Nombre anterior".to_owned(),
                 modo: CreditLineMode::Automatica,
-                present_in_core: None,
             }],
         };
 
@@ -323,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_adds_unknown_ids_disabled_and_keeps_missing_ids() {
+    fn reconcile_adds_unknown_ids_disabled_and_removes_inactive_ids() {
         let mut config = CreditLinesFile {
             version: CREDIT_LINES_CONFIG_VERSION,
             lineas: vec![CreditLineEntry {
@@ -331,25 +319,16 @@ mod tests {
                 codigo: String::new(),
                 descripcion: "Anterior".to_owned(),
                 modo: CreditLineMode::Habilitada,
-                present_in_core: None,
             }],
         };
 
         let summary = config.reconcile(vec![catalog(20, "20", "Nueva")]).unwrap();
 
         assert_eq!(summary.added, 1);
-        assert_eq!(summary.missing, 1);
+        assert_eq!(summary.removed, 1);
         assert_eq!(config.mode_for(Some(20)), CreditLineMode::Inhabilitada);
-        assert_eq!(config.mode_for(Some(10)), CreditLineMode::Habilitada);
-        assert_eq!(
-            config
-                .lineas
-                .iter()
-                .find(|line| line.id == 10)
-                .unwrap()
-                .present_in_core,
-            Some(false)
-        );
+        assert_eq!(config.mode_for(Some(10)), CreditLineMode::Inhabilitada);
+        assert!(config.lineas.iter().all(|line| line.id != 10));
     }
 
     #[test]
@@ -362,14 +341,12 @@ mod tests {
                     codigo: String::new(),
                     descripcion: String::new(),
                     modo: CreditLineMode::Inhabilitada,
-                    present_in_core: None,
                 },
                 CreditLineEntry {
                     id: 10,
                     codigo: String::new(),
                     descripcion: String::new(),
                     modo: CreditLineMode::Automatica,
-                    present_in_core: None,
                 },
             ],
         };

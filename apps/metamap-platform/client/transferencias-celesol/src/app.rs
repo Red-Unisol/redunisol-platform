@@ -523,7 +523,6 @@ impl TransferenciasApp {
                                 CreditLineFilter::Inhabilitadas,
                                 CreditLineFilter::Habilitadas,
                                 CreditLineFilter::Automaticas,
-                                CreditLineFilter::Ausentes,
                             ] {
                                 ui.selectable_value(&mut editor.filter, filter, filter.label());
                             }
@@ -595,14 +594,6 @@ impl TransferenciasApp {
                                     line.descripcion.as_str()
                                 };
                                 ui.add_sized([310.0, 20.0], egui::Label::new(description));
-                                if line.present_in_core == Some(false) {
-                                    ui.label(
-                                        RichText::new("No encontrada")
-                                            .color(Color32::from_rgb(220, 80, 80)),
-                                    );
-                                } else {
-                                    ui.add_sized([90.0, 20.0], egui::Label::new(""));
-                                }
                                 let previous = line.modo;
                                 ui.radio_value(
                                     &mut line.modo,
@@ -726,13 +717,13 @@ impl TransferenciasApp {
                     match self.credit_line_editor.draft.reconcile(catalog) {
                         Ok(summary) => {
                             log::info!(
-                                "Catalogo de lineas reconciliado. added={} updated={} missing={}.",
+                                "Catalogo de lineas reconciliado. added={} updated={} removed={}.",
                                 summary.added,
                                 summary.updated,
-                                summary.missing
+                                summary.removed
                             );
                             self.credit_line_editor.dirty =
-                                summary.added > 0 || summary.updated > 0 || summary.missing > 0;
+                                summary.added > 0 || summary.updated > 0 || summary.removed > 0;
                             self.credit_line_editor.message =
                                 Some(format_reconcile_summary(summary));
                         }
@@ -1219,7 +1210,6 @@ enum CreditLineFilter {
     Inhabilitadas,
     Habilitadas,
     Automaticas,
-    Ausentes,
 }
 
 impl CreditLineFilter {
@@ -1229,7 +1219,6 @@ impl CreditLineFilter {
             Self::Inhabilitadas => "Inhabilitadas",
             Self::Habilitadas => "Habilitadas",
             Self::Automaticas => "Automaticas",
-            Self::Ausentes => "Ausentes del core",
         }
     }
 
@@ -1239,7 +1228,6 @@ impl CreditLineFilter {
             Self::Inhabilitadas => line.modo == CreditLineMode::Inhabilitada,
             Self::Habilitadas => line.modo == CreditLineMode::Habilitada,
             Self::Automaticas => line.modo == CreditLineMode::Automatica,
-            Self::Ausentes => line.present_in_core == Some(false),
         }
     }
 }
@@ -2520,8 +2508,8 @@ enum WorkerEvent {
 
 fn format_reconcile_summary(summary: ReconcileSummary) -> String {
     format!(
-        "Catalogo actualizado en memoria: {} nuevas (inhabilitadas), {} con metadatos actualizados y {} ausentes del core. Revise y guarde para aplicar.",
-        summary.added, summary.updated, summary.missing
+        "Catalogo actualizado en memoria: {} nuevas (inhabilitadas), {} con metadatos actualizados y {} sin actividad en los ultimos tres meses retiradas. Revise y guarde para aplicar.",
+        summary.added, summary.updated, summary.removed
     )
 }
 

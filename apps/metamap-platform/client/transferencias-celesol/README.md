@@ -69,9 +69,9 @@ Configuracion de lineas:
 
 - `lineas.toml` reemplaza los archivos historicos `lineas_habilitadas` y `lineas_automaticas`
 - la identidad se resuelve exclusivamente por `LineaPrestamo.ID`; codigo y descripcion son informativos
-- si el archivo no existe, se consulta el catalogo del core y todas las lineas se crean `inhabilitada`
+- si el archivo no existe, se consultan las lineas con solicitudes en los ultimos tres meses y todas se crean `inhabilitada`
 - `Configurar lineas` permite elegir `Inhabilitada`, `Habilitada` o `Automatica`
-- `Refrescar desde el core` conserva el modo de IDs conocidos, actualiza sus metadatos e incorpora IDs nuevos inhabilitados
+- `Refrescar desde el core` conserva el modo de IDs que siguen activos, actualiza sus metadatos, incorpora IDs nuevos inhabilitados y retira los que ya no tienen actividad en la ventana de tres meses
 - el orden del archivo no modifica el comportamiento
 - el guardado crea `lineas.toml.bak` y reemplaza el archivo principal de forma atomica
 
