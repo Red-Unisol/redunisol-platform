@@ -832,7 +832,7 @@ impl eframe::App for TransferenciasApp {
         let mut open_credit_line_editor = false;
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.heading(APP_NAME_WITH_TAG);
                 ui.separator();
                 ui.label(format!(
@@ -858,7 +858,11 @@ impl eframe::App for TransferenciasApp {
                     Color32::LIGHT_GRAY
                 };
                 ui.label(RichText::new(&self.balance_text).color(balance_color));
-                ui.separator();
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Configurar lineas").clicked() {
+                    open_credit_line_editor = true;
+                }
                 if ui
                     .add_enabled(!self.items_loading, egui::Button::new("Recargar lista"))
                     .clicked()
@@ -912,9 +916,6 @@ impl eframe::App for TransferenciasApp {
                     );
                 }
                 ui.checkbox(&mut self.show_disabled_lines, "Mostrar deshabilitadas");
-                if ui.button("Configurar lineas").clicked() {
-                    open_credit_line_editor = true;
-                }
             });
         });
 
