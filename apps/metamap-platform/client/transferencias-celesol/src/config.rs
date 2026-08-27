@@ -13,6 +13,7 @@ use crate::secure_config;
 pub struct AppConfig {
     pub server: ServerConfig,
     pub core: CoreConfig,
+    pub mark_paid: MarkPaidConfig,
     pub coinag: CoinagConfig,
     pub operator_name: String,
     pub poll_interval: Duration,
@@ -42,6 +43,19 @@ pub struct ServerConfig {
 pub struct CoreConfig {
     pub base_url: String,
     pub allow_invalid_certs: bool,
+}
+
+#[derive(Clone)]
+pub struct MarkPaidConfig {
+    pub endpoint_url: String,
+    pub auth_token: String,
+    pub allow_invalid_certs: bool,
+}
+
+impl MarkPaidConfig {
+    pub fn is_complete(&self) -> bool {
+        !self.endpoint_url.trim().is_empty() && !self.auth_token.trim().is_empty()
+    }
 }
 
 #[derive(Clone, Default)]
@@ -265,6 +279,20 @@ impl AppConfig {
                 allow_invalid_certs: parse_bool_value(
                     values,
                     "TRANSFERENCIAS_CORE_ALLOW_INVALID_CERTS",
+                    true,
+                )?,
+            },
+            mark_paid: MarkPaidConfig {
+                endpoint_url: optional_value(values, "TRANSFERENCIAS_MARK_PAID_ENDPOINT")
+                    .unwrap_or_else(|| {
+                        "https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada"
+                            .to_owned()
+                    }),
+                auth_token: optional_value(values, "TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN")
+                    .unwrap_or_default(),
+                allow_invalid_certs: parse_bool_value(
+                    values,
+                    "TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS",
                     true,
                 )?,
             },

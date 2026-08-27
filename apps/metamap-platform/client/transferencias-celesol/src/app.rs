@@ -21,6 +21,7 @@ use crate::{
     coinag_client::{CoelsaTransferStatus, CoinagClient, TransferLookupResponse},
     config::AppConfig,
     core_client::CoreClient,
+    mark_paid_client::{MarkPaidClient, MarkPaidHttpError},
     models::{
         CoinagTransferGuard, CoreSnapshot, HydratedCase, MetamapSnapshot, TransferAmountOutcome,
         ValidationReport,
@@ -44,7 +45,7 @@ pub struct TransferenciasApp {
     show_disabled_lines: bool,
     pending_transfer_confirmation: Option<TransferConfirmation>,
     transfer_lookup: TransferLookupDialog,
-    automatic_quota: u32,
+    automatic_processing_enabled: bool,
     automatic_inflight: HashSet<String>,
     automatic_attempted: HashSet<String>,
     automatic_pending: Vec<AutomaticTransferPending>,
@@ -76,7 +77,7 @@ impl TransferenciasApp {
             show_disabled_lines: false,
             pending_transfer_confirmation: None,
             transfer_lookup: TransferLookupDialog::default(),
-            automatic_quota: 0,
+            automatic_processing_enabled: false,
             automatic_inflight: HashSet::new(),
             automatic_attempted: HashSet::new(),
             automatic_pending: Vec::new(),
@@ -161,27 +162,28 @@ impl TransferenciasApp {
     }
 
     fn try_spawn_automatic_transfers(&mut self) {
-        if self.automatic_quota == 0 || !self.services.automatic_transfer_enabled() {
+        if !self.automatic_processing_enabled
+            || !self.services.automatic_transfer_enabled()
+            || !self.automatic_inflight.is_empty()
+        {
             return;
         }
 
-        let candidates = self
+        let candidate = self
             .items
             .iter()
             .filter(|item| self.is_automatic_candidate(item))
             .map(|item| item.request_oid().to_owned())
-            .collect::<Vec<_>>();
+            .next();
 
-        for request_oid in candidates {
-            if self.automatic_quota == 0 {
-                break;
-            }
+        if let Some(request_oid) = candidate {
             self.spawn_automatic_transfer(request_oid);
         }
     }
 
     fn spawn_automatic_transfer(&mut self, request_oid: String) {
-        if self.automatic_quota == 0
+        if !self.automatic_processing_enabled
+            || !self.automatic_inflight.is_empty()
             || self.automatic_inflight.contains(&request_oid)
             || self.automatic_attempted.contains(&request_oid)
         {
@@ -204,12 +206,10 @@ impl TransferenciasApp {
             return;
         }
 
-        self.automatic_quota = self.automatic_quota.saturating_sub(1);
         self.automatic_inflight.insert(request_oid.clone());
         self.automatic_attempted.insert(request_oid.clone());
         self.push_notice(format!(
-            "Transferencia automatica iniciada para solicitud {}. Cupo restante: {}.",
-            request_oid, self.automatic_quota
+            "Transferencia automatica iniciada para solicitud {request_oid}."
         ));
         self.spawn_transfer_worker(request_oid, TransferKind::Automatic);
     }
@@ -217,6 +217,7 @@ impl TransferenciasApp {
     fn is_automatic_candidate(&self, item: &HydratedCase) -> bool {
         self.services.transfer_enabled()
             && self.services.automatic_transfer_enabled()
+            && self.automatic_processing_enabled
             && !item.busy
             && !item.validation.disabled
             && item.validation.can_transfer()
@@ -499,20 +500,12 @@ impl TransferenciasApp {
                     receipt_path,
                     refresh_balance,
                     transfer_kind,
-                    automatic_quota_consumed,
                     automatic_receipt_pending,
                 } => {
                     let request_oid = case.request_oid().to_owned();
-                    log::debug!("Caso actualizado para solicitud {}.", request_oid);
+                    log::debug!("Caso actualizado para solicitud {request_oid}.");
                     if transfer_kind == TransferKind::Automatic {
                         self.automatic_inflight.remove(&request_oid);
-                        if !automatic_quota_consumed {
-                            self.automatic_quota = self.automatic_quota.saturating_add(1);
-                            self.push_notice(format!(
-                                "Se devolvio un cupo automatico para solicitud {}. Cupo actual: {}.",
-                                request_oid, self.automatic_quota
-                            ));
-                        }
                         if automatic_receipt_pending {
                             self.automatic_pending.insert(
                                 0,
@@ -579,8 +572,7 @@ impl eframe::App for TransferenciasApp {
 
         let mut request_to_transfer = None;
         let mut transfer_confirmation = None;
-        let mut automatic_quota_delta = 0_u32;
-        let mut clear_automatic_quota = false;
+        let mut toggle_automatic_processing = false;
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -637,24 +629,16 @@ impl eframe::App for TransferenciasApp {
                 }
                 ui.separator();
                 let automatic_enabled = self.services.automatic_transfer_enabled();
-                ui.label(format!("Auto: {}", self.automatic_quota));
+                let automatic_label = if self.automatic_processing_enabled {
+                    RichText::new("Automaticas: HABILITADAS").color(Color32::from_rgb(40, 190, 75))
+                } else {
+                    RichText::new("Automaticas: PAUSADAS").color(Color32::from_rgb(220, 165, 45))
+                };
                 if ui
-                    .add_enabled(automatic_enabled, egui::Button::new("+1 auto"))
+                    .add_enabled(automatic_enabled, egui::Button::new(automatic_label))
                     .clicked()
                 {
-                    automatic_quota_delta = 1;
-                }
-                if ui
-                    .add_enabled(automatic_enabled, egui::Button::new("+2 auto"))
-                    .clicked()
-                {
-                    automatic_quota_delta = 2;
-                }
-                if ui
-                    .add_enabled(self.automatic_quota > 0, egui::Button::new("Auto 0"))
-                    .clicked()
-                {
-                    clear_automatic_quota = true;
+                    toggle_automatic_processing = true;
                 }
                 let pending_count = self.automatic_pending_count();
                 let pending_label = if pending_count > 0 {
@@ -674,17 +658,18 @@ impl eframe::App for TransferenciasApp {
             });
         });
 
-        if automatic_quota_delta > 0 {
-            self.automatic_quota = self.automatic_quota.saturating_add(automatic_quota_delta);
-            self.push_notice(format!(
-                "Cupo automatico aumentado en {}. Cupo actual: {}.",
-                automatic_quota_delta, self.automatic_quota
-            ));
-            self.try_spawn_automatic_transfers();
-        }
-        if clear_automatic_quota {
-            self.automatic_quota = 0;
-            self.push_notice("Cupo automatico puesto en 0.");
+        if toggle_automatic_processing {
+            self.automatic_processing_enabled = !self.automatic_processing_enabled;
+            let state = if self.automatic_processing_enabled {
+                "habilitadas"
+            } else {
+                "pausadas"
+            };
+            log::info!("Transferencias automaticas {state} por el operador.");
+            self.push_notice(format!("Transferencias automaticas {state}."));
+            if self.automatic_processing_enabled {
+                self.try_spawn_automatic_transfers();
+            }
         }
 
         self.render_transfer_lookup_window(ctx);
@@ -1076,6 +1061,7 @@ impl TransferConfirmation {
 struct AppServices {
     server: ServerClient,
     core: CoreClient,
+    mark_paid: Option<MarkPaidClient>,
     coinag: Option<CoinagClient>,
     enabled_credit_lines: EnabledCreditLines,
     automatic_credit_lines: EnabledCreditLines,
@@ -1126,6 +1112,14 @@ impl AppServices {
         );
         let server = ServerClient::new(&config.server, config.request_timeout)?;
         let core = CoreClient::new(&config.core, config.request_timeout)?;
+        let mark_paid = if config.mark_paid.is_complete() {
+            Some(MarkPaidClient::new(
+                &config.mark_paid,
+                config.request_timeout,
+            )?)
+        } else {
+            None
+        };
         let coinag = if config.coinag.is_complete() {
             Some(CoinagClient::new(&config.coinag, config.request_timeout)?)
         } else {
@@ -1142,6 +1136,7 @@ impl AppServices {
         let services = Self {
             server,
             core,
+            mark_paid,
             coinag,
             enabled_credit_lines,
             automatic_credit_lines,
@@ -1151,8 +1146,9 @@ impl AppServices {
             automatic_receipts_dir: config.automatic_receipts_dir,
         };
         log::info!(
-            "Servicios listos. transfer_enabled={}. lineas_habilitadas={} path={:?}. lineas_auto={} auto_path={:?}.",
+            "Servicios listos. transfer_enabled={}. mark_paid_enabled={}. lineas_habilitadas={} path={:?}. lineas_auto={} auto_path={:?}.",
             services.transfer_enabled(),
+            services.mark_paid.is_some(),
             services.enabled_credit_lines.len(),
             services.enabled_credit_lines.path,
             services.automatic_credit_lines.len(),
@@ -1219,6 +1215,84 @@ impl AppServices {
             raw_json: serde_json::to_string_pretty(&response.body)
                 .unwrap_or_else(|_| response.body.to_string()),
         })
+    }
+
+    fn register_paid_receipt(
+        &self,
+        request_oid: &str,
+        transfer_kind: TransferKind,
+        receipt_path: &std::path::Path,
+    ) -> Result<()> {
+        let endpoint = self
+            .mark_paid
+            .as_ref()
+            .map(MarkPaidClient::endpoint_url)
+            .unwrap_or("no configurado");
+        log_transfer_audit(
+            "mark_paid_request_started",
+            request_oid,
+            transfer_kind,
+            json!({
+                "endpoint": endpoint,
+                "receipt_path": receipt_path,
+            }),
+        );
+
+        let Some(client) = &self.mark_paid else {
+            let error = anyhow::anyhow!(
+                "El endpoint para registrar el comprobante no esta configurado. Falta TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN."
+            );
+            log_transfer_audit(
+                "mark_paid_request_failed",
+                request_oid,
+                transfer_kind,
+                json!({ "endpoint": endpoint, "error": format!("{error:#}") }),
+            );
+            return Err(error);
+        };
+
+        match client.mark_paid(request_oid, receipt_path) {
+            Ok(response) => {
+                log_transfer_audit(
+                    "mark_paid_request_succeeded",
+                    request_oid,
+                    transfer_kind,
+                    json!({
+                        "endpoint": endpoint,
+                        "http_status": response.status_code,
+                        "response_body": response.body,
+                        "pdf_bytes": response.pdf_bytes,
+                        "pdf_sha256": response.pdf_sha256,
+                    }),
+                );
+                log::info!(
+                    "Comprobante registrado en el core para solicitud {}. HTTP {}.",
+                    request_oid,
+                    response.status_code
+                );
+                Ok(())
+            }
+            Err(error) => {
+                let http_error = error.downcast_ref::<MarkPaidHttpError>();
+                log::error!(
+                    "La transferencia de la solicitud {request_oid} fue confirmada, pero fallo el registro del comprobante: {error:#}"
+                );
+                log_transfer_audit(
+                    "mark_paid_request_failed",
+                    request_oid,
+                    transfer_kind,
+                    json!({
+                        "endpoint": endpoint,
+                        "receipt_path": receipt_path,
+                        "error_kind": if http_error.is_some() { "http_status" } else { "transport_or_processing" },
+                        "http_status": http_error.map(|error| error.status_code),
+                        "response_body": http_error.map(|error| error.body.as_str()),
+                        "error": format!("{error:#}"),
+                    }),
+                );
+                Err(error)
+            }
+        }
     }
 
     fn load_candidates(&self, existing_items: Vec<HydratedCase>) -> Result<Vec<HydratedCase>> {
@@ -1546,7 +1620,6 @@ impl AppServices {
                 receipt_path: None,
                 refresh_balance: false,
                 transfer_kind,
-                automatic_quota_consumed: false,
                 automatic_receipt_pending: false,
             };
         };
@@ -1589,7 +1662,6 @@ impl AppServices {
                 receipt_path: None,
                 refresh_balance: false,
                 transfer_kind,
-                automatic_quota_consumed: false,
                 automatic_receipt_pending: false,
             };
         }
@@ -1613,7 +1685,6 @@ impl AppServices {
                     receipt_path: None,
                     refresh_balance: false,
                     transfer_kind,
-                    automatic_quota_consumed: false,
                     automatic_receipt_pending: false,
                 };
             }
@@ -1625,10 +1696,6 @@ impl AppServices {
             json!({ "payload": transfer_payload }),
         );
 
-        let mut automatic_quota_consumed = false;
-        if transfer_kind.is_automatic() {
-            automatic_quota_consumed = true;
-        }
         let transfer_response = match coinag.perform_transfer(&transfer_payload) {
             Ok(response) => response,
             Err(error) => {
@@ -1649,7 +1716,6 @@ impl AppServices {
                     receipt_path: None,
                     refresh_balance: false,
                     transfer_kind,
-                    automatic_quota_consumed,
                     automatic_receipt_pending: false,
                 };
             }
@@ -1697,7 +1763,6 @@ impl AppServices {
                 receipt_path: None,
                 refresh_balance: false,
                 transfer_kind,
-                automatic_quota_consumed,
                 automatic_receipt_pending: false,
             };
         }
@@ -1724,7 +1789,6 @@ impl AppServices {
                 receipt_path: None,
                 refresh_balance: true,
                 transfer_kind,
-                automatic_quota_consumed,
                 automatic_receipt_pending: false,
             };
         };
@@ -1785,14 +1849,43 @@ impl AppServices {
                     case.request_oid(),
                     external_transfer_id
                 );
-                (
-                    format!(
-                        "Transferencia confirmada para solicitud {} con idCoelsa {}.",
-                        case.request_oid(),
-                        external_transfer_id
-                    ),
-                    receipt_path,
-                )
+                let message = match receipt_path.as_deref() {
+                    Some(path) => {
+                        match self.register_paid_receipt(case.request_oid(), transfer_kind, path) {
+                            Ok(()) => format!(
+                                "Transferencia confirmada para solicitud {} con idCoelsa {}. Comprobante registrado y solicitud marcada como Pagada.",
+                                case.request_oid(),
+                                external_transfer_id
+                            ),
+                            Err(error) => {
+                                updated.message =
+                                    Some("TRANSFERIDA - ERROR AL REGISTRAR COMPROBANTE".to_owned());
+                                format!(
+                                    "ATENCION: la transferencia de la solicitud {} fue confirmada con idCoelsa {}, pero no se pudo registrar el comprobante ni marcarla como Pagada. No repetir la transferencia; requiere revision. Error: {}",
+                                    case.request_oid(),
+                                    external_transfer_id,
+                                    error
+                                )
+                            }
+                        }
+                    }
+                    None => {
+                        updated.message =
+                            Some("TRANSFERIDA - ERROR AL GENERAR COMPROBANTE".to_owned());
+                        log_transfer_audit(
+                            "mark_paid_request_skipped_missing_receipt",
+                            case.request_oid(),
+                            transfer_kind,
+                            json!({ "id_coelsa": external_transfer_id }),
+                        );
+                        format!(
+                            "ATENCION: la transferencia de la solicitud {} fue confirmada con idCoelsa {}, pero no se genero el PDF y no pudo marcarse como Pagada. No repetir la transferencia; requiere revision.",
+                            case.request_oid(),
+                            external_transfer_id
+                        )
+                    }
+                };
+                (message, receipt_path)
             }
             CoelsaTransferStatus::Rejected { detail } => {
                 updated.transfer_guard = CoinagTransferGuard::Error {
@@ -1872,7 +1965,6 @@ impl AppServices {
             receipt_path,
             refresh_balance: true,
             transfer_kind,
-            automatic_quota_consumed,
             automatic_receipt_pending,
         }
     }
@@ -1976,7 +2068,6 @@ enum WorkerEvent {
         receipt_path: Option<PathBuf>,
         refresh_balance: bool,
         transfer_kind: TransferKind,
-        automatic_quota_consumed: bool,
         automatic_receipt_pending: bool,
     },
 }
