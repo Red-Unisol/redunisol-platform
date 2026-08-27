@@ -17,6 +17,7 @@ fn main() {
 fn run() -> Result<()> {
     let mut input = PathBuf::from("transferencias.env");
     let mut output = PathBuf::from("transferencias.env.enc");
+    let mut decrypt = false;
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -33,6 +34,9 @@ fn run() -> Result<()> {
                     .ok_or_else(|| anyhow!("Falta valor para --output"))?;
                 output = PathBuf::from(value);
             }
+            "--decrypt" => {
+                decrypt = true;
+            }
             "--help" | "-h" => {
                 print_help();
                 return Ok(());
@@ -43,13 +47,21 @@ fn run() -> Result<()> {
         }
     }
 
-    let plaintext =
-        fs::read_to_string(&input).with_context(|| format!("No se pudo leer {:?}", input))?;
     let passphrase = resolve_passphrase()?;
-    let encrypted = secure_config::encrypt_config_text(&plaintext, &passphrase)?;
-    fs::write(&output, encrypted).with_context(|| format!("No se pudo escribir {:?}", output))?;
+    let input_text =
+        fs::read_to_string(&input).with_context(|| format!("No se pudo leer {:?}", input))?;
+    let output_text = if decrypt {
+        secure_config::decrypt_config_text(&input_text, &passphrase)?
+    } else {
+        secure_config::encrypt_config_text(&input_text, &passphrase)?
+    };
+    fs::write(&output, output_text).with_context(|| format!("No se pudo escribir {:?}", output))?;
 
-    println!("Archivo cifrado generado en {}", output.display());
+    println!(
+        "Archivo {} generado en {}",
+        if decrypt { "descifrado" } else { "cifrado" },
+        output.display()
+    );
     Ok(())
 }
 
@@ -91,6 +103,9 @@ fn print_help() {
     println!("Uso:");
     println!(
         "  cargo run --bin encrypt_transferencias_env -- --input transferencias.env --output transferencias.env.enc"
+    );
+    println!(
+        "  cargo run --bin encrypt_transferencias_env -- --decrypt --input transferencias.env.enc --output transferencias.env"
     );
     println!();
     println!(
