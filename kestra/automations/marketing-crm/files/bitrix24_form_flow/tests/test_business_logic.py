@@ -534,7 +534,8 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(routing.reason, "province_cordoba")
-        self.assertEqual(routing.bucket.key, "cordoba_publico_policia")
+        self.assertEqual(routing.bucket.key, "cordoba_general")
+        self.assertEqual(routing.bucket.seller_ids, (10451, 71159, 68579, 90231, 29))
 
     def test_routing_still_requires_employment_status(self) -> None:
         config = load_config(self.env)
@@ -1523,7 +1524,7 @@ class BusinessLogicTests(unittest.TestCase):
             "STATUS_ID": "QUALIFIED",
             "SOURCE_ID": "CALL",
             "TITLE": "Maria Lopez",
-            "ASSIGNED_BY_ID": "74365",
+            "ASSIGNED_BY_ID": "999",
             "UF_CRM_COMM_OWNER": "4117",
         }
         client.activities[501] = {
@@ -1555,7 +1556,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[901]["stageId"], "C1:NEW")
         self.assertEqual(client.deals[901]["leadId"], 303)
         self.assertEqual(client.deals[901]["contactId"], 101)
-        self.assertEqual(client.deals[901]["assignedById"], 74365)
+        self.assertEqual(client.deals[901]["assignedById"], 999)
         self.assertEqual(client.deals[901]["sourceId"], "CALL")
         self.assertEqual(client.leads[303]["STATUS_ID"], "CONVERTED")
         self.assertEqual(len(client.timeline_comments), 1)
@@ -1832,7 +1833,7 @@ class BusinessLogicTests(unittest.TestCase):
             "CONTACT_ID": "101",
             "STATUS_ID": "QUALIFIED",
             "TITLE": "Maria Lopez",
-            "ASSIGNED_BY_ID": "74365",
+            "ASSIGNED_BY_ID": "999",
         }
 
         result = process_lead_update_event(
@@ -1845,7 +1846,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["action"], "deal_created")
-        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 74365)
+        self.assertEqual(client.deals[result["deal_id"]]["assignedById"], 999)
 
     def test_process_form_body_returns_json_ready_payload_for_form_body(self) -> None:
         client = FakeBitrixClient()
@@ -3908,7 +3909,7 @@ class BusinessLogicTests(unittest.TestCase):
             "LAST_NAME": "Catamarca",
             "EMAIL": [{"VALUE": "maria@example.com"}],
             "PHONE": [{"VALUE": "3834123456"}],
-            "ASSIGNED_BY_ID": "74365",
+            "ASSIGNED_BY_ID": "999",
             "UF_CRM_COMM_OWNER": "4119",
             "UF_CRM_1693840106704": "27555555556",
             "UF_CRM_1714071903": "3745",
@@ -4558,7 +4559,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-08-24-cordoba-municipal-caja-v1",
+            "2026-08-26-cordoba-publico-policia-cbu-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
@@ -4944,9 +4945,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertIn("Resultado: Revisión manual", client.notifications[0]["MESSAGE"])
         self.assertIn("Chat transferido: Sí", client.notifications[0]["MESSAGE"])
 
-    def test_cordoba_publico_is_approved_as_cruz_del_eje_and_routed_to_nancy(self) -> None:
+    def test_cordoba_publico_is_approved_as_cbu_and_uses_general_sellers(self) -> None:
         client = FakeBitrixClient()
-        client.online_user_ids.add(74365)
+        client.online_user_ids = {10451}
         client.leads[940] = self._cordoba_enriched_lead(
             940,
             employment_id="1239",
@@ -4957,16 +4958,91 @@ class BusinessLogicTests(unittest.TestCase):
         result = qualify_catamarca_deal(940, env=self.env, bitrix_client=client, logger=SilentLogger())
 
         self.assertEqual(result["action"], "approved")
-        self.assertEqual(result["reason"], "cde_premium")
-        self.assertEqual(result["routing_bucket"], "cordoba_publico_policia")
-        self.assertEqual(result["assigned_by_id"], 74365)
-        self.assertEqual(result["assignment_strategy"], "single_seller")
-        self.assertEqual(result["configured_pool"], "74365")
-        self.assertEqual(result["online_pool"], "74365")
-        self.assertEqual(client.deals[940]["ufCrm_659EBB0445E8E"], "Cruz del Eje")
+        self.assertEqual(result["reason"], "cbu_approved")
+        self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(result["assigned_by_id"], 10451)
+        self.assertEqual(result["assignment_strategy"], "round_robin_initial")
+        self.assertEqual(result["configured_pool"], "10451,71159,68579,90231,29")
+        self.assertEqual(result["online_pool"], "10451")
+        self.assertEqual(client.deals[940]["ufCrm_659EBB0445E8E"], "CBU")
+
+    def test_cordoba_policia_is_approved_as_cbu_and_uses_general_sellers(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {71159}
+        client.leads[941] = self._cordoba_enriched_lead(
+            941,
+            employment_id="1269",
+            bcra_entities=[{"entidad": "BANCO DE CORDOBA", "situacion": 1}],
+        )
+        client.deals[941] = self._pending_deal(941, 941)
+
+        result = qualify_catamarca_deal(
+            941,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["reason"], "cbu_approved")
+        self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(result["assigned_by_id"], 71159)
+        self.assertEqual(result["configured_pool"], "10451,71159,68579,90231,29")
+        self.assertEqual(result["online_pool"], "71159")
+        self.assertEqual(client.deals[941]["ufCrm_659EBB0445E8E"], "CBU")
+
+    def test_cordoba_publico_cbu_rejects_more_than_five_entities(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[949] = self._cordoba_enriched_lead(
+            949,
+            employment_id="1239",
+            bcra_entities=[
+                {"entidad": f"ENTIDAD {index}", "situacion": 1}
+                for index in range(6)
+            ],
+        )
+        client.deals[949] = self._pending_deal(949, 949)
+
+        result = qualify_catamarca_deal(
+            949,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "cbu_more_than_five_entities")
+        self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(result["assignment_strategy"], "rejection_without_distribution")
+        self.assertEqual(client.deals[949]["stageId"], "C1:5")
+        self.assertEqual(client.deals[949]["assignedById"], 57)
+
+    def test_cordoba_policia_cbu_rejects_situation_above_one(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[950] = self._cordoba_enriched_lead(
+            950,
+            employment_id="1269",
+            bcra_entities=[{"entidad": "OTRA ENTIDAD", "situacion": 2}],
+        )
+        client.deals[950] = self._pending_deal(950, 950)
+
+        result = qualify_catamarca_deal(
+            950,
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "cbu_situation_above_one")
+        self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(result["assignment_strategy"], "rejection_without_distribution")
+        self.assertEqual(client.deals[950]["stageId"], "C1:5")
+        self.assertEqual(client.deals[950]["assignedById"], 57)
 
     def test_cordoba_publico_without_online_seller_enters_assignment_queue(self) -> None:
         client = FakeBitrixClient()
+        client.online_user_ids.clear()
         client.leads[948] = self._cordoba_enriched_lead(
             948,
             employment_id="1239",
@@ -4985,38 +5061,38 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "assignment_queued")
         self.assertEqual(result["assignment_strategy"], "assignment_queue")
         self.assertEqual(result["commercial_action"], "approved")
-        self.assertEqual(result["commercial_reason"], "cde_premium")
+        self.assertEqual(result["commercial_reason"], "cbu_approved")
         self.assertEqual(result["commercial_stage_id"], "C1:NEW")
         self.assertEqual(result["distribution_action"], "queued")
         self.assertEqual(result["distribution_reason"], "assignment_queued")
         self.assertEqual(result["assigned_by_id"], 57)
-        self.assertEqual(result["routing_bucket"], "cordoba_publico_policia")
-        self.assertEqual(result["configured_pool"], "74365")
+        self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(result["configured_pool"], "10451,71159,68579,90231,29")
         self.assertEqual(result["online_pool"], "")
         self.assertEqual(client.deals[948]["stageId"], "C1:KESTRA_QUEUE")
         self.assertEqual(client.deals[948]["assignedById"], 57)
         self.assertEqual(client.leads[948]["ASSIGNED_BY_ID"], 57)
-        self.assertEqual(client.deals[948]["ufCrmRouteBucket"], "cordoba_publico_policia")
-        self.assertEqual(client.deals[948]["ufCrm_659EBB0445E8E"], "Cruz del Eje")
+        self.assertEqual(client.deals[948]["ufCrmRouteBucket"], "cordoba_general")
+        self.assertEqual(client.deals[948]["ufCrm_659EBB0445E8E"], "CBU")
         self.assertEqual(client.deals[948]["ufCrmKqAction"], "approved")
-        self.assertEqual(client.deals[948]["ufCrmKqReason"], "cde_premium")
+        self.assertEqual(client.deals[948]["ufCrmKqReason"], "cbu_approved")
         self.assertEqual(client.deals[948]["ufCrmKqStage"], "C1:NEW")
         self.assertEqual(client.chat_transfers, [])
 
     def test_assignment_queue_processes_each_bucket_independently(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids.clear()
-        client.online_user_ids.add(74365)
+        client.online_user_ids.add(53121)
         client.leads[960] = self._catamarca_enriched_lead(960, bcra_entities=[])
         client.leads[961] = self._cordoba_enriched_lead(
-            961, employment_id="1239", bcra_entities=[]
+            961, employment_id="4071", bcra_entities=[]
         )
         queued_at = "2026-08-13T10:00:00-03:00"
         client.deals[960] = self._queued_deal(
             960, 960, "catamarca_general", queued_at
         )
         client.deals[961] = self._queued_deal(
-            961, 961, "cordoba_publico_policia", queued_at
+            961, 961, "cordoba_unc", queued_at
         )
         client.open_line_chats[("deal", 961)] = [116891]
         client.open_line_dialogs[116891] = {
@@ -5037,15 +5113,15 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["distributed_count"], 1)
         self.assertEqual(client.deals[960]["stageId"], "C1:KESTRA_QUEUE")
         self.assertEqual(client.deals[961]["stageId"], "C1:NEW")
-        self.assertEqual(client.deals[961]["assignedById"], 74365)
-        self.assertEqual(client.leads[961]["ASSIGNED_BY_ID"], 74365)
+        self.assertEqual(client.deals[961]["assignedById"], 53121)
+        self.assertEqual(client.leads[961]["ASSIGNED_BY_ID"], 53121)
         distributed = next(
             event
             for event in result["events"]
             if event["action"] == "queue_distributed"
         )
         self.assertEqual(distributed["commercial_action"], "approved")
-        self.assertEqual(distributed["commercial_reason"], "cde_premium")
+        self.assertEqual(distributed["commercial_reason"], "cbu_approved")
         self.assertEqual(distributed["commercial_stage_id"], "C1:NEW")
         self.assertEqual(distributed["distribution_action"], "assigned")
         self.assertEqual(distributed["transferred_chat_count"], 0)
@@ -5058,16 +5134,16 @@ class BusinessLogicTests(unittest.TestCase):
 
     def test_assignment_queue_is_fifo_within_each_bucket(self) -> None:
         client = FakeBitrixClient()
-        client.online_user_ids.add(74365)
+        client.online_user_ids = {10451}
         for lead_id in (962, 963):
             client.leads[lead_id] = self._cordoba_enriched_lead(
                 lead_id, employment_id="1239", bcra_entities=[]
             )
         client.deals[962] = self._queued_deal(
-            962, 962, "cordoba_publico_policia", "2026-08-13T09:00:00-03:00"
+            962, 962, "cordoba_general", "2026-08-13T09:00:00-03:00"
         )
         client.deals[963] = self._queued_deal(
-            963, 963, "cordoba_publico_policia", "2026-08-13T09:01:00-03:00"
+            963, 963, "cordoba_general", "2026-08-13T09:01:00-03:00"
         )
 
         result = process_distribution_queue(
@@ -5083,12 +5159,12 @@ class BusinessLogicTests(unittest.TestCase):
 
     def test_assignment_queue_closes_friday_at_seventeen(self) -> None:
         client = FakeBitrixClient()
-        client.online_user_ids.add(74365)
+        client.online_user_ids = {10451}
         client.leads[964] = self._cordoba_enriched_lead(
             964, employment_id="1239", bcra_entities=[]
         )
         client.deals[964] = self._queued_deal(
-            964, 964, "cordoba_publico_policia", "2026-08-14T16:59:00-03:00"
+            964, 964, "cordoba_general", "2026-08-14T16:59:00-03:00"
         )
 
         result = process_distribution_queue(
@@ -5102,7 +5178,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["distributed_count"], 0)
         closed = result["events"][0]
         self.assertEqual(closed["commercial_action"], "approved")
-        self.assertEqual(closed["commercial_reason"], "cde_premium")
+        self.assertEqual(closed["commercial_reason"], "cbu_approved")
         self.assertEqual(closed["commercial_stage_id"], "C1:NEW")
         self.assertEqual(closed["distribution_action"], "manual_owner")
         self.assertEqual(closed["distribution_reason"], "assignment_queue_closed")
@@ -5127,7 +5203,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
 
         self.assertEqual(result["commercial_action"], "approved")
-        self.assertEqual(result["commercial_reason"], "cde_premium")
+        self.assertEqual(result["commercial_reason"], "cbu_approved")
         self.assertEqual(result["distribution_action"], "manual_owner")
         self.assertEqual(result["distribution_reason"], "outside_business_hours")
         self.assertEqual(client.deals[965]["stageId"], "C1:NEW")
@@ -5156,12 +5232,12 @@ class BusinessLogicTests(unittest.TestCase):
 
     def test_previous_week_queue_is_not_reopened_on_monday(self) -> None:
         client = FakeBitrixClient()
-        client.online_user_ids.add(74365)
+        client.online_user_ids = {10451}
         client.leads[966] = self._cordoba_enriched_lead(
             966, employment_id="1239", bcra_entities=[]
         )
         client.deals[966] = self._queued_deal(
-            966, 966, "cordoba_publico_policia", "2026-08-14T16:59:00-03:00"
+            966, 966, "cordoba_general", "2026-08-14T16:59:00-03:00"
         )
 
         result = process_distribution_queue(
@@ -5176,9 +5252,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.deals[966]["stageId"], "C1:KESTRA_REVIEW")
         self.assertEqual(client.deals[966]["assignedById"], 57)
 
-    def test_cordoba_active_cbu_loan_does_not_block_cruz_del_eje(self) -> None:
+    def test_cordoba_publico_with_active_cruz_del_eje_loan_still_uses_cbu(self) -> None:
         client = FakeBitrixClient()
-        client.online_user_ids.add(74365)
+        client.online_user_ids = {10451}
         client.leads[945] = self._cordoba_enriched_lead(
             945,
             employment_id="1239",
@@ -5187,7 +5263,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "ok": True,
                 "es_socio": True,
                 "socio": {"categoria": "ACTIVO", "dado_de_baja": False},
-                "creditos": [{"linea_id": "2634", "linea_superior_id": "2552"}],
+                "creditos": [{"linea_id": "2752", "linea_superior_id": "2712"}],
             },
         )
         client.deals[945] = self._pending_deal(945, 945)
@@ -5195,7 +5271,9 @@ class BusinessLogicTests(unittest.TestCase):
         result = qualify_catamarca_deal(945, env=self.env, bitrix_client=client, logger=SilentLogger())
 
         self.assertEqual(result["action"], "approved")
-        self.assertEqual(result["reason"], "cde_premium")
+        self.assertEqual(result["reason"], "cbu_approved")
+        self.assertEqual(result["routing_bucket"], "cordoba_general")
+        self.assertEqual(client.deals[945]["ufCrm_659EBB0445E8E"], "CBU")
 
     def test_cordoba_caja_new_irregular_is_approved_and_uses_jubilados_bucket(self) -> None:
         client = FakeBitrixClient()
@@ -5434,9 +5512,9 @@ class BusinessLogicTests(unittest.TestCase):
             "stageId": "C1:KESTRA_QUEUE",
             "createdTime": enqueued_at,
             "ufCrmRouteBucket": bucket,
-            "ufCrm_659EBB0445E8E": "Cruz del Eje",
+            "ufCrm_659EBB0445E8E": "CBU",
             "ufCrmKqAction": "approved",
-            "ufCrmKqReason": "cde_premium",
+            "ufCrmKqReason": "cbu_approved",
             "ufCrmKqStage": "C1:NEW",
             "ufCrmKqAt": enqueued_at,
         }

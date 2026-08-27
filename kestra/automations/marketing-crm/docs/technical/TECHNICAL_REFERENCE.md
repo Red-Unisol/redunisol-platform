@@ -85,7 +85,6 @@ del campo en Bitrix.
 | Gloria Fernández | `53121` | Bucket Córdoba UNC/DASPU propuesto. |
 | Daniel Carrera | `68579` | Pools comerciales. |
 | Natalia Rojo Moyano | `71159` | Pools comerciales. |
-| Nancy Romina Spengler | `74365` | Bucket Córdoba Público/Policía propuesto. |
 | Soledad Rojo Moyano | `90231` | Pools comerciales. |
 | Agustín Villagra | `110059` | Bucket Córdoba Jubilados propuesto. |
 | Daniela Arias | `113455` | Pool Catamarca. |

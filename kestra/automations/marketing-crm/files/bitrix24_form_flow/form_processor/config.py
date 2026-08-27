@@ -68,7 +68,6 @@ DEFAULT_DEAL_CONFIG = {
     "queue_enqueued_at_field": "ufCrmKqAt",
     "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
     "round_robin_lookback_days": 30,
-    "cordoba_publico_policia_user_ids": (74365,),
     "cordoba_jubilados_user_ids": (10451, 71159, 68579, 90231, 29, 110059),
     "cordoba_unc_user_ids": (53121,),
     "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29),
@@ -183,7 +182,6 @@ class DealConfig:
     queue_enqueued_at_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
-    cordoba_publico_policia_user_ids: tuple[int, ...]
     cordoba_jubilados_user_ids: tuple[int, ...]
     cordoba_unc_user_ids: tuple[int, ...]
     cordoba_general_user_ids: tuple[int, ...]
@@ -462,11 +460,6 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS",
                 default=DEFAULT_DEAL_CONFIG["round_robin_lookback_days"],
-            ),
-            cordoba_publico_policia_user_ids=_optional_int_tuple(
-                source,
-                "BITRIX24_DEAL_CORDOBA_PUBLICO_POLICIA_USER_IDS",
-                default=DEFAULT_DEAL_CONFIG["cordoba_publico_policia_user_ids"],
             ),
             cordoba_jubilados_user_ids=_optional_int_tuple(
                 source,

@@ -49,13 +49,7 @@ def resolve_routing_bucket(
 
     if submission.province.key == "cordoba":
         employment = submission.employment_status.key
-        if employment in {"empleado_publico_provincial", "policia"}:
-            key, label, sellers = (
-                "cordoba_publico_policia",
-                "Córdoba - Público provincial y Policía",
-                config.deal.cordoba_publico_policia_user_ids,
-            )
-        elif employment in {
+        if employment in {
             "jubilado_provincial",
             "jubilado_nacional",
             "jubilado_municipal",
@@ -98,11 +92,6 @@ def routing_bucket_by_key(config: AppConfig, key: str) -> RoutingBucket | None:
             "Catamarca - General",
             config.deal.round_robin_user_ids,
             "Catamarca",
-        ),
-        "cordoba_publico_policia": RoutingBucket(
-            "cordoba_publico_policia",
-            "Córdoba - Público provincial y Policía",
-            config.deal.cordoba_publico_policia_user_ids,
         ),
         "cordoba_jubilados": RoutingBucket(
             "cordoba_jubilados",

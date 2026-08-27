@@ -1,11 +1,11 @@
 # Decisiones Comerciales Pendientes
 
-Versión: `2026-08-11`
+Versión: `2026-08-26`
 
 ## Estado
 
-No quedan decisiones provinciales abiertas para las reglas AMEJUCA, CBU, Cruz del
-Eje, Caja, DASPU Haberes y Club Mutual CBU incluidas en la versión `2026-08-11`.
+No quedan decisiones provinciales abiertas para las reglas AMEJUCA, CBU, Caja, DASPU
+Haberes y Club Mutual CBU incluidas en la versión `2026-08-26`.
 
 Las decisiones cerradas y su fundamento están en `DECISION_LOG.md`. Cualquier caso no
 cubierto explícitamente utiliza **REVISIÓN MANUAL KESTRA** y no debe resolverse por

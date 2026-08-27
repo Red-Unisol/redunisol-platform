@@ -51,7 +51,6 @@ tasks:
       BITRIX24_DEAL_QUEUE_ENQUEUED_AT_FIELD: "{{ envs.bitrix24_deal_queue_enqueued_at_field ?? 'ufCrmKqAt' }}"
       BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
-      BITRIX24_DEAL_CORDOBA_PUBLICO_POLICIA_USER_IDS: "{{ envs.bitrix24_deal_cordoba_publico_policia_user_ids ?? '74365' }}"
       BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS: "{{ envs.bitrix24_deal_cordoba_jubilados_user_ids ?? '10451,71159,68579,90231,29,110059' }}"
       BITRIX24_DEAL_CORDOBA_UNC_USER_IDS: "{{ envs.bitrix24_deal_cordoba_unc_user_ids ?? '53121' }}"
       BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS: "{{ envs.bitrix24_deal_cordoba_general_user_ids ?? '10451,71159,68579,90231,29' }}"

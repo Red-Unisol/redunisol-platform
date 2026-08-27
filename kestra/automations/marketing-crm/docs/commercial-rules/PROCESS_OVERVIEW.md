@@ -1,10 +1,8 @@
 # Vista General del Proceso Comercial
 
-Versión: `2026-08-11`
+Versión: `2026-08-26`
 
-Estado: vista explicativa. Las tablas de `DEAL_CLASSIFICATION.md` son normativas. La
-clasificación de Catamarca y Córdoba está implementada en el PR #218 y pendiente de
-deploy y auditoría en producción.
+Estado: vista explicativa. Las tablas de `DEAL_CLASSIFICATION.md` son normativas.
 
 ## Proceso completo
 
@@ -56,25 +54,15 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[Negociación Córdoba] --> B{Situación laboral}
-    B -->|Policía o Empleado<br/>Público Provincial| C[Cruz del Eje]
-    B -->|Docente, Municipal, Salud,<br/>Jubilado Nacional o Pensionado| D[CBU]
+    B -->|Policía, Público Provincial,<br/>Docente, Municipal, Salud,<br/>Jubilado Nacional o Pensionado| D[CBU]
     B -->|Jubilado Provincial<br/>o Municipal| E[Caja]
     B -->|DASPU| F[DASPU Haberes]
     B -->|UNC docente/no docente| G[Club Mutual CBU]
 
-    C --> C1{Préstamo activo<br/>Cruz del Eje}
-    C1 -->|No| C2[BCRA común]
-    C1 -->|Sí y buen comportamiento| C3[BCRA REN]
-    C1 -->|Mora, paralelo o dato dudoso| R[REVISIÓN MANUAL KESTRA]
-    C2 --> Z{Premium, Especial<br/>o rechazo explícito}
-    C3 --> Z
-
-    D --> D1[Evaluar primero cualquier<br/>familia alternativa habilitada]
-    D1 -->|Ninguna aplica| D2[BCRA CBU]
-    D1 -->|Alguna aplica| ALT[Continuar por la familia<br/>comercial específica]
+    D --> D2[BCRA y reglas completas CBU]
 
     E --> E1{Edad}
-    E1 -->|Faltante| R
+    E1 -->|Faltante| R[REVISIÓN MANUAL KESTRA]
     E1 -->|80 o más| RC[RECHAZO COMERCIAL]
     E1 -->|Menor de 80| E2{Nuevo o recurrente<br/>y BCRA}
     E2 -->|Nuevo limpio| N[Caja Nuevo]

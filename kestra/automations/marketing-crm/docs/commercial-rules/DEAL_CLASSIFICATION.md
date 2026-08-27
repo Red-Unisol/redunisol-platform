@@ -1,6 +1,6 @@
 # Clasificación Comercial de Negociaciones
 
-Versión: `2026-08-11`
+Versión: `2026-08-26`
 
 ## Alcance
 
@@ -88,7 +88,7 @@ superarlos queda en revisión manual.
 
 ## Córdoba
 
-Estado: **implementado en el PR #218, pendiente de deploy y auditoría en producción**.
+Estado: reglas vigentes para Córdoba actualizadas al `2026-08-26`.
 
 Precondición: negociación que ya superó provincia, situación laboral y banco de cobro
 en la precalificación.
@@ -106,44 +106,16 @@ subtipos históricos Propia ni Comer.
 | 40 | `COR-CBU-030` | Banco de cobro en situación mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | Banco de cobro no admitido |
 | 50 | `COR-CBU-040` | Hasta 5 entidades, todas hasta situación 1, y banco de cobro hasta situación 1 | Aprobado | PRESENTACIÓN | CBU | CBU aprobada |
 
-Antes de ejecutar un rechazo CBU se evalúan Cruz del Eje, Caja o DASPU cuando la
-situación laboral habilita alguna de esas familias. Para activos, los límites CBU son
+Antes de ejecutar un rechazo CBU se evalúan Caja, DASPU o UNC cuando la situación
+laboral habilita alguna de esas familias. Para activos, los límites CBU son
 60 años para mujeres y 65 para hombres; para pasivos, 80 años. Los límites que dependen
 de sexo permanecen manuales hasta disponer de género confiable.
 
-### Policía y Empleado Público Provincial — Cruz del Eje
+### Policía, Empleado Público Provincial, Docente, Empleado Público Municipal, Personal de Salud, Jubilado Nacional y Pensionado
 
-Ser socio o tener préstamos activos CBU no cambia esta familia comercial. Solamente
-un préstamo activo cuya línea Vimarx pertenezca a Cruz del Eje habilita renovación.
-
-#### Evaluación BCRA común y REN
-
-| Prioridad | Regla | Condición | Decisión | Etapa | Línea | Categoría auditable |
-|---:|---|---|---|---|---|---|
-| 200 | `COR-CDE-DATA-010` | Snapshot faltante, inválido o inconcluso | Revisión manual | REVISIÓN MANUAL KESTRA | No aplica | No aplica |
-| 210 | `COR-CDE-BANK-010` | Banco de Córdoba en situación 2 o superior | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | No aplica |
-| 220 | `COR-CDE-BCRA-010` | Más de 2 entidades en situación 4/5 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica | No aplica |
-| 230 | `COR-CDE-LINE-010` | Solo situaciones 1 | Aprobado | PRESENTACIÓN | Cruz del Eje | Premium |
-| 240 | `COR-CDE-LINE-020` | Situaciones 2/3 sin límite, o hasta 2 entidades en situación 4/5 | Aprobado | PRESENTACIÓN | Cruz del Eje | Especial |
-
-Premium/Especial se registra en el motivo auditable; el campo Línea guarda `Cruz del
-Eje`. Para REN se utiliza la misma separación BCRA, registrando `REN Premium` o `REN
-Especial` como categoría auditable.
-
-#### Préstamos activos y comportamiento
-
-| Prioridad | Regla | Condición | Decisión | Resultado seguro |
-|---:|---|---|---|---|
-| 250 | `COR-CDE-LOAN-DATA-010` | No puede determinarse si la línea activa es Cruz del Eje | Revisión manual | Sin línea |
-| 260 | `COR-CDE-REN-010` | Préstamo Cruz del Eje activo, cero días de atraso y cuotas vencidas pagadas | Aplicar tabla BCRA como REN | Cruz del Eje + categoría REN |
-| 270 | `COR-CDE-MORA-010` | Préstamo Cruz del Eje activo con mora | Revisión manual | Resolver deuda y luego evaluar línea común |
-| 280 | `COR-CDE-PARALLEL-010` | Solicitud de préstamo Cruz del Eje paralelo | Revisión manual | No aprobar paralelo automáticamente |
-
-No hay límite de cantidad para entidades en situación 2/3. Empleado municipal y
-Personal de Salud no usan Cruz del Eje; pasan por CBU. Ministerio de Educación sin
-autorización verificable queda en revisión manual.
-
-### Docente, Empleado Público Municipal, Personal de Salud, Jubilado Nacional y Pensionado
+Desde el 26/08/2026, Policía y Empleado Público Provincial utilizan las mismas reglas
+CBU vigentes que los demás perfiles de esta sección. La existencia de préstamos Cruz
+del Eje activos no cambia esta primera capa: el caso se evalúa igualmente como CBU.
 
 | Prioridad | Regla | Condición | Evaluación | Resultado |
 |---:|---|---|---|---|

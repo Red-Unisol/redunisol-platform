@@ -1,6 +1,6 @@
 # Reglas Comerciales Compartidas
 
-Versión documental: `2026-08-11`
+Versión documental: `2026-08-26`
 
 ## Propósito
 
@@ -107,6 +107,7 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
+| 2026-08-26 | Córdoba: Policía y Público Provincial a CBU | Acordado e implementado | Tarea Bitrix24 `22895` y definición comercial complementaria | PR de tarea `22895` |
 | 2026-08-11 | Catamarca | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218; producción conserva la versión anterior |
 | 2026-08-11 | Córdoba | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218 |
 | 2026-08-10 | Distribución de negociaciones | Implementado, pendiente de deploy | Criterio acordado | PR #218 |
