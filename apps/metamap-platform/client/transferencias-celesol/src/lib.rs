@@ -8,6 +8,7 @@ pub mod completed_log;
 pub mod config;
 pub mod core_client;
 pub mod logging;
+pub mod mark_paid_client;
 pub mod models;
 pub mod receipt;
 pub mod secure_config;

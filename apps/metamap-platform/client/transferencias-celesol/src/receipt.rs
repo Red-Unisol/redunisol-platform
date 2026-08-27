@@ -32,6 +32,7 @@ const ROW_SPACING_MM: f32 = 10.0;
 const TITLE_SIZE_PT: f32 = 17.0;
 const SUBTITLE_SIZE_PT: f32 = 7.5;
 const ROW_SIZE_PT: f32 = 9.5;
+const ERROR_DETAIL_CHARS_PER_LINE: usize = 78;
 const LOGO_BYTES: &[u8] = include_bytes!("../assets/receipt_logo_flat.png");
 
 pub fn write_receipt(
@@ -40,16 +41,134 @@ pub fn write_receipt(
     case: &HydratedCase,
     external_transfer_id: &str,
 ) -> Result<PathBuf> {
+    write_receipt_with_mode(
+        receipts_dir,
+        operator_name,
+        case,
+        external_transfer_id,
+        ReceiptMode::Manual,
+        None,
+    )
+}
+
+pub fn write_automatic_receipt(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    external_transfer_id: &str,
+) -> Result<PathBuf> {
+    write_receipt_with_mode(
+        receipts_dir,
+        operator_name,
+        case,
+        external_transfer_id,
+        ReceiptMode::Automatic,
+        None,
+    )
+}
+
+pub fn write_error_receipt(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    external_transfer_id: &str,
+    error_detail: &str,
+) -> Result<PathBuf> {
+    write_receipt_with_mode(
+        receipts_dir,
+        operator_name,
+        case,
+        external_transfer_id,
+        ReceiptMode::ManualError,
+        Some(error_detail),
+    )
+}
+
+pub fn write_automatic_error_receipt(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    external_transfer_id: &str,
+    error_detail: &str,
+) -> Result<PathBuf> {
+    write_receipt_with_mode(
+        receipts_dir,
+        operator_name,
+        case,
+        external_transfer_id,
+        ReceiptMode::AutomaticError,
+        Some(error_detail),
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ReceiptMode {
+    Manual,
+    Automatic,
+    ManualError,
+    AutomaticError,
+}
+
+impl ReceiptMode {
+    fn is_error(self) -> bool {
+        matches!(self, Self::ManualError | Self::AutomaticError)
+    }
+
+    fn title(self) -> &'static str {
+        if self.is_error() {
+            "Constancia de transferencia rechazada"
+        } else {
+            "Comprobante de transferencia"
+        }
+    }
+
+    fn state(self) -> &'static str {
+        if self.is_error() {
+            "Transferencia rechazada"
+        } else {
+            "Transferencia confirmada"
+        }
+    }
+}
+
+fn write_receipt_with_mode(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    external_transfer_id: &str,
+    mode: ReceiptMode,
+    error_detail: Option<&str>,
+) -> Result<PathBuf> {
     fs::create_dir_all(receipts_dir)
         .with_context(|| format!("No se pudo crear la carpeta {:?}", receipts_dir))?;
 
     let timestamp = Local::now();
-    let file_name = format!(
-        "{}-{}-{}.pdf",
-        sanitize_filename(case.request_oid()),
-        sanitize_filename(case.display_name().as_str()),
-        timestamp.format("%Y%m%d-%H%M%S"),
-    );
+    let file_name = match mode {
+        ReceiptMode::Manual => format!(
+            "{}-{}-{}.pdf",
+            sanitize_filename(case.request_oid()),
+            sanitize_filename(case.display_name().as_str()),
+            timestamp.format("%Y%m%d-%H%M%S"),
+        ),
+        ReceiptMode::Automatic => format!(
+            "{}_solicitud-{}_importe-{}_automatico.pdf",
+            timestamp.format("%Y%m%d-%H%M%S"),
+            sanitize_filename(case.request_oid()),
+            sanitize_filename(case.transfer_amount_display().as_str()),
+        ),
+        ReceiptMode::ManualError => format!(
+            "{}-{}-{}-rechazada.pdf",
+            sanitize_filename(case.request_oid()),
+            sanitize_filename(case.display_name().as_str()),
+            timestamp.format("%Y%m%d-%H%M%S"),
+        ),
+        ReceiptMode::AutomaticError => format!(
+            "{}_solicitud-{}_importe-{}_automatico-rechazada.pdf",
+            timestamp.format("%Y%m%d-%H%M%S"),
+            sanitize_filename(case.request_oid()),
+            sanitize_filename(case.transfer_amount_display().as_str()),
+        ),
+    };
     let receipt_path = receipts_dir.join(file_name);
 
     let (document, page, layer) = PdfDocument::new(
@@ -72,7 +191,7 @@ pub fn write_receipt(
     write_text(
         &current_layer,
         &bold_font,
-        "Comprobante de transferencia",
+        mode.title(),
         TITLE_SIZE_PT,
         TITLE_X_MM,
         TITLE_Y_MM,
@@ -90,44 +209,65 @@ pub fn write_receipt(
     draw_divider(&current_layer, DIVIDER_Y_MM);
 
     let amount = case.transfer_amount_display();
-    let rows = vec![
-        ("N° de transacción", external_transfer_id.to_owned()),
-        ("Tipo de transferencia", "Inmediata".to_owned()),
-        ("Fecha de carga", timestamp.format("%d/%m/%Y").to_string()),
+    let mut rows = vec![
         (
-            "Fecha y hora de emisión",
+            "N° de transacción".to_owned(),
+            external_transfer_id.to_owned(),
+        ),
+        ("Tipo de transferencia".to_owned(), "Inmediata".to_owned()),
+        (
+            "Fecha de carga".to_owned(),
+            timestamp.format("%d/%m/%Y").to_string(),
+        ),
+        (
+            "Fecha y hora de emisión".to_owned(),
             timestamp.format("%d/%m/%Y %H:%M").to_string(),
         ),
-        ("Operador", operator_name.to_owned()),
-        ("Solicitud", case.request_oid().to_owned()),
+        ("Operador".to_owned(), operator_name.to_owned()),
+        ("Solicitud".to_owned(), case.request_oid().to_owned()),
         (
-            "Verification ID",
+            "Verification ID".to_owned(),
             case.server_validation
                 .verification_id
                 .as_deref()
                 .unwrap_or("N/D")
                 .to_owned(),
         ),
-        ("Solicitante", case.display_name()),
-        ("Documento", case.document_display()),
+        ("Solicitante".to_owned(), case.display_name()),
+        ("Documento".to_owned(), case.document_display()),
         (
-            "CBU/CVU",
+            "CBU/CVU".to_owned(),
             case.core
                 .transfer_cbu
                 .as_deref()
                 .unwrap_or("N/D")
                 .to_owned(),
         ),
-        ("Importe", amount),
-        ("Estado", "Comprobante generado".to_owned()),
+        ("Importe".to_owned(), amount),
+        ("Estado".to_owned(), mode.state().to_owned()),
     ];
+    if let Some(error_detail) = error_detail.filter(|detail| !detail.trim().is_empty()) {
+        for (index, line) in wrap_detail(error_detail, ERROR_DETAIL_CHARS_PER_LINE)
+            .into_iter()
+            .enumerate()
+        {
+            rows.push((
+                if index == 0 {
+                    "Detalle".to_owned()
+                } else {
+                    String::new()
+                },
+                line,
+            ));
+        }
+    }
 
     let mut current_y = ROW_START_Y_MM;
     for (label, value) in rows {
         write_text(
             &current_layer,
             &bold_font,
-            label,
+            &label,
             ROW_SIZE_PT,
             LABEL_X_MM,
             current_y,
@@ -237,5 +377,32 @@ fn sanitize_filename(value: &str) -> String {
         "comprobante".to_owned()
     } else {
         cleaned
+    }
+}
+
+fn wrap_detail(value: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(20);
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in value.split_whitespace() {
+        if current.is_empty() {
+            current.push_str(word);
+            continue;
+        }
+        if current.len() + 1 + word.len() > max_chars {
+            lines.push(current);
+            current = word.to_owned();
+        } else {
+            current.push(' ');
+            current.push_str(word);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        vec![value.trim().to_owned()]
+    } else {
+        lines
     }
 }

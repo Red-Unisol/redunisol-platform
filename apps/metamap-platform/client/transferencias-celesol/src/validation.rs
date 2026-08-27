@@ -196,6 +196,21 @@ pub fn build_validation_report(
     if coinag_cuil.is_none() {
         blockers.push("No se pudo validar titularidad del CBU en Coinag via CUIL.".to_owned());
     }
+    if core.transfer_cbu.is_some() {
+        match core.coinag_account_type_is_pesos_transfer_compatible() {
+            Some(true) => {}
+            Some(false) => {
+                let account_type = core
+                    .coinag_account_type_display()
+                    .unwrap_or_else(|| "N/D".to_owned());
+                blockers.push(format!(
+                    "Tipo de cuenta Coinag no compatible con transferencia en pesos: {account_type}."
+                ));
+            }
+            None => blockers
+                .push("No se pudo validar moneda/tipo de cuenta del CBU en Coinag.".to_owned()),
+        }
+    }
 
     if let (Some(document_cuil), Some(request_cuil)) = (&document_cuil, &request_cuil) {
         if document_cuil != request_cuil {
@@ -238,6 +253,8 @@ mod tests {
             document_cuil: Some("20-30111222-3".to_owned()),
             transfer_cbu: Some("2850590940090418135201".to_owned()),
             coinag_cuil: Some("20-30111222-3".to_owned()),
+            coinag_account_type_code: Some("10".to_owned()),
+            coinag_account_type_label: Some("CA Pesos".to_owned()),
             ..Default::default()
         }
     }
@@ -295,6 +312,28 @@ mod tests {
                 .blockers
                 .iter()
                 .any(|value| value.contains("Prestamo.[CBU transferencia]"))
+        );
+        assert!(!report.can_transfer());
+    }
+
+    #[test]
+    fn dollar_account_type_blocks_transfer() {
+        let mut core = valid_core_snapshot();
+        core.coinag_account_type_code = Some("11".to_owned());
+        core.coinag_account_type_label = Some("CA Dolares".to_owned());
+
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|value| value.contains("11 - CA Dolares"))
         );
         assert!(!report.can_transfer());
     }

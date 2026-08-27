@@ -12,6 +12,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
   - titularidad Coinag via CUIL/CUIT
+- transferencia automatica habilitada/pausada para lineas explicitamente autorizadas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
 - si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
   - documento MetaMap vs core
@@ -19,6 +20,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - barrera local anti reenvio por `request_oid` en archivo persistido
 - envio a Coinag si el runtime esta configurado
 - generacion de comprobante PDF simple
+- carga del comprobante confirmado en el core y marcado de la solicitud como `Pagada`
 
 ## Variables de entorno minimas
 
@@ -52,10 +54,32 @@ Obligatorias:
 Opcionales frecuentes:
 
 - `TRANSFERENCIAS_CORE_BASE_URL`
+- `TRANSFERENCIAS_MARK_PAID_ENDPOINT` default `https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada`
+- `TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN` token Bearer requerido para registrar el comprobante
+- `TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS` default `true`
 - `TRANSFERENCIAS_OPERATOR_NAME`
 - `TRANSFERENCIAS_POLL_INTERVAL_SECONDS` default `20`
 - `TRANSFERENCIAS_RECEIPTS_DIR`
+- `TRANSFERENCIAS_AUTO_RECEIPTS_DIR` default `receipts-automaticas`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
+
+Automaticas:
+
+- `TRANSFERENCIAS_AUTO_LINEAS` allowlist exacta de lineas separadas por coma o punto y coma
+- `TRANSFERENCIAS_AUTO_LINEAS_PATH` archivo alternativo con una linea por renglon
+
+Si no se define ninguna linea automatica, el control habilitado/pausado queda deshabilitado.
+Cada apertura de la app comienza con las transferencias automaticas pausadas. Al habilitarlas, procesa una solicitud elegible por vez; al pausarlas, deja terminar la transferencia en curso y no comienza la siguiente.
+Las automaticas solo corren si la solicitud esta verde, sin warnings ni bloqueos, con MetaMap `completed`.
+Los comprobantes de automaticas se generan en `TRANSFERENCIAS_AUTO_RECEIPTS_DIR`, separado de los comprobantes manuales.
+
+Registro del comprobante en el core:
+
+- se ejecuta solo cuando Coinag confirma la transferencia y el PDF se genero correctamente
+- envia el OID unico dentro de la propiedad `numeroSolicitud`
+- considera exitosa solamente una respuesta HTTP `200`
+- ante otro estado HTTP, timeout o error de red, informa que la transferencia bancaria fue realizada pero el registro en el core requiere revision; nunca sugiere repetir la transferencia
+- los comprobantes rechazados y los smoke de debug no se envian al endpoint de marcado
 
 Coinag para habilitar `Transferir`:
 
@@ -142,6 +166,21 @@ Si queres cambiar la ubicacion, defini:
 
 - `TRANSFERENCIAS_DEBUG_LOG_PATH`
 
+Cada transferencia deja eventos JSON correlacionables en ese mismo archivo con el target
+`transfer_audit`. La traza incluye:
+
+- solicitud, operador, tipo manual/automatico y snapshots usados para validar
+- payload completo enviado a Coinag
+- respuesta inicial completa
+- `idTrxCliente` e `idCoelsa`
+- clasificacion inicial y resultado de cada intento de confirmacion
+- resultado final y ruta o error de generacion del PDF
+- inicio, resultado HTTP y body de respuesta del marcado como pagada
+- tamaño y SHA-256 del PDF enviado al core
+
+Los requests y responses operativos de Coinag tambien se registran completos con el target
+`coinag_http`. Se omiten solamente el body OAuth, tokens, passwords y claves SSH.
+
 ## Smoke en debug
 
 En builds `debug`, el boton `Transferir` no pega al endpoint real de transferencia de Coinag.
@@ -202,5 +241,13 @@ Antes de habilitar `Transferir`, la app consulta Coinag por `idTrxCliente` deriv
 
 - si Coinag responde `SIN_REGISTROS`, permite transferir
 - si Coinag responde estado `1`, bloquea como `YA TRANSFERIDA`
-- si Coinag responde estado `2`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
+- si Coinag responde estado `2`, bloquea como `NO COMPLETADA`
+- si Coinag responde estado `3`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
 - para cualquier otra respuesta, bloquea como `ERROR`
+
+La confirmacion por estado Coelsa reconoce:
+
+- `00` o `ACREDITADO / 0600`: transferencia confirmada
+- `0601`, `0602`, `0612`, `2100` o `2000`: transferencia pendiente; continua el polling
+- estados explicitos de error/rechazo/no completada: transferencia rechazada
+- estados desconocidos: se mantienen pendientes para evitar falsos rechazos
