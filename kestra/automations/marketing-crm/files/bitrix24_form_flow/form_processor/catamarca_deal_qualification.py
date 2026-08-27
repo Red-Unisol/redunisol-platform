@@ -77,12 +77,11 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-24-cordoba-municipal-caja-v1"
+COMMERCIAL_RULE_VERSION = "2026-08-26-cordoba-publico-policia-cbu-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
     "catamarca_general",
-    "cordoba_publico_policia",
     "cordoba_jubilados",
     "cordoba_unc",
     "cordoba_general",
@@ -1372,8 +1371,6 @@ def _evaluate_cordoba(
         return _manual(config, "missing_bcra_snapshot")
     vimarx = _vimarx_payload(config, lead)
 
-    if employment in {"empleado_publico_provincial", "policia"}:
-        return _evaluate_cruz_del_eje(config, entities, vimarx)
     if employment in {"jubilado_provincial", "jubilado_municipal"}:
         return _evaluate_caja(config, lead, entities, vimarx, payment_bank)
     if employment == "daspu":
@@ -1381,6 +1378,8 @@ def _evaluate_cordoba(
     if employment == "empleado_de_la_unc":
         return _evaluate_unc(config, lead, entities, vimarx)
     if employment in {
+        "empleado_publico_provincial",
+        "policia",
         "docente",
         "empleado_publico_municipal",
         "personal_de_salud",
@@ -1389,35 +1388,6 @@ def _evaluate_cordoba(
     }:
         return _evaluate_cbu(config, lead, entities, employment, vimarx)
     return _manual(config, "unsupported_cordoba_employment_status")
-
-
-def _evaluate_cruz_del_eje(
-    config: AppConfig,
-    entities: list[dict[str, Any]],
-    vimarx: dict[str, Any] | None,
-) -> CommercialDecision:
-    bank_situation = _named_bank_situation(entities, "cordoba")
-    if bank_situation >= 2:
-        return _bcra_rejected(config, "cordoba_bank_situation_above_one")
-    if _high_risk_count(entities) > 2:
-        return _bcra_rejected(config, "cde_more_than_two_high_risk_situations")
-
-    credits = _family_credits(vimarx, 2712)
-    if vimarx is None:
-        return _manual(config, "missing_vimarx_credit_data")
-    if len(credits) > 1:
-        return _manual(config, "cde_parallel_requires_manual_review")
-    if credits:
-        credit = credits[0]
-        if _optional_int(credit.get("dias_atraso")) not in {None, 0}:
-            return _manual(config, "cde_active_loan_in_arrears")
-        prefix = "cde_ren"
-    else:
-        prefix = "cde"
-
-    if all(value <= 1 for value in _situations(entities)):
-        return _approved(config, prefix + "_premium", "Cruz del Eje")
-    return _approved(config, prefix + "_special", "Cruz del Eje")
 
 
 def _evaluate_cbu(

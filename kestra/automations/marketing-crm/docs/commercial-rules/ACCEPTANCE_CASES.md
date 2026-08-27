@@ -1,6 +1,6 @@
 # Casos de Aceptación Comercial
 
-Versión: `2026-08-11`
+Versión: `2026-08-26`
 
 Cada caso expresa una expectativa verificable en formato Dado / Cuando / Entonces.
 Un caso no reemplaza la tabla normativa de clasificación.
@@ -71,7 +71,7 @@ Un caso no reemplaza la tabla normativa de clasificación.
 - **Dado** un socio cuya cuota social o comportamiento no puede verificarse.
 - **Entonces** aplica `CAT-REC-DATA-010` y queda en **REVISIÓN MANUAL KESTRA**.
 
-## Córdoba — implementado en PR #218, pendiente de deploy
+## Córdoba
 
 ### `COR-CASE-001` — CBU aprobado
 
@@ -85,46 +85,24 @@ Un caso no reemplaza la tabla normativa de clasificación.
 - **Y** no existe otra familia comercial habilitada.
 - **Entonces** aplica `COR-CBU-010` y queda en **SIT. NEG. EN BCRA**.
 
-### `COR-CASE-003` — Cruz del Eje Premium
+### `COR-CASE-003` — Empleado Público Provincial aprobado como CBU
 
-- **Dado** un Policía o Empleado Público Provincial sin préstamo Cruz del Eje activo y
-  con todas las entidades en situación 1.
-- **Entonces** aplica `COR-CDE-LINE-010`, queda en `Cruz del Eje` y registra categoría
-  Premium.
+- **Dado** un Empleado Público Provincial dentro del límite etario, con hasta cinco
+  entidades y todas en situación 1.
+- **Entonces** aplica `COR-CBU-040` y queda en **PRESENTACIÓN**, línea `CBU`.
 
-### `COR-CASE-004` — Cruz del Eje Especial sin límite 2/3
+### `COR-CASE-004` — Policía rechazada por situación BCRA
 
-- **Dado** el mismo perfil con diez entidades en situación 2 y ninguna en 4/5.
-- **Entonces** aplica `COR-CDE-LINE-020` y registra categoría Especial.
+- **Dado** un Policía con hasta cinco entidades y al menos una en situación 2 o
+  superior.
+- **Entonces** aplica `COR-CBU-020` y queda en **SIT. NEG. EN BCRA**.
 
-### `COR-CASE-005` — Rechazo por entidades 4/5
+### `COR-CASE-005` — Préstamo Cruz del Eje activo no cambia la evaluación CBU
 
-- **Dado** un perfil Cruz del Eje con tres entidades en situación 4/5.
-- **Entonces** aplica `COR-CDE-BCRA-010` y queda en **SIT. NEG. EN BCRA**.
-
-### `COR-CASE-006` — Rechazo por Banco de Córdoba
-
-- **Dado** un perfil Cruz del Eje con Banco de Córdoba en situación 2.
-- **Entonces** aplica `COR-CDE-BANK-010` y queda en **SIT. NEG. EN BCRA**.
-
-### `COR-CASE-007` — Préstamo CBU no bloquea Cruz del Eje
-
-- **Dado** un Empleado Público Provincial socio con préstamo CBU activo, sin préstamo
-  Cruz del Eje activo y con BCRA Premium.
-- **Entonces** se evalúa Cruz del Eje común y queda aprobado.
-
-### `COR-CASE-008` — REN Premium
-
-- **Dado** un préstamo Cruz del Eje activo, cero días de atraso, cuotas vencidas
-  pagadas y BCRA Premium.
-- **Entonces** aplica `COR-CDE-REN-010`, queda en línea `Cruz del Eje` y registra
-  categoría `REN Premium`.
-
-### `COR-CASE-009` — Renovación con mora
-
-- **Dado** un préstamo Cruz del Eje activo con mora.
-- **Entonces** aplica `COR-CDE-MORA-010` y queda en **REVISIÓN MANUAL KESTRA** para
-  resolver la deuda antes de evaluar una línea común.
+- **Dado** un Policía o Empleado Público Provincial con un préstamo Cruz del Eje
+  activo.
+- **Entonces** la primera capa vigente ignora esa familia histórica y aplica las
+  reglas CBU completas.
 
 ### `COR-CASE-010` — Caja Nuevo sin entidades BCRA
 

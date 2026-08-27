@@ -1,6 +1,6 @@
 # Registro de Decisiones Comerciales
 
-Versión: `2026-08-11`
+Versión: `2026-08-26`
 
 Este documento conserva decisiones funcionales cerradas para evitar que conceptos
 históricos vuelvan a incorporarse por error.
@@ -42,7 +42,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-002` — Empleado Público Provincial utiliza Cruz del Eje
 
 - **Fecha:** 2026-08-10
-- **Estado:** Implementado en el PR #218; pendiente de deploy.
+- **Estado:** Histórica; reemplazada por `COR-DEC-011` desde el 26/08/2026.
 - **Decisión:** Empleado Público Provincial utiliza la misma evaluación comercial de
   Cruz del Eje que Policía.
 - **Alcance:** aplica tanto a los resultados Premium y Especial como a sus rechazos y
@@ -55,7 +55,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-003` — Renovaciones Cruz del Eje dependen de la línea del préstamo
 
 - **Fecha:** 2026-08-10
-- **Estado:** Ampliada por `COR-DEC-007` e implementada en el PR #218; pendiente de deploy.
+- **Estado:** Histórica; reemplazada por `COR-DEC-011` desde el 26/08/2026.
 - **Decisión:** para Policía y Empleado Público Provincial, solamente un préstamo
   activo de una línea Cruz del Eje habilita el análisis de renovación, paralelo o
   mora de Cruz del Eje.
@@ -148,7 +148,7 @@ del árbol activo; Git conserva su historial.
 ## `COR-DEC-007` — Cerrar reglas Cruz del Eje y REN
 
 - **Fecha:** 2026-08-11
-- **Estado:** Implementado en el PR #218; pendiente de deploy.
+- **Estado:** Histórica; reemplazada por `COR-DEC-011` desde el 26/08/2026.
 - **Premium:** solo situaciones 1.
 - **Especial:** situaciones 2/3 sin límite o hasta dos entidades en situación 4/5.
 - **Rechazos:** más de dos entidades en situación 4/5 o Banco de Córdoba en situación
@@ -199,6 +199,24 @@ del árbol activo; Git conserva su historial.
 - **Negociación:** Jubilado Municipal usa las reglas de Caja y el bucket de jubilados,
   igual que Jubilado Provincial.
 - **Compatibilidad:** ningún caso previamente aceptado pasa a rechazarse.
+
+## `COR-DEC-011` — Policía y Empleado Público Provincial utilizan CBU
+
+- **Fecha:** 2026-08-26.
+- **Origen:** tarea Bitrix24 `22895`.
+- **Alcance laboral:** aplica únicamente a `Policía` y `Empleado Público Provincial` de
+  Córdoba.
+- **Clasificación:** ambos perfiles dejan de utilizar Cruz del Eje y pasan por todas
+  las reglas CBU vigentes, sin excepciones ni criterios nuevos.
+- **Préstamos existentes:** un préstamo Cruz del Eje activo no cambia esta primera
+  capa; la negociación se trata igualmente como CBU.
+- **Distribución:** usan el mismo grupo comercial que Docente, Empleado Público
+  Municipal y Personal de Salud: Patricia Contendi, Natalia Rojo Moyano, Daniel
+  Carrera, Soledad Rojo Moyano y Susana Contenti.
+- **Usuario retirado:** Nancy Romina Spengler deja de participar de este circuito.
+- **Históricos:** no se realiza migración ni reasignación masiva de registros previos.
+- **Resultado BCRA:** se conserva el comportamiento CBU actual, incluida la etapa
+  **SIT. NEG. EN BCRA** para rechazos explícitos.
 
 ## `GEN-DEC-002` — Etapa para rechazos comerciales
 

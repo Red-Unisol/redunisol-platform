@@ -1,6 +1,6 @@
 # Buckets De Distribucion De Negociaciones
 
-Estado: implementado en el PR #218, pendiente de deploy y auditoria en produccion.
+Versión: `2026-08-26`.
 
 Este documento cubre solamente distribución. La clasificación comercial y el proceso
 compartido de aprobación se documentan en [`README.md`](README.md).
@@ -26,11 +26,6 @@ compartido de aprobación se documentan en [`README.md`](README.md).
   - Claudia Algarbe (`113457`)
   - Daniela Arias (`113455`)
 
-### `cordoba_publico_policia`
-
-- Criterio: Cordoba + `Empleado Publico Provincial` o `Policia`.
-- Responsable: Nancy Romina Spengler (`74365`).
-
 ### `cordoba_jubilados`
 
 - Criterio: Cordoba + `Jubilado Provincial`, `Jubilado Nacional`, `Jubilado Municipal`
@@ -50,7 +45,9 @@ compartido de aprobación se documentan en [`README.md`](README.md).
 
 ### `cordoba_general`
 
-- Criterio: restantes situaciones laborales habilitadas de Cordoba.
+- Criterio: Córdoba + `Empleado Público Provincial`, `Policía`, `Docente`,
+  `Empleado Público Municipal`, `Personal de Salud` y restantes situaciones
+  laborales habilitadas que no correspondan a Jubilados/Pensionados ni UNC/DASPU.
 - Responsables, en orden:
   - Patricia Contendi (`10451`)
   - Natalia Rojo Moyano (`71159`)
