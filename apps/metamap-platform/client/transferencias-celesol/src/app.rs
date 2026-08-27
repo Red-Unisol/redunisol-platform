@@ -498,11 +498,32 @@ impl TransferenciasApp {
         let mut refresh_clicked = false;
         let mut save_clicked = false;
         let mut discard_clicked = false;
+        let shortcut_save = ctx.input(|input| input.modifiers.command && input.key_pressed(Key::S));
+        let shortcut_close = ctx.input(|input| input.key_pressed(Key::Escape));
+        if shortcut_save && self.credit_line_editor.dirty {
+            save_clicked = true;
+        }
+        if shortcut_close {
+            if self.credit_line_editor.dirty {
+                self.credit_line_editor.confirm_discard_open = true;
+            } else {
+                self.credit_line_editor.open = false;
+                return;
+            }
+        }
+
+        let available = ctx.available_rect().size();
+        let editor_width = (available.x - 24.0).clamp(560.0, 980.0);
+        let editor_height = (available.y - 24.0).clamp(360.0, 620.0);
+        let config_path = self.services.credit_lines_path.display().to_string();
         let editor = &mut self.credit_line_editor;
         egui::Window::new("Configuracion de lineas")
             .open(&mut open)
-            .default_width(980.0)
-            .default_height(680.0)
+            .default_width(editor_width)
+            .default_height(editor_height)
+            .max_width(editor_width)
+            .max_height(editor_height)
+            .constrain(true)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.label(
@@ -542,6 +563,31 @@ impl TransferenciasApp {
                     }
                 });
 
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .add_enabled(
+                            editor.dirty,
+                            egui::Button::new("Guardar cambios (Ctrl+S)"),
+                        )
+                        .clicked()
+                    {
+                        save_clicked = true;
+                    }
+                    if ui
+                        .add_enabled(editor.dirty, egui::Button::new("Descartar cambios"))
+                        .clicked()
+                    {
+                        discard_clicked = true;
+                    }
+                    if editor.dirty {
+                        ui.label(
+                            RichText::new("Cambios sin guardar")
+                                .color(Color32::from_rgb(220, 165, 45)),
+                        );
+                    }
+                });
+                ui.small(format!("Archivo: {config_path}"));
+
                 let disabled = editor
                     .draft
                     .lineas
@@ -561,12 +607,6 @@ impl TransferenciasApp {
                     ui.label(format!("Inhabilitadas: {disabled}"));
                     ui.label(format!("Habilitadas: {enabled}"));
                     ui.label(format!("Automaticas: {automatic}"));
-                    if editor.dirty {
-                        ui.label(
-                            RichText::new("Cambios sin guardar")
-                                .color(Color32::from_rgb(220, 165, 45)),
-                        );
-                    }
                 });
                 if let Some(message) = &editor.message {
                     ui.label(message);
@@ -576,6 +616,7 @@ impl TransferenciasApp {
                 let query = editor.search.trim().to_lowercase();
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
+                    .max_height(ui.available_height())
                     .show(ui, |ui| {
                         for line in &mut editor.draft.lineas {
                             let matches_query = query.is_empty()
@@ -617,28 +658,42 @@ impl TransferenciasApp {
                             ui.separator();
                         }
                     });
-
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(editor.dirty, egui::Button::new("Guardar cambios"))
-                        .clicked()
-                    {
-                        save_clicked = true;
-                    }
-                    if ui
-                        .add_enabled(editor.dirty, egui::Button::new("Descartar cambios"))
-                        .clicked()
-                    {
-                        discard_clicked = true;
-                    }
-                    ui.label(format!(
-                        "Archivo: {}",
-                        self.services.credit_lines_path.display()
-                    ));
-                });
             });
-        self.credit_line_editor.open = open;
+        if !open && self.credit_line_editor.dirty {
+            self.credit_line_editor.confirm_discard_open = true;
+            self.credit_line_editor.open = true;
+        } else {
+            self.credit_line_editor.open = open;
+        }
+
+        if self.credit_line_editor.confirm_discard_open {
+            let mut continue_editing = false;
+            let mut discard_and_close = false;
+            egui::Window::new("Cambios sin guardar")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label("Hay cambios de lineas que todavia no fueron guardados.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Seguir editando").clicked() {
+                            continue_editing = true;
+                        }
+                        if ui.button("Descartar y cerrar").clicked() {
+                            discard_and_close = true;
+                        }
+                    });
+                });
+            if continue_editing {
+                self.credit_line_editor.confirm_discard_open = false;
+            }
+            if discard_and_close {
+                self.credit_line_editor
+                    .reset(self.services.credit_lines_snapshot());
+                self.credit_line_editor.confirm_discard_open = false;
+                self.credit_line_editor.open = false;
+            }
+        }
 
         if refresh_clicked {
             self.spawn_credit_line_catalog_refresh();
@@ -654,6 +709,7 @@ impl TransferenciasApp {
             {
                 Ok(()) => {
                     self.credit_line_editor.dirty = false;
+                    self.credit_line_editor.confirm_discard_open = false;
                     self.credit_line_editor.message =
                         Some("Configuracion guardada y aplicada.".to_owned());
                     self.automatic_processing_enabled = false;
@@ -1181,6 +1237,7 @@ struct CreditLineEditor {
     draft: CreditLinesFile,
     dirty: bool,
     message: Option<String>,
+    confirm_discard_open: bool,
 }
 
 impl CreditLineEditor {
@@ -1193,6 +1250,7 @@ impl CreditLineEditor {
             draft,
             dirty: false,
             message: None,
+            confirm_discard_open: false,
         }
     }
 
@@ -1200,6 +1258,7 @@ impl CreditLineEditor {
         self.draft = draft;
         self.dirty = false;
         self.message = None;
+        self.confirm_discard_open = false;
     }
 }
 
