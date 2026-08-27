@@ -1,0 +1,11 @@
+# Datos reales de las corridas: CUILs de personas, no van al repo.
+corridas/
+
+# Credenciales. La app lee del env de Kestra, pero si alguien crea uno local
+# que no termine en el repo.
+.env
+
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
