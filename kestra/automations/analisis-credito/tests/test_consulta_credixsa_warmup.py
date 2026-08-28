@@ -164,7 +164,7 @@ class ConsultaCredixsaWarmupTests(unittest.TestCase):
 
         self.assertIn("type: io.kestra.plugin.core.execution.Fail", flow_source)
         self.assertIn("outputs.precalentar_cache.vars.has_errors", flow_source)
-        self.assertIn("(outputs.precalentar_cache.vars.fatal_error ?? true) == false", flow_source)
+        self.assertIn("not outputs.precalentar_cache.vars.fatal_error", flow_source)
         self.assertEqual(flow_source.count("CREDIX_WARMUP_MAX_OID_FAILURES:"), 2)
 
 
