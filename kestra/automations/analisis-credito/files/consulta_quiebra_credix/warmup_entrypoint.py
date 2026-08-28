@@ -37,6 +37,7 @@ DEFAULT_CORE_TIMEOUT_SECONDS = 60
 DEFAULT_CREDIX_TIMEOUT_SECONDS = 90
 DEFAULT_LOCAL_TZ = "America/Argentina/Buenos_Aires"
 MAX_CACHE_ENTRIES = 10
+DEFAULT_MAX_OID_FAILURES = 3
 
 
 @dataclass(frozen=True)
@@ -121,11 +122,13 @@ def run_warmup() -> dict[str, Any]:
         except Exception as exc:
             error_count += 1
             errors.append(f"{solicitud.oid}:{type(exc).__name__}:{str(exc)[:160]}")
+            failure_count = register_oid_failure(daily_index, solicitud.oid)
             _log_event(
                 "credixsa_warmup_candidate_error",
                 oid=solicitud.oid,
                 error_type=type(exc).__name__,
                 error=str(exc)[:300],
+                failure_count=failure_count,
             )
             continue
 
@@ -311,18 +314,24 @@ def select_candidates(
     processed_oids = set(str(value) for value in daily_index.get("processed_oids", []))
     processed_cuils = set(str(value) for value in daily_index.get("cuils", []))
     processed_names = set(str(value) for value in daily_index.get("name_keys", []))
+    max_failures = parse_int_env(
+        "CREDIX_WARMUP_MAX_OID_FAILURES", DEFAULT_MAX_OID_FAILURES
+    )
+    failed_oids = daily_index.get("failed_oids") or {}
     selected: list[CoreSolicitud] = []
     seen_lookup_keys: set[str] = set()
 
     for solicitud in sorted(solicitudes, key=lambda item: item.oid):
+        if solicitud.oid in processed_oids:
+            continue
+        if int(failed_oids.get(solicitud.oid, 0)) >= max_failures:
+            continue
+        if solicitud.cuil and solicitud.cuil in processed_cuils:
+            continue
         cuil_key = cache_key_for_cuil(solicitud.cuil)
         name_key = cache_key_for_name(solicitud.nombre)
         lookup_key = cuil_key or name_key
         if not lookup_key:
-            continue
-        if solicitud.oid in processed_oids:
-            continue
-        if solicitud.cuil and solicitud.cuil in processed_cuils:
             continue
         if name_key and name_key in processed_names:
             continue
@@ -365,6 +374,17 @@ def mark_daily_index(
     name_key = cache_key_for_name(output.get("nombre") or solicitud.nombre)
     if name_key:
         append_unique(daily_index.setdefault("name_keys", []), name_key)
+
+
+def register_oid_failure(daily_index: dict[str, Any], oid: str) -> int:
+    if not oid:
+        return 0
+    failures = daily_index.setdefault("failed_oids", {})
+    if not isinstance(failures, dict):
+        failures = {}
+        daily_index["failed_oids"] = failures
+    failures[oid] = int(failures.get(oid, 0)) + 1
+    return failures[oid]
 
 
 def register_cache_entry(
@@ -442,6 +462,7 @@ def decode_daily_index(raw_value: str, today: str) -> dict[str, Any]:
         "processed_oids": [],
         "cuils": [],
         "name_keys": [],
+        "failed_oids": {},
         "updated_at": datetime.now(ZoneInfo("UTC")).replace(microsecond=0).isoformat(),
     }
     raw_value = (raw_value or "").strip()
@@ -456,6 +477,8 @@ def decode_daily_index(raw_value: str, today: str) -> dict[str, Any]:
     payload.setdefault("processed_oids", [])
     payload.setdefault("cuils", [])
     payload.setdefault("name_keys", [])
+    if not isinstance(payload.get("failed_oids"), dict):
+        payload["failed_oids"] = {}
     payload["updated_at"] = base["updated_at"]
     return payload
 

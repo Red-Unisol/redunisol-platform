@@ -17,6 +17,7 @@ from consulta_quiebra_credix.warmup_entrypoint import (  # noqa: E402
     build_success_output,
     decode_daily_index,
     mark_daily_index,
+    register_oid_failure,
     select_candidates,
 )
 
@@ -49,6 +50,74 @@ class ConsultaCredixsaWarmupTests(unittest.TestCase):
         selected = select_candidates(solicitudes, index, 5)
 
         self.assertEqual([item.oid for item in selected], ["3"])
+
+    def test_register_oid_failure_cuenta_intentos(self) -> None:
+        index = {"date": "2026-05-13"}
+
+        self.assertEqual(register_oid_failure(index, "248745"), 1)
+        self.assertEqual(register_oid_failure(index, "248745"), 2)
+        self.assertEqual(register_oid_failure(index, "otro"), 1)
+        self.assertEqual(index["failed_oids"], {"248745": 2, "otro": 1})
+
+    def test_register_oid_failure_tolera_formato_viejo(self) -> None:
+        index = {"date": "2026-05-13", "failed_oids": ["248745"]}
+
+        self.assertEqual(register_oid_failure(index, "248745"), 1)
+        self.assertEqual(index["failed_oids"], {"248745": 1})
+
+    def test_select_candidates_descarta_oid_agotado(self) -> None:
+        solicitudes = [
+            CoreSolicitud("248745", "2026-05-13", "Nueva", "20111111112", "11111111", "Uno"),
+            CoreSolicitud("248746", "2026-05-13", "Nueva", "20222222223", "22222222", "Dos"),
+        ]
+        index = {
+            "date": "2026-05-13",
+            "processed_oids": [],
+            "cuils": [],
+            "name_keys": [],
+            "failed_oids": {"248745": 3},
+        }
+
+        selected = select_candidates(solicitudes, index, 5)
+
+        self.assertEqual([item.oid for item in selected], ["248746"])
+
+    def test_select_candidates_reintenta_debajo_del_tope(self) -> None:
+        solicitudes = [
+            CoreSolicitud("248745", "2026-05-13", "Nueva", "20111111112", "11111111", "Uno"),
+        ]
+        index = {
+            "date": "2026-05-13",
+            "processed_oids": [],
+            "cuils": [],
+            "name_keys": [],
+            "failed_oids": {"248745": 2},
+        }
+
+        selected = select_candidates(solicitudes, index, 5)
+
+        self.assertEqual([item.oid for item in selected], ["248745"])
+
+    def test_decode_daily_index_inicializa_failed_oids(self) -> None:
+        index = decode_daily_index("", "2026-05-13")
+
+        self.assertEqual(index["failed_oids"], {})
+
+    def test_decode_daily_index_normaliza_failed_oids_invalido(self) -> None:
+        index = decode_daily_index(
+            '{"date":"2026-05-13","failed_oids":["248745"]}',
+            "2026-05-13",
+        )
+
+        self.assertEqual(index["failed_oids"], {})
+
+        solicitudes = [
+            CoreSolicitud("248745", "2026-05-13", "Nueva", "20111111112", "11111111", "Uno"),
+        ]
+        self.assertEqual(
+            [item.oid for item in select_candidates(solicitudes, index, 5)],
+            ["248745"],
+        )
 
     def test_mark_daily_index_records_cuil_and_name_key(self) -> None:
         index = {"date": "2026-05-13", "processed_oids": [], "cuils": [], "name_keys": []}
@@ -96,6 +165,7 @@ class ConsultaCredixsaWarmupTests(unittest.TestCase):
         self.assertIn("type: io.kestra.plugin.core.execution.Fail", flow_source)
         self.assertIn("outputs.precalentar_cache.vars.has_errors", flow_source)
         self.assertIn("not outputs.precalentar_cache.vars.fatal_error", flow_source)
+        self.assertEqual(flow_source.count("CREDIX_WARMUP_MAX_OID_FAILURES:"), 2)
 
 
 if __name__ == "__main__":
