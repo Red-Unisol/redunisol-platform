@@ -329,6 +329,7 @@ function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
     isSystemAdmin: false,
     lastName: "Uno",
     legacyUser: "VUSER",
+    recibeAsignacionAutomatica: false,
     state: 1,
     workflowOwnerId: null,
     ...overrides,

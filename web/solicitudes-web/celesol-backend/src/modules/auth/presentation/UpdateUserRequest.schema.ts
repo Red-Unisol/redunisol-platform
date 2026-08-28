@@ -15,6 +15,7 @@ export const updateUserBodySchema = z
     isSystemAdmin: z.boolean().optional(),
     lastName: z.string().trim().min(1).optional(),
     legacyUser: z.string().trim().min(1).optional(),
+    recibeAsignacionAutomatica: z.boolean().optional(),
     state: z.union([z.literal(0), z.literal(1)]).optional(),
   })
   .strict()
@@ -25,6 +26,7 @@ export const updateUserBodySchema = z
       body.isSystemAdmin !== undefined ||
       body.lastName !== undefined ||
       body.legacyUser !== undefined ||
+      body.recibeAsignacionAutomatica !== undefined ||
       body.state !== undefined,
     {
       message: "At least one field is required.",
