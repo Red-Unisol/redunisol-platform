@@ -57,7 +57,12 @@ const transitionInclude = {
 
 type WorkflowExecutor = Pick<
   DbClient,
-  "solicitud" | "solicitudEstadoHistorial" | "workflowTransition"
+  | "solicitud"
+  | "solicitudEstadoHistorial"
+  | "workflowTransition"
+  | "user"
+  | "workflowAssignmentCursor"
+  | "$queryRaw"
 >;
 
 type SolicitudWithOwner = Prisma.SolicitudGetPayload<{
@@ -125,6 +130,7 @@ export class SolicitudWorkflowPrismaDatasource {
             requiresComment: transition.requiresComment,
             transitionId: transition.id,
             toStateCode: transition.toState.code,
+            toStateOwnerCode: transition.toState.owner.code,
             toStateId: transition.toStateId,
             toStateIsActive: transition.toState.isActive,
           }
@@ -147,7 +153,11 @@ export class SolicitudWorkflowPrismaDatasource {
     });
 
     let currentStepIndex: number | null = null;
-    let currentStepKind: "domain-transition" | "technical-transition" | null = null;
+    let currentStepKind:
+      | "domain-transition"
+      | "technical-transition"
+      | "auto-assignment"
+      | null = null;
     let currentStepActionCode: string | null = null;
 
     try {
@@ -180,6 +190,37 @@ export class SolicitudWorkflowPrismaDatasource {
           currentStepIndex = stepIndex;
           currentStepKind = step.kind;
           currentStepActionCode = step.actionCode;
+
+          // El paso de reparto no es una transicion: no mueve el estado ni
+          // valida from/to. Se resuelve aparte y sigue con el proximo step.
+          if (step.kind === "auto-assignment") {
+            this.logWorkflowEvent("workflow_plan_step_started", {
+              stepActionCode: step.actionCode,
+              stepIndex,
+              stepKind: step.kind,
+              solicitudId: input.plan.command.solicitudId,
+            });
+
+            const assigned = await this.applyAutoAssignment({
+              actorUserId: input.plan.command.changedBy,
+              executor,
+              solicitudId: input.plan.command.solicitudId,
+            });
+
+            if (assigned) {
+              updatedSolicitud = assigned;
+            }
+
+            this.logWorkflowEvent("workflow_plan_step_completed", {
+              assignedToUserId: assigned?.assignedToUserId ?? null,
+              stepActionCode: step.actionCode,
+              stepIndex,
+              stepKind: step.kind,
+              solicitudId: input.plan.command.solicitudId,
+            });
+
+            continue;
+          }
 
           this.logWorkflowEvent("workflow_plan_step_started", {
             expectedFromStateId: step.fromStateId,
@@ -333,6 +374,146 @@ export class SolicitudWorkflowPrismaDatasource {
 
   private shouldAutoChainMotorTransition(transition: WorkflowTransitionWithToState) {
     return transition.toState.code === "Motor";
+  }
+
+  // Reparto por turno (round-robin) al entrar a un owner que asigna solo.
+  // Best-effort a proposito: si no hay candidatos habilitados o falta la fila
+  // de cursor, la solicitud sigue su curso sin asignar y queda en el tablero
+  // de "requieren ejecutivo". Un problema de reparto no debe abortar el envio
+  // del vendedor, que es quien menos control tiene sobre esto.
+  private async applyAutoAssignment(input: {
+    actorUserId: string;
+    executor: WorkflowExecutor;
+    solicitudId: string;
+  }) {
+    const solicitud = await input.executor.solicitud.findUnique({
+      where: {
+        id: input.solicitudId,
+      },
+      include: solicitudWithOwnerInclude,
+    });
+
+    // Reenvio desde Revisar o PreAprobada: si ya tiene ejecutivo se respeta.
+    // El analista que la vio antes la sigue viendo.
+    if (!solicitud || solicitud.assignedToUserId) {
+      return null;
+    }
+
+    // El owner sale del estado en que la solicitud quedo despues de los steps
+    // anteriores, no de lo que declaro el plan: si el estado final cambia, el
+    // reparto sigue al estado real.
+    const ownerId = solicitud.estadoActual.ownerId;
+
+    if (!ownerId) {
+      return null;
+    }
+
+    // Bloqueo de la fila del cursor. Serializa dos envios simultaneos del
+    // mismo owner: el segundo espera el commit del primero y lee el turno ya
+    // avanzado, en vez de repetir candidato. La fila se siembra por migracion.
+    const cursorRows = await input.executor.$queryRaw<
+      Array<{ last_assigned_user_id: string | null }>
+    >`
+      SELECT "last_assigned_user_id"
+      FROM "workflow_assignment_cursors"
+      WHERE "workflow_owner_id" = ${ownerId}::uuid
+      FOR UPDATE
+    `;
+
+    if (cursorRows.length === 0) {
+      return null;
+    }
+
+    const lastAssignedUserId = cursorRows[0]?.last_assigned_user_id ?? null;
+    const candidatos = await input.executor.user.findMany({
+      where: {
+        deletedAt: null,
+        recibeAsignacionAutomatica: true,
+        state: 1, // USER_STATE.ACTIVE
+        workflowOwnerId: ownerId,
+      },
+      select: {
+        firstName: true,
+        id: true,
+        lastName: true,
+        legacyUser: true,
+      },
+      orderBy: {
+        id: "asc",
+      },
+    });
+
+    if (candidatos.length === 0) {
+      return null;
+    }
+
+    // El turno se guarda por id, no por posicion: si el ultimo asignado se dio
+    // de baja o entro alguien nuevo, la comparacion ">" acomoda el ciclo sola,
+    // sin caso especial. Si no hay ninguno mayor, el turno dio la vuelta.
+    const siguiente =
+      (lastAssignedUserId
+        ? candidatos.find((candidato) => candidato.id > lastAssignedUserId)
+        : undefined) ?? candidatos[0];
+
+    if (!siguiente) {
+      return null;
+    }
+
+    const ejecutivoSolicitud = buildExecutiveName(siguiente);
+    const updatedSolicitud = await input.executor.solicitud.update({
+      where: {
+        id: input.solicitudId,
+      },
+      data: {
+        assignedToUserId: siguiente.id,
+        ...(ejecutivoSolicitud ? { ejecutivoSolicitud } : {}),
+      },
+      include: solicitudCoreInclude,
+    });
+
+    // Mismo formato que la asignacion manual (ASSIGNMENT_SET), con su propio
+    // actionCode para poder distinguir en el historial que fue automatica.
+    await input.executor.solicitudEstadoHistorial.create({
+      data: {
+        actionCode: "ASSIGNMENT_AUTO",
+        actionLabel: "Asignación automática",
+        changedBy: input.actorUserId,
+        comentario: null,
+        estadoAnteriorId: solicitud.estadoActualId,
+        estadoNuevoId: solicitud.estadoActualId,
+        fromOwnerCodeSnapshot: solicitud.estadoActual.owner?.code ?? null,
+        fromOwnerIdSnapshot: solicitud.estadoActual.ownerId ?? null,
+        fromOwnerNameSnapshot: solicitud.estadoActual.owner?.name ?? null,
+        fromStateCodeSnapshot: solicitud.estadoActual.code,
+        fromStateNameSnapshot: solicitud.estadoActual.name,
+        metadata: {
+          assignedToUserId: siguiente.id,
+          event: "ASSIGNMENT_AUTO",
+          previousAssignedUserId: lastAssignedUserId,
+        },
+        motivo: "ASSIGNMENT_AUTO",
+        requiresComment: false,
+        saveAndExit: false,
+        solicitudId: solicitud.id,
+        toOwnerCodeSnapshot: solicitud.estadoActual.owner?.code ?? null,
+        toOwnerIdSnapshot: solicitud.estadoActual.ownerId ?? null,
+        toOwnerNameSnapshot: solicitud.estadoActual.owner?.name ?? null,
+        toStateCodeSnapshot: solicitud.estadoActual.code,
+        toStateNameSnapshot: solicitud.estadoActual.name,
+        transitionId: null,
+      },
+    });
+
+    await input.executor.workflowAssignmentCursor.update({
+      where: {
+        workflowOwnerId: ownerId,
+      },
+      data: {
+        lastAssignedUserId: siguiente.id,
+      },
+    });
+
+    return updatedSolicitud;
   }
 
   private async applyTransition(input: {
@@ -564,8 +745,18 @@ function composeWorkflowHistoryComment(input: {
   return defaultComment ?? manualComment ?? null;
 }
 
+// Nombre visible del ejecutivo. Duplica el criterio de
+// SolicitudesCorePrismaDatasource.buildExecutiveName para no acoplar los dos
+// datasources; si aparece un tercer uso, conviene extraerlo a un modulo comun.
+function buildExecutiveName(user: {
+  firstName: string | null;
+  lastName: string | null;
+  legacyUser: string;
+}) {
+  const fullName = [user.firstName?.trim(), user.lastName?.trim()]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
-
-
-
-
+  return fullName || user.legacyUser.trim() || null;
+}
