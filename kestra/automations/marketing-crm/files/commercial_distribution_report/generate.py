@@ -29,6 +29,7 @@ FLOW_IDS = (
 ARGENTINA_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 DEFAULT_AUDIT_FROM = "2026-08-11T13:00:00-03:00"
 ASSIGNMENT_STRATEGY_LABELS = {
+    "sticky_chat_owner": "Continuidad con el operador actual del chat",
     "contact_history": "Continuidad con vendedor anterior del contacto",
     "legacy_contact_history": "Continuidad con vendedor histórico del contacto",
     "round_robin": "Siguiente vendedor del round-robin",
@@ -166,11 +167,13 @@ CHAT_TRANSFER_STATUS_LABELS = {
     "no_chats_found": "No se encontraron chats asociados",
     "no_transferable_session": "Chats encontrados sin sesión transferible",
     "not_evaluated": "No aplica: no hubo transferencia de chat",
+    "preserved": "Se conservó el operador actual del chat",
 }
 CHAT_SKIP_REASON_LABELS = {
     "inspection_error": "no se pudo inspeccionar el chat",
     "invalid_dialog": "Bitrix devolvió un diálogo inválido",
     "no_current_transferable_session": "sin sesión actual transferible",
+    "owner_preserved": "se conservó el operador actual",
 }
 
 

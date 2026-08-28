@@ -27,23 +27,69 @@ def create_lead(
     logger: Logger,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
-    fields = {
+    fields = _submission_lead_fields(client, config, submission, contact_id, logger)
+    fields.update(
+        {
+            "STATUS_ID": config.lead_statuses.new,
+            config.fields.lead_processing_policy: _resolve_enum_id(
+                client,
+                config.fields.lead_processing_policy,
+                config.processing_policy.skip,
+            ),
+            config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(
+                client,
+                config,
+                determine_commercial_owner(submission),
+            ),
+        }
+    )
+
+    lead_id = client.call(
+        "crm.lead.add",
+        {
+            "fields": fields
+        },
+    )
+    return int(lead_id)
+
+
+def update_lead_from_submission(
+    client: BitrixClient,
+    config: AppConfig,
+    submission: NormalizedInput,
+    *,
+    lead_id: int,
+    contact_id: int,
+    logger: Logger,
+) -> None:
+    logger.info(f"Actualizando lead canonico {lead_id} desde una nueva carga.")
+    fields = _submission_lead_fields(client, config, submission, contact_id, logger)
+    # La atribucion inicial no se pisa: el nuevo origen queda en el timeline del deal.
+    for field_name in (
+        config.fields.lead_source,
+        config.fields.lead_utm_source,
+        config.fields.lead_utm_medium,
+        config.fields.lead_utm_campaign,
+        config.fields.lead_utm_term,
+        config.fields.lead_utm_content,
+    ):
+        fields.pop(field_name, None)
+    client.call("crm.lead.update", {"id": lead_id, "fields": fields})
+
+
+def _submission_lead_fields(
+    client: BitrixClient,
+    config: AppConfig,
+    submission: NormalizedInput,
+    contact_id: int,
+    logger: Logger,
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {
         "TITLE": prequalification_title(submission),
         "NAME": submission.full_name,
-        "STATUS_ID": config.lead_statuses.new,
         "EMAIL": [{"VALUE": submission.email, "VALUE_TYPE": "WORK"}],
         "PHONE": [{"VALUE": submission.whatsapp, "VALUE_TYPE": "WORK"}],
         "CONTACT_ID": contact_id,
-        config.fields.lead_processing_policy: _resolve_enum_id(
-            client,
-            config.fields.lead_processing_policy,
-            config.processing_policy.skip,
-        ),
-        config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(
-            client,
-            config,
-            determine_commercial_owner(submission),
-        ),
         config.fields.lead_cuil: submission.cuil_digits,
         config.fields.lead_employment_status: submission.employment_status.bitrix_id,
         config.fields.lead_payment_bank: [submission.payment_bank.bitrix_id],
@@ -59,13 +105,7 @@ def create_lead(
             timeout_seconds=config.timeout_seconds,
         )
 
-    lead_id = client.call(
-        "crm.lead.add",
-        {
-            "fields": fields
-        },
-    )
-    return int(lead_id)
+    return fields
 
 
 def get_lead(

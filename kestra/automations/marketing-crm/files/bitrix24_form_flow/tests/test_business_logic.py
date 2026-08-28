@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -55,7 +55,11 @@ from bitrix24_form_flow.form_processor.credixsa_employer_service import (
     select_next_lead_for_credixsa_employer_backfill,
     update_lead_with_credixsa_output,
 )
-from bitrix24_form_flow.form_processor.deal_service import ensure_deal_timeline_comment
+from bitrix24_form_flow.form_processor.deal_service import (
+    assign_open_line_chats_to_user,
+    ensure_deal_timeline_comment,
+    resolve_round_robin_assignee,
+)
 from bitrix24_form_flow.form_processor.input_parser import (
     normalize_business_input,
     normalize_prequalification_input,
@@ -126,6 +130,7 @@ class FakeBitrixClient:
         self.online_user_ids: set[int] = {68579, 10451, 29, 90231, 71159, 113457, 113455}
         self.open_line_chats: dict[tuple[str, int], list[int]] = {}
         self.open_line_dialogs: dict[int, dict] = {}
+        self.open_line_history: dict[int, list[dict]] = {}
         self.chat_transfers: list[dict] = []
         self.notifications: list[dict] = []
 
@@ -205,6 +210,16 @@ class FakeBitrixClient:
         if method == "imopenlines.operator.transfer":
             self.chat_transfers.append(dict(payload))
             return True
+        if method == "imopenlines.session.history.get":
+            session_id = int(payload["SESSION_ID"])
+            messages = self.open_line_history.get(session_id, [])
+            return {
+                "sessionId": session_id,
+                "message": {
+                    str(index + 1): dict(message)
+                    for index, message in enumerate(messages)
+                },
+            }
         if method == "im.notify.system.add":
             self.notifications.append(dict(payload))
             return len(self.notifications)
@@ -461,6 +476,10 @@ class FakeBitrixClient:
                     return False
                 continue
             field_name = raw_field[1:] if raw_field.startswith("=") else raw_field
+            if isinstance(expected, bool):
+                if bool(deal.get(field_name)) is not expected:
+                    return False
+                continue
             if str(deal.get(field_name) or "") != str(expected):
                 return False
         return True
@@ -572,6 +591,9 @@ class BusinessLogicTests(unittest.TestCase):
             (68579, 10451, 29, 90231, 71159, 113457, 113455),
         )
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
+        self.assertTrue(config.deal.reuse_active_deal)
+        self.assertTrue(config.deal.sticky_chat_ownership)
+        self.assertEqual(config.deal.chat_handoff_sla_minutes, 60)
         self.assertEqual(config.lead_statuses.new, "UC_5N2OEO")
         self.assertEqual(config.lead_statuses.preclassification, "NEW")
         self.assertEqual(config.lead_statuses.external_referral, "13")
@@ -1431,6 +1453,7 @@ class BusinessLogicTests(unittest.TestCase):
             [
                 "crm.contact.list",
                 "crm.contact.add",
+                "crm.item.list",
                 "crm.lead.fields",
                 "crm.lead.fields",
                 "crm.lead.add",
@@ -1458,7 +1481,141 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(lead_add["fields"]["UTM_CAMPAIGN"], "policias-abril")
         self.assertEqual(lead_add["fields"]["UTM_TERM"], "prestamo policia cordoba")
         self.assertEqual(lead_add["fields"]["UTM_CONTENT"], "anuncio-a")
-        self.assertNotIn("UF_CRM_BCRA_STATUS", client.leads[202])
+
+    def test_ingest_reuses_active_deal_for_same_cuil_and_bucket(self) -> None:
+        client = FakeBitrixClient()
+        client.contacts[101] = {
+            "ID": "101",
+            "NAME": "Monica",
+            "LAST_NAME": "Palacios",
+            "UF_CONTACT_CUIL": "20876543219",
+            "EMAIL": [],
+            "PHONE": [],
+        }
+        client.leads[303] = {
+            "ID": "303",
+            "TITLE": "Monica Palacios - Catamarca",
+            "STATUS_ID": "CONVERTED",
+            "ASSIGNED_BY_ID": "90231",
+            "CONTACT_ID": "101",
+            "UF_CRM_1693840106704": "20876543219",
+            "UF_CRM_1714071903": "1239",
+            "UF_CRM_LEAD_1711458190312": ["439"],
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1722365051": "2423",
+        }
+        client.deals[901] = {
+            "id": 901,
+            "leadId": 303,
+            "contactId": 101,
+            "assignedById": 90231,
+            "categoryId": 1,
+            "stageId": "C1:EXECUTING",
+            "closed": False,
+            "createdTime": "2026-08-27T16:00:00-03:00",
+            "ufCrmRouteBucket": "catamarca_general",
+            "ufCrm_64FF4F9B5C195": "20876543219",
+            "sourceId": "CALL",
+        }
+
+        result = ingest_submission(
+            {
+                "full_name": "Monica Palacios",
+                "email": "monica@example.com",
+                "whatsapp": "3511234567",
+                "cuil": "20-87654321-9",
+                "province": "Catamarca",
+                "employment_status": "Empleado Publico Provincial",
+                "payment_bank": "Banco de la Nacion Argentina",
+                "lead_source": "Facebook",
+                "utm_campaign": "segunda-carga",
+            },
+            env=self.env,
+            bitrix_client=client,
+            logger=SilentLogger(),
+        )
+
+        methods = [method for method, _payload in client.calls]
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "reused")
+        self.assertEqual(result["application_resolution"], "reused")
+        self.assertEqual(result["lead_id"], 303)
+        self.assertEqual(result["deal_id"], 901)
+        self.assertNotIn("crm.lead.add", methods)
+        self.assertNotIn("crm.item.add", methods)
+        self.assertNotIn("user.get", methods)
+        self.assertNotIn("imopenlines.operator.transfer", methods)
+        self.assertEqual(client.deals[901]["assignedById"], 90231)
+        self.assertEqual(client.deals[901]["stageId"], "C1:EXECUTING")
+        self.assertEqual(client.leads[303]["UF_CRM_1722365051"], "2423")
+        comments = list(client.timeline_comments.values())
+        self.assertEqual(len(comments), 1)
+        self.assertEqual(comments[0]["ENTITY_TYPE"], "deal")
+        self.assertIn("Fuente: Facebook", comments[0]["COMMENT"])
+
+    def test_sticky_chat_preserves_offline_owner_until_sla_expires(self) -> None:
+        client = FakeBitrixClient()
+        config = load_config(self.env)
+        now = datetime(2026, 8, 28, 10, 0, tzinfo=timezone.utc)
+        client.online_user_ids = {10451}
+        client.open_line_chats[("contact", 101)] = [777]
+        client.open_line_dialogs[777] = {
+            "id": 777,
+            "entity_id": "whatsappbyedna|1|contact-777|guest",
+            "entity_data_1": "Y|CONTACT|101|N|N|1777|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+            "owner": 90231,
+        }
+        client.open_line_history[1777] = [
+            {"date": (now - timedelta(minutes=10)).isoformat(), "text": "Hola"}
+        ]
+
+        assignment = resolve_round_robin_assignee(
+            client,
+            config,
+            contact_id=101,
+            lead_id=303,
+            deal_id=901,
+            bucket_key="catamarca_general",
+            bucket_field=config.deal.routing_bucket_field,
+            pool=config.deal.round_robin_user_ids,
+            legacy_province_label="Catamarca",
+            logger=SilentLogger(),
+            now=now,
+        )
+        transfer = assign_open_line_chats_to_user(
+            client,
+            lead_id=303,
+            contact_id=101,
+            deal_id=901,
+            assigned_by_id=assignment.assigned_by_id,
+            distributable_open_line_ids=(1,),
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(assignment.assigned_by_id, 90231)
+        self.assertEqual(assignment.strategy, "sticky_chat_owner")
+        self.assertEqual(transfer.status, "preserved")
+        self.assertEqual(client.chat_transfers, [])
+
+        client.open_line_history[1777] = [
+            {"date": (now - timedelta(minutes=61)).isoformat(), "text": "Hola"}
+        ]
+        reassignment = resolve_round_robin_assignee(
+            client,
+            config,
+            contact_id=101,
+            lead_id=303,
+            deal_id=901,
+            bucket_key="catamarca_general",
+            bucket_field=config.deal.routing_bucket_field,
+            pool=config.deal.round_robin_user_ids,
+            legacy_province_label="Catamarca",
+            logger=SilentLogger(),
+            now=now,
+        )
+        self.assertEqual(reassignment.assigned_by_id, 10451)
+        self.assertNotEqual(reassignment.strategy, "sticky_chat_owner")
 
     def test_process_submission_updates_status_for_catamarca_owner_kestra(self) -> None:
         client = FakeBitrixClient()
@@ -3999,7 +4156,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["bcra_refresh_outcome"], "reused_fresh")
         self.assertEqual(
             result["trace_schema_version"],
-            "deal-commercial-distribution-trace.v4",
+            "deal-commercial-distribution-trace.v5",
         )
         self.assertEqual(
             result["event_type"],

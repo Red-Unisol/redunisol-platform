@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import unicodedata
 from typing import Any
 
@@ -91,6 +92,11 @@ class ChatTransferResult:
             return "partially_transferred"
         if self.transferred_chat_ids:
             return "transferred"
+        if self.skipped_chats and all(
+            reason == "owner_preserved"
+            for _chat_id, reason in self.skipped_chats
+        ):
+            return "preserved"
         if self.skipped_chats and all(
             reason == "non_distributable_open_line"
             for _chat_id, reason in self.skipped_chats
@@ -212,22 +218,115 @@ def find_deal_by_lead(
     return deals[0] if deals else None
 
 
+def find_active_deal_for_identity(
+    client: BitrixClient,
+    config: AppConfig,
+    *,
+    cuil: str,
+    contact_id: int,
+    bucket_key: str,
+    logger: Logger,
+) -> dict[str, Any] | None:
+    """Return the oldest active deal for the identity and commercial bucket."""
+    if not cuil or not bucket_key:
+        return None
+
+    select = [
+        "id",
+        "leadId",
+        "contactId",
+        "assignedById",
+        "stageId",
+        "createdTime",
+        "closed",
+        config.deal.routing_bucket_field,
+    ]
+    base_filter: dict[str, Any] = {
+        "=categoryId": config.deal.category_id,
+        "=closed": False,
+        f"={config.deal.routing_bucket_field}": bucket_key,
+    }
+    # El contacto fue resuelto por CUIL durante el intake. Se filtra por su ID porque
+    # Bitrix no permite filtrar de forma estable el campo legacy numérico de CUIL del deal.
+    deals = _list_deals(
+        client,
+        filter_={**base_filter, "=contactId": contact_id},
+        order={"createdTime": "ASC", "id": "ASC"},
+        select=select,
+        max_items=1,
+    )
+    for deal in deals:
+        if _is_positive_int(deal.get("leadId")):
+            logger.info(
+                f"Negociacion activa {deal.get('id')} reutilizable para CUIL {cuil} "
+                f"y bucket {bucket_key}."
+            )
+            return deal
+    return None
+
+
+def refresh_reused_deal_from_lead(
+    client: BitrixClient,
+    config: AppConfig,
+    lead: dict[str, Any],
+    *,
+    lead_id: int,
+    deal_id: int,
+    contact_id: int,
+    logger: Logger,
+) -> None:
+    """Refresh applicant data without touching stage, owner or first-touch source."""
+    fields: dict[str, Any] = {
+        "title": _deal_title(lead, lead_id),
+        "contactId": contact_id,
+    }
+    _copy_custom_lead_fields_to_deal(client, config, lead, fields)
+    _copy_receipt_file_to_deal(client, config, lead, fields, lead_id=lead_id, logger=logger)
+    client.call(
+        "crm.item.update",
+        {"entityTypeId": DEAL_ENTITY_TYPE_ID, "id": deal_id, "fields": fields},
+    )
+    logger.info(f"Negociacion canonica {deal_id} actualizada sin redistribucion.")
+
+
 def resolve_round_robin_assignee(
     client: BitrixClient,
     config: AppConfig,
     *,
     contact_id: int | None,
     lead_id: int,
+    deal_id: int,
     bucket_key: str,
     bucket_field: str,
     pool: tuple[int, ...],
     legacy_province_label: str | None,
     logger: Logger,
+    now: datetime | None = None,
 ) -> AssignmentResolution:
     if not pool:
         raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
 
     online_pool = _online_pool_users(client, pool=pool, logger=logger)
+    if config.deal.sticky_chat_ownership:
+        sticky_owner = _sticky_open_line_owner(
+            client,
+            lead_id=lead_id,
+            contact_id=contact_id,
+            deal_id=deal_id,
+            pool=pool,
+            online_pool=online_pool,
+            distributable_open_line_ids=config.deal.distributable_open_line_ids,
+            sla_minutes=config.deal.chat_handoff_sla_minutes,
+            logger=logger,
+            now=now,
+        )
+        if sticky_owner is not None:
+            return AssignmentResolution(
+                assigned_by_id=sticky_owner,
+                strategy="sticky_chat_owner",
+                configured_pool=pool,
+                online_pool=online_pool,
+            )
     if not online_pool:
         raise NoOnlineSellersError(pool)
 
@@ -483,25 +582,12 @@ def assign_open_line_chats_to_user(
     distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
 ) -> ChatTransferResult:
-    chat_ids: list[int] = []
-    for entity_type, entity_id in (
-        ("lead", lead_id),
-        ("contact", contact_id),
-        ("deal", deal_id),
-    ):
-        if entity_id is None:
-            continue
-        chats = client.call(
-            "imopenlines.crm.chat.get",
-            {"CRM_ENTITY_TYPE": entity_type, "CRM_ENTITY": entity_id, "ACTIVE_ONLY": "N"},
-        )
-        if not isinstance(chats, list):
-            raise RuntimeError("imopenlines.crm.chat.get devolvio un payload invalido.")
-        for chat in chats:
-            if isinstance(chat, dict) and _is_positive_int(chat.get("CHAT_ID") or chat.get("chat_id")):
-                chat_ids.append(int(str(chat.get("CHAT_ID") or chat.get("chat_id"))))
-
-    found_chat_ids = tuple(dict.fromkeys(chat_ids))
+    found_chat_ids = _open_line_chat_ids(
+        client,
+        lead_id=lead_id,
+        contact_id=contact_id,
+        deal_id=deal_id,
+    )
     transferred_chat_ids: list[int] = []
     skipped_chats: list[tuple[int, str]] = []
     for chat_id in found_chat_ids:
@@ -513,6 +599,18 @@ def assign_open_line_chats_to_user(
         )
         if not transferable:
             skipped_chats.append((chat_id, reason))
+            continue
+        dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        current_owner = _optional_positive_int(
+            dialog.get("owner") or dialog.get("OWNER")
+            if isinstance(dialog, dict)
+            else None
+        )
+        if current_owner == assigned_by_id:
+            skipped_chats.append((chat_id, "owner_preserved"))
+            logger.info(
+                f"Chat Open Lines {chat_id} conserva al vendedor {assigned_by_id}."
+            )
             continue
         client.call(
             "imopenlines.operator.transfer",
@@ -566,6 +664,126 @@ def _open_line_session_transferability(
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
         return False, "no_current_transferable_session"
     return True, "transferable"
+
+
+def _sticky_open_line_owner(
+    client: BitrixClient,
+    *,
+    lead_id: int,
+    contact_id: int | None,
+    deal_id: int,
+    pool: tuple[int, ...],
+    online_pool: tuple[int, ...],
+    distributable_open_line_ids: tuple[int, ...],
+    sla_minutes: int,
+    logger: Logger,
+    now: datetime | None,
+) -> int | None:
+    pool_set = set(pool)
+    online_set = set(online_pool)
+    effective_now = now or datetime.now(timezone.utc)
+    for chat_id in _open_line_chat_ids(
+        client,
+        lead_id=lead_id,
+        contact_id=contact_id,
+        deal_id=deal_id,
+    ):
+        transferable, _reason = _open_line_session_transferability(
+            client,
+            chat_id=chat_id,
+            distributable_open_line_ids=distributable_open_line_ids,
+            logger=logger,
+        )
+        if not transferable:
+            continue
+        dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        if not isinstance(dialog, dict):
+            continue
+        owner = _optional_positive_int(dialog.get("owner") or dialog.get("OWNER"))
+        if owner is None or owner not in pool_set:
+            continue
+        if owner in online_set:
+            logger.info(f"Chat {chat_id} conserva vendedor online {owner}.")
+            return owner
+        if sla_minutes <= 0:
+            continue
+        session_id = _dialog_session_id(dialog)
+        last_message_at = _last_session_message_at(client, session_id=session_id)
+        if last_message_at is None:
+            continue
+        comparable_now = effective_now.astimezone(last_message_at.tzinfo or timezone.utc)
+        age_minutes = max((comparable_now - last_message_at).total_seconds() / 60, 0)
+        if age_minutes <= sla_minutes:
+            logger.info(
+                f"Chat {chat_id} conserva vendedor offline {owner}: "
+                f"SLA vigente ({age_minutes:.1f}/{sla_minutes} minutos)."
+            )
+            return owner
+    return None
+
+
+def _open_line_chat_ids(
+    client: BitrixClient,
+    *,
+    lead_id: int,
+    contact_id: int | None,
+    deal_id: int,
+) -> tuple[int, ...]:
+    chat_ids: list[int] = []
+    for entity_type, entity_id in (
+        ("lead", lead_id),
+        ("contact", contact_id),
+        ("deal", deal_id),
+    ):
+        if entity_id is None:
+            continue
+        chats = client.call(
+            "imopenlines.crm.chat.get",
+            {"CRM_ENTITY_TYPE": entity_type, "CRM_ENTITY": entity_id, "ACTIVE_ONLY": "N"},
+        )
+        if not isinstance(chats, list):
+            raise RuntimeError("imopenlines.crm.chat.get devolvio un payload invalido.")
+        for chat in chats:
+            chat_id = (
+                chat.get("CHAT_ID") or chat.get("chat_id")
+                if isinstance(chat, dict)
+                else None
+            )
+            if _is_positive_int(chat_id):
+                chat_ids.append(int(str(chat_id)))
+    return tuple(dict.fromkeys(chat_ids))
+
+
+def _dialog_session_id(dialog: dict[str, Any]) -> int | None:
+    entity_data = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "")
+    parts = entity_data.split("|")
+    return _optional_positive_int(parts[5] if len(parts) > 5 else None)
+
+
+def _last_session_message_at(
+    client: BitrixClient,
+    *,
+    session_id: int | None,
+) -> datetime | None:
+    if session_id is None:
+        return None
+    history = client.call("imopenlines.session.history.get", {"SESSION_ID": session_id})
+    messages = history.get("message") if isinstance(history, dict) else None
+    if not isinstance(messages, dict):
+        return None
+    dates: list[datetime] = []
+    for message in messages.values():
+        raw = message.get("date") if isinstance(message, dict) else None
+        if not raw:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        dates.append(parsed)
+    return max(dates) if dates else None
 
 
 def _open_line_id(dialog: dict[str, Any]) -> int | None:
@@ -1116,3 +1334,7 @@ def _is_positive_int(raw_value: Any) -> bool:
         return int(str(raw_value)) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _optional_positive_int(raw_value: Any) -> int | None:
+    return int(str(raw_value)) if _is_positive_int(raw_value) else None

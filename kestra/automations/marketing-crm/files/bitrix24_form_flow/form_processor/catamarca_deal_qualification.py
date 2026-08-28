@@ -472,11 +472,13 @@ def qualify_catamarca_deal(
             config,
             contact_id=contact_id,
             lead_id=lead_id,
+            deal_id=deal_id_int,
             bucket_key=bucket.key,
             bucket_field=config.deal.routing_bucket_field,
             pool=bucket.seller_ids,
             legacy_province_label=bucket.legacy_province_label,
             logger=active_logger,
+            now=processed_at,
         )
     except NoOnlineSellersError as exc:
         can_enqueue = (
@@ -821,11 +823,13 @@ def _retry_queued_deal(
             config,
             contact_id=contact_id,
             lead_id=lead_id,
+            deal_id=deal_id,
             bucket_key=bucket.key,
             bucket_field=config.deal.routing_bucket_field,
             pool=bucket.seller_ids,
             legacy_province_label=bucket.legacy_province_label,
             logger=logger,
+            now=processed_at,
         )
     except NoOnlineSellersError as exc:
         return _queue_context_result(

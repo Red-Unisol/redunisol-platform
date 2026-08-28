@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-TRACE_SCHEMA_VERSION = "deal-commercial-distribution-trace.v4"
+TRACE_SCHEMA_VERSION = "deal-commercial-distribution-trace.v5"
 
 
 REASON_LABELS = {

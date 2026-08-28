@@ -32,6 +32,10 @@ si no tenía una sesión transferible o si Bitrix no permitió inspeccionarlo. L
 anteriores mantienen el contador disponible y el Excel los identifica como trazabilidad
 histórica sin detalle, sin inferir una causa que no fue registrada.
 
+Desde `deal-commercial-distribution-trace.v5`, `assignment_strategy=sticky_chat_owner`
+y `chat_transfer_status=preserved` identifican los casos donde se conserva al operador
+del chat en vez de ejecutar una nueva transferencia.
+
 Los chats se transfieren únicamente cuando pertenecen a una línea de Open Lines
 incluida en `BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`. La configuración usa una
 allowlist y omite de forma segura cualquier línea desconocida, mal formada o no
