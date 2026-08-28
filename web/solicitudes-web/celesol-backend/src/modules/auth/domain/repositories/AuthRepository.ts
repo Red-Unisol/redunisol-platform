@@ -12,6 +12,7 @@ export type AuthRepository = {
     isSystemAdmin?: boolean;
     lastName?: string;
     legacyUser?: string;
+    recibeAsignacionAutomatica?: boolean;
     state?: number;
   }): Promise<AuthUser>;
   updatePasswordAndRevokeSessions(input: {

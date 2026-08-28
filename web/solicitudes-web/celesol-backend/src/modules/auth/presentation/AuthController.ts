@@ -432,6 +432,7 @@ export class AuthController {
         isSystemAdmin: body.isSystemAdmin,
         lastName: body.lastName,
         legacyUser: body.legacyUser,
+        recibeAsignacionAutomatica: body.recibeAsignacionAutomatica,
         state: body.state,
         userId: params.id,
       });
