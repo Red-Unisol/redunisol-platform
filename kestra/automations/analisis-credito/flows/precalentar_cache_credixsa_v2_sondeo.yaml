@@ -36,6 +36,7 @@ tasks:
     env:
       CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | json }}"
       CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
+      CREDIX_WARMUP_MAX_OID_FAILURES: "{{ envs.credixsa_warmup_max_oid_failures ?? '3' }}"
       VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
@@ -67,6 +68,7 @@ tasks:
       CREDIX_USER: "{{ secret('CREDIX_USER') }}"
       CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
       CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
+      CREDIX_WARMUP_MAX_OID_FAILURES: "{{ envs.credixsa_warmup_max_oid_failures ?? '3' }}"
       CREDIX_WARMUP_CORE_MAX_ROWS: "{{ envs.credixsa_warmup_core_max_rows ?? '1000' }}"
       CREDIX_WARMUP_RETRY_ATTEMPTS: "{{ envs.credixsa_warmup_retry_attempts ?? '2' }}"
       CREDIX_CACHE_SQLITE_PATH: "/data/credixsa-cache/credixsa.sqlite"

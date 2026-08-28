@@ -477,7 +477,8 @@ def decode_daily_index(raw_value: str, today: str) -> dict[str, Any]:
     payload.setdefault("processed_oids", [])
     payload.setdefault("cuils", [])
     payload.setdefault("name_keys", [])
-    payload.setdefault("failed_oids", {})
+    if not isinstance(payload.get("failed_oids"), dict):
+        payload["failed_oids"] = {}
     payload["updated_at"] = base["updated_at"]
     return payload
 

@@ -103,6 +103,22 @@ class ConsultaCredixsaWarmupTests(unittest.TestCase):
 
         self.assertEqual(index["failed_oids"], {})
 
+    def test_decode_daily_index_normaliza_failed_oids_invalido(self) -> None:
+        index = decode_daily_index(
+            '{"date":"2026-05-13","failed_oids":["248745"]}',
+            "2026-05-13",
+        )
+
+        self.assertEqual(index["failed_oids"], {})
+
+        solicitudes = [
+            CoreSolicitud("248745", "2026-05-13", "Nueva", "20111111112", "11111111", "Uno"),
+        ]
+        self.assertEqual(
+            [item.oid for item in select_candidates(solicitudes, index, 5)],
+            ["248745"],
+        )
+
     def test_mark_daily_index_records_cuil_and_name_key(self) -> None:
         index = {"date": "2026-05-13", "processed_oids": [], "cuils": [], "name_keys": []}
         solicitud = CoreSolicitud("10", "2026-05-13", "Nueva", "20123456783", "12345678", "Juan Perez")
@@ -149,6 +165,7 @@ class ConsultaCredixsaWarmupTests(unittest.TestCase):
         self.assertIn("type: io.kestra.plugin.core.execution.Fail", flow_source)
         self.assertIn("outputs.precalentar_cache.vars.has_errors", flow_source)
         self.assertIn("not outputs.precalentar_cache.vars.fatal_error", flow_source)
+        self.assertEqual(flow_source.count("CREDIX_WARMUP_MAX_OID_FAILURES:"), 2)
 
 
 if __name__ == "__main__":
