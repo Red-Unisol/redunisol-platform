@@ -69,7 +69,7 @@ const FALLBACK_REGULATORS: Regulator[] = [
     {
         id: 2,
         name: 'Asociación Mutual Fiat Concord',
-        short_name: 'Fiat',
+        short_name: 'Fiat Concord',
         logo_path: null,
         inaes_mat: '233',
         bcra_code: '55277',

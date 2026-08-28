@@ -9,7 +9,7 @@ export function getRegulatorDisplayName(
         normalizedName === 'fiat celesol' ||
         normalizedName === 'fiat concord'
     ) {
-        return 'Fiat';
+        return 'Fiat Concord';
     }
 
     return name;
