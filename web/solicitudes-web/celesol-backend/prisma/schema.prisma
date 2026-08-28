@@ -28,48 +28,61 @@ enum TipoPersona {
 }
 
 model User {
-  id                           String                     @id @default(uuid()) @map("usr_id") @db.Uuid
-  email                        String                     @unique @map("usr_email")
-  legacyUser                   String                     @unique @map("usr_legacy_user")
-  passwordHash                 String                     @map("usr_password_hash")
-  firstName                    String?                    @map("usr_first_name")
-  lastName                     String?                    @map("usr_last_name")
-  emailVerified                Boolean                    @default(false) @map("usr_email_verified")
-  isSystemAdmin                Boolean                    @default(false) @map("usr_is_system_admin")
-  state                        Int                        @default(1) @map("usr_state")
-  createdAt                    DateTime                   @default(now()) @map("usr_created_at")
-  updatedAt                    DateTime                   @updatedAt @map("usr_updated_at")
-  deletedAt                    DateTime?                  @map("usr_deleted_at")
-  workflowOwnerId              String?                    @map("workflow_owner_id") @db.Uuid
-  emailTokens                  EmailVerificationToken[]
-  passwordTokens               PasswordResetToken[]
-  refreshTokens                RefreshToken[]
-  createdSolicitudes           Solicitud[]
-  assignedSolicitudes          Solicitud[]                @relation("SolicitudAssignedToUser")
-  vendedorSolicitudes          Solicitud[]                @relation("SolicitudVendedor")
-  uploadedSolicitudAdjuntos    SolicitudAdjunto[]         @relation("SolicitudAdjuntoUploadedByUser")
-  deletedSolicitudAdjuntos     SolicitudAdjunto[]         @relation("SolicitudAdjuntoDeletedByUser")
-  createdSolicitudCancelaciones SolicitudCancelacion[]    @relation("SolicitudCancelacionCreatedByUser")
-  deletedSolicitudCancelaciones SolicitudCancelacion[]    @relation("SolicitudCancelacionDeletedByUser")
-  changedSolicitudEstados      SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
-  solicitudParticipants        SolicitudParticipant[]     @relation("SolicitudParticipantUser")
-  createdSolicitudParticipants SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
-  workflowOwner                WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
+  id                            String                     @id @default(uuid()) @map("usr_id") @db.Uuid
+  email                         String                     @unique @map("usr_email")
+  legacyUser                    String                     @unique @map("usr_legacy_user")
+  passwordHash                  String                     @map("usr_password_hash")
+  firstName                     String?                    @map("usr_first_name")
+  lastName                      String?                    @map("usr_last_name")
+  emailVerified                 Boolean                    @default(false) @map("usr_email_verified")
+  isSystemAdmin                 Boolean                    @default(false) @map("usr_is_system_admin")
+  recibeAsignacionAutomatica    Boolean                    @default(false) @map("usr_recibe_asignacion_automatica")
+  state                         Int                        @default(1) @map("usr_state")
+  createdAt                     DateTime                   @default(now()) @map("usr_created_at")
+  updatedAt                     DateTime                   @updatedAt @map("usr_updated_at")
+  deletedAt                     DateTime?                  @map("usr_deleted_at")
+  workflowOwnerId               String?                    @map("workflow_owner_id") @db.Uuid
+  emailTokens                   EmailVerificationToken[]
+  passwordTokens                PasswordResetToken[]
+  refreshTokens                 RefreshToken[]
+  createdSolicitudes            Solicitud[]
+  assignmentCursors             WorkflowAssignmentCursor[] @relation("AssignmentCursorLastUser")
+  assignedSolicitudes           Solicitud[]                @relation("SolicitudAssignedToUser")
+  vendedorSolicitudes           Solicitud[]                @relation("SolicitudVendedor")
+  uploadedSolicitudAdjuntos     SolicitudAdjunto[]         @relation("SolicitudAdjuntoUploadedByUser")
+  deletedSolicitudAdjuntos      SolicitudAdjunto[]         @relation("SolicitudAdjuntoDeletedByUser")
+  createdSolicitudCancelaciones SolicitudCancelacion[]     @relation("SolicitudCancelacionCreatedByUser")
+  deletedSolicitudCancelaciones SolicitudCancelacion[]     @relation("SolicitudCancelacionDeletedByUser")
+  changedSolicitudEstados       SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
+  solicitudParticipants         SolicitudParticipant[]     @relation("SolicitudParticipantUser")
+  createdSolicitudParticipants  SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
+  workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
 
   @@index([workflowOwnerId])
   @@map("users")
 }
 
 model WorkflowOwner {
-  id        String          @id @default(uuid()) @db.Uuid
-  code      String          @unique
-  name      String
-  sortOrder Int             @default(0) @map("sort_order")
-  isActive  Boolean         @default(true) @map("is_active")
-  states    WorkflowState[]
-  users     User[]
+  id               String                    @id @default(uuid()) @db.Uuid
+  code             String                    @unique
+  name             String
+  sortOrder        Int                       @default(0) @map("sort_order")
+  isActive         Boolean                   @default(true) @map("is_active")
+  states           WorkflowState[]
+  users            User[]
+  assignmentCursor WorkflowAssignmentCursor?
 
   @@map("workflow_owners")
+}
+
+model WorkflowAssignmentCursor {
+  workflowOwnerId    String        @id @map("workflow_owner_id") @db.Uuid
+  lastAssignedUserId String?       @map("last_assigned_user_id") @db.Uuid
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  workflowOwner      WorkflowOwner @relation(fields: [workflowOwnerId], references: [id], onDelete: Cascade)
+  lastAssignedUser   User?         @relation("AssignmentCursorLastUser", fields: [lastAssignedUserId], references: [id], onDelete: SetNull)
+
+  @@map("workflow_assignment_cursors")
 }
 
 model WorkflowState {
@@ -189,22 +202,22 @@ model SolicitudParticipant {
 }
 
 model WorkflowTransition {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  fromStateId           String                     @map("from_state_id") @db.Uuid
-  toStateId             String                     @map("to_state_id") @db.Uuid
-  actionCode            String                     @map("action_code")
-  actionLabel           String                     @map("action_label")
-  defaultComment        String?                    @map("default_comment")
-  description           String?
-  sortOrder             Int                        @map("sort_order")
-  saveAndExit           Boolean                    @default(false) @map("save_and_exit")
-  requiresComment       Boolean                    @default(false) @map("requires_comment")
-  isActive              Boolean                    @default(true) @map("is_active")
-  createdAt             DateTime                   @default(now()) @map("created_at")
-  updatedAt             DateTime                   @updatedAt @map("updated_at")
-  fromState             WorkflowState              @relation("WorkflowTransitionFromState", fields: [fromStateId], references: [id])
-  toState               WorkflowState              @relation("WorkflowTransitionToState", fields: [toStateId], references: [id])
-  history               SolicitudEstadoHistorial[]
+  id              String                     @id @default(uuid()) @db.Uuid
+  fromStateId     String                     @map("from_state_id") @db.Uuid
+  toStateId       String                     @map("to_state_id") @db.Uuid
+  actionCode      String                     @map("action_code")
+  actionLabel     String                     @map("action_label")
+  defaultComment  String?                    @map("default_comment")
+  description     String?
+  sortOrder       Int                        @map("sort_order")
+  saveAndExit     Boolean                    @default(false) @map("save_and_exit")
+  requiresComment Boolean                    @default(false) @map("requires_comment")
+  isActive        Boolean                    @default(true) @map("is_active")
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+  fromState       WorkflowState              @relation("WorkflowTransitionFromState", fields: [fromStateId], references: [id])
+  toState         WorkflowState              @relation("WorkflowTransitionToState", fields: [toStateId], references: [id])
+  history         SolicitudEstadoHistorial[]
 
   @@unique([fromStateId, actionCode])
   @@unique([fromStateId, toStateId, actionCode])

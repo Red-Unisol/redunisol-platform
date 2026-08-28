@@ -220,7 +220,7 @@ describe("SolicitudWorkflowEngine", () => {
     assert.equal(result.transitions.length, 0);
     assert.ok(capturedPlan);
     const plan = capturedPlan as WorkflowExecutionPlan;
-    assert.equal(plan.steps.length, 2);
+    assert.equal(plan.steps.length, 3);
     assert.equal(plan.steps[0]?.kind, "domain-transition");
     assert.equal(plan.steps[1]?.kind, "technical-transition");
   });
