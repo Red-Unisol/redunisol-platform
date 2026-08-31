@@ -83,7 +83,6 @@ class TestNombres(unittest.TestCase):
     def test_la_etiqueta_manual_gana_sobre_todo(self):
         self.assertEqual(
             corrida.construir_sufijo_salida(
-                linea_superior="Otra Linea",
                 etiqueta_salida="mi etiqueta",
                 archivo_cuiles="C:/x/MEDICOS.xlsx",
             ),
@@ -96,18 +95,6 @@ class TestNombres(unittest.TestCase):
             "medicos_a",
         )
 
-    def test_la_linea_habitual_no_lleva_sufijo(self):
-        # Asi la corrida normal escribe siempre en los mismos archivos.
-        self.assertEqual(
-            corrida.construir_sufijo_salida(corrida.DEFAULT_LINEA_SUPERIOR_VIMARX),
-            "",
-        )
-
-    def test_otra_linea_si_lleva_sufijo(self):
-        self.assertEqual(
-            corrida.construir_sufijo_salida("Haberes Otra Cosa"), "haberes_otra_cosa"
-        )
-
 
 class TestRutas(unittest.TestCase):
     def test_arma_las_rutas_del_periodo(self):
@@ -115,34 +102,19 @@ class TestRutas(unittest.TestCase):
 
         self.assertEqual(rutas.directorio, Path("corridas/2026-08"))
         self.assertEqual(rutas.archivo_resultados.name, "resultados.ndjson")
-        self.assertEqual(rutas.archivo_cuiles.name, "cuiles_vimarx.json")
+        self.assertEqual(rutas.archivo_cuiles.name, "cuiles_archivo.json")
 
     def test_el_sufijo_va_en_los_dos_archivos(self):
         rutas = corrida.RutasCorrida.para(sufijo="medicos_a", periodo="2026-08")
 
         self.assertEqual(rutas.archivo_resultados.name, "resultados_medicos_a.ndjson")
-        self.assertEqual(rutas.archivo_cuiles.name, "cuiles_vimarx_medicos_a.json")
+        self.assertEqual(rutas.archivo_cuiles.name, "cuiles_archivo_medicos_a.json")
 
     def test_desde_archivo_cambia_el_nombre_de_los_cuiles(self):
         rutas = corrida.RutasCorrida.para(
             sufijo="medicos_a", desde_archivo=True, periodo="2026-07"
         )
         self.assertEqual(rutas.archivo_cuiles.name, "cuiles_archivo_medicos_a.json")
-
-    def test_no_reusa_el_nombre_que_dejo_la_version_vieja(self):
-        """resultados_cuad.ndjson es la salida de main.py, no la nuestra.
-
-        Convive en las carpetas 2026-05 y 2026-06 con registros de otra forma,
-        mucho mas pobre. Si el archivo nuevo se llamara igual, reanudar un
-        periodo viejo leeria aquello creyendo que es propio.
-        """
-        rutas = corrida.RutasCorrida.para(periodo="2026-06")
-        self.assertEqual(rutas.archivo_resultados.name, "resultados.ndjson")
-        self.assertNotEqual(rutas.archivo_resultados.name, corrida.PATRON_RESULTADOS_MAIN1)
-
-    def test_conserva_el_patron_legacy_para_los_exportadores(self):
-        # exportar.py lo necesita para poder leer las corridas de mayo a julio.
-        self.assertEqual(corrida.PATRON_RESULTADOS_LEGACY, "resultados_cuad_main2*.ndjson")
 
     def test_el_periodo_se_congela_al_armar_las_rutas(self):
         # Una corrida de 8 horas que cruce fin de mes tiene que seguir

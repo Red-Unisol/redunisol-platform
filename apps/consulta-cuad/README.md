@@ -1,240 +1,86 @@
 # Consulta CUAD
 
-## Paquete actual
+Consulta masiva de CUAD Santa Fe para una lista propia de socios. La entrada
+es un Excel (`.xlsx` o `.xlsm`) o JSON con CUILes; la aplicacion no consulta
+Vimarx.
 
-El comando `python -m consulta_cuad` es la version actual. Recibe una lista de
-CUILes desde Excel o JSON, reanuda desde NDJSON y renueva la sesion cuando
-CUAD la vence.
+El login abre CUAD en un navegador visible. El operador resuelve el captcha
+una vez y la aplicacion conserva ese contexto para consultar y renovar la
+sesion cuando vence. Nunca se guardan usuarios, contrasenas ni cookies.
 
-El lector automatico de captcha se usa por defecto. Como respaldo operativo se
-puede abrir un navegador visible para que un operador autorizado resuelva el
-captcha una vez; la corrida conserva la cookie y sigue por HTTP:
+## Instalacion
+
+Desde `apps/consulta-cuad`:
+
+```powershell
+python -m pip install -e .
+playwright install chromium
+```
+
+Configura `CUAD_USUARIO`, `CUAD_PASSWORD` y `MISTRAL_API_KEY` en la sesion de
+PowerShell. Para resolver siempre el captcha a mano, la clave de Mistral no se
+usa:
 
 ```powershell
 python -m consulta_cuad --probar-login --login-manual
 ```
 
-En una corrida masiva se agrega `--login-manual` al comando habitual. Cuando
-CUAD venza la sesion, la aplicacion abrira otra vez el navegador, esperara el
-login manual y retomara desde el ultimo CUIL guardado.
+## Archivo de socios
 
-Durante la corrida el navegador permanece abierto y las consultas se hacen
-desde su mismo contexto HTTP. Esto conserva las cookies y la identidad del
-cliente que resolvio el captcha; al finalizar o interrumpir la corrida se
-cierra automaticamente.
+El Excel debe tener una fila de encabezados y una columna `CUIL` o `CUIT`.
+Tambien puede indicarse otra columna con `--columna`.
 
-`main2.py`, documentado mas abajo, es el flujo historico: incluye Vimarx pero
-depende de una cookie cargada manualmente y no debe tomarse como la app actual.
+| CUIL | Nombre |
+| --- | --- |
+| 20123456789 | Nombre del socio |
 
-## Objetivo del script
-
-`main2.py` consulta:
-
-1. Vimarx para obtener los CUILes de la linea configurada, o bien lee un Excel manual
-2. CUAD para cada CUIL obtenido
-
-`main2.py` guarda la sig. info de CUAD:
-
-- tabla de empleado
-- tabla de totales
-- tabla de movimientos
-
-## Que toma como entrada
-
-### Vimarx
-
-Consulta prestamos de:
-
-- linea superior configurable
-- estado configurable
-
-Luego aplica en Python el filtro de deuda mayor a `0`.
-
-### Archivo manual
-
-Tambien puede tomar un archivo Excel `.xlsx` o `.xlsm` con una columna de `CUIL` o `CUIT`.
-
-Si se informa `--archivo-cuiles`, no consulta Vimarx.
-
-### CUAD
-
-Para cada CUIL consulta:
-
-1. `movimiento.asp`
-2. `grilla.asp?Modo=SERVICIO&Pag=...&ID=MOVIMIENTOS`
-
-Si en `ACTIVOS` no encuentra resultado, reconsulta en `PASIVOS`.
-
-## Que genera
-
-Dentro de `corridas/<YYYY-MM>/`:
-
-- `cuiles_vimarx_main2.json`
-- `resultados_cuad_main2.ndjson`
-
-Si se consulta una linea distinta a la default, los archivos se guardan con sufijo automatico:
-
-- `cuiles_vimarx_main2_<sufijo>.json`
-- `resultados_cuad_main2_<sufijo>.ndjson`
-
-## Formato de salida
-
-`resultados_cuad_main2.ndjson` guarda una linea por socio. Cada linea es un JSON completo.
-
-Estructura general:
+Tambien acepta un JSON con una lista de CUILes:
 
 ```json
-{
-  "cuil": "27431680403",
-  "ok": true,
-  "status": "ok",
-  "emr_nombre": "Santa Fe - ACTIVOS",
-  "emr_id": "10",
-  "consultado_en": "2026-06-16T12:34:56",
-  "payload": {},
-  "parsed": {
-    "tabla_empleado": {},
-    "tabla_totales": {},
-    "tabla_movimientos": {
-      "columnas_visibles": [],
-      "columnas_normalizadas": [],
-      "registros": []
-    }
-  }
-}
+["20123456789", "27234567890"]
 ```
 
-### Bloques principales
+## Consultar
 
-- `tabla_empleado`: datos del panel izquierdo de CUAD
-- `tabla_totales`: datos de la tabla de totales
-- `tabla_movimientos`: filas de la grilla superior
-
-Cada elemento de `tabla_movimientos.registros` representa una fila de la tabla.
-
-## Configuracion importante
-
-En `main2.py` revisar:
-
-- `COOKIE_CUAD`
-- `INICIAR_NUEVA_CORRIDA`
-- `LIMITE_CUAD`
-
-Por linea y estado ya no hace falta editar el codigo: se pueden pasar por linea de comandos.
-
-Para usar un Excel manual tampoco hace falta tocar el codigo.
-
-### Sesion de CUAD
-
-El script requiere una sesion valida de CUAD cargada en `COOKIE_CUAD`.
-
-Este script no automatiza el inicio de sesion en CUAD.
-
-Antes de ejecutarlo:
-
-- se debe ingresar manualmente a CUAD
-- se debe resolver manualmente el captcha
-- se debe copiar una cookie valida en `COOKIE_CUAD`
-
-Existe una version alternativa con OCR para resolver captcha, pero no fue necesaria en este proceso porque la ejecucion se realiza una sola vez al mes.
-
-Si la sesion vence durante la ejecucion:
-
-- el proceso se detiene
-- al actualizar la cookie y volver a ejecutar, el script puede reanudar desde lo ya guardado en el `resultados_cuad_main2*.ndjson` correspondiente
-
-### Uso recomendado
-
-#### Corrida nueva
-
-```python
-INICIAR_NUEVA_CORRIDA = True
-```
-
-Arranca de cero para el periodo actual y respalda archivos previos de `main2` si existen.
-
-#### Reanudar
-
-```python
-INICIAR_NUEVA_CORRIDA = False
-```
-
-Reanuda tomando como base `resultados_cuad_main2.ndjson`.
-
-#### Prueba corta
-
-```python
-LIMITE_CUAD = 10
-```
-
-Sirve para validar con pocos registros antes de correr todo.
-
-## Comportamiento ante errores
-
-- Si la sesion de CUAD vence, el proceso se detiene.
-- Al volver a ejecutar con una cookie nueva, puede reanudarse.
-- Si `ACTIVOS` no devuelve resultado, consulta `PASIVOS`.
-- Reintenta errores transitorios de red y timeout.
-
-## Ejecucion
-
-Desde la carpeta del proyecto:
+Primero conviene probar un lote pequeno. `--nueva` inicia el archivo de salida
+desde cero; sin esa opcion el mismo comando reanuda lo pendiente.
 
 ```powershell
-python main2.py
+python -m consulta_cuad --cuiles "C:\ruta\a\socios.xlsx" --login-manual --limite 30 --etiqueta socios --nueva
 ```
 
-### Consultar otra linea de Vimarx
-
-Ejemplo:
+La corrida completa, incluyendo movimientos:
 
 ```powershell
-python main2.py --linea-vimarx "Nombre de la otra lista"
+python -m consulta_cuad --cuiles "C:\ruta\a\socios.xlsx" --login-manual --etiqueta socios
 ```
 
-Opciones disponibles:
+`--solo-cupo` evita descargar movimientos: guarda empleado y totales, incluido
+el cupo, y termina antes. La demora se ajusta con `--demora`, `--pausa-cada` y
+`--pausa-larga`.
 
-- `--linea-vimarx`: valor de `[LineaPrestamo.Superior.Descripcion]`
-- `--estado-vimarx`: valor de `[Estado]` en Vimarx
-- `--etiqueta-salida`: sufijo manual para los archivos de salida
+## Salida y reanudacion
 
-Ejemplo completo:
+Para una etiqueta `socios`, se crean estos archivos locales, ignorados por Git:
+
+```text
+corridas/AAAA-MM/cuiles_archivo_socios.json
+corridas/AAAA-MM/resultados_socios.ndjson
+```
+
+El NDJSON tiene una linea por CUIL con empleado, totales y movimientos. Es el
+registro completo y el estado de reanudacion: los CUILes resueltos no se
+repiten al ejecutar otra vez el mismo comando.
+
+## Exportar Excel
+
+Los exportadores generan un `.xlsx` junto al NDJSON y no vuelven a consultar
+CUAD:
 
 ```powershell
-python main2.py --linea-vimarx "Nombre de la otra lista" --estado-vimarx "Activa" --etiqueta-salida "otra_lista"
+python -m consulta_cuad.exportar --tipo totales corridas/AAAA-MM/resultados_socios.ndjson
+python -m consulta_cuad.exportar --tipo movimientos corridas/AAAA-MM/resultados_socios.ndjson
 ```
 
-### Consultar desde un Excel de CUILes
-
-Ejemplo:
-
-```powershell
-python main2.py --archivo-cuiles "C:\Users\Nicolas\Downloads\MEDICOS -A-.xlsx" --columna-cuiles CUIT --etiqueta-salida "medicos_a"
-```
-
-Opciones disponibles:
-
-- `--archivo-cuiles`: ruta al archivo Excel
-- `--hoja-cuiles`: nombre de la hoja a usar
-- `--columna-cuiles`: encabezado, letra o numero de la columna con CUIL/CUIT
-- `--limite-cuad`: cantidad maxima de CUILes a consultar en esa corrida
-
-Si no se informa `--hoja-cuiles`, toma la primera hoja.
-
-Si no se informa `--columna-cuiles`, intenta detectar automaticamente una columna `CUIL` o `CUIT`.
-
-### Exportar a Excel
-
-Si no se informa archivo, los scripts toman el `resultados_cuad_main2*.ndjson` mas reciente dentro de `corridas/`.
-
-```powershell
-python excel_totales.py
-python excel_movimientos.py
-```
-
-Tambien se puede indicar un archivo puntual:
-
-```powershell
-python excel_totales.py corridas/2026-07/resultados_cuad_main2_otra_lista.ndjson
-python excel_movimientos.py corridas/2026-07/resultados_cuad_main2_otra_lista.ndjson
-```
+Luego de instalar el paquete tambien se puede usar `consulta-cuad-exportar`.
+Si se omite el archivo, se exporta el NDJSON mas reciente de `corridas/`.

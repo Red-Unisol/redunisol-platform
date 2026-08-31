@@ -46,9 +46,7 @@ ESTADOS_PENDIENTES = ESTADOS_REINTENTABLES | {
 class ConfigCuad:
     """Parametros de la consulta.
 
-    En main2.py esto eran variables de modulo que habia que editar a mano
-    antes de cada corrida. Como dataclass se pueden pasar por CLI, cambiar en
-    un test y, sobre todo, tener dos configuraciones distintas conviviendo.
+    Se pasan por CLI o por codigo, sin editar constantes antes de cada corrida.
     """
 
     url_movimiento: str = URL_MOVIMIENTO

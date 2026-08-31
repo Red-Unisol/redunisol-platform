@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 consulta-cuad = "consulta_cuad.__main__:main"
+consulta-cuad-exportar = "consulta_cuad.exportar:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

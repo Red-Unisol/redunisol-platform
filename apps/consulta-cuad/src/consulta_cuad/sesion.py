@@ -1,8 +1,8 @@
 """Login automatico en CUAD, resolviendo el captcha con un modelo de vision.
 
-Es la unica pieza que no viene de main2.py: sale de la automatizacion de
-Kestra (kestra/automations/analisis-credito/files/consulta_cuad/service.py),
-que ya resolvia el login para consultas de a un CUIL.
+Proviene de la automatizacion de Kestra
+(`kestra/automations/analisis-credito/files/consulta_cuad/service.py`), que
+ya resolvia el login para consultas de a un CUIL.
 
 QUE HACE Y QUE NO
 -----------------
@@ -16,10 +16,7 @@ seria pagar memoria por algo que no se usa.
 
 POR QUE ESTO IMPORTA
 --------------------
-En main2.py la cookie se pegaba a mano y, cuando vencia, la corrida se
-frenaba hasta que alguien estuviera disponible para renovarla. En la corrida
-de julio eso paso 7 veces: 10 horas de trabajo tardaron dos dias. Con esto,
-renovar la sesion es una llamada a renovar().
+Cuando la sesion vence, la corrida la renueva y reintenta el mismo CUIL.
 
 EL LOGIN DE CUAD, POR SI HAY QUE DEBUGGEARLO
 --------------------------------------------
@@ -206,8 +203,7 @@ def _entero_de_entorno(nombre, defecto):
 def config_desde_entorno(modo_login=None):
     """Arma la config desde variables de entorno.
 
-    Las credenciales NUNCA se hardcodean: es exactamente lo que estaba mal en
-    main2.py, que traia una cookie de sesion real escrita en el codigo.
+    Las credenciales nunca se hardcodean.
     """
     usuario = os.getenv("CUAD_USUARIO", "").strip()
     password = os.getenv("CUAD_PASSWORD", "").strip()

@@ -4,8 +4,7 @@ TRES IDEAS QUE SOSTIENEN TODO
 -----------------------------
 1. El ndjson ES el estado. No hay un archivo aparte que lleve el progreso:
    se relee lo ya escrito y de ahi sale que falta. Una sola fuente de verdad
-   que no se puede desincronizar. (main.py tenia un estado_cuad.json en
-   paralelo; main2.py lo elimino, y con razon.)
+   que no se puede desincronizar.
 
 2. Se escribe de a una linea, apenas se tiene. Si el proceso muere en la
    consulta 900 de 1000, se perdio esa consulta, no las 900.
@@ -41,24 +40,8 @@ logger = logging.getLogger(__name__)
 
 DIRECTORIO_CORRIDAS = Path("corridas")
 
-BASE_NOMBRE_CUILES_VIMARX = "cuiles_vimarx"
 BASE_NOMBRE_CUILES_ARCHIVO = "cuiles_archivo"
 BASE_NOMBRE_RESULTADOS = "resultados"
-
-# Como se llamaban los archivos de las corridas hechas con main2.py, de mayo a
-# julio de 2026. No se escribe mas con estos nombres, pero exportar.py los
-# necesita para poder seguir leyendo aquellas corridas.
-PATRON_RESULTADOS_LEGACY = "resultados_cuad_main2*.ndjson"
-
-# OJO: "resultados_cuad.ndjson" (sin el _main2) es la salida de main.py, la
-# version anterior, y convive en las carpetas 2026-05 y 2026-06. Sus registros
-# tienen otra forma, mucho mas pobre. Por eso el archivo nuevo se llama
-# "resultados.ndjson" y no "resultados_cuad.ndjson": para que no exista
-# ninguna chance de leer aquello creyendo que es esto.
-PATRON_RESULTADOS_MAIN1 = "resultados_cuad.ndjson"
-
-DEFAULT_LINEA_SUPERIOR_VIMARX = "Haberes CUAD SANTA FE"
-
 
 # --------------------------------------------------------------------------
 # Nombres y rutas
@@ -80,32 +63,23 @@ def slug_archivo(texto):
     return slug or "lista"
 
 
-def construir_sufijo_salida(linea_superior=None, etiqueta_salida=None, archivo_cuiles=None):
-    """Decide el sufijo de los archivos de salida.
-
-    La linea por defecto no lleva sufijo: asi los archivos de la corrida
-    habitual se siguen llamando como siempre.
-    """
+def construir_sufijo_salida(etiqueta_salida=None, archivo_cuiles=None):
+    """Decide el sufijo de los archivos de salida."""
     if etiqueta_salida:
         return slug_archivo(etiqueta_salida)
 
     if archivo_cuiles is not None:
         return slug_archivo(Path(archivo_cuiles).stem)
 
-    if str(linea_superior).strip() == DEFAULT_LINEA_SUPERIOR_VIMARX:
-        return ""
-
-    return slug_archivo(linea_superior)
+    return ""
 
 
 @dataclass(frozen=True)
 class RutasCorrida:
     """Donde escribe una corrida.
 
-    En main2.py esto eran cinco variables de modulo que `configurar_consulta`
-    reescribia con `global`. Al ser un objeto se puede tener mas de una
-    corrida a la vista, y sobre todo se puede testear contra un directorio
-    temporal sin ensuciar nada.
+    Al ser un objeto se puede testear contra un directorio temporal sin
+    ensuciar la carpeta de corridas.
     """
 
     directorio: Path
@@ -121,14 +95,12 @@ class RutasCorrida:
         directorio_base=DIRECTORIO_CORRIDAS,
         periodo=None,
     ):
-        # El periodo se fija UNA vez, al armar las rutas. En main2.py se
-        # calculaba al importar el modulo, con lo cual una corrida larga que
-        # cruzara fin de mes seguia escribiendo donde habia arrancado, pero
-        # por accidente. Aca es una decision explicita.
+        # Una corrida larga que cruza fin de mes debe seguir escribiendo donde
+        # empezo.
         periodo = periodo or periodo_actual()
         directorio = Path(directorio_base) / periodo
 
-        base_cuiles = BASE_NOMBRE_CUILES_ARCHIVO if desde_archivo else BASE_NOMBRE_CUILES_VIMARX
+        base_cuiles = BASE_NOMBRE_CUILES_ARCHIVO
 
         def nombrar(base, extension):
             if sufijo:
@@ -320,9 +292,8 @@ def preparar_corrida(rutas, iniciar_nueva=False, ahora=None):
 class Ritmo:
     """Cuanto esperar entre consultas.
 
-    Los defaults son los de main2.py. Dan ~15,4 s por socio: 1000 socios en
-    unas 4h20. Es muy suave con CUAD (~0,13 req/s) y conviene medir antes de
-    bajarlo.
+    Dan ~15,4 s por socio: 1000 socios en unas 4h20. Es muy suave con CUAD
+    (~0,13 req/s) y conviene medir antes de bajarlo.
     """
 
     demora_entre_consultas: float = 12.0
