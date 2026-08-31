@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "consulta-cuad"
+version = "0.1.0"
+description = "Consulta masiva de CUAD Santa Fe por CUIL o lote, con login automatico por OCR."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "openpyxl>=3.1,<4.0",
+  # Solo para el login: se usa unos segundos por corrida y despues el trabajo
+  # sigue con urllib. Requiere ademas `playwright install chromium`.
+  "playwright>=1.40,<2.0",
+  # El POST al modelo de vision de Mistral que lee el captcha.
+  "requests>=2.32,<3.0",
+  # Amplia la imagen del captcha antes de mandarla. Sin esto el modelo no
+  # acierta: ver la tabla de mediciones en sesion.ESCALA_CAPTCHA.
+  "pillow>=10.0,<13.0",
+]
+
+[project.scripts]
+consulta-cuad = "consulta_cuad.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
