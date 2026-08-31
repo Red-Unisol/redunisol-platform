@@ -49,5 +49,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El mismo listener crea o reutiliza la negociacion cuando el lead llega a `RESULTADO GANADO`.
 - Las negociaciones internas Catamarca y Cordoba nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior clasifica y distribuye segun el resultado y el horario.
 - Cada resultado terminal publica datos auditables en la ejecucion Kestra. El reporte diario los transforma en `marketing/distribucion-negociaciones/ultimo.xlsx` y conserva una copia historica por fecha.
+- El intake reutiliza una negociacion activa del mismo CUIL y bucket, registra la nueva fuente en timeline y no vuelve a ejecutar el round-robin.
+- Un chat activo conserva su operador mientras siga online o durante el SLA configurado; solo vencido ese plazo vuelve a distribuirse.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.
 - Aunque el dominio se llame `marketing-crm`, la integracion actual sigue siendo con Bitrix24, por eso se mantienen nombres internos `bitrix24_*` donde ya forman parte del contrato tecnico.

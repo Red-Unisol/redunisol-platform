@@ -64,6 +64,8 @@ tasks:
       BITRIX24_DEAL_QUEUE_ENQUEUED_AT_FIELD: "{{ envs.bitrix24_deal_queue_enqueued_at_field ?? 'ufCrmKqAt' }}"
       BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_STICKY_CHAT_OWNERSHIP: "{{ envs.bitrix24_sticky_chat_ownership ?? 'true' }}"
+      BITRIX24_CHAT_HANDOFF_SLA_MINUTES: "{{ envs.bitrix24_chat_handoff_sla_minutes ?? '60' }}"
       BITRIX24_DEAL_BCRA_MAX_AGE_DAYS: "{{ envs.bitrix24_deal_bcra_max_age_days ?? '7' }}"
       BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS: "{{ envs.bitrix24_deal_cordoba_jubilados_user_ids ?? '10451,71159,68579,90231,29,110059' }}"
       BITRIX24_DEAL_CORDOBA_UNC_USER_IDS: "{{ envs.bitrix24_deal_cordoba_unc_user_ids ?? '53121' }}"

@@ -15,6 +15,7 @@ from .bcra_client import (
     deserialize_bcra_result,
     serialize_bcra_result,
 )
+from .application_reuse import reuse_active_application
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import load_config
@@ -69,6 +70,8 @@ def process_form_body(
     )
     if not intake_result.get("ok"):
         return intake_result
+    if intake_result.get("action") == "reused":
+        return intake_result
 
     lead_id = intake_result.get("lead_id")
     if lead_id is None:
@@ -94,6 +97,8 @@ def process_submission(
 ) -> dict[str, object]:
     intake_result = ingest_submission(payload, env=env, bitrix_client=bitrix_client, logger=logger)
     if not intake_result.get("ok"):
+        return intake_result
+    if intake_result.get("action") == "reused":
         return intake_result
 
     lead_id = intake_result.get("lead_id")
@@ -143,6 +148,22 @@ def ingest_submission(
         contact = upsert_contact(client, config, submission, active_logger)
         contact_id = contact.contact_id
         effective_submission = replace(submission, full_name=contact.effective_full_name)
+        reused = reuse_active_application(
+            client,
+            config,
+            effective_submission,
+            contact_id=contact_id,
+            logger=active_logger,
+        )
+        if reused is not None:
+            return intake_success_result(
+                contact_id=contact_id,
+                lead_id=reused.lead_id,
+                deal_id=reused.deal_id,
+                action="reused",
+                reason="active_deal_reused",
+                message="Se reutilizo la negociacion activa del solicitante.",
+            )
         lead_id = create_lead(client, config, effective_submission, contact_id, active_logger)
         return intake_success_result(
             contact_id=contact_id,

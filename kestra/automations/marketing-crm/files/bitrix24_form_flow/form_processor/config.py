@@ -71,6 +71,9 @@ DEFAULT_DEAL_CONFIG = {
     "cordoba_jubilados_user_ids": (10451, 71159, 68579, 90231, 29, 110059),
     "cordoba_unc_user_ids": (53121,),
     "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29),
+    "reuse_active_deal": True,
+    "sticky_chat_ownership": True,
+    "chat_handoff_sla_minutes": 60,
 }
 
 
@@ -185,6 +188,9 @@ class DealConfig:
     cordoba_jubilados_user_ids: tuple[int, ...]
     cordoba_unc_user_ids: tuple[int, ...]
     cordoba_general_user_ids: tuple[int, ...]
+    reuse_active_deal: bool
+    sticky_chat_ownership: bool
+    chat_handoff_sla_minutes: int
 
 
 @dataclass(frozen=True)
@@ -476,6 +482,24 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 "BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS",
                 default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
             ),
+            reuse_active_deal=_optional_bool(
+                source,
+                "BITRIX24_REUSE_ACTIVE_DEAL",
+                default=DEFAULT_DEAL_CONFIG["reuse_active_deal"],
+            ),
+            sticky_chat_ownership=_optional_bool(
+                source,
+                "BITRIX24_STICKY_CHAT_OWNERSHIP",
+                default=DEFAULT_DEAL_CONFIG["sticky_chat_ownership"],
+            ),
+            chat_handoff_sla_minutes=max(
+                _optional_int(
+                    source,
+                    "BITRIX24_CHAT_HANDOFF_SLA_MINUTES",
+                    default=DEFAULT_DEAL_CONFIG["chat_handoff_sla_minutes"],
+                ),
+                0,
+            ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),
     )
@@ -491,6 +515,17 @@ def _required_env(env: dict[str, str], key: str) -> str:
 def _optional_env(env: dict[str, str], key: str) -> str | None:
     value = env.get(key, "").strip()
     return value or None
+
+
+def _optional_bool(env: dict[str, str], key: str, *, default: bool) -> bool:
+    raw = env.get(key, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "y", "si", "s"}:
+        return True
+    if raw in {"0", "false", "no", "n"}:
+        return False
+    raise ValueError(f'La variable "{key}" debe ser booleana.')
 
 
 def _optional_int(env: dict[str, str], key: str, *, default: int) -> int:

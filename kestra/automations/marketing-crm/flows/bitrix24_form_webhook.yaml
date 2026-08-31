@@ -3,6 +3,10 @@ namespace: redunisol
 
 description: Valida el payload del formulario y crea el contacto y lead en Bitrix24 sin enriquecimiento ni clasificacion.
 
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
 labels:
   env: prod
   team: redunisol
@@ -39,6 +43,9 @@ tasks:
       BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'UC_5N2OEO' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
+      BITRIX24_REUSE_ACTIVE_DEAL: "{{ envs.bitrix24_reuse_active_deal ?? 'true' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
       - python -m bitrix24_form_flow.kestra_form_intake_entrypoint
@@ -53,6 +60,12 @@ outputs:
   - id: lead_id
     type: STRING
     value: "{{ outputs.cargar_formulario.vars.lead_id }}"
+  - id: deal_id
+    type: STRING
+    value: "{{ outputs.cargar_formulario.vars.deal_id }}"
+  - id: application_resolution
+    type: STRING
+    value: "{{ outputs.cargar_formulario.vars.application_resolution }}"
   - id: action
     type: STRING
     value: "{{ outputs.cargar_formulario.vars.action }}"

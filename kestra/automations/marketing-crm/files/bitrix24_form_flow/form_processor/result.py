@@ -6,6 +6,9 @@ def intake_success_result(
     contact_id: int,
     lead_id: int,
     message: str,
+    deal_id: int | None = None,
+    action: str = "ingested",
+    reason: str = "ingested",
 ) -> dict[str, object]:
     return {
         "ok": True,
@@ -13,8 +16,10 @@ def intake_success_result(
         "contact_id": contact_id,
         "lead_id": lead_id,
         "lead_status": None,
-        "action": "ingested",
-        "reason": "ingested",
+        "deal_id": deal_id,
+        "application_resolution": "reused" if action == "reused" else "created",
+        "action": action,
+        "reason": reason,
         "message": message,
     }
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import AppConfig
+from .input_parser import RoutingInput
 from .lead_service import build_routing_input_from_lead
 
 
@@ -35,6 +36,13 @@ def resolve_routing_bucket(
             reason="missing_routing_data",
         )
 
+    return resolve_routing_bucket_input(config, submission)
+
+
+def resolve_routing_bucket_input(
+    config: AppConfig,
+    submission: RoutingInput,
+) -> RoutingResolution:
     if submission.province.key == "catamarca":
         return RoutingResolution(
             bucket=RoutingBucket(
