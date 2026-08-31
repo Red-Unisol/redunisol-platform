@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
+use crate::cancellations::CancellationPayment;
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ValidationSearchResponse {
     pub items: Vec<ValidationSnapshot>,
@@ -49,6 +51,12 @@ pub struct CoreSnapshot {
     pub request_cuil: Option<String>,
     pub document_cuil: Option<String>,
     pub transfer_cbu: Option<String>,
+    pub cancellation_amount_raw: Option<String>,
+    pub cancellation_amount: Option<Decimal>,
+    pub cash_in_hand_amount_raw: Option<String>,
+    pub cash_in_hand_amount: Option<Decimal>,
+    pub cancellation_payments: Vec<CancellationPayment>,
+    pub cancellation_detail_count: Option<u64>,
     pub bank_cmf_amount_raw: Option<String>,
     pub bank_cmf_amount: Option<Decimal>,
     pub bank_coinag_cba_amount_raw: Option<String>,
@@ -322,6 +330,20 @@ impl CoreSnapshot {
     }
 
     pub fn transfer_amount_resolution(&self) -> TransferAmountResolution {
+        if crate::cancellations::is_candidate(self) {
+            let plan = crate::cancellations::build_plan(self);
+            return TransferAmountResolution {
+                outcome: if plan.can_transfer() {
+                    TransferAmountOutcome::Exact
+                } else {
+                    TransferAmountOutcome::Error
+                },
+                bank_field: None,
+                transfer_amount: plan.can_transfer().then(|| plan.total()),
+                request_amount: self.request_amount,
+                detail: (!plan.blockers.is_empty()).then(|| plan.blockers.join(" | ")),
+            };
+        }
         let zero = Decimal::ZERO;
         let bank_cmf_amount = self.bank_cmf_amount.filter(|amount| *amount > zero);
         let bank_coinag_cba_amount = self.bank_coinag_cba_amount.filter(|amount| *amount > zero);

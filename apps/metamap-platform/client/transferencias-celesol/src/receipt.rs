@@ -11,7 +11,11 @@ use printpdf::{
     PdfDocument, Point, Rgb, image_crate::codecs::png::PngDecoder,
 };
 
-use crate::models::HydratedCase;
+use crate::{
+    cancellations::{TransferLeg, TransferLegKind},
+    models::HydratedCase,
+    validation::format_money,
+};
 
 const PAGE_WIDTH_MM: f32 = 210.0;
 const PAGE_HEIGHT_MM: f32 = 297.0;
@@ -99,6 +103,112 @@ pub fn write_automatic_error_receipt(
         ReceiptMode::AutomaticError,
         Some(error_detail),
     )
+}
+
+pub fn write_cancellation_receipt(
+    receipts_dir: &Path,
+    operator_name: &str,
+    case: &HydratedCase,
+    legs: &[(TransferLeg, String)],
+) -> Result<PathBuf> {
+    fs::create_dir_all(receipts_dir)
+        .with_context(|| format!("No se pudo crear la carpeta {:?}", receipts_dir))?;
+    let timestamp = Local::now();
+    let receipt_path = receipts_dir.join(format!(
+        "{}-{}-{}-cancelacion.pdf",
+        sanitize_filename(case.request_oid()),
+        sanitize_filename(case.display_name().as_str()),
+        timestamp.format("%Y%m%d-%H%M%S"),
+    ));
+    let (document, page, layer) = PdfDocument::new(
+        "Comprobante Cancelacion",
+        Mm(PAGE_WIDTH_MM),
+        Mm(PAGE_HEIGHT_MM),
+        "Capa 1",
+    );
+    let current_layer = document.get_page(page).get_layer(layer);
+    let regular_font = document.add_builtin_font(BuiltinFont::Helvetica)?;
+    let bold_font = document.add_builtin_font(BuiltinFont::HelveticaBold)?;
+    draw_frame(&current_layer);
+    draw_logo(&current_layer)?;
+    write_text(
+        &current_layer,
+        &bold_font,
+        "Comprobante de cancelacion",
+        TITLE_SIZE_PT,
+        TITLE_X_MM,
+        TITLE_Y_MM,
+        rgb(33, 37, 41),
+    );
+    write_text(
+        &current_layer,
+        &regular_font,
+        "Transferencias inmediatas confirmadas",
+        SUBTITLE_SIZE_PT,
+        TITLE_X_MM,
+        SUBTITLE_Y_MM,
+        rgb(141, 145, 153),
+    );
+    draw_divider(&current_layer, DIVIDER_Y_MM);
+
+    let mut rows = vec![
+        ("Solicitud".to_owned(), case.request_oid().to_owned()),
+        ("Solicitante".to_owned(), case.display_name()),
+        ("Documento".to_owned(), case.document_display()),
+        ("Operador".to_owned(), operator_name.to_owned()),
+        (
+            "Fecha y hora".to_owned(),
+            timestamp.format("%d/%m/%Y %H:%M").to_string(),
+        ),
+        ("Importe total".to_owned(), case.transfer_amount_display()),
+        ("Cantidad de patas".to_owned(), legs.len().to_string()),
+    ];
+    for (index, (leg, transaction_id)) in legs.iter().enumerate() {
+        let destination = match leg.kind {
+            TransferLegKind::Member => "Socio".to_owned(),
+            TransferLegKind::Creditor => leg
+                .holder_name
+                .clone()
+                .unwrap_or_else(|| "Entidad financiera".to_owned()),
+        };
+        rows.push((format!("Pata {}", index + 1), destination));
+        rows.push((
+            "CUIT / CBU".to_owned(),
+            format!("{} / {}", leg.cuit, leg.cbu),
+        ));
+        rows.push((
+            "Importe / transaccion".to_owned(),
+            format!("{} / {}", format_money(leg.amount), transaction_id),
+        ));
+    }
+    rows.push(("Estado".to_owned(), "Cancelacion confirmada".to_owned()));
+
+    let mut current_y = ROW_START_Y_MM;
+    for (label, value) in rows {
+        write_text(
+            &current_layer,
+            &bold_font,
+            &label,
+            8.0,
+            LABEL_X_MM,
+            current_y,
+            rgb(71, 75, 82),
+        );
+        write_text(
+            &current_layer,
+            &regular_font,
+            &value,
+            8.0,
+            VALUE_X_MM,
+            current_y,
+            rgb(33, 37, 41),
+        );
+        current_y -= 6.0;
+    }
+    document
+        .save(&mut BufWriter::new(File::create(&receipt_path)?))
+        .with_context(|| format!("No se pudo guardar {:?}", receipt_path))?;
+    Ok(receipt_path)
 }
 
 #[derive(Clone, Copy)]

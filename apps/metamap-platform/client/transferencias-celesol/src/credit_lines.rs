@@ -45,6 +45,8 @@ pub struct CreditLineEntry {
     #[serde(default)]
     pub descripcion: String,
     pub modo: CreditLineMode,
+    #[serde(default)]
+    pub modo_cancelaciones: CreditLineMode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +93,17 @@ impl CreditLinesFile {
             .unwrap_or_default()
     }
 
+    pub fn cancellation_mode_for(&self, id: Option<u64>) -> CreditLineMode {
+        let Some(id) = id else {
+            return CreditLineMode::Inhabilitada;
+        };
+        self.lineas
+            .iter()
+            .find(|line| line.id == id)
+            .map(|line| line.modo_cancelaciones)
+            .unwrap_or_default()
+    }
+
     pub fn enabled_count(&self) -> usize {
         self.lineas
             .iter()
@@ -102,6 +115,20 @@ impl CreditLinesFile {
         self.lineas
             .iter()
             .filter(|line| line.modo.allows_automatic())
+            .count()
+    }
+
+    pub fn cancellation_enabled_count(&self) -> usize {
+        self.lineas
+            .iter()
+            .filter(|line| line.modo_cancelaciones.allows_manual())
+            .count()
+    }
+
+    pub fn cancellation_automatic_count(&self) -> usize {
+        self.lineas
+            .iter()
+            .filter(|line| line.modo_cancelaciones.allows_automatic())
             .count()
     }
 
@@ -132,6 +159,7 @@ impl CreditLinesFile {
                     codigo: catalog_line.codigo,
                     descripcion: catalog_line.descripcion,
                     modo: CreditLineMode::Inhabilitada,
+                    modo_cancelaciones: CreditLineMode::Inhabilitada,
                 });
             }
         }
@@ -241,7 +269,7 @@ fn backup_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(windows)]
-fn replace_file(source: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
@@ -272,7 +300,7 @@ fn replace_file(source: &Path, destination: &Path) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn replace_file(source: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<()> {
     fs::rename(source, destination)
         .context("No se pudo reemplazar atomicamente la configuracion de lineas")
 }
@@ -298,6 +326,7 @@ mod tests {
                 codigo: "old".to_owned(),
                 descripcion: "Nombre anterior".to_owned(),
                 modo: CreditLineMode::Automatica,
+                modo_cancelaciones: CreditLineMode::Inhabilitada,
             }],
         };
 
@@ -311,6 +340,30 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_permission_is_independent_and_preserved_by_id() {
+        let mut config = CreditLinesFile {
+            version: CREDIT_LINES_CONFIG_VERSION,
+            lineas: vec![CreditLineEntry {
+                id: 2684,
+                codigo: "10011".to_owned(),
+                descripcion: "MUDON CANCELACIONES".to_owned(),
+                modo: CreditLineMode::Inhabilitada,
+                modo_cancelaciones: CreditLineMode::Habilitada,
+            }],
+        };
+
+        config
+            .reconcile(vec![catalog(2684, "10011", "MUDON CANCELACIONES")])
+            .unwrap();
+
+        assert_eq!(config.mode_for(Some(2684)), CreditLineMode::Inhabilitada);
+        assert_eq!(
+            config.cancellation_mode_for(Some(2684)),
+            CreditLineMode::Habilitada
+        );
+    }
+
+    #[test]
     fn reconcile_adds_unknown_ids_disabled_and_removes_inactive_ids() {
         let mut config = CreditLinesFile {
             version: CREDIT_LINES_CONFIG_VERSION,
@@ -319,6 +372,7 @@ mod tests {
                 codigo: String::new(),
                 descripcion: "Anterior".to_owned(),
                 modo: CreditLineMode::Habilitada,
+                modo_cancelaciones: CreditLineMode::Inhabilitada,
             }],
         };
 
@@ -341,12 +395,14 @@ mod tests {
                     codigo: String::new(),
                     descripcion: String::new(),
                     modo: CreditLineMode::Inhabilitada,
+                    modo_cancelaciones: CreditLineMode::Inhabilitada,
                 },
                 CreditLineEntry {
                     id: 10,
                     codigo: String::new(),
                     descripcion: String::new(),
                     modo: CreditLineMode::Automatica,
+                    modo_cancelaciones: CreditLineMode::Inhabilitada,
                 },
             ],
         };

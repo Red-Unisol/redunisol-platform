@@ -22,6 +22,7 @@ pub struct AppConfig {
     pub automatic_receipts_dir: PathBuf,
     pub completed_log_path: PathBuf,
     pub credit_lines_path: PathBuf,
+    pub creditor_whitelist_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -312,6 +313,11 @@ impl AppConfig {
                 base_dir,
                 optional_value(values, "TRANSFERENCIAS_LINEAS_CONFIG_PATH").as_deref(),
                 "lineas.toml",
+            ),
+            creditor_whitelist_path: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_ACREEDORES_CONFIG_PATH").as_deref(),
+                "acreedores-confiables.toml",
             ),
         })
     }
