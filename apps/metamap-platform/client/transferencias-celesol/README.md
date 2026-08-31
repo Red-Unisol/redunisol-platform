@@ -12,7 +12,11 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
   - titularidad Coinag via CUIL/CUIT
-- transferencia automatica habilitada/pausada para lineas explicitamente autorizadas
+- configuracion unificada de lineas por ID estable, editable desde la aplicacion
+- cancelaciones detectadas por `MontoCancelaciones` o `DetalleFormaPago.Count()`, sin depender del nombre de la linea
+- cancelaciones ejecutadas como patas independientes al socio y a cada acreedor
+- whitelist dinamica por CUIT juridico + CBU, con validacion Coinag en cada operacion
+- transferencia automatica habilitada/pausada para lineas marcadas como automaticas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
 - si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
   - documento MetaMap vs core
@@ -62,13 +66,31 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_RECEIPTS_DIR`
 - `TRANSFERENCIAS_AUTO_RECEIPTS_DIR` default `receipts-automaticas`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
+- `TRANSFERENCIAS_LINEAS_CONFIG_PATH` default `lineas.toml` junto a la configuracion
+- `TRANSFERENCIAS_ACREEDORES_CONFIG_PATH` default `acreedores-confiables.toml`
 
-Automaticas:
+Configuracion de lineas:
 
-- `TRANSFERENCIAS_AUTO_LINEAS` allowlist exacta de lineas separadas por coma o punto y coma
-- `TRANSFERENCIAS_AUTO_LINEAS_PATH` archivo alternativo con una linea por renglon
+- `lineas.toml` reemplaza los archivos historicos `lineas_habilitadas` y `lineas_automaticas`
+- la identidad se resuelve exclusivamente por `LineaPrestamo.ID`; codigo y descripcion son informativos
+- si el archivo no existe, se consultan las lineas con solicitudes en los ultimos tres meses y todas se crean `inhabilitada`
+- `Configurar lineas` permite elegir `Inhabilitada`, `Habilitada` o `Automatica` por separado para creditos normales y cancelaciones
+- `Refrescar desde el core` conserva el modo de IDs que siguen activos, actualiza sus metadatos, incorpora IDs nuevos inhabilitados y retira los que ya no tienen actividad en la ventana de tres meses
+- el orden del archivo no modifica el comportamiento
+- el guardado crea `lineas.toml.bak` y reemplaza el archivo principal de forma atomica
 
-Si no se define ninguna linea automatica, el control habilitado/pausado queda deshabilitado.
+Cancelaciones:
+
+- una solicitud es candidata si `MontoCancelaciones != 0` o `DetalleFormaPago.Count() > 0`
+- antes de transferir deben coincidir la suma de detalles, `MontoCancelaciones`, `abs(Monto En Mano)`, `MontoAFinanciar` y el unico campo bancario no nulo
+- cada CBU se consulta siempre en Coinag; CUIT juridico, nombre y cuenta en pesos son bloqueantes
+- una entidad o un CBU nuevos generan advertencia y requieren confirmacion manual; la accion `Confiar acreedor` los agrega a la whitelist atomica
+- cualquier advertencia impide el modo automatico
+- se hace preflight de todas las patas antes del primer envio y cada pata tiene un `idTrxCliente` estable
+- un reintento solo omite una pata previa si Coinag confirma que CBU, CUIT e importe coinciden exactamente
+- el core se marca `Pagada` unicamente despues de confirmar todas las patas y generar el comprobante conjunto
+
+Si no hay ninguna linea marcada como automatica, el control habilitado/pausado queda deshabilitado.
 Cada apertura de la app comienza con las transferencias automaticas pausadas. Al habilitarlas, procesa una solicitud elegible por vez; al pausarlas, deja terminar la transferencia en curso y no comienza la siguiente.
 Las automaticas solo corren si la solicitud esta verde, sin warnings ni bloqueos, con MetaMap `completed`.
 Los comprobantes de automaticas se generan en `TRANSFERENCIAS_AUTO_RECEIPTS_DIR`, separado de los comprobantes manuales.

@@ -39,8 +39,9 @@ fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(APP_NAME_WITH_TAG)
-            .with_inner_size([1500.0, 920.0])
-            .with_min_inner_size([1200.0, 700.0]),
+            .with_inner_size([1100.0, 700.0])
+            .with_min_inner_size([800.0, 500.0])
+            .with_maximized(true),
         ..Default::default()
     };
 

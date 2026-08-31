@@ -3,7 +3,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, RwLock,
         mpsc::{self, Receiver, Sender},
     },
     thread,
@@ -17,10 +17,14 @@ use egui_extras::{Column, TableBuilder};
 use serde_json::{Value, json};
 
 use crate::{
-    APP_NAME_WITH_TAG,
+    APP_NAME_WITH_TAG, cancellations,
     coinag_client::{CoelsaTransferStatus, CoinagClient, TransferLookupResponse},
     config::AppConfig,
     core_client::CoreClient,
+    credit_lines::{
+        CreditLineCatalogEntry, CreditLineEntry, CreditLineMode, CreditLinesFile, ReconcileSummary,
+    },
+    creditor_whitelist::{CreditorWhitelistFile, TrustStatus},
     mark_paid_client::{MarkPaidClient, MarkPaidHttpError},
     models::{
         CoinagTransferGuard, CoreSnapshot, HydratedCase, MetamapSnapshot, TransferAmountOutcome,
@@ -50,6 +54,7 @@ pub struct TransferenciasApp {
     automatic_attempted: HashSet<String>,
     automatic_pending: Vec<AutomaticTransferPending>,
     show_automatic_pending: bool,
+    credit_line_editor: CreditLineEditor,
 }
 
 const BALANCE_POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -63,6 +68,8 @@ impl TransferenciasApp {
     pub fn new(config: AppConfig) -> Result<Self> {
         let services = Arc::new(AppServices::new(config)?);
         let (event_tx, event_rx) = mpsc::channel();
+        let startup_notices = services.startup_notices.clone();
+        let credit_lines = services.credit_lines_snapshot();
         let mut app = Self {
             next_poll_at: Instant::now(),
             next_balance_poll_at: Instant::now(),
@@ -73,7 +80,10 @@ impl TransferenciasApp {
             event_rx,
             items_loading: false,
             balance_loading: false,
-            notices: Vec::new(),
+            notices: startup_notices
+                .into_iter()
+                .map(|message| format!("[{}] {message}", Local::now().format("%H:%M:%S")))
+                .collect(),
             show_disabled_lines: false,
             pending_transfer_confirmation: None,
             transfer_lookup: TransferLookupDialog::default(),
@@ -82,6 +92,7 @@ impl TransferenciasApp {
             automatic_attempted: HashSet::new(),
             automatic_pending: Vec::new(),
             show_automatic_pending: false,
+            credit_line_editor: CreditLineEditor::from_config(credit_lines),
         };
         log::info!("TransferenciasApp inicializada.");
         app.spawn_items_poll();
@@ -225,8 +236,8 @@ impl TransferenciasApp {
             && item.server_validation.has_completed_validation()
             && self
                 .services
-                .automatic_credit_lines
-                .is_enabled(item.core.credit_line_description.as_deref())
+                .credit_line_mode_for(&item.core)
+                .allows_automatic()
             && !self.automatic_inflight.contains(item.request_oid())
             && !self.automatic_attempted.contains(item.request_oid())
     }
@@ -455,6 +466,299 @@ impl TransferenciasApp {
             .count()
     }
 
+    fn open_credit_line_editor(&mut self) {
+        self.credit_line_editor
+            .reset(self.services.credit_lines_snapshot());
+        self.credit_line_editor.open = true;
+    }
+
+    fn spawn_credit_line_catalog_refresh(&mut self) {
+        if self.credit_line_editor.loading {
+            return;
+        }
+        self.credit_line_editor.loading = true;
+        self.credit_line_editor.message = Some("Consultando catalogo del core...".to_owned());
+        let services = Arc::clone(&self.services);
+        let sender = self.event_tx.clone();
+        thread::spawn(move || match services.fetch_credit_line_catalog() {
+            Ok(catalog) => {
+                let _ = sender.send(WorkerEvent::CreditLineCatalogLoaded(catalog));
+            }
+            Err(error) => {
+                let _ = sender.send(WorkerEvent::CreditLineCatalogFailed(error.to_string()));
+            }
+        });
+    }
+
+    fn render_credit_line_editor(&mut self, ctx: &egui::Context) {
+        if !self.credit_line_editor.open {
+            return;
+        }
+
+        let mut open = self.credit_line_editor.open;
+        let mut refresh_clicked = false;
+        let mut save_clicked = false;
+        let mut discard_clicked = false;
+        let shortcut_save = ctx.input(|input| input.modifiers.command && input.key_pressed(Key::S));
+        let shortcut_close = ctx.input(|input| input.key_pressed(Key::Escape));
+        if shortcut_save && self.credit_line_editor.dirty {
+            save_clicked = true;
+        }
+        if shortcut_close {
+            if self.credit_line_editor.dirty {
+                self.credit_line_editor.confirm_discard_open = true;
+            } else {
+                self.credit_line_editor.open = false;
+                return;
+            }
+        }
+
+        let available = ctx.available_rect().size();
+        let editor_width = (available.x - 24.0).clamp(560.0, 980.0);
+        let editor_height = (available.y - 24.0).clamp(360.0, 620.0);
+        let config_path = self.services.credit_lines_path.display().to_string();
+        let editor = &mut self.credit_line_editor;
+        egui::Window::new("Configuracion de lineas")
+            .open(&mut open)
+            .default_width(editor_width)
+            .default_height(editor_height)
+            .max_width(editor_width)
+            .max_height(editor_height)
+            .constrain(true)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label(
+                    "Cada linea tiene permisos independientes para creditos normales y cancelaciones. Las lineas nuevas quedan inhabilitadas en ambos.",
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Buscar:");
+                    ui.add(
+                        TextEdit::singleline(&mut editor.search)
+                            .hint_text("ID, codigo o descripcion")
+                            .desired_width(260.0),
+                    );
+                    egui::ComboBox::from_id_salt("credit_line_filter")
+                        .selected_text(editor.filter.label())
+                        .show_ui(ui, |ui| {
+                            for filter in [
+                                CreditLineFilter::Todas,
+                                CreditLineFilter::Inhabilitadas,
+                                CreditLineFilter::Habilitadas,
+                                CreditLineFilter::Automaticas,
+                            ] {
+                                ui.selectable_value(&mut editor.filter, filter, filter.label());
+                            }
+                        });
+                    if ui
+                        .add_enabled(
+                            !editor.loading,
+                            egui::Button::new(if editor.loading {
+                                "Actualizando..."
+                            } else {
+                                "Refrescar desde el core"
+                            }),
+                        )
+                        .clicked()
+                    {
+                        refresh_clicked = true;
+                    }
+                });
+
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .add_enabled(
+                            editor.dirty,
+                            egui::Button::new("Guardar cambios (Ctrl+S)"),
+                        )
+                        .clicked()
+                    {
+                        save_clicked = true;
+                    }
+                    if ui
+                        .add_enabled(editor.dirty, egui::Button::new("Descartar cambios"))
+                        .clicked()
+                    {
+                        discard_clicked = true;
+                    }
+                    if editor.dirty {
+                        ui.label(
+                            RichText::new("Cambios sin guardar")
+                                .color(Color32::from_rgb(220, 165, 45)),
+                        );
+                    }
+                });
+                ui.small(format!("Archivo: {config_path}"));
+
+                let disabled = editor
+                    .draft
+                    .lineas
+                    .iter()
+                    .filter(|line| line.modo == CreditLineMode::Inhabilitada)
+                    .count();
+                let enabled = editor
+                    .draft
+                    .lineas
+                    .iter()
+                    .filter(|line| line.modo == CreditLineMode::Habilitada)
+                    .count();
+                let automatic = editor.draft.automatic_count();
+                let cancellation_enabled = editor.draft.cancellation_enabled_count();
+                let cancellation_automatic = editor.draft.cancellation_automatic_count();
+                ui.horizontal(|ui| {
+                    ui.label(format!("Total: {}", editor.draft.lineas.len()));
+                    ui.separator();
+                    ui.label(format!("Inhabilitadas: {disabled}"));
+                    ui.label(format!("Habilitadas: {enabled}"));
+                    ui.label(format!("Automaticas: {automatic}"));
+                    ui.separator();
+                    ui.label(format!("Cancelaciones habilitadas: {cancellation_enabled}"));
+                    ui.label(format!("automaticas: {cancellation_automatic}"));
+                });
+                if let Some(message) = &editor.message {
+                    ui.label(message);
+                }
+                ui.separator();
+
+                let query = editor.search.trim().to_lowercase();
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .max_height(ui.available_height())
+                    .show(ui, |ui| {
+                        for line in &mut editor.draft.lineas {
+                            let matches_query = query.is_empty()
+                                || line.id.to_string().contains(&query)
+                                || line.codigo.to_lowercase().contains(&query)
+                                || line.descripcion.to_lowercase().contains(&query);
+                            if !matches_query || !editor.filter.includes(line) {
+                                continue;
+                            }
+                            ui.horizontal(|ui| {
+                                ui.monospace(format!("{:>5}", line.id));
+                                ui.label(format!("{:>8}", line.codigo));
+                                let description = if line.descripcion.is_empty() {
+                                    "<sin descripcion>"
+                                } else {
+                                    line.descripcion.as_str()
+                                };
+                                ui.add_sized([310.0, 20.0], egui::Label::new(description));
+                                let previous = line.modo;
+                                ui.label("Normal:");
+                                ui.radio_value(
+                                    &mut line.modo,
+                                    CreditLineMode::Inhabilitada,
+                                    "Inhabilitada",
+                                );
+                                ui.radio_value(
+                                    &mut line.modo,
+                                    CreditLineMode::Habilitada,
+                                    "Habilitada",
+                                );
+                                ui.radio_value(
+                                    &mut line.modo,
+                                    CreditLineMode::Automatica,
+                                    "Automatica",
+                                );
+                                if previous != line.modo {
+                                    editor.dirty = true;
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.add_space(420.0);
+                                ui.label("Cancelacion:");
+                                let previous = line.modo_cancelaciones;
+                                ui.radio_value(
+                                    &mut line.modo_cancelaciones,
+                                    CreditLineMode::Inhabilitada,
+                                    "Inhabilitada",
+                                );
+                                ui.radio_value(
+                                    &mut line.modo_cancelaciones,
+                                    CreditLineMode::Habilitada,
+                                    "Habilitada",
+                                );
+                                ui.radio_value(
+                                    &mut line.modo_cancelaciones,
+                                    CreditLineMode::Automatica,
+                                    "Automatica",
+                                );
+                                if previous != line.modo_cancelaciones {
+                                    editor.dirty = true;
+                                }
+                            });
+                            ui.separator();
+                        }
+                    });
+            });
+        if !open && self.credit_line_editor.dirty {
+            self.credit_line_editor.confirm_discard_open = true;
+            self.credit_line_editor.open = true;
+        } else {
+            self.credit_line_editor.open = open;
+        }
+
+        if self.credit_line_editor.confirm_discard_open {
+            let mut continue_editing = false;
+            let mut discard_and_close = false;
+            egui::Window::new("Cambios sin guardar")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label("Hay cambios de lineas que todavia no fueron guardados.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Seguir editando").clicked() {
+                            continue_editing = true;
+                        }
+                        if ui.button("Descartar y cerrar").clicked() {
+                            discard_and_close = true;
+                        }
+                    });
+                });
+            if continue_editing {
+                self.credit_line_editor.confirm_discard_open = false;
+            }
+            if discard_and_close {
+                self.credit_line_editor
+                    .reset(self.services.credit_lines_snapshot());
+                self.credit_line_editor.confirm_discard_open = false;
+                self.credit_line_editor.open = false;
+            }
+        }
+
+        if refresh_clicked {
+            self.spawn_credit_line_catalog_refresh();
+        }
+        if discard_clicked {
+            self.credit_line_editor
+                .reset(self.services.credit_lines_snapshot());
+        }
+        if save_clicked {
+            match self
+                .services
+                .save_credit_lines(self.credit_line_editor.draft.clone())
+            {
+                Ok(()) => {
+                    self.credit_line_editor.dirty = false;
+                    self.credit_line_editor.confirm_discard_open = false;
+                    self.credit_line_editor.message =
+                        Some("Configuracion guardada y aplicada.".to_owned());
+                    self.automatic_processing_enabled = false;
+                    self.push_notice(
+                        "Configuracion de lineas guardada. Las automaticas quedaron pausadas.",
+                    );
+                    self.spawn_items_poll();
+                }
+                Err(error) => {
+                    log::error!("No se pudo guardar la configuracion de lineas: {error:#}");
+                    self.credit_line_editor.message = Some(format!("Error al guardar: {error}"));
+                    self.push_notice(format!(
+                        "Error al guardar la configuracion de lineas: {error}"
+                    ));
+                }
+            }
+        }
+    }
+
     fn process_worker_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
@@ -493,6 +797,35 @@ impl TransferenciasApp {
                     self.transfer_lookup.result = None;
                     self.transfer_lookup.open = true;
                     self.push_notice(format!("Error en consulta de transferencia: {error}"));
+                }
+                WorkerEvent::CreditLineCatalogLoaded(catalog) => {
+                    self.credit_line_editor.loading = false;
+                    match self.credit_line_editor.draft.reconcile(catalog) {
+                        Ok(summary) => {
+                            log::info!(
+                                "Catalogo de lineas reconciliado. added={} updated={} removed={}.",
+                                summary.added,
+                                summary.updated,
+                                summary.removed
+                            );
+                            self.credit_line_editor.dirty =
+                                summary.added > 0 || summary.updated > 0 || summary.removed > 0;
+                            self.credit_line_editor.message =
+                                Some(format_reconcile_summary(summary));
+                        }
+                        Err(error) => {
+                            log::error!("El catalogo de lineas recibido no es valido: {error:#}");
+                            self.credit_line_editor.message =
+                                Some(format!("El catalogo recibido no es valido: {error}"));
+                        }
+                    }
+                }
+                WorkerEvent::CreditLineCatalogFailed(error) => {
+                    self.credit_line_editor.loading = false;
+                    log::error!("No se pudo refrescar el catalogo de lineas: {error}");
+                    self.credit_line_editor.message =
+                        Some(format!("No se pudo actualizar desde el core: {error}"));
+                    self.push_notice(format!("Error al actualizar lineas: {error}"));
                 }
                 WorkerEvent::CaseUpdated {
                     case,
@@ -572,10 +905,12 @@ impl eframe::App for TransferenciasApp {
 
         let mut request_to_transfer = None;
         let mut transfer_confirmation = None;
+        let mut creditors_to_trust = None;
         let mut toggle_automatic_processing = false;
+        let mut open_credit_line_editor = false;
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.heading(APP_NAME_WITH_TAG);
                 ui.separator();
                 ui.label(format!(
@@ -601,7 +936,11 @@ impl eframe::App for TransferenciasApp {
                     Color32::LIGHT_GRAY
                 };
                 ui.label(RichText::new(&self.balance_text).color(balance_color));
-                ui.separator();
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Configurar lineas").clicked() {
+                    open_credit_line_editor = true;
+                }
                 if ui
                     .add_enabled(!self.items_loading, egui::Button::new("Recargar lista"))
                     .clicked()
@@ -658,6 +997,10 @@ impl eframe::App for TransferenciasApp {
             });
         });
 
+        if open_credit_line_editor {
+            self.open_credit_line_editor();
+        }
+
         if toggle_automatic_processing {
             self.automatic_processing_enabled = !self.automatic_processing_enabled;
             let state = if self.automatic_processing_enabled {
@@ -674,6 +1017,7 @@ impl eframe::App for TransferenciasApp {
 
         self.render_transfer_lookup_window(ctx);
         self.render_automatic_pending_window(ctx);
+        self.render_credit_line_editor(ctx);
 
         egui::TopBottomPanel::bottom("notices")
             .resizable(true)
@@ -861,17 +1205,27 @@ impl eframe::App for TransferenciasApp {
                                     ui.label("Procesando...");
                                     return;
                                 }
-                                let response =
-                                    ui.add_enabled(button_enabled, egui::Button::new("Transferir"));
-                                if response.clicked() {
-                                    transfer_confirmation =
-                                        Some(TransferConfirmation::for_case(item));
-                                }
-                                if !self.services.transfer_enabled() {
-                                    response.on_hover_text(
-                                        "Coinag no esta configurado en este runtime.",
+                                ui.vertical(|ui| {
+                                    let response = ui.add_enabled(
+                                        button_enabled,
+                                        egui::Button::new("Transferir"),
                                     );
-                                }
+                                    if response.clicked() {
+                                        transfer_confirmation =
+                                            Some(TransferConfirmation::for_case(item));
+                                    }
+                                    if !self.services.transfer_enabled() {
+                                        response.on_hover_text(
+                                            "Coinag no esta configurado en este runtime.",
+                                        );
+                                    }
+                                    if cancellations::is_candidate(&item.core)
+                                        && self.services.has_untrusted_creditors(&item.core)
+                                        && ui.button("Confiar acreedor").clicked()
+                                    {
+                                        creditors_to_trust = Some(item.core.clone());
+                                    }
+                                });
                             });
                         });
                     }
@@ -880,6 +1234,20 @@ impl eframe::App for TransferenciasApp {
 
         if let Some(transfer_confirmation) = transfer_confirmation {
             self.pending_transfer_confirmation = Some(transfer_confirmation);
+        }
+        if let Some(core) = creditors_to_trust {
+            match self.services.approve_case_creditors(&core) {
+                Ok(count) => {
+                    self.push_notice(format!(
+                        "Se agregaron {count} destinos de acreedores a la whitelist para la solicitud {}.",
+                        core.request_oid
+                    ));
+                    self.spawn_items_poll();
+                }
+                Err(error) => self.push_notice(format!(
+                    "No se pudo actualizar la whitelist de acreedores: {error}"
+                )),
+            }
         }
 
         self.render_transfer_confirmation(ctx, &mut request_to_transfer);
@@ -914,6 +1282,77 @@ struct TransferLookupResult {
     request_number: String,
     summary_fields: Vec<(String, String)>,
     raw_json: String,
+}
+
+struct CreditLineEditor {
+    open: bool,
+    loading: bool,
+    search: String,
+    filter: CreditLineFilter,
+    draft: CreditLinesFile,
+    dirty: bool,
+    message: Option<String>,
+    confirm_discard_open: bool,
+}
+
+impl CreditLineEditor {
+    fn from_config(draft: CreditLinesFile) -> Self {
+        Self {
+            open: false,
+            loading: false,
+            search: String::new(),
+            filter: CreditLineFilter::Todas,
+            draft,
+            dirty: false,
+            message: None,
+            confirm_discard_open: false,
+        }
+    }
+
+    fn reset(&mut self, draft: CreditLinesFile) {
+        self.draft = draft;
+        self.dirty = false;
+        self.message = None;
+        self.confirm_discard_open = false;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum CreditLineFilter {
+    #[default]
+    Todas,
+    Inhabilitadas,
+    Habilitadas,
+    Automaticas,
+}
+
+impl CreditLineFilter {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Todas => "Todas",
+            Self::Inhabilitadas => "Inhabilitadas",
+            Self::Habilitadas => "Habilitadas",
+            Self::Automaticas => "Automaticas",
+        }
+    }
+
+    fn includes(self, line: &CreditLineEntry) -> bool {
+        match self {
+            Self::Todas => true,
+            Self::Inhabilitadas => {
+                line.modo == CreditLineMode::Inhabilitada
+                    && line.modo_cancelaciones == CreditLineMode::Inhabilitada
+            }
+            Self::Habilitadas => {
+                line.modo == CreditLineMode::Habilitada
+                    || line.modo_cancelaciones == CreditLineMode::Habilitada
+            }
+            Self::Automaticas => {
+                line.modo == CreditLineMode::Automatica
+                    || line.modo_cancelaciones == CreditLineMode::Automatica
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1013,6 +1452,24 @@ fn finish_receipt_trace(
     }
 }
 
+fn cancellation_failure(
+    mut case: HydratedCase,
+    message: String,
+    transfer_kind: TransferKind,
+    refresh_balance: bool,
+) -> WorkerEvent {
+    case.busy = false;
+    case.message = Some(message.clone());
+    WorkerEvent::CaseUpdated {
+        case,
+        message,
+        receipt_path: None,
+        refresh_balance,
+        transfer_kind,
+        automatic_receipt_pending: false,
+    }
+}
+
 impl TransferConfirmation {
     fn for_case(item: &HydratedCase) -> Self {
         let resolution = item.transfer_amount_resolution();
@@ -1031,23 +1488,49 @@ impl TransferConfirmation {
             ));
         }
 
+        warning_lines.extend(item.validation.warnings.iter().cloned());
+
+        let mut summary_fields = vec![
+            ("NOMBRE".to_owned(), item.display_name()),
+            ("CUIL".to_owned(), item.cuil_display()),
+            (
+                "LINEA".to_owned(),
+                display_credit_line(item.core.credit_line_description.as_deref()),
+            ),
+            ("MONTO SOLICITUD".to_owned(), item.core_amount_display()),
+            (
+                "MONTO A TRANSFERIR".to_owned(),
+                item.transfer_amount_display(),
+            ),
+        ];
+        if cancellations::is_candidate(&item.core) {
+            for (index, leg) in cancellations::build_plan(&item.core)
+                .legs
+                .iter()
+                .enumerate()
+            {
+                summary_fields.push((
+                    format!("PATA {}", index + 1),
+                    format!(
+                        "{} | CUIT {} | CBU {} | {}",
+                        leg.holder_name.as_deref().unwrap_or(match leg.kind {
+                            cancellations::TransferLegKind::Member => "Socio",
+                            cancellations::TransferLegKind::Creditor => "Entidad financiera",
+                        }),
+                        leg.cuit,
+                        leg.cbu,
+                        validation::format_money(leg.amount)
+                    ),
+                ));
+            }
+        } else {
+            summary_fields.push(("CBU".to_owned(), item.cbu_display()));
+        }
+
         Self {
             request_oid: item.request_oid().to_owned(),
             message: "Desea transferir esta solicitud?".to_owned(),
-            summary_fields: vec![
-                ("NOMBRE".to_owned(), item.display_name()),
-                ("CUIL".to_owned(), item.cuil_display()),
-                (
-                    "LINEA".to_owned(),
-                    display_credit_line(item.core.credit_line_description.as_deref()),
-                ),
-                ("MONTO SOLICITUD".to_owned(), item.core_amount_display()),
-                (
-                    "MONTO A TRANSFERIR".to_owned(),
-                    item.transfer_amount_display(),
-                ),
-                ("CBU".to_owned(), item.cbu_display()),
-            ],
+            summary_fields,
             warning_message: if warning_lines.is_empty() {
                 None
             } else {
@@ -1063,43 +1546,15 @@ struct AppServices {
     core: CoreClient,
     mark_paid: Option<MarkPaidClient>,
     coinag: Option<CoinagClient>,
-    enabled_credit_lines: EnabledCreditLines,
-    automatic_credit_lines: EnabledCreditLines,
+    credit_lines: Arc<RwLock<CreditLinesFile>>,
+    credit_lines_path: PathBuf,
+    creditor_whitelist: Arc<RwLock<CreditorWhitelistFile>>,
+    creditor_whitelist_path: PathBuf,
+    startup_notices: Vec<String>,
     operator_name: String,
     poll_interval: std::time::Duration,
     receipts_dir: PathBuf,
     automatic_receipts_dir: PathBuf,
-}
-
-#[derive(Clone)]
-struct EnabledCreditLines {
-    path: PathBuf,
-    values: Arc<HashSet<String>>,
-}
-
-impl EnabledCreditLines {
-    fn new(path: PathBuf, values: Vec<String>) -> Self {
-        let values = values
-            .into_iter()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty())
-            .collect::<HashSet<_>>();
-        Self {
-            path,
-            values: Arc::new(values),
-        }
-    }
-
-    fn is_enabled(&self, line: Option<&str>) -> bool {
-        let Some(line) = line.map(str::trim).filter(|line| !line.is_empty()) else {
-            return false;
-        };
-        self.values.contains(line)
-    }
-
-    fn len(&self) -> usize {
-        self.values.len()
-    }
 }
 
 impl AppServices {
@@ -1125,34 +1580,98 @@ impl AppServices {
         } else {
             None
         };
-        let enabled_credit_lines = EnabledCreditLines::new(
-            config.enabled_credit_lines.path,
-            config.enabled_credit_lines.values,
-        );
-        let automatic_credit_lines = EnabledCreditLines::new(
-            config.automatic_credit_lines.path,
-            config.automatic_credit_lines.values,
-        );
+        let credit_lines_path = config.credit_lines_path;
+        let creditor_whitelist_path = config.creditor_whitelist_path;
+        let mut startup_notices = Vec::new();
+        let credit_lines = if credit_lines_path.exists() {
+            match CreditLinesFile::load(&credit_lines_path) {
+                Ok(lines) => lines,
+                Err(error) => {
+                    log::error!(
+                        "Configuracion de lineas invalida en {credit_lines_path:?}: {error:#}. Todas las lineas quedan inhabilitadas."
+                    );
+                    startup_notices.push(format!(
+                        "ATENCION: no se pudo cargar {}. Todas las lineas quedaron inhabilitadas: {error}",
+                        credit_lines_path.display()
+                    ));
+                    CreditLinesFile::default()
+                }
+            }
+        } else {
+            let mut initial = CreditLinesFile::default();
+            match core.fetch_credit_line_catalog() {
+                Ok(catalog) => match initial.reconcile(catalog) {
+                    Ok(summary) => match initial.save_atomic(&credit_lines_path) {
+                        Ok(()) => {
+                            startup_notices.push(format!(
+                                "Se creo {} con {} lineas inhabilitadas.",
+                                credit_lines_path.display(),
+                                summary.added
+                            ));
+                        }
+                        Err(error) => {
+                            log::error!(
+                                "No se pudo crear la configuracion inicial de lineas: {error:#}"
+                            );
+                            startup_notices.push(format!(
+                                "No se pudo guardar la configuracion inicial de lineas: {error}"
+                            ));
+                            initial = CreditLinesFile::default();
+                        }
+                    },
+                    Err(error) => {
+                        log::error!("Catalogo inicial de lineas invalido: {error:#}");
+                        startup_notices.push(format!(
+                            "El catalogo inicial de lineas no es valido: {error}"
+                        ));
+                    }
+                },
+                Err(error) => {
+                    log::error!("No se pudo obtener el catalogo inicial de lineas: {error:#}");
+                    startup_notices.push(format!(
+                        "No se pudo crear lineas.toml porque fallo el core. Todas las lineas estan inhabilitadas; reintente desde Configurar lineas: {error}"
+                    ));
+                }
+            }
+            initial
+        };
         let services = Self {
             server,
             core,
             mark_paid,
             coinag,
-            enabled_credit_lines,
-            automatic_credit_lines,
+            credit_lines: Arc::new(RwLock::new(credit_lines)),
+            credit_lines_path,
+            creditor_whitelist: Arc::new(RwLock::new(if creditor_whitelist_path.exists() {
+                CreditorWhitelistFile::load(&creditor_whitelist_path).with_context(|| {
+                    format!(
+                        "No se pudo cargar la whitelist de acreedores {:?}",
+                        creditor_whitelist_path
+                    )
+                })?
+            } else {
+                CreditorWhitelistFile::default()
+            })),
+            creditor_whitelist_path,
+            startup_notices,
             operator_name: config.operator_name,
             poll_interval: config.poll_interval,
             receipts_dir: config.receipts_dir,
             automatic_receipts_dir: config.automatic_receipts_dir,
         };
         log::info!(
-            "Servicios listos. transfer_enabled={}. mark_paid_enabled={}. lineas_habilitadas={} path={:?}. lineas_auto={} auto_path={:?}.",
+            "Servicios listos. transfer_enabled={}. mark_paid_enabled={}. lineas_habilitadas={} lineas_auto={} cancelaciones_habilitadas={} cancelaciones_auto={} lineas_path={:?}.",
             services.transfer_enabled(),
             services.mark_paid.is_some(),
-            services.enabled_credit_lines.len(),
-            services.enabled_credit_lines.path,
-            services.automatic_credit_lines.len(),
-            services.automatic_credit_lines.path
+            services.credit_lines_snapshot().enabled_count(),
+            services.credit_lines_snapshot().automatic_count(),
+            services
+                .credit_lines_snapshot()
+                .cancellation_enabled_count(),
+            services
+                .credit_lines_snapshot()
+                .cancellation_automatic_count(),
+            services.credit_lines_path
         );
         Ok(services)
     }
@@ -1162,7 +1681,184 @@ impl AppServices {
     }
 
     fn automatic_transfer_enabled(&self) -> bool {
-        self.transfer_enabled() && self.automatic_credit_lines.len() > 0
+        self.transfer_enabled()
+            && self
+                .credit_lines
+                .read()
+                .map(|lines| {
+                    lines.automatic_count() > 0 || lines.cancellation_automatic_count() > 0
+                })
+                .unwrap_or(false)
+    }
+
+    fn credit_lines_snapshot(&self) -> CreditLinesFile {
+        self.credit_lines
+            .read()
+            .map(|lines| lines.clone())
+            .unwrap_or_else(|error| {
+                log::error!("No se pudo leer la configuracion de lineas en memoria: {error}");
+                CreditLinesFile::default()
+            })
+    }
+
+    fn credit_line_mode_for(&self, core: &CoreSnapshot) -> CreditLineMode {
+        self.credit_lines
+            .read()
+            .map(|lines| {
+                if cancellations::is_candidate(core) {
+                    lines.cancellation_mode_for(core.credit_line_id)
+                } else {
+                    lines.mode_for(core.credit_line_id)
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    fn fetch_credit_line_catalog(&self) -> Result<Vec<CreditLineCatalogEntry>> {
+        self.core.fetch_credit_line_catalog()
+    }
+
+    fn save_credit_lines(&self, config: CreditLinesFile) -> Result<()> {
+        let mut guard = self.credit_lines.write().map_err(|error| {
+            anyhow::anyhow!("No se pudo actualizar la configuracion en memoria: {error}")
+        })?;
+        let previous = guard.clone();
+        config.save_atomic(&self.credit_lines_path)?;
+        let previous_by_id = previous
+            .lineas
+            .iter()
+            .map(|line| (line.id, line))
+            .collect::<HashMap<_, _>>();
+        for line in &config.lineas {
+            let previous_line = previous_by_id.get(&line.id).copied();
+            let previous_mode = previous_line
+                .map(|previous| previous.modo)
+                .unwrap_or_default();
+            if previous_line.is_none() {
+                log::info!(
+                    "credit_line_config_added {}",
+                    json!({
+                        "operator": self.operator_name,
+                        "line_id": line.id,
+                        "code": line.codigo,
+                        "description": line.descripcion,
+                        "mode": line.modo.label(),
+                        "cancellation_mode": line.modo_cancelaciones.label(),
+                    })
+                );
+            } else if previous_line.is_some_and(|previous| {
+                previous.codigo != line.codigo || previous.descripcion != line.descripcion
+            }) {
+                log::info!(
+                    "credit_line_config_metadata_updated {}",
+                    json!({
+                        "operator": self.operator_name,
+                        "line_id": line.id,
+                        "previous_code": previous_line.map(|line| line.codigo.as_str()),
+                        "new_code": line.codigo,
+                        "previous_description": previous_line.map(|line| line.descripcion.as_str()),
+                        "new_description": line.descripcion,
+                        "mode": line.modo.label(),
+                    })
+                );
+            }
+            if previous_line.is_some() && previous_mode != line.modo {
+                log::info!(
+                    "credit_line_config_change {}",
+                    json!({
+                        "operator": self.operator_name,
+                        "line_id": line.id,
+                        "code": line.codigo,
+                        "description": line.descripcion,
+                        "previous_mode": previous_mode.label(),
+                        "new_mode": line.modo.label(),
+                    })
+                );
+            }
+            let previous_cancellation_mode = previous_line
+                .map(|previous| previous.modo_cancelaciones)
+                .unwrap_or_default();
+            if previous_line.is_some() && previous_cancellation_mode != line.modo_cancelaciones {
+                log::info!(
+                    "credit_line_cancellation_config_change {}",
+                    json!({
+                        "operator": self.operator_name,
+                        "line_id": line.id,
+                        "code": line.codigo,
+                        "description": line.descripcion,
+                        "previous_mode": previous_cancellation_mode.label(),
+                        "new_mode": line.modo_cancelaciones.label(),
+                    })
+                );
+            }
+        }
+        log::info!(
+            "credit_line_config_saved {}",
+            json!({
+                "operator": self.operator_name,
+                "path": self.credit_lines_path,
+                "total": config.lineas.len(),
+                "enabled": config.enabled_count(),
+                "automatic": config.automatic_count(),
+                "cancellation_enabled": config.cancellation_enabled_count(),
+                "cancellation_automatic": config.cancellation_automatic_count(),
+            })
+        );
+        *guard = config;
+        Ok(())
+    }
+
+    fn has_untrusted_creditors(&self, core: &CoreSnapshot) -> bool {
+        let Ok(whitelist) = self.creditor_whitelist.read() else {
+            return true;
+        };
+        core.cancellation_payments.iter().any(|payment| {
+            match (payment.owner_cuit.as_deref(), payment.cbu.as_deref()) {
+                (Some(cuit), Some(cbu)) => whitelist.status(cuit, cbu) != TrustStatus::Trusted,
+                _ => false,
+            }
+        })
+    }
+
+    fn approve_case_creditors(&self, core: &CoreSnapshot) -> Result<usize> {
+        let mut guard = self.creditor_whitelist.write().map_err(|error| {
+            anyhow::anyhow!("No se pudo actualizar la whitelist en memoria: {error}")
+        })?;
+        let mut whitelist = guard.clone();
+        let mut added = 0;
+        let mut approvals = Vec::new();
+        for payment in &core.cancellation_payments {
+            let (Some(cuit), Some(name), Some(cbu)) = (
+                payment.owner_cuit.as_deref(),
+                payment.owner_name.as_deref(),
+                payment.cbu.as_deref(),
+            ) else {
+                continue;
+            };
+            if whitelist.status(cuit, cbu) == TrustStatus::Trusted {
+                continue;
+            }
+            let previous = whitelist.approve(cuit, name, cbu)?;
+            added += 1;
+            approvals.push((payment.id, cuit, name, cbu, previous));
+        }
+        whitelist.save(&self.creditor_whitelist_path)?;
+        *guard = whitelist;
+        for (detail_id, cuit, name, cbu, previous) in approvals {
+            log::info!(
+                "creditor_whitelist_approved {}",
+                json!({
+                    "operator": self.operator_name,
+                    "request_oid": core.request_oid,
+                    "detail_id": detail_id,
+                    "cuit": cuit,
+                    "name": name,
+                    "cbu": cbu,
+                    "previous_status": format!("{previous:?}"),
+                })
+            );
+        }
+        Ok(added)
     }
 
     fn ensure_automatic_receipts_dir(&self) -> Result<()> {
@@ -1312,10 +2008,7 @@ impl AppServices {
             let existing = existing_map
                 .get(core_snapshot.request_oid.as_str())
                 .cloned();
-            if !self
-                .enabled_credit_lines
-                .is_enabled(core_snapshot.credit_line_description.as_deref())
-            {
+            if !self.credit_line_mode_for(&core_snapshot).allows_manual() {
                 hydrated.push(self.build_disabled_candidate(core_snapshot, existing));
                 continue;
             }
@@ -1404,10 +2097,7 @@ impl AppServices {
             )),
         }
 
-        if !self
-            .enabled_credit_lines
-            .is_enabled(refreshed.core.credit_line_description.as_deref())
-        {
+        if !self.credit_line_mode_for(&refreshed.core).allows_manual() {
             self.mark_disabled_case(&mut refreshed);
             return refreshed;
         }
@@ -1530,6 +2220,26 @@ impl AppServices {
             }
         }
 
+        if let Some(coinag) = &self.coinag {
+            for payment in &mut case.core.cancellation_payments {
+                let Some(cbu) = payment.cbu.as_deref() else {
+                    continue;
+                };
+                match coinag.lookup_cbu_details(cbu) {
+                    Ok(details) => {
+                        payment.owner_cuit = details.cuil;
+                        payment.owner_name = details.holder_name;
+                        payment.account_type_code = details.account_type_code;
+                        payment.account_type_label = details.account_type_label;
+                    }
+                    Err(error) => runtime_errors.push(format!(
+                        "No se pudo validar el CBU del detalle {}: {error}",
+                        payment.id
+                    )),
+                }
+            }
+        }
+
         case.transfer_guard = if let Some(coinag) = &self.coinag {
             coinag.fetch_transfer_guard_status(case.request_oid())
         } else {
@@ -1545,6 +2255,36 @@ impl AppServices {
             &case.transfer_guard,
         );
         case.validation.blockers.extend(runtime_errors.clone());
+        if cancellations::is_candidate(&case.core) {
+            match self.creditor_whitelist.read() {
+                Ok(whitelist) => {
+                    for payment in &case.core.cancellation_payments {
+                        let (Some(cuit), Some(cbu)) =
+                            (payment.owner_cuit.as_deref(), payment.cbu.as_deref())
+                        else {
+                            continue;
+                        };
+                        let warning = match whitelist.status(cuit, cbu) {
+                            TrustStatus::Trusted => None,
+                            TrustStatus::KnownEntityNewCbu => Some(format!(
+                                "Acreedor conocido con CBU nuevo: {} ({cuit}), CBU {cbu}.",
+                                payment.owner_name.as_deref().unwrap_or("sin nombre")
+                            )),
+                            TrustStatus::NewEntity => Some(format!(
+                                "Acreedor nuevo: {} ({cuit}), CBU {cbu}.",
+                                payment.owner_name.as_deref().unwrap_or("sin nombre")
+                            )),
+                        };
+                        if let Some(warning) = warning {
+                            case.validation.warnings.push(warning);
+                        }
+                    }
+                }
+                Err(error) => case.validation.blockers.push(format!(
+                    "No se pudo leer la whitelist de acreedores: {error}"
+                )),
+            }
+        }
         log::debug!(
             "Solicitud {} validada. blockers={} warnings={}.",
             case.request_oid(),
@@ -1581,8 +2321,9 @@ impl AppServices {
             case.message = None;
         }
         log::info!(
-            "Solicitud {} marcada como deshabilitada por línea {:?}.",
+            "Solicitud {} marcada como deshabilitada por linea_id={:?} descripcion={:?}.",
             case.request_oid(),
+            case.core.credit_line_id,
             case.core.credit_line_description
         );
     }
@@ -1601,6 +2342,8 @@ impl AppServices {
                 "request_amount": case.core_amount_display(),
                 "transfer_amount": case.transfer_amount_display(),
                 "credit_line": case.core.credit_line_description,
+                "credit_line_id": case.core.credit_line_id,
+                "credit_line_code": case.core.credit_line_code,
                 "verification_id": case.server_validation.verification_id,
                 "blockers": case.validation.blockers,
                 "warnings": case.validation.warnings,
@@ -1645,8 +2388,8 @@ impl AppServices {
                 && (!refreshed.validation.warnings.is_empty()
                     || !refreshed.server_validation.has_completed_validation()
                     || !self
-                        .automatic_credit_lines
-                        .is_enabled(refreshed.core.credit_line_description.as_deref())))
+                        .credit_line_mode_for(&refreshed.core)
+                        .allows_automatic()))
         {
             log::warn!(
                 "Transferencia bloqueada para solicitud {} por validaciones: {} bloqueos.",
@@ -1664,6 +2407,10 @@ impl AppServices {
                 transfer_kind,
                 automatic_receipt_pending: false,
             };
+        }
+
+        if cancellations::is_candidate(&refreshed.core) {
+            return self.execute_cancellation_transfer(refreshed, transfer_kind, coinag);
         }
 
         let transfer_payload = match coinag.build_transfer_payload(&refreshed) {
@@ -1969,6 +2716,229 @@ impl AppServices {
         }
     }
 
+    fn execute_cancellation_transfer(
+        &self,
+        mut case: HydratedCase,
+        transfer_kind: TransferKind,
+        coinag: &CoinagClient,
+    ) -> WorkerEvent {
+        let plan = cancellations::build_plan(&case.core);
+        if !plan.can_transfer() {
+            return cancellation_failure(
+                case,
+                format!("Cancelacion bloqueada: {}", plan.blockers.join(" | ")),
+                transfer_kind,
+                false,
+            );
+        }
+
+        let mut preflight = Vec::new();
+        for leg in plan.legs {
+            let id_trx_cliente =
+                match coinag.build_cancellation_id_trx_cliente(case.request_oid(), &leg) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return cancellation_failure(case, error.to_string(), transfer_kind, false);
+                    }
+                };
+            let lookup = match coinag.lookup_transfer_by_id_trx_cliente(&id_trx_cliente) {
+                Ok(value) => value,
+                Err(error) => {
+                    return cancellation_failure(case, error.to_string(), transfer_kind, false);
+                }
+            };
+            let already_transferred = match lookup {
+                None => false,
+                Some(response) => match CoinagClient::transfer_guard_from_lookup(&response) {
+                    CoinagTransferGuard::YaTransferida => {
+                        if let Err(error) = CoinagClient::verify_lookup_matches_leg(&response, &leg)
+                        {
+                            return cancellation_failure(
+                                case,
+                                format!("La pata {} no es reanudable: {error}", leg.key),
+                                transfer_kind,
+                                false,
+                            );
+                        }
+                        true
+                    }
+                    CoinagTransferGuard::EnProceso => {
+                        return cancellation_failure(
+                            case,
+                            format!(
+                                "La pata {} esta EN PROCESO en Coinag; no se envio ninguna pata nueva.",
+                                leg.key
+                            ),
+                            transfer_kind,
+                            true,
+                        );
+                    }
+                    CoinagTransferGuard::Error { detail } => {
+                        return cancellation_failure(case, detail, transfer_kind, false);
+                    }
+                    CoinagTransferGuard::Unknown | CoinagTransferGuard::NotFound => {
+                        return cancellation_failure(
+                            case,
+                            format!(
+                                "Coinag devolvio un estado no seguro para la pata {}.",
+                                leg.key
+                            ),
+                            transfer_kind,
+                            false,
+                        );
+                    }
+                },
+            };
+            preflight.push((leg, id_trx_cliente, already_transferred));
+        }
+
+        let mut completed = Vec::new();
+        let mut smoke = false;
+        for (leg, id_trx_cliente, already_transferred) in preflight {
+            if already_transferred {
+                log_transfer_audit(
+                    "cancellation_leg_already_transferred",
+                    case.request_oid(),
+                    transfer_kind,
+                    json!({ "leg": leg.key, "id_trx_cliente": id_trx_cliente }),
+                );
+                completed.push((leg, id_trx_cliente));
+                continue;
+            }
+
+            let payload = match coinag.build_transfer_leg_payload(&case, &leg) {
+                Ok(value) => value,
+                Err(error) => {
+                    return cancellation_failure(case, error.to_string(), transfer_kind, false);
+                }
+            };
+            log_transfer_audit(
+                "cancellation_leg_payload_built",
+                case.request_oid(),
+                transfer_kind,
+                json!({ "leg": leg.key, "payload": payload }),
+            );
+            let response = match coinag.perform_transfer(&payload) {
+                Ok(value) => value,
+                Err(error) => {
+                    return cancellation_failure(
+                        case,
+                        format!(
+                            "Fallo la pata {} despues de {} patas confirmadas: {error}",
+                            leg.key,
+                            completed.len()
+                        ),
+                        transfer_kind,
+                        !completed.is_empty(),
+                    );
+                }
+            };
+            if coinag.transfer_is_smoke() {
+                smoke = true;
+                completed.push((leg, id_trx_cliente));
+                continue;
+            }
+            let Some(external_id) = CoinagClient::extract_external_transfer_id(&response) else {
+                return cancellation_failure(
+                    case,
+                    format!(
+                        "La pata {} fue enviada sin idCoelsa; queda EN PROCESO y no se enviaron las restantes.",
+                        leg.key
+                    ),
+                    transfer_kind,
+                    true,
+                );
+            };
+            let status = self.wait_for_coelsa_confirmation(
+                coinag,
+                case.request_oid(),
+                transfer_kind,
+                &external_id,
+                CoinagClient::classify_transfer_response(&response),
+            );
+            match status {
+                CoelsaTransferStatus::Confirmed => completed.push((leg, external_id)),
+                CoelsaTransferStatus::Rejected { detail } => {
+                    return cancellation_failure(
+                        case,
+                        format!("La pata {} fue rechazada: {detail}", leg.key),
+                        transfer_kind,
+                        !completed.is_empty(),
+                    );
+                }
+                CoelsaTransferStatus::Pending { detail } => {
+                    return cancellation_failure(
+                        case,
+                        format!(
+                            "La pata {} continua pendiente ({detail}); no se enviaron las restantes.",
+                            leg.key
+                        ),
+                        transfer_kind,
+                        true,
+                    );
+                }
+            }
+        }
+
+        case.busy = false;
+        if smoke {
+            case.message = Some("Cancelacion smoke generada; no se envio a Coinag.".to_owned());
+            return WorkerEvent::CaseUpdated {
+                case,
+                message: format!(
+                    "Smoke de cancelacion generado con {} patas independientes.",
+                    completed.len()
+                ),
+                receipt_path: None,
+                refresh_balance: false,
+                transfer_kind,
+                automatic_receipt_pending: false,
+            };
+        }
+
+        let receipts_dir = if transfer_kind.is_automatic() {
+            &self.automatic_receipts_dir
+        } else {
+            &self.receipts_dir
+        };
+        let receipt_path = match receipt::write_cancellation_receipt(
+            receipts_dir,
+            &self.operator_name,
+            &case,
+            &completed,
+        ) {
+            Ok(path) => path,
+            Err(error) => {
+                return cancellation_failure(
+                    case,
+                    format!(
+                        "Todas las patas fueron confirmadas, pero no se pudo generar el comprobante: {error}"
+                    ),
+                    transfer_kind,
+                    true,
+                );
+            }
+        };
+        let mark_paid_message =
+            match self.register_paid_receipt(case.request_oid(), transfer_kind, &receipt_path) {
+                Ok(()) => " Comprobante registrado y solicitud marcada como Pagada.".to_owned(),
+                Err(error) => format!(" No se pudo registrar el comprobante: {error}"),
+            };
+        case.transfer_guard = CoinagTransferGuard::YaTransferida;
+        case.message = Some("YA TRANSFERIDA".to_owned());
+        WorkerEvent::CaseUpdated {
+            case,
+            message: format!(
+                "Cancelacion confirmada con {} patas.{mark_paid_message}",
+                completed.len()
+            ),
+            receipt_path: Some(receipt_path),
+            refresh_balance: true,
+            transfer_kind,
+            automatic_receipt_pending: transfer_kind.is_automatic(),
+        }
+    }
+
     fn wait_for_coelsa_confirmation(
         &self,
         coinag: &CoinagClient,
@@ -2062,6 +3032,8 @@ enum WorkerEvent {
     BalanceUpdated(String),
     TransferLookupCompleted(TransferLookupResult),
     TransferLookupFailed(String),
+    CreditLineCatalogLoaded(Vec<CreditLineCatalogEntry>),
+    CreditLineCatalogFailed(String),
     CaseUpdated {
         case: HydratedCase,
         message: String,
@@ -2070,6 +3042,13 @@ enum WorkerEvent {
         transfer_kind: TransferKind,
         automatic_receipt_pending: bool,
     },
+}
+
+fn format_reconcile_summary(summary: ReconcileSummary) -> String {
+    format!(
+        "Catalogo actualizado en memoria: {} nuevas (inhabilitadas), {} con metadatos actualizados y {} sin actividad en los ultimos tres meses retiradas. Revise y guarde para aplicar.",
+        summary.added, summary.updated, summary.removed
+    )
 }
 
 fn preserve_busy_items(

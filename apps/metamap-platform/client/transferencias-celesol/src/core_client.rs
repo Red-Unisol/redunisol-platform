@@ -1,9 +1,14 @@
+use std::collections::BTreeMap;
+
 use anyhow::{Context, Result, anyhow};
+use chrono::{Local, Months};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 
 use crate::{
+    cancellations::{self, CancellationPayment},
     config::CoreConfig,
+    credit_lines::CreditLineCatalogEntry,
     models::CoreSnapshot,
     validation::{normalize_digits, parse_decimal},
 };
@@ -41,7 +46,7 @@ impl CoreClient {
         let result = self.evaluate_obj(json!({
             "cmd": criteria,
             "tipo": "PreSolicitud.Module.Solicitud",
-            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba]",
+            "campos": snapshot_fields(),
         }))?;
         let mut snapshot = parse_core_snapshot(&result);
         if snapshot.request_oid.is_empty() {
@@ -56,6 +61,10 @@ impl CoreClient {
                 snapshot.request_oid
             );
             snapshot.document_cuil = self.fetch_system_cuil_by_document(document)?;
+        }
+        if cancellations::is_candidate(&snapshot) {
+            snapshot.cancellation_payments =
+                self.fetch_cancellation_payments(&snapshot.request_oid)?;
         }
         log::debug!(
             "Core snapshot resuelto para solicitud {}: estado={:?}, monto={:?}, cbu={}.",
@@ -76,7 +85,7 @@ impl CoreClient {
         let result = self.evaluate_list(json!({
             "cmd": "[Estado.Descripcion]='A Transferir'",
             "tipo": "PreSolicitud.Module.Solicitud",
-            "campos": "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba]",
+            "campos": snapshot_fields(),
             "max": 5000,
         }))?;
 
@@ -86,9 +95,13 @@ impl CoreClient {
 
         let mut items = Vec::new();
         for row in rows {
-            let snapshot = parse_core_snapshot(&row);
+            let mut snapshot = parse_core_snapshot(&row);
             if snapshot.request_oid.trim().is_empty() {
                 continue;
+            }
+            if cancellations::is_candidate(&snapshot) {
+                snapshot.cancellation_payments =
+                    self.fetch_cancellation_payments(&snapshot.request_oid)?;
             }
             items.push(snapshot);
         }
@@ -97,6 +110,85 @@ impl CoreClient {
             items.len()
         );
         Ok(items)
+    }
+
+    pub fn fetch_credit_line_catalog(&self) -> Result<Vec<CreditLineCatalogEntry>> {
+        let from_date = Local::now()
+            .date_naive()
+            .checked_sub_months(Months::new(3))
+            .ok_or_else(|| anyhow!("No se pudo calcular la fecha desde para consultar lineas"))?;
+        let criteria = format!("[Fecha] >= #{}#", from_date.format("%Y-%m-%d"));
+        log::info!(
+            "Consultando lineas con solicitudes desde {} en el core.",
+            from_date.format("%Y-%m-%d")
+        );
+        let result = self.evaluate_list(json!({
+            "cmd": criteria,
+            "tipo": "PreSolicitud.Module.Solicitud",
+            "campos": "LineaPrestamo.ID;LineaPrestamo.Codigo;LineaPrestamo.Descripcion",
+            "max": 50000,
+        }))?;
+        let Value::Array(rows) = result else {
+            return Err(anyhow!(
+                "EvaluateList del catalogo de lineas no devolvio una lista"
+            ));
+        };
+
+        let total_rows = rows.len();
+        let mut catalog = BTreeMap::<u64, CreditLineCatalogEntry>::new();
+        for row in rows {
+            let Some(raw_id) = read_indexed_value(
+                &row,
+                0,
+                &["LineaPrestamo.ID", "lineaPrestamo.id", "ID", "Id", "id"],
+            ) else {
+                continue;
+            };
+            let id = raw_id
+                .parse::<u64>()
+                .with_context(|| format!("El core devolvio un ID de linea invalido: {raw_id}"))?;
+            let codigo = read_indexed_value(
+                &row,
+                1,
+                &[
+                    "LineaPrestamo.Codigo",
+                    "lineaPrestamo.codigo",
+                    "Codigo",
+                    "codigo",
+                ],
+            )
+            .unwrap_or_default();
+            let descripcion = read_indexed_value(
+                &row,
+                2,
+                &[
+                    "LineaPrestamo.Descripcion",
+                    "lineaPrestamo.descripcion",
+                    "Descripcion",
+                    "descripcion",
+                ],
+            )
+            .unwrap_or_default();
+            let line = catalog.entry(id).or_insert_with(|| CreditLineCatalogEntry {
+                id,
+                codigo: codigo.clone(),
+                descripcion: descripcion.clone(),
+            });
+            if line.codigo.is_empty() && !codigo.is_empty() {
+                line.codigo = codigo;
+            }
+            if line.descripcion.is_empty() && !descripcion.is_empty() {
+                line.descripcion = descripcion;
+            }
+        }
+        let catalog = catalog.into_values().collect::<Vec<_>>();
+        log::info!(
+            "Core devolvio {} solicitudes y {} lineas distintas con actividad desde {}.",
+            total_rows,
+            catalog.len(),
+            from_date.format("%Y-%m-%d")
+        );
+        Ok(catalog)
     }
 
     pub fn fetch_system_cuil_by_document(&self, document: &str) -> Result<Option<String>> {
@@ -129,6 +221,23 @@ impl CoreClient {
             return Ok(None);
         }
         Ok(Some(core_cuil))
+    }
+
+    fn fetch_cancellation_payments(&self, request_oid: &str) -> Result<Vec<CancellationPayment>> {
+        let criteria = build_eval_criteria("Solicitud.Oid", request_oid)
+            .context("No se pudo construir el criterio de DetalleFormaPago.")?;
+        let result = self.evaluate_list(json!({
+            "cmd": criteria,
+            "tipo": "PreSolicitud.Module.SolicitudDetallePago",
+            "campos": "ID;Solicitud.Oid;Monto;FormaPago;CBU",
+            "max": 100,
+        }))?;
+        let Value::Array(rows) = result else {
+            return Err(anyhow!(
+                "EvaluateList de DetalleFormaPago no devolvio una lista"
+            ));
+        };
+        rows.iter().map(parse_cancellation_payment).collect()
     }
 
     fn evaluate_list(&self, payload: Value) -> Result<Value> {
@@ -184,24 +293,43 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
             3,
             &["NombreCompleto", "nombreCompleto", "Socio.NombreCompleto"],
         ),
-        credit_line_description: read_indexed_value(
+        credit_line_id: read_indexed_value(
             value,
             4,
+            &[
+                "Prestamo.LineaPrestamo.ID",
+                "LineaPrestamo.ID",
+                "lineaPrestamo.id",
+            ],
+        )
+        .and_then(|raw| raw.parse::<u64>().ok()),
+        credit_line_code: read_indexed_value(
+            value,
+            5,
+            &[
+                "Prestamo.LineaPrestamo.Codigo",
+                "LineaPrestamo.Codigo",
+                "lineaPrestamo.codigo",
+            ],
+        ),
+        credit_line_description: read_indexed_value(
+            value,
+            6,
             &[
                 "Prestamo.LineaPrestamo.Descripcion",
                 "LineaPrestamo.Descripcion",
                 "lineaPrestamo.descripcion",
             ],
         ),
-        request_cuil: read_indexed_value(value, 5, &["CUIT", "Cuit", "cuit"]),
+        request_cuil: read_indexed_value(value, 7, &["CUIT", "Cuit", "cuit"]),
         request_document: read_indexed_value(
             value,
-            6,
+            8,
             &["NroDocumento", "nroDocumento", "NroDoc", "nroDoc"],
         ),
         transfer_cbu: read_indexed_value(
             value,
-            7,
+            9,
             &[
                 "Prestamo.[CBU transferencia]",
                 "Prestamo.CBU transferencia",
@@ -210,15 +338,15 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
         ),
         bank_cmf_amount_raw: read_indexed_value(
             value,
-            8,
+            10,
             &["Prestamo.[Bco CMF]", "Prestamo.Bco CMF"],
         ),
-        bank_cmf_amount: read_indexed_value(value, 8, &["Prestamo.[Bco CMF]", "Prestamo.Bco CMF"])
+        bank_cmf_amount: read_indexed_value(value, 10, &["Prestamo.[Bco CMF]", "Prestamo.Bco CMF"])
             .as_deref()
             .and_then(parse_decimal),
         bank_coinag_cba_amount_raw: read_indexed_value(
             value,
-            9,
+            11,
             &[
                 "Prestamo.[Bco Coinag Cba]",
                 "Prestamo.Bco Coinag Cba",
@@ -227,7 +355,7 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
         ),
         bank_coinag_cba_amount: read_indexed_value(
             value,
-            9,
+            11,
             &[
                 "Prestamo.[Bco Coinag Cba]",
                 "Prestamo.Bco Coinag Cba",
@@ -236,8 +364,51 @@ fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
         )
         .as_deref()
         .and_then(parse_decimal),
+        cancellation_amount_raw: read_indexed_value(value, 12, &["MontoCancelaciones"]),
+        cancellation_amount: read_indexed_value(value, 12, &["MontoCancelaciones"])
+            .as_deref()
+            .and_then(parse_decimal),
+        cash_in_hand_amount_raw: read_indexed_value(
+            value,
+            13,
+            &["Prestamo.[Monto En Mano]", "Prestamo.Monto En Mano"],
+        ),
+        cash_in_hand_amount: read_indexed_value(
+            value,
+            13,
+            &["Prestamo.[Monto En Mano]", "Prestamo.Monto En Mano"],
+        )
+        .as_deref()
+        .and_then(parse_decimal),
+        cancellation_detail_count: read_indexed_value(
+            value,
+            14,
+            &["DetalleFormaPago.Count()", "DetalleFormaPago.Count"],
+        )
+        .and_then(|value| value.parse::<u64>().ok()),
         ..CoreSnapshot::default()
     }
+}
+
+fn snapshot_fields() -> &'static str {
+    "Oid;Estado.Descripcion;MontoAFinanciar;NombreCompleto;Prestamo.LineaPrestamo.ID;Prestamo.LineaPrestamo.Codigo;Prestamo.LineaPrestamo.Descripcion;CUIT;NroDocumento;Prestamo.[CBU transferencia];Prestamo.[Bco CMF];Prestamo.[Bco Coinag Cba];MontoCancelaciones;Prestamo.[Monto En Mano];DetalleFormaPago.Count()"
+}
+
+fn parse_cancellation_payment(value: &Value) -> Result<CancellationPayment> {
+    let raw_id = read_indexed_value(value, 0, &["ID", "Id", "id"])
+        .ok_or_else(|| anyhow!("DetalleFormaPago sin ID"))?;
+    let id = raw_id
+        .parse::<u64>()
+        .with_context(|| format!("DetalleFormaPago con ID invalido: {raw_id}"))?;
+    let amount_raw = read_indexed_value(value, 2, &["Monto", "monto"]);
+    Ok(CancellationPayment {
+        id,
+        amount: amount_raw.as_deref().and_then(parse_decimal),
+        amount_raw,
+        payment_method: read_indexed_value(value, 3, &["FormaPago", "formaPago"]),
+        cbu: read_indexed_value(value, 4, &["CBU", "Cbu", "cbu"]),
+        ..Default::default()
+    })
 }
 
 fn read_indexed_value(value: &Value, list_index: usize, dict_keys: &[&str]) -> Option<String> {
@@ -295,7 +466,12 @@ fn mask_value(value: &str, visible_suffix: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_eval_criteria, build_numeric_eval_criteria};
+    use serde_json::json;
+
+    use super::{
+        build_eval_criteria, build_numeric_eval_criteria, parse_cancellation_payment,
+        parse_core_snapshot,
+    };
 
     #[test]
     fn numeric_criteria_strips_non_digits() {
@@ -315,5 +491,53 @@ mod tests {
             build_eval_criteria("Oid", "SOL-123").as_deref(),
             Some("[Oid]='SOL-123'")
         );
+    }
+
+    #[test]
+    fn snapshot_reads_credit_line_identity_from_indexed_response() {
+        let snapshot = parse_core_snapshot(&json!([
+            248948,
+            "A Transferir",
+            100000,
+            "Persona",
+            2771,
+            11523,
+            "AMEJUCA RECURRENTE PREMIUM",
+            "20123456789",
+            "12345678",
+            "0200000000000000000000",
+            0,
+            100000,
+            565000,
+            -1335000
+        ]));
+
+        assert_eq!(snapshot.credit_line_id, Some(2771));
+        assert_eq!(snapshot.credit_line_code.as_deref(), Some("11523"));
+        assert_eq!(
+            snapshot.credit_line_description.as_deref(),
+            Some("AMEJUCA RECURRENTE PREMIUM")
+        );
+        assert_eq!(snapshot.request_document.as_deref(), Some("12345678"));
+        assert_eq!(
+            snapshot.cancellation_amount,
+            Some(rust_decimal::Decimal::new(565000, 0))
+        );
+        assert_eq!(
+            snapshot.cash_in_hand_amount,
+            Some(rust_decimal::Decimal::new(1335000, 0))
+        );
+    }
+
+    #[test]
+    fn parses_recent_historical_cancellation_detail() {
+        let detail =
+            parse_cancellation_payment(&json!([1296, 246729, 565000, 2, "0970099413001097400111"]))
+                .unwrap();
+
+        assert_eq!(detail.id, 1296);
+        assert_eq!(detail.amount, Some(rust_decimal::Decimal::new(565000, 0)));
+        assert_eq!(detail.payment_method.as_deref(), Some("2"));
+        assert_eq!(detail.cbu.as_deref(), Some("0970099413001097400111"));
     }
 }
