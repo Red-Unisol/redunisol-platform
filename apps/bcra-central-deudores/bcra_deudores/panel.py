@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import hmac
+import html
 import json
 import mimetypes
+import os
+import secrets
 import shutil
 import sqlite3
 import threading
+import time
 import traceback
 import urllib.parse
 from contextlib import closing
@@ -13,6 +19,7 @@ from calendar import monthrange
 from datetime import UTC, datetime
 from decimal import Decimal
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -58,6 +65,190 @@ TASA_CLASSIFICATIONS = {
     "CON_GARANTIA_REAL",
     "NO_APLICA",
 }
+PANEL_AUTH_COOKIE = "bcra_panel_session"
+PANEL_AUTH_SESSION_SECONDS = 12 * 60 * 60
+
+
+LOGIN_HTML = r"""<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso BCRA PNFC</title>
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+      --border: #cbd5e1;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --primary: #075985;
+      --danger: #b91c1c;
+      --surface: #f8fafc;
+    }
+    body {
+      background: var(--surface);
+      color: var(--ink);
+      margin: 0;
+    }
+    main {
+      align-items: center;
+      display: flex;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    section {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin: 0 auto;
+      max-width: 420px;
+      padding: 28px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 24px;
+      margin: 0 0 8px;
+    }
+    p {
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0 0 20px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    input {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-sizing: border-box;
+      font: inherit;
+      padding: 12px;
+      width: 100%;
+    }
+    button {
+      background: var(--primary);
+      border: 0;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      margin-top: 16px;
+      padding: 12px 16px;
+      width: 100%;
+    }
+    .alert {
+      border-radius: 8px;
+      margin-bottom: 16px;
+      padding: 12px;
+    }
+    .alert-danger {
+      background: #fee2e2;
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>BCRA Central de Deudores PNFC</h1>
+      <p>Ingrese la clave del panel para operar presentaciones y descargar archivos.</p>
+      {{MESSAGE_BLOCK}}
+      <form method="POST" action="/login">
+        <label for="password">Clave</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+        <button type="submit">Ingresar</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "si", "on"}
+
+
+def panel_access_required() -> bool:
+    return env_bool("BCRA_PANEL_ACCESS_REQUIRED", True)
+
+
+def get_panel_password_hash() -> str:
+    return os.getenv("BCRA_PANEL_PASSWORD_HASH", "").strip()
+
+
+def verify_panel_password(password: str, stored_hash: str) -> bool:
+    stored_hash = stored_hash.strip()
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("sha256:"):
+        expected = stored_hash.removeprefix("sha256:")
+        return hmac.compare_digest(expected, hashlib.sha256(password.encode("utf-8")).hexdigest())
+    return False
+
+
+def panel_session_secret(stored_hash: str) -> str:
+    return os.getenv("BCRA_PANEL_SESSION_SECRET", "").strip() or stored_hash
+
+
+def build_panel_session_cookie_value(
+    *,
+    stored_hash: str | None = None,
+    now: int | None = None,
+    token: str | None = None,
+) -> str:
+    stored_hash = stored_hash if stored_hash is not None else get_panel_password_hash()
+    token = token or secrets.token_urlsafe(32)
+    expires = str((now if now is not None else int(time.time())) + PANEL_AUTH_SESSION_SECONDS)
+    signed = f"{token}.{expires}"
+    signature = hmac.new(
+        panel_session_secret(stored_hash).encode("utf-8"),
+        signed.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{signed}.{signature}"
+
+
+def validate_panel_session_cookie(
+    cookie_value: str,
+    *,
+    stored_hash: str | None = None,
+    now: int | None = None,
+) -> bool:
+    stored_hash = stored_hash if stored_hash is not None else get_panel_password_hash()
+    try:
+        token, expires_text, signature = cookie_value.split(".", 2)
+        expires = int(expires_text)
+    except ValueError:
+        return False
+    if expires < (now if now is not None else int(time.time())):
+        return False
+    signed = f"{token}.{expires_text}"
+    expected = hmac.new(
+        panel_session_secret(stored_hash).encode("utf-8"),
+        signed.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def render_login_html(message: str = "", *, configuration_missing: bool = False) -> bytes:
+    blocks: list[str] = []
+    if configuration_missing:
+        blocks.append(
+            '<div class="alert alert-danger">Falta configurar '
+            "<strong>BCRA_PANEL_PASSWORD_HASH</strong> en el ambiente.</div>"
+        )
+    if message:
+        blocks.append(f'<div class="alert alert-danger">{html.escape(message)}</div>')
+    return LOGIN_HTML.replace("{{MESSAGE_BLOCK}}", "\n      ".join(blocks)).encode("utf-8")
 
 
 def utc_now() -> str:
@@ -2585,6 +2776,10 @@ PANEL_HTML = r"""<!doctype html>
         ...opts
       });
       const data = await res.json().catch(() => ({}));
+      if ((res.status === 401 || res.status === 503) && String(data.error || '').startsWith('panel_access')) {
+        window.location.href = '/login';
+        throw new Error(data.message || 'Debe ingresar la clave del panel.');
+      }
       if (!res.ok) throw new Error(data.error || res.statusText);
       return data;
     }
@@ -2891,7 +3086,12 @@ PANEL_HTML = r"""<!doctype html>
 <body>
   <header>
     <h1>BCRA Central de Deudores PNFC</h1>
-    <div id="state" class="status-line">Cargando...</div>
+    <div class="row">
+      <div id="state" class="status-line">Cargando...</div>
+      <form method="POST" action="/logout">
+        <button class="secondary" type="submit">Salir</button>
+      </form>
+    </div>
   </header>
 
   <main>
@@ -3097,6 +3297,10 @@ PANEL_HTML = r"""<!doctype html>
     async function api(path, opts = {}) {
       const res = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...opts});
       const data = await res.json().catch(() => ({}));
+      if ((res.status === 401 || res.status === 503) && String(data.error || '').startsWith('panel_access')) {
+        window.location.href = '/login';
+        throw new Error(data.message || 'Debe ingresar la clave del panel.');
+      }
       if (!res.ok) throw new Error(data.error || data.message || res.statusText);
       return data;
     }
@@ -3571,17 +3775,154 @@ def create_handler(
         def send_error_json(self, message: str, status: int = 400) -> None:
             self.send_json({"error": message}, status)
 
+        def send_html(self, payload: bytes, status: int = 200) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def send_redirect(self, location: str, status: int = HTTPStatus.SEE_OTHER) -> None:
+            self.send_response(status)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def send_auth_cookie(self) -> None:
+            cookie_value = build_panel_session_cookie_value()
+            cookie = (
+                f"{PANEL_AUTH_COOKIE}={cookie_value}; "
+                f"Path=/; HttpOnly; SameSite=Lax; Max-Age={PANEL_AUTH_SESSION_SECONDS}"
+            )
+            if env_bool("BCRA_PANEL_COOKIE_SECURE", False):
+                cookie += "; Secure"
+            self.send_header("Set-Cookie", cookie)
+
+        def clear_auth_cookie(self) -> None:
+            cookie = f"{PANEL_AUTH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+            if env_bool("BCRA_PANEL_COOKIE_SECURE", False):
+                cookie += "; Secure"
+            self.send_header("Set-Cookie", cookie)
+
+        def get_auth_cookie(self) -> str:
+            raw_cookie = self.headers.get("Cookie", "")
+            parsed = SimpleCookie()
+            try:
+                parsed.load(raw_cookie)
+            except Exception:
+                return ""
+            morsel = parsed.get(PANEL_AUTH_COOKIE)
+            return morsel.value if morsel else ""
+
+        def is_authenticated(self) -> bool:
+            if not panel_access_required():
+                return True
+            stored_hash = get_panel_password_hash()
+            if not stored_hash:
+                return False
+            return validate_panel_session_cookie(self.get_auth_cookie(), stored_hash=stored_hash)
+
+        def wants_json_auth_response(self, path: str) -> bool:
+            accept = self.headers.get("Accept", "")
+            return (
+                path.startswith("/api/")
+                or path.startswith("/files/")
+                or "application/json" in accept
+            )
+
+        def ensure_authenticated(self, path: str) -> bool:
+            if self.is_authenticated():
+                return True
+            if not panel_access_required():
+                return True
+            if not get_panel_password_hash():
+                if self.wants_json_auth_response(path):
+                    self.send_json(
+                        {
+                            "error": "panel_access_not_configured",
+                            "message": "La clave del panel BCRA no esta configurada.",
+                        },
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                else:
+                    self.send_html(
+                        render_login_html(configuration_missing=True),
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                return False
+            if self.wants_json_auth_response(path):
+                self.send_json(
+                    {
+                        "error": "panel_access_required",
+                        "message": "Debe ingresar la clave del panel BCRA.",
+                    },
+                    HTTPStatus.UNAUTHORIZED,
+                )
+            else:
+                self.send_html(render_login_html())
+            return False
+
+        def handle_login(self) -> None:
+            if not panel_access_required():
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", "/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            stored_hash = get_panel_password_hash()
+            if not stored_hash:
+                self.send_html(
+                    render_login_html(configuration_missing=True),
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                )
+                return
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            form_data = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+            fields = urllib.parse.parse_qs(form_data)
+            password = fields.get("password", [""])[0]
+            if not verify_panel_password(password, stored_hash):
+                print(f"[WARN] Intento fallido de acceso al panel BCRA desde {self.client_address[0]}")
+                self.send_html(
+                    render_login_html("Clave incorrecta."),
+                    HTTPStatus.UNAUTHORIZED,
+                )
+                return
+            self.send_response(HTTPStatus.SEE_OTHER)
+            self.send_header("Location", "/")
+            self.send_auth_cookie()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def handle_logout(self) -> None:
+            self.send_response(HTTPStatus.SEE_OTHER)
+            self.send_header("Location", "/login")
+            self.clear_auth_cookie()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def do_GET(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path
             try:
+                if path == "/login":
+                    if self.is_authenticated():
+                        self.send_redirect("/")
+                    else:
+                        self.send_html(
+                            render_login_html(
+                                configuration_missing=panel_access_required()
+                                and not get_panel_password_hash()
+                            ),
+                            HTTPStatus.SERVICE_UNAVAILABLE
+                            if panel_access_required() and not get_panel_password_hash()
+                            else HTTPStatus.OK,
+                        )
+                    return
+                if not self.ensure_authenticated(path):
+                    return
                 if path == "/":
                     payload = PANEL_HTML.encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(payload)))
-                    self.end_headers()
-                    self.wfile.write(payload)
+                    self.send_html(payload)
                     return
                 if path == "/api/state":
                     with closing(sqlite3.connect(db_path)) as connection:
@@ -3684,6 +4025,14 @@ def create_handler(
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path
             try:
+                if path == "/login":
+                    self.handle_login()
+                    return
+                if path == "/logout":
+                    self.handle_logout()
+                    return
+                if not self.ensure_authenticated(path):
+                    return
                 payload = parse_json_body(self)
                 if path == "/api/superiores/sync":
                     count = sync_superiores_from_csv(
@@ -3807,6 +4156,8 @@ def create_handler(
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path
             try:
+                if not self.ensure_authenticated(path):
+                    return
                 if path.startswith("/api/runs/"):
                     parts = path.strip("/").split("/")
                     if len(parts) == 3:

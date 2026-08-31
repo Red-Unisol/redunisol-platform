@@ -19,6 +19,31 @@ Comando local del panel:
 python run_panel.py --host 127.0.0.1 --port 8080
 ```
 
+El panel tiene proteccion propia por clave, aun cuando se abra desde una web
+interna protegida. La clave real no se versiona; se configura con:
+
+```env
+BCRA_PANEL_ACCESS_REQUIRED=true
+BCRA_PANEL_PASSWORD_HASH=sha256:<hash>
+```
+
+Para generar el hash:
+
+```powershell
+$clave = "cambiar-esta-clave"
+$hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($clave))).Replace("-", "").ToLower()
+"sha256:$hash"
+```
+
+En pruebas locales se puede desactivar solo de forma controlada:
+
+```env
+BCRA_PANEL_ACCESS_REQUIRED=false
+```
+
+Si `BCRA_PANEL_ACCESS_REQUIRED=true` y falta `BCRA_PANEL_PASSWORD_HASH`, el
+panel inicia pero queda bloqueado con una pantalla de configuracion pendiente.
+
 Variable usada por la web:
 
 ```env

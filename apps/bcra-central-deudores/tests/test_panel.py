@@ -1,11 +1,13 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from contextlib import closing
+import hashlib
 import json
 import sqlite3
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from unittest.mock import patch
 
@@ -13,6 +15,7 @@ from http.server import ThreadingHTTPServer
 
 from bcra_deudores.panel import (
     RunCoordinator,
+    build_panel_session_cookie_value,
     build_config_json,
     build_manifest,
     create_handler,
@@ -26,6 +29,8 @@ from bcra_deudores.panel import (
     ignore_error,
     init_db,
     month_to_cutoff,
+    validate_panel_session_cookie,
+    verify_panel_password,
     resolve_error,
     save_current_config,
     sync_lineas_prestamo_from_api,
@@ -578,6 +583,14 @@ class PanelDbTest(unittest.TestCase):
 
 
 class PanelApiTest(unittest.TestCase):
+    def setUp(self):
+        self.auth_env = patch.dict(
+            "os.environ",
+            {"BCRA_PANEL_ACCESS_REQUIRED": "false"},
+        )
+        self.auth_env.start()
+        self.addCleanup(self.auth_env.stop)
+
     def test_post_runs_rechaza_si_hay_corrida_activa(self):
         with TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -609,6 +622,98 @@ class PanelApiTest(unittest.TestCase):
                     urllib.request.urlopen(request, timeout=5)
                 self.assertEqual(ctx.exception.code, 409)
                 ctx.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+
+class PanelAuthTest(unittest.TestCase):
+    def setUp(self):
+        self.auth_env = patch.dict(
+            "os.environ",
+            {"BCRA_PANEL_ACCESS_REQUIRED": "false"},
+        )
+        self.auth_env.start()
+        self.addCleanup(self.auth_env.stop)
+
+    def test_verify_panel_password_sha256(self):
+        stored_hash = "sha256:" + hashlib.sha256(b"panel-seguro").hexdigest()
+
+        self.assertTrue(verify_panel_password("panel-seguro", stored_hash))
+        self.assertFalse(verify_panel_password("incorrecta", stored_hash))
+
+    def test_panel_session_cookie_validates_signature_and_expiration(self):
+        stored_hash = "sha256:" + hashlib.sha256(b"panel-seguro").hexdigest()
+        cookie = build_panel_session_cookie_value(stored_hash=stored_hash, now=100)
+
+        self.assertTrue(validate_panel_session_cookie(cookie, stored_hash=stored_hash, now=101))
+        self.assertFalse(validate_panel_session_cookie(cookie + "x", stored_hash=stored_hash, now=101))
+        self.assertFalse(
+            validate_panel_session_cookie(cookie, stored_hash=stored_hash, now=100 + 13 * 60 * 60)
+        )
+
+    def test_panel_api_blocks_without_session_when_enabled(self):
+        with TemporaryDirectory() as tmp, patch.dict(
+            "os.environ",
+            {
+                "BCRA_PANEL_ACCESS_REQUIRED": "true",
+                "BCRA_PANEL_PASSWORD_HASH": "sha256:"
+                + hashlib.sha256(b"panel-seguro").hexdigest(),
+            },
+        ):
+            workspace = Path(tmp)
+            db = workspace / "panel.db"
+            config = workspace / "config.json"
+            write_base_config(config)
+            init_db(db, config)
+            handler = create_handler(db_path=db, base_config_path=config, workspace=workspace)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(f"{base}/api/state", timeout=5)
+                self.assertEqual(ctx.exception.code, 401)
+                ctx.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_panel_login_allows_api_with_session_cookie(self):
+        with TemporaryDirectory() as tmp, patch.dict(
+            "os.environ",
+            {
+                "BCRA_PANEL_ACCESS_REQUIRED": "true",
+                "BCRA_PANEL_PASSWORD_HASH": "sha256:"
+                + hashlib.sha256(b"panel-seguro").hexdigest(),
+            },
+        ):
+            workspace = Path(tmp)
+            db = workspace / "panel.db"
+            config = workspace / "config.json"
+            write_base_config(config)
+            init_db(db, config)
+            handler = create_handler(db_path=db, base_config_path=config, workspace=workspace)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+
+            try:
+                login_request = urllib.request.Request(
+                    f"{base}/login",
+                    data=urllib.parse.urlencode({"password": "panel-seguro"}).encode("utf-8"),
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    method="POST",
+                )
+                opener.open(login_request, timeout=5).close()
+                payload = json.loads(opener.open(f"{base}/api/state", timeout=5).read())
+                self.assertIn("settings", payload)
             finally:
                 server.shutdown()
                 server.server_close()

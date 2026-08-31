@@ -27,6 +27,7 @@ Copiar `.env.example` a `.env` y completar al menos:
 
 - `APP_KEY`
 - `APP_URL`
+- `HERRAMIENTAS_ACCESS_PASSWORD_HASH`
 - `ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL`
 - `ANALISIS_CREDITO_CONSULTA_CAJA`
 - `ANALISIS_CREDITO_QUIEBRA_CREDIX_WEBHOOK_URL`
@@ -41,6 +42,28 @@ Cada una de esas URLs debe apuntar al webhook completo expuesto por Kestra para 
 `BCRA_PANEL_URL` apunta al panel operativo BCRA Central de Deudores PNFC. Como
 esa herramienta abre un sistema web externo al hub, la URL debe ser accesible
 desde el navegador del operador y no debe incluir credenciales en el enlace.
+
+## Acceso con clave
+
+El hub queda protegido por una clave compartida guardada solo como hash:
+
+```env
+HERRAMIENTAS_ACCESS_REQUIRED=true
+HERRAMIENTAS_ACCESS_PASSWORD_HASH=sha256:<hash>
+```
+
+Para generar el hash sin subir la clave real al repositorio:
+
+```powershell
+$clave = "cambiar-esta-clave"
+$hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($clave))).Replace("-", "").ToLower()
+"sha256:$hash"
+```
+
+Tambien se aceptan hashes generados por `password_hash()` de PHP. Las APIs
+internas y las pantallas privadas quedan bloqueadas hasta ingresar la clave.
+Si `HERRAMIENTAS_ACCESS_REQUIRED=true` y no se configura hash, el hub muestra
+un error de configuracion y no permite operar.
 
 ## Dashboard de objetivos
 

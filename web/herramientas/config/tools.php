@@ -2,6 +2,11 @@
 
 return [
     'enabled' => filter_var(env('HERRAMIENTAS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+    'access' => [
+        'required' => filter_var(env('HERRAMIENTAS_ACCESS_REQUIRED', true), FILTER_VALIDATE_BOOLEAN),
+        'password_hash' => env('HERRAMIENTAS_ACCESS_PASSWORD_HASH'),
+        'session_key' => 'herramientas_access_granted',
+    ],
     'branding' => [
         'eyebrow' => 'Asociacion Mutual Celesol',
         'title' => 'Herramientas Red Unisol',
