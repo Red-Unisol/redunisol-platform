@@ -33,9 +33,14 @@ Copiar `.env.example` a `.env` y completar al menos:
 - `ANALISIS_CREDITO_CONSULTA_EMPLEADOR_WEBHOOK_URL`
 - `ANALISIS_CREDITO_CONSULTA_CUAD_WEBHOOK_URL`
 - `ANALISIS_CREDITO_TIMEOUT_SECONDS`
+- `BCRA_PANEL_URL`
 - `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH`
 
 Cada una de esas URLs debe apuntar al webhook completo expuesto por Kestra para el flow correspondiente. Esas URLs quedan solo del lado servidor y no se exponen al navegador.
+
+`BCRA_PANEL_URL` apunta al panel operativo BCRA Central de Deudores PNFC. Como
+esa herramienta abre un sistema web externo al hub, la URL debe ser accesible
+desde el navegador del operador y no debe incluir credenciales en el enlace.
 
 ## Dashboard de objetivos
 
@@ -166,6 +171,11 @@ Con este esquema, Git queda como fuente de verdad para el runtime: Actions const
 2. agregar la UI React correspondiente en `resources/js/app.jsx` o extraerla a componentes
 3. crear un metodo backend si hace falta proxy o logica sensible
 4. exponer la ruta en `routes/web.php`
+
+Para herramientas que ya tienen su propia interfaz, como BCRA Central de
+Deudores PNFC, se puede usar `openMode: external` y completar `href` desde una
+variable de entorno. En ese caso el hub muestra la tarjeta y abre el panel sin
+duplicar la logica de negocio.
 
 ## Nota operativa
 
