@@ -30,3 +30,17 @@ composer-setup.php
 infra/
 local-notes/
 apps/metamap-platform/docs/*.csv
+
+# BCRA Central de Deudores runtime local
+apps/bcra-central-deudores/data/
+apps/bcra-central-deudores/control/
+apps/bcra-central-deudores/output/
+apps/bcra-central-deudores/runs/
+apps/bcra-central-deudores/config.full.json
+apps/bcra-central-deudores/config.local.json
+apps/bcra-central-deudores/*.db
+apps/bcra-central-deudores/*.sqlite
+apps/bcra-central-deudores/*.sqlite3
+apps/bcra-central-deudores/*.log
+apps/bcra-central-deudores/*.pid
+apps/bcra-central-deudores/*.zip

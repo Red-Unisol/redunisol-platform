@@ -48,7 +48,10 @@ class HerramientasController extends Controller
                 if (($tool['id'] ?? null) === 'consulta-cuad') {
                     $tool['endpoint'] = route('tools.consulta-cuad');
                 }
-                
+                if (($tool['id'] ?? null) === 'bcra-central-deudores') {
+                    $tool['href'] = config('tools.bcra.panel_url');
+                }
+
                 return $tool;
             })
             ->values();
