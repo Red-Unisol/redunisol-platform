@@ -1568,6 +1568,7 @@ struct AppServices {
     poll_interval: std::time::Duration,
     receipts_dir: PathBuf,
     automatic_receipts_dir: PathBuf,
+    observed_candidates: Arc<RwLock<HashSet<String>>>,
 }
 
 impl AppServices {
@@ -1683,6 +1684,7 @@ impl AppServices {
             poll_interval: config.poll_interval,
             receipts_dir: config.receipts_dir,
             automatic_receipts_dir: config.automatic_receipts_dir,
+            observed_candidates: Arc::new(RwLock::new(HashSet::new())),
         };
         log::info!(
             "Servicios listos. transfer_enabled={}. mark_paid_enabled={}. lineas_habilitadas={} lineas_auto={} cancelaciones_habilitadas={} cancelaciones_auto={} lineas_path={:?}.",
@@ -2078,6 +2080,7 @@ impl AppServices {
 
         let mut hydrated = Vec::new();
         for core_snapshot in candidates {
+            self.record_candidate_observed(&core_snapshot);
             let existing = existing_map
                 .get(core_snapshot.request_oid.as_str())
                 .cloned();
@@ -2091,6 +2094,32 @@ impl AppServices {
             .sort_by(|left, right| compare_request_oids(left.request_oid(), right.request_oid()));
         log::debug!("Lista hidratada. total_items={}.", hydrated.len());
         Ok(hydrated)
+    }
+
+    fn record_candidate_observed(&self, core: &CoreSnapshot) {
+        let should_record = match self.observed_candidates.write() {
+            Ok(mut observed) => observed.insert(core.request_oid.clone()),
+            Err(error) => {
+                log::warn!("No se pudo actualizar el conjunto de solicitudes observadas: {error}");
+                false
+            }
+        };
+        if !should_record {
+            return;
+        }
+        trace::record_audit(
+            "transfer_candidate_observed",
+            Some(core.request_oid.as_str()),
+            None,
+            json!({
+                "request_status": core.request_status.as_deref(),
+                "credit_line": core.credit_line_description.as_deref(),
+                "credit_line_id": core.credit_line_id,
+                "credit_line_code": core.credit_line_code.as_deref(),
+                "request_amount": core.request_amount_raw.as_deref(),
+                "is_cancellation": cancellations::is_candidate(core),
+            }),
+        );
     }
 
     fn hydrate_candidate(
