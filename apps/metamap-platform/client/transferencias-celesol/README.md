@@ -281,3 +281,8 @@ La confirmacion por estado Coelsa reconoce:
 - `0601`, `0602`, `0612`, `2100` o `2000`: transferencia pendiente; continua el polling
 - estados explicitos de error/rechazo/no completada: transferencia rechazada
 - estados desconocidos: se mantienen pendientes para evitar falsos rechazos
+
+Desde 2.0.1, cada sesión emite además `transfer_candidate_observed` una sola vez por
+OID cuando una solicitud aparece en la lista `A Transferir`. Esta señal permite
+calcular el universo observado y las solicitudes que no fueron completadas vía app
+sin recurrir a fuentes externas.

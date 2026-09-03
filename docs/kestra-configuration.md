@@ -748,6 +748,19 @@ Consecuencia practica:
 
 Esto no bloquea el modelo actual, pero si en el futuro dev y prod necesitan valores distintos dentro de la misma instancia, habra que definir una estrategia mas fina.
 
+## Runtime Del Informe De Transferencias
+
+El flow `kestra/automations/contabilidad/flows/transfer_trace_report_daily.yaml`
+usa:
+
+- `ENV_TRANSFERENCIAS_SERVER_BASE_URL`: base pública del MetaMap Platform Server
+- `ENV_TRANSFER_TRACE_COVERAGE_FROM`: primer día incluido al reconstruir el backlog
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_ID`: cliente autenticado del server
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_SECRET`: secreto del cliente autenticado
+
+Los valores reales no se copian al flow ni a esta documentación. El informe usa
+estas credenciales exclusivamente para leer `/api/v1/transfer-trace-events`.
+
 ## Referencias
 
 - `kestra/platform/infra/.env.example`
