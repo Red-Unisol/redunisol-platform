@@ -86,9 +86,10 @@ del campo en Bitrix.
 | Daniel Carrera | `68579` | Pools comerciales. |
 | Natalia Rojo Moyano | `71159` | Pools comerciales. |
 | Soledad Rojo Moyano | `90231` | Pools comerciales. |
-| Agustín Villagra | `110059` | Bucket Córdoba Jubilados propuesto. |
+| Agustín Villagra | `110059` | Catamarca y Córdoba, excepto UNC/DASPU. |
 | Daniela Arias | `113455` | Pool Catamarca. |
 | Claudia Algarbe | `113457` | Pool Catamarca. |
+| Julieta Aguilera | `116561` | Catamarca y Córdoba, excepto UNC/DASPU. |
 
 Los buckets propuestos y sus órdenes completos se encuentran en
 [`../commercial-rules/DEAL_ROUTING.md`](../commercial-rules/DEAL_ROUTING.md).

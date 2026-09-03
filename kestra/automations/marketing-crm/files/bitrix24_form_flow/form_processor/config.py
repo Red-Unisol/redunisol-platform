@@ -66,11 +66,29 @@ DEFAULT_DEAL_CONFIG = {
     "queue_reason_field": "ufCrmKqReason",
     "queue_target_stage_field": "ufCrmKqStage",
     "queue_enqueued_at_field": "ufCrmKqAt",
-    "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
+    "round_robin_user_ids": (
+        68579,
+        10451,
+        29,
+        90231,
+        71159,
+        113457,
+        113455,
+        116561,
+        110059,
+    ),
     "round_robin_lookback_days": 30,
-    "cordoba_jubilados_user_ids": (10451, 71159, 68579, 90231, 29, 110059),
+    "cordoba_jubilados_user_ids": (
+        10451,
+        71159,
+        68579,
+        90231,
+        29,
+        110059,
+        116561,
+    ),
     "cordoba_unc_user_ids": (53121,),
-    "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29),
+    "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29, 116561, 110059),
 }
 
 

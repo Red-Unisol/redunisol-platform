@@ -12,14 +12,37 @@ import re
 
 COMPOSE_VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)[^}]*\}")
 ENV_KEY = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=")
-CATAMARCA_ROUND_ROBIN_USERS = {
-    "29",
-    "10451",
-    "68579",
-    "71159",
-    "90231",
-    "113455",
-    "113457",
+APPROVED_SELLER_POOLS = {
+    "ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS": {
+        "29",
+        "10451",
+        "68579",
+        "71159",
+        "90231",
+        "110059",
+        "113455",
+        "113457",
+        "116561",
+    },
+    "ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS": {
+        "29",
+        "10451",
+        "68579",
+        "71159",
+        "90231",
+        "110059",
+        "116561",
+    },
+    "ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS": {"53121"},
+    "ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS": {
+        "29",
+        "10451",
+        "68579",
+        "71159",
+        "90231",
+        "110059",
+        "116561",
+    },
 }
 
 
@@ -64,7 +87,7 @@ def runtime_value_errors(env_path: Path) -> list[str]:
         "KESTRA_ADMIN_PASSWORD",
         "SECRET_REPORTS_KESTRA_USERNAME",
         "SECRET_REPORTS_KESTRA_PASSWORD",
-        "ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
+        *APPROVED_SELLER_POOLS,
     }
     missing = sorted(required - values.keys())
     if missing:
@@ -85,17 +108,17 @@ def runtime_value_errors(env_path: Path) -> list[str]:
         if reports_password != values["KESTRA_ADMIN_PASSWORD"]:
             errors.append("report password must match KESTRA_ADMIN_PASSWORD")
 
-    configured_user_list = [
-        user_id.strip()
-        for user_id in values["ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS"].split(",")
-        if user_id.strip()
-    ]
-    configured_users = set(configured_user_list)
-    if (
-        configured_users != CATAMARCA_ROUND_ROBIN_USERS
-        or len(configured_user_list) != len(CATAMARCA_ROUND_ROBIN_USERS)
-    ):
-        errors.append("Catamarca round-robin pool does not match the approved seller set")
+    for env_key, approved_users in APPROVED_SELLER_POOLS.items():
+        configured_user_list = [
+            user_id.strip()
+            for user_id in values[env_key].split(",")
+            if user_id.strip()
+        ]
+        if (
+            set(configured_user_list) != approved_users
+            or len(configured_user_list) != len(approved_users)
+        ):
+            errors.append(f"{env_key} does not match the approved seller set")
 
     return errors
 

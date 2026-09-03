@@ -44,7 +44,10 @@ class ValidateRuntimeEnvTests(unittest.TestCase):
                         "KESTRA_ADMIN_PASSWORD=admin-password",
                         "SECRET_REPORTS_KESTRA_USERNAME=YWRtaW5Aa2VzdHJhLmxvY2Fs",
                         "SECRET_REPORTS_KESTRA_PASSWORD=YWRtaW4tcGFzc3dvcmQ=",
-                        "ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451,29,90231,71159,113457,113455",
+                        "ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451,29,90231,71159,113457,113455,116561,110059",
+                        "ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS=10451,71159,68579,90231,29,110059,116561",
+                        "ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS=53121",
+                        "ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS=10451,71159,68579,90231,29,116561,110059",
                     ]
                 ),
                 encoding="utf-8",
@@ -63,6 +66,9 @@ class ValidateRuntimeEnvTests(unittest.TestCase):
                         "SECRET_REPORTS_KESTRA_USERNAME=b3RoZXJAdXNlci5sb2NhbA==",
                         "SECRET_REPORTS_KESTRA_PASSWORD=b3RoZXItcGFzc3dvcmQ=",
                         "ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451",
+                        "ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS=10451,71159,68579,90231,29,110059,116561",
+                        "ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS=53121",
+                        "ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS=10451,71159,68579,90231,29,116561,110059",
                     ]
                 ),
                 encoding="utf-8",
@@ -73,7 +79,7 @@ class ValidateRuntimeEnvTests(unittest.TestCase):
                 [
                     "report username must match KESTRA_ADMIN_EMAIL",
                     "report password must match KESTRA_ADMIN_PASSWORD",
-                    "Catamarca round-robin pool does not match the approved seller set",
+                    "ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS does not match the approved seller set",
                 ],
             )
 
