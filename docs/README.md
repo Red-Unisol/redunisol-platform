@@ -5,6 +5,7 @@ Documentacion tecnica transversal de la repo.
 ## Documentos actuales
 
 - `architecture.md`: arquitectura general, capas, carpetas y modelo dominio/namespace
+- `agent-systems.md`: mapa operativo para agentes, fuentes de verdad, accesos y limites entre sistemas
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
 - `metamap-client-server-redesign-plan.md`: plan de reescritura de Notificaciones MetaMap; hoy el server quedo acotado a ingest y busqueda de validaciones, con workflow y tunel bancario diferidos
