@@ -1,6 +1,6 @@
 [package]
 name = "transferencias-celesol"
-version = "1.9.0"
+version = "1.10.0"
 edition = "2024"
 
 [dependencies]
@@ -32,6 +32,7 @@ toml = "0.9.8"
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["logging", "ring", "tls12"] }
 url = "2.5.7"
+uuid = { version = "1.18.1", features = ["v4", "serde"] }
 webpki-roots = "1.0.2"
 
 [target.'cfg(windows)'.dependencies]

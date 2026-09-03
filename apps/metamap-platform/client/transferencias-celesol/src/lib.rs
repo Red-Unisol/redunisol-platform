@@ -17,4 +17,5 @@ pub mod receipt;
 pub mod secure_config;
 pub mod server_client;
 pub mod ssh_transport;
+pub mod trace;
 pub mod validation;

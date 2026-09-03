@@ -22,6 +22,8 @@ Este corte deja resuelto:
 - bootstrap de clientes autenticados por rol
 - retencion de receipts/logs de MetaMap por 7 dias
 - tests de API y persistencia
+- eventos append-only de trazabilidad de transferencias, idempotentes por `event_id`
+- consulta de trazas por solicitud, sesion, instalacion, operador y tipo de evento
 - CI de validacion y build de imagen
 - deploy automatico a `dev`
 
@@ -112,6 +114,8 @@ Endpoints autenticados por cliente:
 - `GET /api/v1/validations/{verification_id}`
 - `POST /api/v1/validations/{verification_id}/review`
 - `GET /api/v1/internal/metamap/webhook-receipts`
+- `POST /api/v1/transfer-trace-events`
+- `GET /api/v1/transfer-trace-events`
 
 Cabeceras requeridas:
 
@@ -213,6 +217,17 @@ Reglas actuales:
 ### `GET /api/v1/internal/metamap/webhook-receipts`
 
 Devuelve receipts recientes de MetaMap para debugging.
+
+### Trazabilidad de transferencias
+
+`POST /api/v1/transfer-trace-events` acepta lotes de hasta 100 eventos autenticados con el
+rol `transferencias_celesol`. La tabla `transfer_trace_events` es append-only y usa
+`event_id` como clave idempotente: reenviar el mismo evento lo cuenta como duplicado sin
+crear otra fila.
+
+`GET /api/v1/transfer-trace-events` permite filtrar por `request_oid`, `session_id`,
+`client_instance_id`, `operator`, `event_type`, `occurred_from` y `occurred_to`, con
+paginacion `limit`/`offset`. Las fechas de ocurrencia se normalizan a UTC al ingresar.
 
 ## Estructura
 

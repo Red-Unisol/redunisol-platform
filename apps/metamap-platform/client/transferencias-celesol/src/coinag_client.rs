@@ -15,6 +15,7 @@ use crate::{
     config::CoinagConfig,
     models::{CoinagTransferGuard, HydratedCase},
     ssh_transport::{SshHttpClient, TransportRequest, TransportResponse},
+    trace,
     validation::{format_money, normalize_digits, parse_decimal},
 };
 
@@ -685,6 +686,16 @@ impl CoinagClient {
         let is_token_request =
             url.trim_end_matches('/') == self.config.token_url.trim_end_matches('/');
         if !is_token_request {
+            trace::record_audit(
+                "coinag_http_request",
+                None,
+                None,
+                json!({
+                    "method": method_name,
+                    "url": url,
+                    "body": String::from_utf8_lossy(&body.bytes),
+                }),
+            );
             log::info!(
                 target: "coinag_http",
                 "{}",
@@ -1243,6 +1254,17 @@ fn log_coinag_http_response(
     is_token_request: bool,
 ) {
     if is_token_request {
+        trace::record_audit(
+            "coinag_oauth_response",
+            None,
+            None,
+            json!({
+                "method": method,
+                "url": url,
+                "status": response.status.as_u16(),
+                "body_omitted": true,
+            }),
+        );
         log::info!(
             target: "coinag_http",
             "OAuth respondio status={} para {} {}. Body omitido por contener credenciales de sesion.",
@@ -1252,6 +1274,17 @@ fn log_coinag_http_response(
         );
         return;
     }
+    trace::record_audit(
+        "coinag_http_response",
+        None,
+        None,
+        json!({
+            "method": method,
+            "url": url,
+            "status": response.status.as_u16(),
+            "body": String::from_utf8_lossy(&response.body),
+        }),
+    );
     log::info!(
         target: "coinag_http",
         "{}",

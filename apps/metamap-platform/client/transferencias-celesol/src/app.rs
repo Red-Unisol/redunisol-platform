@@ -32,7 +32,7 @@ use crate::{
     },
     receipt,
     server_client::ServerClient,
-    validation,
+    trace, validation,
 };
 
 pub struct TransferenciasApp {
@@ -1009,6 +1009,12 @@ impl eframe::App for TransferenciasApp {
                 "pausadas"
             };
             log::info!("Transferencias automaticas {state} por el operador.");
+            trace::record_audit(
+                "automatic_processing_changed",
+                None,
+                Some("automatico"),
+                json!({ "state": state }),
+            );
             self.push_notice(format!("Transferencias automaticas {state}."));
             if self.automatic_processing_enabled {
                 self.try_spawn_automatic_transfers();
@@ -1238,6 +1244,12 @@ impl eframe::App for TransferenciasApp {
         if let Some(core) = creditors_to_trust {
             match self.services.approve_case_creditors(&core) {
                 Ok(count) => {
+                    trace::record_audit(
+                        "creditors_trusted",
+                        Some(&core.request_oid),
+                        None,
+                        json!({ "destinations_added": count }),
+                    );
                     self.push_notice(format!(
                         "Se agregaron {count} destinos de acreedores a la whitelist para la solicitud {}.",
                         core.request_oid
@@ -1403,6 +1415,12 @@ fn coelsa_status_audit_value(status: &CoelsaTransferStatus) -> Value {
 }
 
 fn log_transfer_audit(event: &str, request_oid: &str, transfer_kind: TransferKind, data: Value) {
+    trace::record_audit(
+        event,
+        Some(request_oid),
+        Some(transfer_kind.label()),
+        data.clone(),
+    );
     log::info!(
         target: "transfer_audit",
         "{}",
@@ -1566,6 +1584,18 @@ impl AppServices {
             config.operator_name
         );
         let server = ServerClient::new(&config.server, config.request_timeout)?;
+        match ServerClient::new(&config.server, Duration::from_secs(3)) {
+            Ok(trace_server) => {
+                if let Err(error) = trace::init(
+                    trace_server,
+                    config.operator_name.clone(),
+                    config.trace_outbox_path.clone(),
+                ) {
+                    log::warn!("No se pudo iniciar la trazabilidad remota: {error:#}");
+                }
+            }
+            Err(error) => log::warn!("No se pudo crear el cliente de trazabilidad: {error:#}"),
+        }
         let core = CoreClient::new(&config.core, config.request_timeout)?;
         let mark_paid = if config.mark_paid.is_complete() {
             Some(MarkPaidClient::new(
@@ -1735,6 +1765,18 @@ impl AppServices {
                 .map(|previous| previous.modo)
                 .unwrap_or_default();
             if previous_line.is_none() {
+                trace::record_audit(
+                    "credit_line_config_added",
+                    None,
+                    None,
+                    json!({
+                        "line_id": line.id,
+                        "code": line.codigo,
+                        "description": line.descripcion,
+                        "mode": line.modo.label(),
+                        "cancellation_mode": line.modo_cancelaciones.label(),
+                    }),
+                );
                 log::info!(
                     "credit_line_config_added {}",
                     json!({
@@ -1763,6 +1805,18 @@ impl AppServices {
                 );
             }
             if previous_line.is_some() && previous_mode != line.modo {
+                trace::record_audit(
+                    "credit_line_config_changed",
+                    None,
+                    None,
+                    json!({
+                        "line_id": line.id,
+                        "code": line.codigo,
+                        "description": line.descripcion,
+                        "previous_mode": previous_mode.label(),
+                        "new_mode": line.modo.label(),
+                    }),
+                );
                 log::info!(
                     "credit_line_config_change {}",
                     json!({
@@ -1779,6 +1833,18 @@ impl AppServices {
                 .map(|previous| previous.modo_cancelaciones)
                 .unwrap_or_default();
             if previous_line.is_some() && previous_cancellation_mode != line.modo_cancelaciones {
+                trace::record_audit(
+                    "credit_line_cancellation_config_changed",
+                    None,
+                    None,
+                    json!({
+                        "line_id": line.id,
+                        "code": line.codigo,
+                        "description": line.descripcion,
+                        "previous_mode": previous_cancellation_mode.label(),
+                        "new_mode": line.modo_cancelaciones.label(),
+                    }),
+                );
                 log::info!(
                     "credit_line_cancellation_config_change {}",
                     json!({
@@ -1803,6 +1869,18 @@ impl AppServices {
                 "cancellation_enabled": config.cancellation_enabled_count(),
                 "cancellation_automatic": config.cancellation_automatic_count(),
             })
+        );
+        trace::record_audit(
+            "credit_line_config_saved",
+            None,
+            None,
+            json!({
+                "total": config.lineas.len(),
+                "enabled": config.enabled_count(),
+                "automatic": config.automatic_count(),
+                "cancellation_enabled": config.cancellation_enabled_count(),
+                "cancellation_automatic": config.cancellation_automatic_count(),
+            }),
         );
         *guard = config;
         Ok(())

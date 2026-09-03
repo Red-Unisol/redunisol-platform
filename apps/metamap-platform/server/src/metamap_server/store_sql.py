@@ -106,6 +106,24 @@ class MetamapWebhookReceiptRow(Base):
     received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
 
 
+class TransferTraceEventRow(Base):
+    __tablename__ = "transfer_trace_events"
+
+    event_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    client_instance_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    authenticated_client_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    occurred_at: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
+    operator: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    application_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_oid: Mapped[str | None] = mapped_column(String(120), index=True)
+    mode: Mapped[str | None] = mapped_column(String(32))
+    severity: Mapped[str] = mapped_column(String(32), nullable=False)
+    data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
 class SqlValidationStore:
     """Validation store backed by SQLAlchemy and intended for Postgres or SQLite."""
 
@@ -289,6 +307,81 @@ class SqlValidationStore:
             )
             rows = session.execute(stmt).scalars().all()
             return [self._serialize_metamap_webhook_receipt(row) for row in rows]
+
+    def record_transfer_trace_events(
+        self, *, events: list[dict], authenticated_client_id: str
+    ) -> tuple[int, int]:
+        accepted = 0
+        duplicates = 0
+        with self._session_factory() as session:
+            for event in events:
+                if session.get(TransferTraceEventRow, event["event_id"]) is not None:
+                    duplicates += 1
+                    continue
+                session.add(
+                    TransferTraceEventRow(
+                        event_id=event["event_id"],
+                        session_id=event["session_id"],
+                        client_instance_id=event["client_instance_id"],
+                        authenticated_client_id=authenticated_client_id,
+                        event_type=event["event_type"],
+                        occurred_at=event["occurred_at"],
+                        operator=event["operator"],
+                        application_version=event["application_version"],
+                        request_oid=event.get("request_oid"),
+                        mode=event.get("mode"),
+                        severity=event["severity"],
+                        data=event.get("data") or {},
+                    )
+                )
+                accepted += 1
+            session.commit()
+        return accepted, duplicates
+
+    def search_transfer_trace_events(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        request_oid: str | None = None,
+        session_id: str | None = None,
+        client_instance_id: str | None = None,
+        operator: str | None = None,
+        event_type: str | None = None,
+        occurred_from: str | None = None,
+        occurred_to: str | None = None,
+    ) -> tuple[list[dict], int]:
+        conditions = []
+        for column, value in (
+            (TransferTraceEventRow.request_oid, request_oid),
+            (TransferTraceEventRow.session_id, session_id),
+            (TransferTraceEventRow.client_instance_id, client_instance_id),
+            (TransferTraceEventRow.operator, operator),
+            (TransferTraceEventRow.event_type, event_type),
+        ):
+            if value and value.strip():
+                conditions.append(column == value.strip())
+        if occurred_from:
+            conditions.append(TransferTraceEventRow.occurred_at >= occurred_from)
+        if occurred_to:
+            conditions.append(TransferTraceEventRow.occurred_at <= occurred_to)
+        with self._session_factory() as session:
+            stmt = select(TransferTraceEventRow)
+            count_stmt = select(func.count()).select_from(TransferTraceEventRow)
+            if conditions:
+                stmt = stmt.where(*conditions)
+                count_stmt = count_stmt.where(*conditions)
+            stmt = (
+                stmt.order_by(
+                    TransferTraceEventRow.occurred_at.desc(),
+                    TransferTraceEventRow.event_id.desc(),
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            rows = session.execute(stmt).scalars().all()
+            total = int(session.execute(count_stmt).scalar_one())
+            return [self._serialize_transfer_trace_event(row) for row in rows], total
 
     def get_validation(self, verification_id: str) -> ValidationRecord:
         with self._session_factory() as session:
@@ -517,6 +610,23 @@ class SqlValidationStore:
             "headers": row.headers,
             "payload": row.payload,
             "received_at": row.received_at,
+        }
+
+    def _serialize_transfer_trace_event(self, row: TransferTraceEventRow) -> dict:
+        return {
+            "event_id": row.event_id,
+            "session_id": row.session_id,
+            "client_instance_id": row.client_instance_id,
+            "authenticated_client_id": row.authenticated_client_id,
+            "event_type": row.event_type,
+            "occurred_at": row.occurred_at,
+            "received_at": row.received_at,
+            "operator": row.operator,
+            "application_version": row.application_version,
+            "request_oid": row.request_oid,
+            "mode": row.mode,
+            "severity": row.severity,
+            "data": row.data or {},
         }
 
     def _ensure_validation_columns(self) -> None:

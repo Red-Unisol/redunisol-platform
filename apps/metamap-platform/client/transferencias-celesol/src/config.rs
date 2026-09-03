@@ -23,6 +23,7 @@ pub struct AppConfig {
     pub completed_log_path: PathBuf,
     pub credit_lines_path: PathBuf,
     pub creditor_whitelist_path: PathBuf,
+    pub trace_outbox_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -318,6 +319,11 @@ impl AppConfig {
                 base_dir,
                 optional_value(values, "TRANSFERENCIAS_ACREEDORES_CONFIG_PATH").as_deref(),
                 "acreedores-confiables.toml",
+            ),
+            trace_outbox_path: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_TRACE_OUTBOX_PATH").as_deref(),
+                "transfer-trace-outbox.jsonl",
             ),
         })
     }
