@@ -103,8 +103,13 @@ Los ejemplos versionados son:
 En GitHub Actions, la validacion de esos `.env.enc` usa `RUNTIME_ENV_KEY`
 desde el environment `vps-infra`.
 
-El deploy automatico `dev` usa el mismo environment `vps-infra`, publica una
-imagen en GHCR y actualiza el runtime remoto en `/opt/metamap-platform-server-dev`.
+El deploy `dev` usa el mismo environment `vps-infra`, publica una imagen en GHCR y
+actualiza el runtime remoto en `/opt/metamap-platform-server-dev`. Corre automaticamente
+cuando los cambios llegan a la rama `dev`; desde `main` requiere ejecutar manualmente
+`Deploy MetaMap Server Dev` con `workflow_dispatch`.
+
+Para cambios coordinados con el cliente desktop, desplegar primero el servidor y distribuir
+despues el ZIP de `transferencias-celesol`. No existe deploy automatico a produccion.
 
 ## Auth actual
 
