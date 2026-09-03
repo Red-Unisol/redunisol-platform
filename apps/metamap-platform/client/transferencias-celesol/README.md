@@ -172,9 +172,24 @@ El script busca estos archivos locales dentro de `package-input/`:
 
 El zip se genera en `dist/`.
 
-Antes de crear el ZIP, el script descifra temporalmente el entorno y valida que
-`TRANSFERENCIAS_CORE_BASE_URL` sea `https://celesol.dyndns.org:5002`. Si falta la
-variable o apunta a un endpoint anterior, el build se cancela. La passphrase se toma de
+La fuente local canonica para las credenciales y la passphrase de empaquetado es la
+seccion `Transferencias Celesol - entorno canonico de empaquetado` de `credentials.txt`.
+Ese archivo nunca se versiona. El insumo que consume el build es
+`package-input/transferencias.env.enc`, que tambien queda fuera de Git y debe conservarse
+cifrado; nunca distribuyas el entorno en texto plano.
+
+Antes de crear el ZIP, el script descifra temporalmente el entorno y valida el contrato
+operativo completo:
+
+- `TRANSFERENCIAS_CORE_BASE_URL=https://celesol.dyndns.org:5002` para `EvaluateList` y
+  `EvaluateObj`.
+- `TRANSFERENCIAS_MARK_PAID_ENDPOINT=https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada`.
+- `TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN` presente y no vacio.
+- `TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS=true`.
+
+Los puertos no son intercambiables: `5002` consulta el Core y `35010` registra el
+comprobante y cambia la solicitud a `Pagada`. Si falta cualquiera de estas variables o
+apunta a otro servicio, el build se cancela. La passphrase se toma de
 `TRANSFERENCIAS_CONFIG_PASSPHRASE` o se solicita de forma interactiva; el plaintext
 temporal se elimina siempre al terminar la validacion.
 
