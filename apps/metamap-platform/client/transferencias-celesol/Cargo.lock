@@ -5455,7 +5455,7 @@ dependencies = [
 
 [[package]]
 name = "transferencias-celesol"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
@@ -5471,6 +5471,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "log",
+ "lopdf",
  "pbkdf2 0.12.2",
  "printpdf",
  "rand 0.8.5",

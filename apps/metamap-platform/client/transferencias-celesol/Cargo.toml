@@ -1,6 +1,6 @@
 [package]
 name = "transferencias-celesol"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2024"
 
 [dependencies]
@@ -34,6 +34,9 @@ tokio-rustls = { version = "0.26.4", default-features = false, features = ["logg
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
 webpki-roots = "1.0.2"
+
+[dev-dependencies]
+lopdf = { version = "0.31.0", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
