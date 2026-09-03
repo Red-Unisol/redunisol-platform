@@ -20,6 +20,7 @@ $stagingDir = Join-Path $distDir "staging"
 $exePath = Join-Path $scriptDir "target\\release\\transferencias-celesol.exe"
 $configToolPath = Join-Path $scriptDir "target\\release\\encrypt_transferencias_env.exe"
 $requiredCoreBaseUrl = "https://celesol.dyndns.org:5002"
+$requiredMarkPaidEndpoint = "https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada"
 
 function Get-PackageVersion {
     param(
@@ -65,7 +66,7 @@ function Resolve-FirstExistingPath {
     return $null
 }
 
-function Assert-PackageCoreBaseUrl {
+function Assert-PackageEnvironment {
     param(
         [Parameter(Mandatory = $true)]
         [string]$EncryptedEnvPath,
@@ -74,7 +75,10 @@ function Assert-PackageCoreBaseUrl {
         [string]$ConfigToolPath,
 
         [Parameter(Mandatory = $true)]
-        [string]$RequiredBaseUrl
+        [string]$RequiredCoreBaseUrl,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RequiredMarkPaidEndpoint
     )
 
     $temporaryEnvPath = Join-Path (
@@ -87,25 +91,59 @@ function Assert-PackageCoreBaseUrl {
             throw "No se pudo validar la configuracion cifrada del paquete."
         }
 
-        $configuredBaseUrl = $null
+        $settings = @{}
         foreach ($line in Get-Content -LiteralPath $temporaryEnvPath) {
-            if ($line -match '^\s*TRANSFERENCIAS_CORE_BASE_URL\s*=\s*(.+?)\s*$') {
-                $configuredBaseUrl = $matches[1].Trim().Trim('"').Trim("'").TrimEnd('/')
+            $trimmed = $line.Trim()
+            if (-not $trimmed -or $trimmed.StartsWith("#") -or -not $trimmed.Contains("=")) {
+                continue
             }
+
+            $parts = $trimmed -split "=", 2
+            $settings[$parts[0].Trim()] = $parts[1].Trim().Trim('"').Trim("'")
         }
 
-        if (-not $configuredBaseUrl) {
+        $configuredCoreBaseUrl = $settings["TRANSFERENCIAS_CORE_BASE_URL"]
+        if (-not $configuredCoreBaseUrl) {
             throw "La configuracion cifrada no define TRANSFERENCIAS_CORE_BASE_URL."
         }
 
-        if ($configuredBaseUrl -ne $RequiredBaseUrl.TrimEnd('/')) {
+        if ($configuredCoreBaseUrl.TrimEnd('/') -ne $RequiredCoreBaseUrl.TrimEnd('/')) {
             throw (
                 "El paquete apunta a un core obsoleto: {0}. " +
                 "Debe usar {1}; se cancela la construccion del ZIP."
-            ) -f $configuredBaseUrl, $RequiredBaseUrl
+            ) -f $configuredCoreBaseUrl, $RequiredCoreBaseUrl
         }
 
-        Write-Host "Configuracion validada: core financiero en $RequiredBaseUrl"
+        $configuredMarkPaidEndpoint = $settings["TRANSFERENCIAS_MARK_PAID_ENDPOINT"]
+        if (-not $configuredMarkPaidEndpoint) {
+            throw "La configuracion cifrada no define TRANSFERENCIAS_MARK_PAID_ENDPOINT."
+        }
+
+        if ($configuredMarkPaidEndpoint.TrimEnd('/') -ne $RequiredMarkPaidEndpoint.TrimEnd('/')) {
+            throw (
+                "El paquete apunta a un endpoint incorrecto para marcar Pagada: {0}. " +
+                "Debe usar {1}; se cancela la construccion del ZIP."
+            ) -f $configuredMarkPaidEndpoint, $RequiredMarkPaidEndpoint
+        }
+
+        if ([string]::IsNullOrWhiteSpace($settings["TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN"])) {
+            throw (
+                "La configuracion cifrada no define TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN. " +
+                "Sin ese token la app transfiere, pero no puede registrar el comprobante ni marcar Pagada."
+            )
+        }
+
+        if ($settings["TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS"] -ne "true") {
+            throw (
+                "TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS debe ser true para el endpoint operativo actual."
+            )
+        }
+
+        Write-Host (
+            "Configuracion validada: Evaluate en {0}; marcado Pagada en {1}; token presente." -f
+            $RequiredCoreBaseUrl,
+            $RequiredMarkPaidEndpoint
+        )
     }
     finally {
         if (Test-Path -LiteralPath $temporaryEnvPath) {
@@ -145,10 +183,11 @@ try {
 
     Assert-FileExists -Path $exePath -Label "el ejecutable release"
     Assert-FileExists -Path $configToolPath -Label "la herramienta de configuracion cifrada"
-    Assert-PackageCoreBaseUrl `
+    Assert-PackageEnvironment `
         -EncryptedEnvPath $encryptedEnvPath `
         -ConfigToolPath $configToolPath `
-        -RequiredBaseUrl $requiredCoreBaseUrl
+        -RequiredCoreBaseUrl $requiredCoreBaseUrl `
+        -RequiredMarkPaidEndpoint $requiredMarkPaidEndpoint
 
     if (Test-Path -LiteralPath $stagingDir) {
         Remove-Item -LiteralPath $stagingDir -Recurse -Force
