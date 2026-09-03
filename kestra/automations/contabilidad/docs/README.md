@@ -74,7 +74,8 @@ El informe muestra:
 
 - solicitudes nuevas observadas y backlog no realizado vía app
 - transferencias y cancelaciones manuales y automáticas
-- tiempos promedio por modalidad y para cancelaciones
+- tiempos promedio desde la primera detección en `A Transferir` hasta que la
+  solicitud queda marcada como `Pagada`, por modalidad y para cancelaciones
 - intentos bloqueados, pendientes o con registro final pendiente
 - volumen de eventos técnicos por tipo
 
@@ -92,6 +93,11 @@ reporte consulta desde `transfer_trace_coverage_from` hasta el cierre de esa fec
 para reconstruir el backlog. Antes de que exista al menos un evento
 `transfer_candidate_observed`, el indicador se muestra como `Sin cobertura`, no
 como cero.
+
+Los tiempos operativos requieren los dos extremos para cada OID:
+`transfer_candidate_observed` y `mark_paid_request_succeeded`. El tiempo técnico
+del intento dentro de la app se conserva en el detalle, pero no alimenta los
+promedios del resumen.
 
 Configuración requerida en el runtime Kestra:
 

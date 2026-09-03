@@ -24,22 +24,27 @@ def event(event_type, occurred_at, request_oid="100", mode="manual", data=None, 
 class TransferTraceReportTest(unittest.TestCase):
     def test_builds_manual_and_automatic_cancellation_metrics(self):
         events = [
+            event("transfer_candidate_observed", "2026-09-03T09:00:00-03:00", mode=None, data={"request_status": "A Transferir"}),
             event("transfer_started", "2026-09-03T10:00:00-03:00", data={"credit_line": "Línea", "transfer_amount": "1000"}),
             event("confirmation_finished", "2026-09-03T10:00:30-03:00", data={"id_coelsa": "TX-1", "status": {"classification": "confirmed"}}),
             event("mark_paid_request_succeeded", "2026-09-03T10:00:40-03:00"),
+            event("transfer_candidate_observed", "2026-09-03T10:30:00-03:00", request_oid="200", mode=None, data={"request_status": "A Transferir", "is_cancellation": True}),
             event("transfer_started", "2026-09-03T11:00:00-03:00", request_oid="200", mode="automatica"),
             event("cancellation_leg_payload_built", "2026-09-03T11:00:10-03:00", request_oid="200", mode="automatica", data={"leg": "member"}),
             event("cancellation_leg_payload_built", "2026-09-03T11:00:20-03:00", request_oid="200", mode="automatica", data={"leg": "creditor-1"}),
             event("mark_paid_request_succeeded", "2026-09-03T11:01:00-03:00", request_oid="200", mode="automatica"),
         ]
         operations = REPORT.build_operations(events)
+        candidates = REPORT.build_candidates(events, operations)
         self.assertEqual(len(operations), 2)
-        self.assertEqual(operations[0].duration_seconds, 40)
+        self.assertEqual(operations[0].flow_duration_seconds, 40)
         self.assertEqual(operations[1].operation_type, "Cancelación")
         self.assertEqual(operations[1].cancellation_legs, 2)
         self.assertEqual(REPORT.distinct_completed(operations, mode="Manual"), 1)
         self.assertEqual(REPORT.distinct_completed(operations, mode="Automática", operation_type="Cancelación"), 1)
-        self.assertEqual(REPORT.average_duration(operations, mode="Automática"), 60)
+        self.assertEqual(candidates[0].time_to_paid_seconds, 3640)
+        self.assertEqual(REPORT.average_time_to_paid(candidates, mode="Automática"), 1860)
+        self.assertEqual(REPORT.average_time_to_paid(candidates, mode="Automática", operation_type="Cancelación"), 1860)
 
     def test_candidates_are_the_universe_for_not_transferred_via_app(self):
         events = [
@@ -65,6 +70,8 @@ class TransferTraceReportTest(unittest.TestCase):
         candidates = REPORT.build_candidates(events, operations)
         self.assertEqual(operations[0].result, "Transferida; registro pendiente")
         self.assertTrue(candidates[0].completed_via_app)
+        self.assertIsNone(candidates[0].paid_at)
+        self.assertIsNone(candidates[0].time_to_paid_seconds)
 
     def test_candidate_first_observation_is_deduplicated_across_sessions(self):
         events = [event("transfer_candidate_observed", "2026-09-03T09:00:00-03:00", mode=None, session="s1"), event("transfer_candidate_observed", "2026-09-04T09:00:00-03:00", mode=None, session="s2")]
@@ -80,6 +87,22 @@ class TransferTraceReportTest(unittest.TestCase):
         legacy["application_version"] = "2.0.0"
         self.assertFalse(REPORT.has_candidate_coverage([legacy]))
 
+    def test_workbook_does_not_report_technical_duration_as_operational_time(self):
+        events = [
+            event("transfer_started", "2026-09-03T10:00:00-03:00"),
+            event("mark_paid_request_succeeded", "2026-09-03T10:00:40-03:00"),
+        ]
+        operations = REPORT.build_operations(events)
+        workbook = REPORT.build_workbook(
+            date(2026, 9, 3), events, operations, [], coverage_from=date(2026, 9, 3)
+        )
+
+        self.assertEqual(workbook["Resumen"]["B12"].value, 0)
+        self.assertEqual(workbook["Resumen"]["C17"].value, "Sin datos")
+        self.assertIsNone(workbook["Operaciones app"]["G2"].value)
+        self.assertEqual(workbook["Operaciones app"]["S2"].value, 40)
+        self.assertEqual(len(workbook["Resumen"]._charts), 1)
+
     def test_workbook_and_publish_include_auditable_sheets(self):
         events = [event("transfer_candidate_observed", "2026-09-03T09:00:00-03:00", mode=None), event("transfer_started", "2026-09-03T10:00:00-03:00"), event("mark_paid_request_succeeded", "2026-09-03T10:00:40-03:00")]
         operations = REPORT.build_operations(events)
@@ -88,6 +111,10 @@ class TransferTraceReportTest(unittest.TestCase):
         self.assertEqual(workbook.sheetnames, ["Resumen", "Operaciones app", "Solicitudes observadas", "Eventos técnicos", "Metodología"])
         self.assertEqual(workbook["Resumen"]["B5"].value, 1)
         self.assertEqual(workbook["Resumen"]["B6"].value, 0)
+        self.assertEqual(workbook["Resumen"]["B12"].value, 1)
+        self.assertAlmostEqual(workbook["Resumen"]["C17"].value, 3640 / 60)
+        self.assertEqual(workbook["Operaciones app"]["A2"].value.isoformat(), "2026-09-03T09:00:00")
+        self.assertEqual(workbook["Operaciones app"]["B2"].value.isoformat(), "2026-09-03T10:00:40")
         self.assertEqual(len(workbook["Resumen"]._charts), 2)
         with tempfile.TemporaryDirectory() as directory:
             latest, dated, metadata = REPORT.publish(workbook, {"ok": True}, Path(directory), date(2026, 9, 3))
