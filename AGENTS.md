@@ -24,6 +24,7 @@ En busquedas normales excluir `.tmp/`, `temp/`, `tmp/`, `untracked/`, `.local/`,
 - Para PRs o cambios aislados: usar una rama y, si hay trabajo local que preservar, un worktree separado.
 - No mezclar correcciones no relacionadas en el mismo PR.
 - Antes de afirmar que algo no es accesible, revisar `credentials.txt`, herramientas disponibles, CLI autenticadas y alternativas documentadas.
+- Para SSH, usar el bloque y comando exactos de `credentials.txt`; no asumir puerto `22`, usuario ni metodo de autenticacion.
 - Preferir la fuente primaria del sistema. Un Excel o informe suele ser una salida derivada, no la fuente de datos.
 - Verificar el resultado real cuando sea posible: tests, workflow, API, runtime o pagina publicada. Un workflow rojo no demuestra por si solo que el deploy funcional fallo.
 
