@@ -10,6 +10,7 @@ venv/
 .env.*
 !.env.example
 .local-secrets/
+.local/
 kestra/platform/infra/kestra-runtime.env
 web/herramientas/deploy/*.env
 web/solicitudes-web/deploy/*.env
@@ -21,7 +22,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/tasks.json
-AGENTS.md
 credentials.txt
 temp/*
 untracked/*
