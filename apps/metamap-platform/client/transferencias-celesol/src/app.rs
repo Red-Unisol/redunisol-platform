@@ -1490,23 +1490,8 @@ fn cancellation_failure(
 
 impl TransferConfirmation {
     fn for_case(item: &HydratedCase) -> Self {
-        let resolution = item.transfer_amount_resolution();
-        let mut warning_lines = Vec::new();
-        if !item.server_validation.has_completed_validation() {
-            warning_lines.push(
-                "Advertencia: no existe validacion MetaMap completed asociada en el server."
-                    .to_owned(),
-            );
-        }
-        if matches!(resolution.outcome, TransferAmountOutcome::Renovacion) {
-            warning_lines.push(format!(
-                "NOTA: EL MONTO QUE SE VA A TRANSFERIR ({}) ES MENOR QUE EL MONTO DE LA SOLICITUD ({}). SE AUTODETECTO COMO RENOVACION.",
-                item.transfer_amount_display(),
-                item.core_amount_display(),
-            ));
-        }
-
-        warning_lines.extend(item.validation.warnings.iter().cloned());
+        let mut warning_lines = item.validation.warnings.clone();
+        deduplicate_warning_lines(&mut warning_lines);
 
         let mut summary_fields = vec![
             ("NOMBRE".to_owned(), item.display_name()),
@@ -1527,14 +1512,12 @@ impl TransferConfirmation {
                 .iter()
                 .enumerate()
             {
+                let role = transfer_leg_role_label(leg.kind);
                 summary_fields.push((
-                    format!("PATA {}", index + 1),
+                    format!("PATA {} - {role}", index + 1),
                     format!(
                         "{} | CUIT {} | CBU {} | {}",
-                        leg.holder_name.as_deref().unwrap_or(match leg.kind {
-                            cancellations::TransferLegKind::Member => "Socio",
-                            cancellations::TransferLegKind::Creditor => "Entidad financiera",
-                        }),
+                        leg.holder_name.as_deref().unwrap_or("Titular no informado"),
                         leg.cuit,
                         leg.cbu,
                         validation::format_money(leg.amount)
@@ -1556,6 +1539,18 @@ impl TransferConfirmation {
             },
         }
     }
+}
+
+fn transfer_leg_role_label(kind: cancellations::TransferLegKind) -> &'static str {
+    match kind {
+        cancellations::TransferLegKind::Member => "SOCIO",
+        cancellations::TransferLegKind::Creditor => "ACREEDOR",
+    }
+}
+
+fn deduplicate_warning_lines(warnings: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    warnings.retain(|warning| seen.insert(warning.trim().to_owned()));
 }
 
 #[derive(Clone)]
@@ -3204,6 +3199,31 @@ mod tests {
 
         assert!(!merged[0].busy);
         assert_eq!(merged[0].message, None);
+    }
+
+    #[test]
+    fn confirmation_warning_lines_are_unique_and_keep_their_order() {
+        let mut warnings = vec![
+            "Sin MetaMap".to_owned(),
+            "Renovacion".to_owned(),
+            "Sin MetaMap".to_owned(),
+        ];
+
+        deduplicate_warning_lines(&mut warnings);
+
+        assert_eq!(warnings, vec!["Sin MetaMap", "Renovacion"]);
+    }
+
+    #[test]
+    fn cancellation_confirmation_labels_each_destination_role() {
+        assert_eq!(
+            transfer_leg_role_label(cancellations::TransferLegKind::Creditor),
+            "ACREEDOR"
+        );
+        assert_eq!(
+            transfer_leg_role_label(cancellations::TransferLegKind::Member),
+            "SOCIO"
+        );
     }
 }
 
