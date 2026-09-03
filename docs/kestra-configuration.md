@@ -95,6 +95,9 @@ Ejemplos reales:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
 - `ENV_BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 - `SECRET_BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
 - `SECRET_BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
@@ -377,6 +380,9 @@ Referenciadas hoy desde los flows:
 - `bitrix24_deal_commercial_line_field`
 - `bitrix24_deal_round_robin_user_ids`
 - `bitrix24_deal_round_robin_lookback_days`
+- `bitrix24_deal_cordoba_jubilados_user_ids`
+- `bitrix24_deal_cordoba_unc_user_ids`
+- `bitrix24_deal_cordoba_general_user_ids`
 
 En la infraestructura actual corresponden a:
 
@@ -402,6 +408,9 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
 - `ENV_BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 
 En el pipeline actual:

@@ -25,6 +25,8 @@ compartido de aprobación se documentan en [`README.md`](README.md).
   - Natalia Rojo Moyano (`71159`)
   - Claudia Algarbe (`113457`)
   - Daniela Arias (`113455`)
+  - Julieta Aguilera (`116561`)
+  - Agustin Villagra (`110059`)
 
 ### `cordoba_jubilados`
 
@@ -37,6 +39,7 @@ compartido de aprobación se documentan en [`README.md`](README.md).
   - Soledad Rojo Moyano (`90231`)
   - Susana Contenti (`29`)
   - Agustin Villagra (`110059`)
+  - Julieta Aguilera (`116561`)
 
 ### `cordoba_unc`
 
@@ -54,6 +57,8 @@ compartido de aprobación se documentan en [`README.md`](README.md).
   - Daniel Carrera (`68579`)
   - Soledad Rojo Moyano (`90231`)
   - Susana Contenti (`29`)
+  - Julieta Aguilera (`116561`)
+  - Agustin Villagra (`110059`)
 
 ### `manual_fallback`
 
