@@ -172,6 +172,12 @@ El script busca estos archivos locales dentro de `package-input/`:
 
 El zip se genera en `dist/`.
 
+Antes de crear el ZIP, el script descifra temporalmente el entorno y valida que
+`TRANSFERENCIAS_CORE_BASE_URL` sea `https://celesol.dyndns.org:5002`. Si falta la
+variable o apunta a un endpoint anterior, el build se cancela. La passphrase se toma de
+`TRANSFERENCIAS_CONFIG_PASSPHRASE` o se solicita de forma interactiva; el plaintext
+temporal se elimina siempre al terminar la validacion.
+
 Recomendacion importante para que el paquete funcione sin tocar rutas por instalacion:
 
 - en `transferencias.env.enc`, defini `TRANSFERENCIAS_COINAG_SSH_PRIVATE_KEY_PATH=ssh/coinag_tunnel_key`
