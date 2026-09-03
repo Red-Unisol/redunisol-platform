@@ -27,6 +27,7 @@ En busquedas normales excluir `.tmp/`, `temp/`, `tmp/`, `untracked/`, `.local/`,
 - Para SSH, usar el bloque y comando exactos de `credentials.txt`; no asumir puerto `22`, usuario ni metodo de autenticacion.
 - Preferir la fuente primaria del sistema. Un Excel o informe suele ser una salida derivada, no la fuente de datos.
 - Verificar el resultado real cuando sea posible: tests, workflow, API, runtime o pagina publicada. Un workflow rojo no demuestra por si solo que el deploy funcional fallo.
+- Al abrir o actualizar un PR, ejecutar las validaciones locales pertinentes pero no esperar ni monitorear los checks remotos. Informar que quedaron pendientes; el usuario avisara si alguno falla.
 
 ## Accesos y secretos
 
