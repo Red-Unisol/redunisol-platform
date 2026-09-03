@@ -7,6 +7,7 @@ Esta monorepo es la fuente de verdad Git para las automatizaciones, aplicaciones
 - repositorio: `Red-Unisol/redunisol-platform`
 - rama principal: `main`
 - Kestra y las VPS son runtimes; no son la fuente de verdad del codigo
+- El estado deseado de las VPS debe mantenerse Git-managed en la medida de lo posible.
 
 ## Antes de trabajar
 
@@ -25,6 +26,9 @@ En busquedas normales excluir `.tmp/`, `temp/`, `tmp/`, `untracked/`, `.local/`,
 - No mezclar correcciones no relacionadas en el mismo PR.
 - Antes de afirmar que algo no es accesible, revisar `credentials.txt`, herramientas disponibles, CLI autenticadas y alternativas documentadas.
 - Para SSH, usar el bloque y comando exactos de `credentials.txt`; no asumir puerto `22`, usuario ni metodo de autenticacion.
+- Usar SSH activamente para diagnosticos, evaluaciones y lecturas. Por defecto, toda operacion SSH debe ser de solo lectura.
+- No modificar archivos, configuracion, servicios, contenedores, paquetes ni datos directamente por SSH sin aprobacion explicita del usuario para esa intervencion.
+- Si se autoriza una modificacion directa excepcional, documentar el cambio y llevar su estado deseado a Git para evitar drift.
 - Preferir la fuente primaria del sistema. Un Excel o informe suele ser una salida derivada, no la fuente de datos.
 - Verificar el resultado real cuando sea posible: tests, workflow, API, runtime o pagina publicada. Un workflow rojo no demuestra por si solo que el deploy funcional fallo.
 - Al abrir o actualizar un PR, ejecutar las validaciones locales pertinentes pero no esperar ni monitorear los checks remotos. Informar que quedaron pendientes; el usuario avisara si alguno falla.
