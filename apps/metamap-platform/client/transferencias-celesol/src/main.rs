@@ -11,7 +11,7 @@ use transferencias_celesol::{
     APP_NAME_WITH_TAG,
     app::TransferenciasApp,
     config::{self, AppConfig},
-    logging,
+    logging, trace,
 };
 
 fn main() -> eframe::Result<()> {
@@ -31,6 +31,13 @@ fn main() -> eframe::Result<()> {
         Ok(app) => app,
         Err(error) => {
             log::error!("No se pudo iniciar la app: {error:#}");
+            trace::record_audit(
+                "app_start_failed",
+                None,
+                None,
+                serde_json::json!({ "error": format!("{error:#}") }),
+            );
+            trace::shutdown();
             show_startup_error("No se pudo iniciar la app", &error);
             return Ok(());
         }
@@ -45,11 +52,13 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    let result = eframe::run_native(
         APP_NAME_WITH_TAG,
         native_options,
         Box::new(move |_creation_context| Ok(Box::new(app))),
-    )
+    );
+    trace::shutdown();
+    result
 }
 
 fn show_startup_error(title: &str, error: &anyhow::Error) {

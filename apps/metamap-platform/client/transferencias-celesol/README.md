@@ -25,6 +25,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - envio a Coinag si el runtime esta configurado
 - generacion de comprobante PDF simple
 - carga del comprobante confirmado en el core y marcado de la solicitud como `Pagada`
+- trazabilidad central append-only con outbox local durable e idempotencia por evento
 
 ## Variables de entorno minimas
 
@@ -68,6 +69,7 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
 - `TRANSFERENCIAS_LINEAS_CONFIG_PATH` default `lineas.toml` junto a la configuracion
 - `TRANSFERENCIAS_ACREEDORES_CONFIG_PATH` default `acreedores-confiables.toml`
+- `TRANSFERENCIAS_TRACE_OUTBOX_PATH` default `transfer-trace-outbox.jsonl`
 
 Configuracion de lineas:
 
@@ -202,6 +204,12 @@ Cada transferencia deja eventos JSON correlacionables en ese mismo archivo con e
 
 Los requests y responses operativos de Coinag tambien se registran completos con el target
 `coinag_http`. Se omiten solamente el body OAuth, tokens, passwords y claves SSH.
+
+Los eventos `transfer_audit` y las trazas HTTP de Coinag tambien se guardan primero en la
+outbox JSONL y se envian en lotes al server. Cada evento incluye IDs de evento, sesion e instalacion, operador, version,
+fecha local, solicitud, modo y datos operativos. Si el server no responde, la transferencia
+no se bloquea: los eventos permanecen pendientes y se reintentan durante la sesion o en el
+proximo arranque. Un marcador de sesion permite detectar cierres no limpios.
 
 ## Smoke en debug
 
