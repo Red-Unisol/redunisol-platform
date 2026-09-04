@@ -383,25 +383,40 @@ def _iter_template_fields(payload: Any) -> list[dict]:
     if not isinstance(payload, dict):
         return []
     fields: list[dict] = []
-    signed_details = payload.get("signedDocumentDetails")
-    if isinstance(signed_details, list):
-        for detail in signed_details:
-            if isinstance(detail, dict) and isinstance(detail.get("customVariables"), dict):
-                fields.extend(
-                    value
-                    for value in detail["customVariables"].values()
-                    if isinstance(value, dict)
-                )
+    _append_signed_document_fields(fields, payload.get("signedDocumentDetails"))
     steps = payload.get("steps")
     if isinstance(steps, list):
         for step in steps:
-            if isinstance(step, dict) and isinstance(step.get("fields"), dict):
+            if not isinstance(step, dict):
+                continue
+            if isinstance(step.get("fields"), dict):
                 fields.extend(
                     value
                     for value in step["fields"].values()
                     if isinstance(value, dict)
                 )
+            data = step.get("data")
+            if isinstance(data, dict):
+                _append_signed_document_fields(
+                    fields, data.get("signedDocumentDetails")
+                )
     return fields
+
+
+def _append_signed_document_fields(
+    fields: list[dict], signed_details: Any
+) -> None:
+    if not isinstance(signed_details, list):
+        return
+    for detail in signed_details:
+        if not isinstance(detail, dict):
+            continue
+        custom_variables = detail.get("customVariables")
+        if not isinstance(custom_variables, dict):
+            continue
+        fields.extend(
+            value for value in custom_variables.values() if isinstance(value, dict)
+        )
 
 
 def _normalize_label(value: str) -> str:

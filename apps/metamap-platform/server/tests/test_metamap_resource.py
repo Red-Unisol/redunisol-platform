@@ -26,6 +26,71 @@ class _FakeResponse:
 
 
 class MetaMapResourceTests(unittest.TestCase):
+    def test_enrichment_reads_nested_signed_document_details_from_real_resource_shape(
+        self,
+    ) -> None:
+        payload = {
+            "steps": [
+                {"id": "selfie", "status": 200, "data": {}},
+                {
+                    "id": "electronic-signature-document-validation",
+                    "status": 200,
+                    "data": {
+                        "signedDocumentDetails": [
+                            {
+                                "documentId": "pdf-document-id",
+                                "customVariables": {
+                                    "variableKey": {
+                                        "title": "Solicitud",
+                                        "value": "249150",
+                                    },
+                                    "variableKey2": {
+                                        "title": "Importe solicitado",
+                                        "value": "$ 300.000,00",
+                                    },
+                                    "variableKey9": {
+                                        "title": "NumeroPrestamo",
+                                        "value": "1014330",
+                                    },
+                                    "variableKey10": {
+                                        "title": "Importe liquidado",
+                                        "value": "$ 363.000,00",
+                                    },
+                                    "variableKey11": {
+                                        "title": "Importe total",
+                                        "value": "$ 863.447,97",
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                },
+            ],
+            "documents": [
+                {
+                    "type": "national-id",
+                    "fields": {
+                        "documentNumber": {"value": "31086118"},
+                        "fullName": {"value": "JUAN PABLO MUÑOZ"},
+                    },
+                }
+            ],
+        }
+
+        enrichment = extract_validation_enrichment(payload)
+
+        self.assertEqual(enrichment.request_number, "249150")
+        self.assertEqual(enrichment.loan_number, "1014330")
+        self.assertEqual(enrichment.requested_amount_raw, "$ 300.000,00")
+        self.assertEqual(enrichment.requested_amount_value, "300000.00")
+        self.assertEqual(enrichment.liquidated_amount_raw, "$ 363.000,00")
+        self.assertEqual(enrichment.liquidated_amount_value, "363000.00")
+        self.assertEqual(enrichment.total_amount_raw, "$ 863.447,97")
+        self.assertEqual(enrichment.total_amount_value, "863447.97")
+        self.assertEqual(enrichment.amount_value, "863447.97")
+        self.assertEqual(enrichment.document_number, "31086118")
+        self.assertEqual(enrichment.applicant_name, "JUAN PABLO MUÑOZ")
+
     def test_enrichment_uses_explicit_document_and_template_paths(self) -> None:
         payload = {
             "deviceFingerprint": {
