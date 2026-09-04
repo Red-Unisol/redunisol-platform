@@ -128,6 +128,16 @@ El flow une y deduplica CUILs de dos fuentes:
   de cobro es Banco de la Provincia de Cordoba. Si el lead no contiene un CUIL
   de 11 digitos, busca el CUIL en el contacto asociado.
 
+El reporte incorpora email y telefono desde Core, leads y contactos Bitrix. Las
+columnas visibles `mail` y `telefono` contienen el dato mas probable. La
+seleccion prioriza, en este orden: coincidencia Core/lead, repeticion en varios
+leads, lead mas reciente, Core y contacto Bitrix. Los valores con forma de
+CUIL/CUIT no se eligen como telefono probable.
+
+Las columnas con todos los valores de origen y el criterio aplicado se conservan
+en el Excel para auditoria, agrupadas y ocultas por defecto para desenfatizar el
+ruido. Se pueden mostrar manualmente desde Excel.
+
 Los enums Bitrix se validan contra la metadata live antes de iniciar la tanda.
 Si no coinciden con los IDs esperados, el flow falla sin consultar Caja ni
 publicar archivos.
@@ -149,6 +159,10 @@ Inputs manuales opcionales:
 - `run_month`: mes de checkpoint e historico, `YYYY-MM`
 - `limit`: cantidad maxima para una prueba; impide la publicacion
 - `pause_seconds`: pausa entre consultas Caja
+- `rebuild_only`: reconstruye y publica el Excel de un checkpoint mensual ya
+  completo, refrescando datos de contacto sin abrir una sesion ni consultar Caja.
+  No admite `limit`, ignora CUILs nuevos y falla si falta en las fuentes algun
+  CUIL presente en el checkpoint.
 
 ### Salidas
 

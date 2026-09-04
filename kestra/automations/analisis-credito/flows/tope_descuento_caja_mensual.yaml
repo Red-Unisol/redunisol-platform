@@ -28,6 +28,11 @@ inputs:
     type: FLOAT
     required: false
     description: Pausa entre consultas Caja. Por defecto 3 segundos.
+  - id: rebuild_only
+    type: BOOLEAN
+    required: false
+    defaults: false
+    description: Regenera el Excel desde un checkpoint completo sin consultar Caja.
 
 tasks:
   - id: generar_reporte
@@ -49,6 +54,7 @@ tasks:
       REPORT_RUN_MONTH: "{{ inputs.run_month ?? '' }}"
       REPORT_LIMIT: "{{ inputs.limit ?? '' }}"
       REPORT_PAUSE_SECONDS: "{{ inputs.pause_seconds ?? '3' }}"
+      REPORT_REBUILD_ONLY: "{{ inputs.rebuild_only ?? false }}"
       REPORT_MAX_CONSECUTIVE_ERRORS: "8"
       REPORT_MIN_CANDIDATES: "100"
       REPORTS_ROOT: "/reports"
@@ -98,6 +104,12 @@ outputs:
   - id: pending_count
     type: INT
     value: "{{ outputs.generar_reporte.vars.pending_count }}"
+  - id: rebuild_only
+    type: BOOLEAN
+    value: "{{ outputs.generar_reporte.vars.rebuild_only }}"
+  - id: ignored_new_candidate_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.ignored_new_candidate_count }}"
   - id: latest_path
     type: STRING
     value: "{{ outputs.generar_reporte.vars.latest_path }}"

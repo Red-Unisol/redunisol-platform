@@ -8,6 +8,8 @@ from typing import Any, Iterable
 import requests
 import urllib3
 
+from .contact_data import ContactObservation, observations
+
 CORE_LOAN_TYPE = "F.Module.Cuentas.Prestamos.Prestamo"
 CORE_CAJA_CORDOBA_PARENT_ID = 2756
 CORE_FIELDS = (
@@ -15,6 +17,8 @@ CORE_FIELDS = (
     "LineaPrestamo.ID",
     "LineaPrestamo.Descripcion",
     "SocioTitular.Socio.CUIT",
+    "SocioTitular.Socio.Email",
+    "SocioTitular.Socio.Celular",
 )
 
 BITRIX_ENUMS = {
@@ -43,6 +47,12 @@ class Candidate:
     core_line_ids: set[str] = field(default_factory=set)
     core_line_names: set[str] = field(default_factory=set)
     bitrix_lead_ids: set[str] = field(default_factory=set)
+    core_emails: set[ContactObservation] = field(default_factory=set)
+    core_phones: set[ContactObservation] = field(default_factory=set)
+    bitrix_lead_emails: set[ContactObservation] = field(default_factory=set)
+    bitrix_lead_phones: set[ContactObservation] = field(default_factory=set)
+    bitrix_contact_emails: set[ContactObservation] = field(default_factory=set)
+    bitrix_contact_phones: set[ContactObservation] = field(default_factory=set)
 
     def merge(self, other: "Candidate") -> None:
         self.from_core = self.from_core or other.from_core
@@ -59,6 +69,12 @@ class Candidate:
         self.core_line_ids.update(other.core_line_ids)
         self.core_line_names.update(other.core_line_names)
         self.bitrix_lead_ids.update(other.bitrix_lead_ids)
+        self.core_emails.update(other.core_emails)
+        self.core_phones.update(other.core_phones)
+        self.bitrix_lead_emails.update(other.bitrix_lead_emails)
+        self.bitrix_lead_phones.update(other.bitrix_lead_phones)
+        self.bitrix_contact_emails.update(other.bitrix_contact_emails)
+        self.bitrix_contact_phones.update(other.bitrix_contact_phones)
 
 
 @dataclass(frozen=True)
@@ -137,13 +153,24 @@ class VimarxClient:
             if not cuil:
                 missing += 1
                 continue
+            loan_id = _text(row.get("ID"))
             candidates.append(
                 Candidate(
                     cuil=cuil,
                     from_core=True,
-                    core_loan_ids={_text(row.get("ID"))} - {""},
+                    core_loan_ids={loan_id} - {""},
                     core_line_ids={_text(row.get("LineaPrestamo.ID"))} - {""},
                     core_line_names={_text(row.get("LineaPrestamo.Descripcion"))} - {""},
+                    core_emails=observations(
+                        row.get("SocioTitular.Socio.Email"),
+                        "email",
+                        record_id=loan_id,
+                    ),
+                    core_phones=observations(
+                        row.get("SocioTitular.Socio.Celular"),
+                        "phone",
+                        record_id=loan_id,
+                    ),
                 )
             )
         return merge_candidates(candidates), len(rows), missing
@@ -223,16 +250,49 @@ class BitrixClient:
         )
         all_rows = jubilados + pensionados
         missing = [row for row in all_rows if not row["candidate"].cuil]
-        recovered = self._recover_from_contacts(missing)
-        direct = [row["candidate"] for row in all_rows if row["candidate"].cuil]
+        requested_contact_count = len(
+            {row["contact_id"] for row in all_rows if row["contact_id"]}
+        )
+        contacts = self._load_contacts(all_rows)
+        recovered_cuils: set[str] = set()
+        candidates: list[Candidate] = []
+        for row in all_rows:
+            candidate = row["candidate"]
+            contact = contacts.get(row["contact_id"], {})
+            if not candidate.cuil:
+                candidate.cuil = normalize_cuil(contact.get(self.contact_cuil_field))
+                candidate.cuil_from_contact = bool(candidate.cuil)
+                if candidate.cuil:
+                    recovered_cuils.add(candidate.cuil)
+            if not candidate.cuil:
+                continue
+            contact_id = row["contact_id"]
+            observed_at = _text(contact.get("DATE_MODIFY") or contact.get("DATE_CREATE"))
+            candidate.bitrix_contact_emails.update(
+                observations(
+                    contact.get("EMAIL"),
+                    "email",
+                    observed_at=observed_at,
+                    record_id=contact_id,
+                )
+            )
+            candidate.bitrix_contact_phones.update(
+                observations(
+                    contact.get("PHONE"),
+                    "phone",
+                    observed_at=observed_at,
+                    record_id=contact_id,
+                )
+            )
+            candidates.append(candidate)
         stats = {
             "jubilado_rows": len(jubilados),
             "pensionado_rows": len(pensionados),
             "without_direct_cuil": len(missing),
-            "contact_ids_checked": len({row["contact_id"] for row in missing if row["contact_id"]}),
-            "contacts_recovered": len({item.cuil for item in recovered}),
+            "contact_ids_checked": requested_contact_count,
+            "contacts_recovered": len(recovered_cuils),
         }
-        return merge_candidates(direct, recovered), stats
+        return merge_candidates(candidates), stats
 
     def validate_live_enums(self) -> None:
         fields = self.call("crm.lead.fields", {})
@@ -267,18 +327,40 @@ class BitrixClient:
             {
                 "order": {"ID": "ASC"},
                 "filter": filter_values,
-                "select": ["ID", "CONTACT_ID", self.lead_cuil_field],
+                "select": [
+                    "ID",
+                    "CONTACT_ID",
+                    self.lead_cuil_field,
+                    "EMAIL",
+                    "PHONE",
+                    "DATE_CREATE",
+                    "DATE_MODIFY",
+                ],
             },
         )
         output = []
         for row in rows:
             cuil = normalize_cuil(row.get(self.lead_cuil_field))
+            lead_id = _text(row.get("ID"))
+            observed_at = _text(row.get("DATE_MODIFY") or row.get("DATE_CREATE"))
             candidate = Candidate(
                 cuil=cuil,
                 from_bitrix_jubilado=source == "jubilado",
                 from_bitrix_pensionado_bancor=source == "pensionado",
                 cuil_from_lead=bool(cuil),
-                bitrix_lead_ids={_text(row.get("ID"))} - {""},
+                bitrix_lead_ids={lead_id} - {""},
+                bitrix_lead_emails=observations(
+                    row.get("EMAIL"),
+                    "email",
+                    observed_at=observed_at,
+                    record_id=lead_id,
+                ),
+                bitrix_lead_phones=observations(
+                    row.get("PHONE"),
+                    "phone",
+                    observed_at=observed_at,
+                    record_id=lead_id,
+                ),
             )
             output.append(
                 {
@@ -288,18 +370,12 @@ class BitrixClient:
             )
         return output
 
-    def _recover_from_contacts(
-        self, missing_rows: list[dict[str, Any]]
-    ) -> list[Candidate]:
-        by_contact: dict[str, list[Candidate]] = {}
-        for row in missing_rows:
-            contact_id = row["contact_id"]
-            if contact_id:
-                by_contact.setdefault(contact_id, []).append(row["candidate"])
-
-        contacts: dict[str, str] = {}
+    def _load_contacts(
+        self, lead_rows: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        contacts: dict[str, dict[str, Any]] = {}
         ids = sorted(
-            by_contact,
+            {row["contact_id"] for row in lead_rows if row["contact_id"]},
             key=lambda value: (0, f"{int(value):020d}")
             if value.isdigit()
             else (1, value),
@@ -310,25 +386,22 @@ class BitrixClient:
                 "crm.contact.list",
                 {
                     "filter": {"@ID": chunk},
-                    "select": ["ID", self.contact_cuil_field],
+                    "select": [
+                        "ID",
+                        self.contact_cuil_field,
+                        "EMAIL",
+                        "PHONE",
+                        "DATE_CREATE",
+                        "DATE_MODIFY",
+                    ],
                     "start": -1,
                 },
             )
             for contact in result or []:
-                cuil = normalize_cuil(contact.get(self.contact_cuil_field))
-                if cuil:
-                    contacts[_text(contact.get("ID"))] = cuil
-
-        recovered: list[Candidate] = []
-        for contact_id, source_candidates in by_contact.items():
-            cuil = contacts.get(contact_id, "")
-            if not cuil:
-                continue
-            candidate = Candidate(cuil=cuil, cuil_from_contact=True)
-            for source_candidate in source_candidates:
-                candidate.merge(source_candidate)
-            recovered.append(candidate)
-        return recovered
+                contact_id = _text(contact.get("ID"))
+                if contact_id:
+                    contacts[contact_id] = contact
+        return contacts
 
     def list_all(self, method: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
