@@ -81,6 +81,20 @@ def normalize_cuil(value: Any) -> str:
     return ""
 
 
+def is_valid_cuil(cuil: str) -> bool:
+    if not re.fullmatch(r"\d{11}", cuil):
+        return False
+    weights = (5, 4, 3, 2, 7, 6, 5, 4, 3, 2)
+    check_digit = 11 - sum(
+        int(digit) * weight for digit, weight in zip(cuil[:10], weights)
+    ) % 11
+    if check_digit == 11:
+        check_digit = 0
+    elif check_digit == 10:
+        check_digit = 9
+    return check_digit == int(cuil[-1])
+
+
 def merge_candidates(*groups: Iterable[Candidate]) -> list[Candidate]:
     merged: dict[str, Candidate] = {}
     for group in groups:

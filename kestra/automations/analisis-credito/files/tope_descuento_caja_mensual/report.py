@@ -135,11 +135,13 @@ def _add_summary(
     sheet = workbook.create_sheet("Resumen", 0)
     completed = sum(row.status == "completed" for row in results.values())
     not_found = sum(row.status == "not_found" for row in results.values())
+    invalid_cuils = sum(row.status == "invalid_cuil" for row in results.values())
     rows = [
         ("Generado", generated_at.isoformat(timespec="seconds")),
         ("CUILs unicos", len(candidates)),
         ("Completados", completed),
         ("No encontrados", not_found),
+        ("CUILs invalidos", invalid_cuils),
         ("Prestamos Core leidos", stats.core_rows),
         ("Prestamos Core sin CUIL", stats.core_without_cuil),
         ("Leads jubilados provinciales Cordoba", stats.bitrix_jubilado_rows),

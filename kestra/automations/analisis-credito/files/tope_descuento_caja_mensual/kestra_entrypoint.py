@@ -78,6 +78,7 @@ def generate(now: datetime | None = None) -> dict[str, Any]:
         "pending_count": summary.pending,
         "completed_count": summary.completed,
         "not_found_count": summary.not_found,
+        "invalid_cuil_count": summary.invalid_cuils,
         "technical_error_count": summary.technical_errors,
         "session_open_count": summary.session_opens,
         "latest_path": latest_path,

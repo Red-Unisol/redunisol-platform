@@ -13,7 +13,9 @@ from .caja_client import (
     CajaTechnicalError,
 )
 from .checkpoint import Checkpoint, ResultRow, now_iso
-from .sources import Candidate
+from .sources import Candidate, is_valid_cuil
+
+INVALID_CUIL_ERROR = "CUIL con digito verificador invalido."
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class RunSummary:
     queried: int
     completed: int
     not_found: int
+    invalid_cuils: int
     technical_errors: int
     pending: int
     limited: bool
@@ -48,16 +51,38 @@ def run_candidates(
     retry_delays: tuple[float, ...] = (5, 15),
 ) -> RunSummary:
     latest = checkpoint.latest()
+    already_resolved = sum(
+        latest.get(candidate.cuil, _pending(candidate.cuil)).resolved
+        for candidate in candidates
+    )
+    invalid_cuils = 0
+    for candidate in candidates:
+        if is_valid_cuil(candidate.cuil):
+            continue
+        invalid_cuils += 1
+        current = latest.get(candidate.cuil)
+        if current is not None and current.status == "invalid_cuil":
+            continue
+        row = ResultRow(
+            cuil=candidate.cuil,
+            status="invalid_cuil",
+            checked_at=now_iso(now()),
+            error=INVALID_CUIL_ERROR,
+        )
+        checkpoint.append(row)
+        latest[row.cuil] = row
+
     unresolved = [
         candidate for candidate in candidates if not latest.get(candidate.cuil, _pending(candidate.cuil)).resolved
     ]
     target = unresolved[:limit] if limit is not None else unresolved
-    already_resolved = len(candidates) - len(unresolved)
     queried = completed = not_found = technical_errors = 0
     consecutive_errors = 0
     stop_reason = ""
 
     for index, candidate in enumerate(target, start=1):
+        if queried:
+            sleep(pause_seconds)
         row: ResultRow | None = None
         for attempt in range(len(retry_delays) + 1):
             try:
@@ -134,9 +159,6 @@ def run_candidates(
         if consecutive_errors >= max_consecutive_errors:
             stop_reason = f"{consecutive_errors} errores tecnicos consecutivos."
             break
-        if index < len(target):
-            sleep(pause_seconds)
-
     final_rows = checkpoint.latest()
     pending = sum(
         not final_rows.get(candidate.cuil, _pending(candidate.cuil)).resolved
@@ -150,6 +172,7 @@ def run_candidates(
         queried=queried,
         completed=completed,
         not_found=not_found,
+        invalid_cuils=invalid_cuils,
         technical_errors=technical_errors,
         pending=pending,
         limited=limited,
