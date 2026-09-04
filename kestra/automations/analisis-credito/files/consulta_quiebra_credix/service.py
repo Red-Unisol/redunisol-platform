@@ -836,8 +836,8 @@ def _run_visible_online_update_requests(page: "Page") -> list[dict[str, Any]]:
                 },
             ].filter((update) => document.querySelector(update.selector));
 
-            const results = [];
-            for (const update of updates) {
+            const results = await Promise.all(updates.map(async (update) => {
+                const t0 = Date.now();
                 try {
                     const response = await fetch(update.url, {
                         method: 'POST',
@@ -855,20 +855,22 @@ def _run_visible_online_update_requests(page: "Page") -> list[dict[str, Any]]:
                     } catch (error) {
                         payload = text.slice(0, 200);
                     }
-                    results.push({
+                    return {
                         name: update.name,
                         ok: response.ok,
                         status: response.status,
                         payload,
-                    });
+                        ms: Date.now() - t0,
+                    };
                 } catch (error) {
-                    results.push({
+                    return {
                         name: update.name,
                         ok: false,
                         error: String(error),
-                    });
+                        ms: Date.now() - t0,
+                    };
                 }
-            }
+            }));
             return results;
         }
         """
@@ -1034,7 +1036,7 @@ def _wait_report_tables_stable(page: "Page", config: CredixConfig, request: Sear
         is_stable = current_count == previous_count and PROCESSING_TEXT not in body_text
         if is_stable:
             stable_since = stable_since or time.monotonic()
-            if time.monotonic() - stable_since >= 2.0 and time.monotonic() - started_at >= 5.0:
+            if time.monotonic() - stable_since >= 2.0 and time.monotonic() - started_at >= 2.0:
                 return
         else:
             stable_since = None

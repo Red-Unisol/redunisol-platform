@@ -14,11 +14,19 @@ Proceso:
 
 1. descarga desde SFTP los archivos `mov_emp_431*.txt` de la raiz remota
 2. excluye `mov_emp_mes_*`
-3. ejecuta el cruce contra la API Vimarx
-4. genera dos Excel por fecha de corrida:
+3. conserva todos los movimientos bancarios, incluso los que no informan CUIT
+4. ejecuta el cruce contra la API Vimarx solo para movimientos con CUIT valido
+5. deja vacias las columnas Vimarx cuando no existe una coincidencia confiable
+6. genera dos Excel por fecha de corrida:
    - `cruce_mov_emp_vimarx_YYYYMMDD.xlsx`
    - `cruce_mov_emp_vimarx_altos_YYYYMMDD.xlsx`
-5. guarda `metadata.json` junto al output
+7. guarda `metadata.json` junto al output, incluyendo conteos de movimientos sin
+   CUIT y sin importe interpretable
+
+El Excel completo usa Coinag como fuente principal: contiene una fila por cada
+movimiento leido. Los movimientos que no pueden consultarse en Vimarx se marcan
+como `sin_cuit_para_consultar`; los candidatos Vimarx no confiables no completan
+las columnas de socio, solicitud o prestamo.
 
 Storage esperado en VPS:
 
@@ -46,3 +54,50 @@ Frontend oculto:
 ```
 
 El slug puede cambiarse en `web/herramientas` con `CONTABILIDAD_TRANSFER_PRIVATE_SLUG`.
+
+## Informe diario de transferencias de la app
+
+Flow principal:
+
+- `transfer_trace_report_daily`
+- namespace runtime por ambiente: `redunisol.<env>.contabilidad`
+- schedule prod: todos los días a las 10:00 `America/Argentina/Buenos_Aires`
+- fecha informada por defecto: el día calendario anterior
+
+La fuente única es `MetaMap Platform Server /api/v1/transfer-trace-events`.
+Desde Transferencias Celesol 2.0.1, la app emite una observación por sesión y OID
+cuando una solicitud aparece en `A Transferir`. El informe reconstruye desde esas
+observaciones el universo de solicitudes y considera **No realizada vía app** a
+toda solicitud observada que no tenga una transferencia confirmada por la app.
+
+El informe muestra:
+
+- solicitudes nuevas observadas y backlog no realizado vía app
+- transferencias y cancelaciones manuales y automáticas
+- tiempos promedio por modalidad y para cancelaciones
+- intentos bloqueados, pendientes o con registro final pendiente
+- volumen de eventos técnicos por tipo
+
+Storage publicado:
+
+```text
+/srv/redunisol-reports/contabilidad/transferencias-app/ultimo.xlsx
+/srv/redunisol-reports/contabilidad/transferencias-app/historico/YYYY-MM-DD.xlsx
+/srv/redunisol-reports/contabilidad/transferencias-app/ultimo.json
+/srv/redunisol-reports/contabilidad/transferencias-app/metadata/YYYY-MM-DD.json
+```
+
+Para reejecutar una fecha desde Kestra, completar `run_date=YYYY-MM-DD`. El
+reporte consulta desde `transfer_trace_coverage_from` hasta el cierre de esa fecha
+para reconstruir el backlog. Antes de que exista al menos un evento
+`transfer_candidate_observed`, el indicador se muestra como `Sin cobertura`, no
+como cero.
+
+Configuración requerida en el runtime Kestra:
+
+- `ENV_TRANSFERENCIAS_SERVER_BASE_URL`
+- `ENV_TRANSFER_TRACE_COVERAGE_FROM`
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_ID`
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_SECRET`
+
+El Excel no exporta CBU, CUIL, documento, payloads ni respuestas HTTP crudas.

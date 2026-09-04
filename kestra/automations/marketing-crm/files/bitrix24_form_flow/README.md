@@ -97,6 +97,7 @@ Obligatorias:
 - `BITRIX24_CONTACT_CUIL_FIELD`
 - `BITRIX24_LEAD_STATUS_QUALIFIED`
 - `BITRIX24_LEAD_STATUS_REJECTED`
+- `BITRIX24_LEAD_STATUS_EXTERNAL_REFERRAL` (default `13`, `NEGOCIACION CON VENDEDOR`)
 - `BITRIX24_LEAD_REJECTION_REASON_FIELD`
 
 Opcionales para override de campos del lead:
@@ -139,9 +140,13 @@ Opcionales para override de campos del lead:
 - `BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID`
 - `BITRIX24_DEAL_PROVISIONAL_USER_ID`
 - `BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID`
+- `BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 - `BITRIX24_DEAL_COMMERCIAL_LINE_FIELD`
 - `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 
 Valores actualmente confirmados en el CRM:
@@ -150,6 +155,8 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_LEAD_PROCESSING_POLICY_SKIP=No procesar`
 - `BITRIX24_LEAD_PROCESSING_POLICY_PROCESS=Procesar`
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD=UF_CRM_COMM_OWNER` (`Motor decision comercial`)
+- `BITRIX24_PREQUALIFICATION_CUTOFF=2026-08-07T12:28:19-03:00` limita la toma de
+  decisiones del webhook a leads creados desde el corte operativo.
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_BITRIX=Bitrix` (`ID=4117`)
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_KESTRA=Kestra` (`ID=4119`)
 - `BITRIX24_LEAD_COMMERCIAL_OWNER_MANUAL=Manual` (`ID=4121`)
@@ -160,9 +167,13 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID=C1:5`
 - `BITRIX24_DEAL_PROVISIONAL_USER_ID=57` (`Maru Lopez`)
 - `BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID=57` (`Maru Lopez`, recibe la notificacion nativa por cada distribucion Catamarca)
+- `BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS=1` (allowlist de Open Lines comerciales; Cobranzas usa la linea `3` y queda excluida)
 - `BITRIX24_DEAL_COMMERCIAL_LINE_FIELD=ufCrm_659EBB0445E8E` (`Linea`)
-- `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451,29,90231,71159,113457,113455` (`Daniel Carrera,Patricia Contendi,Susana Contenti,Soledad Moyano,Natalia Rojo,Claudia Algarbe,Daniela Arias`)
+- `BITRIX24_DEAL_ROUND_ROBIN_USER_IDS=68579,10451,29,90231,71159,113457,113455,116561,110059` (`Daniel Carrera,Patricia Contendi,Susana Contenti,Soledad Moyano,Natalia Rojo,Claudia Algarbe,Daniela Arias,Julieta Aguilera,Agustin Villagra`)
 - `BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS=30`
+- `BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS=10451,71159,68579,90231,29,110059,116561`
+- `BITRIX24_DEAL_CORDOBA_UNC_USER_IDS=53121` (`Gloria Fernandez`)
+- `BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS=10451,71159,68579,90231,29,116561,110059`
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN=<token del webhook de salida ONCRMLEADUPDATE>`
 - `BITRIX24_CONTACT_CUIL_FIELD=UF_CRM_65B7E48033FCD`
 - `BITRIX24_LEAD_CUIL_FIELD=UF_CRM_1693840106704`
@@ -217,8 +228,10 @@ Backfill CredixSA de empleador:
 Comportamiento esperado al crear el lead:
 
 - el intake crea el lead con la politica `No procesar`
-- el intake crea leads de Catamarca con `Motor decision comercial = Kestra`
-- el intake crea leads del resto de provincias con `Motor decision comercial = Bitrix` como default conservador
+- el intake crea todos los leads con `Motor decision comercial = Kestra`
+- Rio Negro, Santa Fe y Neuquen usan reglas locales y derivan los casos aceptados a `NEGOCIACION CON VENDEDOR (13)`
+- Diego Frias (`ASSIGNED_BY_ID=7`) queda fuera de la precalificacion automatica, salvo ejecucion forzada
+- Finguru (`ID=3729`) se reconoce en el catalogo; el envio del email sigue a cargo de un BP minimo de Bitrix
 - el flow de clasificacion por `lead_id` solo usa los criterios locales de precalificacion
 - el flow de clasificacion por `lead_id` solo actualiza estado/motivo cuando `Motor decision comercial = Kestra` o cuando se lo fuerza explicitamente
 - `Politica procesamiento` queda como campo legacy/parcial y no define el ownership comercial nuevo
@@ -230,6 +243,11 @@ Para usar este paquete dentro de Kestra, el adaptador recomendado es:
 - `bitrix24_form_flow/kestra_form_intake_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_classification_entrypoint.py`
 - `bitrix24_form_flow/kestra_lead_won_deal_entrypoint.py`
+
+El webhook `bitrix24_lead_won_deal_webhook` no usa el owner previo como compuerta para
+leads posteriores al corte. Si el lead esta en `PRECLASIFICACION`, clasifica y guarda
+`Motor decision comercial = Kestra` en la misma actualizacion del estado. Los leads
+anteriores al corte y el responsable Diego Frias (`7`) se omiten.
 - `bitrix24_form_flow/kestra_catamarca_deal_select_entrypoint.py`
 - `bitrix24_form_flow/kestra_catamarca_deal_qualification_entrypoint.py`
 - `bitrix24_form_flow/kestra_webhook_entrypoint.py` como wrapper backward-compatible de la ejecucion end-to-end
@@ -274,7 +292,7 @@ Los entrypoints:
   Busca el contacto por CUIL y hace create/update según corresponda.
 
 - `bitrix24_form_flow/form_processor/lead_service.py`
-  Crea el lead con la politica `No procesar`, asigna `Motor decision comercial` segun provincia migrada, reconstruye un lead por `lead_id` y expone helpers de ownership comercial.
+  Crea el lead con la politica `No procesar`, asigna `Motor decision comercial = Kestra`, reconstruye un lead por `lead_id` y expone helpers de ownership comercial.
 
 - `bitrix24_form_flow/form_processor/lead_won_deal_service.py`
   Procesa eventos `ONCRMLEADUPDATE`, valida el token de aplicacion de Bitrix y crea negociacion solo si el lead esta en `RESULTADO GANADO`.

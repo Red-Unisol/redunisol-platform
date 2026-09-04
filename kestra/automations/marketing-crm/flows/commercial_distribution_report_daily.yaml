@@ -1,0 +1,44 @@
+id: commercial_distribution_report_daily
+namespace: redunisol
+
+description: Genera y publica el informe privado de clasificación y distribución comercial.
+
+labels:
+  env: prod
+  team: redunisol
+  domain: marketing-crm
+  kind: schedule
+  schedule_scope: prod_only
+
+tasks:
+  - id: generar_informe
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - commercial_distribution_report/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/srv/redunisol-reports:/reports"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra openpyxl requests > /dev/null
+    env:
+      REPORTS_KESTRA_URL: "{{ envs.reports_kestra_url }}"
+      REPORTS_KESTRA_TENANT: "{{ envs.reports_kestra_tenant ?? 'main' }}"
+      REPORTS_KESTRA_USERNAME: "{{ secret('REPORTS_KESTRA_USERNAME') }}"
+      REPORTS_KESTRA_PASSWORD: "{{ secret('REPORTS_KESTRA_PASSWORD') }}"
+      REPORTS_NAMESPACE: "{{ flow.namespace }}"
+      REPORTS_BITRIX_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      REPORTS_BITRIX_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      REPORTS_AUDIT_FROM: "{{ envs.commercial_distribution_audit_from ?? '2026-08-11T13:00:00-03:00' }}"
+      REPORTS_ROOT: /reports
+    commands:
+      - python commercial_distribution_report/generate.py
+
+triggers:
+  - id: todos_los_dias
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "25 7 * * *"
+    timezone: America/Argentina/Buenos_Aires

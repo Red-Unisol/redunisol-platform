@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
+use crate::cancellations::CancellationPayment;
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ValidationSearchResponse {
     pub items: Vec<ValidationSnapshot>,
@@ -39,6 +41,8 @@ pub struct ValidationSnapshot {
 pub struct CoreSnapshot {
     pub request_oid: String,
     pub request_name: Option<String>,
+    pub credit_line_id: Option<u64>,
+    pub credit_line_code: Option<String>,
     pub credit_line_description: Option<String>,
     pub request_status: Option<String>,
     pub request_amount_raw: Option<String>,
@@ -47,11 +51,19 @@ pub struct CoreSnapshot {
     pub request_cuil: Option<String>,
     pub document_cuil: Option<String>,
     pub transfer_cbu: Option<String>,
+    pub cancellation_amount_raw: Option<String>,
+    pub cancellation_amount: Option<Decimal>,
+    pub cash_in_hand_amount_raw: Option<String>,
+    pub cash_in_hand_amount: Option<Decimal>,
+    pub cancellation_payments: Vec<CancellationPayment>,
+    pub cancellation_detail_count: Option<u64>,
     pub bank_cmf_amount_raw: Option<String>,
     pub bank_cmf_amount: Option<Decimal>,
     pub bank_coinag_cba_amount_raw: Option<String>,
     pub bank_coinag_cba_amount: Option<Decimal>,
     pub coinag_cuil: Option<String>,
+    pub coinag_account_type_code: Option<String>,
+    pub coinag_account_type_label: Option<String>,
     pub refreshed_label: Option<String>,
 }
 
@@ -296,7 +308,42 @@ impl HydratedCase {
 }
 
 impl CoreSnapshot {
+    pub fn coinag_account_type_display(&self) -> Option<String> {
+        match (
+            self.coinag_account_type_code.as_deref(),
+            self.coinag_account_type_label.as_deref(),
+        ) {
+            (Some(code), Some(label)) if !label.trim().is_empty() => {
+                Some(format!("{} - {}", code.trim(), label.trim()))
+            }
+            (Some(code), _) => Some(code.trim().to_owned()),
+            _ => None,
+        }
+    }
+
+    pub fn coinag_account_type_is_pesos_transfer_compatible(&self) -> Option<bool> {
+        self.coinag_account_type_code
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| matches!(value, "1" | "10" | "20" | "30"))
+    }
+
     pub fn transfer_amount_resolution(&self) -> TransferAmountResolution {
+        if crate::cancellations::is_candidate(self) {
+            let plan = crate::cancellations::build_plan(self);
+            return TransferAmountResolution {
+                outcome: if plan.can_transfer() {
+                    TransferAmountOutcome::Exact
+                } else {
+                    TransferAmountOutcome::Error
+                },
+                bank_field: None,
+                transfer_amount: plan.can_transfer().then(|| plan.total()),
+                request_amount: self.request_amount,
+                detail: (!plan.blockers.is_empty()).then(|| plan.blockers.join(" | ")),
+            };
+        }
         let zero = Decimal::ZERO;
         let bank_cmf_amount = self.bank_cmf_amount.filter(|amount| *amount > zero);
         let bank_coinag_cba_amount = self.bank_coinag_cba_amount.filter(|amount| *amount > zero);

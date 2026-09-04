@@ -1,0 +1,115 @@
+id: tope_descuento_caja_mensual
+namespace: redunisol
+
+description: Genera mensualmente el Excel de topes de Caja para los universos elegibles de Core y Bitrix.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  domain: analisis-credito
+  kind: schedule
+  integration: caja-jubilaciones
+  schedule_scope: prod_only
+
+inputs:
+  - id: run_month
+    type: STRING
+    required: false
+    description: Mes de checkpoint e historico en formato YYYY-MM. Por defecto el mes actual.
+  - id: limit
+    type: INT
+    required: false
+    description: Limite opcional para pruebas. Una corrida limitada nunca publica el Excel.
+  - id: pause_seconds
+    type: FLOAT
+    required: false
+    description: Pausa entre consultas Caja. Por defecto 3 segundos.
+
+tasks:
+  - id: generar_reporte
+    type: io.kestra.plugin.scripts.python.Commands
+    timeout: PT5H
+    namespaceFiles:
+      enabled: true
+      include:
+        - tope_descuento_caja/**
+        - tope_descuento_caja_mensual/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/srv/redunisol-reports:/reports"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra openpyxl requests pycryptodome urllib3 > /dev/null
+    env:
+      REPORT_RUN_MONTH: "{{ inputs.run_month ?? '' }}"
+      REPORT_LIMIT: "{{ inputs.limit ?? '' }}"
+      REPORT_PAUSE_SECONDS: "{{ inputs.pause_seconds ?? '3' }}"
+      REPORT_MAX_CONSECUTIVE_ERRORS: "8"
+      REPORT_MIN_CANDIDATES: "100"
+      REPORTS_ROOT: "/reports"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds ?? '90' }}"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls ?? 'false' }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds ?? '60' }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      CIDI_USER: "{{ secret('CIDI_USER') }}"
+      CIDI_PASS: "{{ secret('CIDI_PASS') }}"
+      CIDI_BASE_URL: "{{ envs.cidi_base_url }}"
+      CIDI_CLIENT_ID: "{{ envs.cidi_client_id }}"
+      CIDI_CLIENT_SECRET: "{{ secret('CIDI_CLIENT_SECRET') }}"
+      CAJA_BASE_URL: "{{ envs.caja_base_url }}"
+      CAJA_ENCRYPT_PASS: "{{ secret('CAJA_ENCRYPT_PASS') }}"
+      CAJA_ID_TIPO_USUARIO: "{{ envs.caja_id_tipo_usuario }}"
+      CAJA_TIMEOUT_SECONDS: "30"
+      CAJA_SESSION_MAX_AGE_SECONDS: "2400"
+    commands:
+      - python -m tope_descuento_caja_mensual.kestra_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.generar_reporte.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.status }}"
+  - id: run_month
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.run_month }}"
+  - id: candidate_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.candidate_count }}"
+  - id: queried_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.queried_count }}"
+  - id: invalid_cuil_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.invalid_cuil_count }}"
+  - id: pending_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.pending_count }}"
+  - id: latest_path
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.latest_path }}"
+  - id: history_path
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.history_path }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.error }}"
+
+triggers:
+  - id: primer_dia_del_mes
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 5 1 * *"
+    timezone: America/Argentina/Buenos_Aires

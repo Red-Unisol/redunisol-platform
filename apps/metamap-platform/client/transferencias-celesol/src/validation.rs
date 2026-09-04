@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 
+use crate::cancellations;
 use crate::models::{
     CoinagTransferGuard, CoreSnapshot, MetamapSnapshot, TransferAmountOutcome, ValidationReport,
     ValidationSnapshot,
@@ -76,6 +77,7 @@ pub fn build_validation_report(
     let mut blockers = Vec::new();
     let mut warnings = Vec::new();
     let has_metamap_validation = server_validation.has_completed_validation();
+    let is_cancellation = cancellations::is_candidate(core);
     let transfer_amount_resolution = core.transfer_amount_resolution();
 
     match transfer_guard {
@@ -120,20 +122,29 @@ pub fn build_validation_report(
             .push("No se pudo obtener Estado.Descripcion desde el core financiero.".to_owned()),
     }
 
-    if core.transfer_cbu.is_none() {
+    if core.transfer_cbu.is_none()
+        && (!is_cancellation
+            || core
+                .cash_in_hand_amount
+                .is_some_and(|amount| !amount.is_zero()))
+    {
         blockers.push("No existe Prestamo.[CBU transferencia] en el core financiero.".to_owned());
     }
 
-    match transfer_amount_resolution.outcome {
-        TransferAmountOutcome::Exact => {}
-        TransferAmountOutcome::Renovacion => {
-            if let Some(detail) = transfer_amount_resolution.detail {
-                warnings.push(detail);
+    if is_cancellation {
+        blockers.extend(cancellations::build_plan(core).blockers);
+    } else {
+        match transfer_amount_resolution.outcome {
+            TransferAmountOutcome::Exact => {}
+            TransferAmountOutcome::Renovacion => {
+                if let Some(detail) = transfer_amount_resolution.detail {
+                    warnings.push(detail);
+                }
             }
-        }
-        TransferAmountOutcome::Error => {
-            if let Some(detail) = transfer_amount_resolution.detail {
-                blockers.push(detail);
+            TransferAmountOutcome::Error => {
+                if let Some(detail) = transfer_amount_resolution.detail {
+                    blockers.push(detail);
+                }
             }
         }
     }
@@ -193,8 +204,27 @@ pub fn build_validation_report(
     if request_cuil.is_none() {
         blockers.push("No se pudo obtener CUIL/CUIT del core por solicitud.".to_owned());
     }
-    if coinag_cuil.is_none() {
+    let needs_member_destination = !is_cancellation
+        || core
+            .cash_in_hand_amount
+            .is_some_and(|amount| !amount.is_zero());
+    if needs_member_destination && coinag_cuil.is_none() {
         blockers.push("No se pudo validar titularidad del CBU en Coinag via CUIL.".to_owned());
+    }
+    if needs_member_destination && core.transfer_cbu.is_some() {
+        match core.coinag_account_type_is_pesos_transfer_compatible() {
+            Some(true) => {}
+            Some(false) => {
+                let account_type = core
+                    .coinag_account_type_display()
+                    .unwrap_or_else(|| "N/D".to_owned());
+                blockers.push(format!(
+                    "Tipo de cuenta Coinag no compatible con transferencia en pesos: {account_type}."
+                ));
+            }
+            None => blockers
+                .push("No se pudo validar moneda/tipo de cuenta del CBU en Coinag.".to_owned()),
+        }
     }
 
     if let (Some(document_cuil), Some(request_cuil)) = (&document_cuil, &request_cuil) {
@@ -205,7 +235,9 @@ pub fn build_validation_report(
         }
     }
 
-    if let (Some(request_cuil), Some(coinag_cuil)) = (&request_cuil, &coinag_cuil) {
+    if needs_member_destination
+        && let (Some(request_cuil), Some(coinag_cuil)) = (&request_cuil, &coinag_cuil)
+    {
         if request_cuil != coinag_cuil {
             blockers.push(format!(
                 "Titularidad Coinag inconsistente: solicitud {request_cuil}, Coinag {coinag_cuil}."
@@ -238,6 +270,8 @@ mod tests {
             document_cuil: Some("20-30111222-3".to_owned()),
             transfer_cbu: Some("2850590940090418135201".to_owned()),
             coinag_cuil: Some("20-30111222-3".to_owned()),
+            coinag_account_type_code: Some("10".to_owned()),
+            coinag_account_type_label: Some("CA Pesos".to_owned()),
             ..Default::default()
         }
     }
@@ -295,6 +329,28 @@ mod tests {
                 .blockers
                 .iter()
                 .any(|value| value.contains("Prestamo.[CBU transferencia]"))
+        );
+        assert!(!report.can_transfer());
+    }
+
+    #[test]
+    fn dollar_account_type_blocks_transfer() {
+        let mut core = valid_core_snapshot();
+        core.coinag_account_type_code = Some("11".to_owned());
+        core.coinag_account_type_label = Some("CA Dolares".to_owned());
+
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|value| value.contains("11 - CA Dolares"))
         );
         assert!(!report.can_transfer());
     }

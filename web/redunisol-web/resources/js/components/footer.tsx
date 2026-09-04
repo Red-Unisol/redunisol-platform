@@ -7,6 +7,8 @@ import {
     YoutubeLogo,
 } from '@phosphor-icons/react';
 
+import { getRegulatorDisplayName } from '@/lib/regulators';
+
 import WhatsAppButton from './WhatsAppButton';
 
 interface Regulator {
@@ -79,16 +81,18 @@ const FALLBACK_REGULATORS: Regulator[] = [
 ];
 
 function RegulatorCard({ reg }: { reg: Regulator }) {
+    const displayName = getRegulatorDisplayName(reg.short_name, reg.name);
+
     return (
         <div className="rounded-lg border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-5">
             <p className="mb-4 text-xs font-bold tracking-widest text-gray-600 uppercase">
-                {reg.short_name ?? reg.name}
+                {displayName}
             </p>
 
             {reg.logo_path && (
                 <img
                     src={`/storage/${reg.logo_path}`}
-                    alt={reg.short_name ?? reg.name}
+                    alt={displayName}
                     className="mb-4 h-8 w-auto object-contain"
                 />
             )}
@@ -174,9 +178,13 @@ export default function Footer({
     ];
 
     // Build BCRA statement dynamically from regulator data
+    const bcraRegulators = regulators.filter((reg) => reg.bcra_code?.trim());
     const bcraStatement =
-        regulators
-            .map((r) => `${r.short_name ?? r.name} (Nº ${r.bcra_code})`)
+        bcraRegulators
+            .map(
+                (reg) =>
+                    `${getRegulatorDisplayName(reg.short_name, reg.name)} (Nº ${reg.bcra_code})`,
+            )
             .join(' y ') +
         ' son Proveedores no Financieros de Crédito regulados por el BCRA.';
 

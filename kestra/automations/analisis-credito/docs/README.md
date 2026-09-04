@@ -6,6 +6,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
+- `tope_descuento_caja_mensual`
 - `afip_contacto_por_dni`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
@@ -113,6 +114,62 @@ Notas:
 
 - `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
 
+## tope_descuento_caja_mensual
+
+Genera el reporte privado mensual de topes de Caja y lo publica para management.
+
+### Universo
+
+El flow une y deduplica CUILs de dos fuentes:
+
+- Core/Vimarx: todos los prestamos vigentes o historicos cuyo padre de linea es
+  `LINEAS CAJA JUBILADOS_FIAT` (`LineaPrestamo.Superior.ID = 2756`). Este filtro
+  excluye las lineas de Caja Santa Fe, que pertenecen a otro padre.
+- Bitrix: jubilados provinciales de Cordoba, y pensionados de Cordoba cuyo banco
+  de cobro es Banco de la Provincia de Cordoba. Si el lead no contiene un CUIL
+  de 11 digitos, busca el CUIL en el contacto asociado.
+
+Los enums Bitrix se validan contra la metadata live antes de iniciar la tanda.
+Si no coinciden con los IDs esperados, el flow falla sin consultar Caja ni
+publicar archivos.
+
+### Ejecucion
+
+- corre el dia 1 de cada mes a las 05:00, hora de Buenos Aires
+- el schedule solo se despliega en produccion
+- reutiliza una sesion CIDI/Caja y la renueva cada 40 minutos o ante `401/403`
+- espera 3 segundos entre consultas
+- reintenta fallos tecnicos y frena ante `429` u 8 fallos consecutivos
+- guarda cada resultado en un checkpoint mensual append-only
+- conserva los CUILs con digito verificador invalido como `invalid_cuil` en el
+  checkpoint y en el Excel, sin enviarlos a Caja
+- una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
+
+Inputs manuales opcionales:
+
+- `run_month`: mes de checkpoint e historico, `YYYY-MM`
+- `limit`: cantidad maxima para una prueba; impide la publicacion
+- `pause_seconds`: pausa entre consultas Caja
+
+### Salidas
+
+```text
+/reports/analisis-credito/tope-descuento-caja/
+  ultimo.xlsx
+  historico/
+    YYYY-MM.xlsx
+  .state/
+    YYYY-MM.jsonl
+```
+
+El `.jsonl` no es visible en Filament. Los Excel se publican mediante reemplazo
+atomico solamente cuando no quedan CUILs pendientes.
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
+- `kestra/automations/analisis-credito/files/tope_descuento_caja_mensual/**`
+
 ## afip_contacto_por_dni
 
 Consulta AFIP/ARCA por tipo y numero de documento y devuelve nombre mas CUIL normalizados.
@@ -184,13 +241,13 @@ Ejemplo:
 
 ```json
 {
-	"_bridge_forward_url": "http://host.docker.internal:8787/metamap",
-	"_bridge_timeout_seconds": 5,
-	"event": "verification.finished",
-	"lead_id": "abc123",
-	"result": {
-		"status": "approved"
-	}
+  "_bridge_forward_url": "http://host.docker.internal:8787/metamap",
+  "_bridge_timeout_seconds": 5,
+  "event": "verification.finished",
+  "lead_id": "abc123",
+  "result": {
+    "status": "approved"
+  }
 }
 ```
 
@@ -305,9 +362,9 @@ Corre cada minuto en horario util con concurrencia `1`. En cada corrida:
 6. solo si hay candidatos ejecuta el worker pesado de warmup
 7. el worker consulta CredixSA con retry por candidato
 8. guarda cache por CUIL y por nombre si el resultado es `single`
-9. actualiza el indice diario
+9. actualiza el indice diario, incluidos los fallos acumulados por OID
 
-Si CredixSA falla para un candidato dentro del worker, ese candidato no se marca como procesado; la siguiente corrida vuelve a intentarlo.
+Si CredixSA falla para un candidato dentro del worker, la siguiente corrida vuelve a intentarlo hasta alcanzar el limite diario configurado. Al llegar al limite, el OID queda descartado hasta el siguiente dia.
 
 ### Variables
 
@@ -323,8 +380,9 @@ Config en `envs`:
 - `vimarx_timeout_seconds`
 - `vimarx_verify_tls`
 - `local_tz` opcional, default `America/Argentina/Buenos_Aires`
-- `credix_debug` opcional, default `true` en los tasks del flow
+- `credix_debug` opcional, default `false` en los tasks del flow
 - `credixsa_warmup_max_per_run` opcional, default `5`
+- `credixsa_warmup_max_oid_failures` opcional, default `3`
 - `credixsa_warmup_core_max_rows` opcional, default `1000`
 - `credixsa_warmup_retry_attempts` opcional, default `2`
 
@@ -527,6 +585,126 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_cuad/**`
+
+## reporte_evaluacion_management
+
+Genera el Excel evaluatorio acumulado, lo publica en la carpeta privada consumida por Filament y conserva una copia historica diaria.
+
+### Ejecucion automatica
+
+- corre el dia 1 de cada mes a las 07:15, hora de Buenos Aires
+- toma desde `2025-10` hasta el ultimo mes cerrado
+- el trigger programado solo se despliega en produccion
+
+### Ejecucion manual
+
+Puede ejecutarse desde la UI de Kestra, informando opcionalmente `from_month` y `to_month`, o con un `POST` al webhook:
+
+```json
+{
+  "from_month": "2026-01",
+  "to_month": "2026-07"
+}
+```
+
+El body es opcional y los meses deben estar cerrados. El webhook usa `ANALISIS_CREDITO_WEBHOOK_KEY`, responde de forma asincrona y el resultado se consulta en la ejecucion de Kestra.
+
+### Salidas
+
+- `/reports/analisis-credito/reporte-evaluacion/ultimo.xlsx`
+- `/reports/analisis-credito/reporte-evaluacion/historico/YYYY-MM-DD.xlsx`
+
+Ambos archivos se reemplazan de forma atomica para evitar descargas incompletas.
+
+### Configuracion
+
+- secret `DEVEXPRESS_EVALUATE_API_BASE_URL`
+- secret `ANALISIS_CREDITO_WEBHOOK_KEY`
+- env opcional `reporte_evaluacion_timeout_seconds`
+- env opcional `reporte_evaluacion_per_day_max`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/reporte_evaluacion_report/**`
+
+## mudon_credixsa_report
+
+Genera el padron de socios con credito activo en las lineas `MUDON HABERES` y
+`MUDON HABERES SOCIOS NUEVOS`, enriquece cada CUIL con CredixSA y publica un
+Excel para Cobranzas.
+
+### Operacion reanudable
+
+- crea un snapshot mensual de socios desde `F.Module.Cuentas.Prestamos.Prestamo`;
+- deduplica por CUIL y conserva todas las cuentas activas del socio;
+- reutiliza resultados CredixSA de hasta 7 dias;
+- procesa por defecto 5 socios por lote y espera 15 segundos entre consultas online;
+- persiste cada resultado en `/data/credixsa-cache/mudon-report.sqlite`;
+- recupera automaticamente leases de ejecuciones interrumpidas;
+- reintenta errores tecnicos hasta 3 veces en lotes posteriores;
+- publica el Excel aunque existan errores definitivos, marcandolos por fila.
+
+El estado SQLite es runtime mutable. El esquema, las migraciones y toda la
+logica que lo administra viven en Git.
+
+### Triggers
+
+- `primer_dia_del_mes`: dia 1 a las 07:30, solo en produccion;
+- `reanudar_corrida`: cada 10 minutos, solo en produccion; sale como `idle` si no hay corrida activa;
+- `webhook_manual`: asincrono y protegido por `ANALISIS_CREDITO_WEBHOOK_KEY`.
+
+Cada trigger fija explicitamente el input interno `run_mode` (`monthly`, `resume` o `manual`). El worker no infiere el modo desde metadatos del trigger: `resume` nunca crea una corrida nueva y solo continua una corrida activa.
+
+Body manual opcional:
+
+```json
+{
+  "force_refresh": false,
+  "retry_errors": false
+}
+```
+
+`force_refresh` solo afecta una corrida nueva. `retry_errors` reabre los errores
+definitivos de la ultima corrida. Para consultar estado sin procesar un lote:
+
+```json
+{ "mode": "status" }
+```
+
+### Salidas
+
+- `/reports/cobranzas/mudon-jubilados/ultimo.xlsx`
+- `/reports/cobranzas/mudon-jubilados/historico/YYYY-MM-DD.xlsx`
+
+El workbook contiene las hojas `Resumen` y `Socios`. La publicacion de ambos
+archivos es atomica.
+
+### Configuracion
+
+Secrets reutilizados:
+
+- `DEVEXPRESS_EVALUATE_API_BASE_URL` (puerto operativo 5002)
+- `DEVEXPRESS_EVALUATE_API_BEARER_TOKEN`
+- `CREDIX_CLIENTE`
+- `CREDIX_USER`
+- `CREDIX_PASS`
+- `ANALISIS_CREDITO_WEBHOOK_KEY`
+
+Variables:
+
+- `mudon_core_timeout_seconds` (default `60`)
+- `mudon_core_verify_tls` (default `false`)
+- `mudon_core_max_rows` (default `5000`; alcanzar el limite aborta la corrida)
+- `mudon_loan_lines`
+- `mudon_credixsa_batch_size` (default `5`, maximo `10`)
+- `mudon_credixsa_delay_seconds` (default `15`)
+- `mudon_credixsa_cache_max_age_days` (default `7`)
+- `mudon_credixsa_max_attempts` (default `3`)
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/mudon_credixsa_report/**`
+- reutiliza `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
 
 ## consulta_cuad_masivo
 

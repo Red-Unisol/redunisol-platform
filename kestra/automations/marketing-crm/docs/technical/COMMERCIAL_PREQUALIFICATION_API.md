@@ -48,7 +48,7 @@ aceptan los aliases existentes en el formulario:
   "route_to_whatsapp": true,
   "reason": "qualified",
   "message": "La persona califica para Catamarca.",
-  "rule_version": "2026-07-21"
+  "rule_version": "2026-08-10-la-rioja-external-referral"
 }
 ```
 
@@ -61,7 +61,7 @@ aceptan los aliases existentes en el formulario:
   "route_to_whatsapp": false,
   "reason": "payment_bank_not_eligible",
   "message": "El banco \"Banco de la Nacion Argentina\" no califica para Cordoba.",
-  "rule_version": "2026-07-21"
+  "rule_version": "2026-08-10-la-rioja-external-referral"
 }
 ```
 
@@ -74,12 +74,31 @@ aceptan los aliases existentes en el formulario:
   "route_to_whatsapp": false,
   "reason": "invalid_input",
   "message": "Falta el campo requerido: payment_bank.",
-  "rule_version": "2026-07-21"
+  "rule_version": "2026-08-10-la-rioja-external-referral"
 }
 ```
 
 `prequalified=true` no representa una aprobacion final. Solo determina la salida
 inmediata del formulario. La clasificacion definitiva puede cambiar luego del backfill.
+
+## Derivación Externa
+
+La Rioja, Río Negro, Santa Fe y Neuquén pueden devolver `reason=external_referral` para
+casos elegibles. En la respuesta síncrona esto implica `prequalified=false` y
+`route_to_whatsapp=false`; posteriormente, Kestra mueve el lead a NEGOCIACIÓN CON
+VENDEDOR sin crear una negociación interna.
+
+## Policía Federal + CABA: circuito inicial
+
+Entre el 31 de agosto y el 13 de septiembre de 2026, inclusive, la combinación
+`Policía Federal` + `Ciudad Autónoma de Buenos Aires` devuelve
+`prequalified=true` y `route_to_whatsapp=false`. Esto permite contabilizar la
+conversión sin mostrar el CTA de WhatsApp; en CRM el lead se conserva como
+rechazado con el motivo específico `POLICÍA FEDERAL CABA - PERÍODO INICIAL`.
+
+Fuera de esa ventana, y para Policía Federal en cualquier otra provincia, se
+aplican las reglas generales de rechazo. El detalle operativo se documenta en
+`POLICIA_FEDERAL_CABA_INITIAL_2026.md`.
 
 El backend encola la persistencia del formulario cualquiera sea el resultado de
 preclasificación. Por lo tanto, la respuesta no confirma que el lead ya exista en

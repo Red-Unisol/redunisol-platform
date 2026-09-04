@@ -28,6 +28,17 @@ jobs:
       - name: Run encrypted env tooling tests
         run: python -m unittest kestra.tools.tests.test_manage_encrypted_env
 
+      - name: Run runtime env validation tests
+        run: python -m unittest kestra.tools.tests.test_validate_runtime_env
+
+      - name: Validate Kestra runtime env contract
+        run: |
+          python kestra/tools/validate_runtime_env.py \
+            --compose kestra/platform/infra/docker-compose.yml \
+            --env kestra/platform/infra/kestra-runtime.env.enc \
+            --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing SECRET_SMTP_PASSWORD
+
       - name: Run deploy tooling tests
         run: python -m unittest kestra.tools.tests.test_deploy_kestra
 
@@ -50,11 +61,19 @@ jobs:
         env:
           PYTHONPATH: kestra/automations/analisis-credito/files
 
+      - name: Run Contabilidad unit tests
+        run: python -m unittest discover -s kestra/automations/contabilidad/tests -p "test_*.py"
+        env:
+          PYTHONPATH: kestra/automations/contabilidad/files
+
       - name: Dry-run Marketing CRM deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain marketing-crm --dry-run
 
       - name: Dry-run Analisis Credito deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --domain analisis-credito --dry-run
+
+      - name: Dry-run Contabilidad deploy
+        run: python kestra/tools/deploy_kestra.py --environment dev --domain contabilidad --dry-run
 
       - name: Dry-run System deploy
         run: python kestra/tools/deploy_kestra.py --environment dev --target system --dry-run
@@ -67,3 +86,6 @@ jobs:
 
       - name: Build Consulta CUAD Masivo image
         run: docker build kestra/automations/analisis-credito/docker/consulta-cuad-masivo -t analisis-credito-consulta-cuad-masivo:test
+
+      - name: Build CredixSA worker image
+        run: docker build kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2 -t analisis-credito-credixsa:test

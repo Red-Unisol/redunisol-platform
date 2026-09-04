@@ -28,6 +28,7 @@ def success_result(
     message: str,
     reason: str,
     deal_id: int | None = None,
+    action: str | None = None,
 ) -> dict[str, object]:
     return {
         "ok": True,
@@ -36,7 +37,7 @@ def success_result(
         "lead_id": lead_id,
         "lead_status": lead_status,
         "deal_id": deal_id,
-        "action": "qualified" if qualified else "rejected",
+        "action": action or ("qualified" if qualified else "rejected"),
         "reason": reason,
         "message": message,
     }

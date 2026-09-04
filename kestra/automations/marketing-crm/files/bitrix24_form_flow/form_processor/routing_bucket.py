@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import AppConfig
-from .lead_service import build_submission_from_lead
+from .lead_service import build_routing_input_from_lead
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ def resolve_routing_bucket(
     lead: dict[str, Any],
 ) -> RoutingResolution:
     try:
-        submission = build_submission_from_lead(lead, config)
+        submission = build_routing_input_from_lead(lead, config)
     except ValueError:
         return RoutingResolution(
             bucket=None,
@@ -47,8 +47,66 @@ def resolve_routing_bucket(
             reason="province_catamarca",
         )
 
+    if submission.province.key == "cordoba":
+        employment = submission.employment_status.key
+        if employment in {
+            "jubilado_provincial",
+            "jubilado_nacional",
+            "jubilado_municipal",
+            "pensionado",
+        }:
+            key, label, sellers = (
+                "cordoba_jubilados",
+                "Córdoba - Jubilados y pensionados",
+                config.deal.cordoba_jubilados_user_ids,
+            )
+        elif employment in {"empleado_de_la_unc", "daspu"}:
+            key, label, sellers = (
+                "cordoba_unc",
+                "Córdoba - UNC y DASPU",
+                config.deal.cordoba_unc_user_ids,
+            )
+        else:
+            key, label, sellers = (
+                "cordoba_general",
+                "Córdoba - General",
+                config.deal.cordoba_general_user_ids,
+            )
+        return RoutingResolution(
+            bucket=RoutingBucket(key=key, label=label, seller_ids=sellers),
+            province=submission.province.label,
+            reason="province_cordoba",
+        )
+
     return RoutingResolution(
         bucket=None,
         province=submission.province.label,
         reason="no_matching_bucket",
     )
+
+
+def routing_bucket_by_key(config: AppConfig, key: str) -> RoutingBucket | None:
+    definitions = {
+        "catamarca_general": RoutingBucket(
+            "catamarca_general",
+            "Catamarca - General",
+            config.deal.round_robin_user_ids,
+            "Catamarca",
+        ),
+        "cordoba_jubilados": RoutingBucket(
+            "cordoba_jubilados",
+            "Córdoba - Jubilados y pensionados",
+            config.deal.cordoba_jubilados_user_ids,
+        ),
+        "cordoba_unc": RoutingBucket(
+            "cordoba_unc",
+            "Córdoba - UNC y DASPU",
+            config.deal.cordoba_unc_user_ids,
+        ),
+        "cordoba_general": RoutingBucket(
+            "cordoba_general",
+            "Córdoba - General",
+            config.deal.cordoba_general_user_ids,
+        ),
+    }
+    return definitions.get(str(key or "").strip())

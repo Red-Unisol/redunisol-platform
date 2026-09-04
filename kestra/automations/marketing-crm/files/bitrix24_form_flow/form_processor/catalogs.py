@@ -90,6 +90,7 @@ SITUACIONES_LABORALES = Catalog(
         ("Empleado Publico Municipal", "1273"),
         ("Empleado Privado", "1241"),
         ("Policia", "1269"),
+        ("Policía Federal", "4165"),
         ("Personal de Salud", "4069"),
         ("Jubilado Provincial", "2565"),
         ("Jubilado Nacional", "2567"),
@@ -111,6 +112,8 @@ ORIGENES_LEAD = Catalog(
         ("Instagram", "2427"),
         ("WhatsApp", "2451"),
         ("E Mail", "2647"),
+        ("Finguru", "3729"),
+        ("Suscripcion News Celesol", "3737"),
         ("YouTube", "3921"),
     ]
 )

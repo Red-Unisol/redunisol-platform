@@ -77,6 +77,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python kestra/tools/validate_runtime_env.py \
+            --compose kestra/platform/infra/docker-compose.yml \
+            --env kestra/platform/infra/kestra-runtime.env.enc \
+            --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing SECRET_SMTP_PASSWORD
           printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/kestra-runtime.key"
           python kestra/tools/manage_encrypted_env.py decrypt \
             --key-file "$RUNNER_TEMP/kestra-runtime.key" \
@@ -84,6 +89,12 @@ jobs:
             --output kestra/platform/infra/kestra-runtime.env \
             --output-format runtime \
             --force
+          python kestra/tools/validate_runtime_env.py \
+            --compose kestra/platform/infra/docker-compose.yml \
+            --env kestra/platform/infra/kestra-runtime.env \
+            --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing SECRET_SMTP_PASSWORD \
+            --validate-values
 
       - name: Upload staged infra files
         shell: bash

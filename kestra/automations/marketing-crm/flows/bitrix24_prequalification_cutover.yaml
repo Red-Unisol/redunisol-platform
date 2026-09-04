@@ -1,0 +1,68 @@
+id: bitrix24_prequalification_cutover
+namespace: redunisol
+
+description: Transfiere en un unico corte los leads activos de INGRESO y PRECLASIFICACION al motor comercial Kestra.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: manual
+  integration: bitrix24
+
+inputs:
+  - id: dry_run
+    type: BOOLEAN
+    required: true
+    defaults: true
+  - id: date_from
+    type: STRING
+    required: true
+    defaults: ""
+
+tasks:
+  - id: centralizar_ownership
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      DRY_RUN: "{{ inputs.dry_run }}"
+      DATE_FROM: "{{ inputs.date_from }}"
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
+      BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'UC_5N2OEO' }}"
+      BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'NEW' }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_LEAD_STATUS_EXTERNAL_REFERRAL: "{{ envs.bitrix24_lead_status_external_referral ?? '13' }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_prequalification_cutover_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.centralizar_ownership.vars.ok }}"
+  - id: action
+    type: STRING
+    value: "{{ outputs.centralizar_ownership.vars.action }}"
+  - id: scanned_count
+    type: INT
+    value: "{{ outputs.centralizar_ownership.vars.scanned_count }}"
+  - id: candidate_count
+    type: INT
+    value: "{{ outputs.centralizar_ownership.vars.candidate_count }}"
+  - id: changed_count
+    type: INT
+    value: "{{ outputs.centralizar_ownership.vars.changed_count }}"
+  - id: message
+    type: STRING
+    value: "{{ outputs.centralizar_ownership.vars.message }}"

@@ -1,0 +1,91 @@
+id: bitrix24_deal_assignment_queue
+namespace: redunisol
+
+description: Reintenta una negociación por bucket y cierra la cola al finalizar la ventana semanal.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  integration: bitrix24
+
+tasks:
+  - id: procesar_colas
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
+      BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
+      BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID: "{{ envs.bitrix24_deal_manual_review_stage_id ?? 'C1:KESTRA_REVIEW' }}"
+      BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID: "{{ envs.bitrix24_deal_assignment_queue_stage_id ?? 'C1:KESTRA_QUEUE' }}"
+      BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
+      BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID: "{{ envs.bitrix24_deal_distribution_notification_user_id ?? '57' }}"
+      BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS: "{{ envs.bitrix24_distributable_open_line_ids ?? '1' }}"
+      BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
+      BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
+      BITRIX24_DEAL_QUEUE_ACTION_FIELD: "{{ envs.bitrix24_deal_queue_action_field ?? 'ufCrmKqAction' }}"
+      BITRIX24_DEAL_QUEUE_REASON_FIELD: "{{ envs.bitrix24_deal_queue_reason_field ?? 'ufCrmKqReason' }}"
+      BITRIX24_DEAL_QUEUE_TARGET_STAGE_FIELD: "{{ envs.bitrix24_deal_queue_target_stage_field ?? 'ufCrmKqStage' }}"
+      BITRIX24_DEAL_QUEUE_ENQUEUED_AT_FIELD: "{{ envs.bitrix24_deal_queue_enqueued_at_field ?? 'ufCrmKqAt' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455,116561,110059' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS: "{{ envs.bitrix24_deal_cordoba_jubilados_user_ids ?? '10451,71159,68579,90231,29,110059,116561' }}"
+      BITRIX24_DEAL_CORDOBA_UNC_USER_IDS: "{{ envs.bitrix24_deal_cordoba_unc_user_ids ?? '53121' }}"
+      BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS: "{{ envs.bitrix24_deal_cordoba_general_user_ids ?? '10451,71159,68579,90231,29,116561,110059' }}"
+      BITRIX24_DISTRIBUTION_TIMEZONE: "{{ envs.bitrix24_distribution_timezone ?? 'America/Argentina/Cordoba' }}"
+      BITRIX24_DISTRIBUTION_WORKDAYS: "{{ envs.bitrix24_distribution_workdays ?? 'MO,TU,WE,TH,FR' }}"
+      BITRIX24_DISTRIBUTION_FROM: "{{ envs.bitrix24_distribution_from ?? '00:00' }}"
+      BITRIX24_DISTRIBUTION_TO: "{{ envs.bitrix24_distribution_to ?? '17:00' }}"
+      BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_deal_assignment_queue_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.procesar_colas.vars.ok }}"
+  - id: processed_at
+    type: STRING
+    value: "{{ outputs.procesar_colas.vars.processed_at ?? '' }}"
+  - id: event_count
+    type: INT
+    value: "{{ outputs.procesar_colas.vars.event_count }}"
+  - id: distributed_count
+    type: INT
+    value: "{{ outputs.procesar_colas.vars.distributed_count }}"
+  - id: waiting_count
+    type: INT
+    value: "{{ outputs.procesar_colas.vars.waiting_count }}"
+  - id: closed_count
+    type: INT
+    value: "{{ outputs.procesar_colas.vars.closed_count }}"
+  - id: events_json
+    type: STRING
+    value: "{{ outputs.procesar_colas.vars.events_json }}"
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"

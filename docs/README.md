@@ -5,9 +5,12 @@ Documentacion tecnica transversal de la repo.
 ## Documentos actuales
 
 - `architecture.md`: arquitectura general, capas, carpetas y modelo dominio/namespace
+- `agent-systems.md`: mapa operativo para agentes, fuentes de verdad, accesos y limites entre sistemas
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
+- `reportes-operativos.md`: patrón recurrente para generar, publicar y reejecutar informes diarios
 - `metamap-client-server-redesign-plan.md`: plan de reescritura de Notificaciones MetaMap; hoy el server quedo acotado a ingest y busqueda de validaciones, con workflow y tunel bancario diferidos
+- `transferencias-automaticas.md`: plan historico de automaticas y diferencias respecto del contrato vigente de Transferencias Celesol 2.0.0
 - `migration-notes.md`: contexto historico de la migracion inicial a la monorepo
 - `redunisol-web-operating-model.md`: modelo operativo de `web/redunisol-web` con infraestructura Git-managed y datos runtime persistentes fuera de Git
 - `redunisol-web-deploy-runbook.md`: runbook operativo de `web/redunisol-web`, circuitos de `.env`, limites entre desarrollo e integracion y estado validado del deploy

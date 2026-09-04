@@ -18,6 +18,10 @@ inputs:
 tasks:
   - id: consultar_tope
     type: io.kestra.plugin.scripts.python.Commands
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 2
     namespaceFiles:
       enabled: true
       include:
@@ -44,6 +48,9 @@ outputs:
   - id: ok
     type: BOOLEAN
     value: "{{ outputs.consultar_tope.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.consultar_tope.vars.status }}"
   - id: cuil
     type: STRING
     value: "{{ outputs.consultar_tope.vars.cuil }}"

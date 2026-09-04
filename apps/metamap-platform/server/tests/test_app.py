@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import json
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +43,7 @@ class MetaMapServerApiTests(unittest.TestCase):
             git_sha="test-git-sha",
         )
         self._resource_payloads: dict[str, dict] = {}
+        self._resource_fetch_calls: list[str] = []
         self.client = TestClient(
             create_app(
                 settings=self.settings,
@@ -49,6 +52,8 @@ class MetaMapServerApiTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
+        self.client.app.state.background_enricher.wait_for_idle()
+        self.client.app.state.background_enricher.shutdown()
         self.client.close()
         self.client.app.state.validation_store.close()
         self._tmpdir.cleanup()
@@ -97,18 +102,8 @@ class MetaMapServerApiTests(unittest.TestCase):
             ingest.json()["validation"]["resource_url"],
             "https://api.getmati.com/v2/verifications/verif-100",
         )
-        self.assertEqual(ingest.json()["validation"]["request_number"], "241325")
-        self.assertEqual(ingest.json()["validation"]["loan_number"], "1010477")
-        self.assertEqual(ingest.json()["validation"]["amount_raw"], "223.456,78")
-        self.assertEqual(ingest.json()["validation"]["amount_value"], "223456.78")
-        self.assertEqual(
-            ingest.json()["validation"]["requested_amount_raw"], "123.456,78"
-        )
-        self.assertEqual(
-            ingest.json()["validation"]["requested_amount_value"], "123456.78"
-        )
-        self.assertEqual(ingest.json()["validation"]["applicant_name"], "Ada Lovelace")
-        self.assertEqual(ingest.json()["validation"]["document_number"], "30111222")
+        self.assertIsNone(ingest.json()["validation"]["request_number"])
+        self.assertTrue(self.client.app.state.background_enricher.wait_for_idle())
 
         validations = self.client.get(
             "/api/v1/validations",
@@ -331,13 +326,15 @@ class MetaMapServerApiTests(unittest.TestCase):
             "verification_completed",
         )
 
-    def test_get_validation_backfills_missing_enrichment_from_resource(self) -> None:
+    def test_get_validation_never_fetches_metamap_resource(self) -> None:
         self._post_metamap_webhook(
             self._metamap_payload(
                 event_name="verification_completed",
                 verification_id="verif-backfill",
             )
         )
+        self.assertTrue(self.client.app.state.background_enricher.wait_for_idle())
+        calls_before_read = len(self._resource_fetch_calls)
         self._resource_payloads["verif-backfill"] = self._metamap_resource_payload(
             request_number="241999",
             amount_raw="6543,00",
@@ -351,13 +348,89 @@ class MetaMapServerApiTests(unittest.TestCase):
             headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
         )
         self.assertEqual(validation.status_code, 200)
-        self.assertEqual(validation.json()["validation"]["request_number"], "241999")
-        self.assertEqual(validation.json()["validation"]["amount_value"], "6543.00")
-        self.assertEqual(
-            validation.json()["validation"]["requested_amount_value"], "3210.00"
+        self.assertIsNone(validation.json()["validation"]["request_number"])
+        validations = self.client.get(
+            "/api/v1/validations",
+            headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
         )
-        self.assertEqual(validation.json()["validation"]["applicant_name"], "Grace Hopper")
-        self.assertEqual(validation.json()["validation"]["document_number"], "27888999")
+        self.assertEqual(validations.status_code, 200)
+        self.assertEqual(len(self._resource_fetch_calls), calls_before_read)
+
+    def test_webhook_response_does_not_wait_for_resource_enrichment(self) -> None:
+        fetch_started = threading.Event()
+        release_fetch = threading.Event()
+
+        def blocking_fetch(_resource_url: str) -> dict:
+            fetch_started.set()
+            release_fetch.wait(timeout=5)
+            return self._metamap_resource_payload(request_number="242000")
+
+        self.client.app.state.background_enricher._resource_fetcher = blocking_fetch
+        started_at = time.monotonic()
+        response = self._post_metamap_webhook(
+            self._metamap_payload(
+                event_name="verification_completed",
+                verification_id="verif-nonblocking",
+            )
+        )
+        elapsed = time.monotonic() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(elapsed, 1.0)
+        self.assertTrue(fetch_started.wait(timeout=1))
+        release_fetch.set()
+        self.assertTrue(self.client.app.state.background_enricher.wait_for_idle())
+
+        validation = self.client.get(
+            "/api/v1/validations/verif-nonblocking",
+            headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
+        )
+        self.assertEqual(validation.json()["validation"]["request_number"], "242000")
+
+    def test_startup_requeues_legacy_incomplete_validations(self) -> None:
+        self._post_metamap_webhook(
+            self._metamap_payload(
+                event_name="verification_completed",
+                verification_id="verif-startup-recovery",
+            )
+        )
+        self.assertTrue(self.client.app.state.background_enricher.wait_for_idle())
+        self._resource_payloads["verif-startup-recovery"] = (
+            self._metamap_resource_payload(request_number="242002")
+        )
+
+        restarted_app = create_app(
+            settings=self.settings,
+            metamap_resource_fetcher=self._fetch_resource_payload,
+        )
+        with TestClient(restarted_app) as restarted_client:
+            self.assertTrue(restarted_app.state.background_enricher.wait_for_idle())
+            validation = restarted_client.get(
+                "/api/v1/validations/verif-startup-recovery",
+                headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
+            )
+            self.assertEqual(
+                validation.json()["validation"]["request_number"], "242002"
+            )
+        restarted_app.state.validation_store.close()
+
+    def test_metrics_endpoint_exposes_request_and_enrichment_durations(self) -> None:
+        self._resource_payloads["verif-metrics"] = self._metamap_resource_payload(
+            request_number="242001"
+        )
+        self._post_metamap_webhook(
+            self._metamap_payload(
+                event_name="verification_completed",
+                verification_id="verif-metrics",
+            )
+        )
+        self.assertTrue(self.client.app.state.background_enricher.wait_for_idle())
+
+        response = self.client.get("/metrics")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("metamap_http_request_duration_seconds_count", response.text)
+        self.assertIn("metamap_enrichment_duration_seconds_count", response.text)
+        self.assertIn("metamap_enrichment_completed_total", response.text)
 
     def test_validador_can_mark_validation_as_reviewed_and_review_is_idempotent(self) -> None:
         self._post_metamap_webhook(
@@ -461,14 +534,24 @@ class MetaMapServerApiTests(unittest.TestCase):
         )
 
         self.assertEqual(ingest.status_code, 200)
+        self.assertIsNone(ingest.json()["validation"]["requested_amount_raw"])
+        self.assertTrue(self.client.app.state.background_enricher.wait_for_idle())
+        validation = self.client.get(
+            "/api/v1/validations/verif-signed-doc",
+            headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
+        ).json()["validation"]
         self.assertEqual(
-            ingest.json()["validation"]["requested_amount_raw"], "$ 1.500.000,00"
+            validation["requested_amount_raw"], "$ 1.500.000,00"
         )
         self.assertEqual(
-            ingest.json()["validation"]["requested_amount_value"], "1500000.00"
+            validation["requested_amount_value"], "1500000.00"
         )
-        self.assertEqual(ingest.json()["validation"]["amount_raw"], "$ 2.580.681,70")
-        self.assertEqual(ingest.json()["validation"]["amount_value"], "2580681.70")
+        self.assertEqual(validation["amount_raw"], "$ 2.580.681,70")
+        self.assertEqual(validation["amount_value"], "2580681.70")
+        self.assertEqual(validation["liquidated_amount_raw"], "$ 1.770.000,00")
+        self.assertEqual(validation["liquidated_amount_value"], "1770000.00")
+        self.assertEqual(validation["total_amount_raw"], "$ 2.580.681,70")
+        self.assertEqual(validation["total_amount_value"], "2580681.70")
 
     def test_internal_webhook_receipts_endpoint_prunes_logs_older_than_one_week(self) -> None:
         self._post_metamap_webhook(
@@ -517,6 +600,79 @@ class MetaMapServerApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(wrong_secret.status_code, 401)
+
+    def test_transfer_trace_events_are_append_only_idempotent_and_searchable(self) -> None:
+        event = {
+            "event_id": "event-001",
+            "session_id": "session-001",
+            "client_instance_id": "desktop-001",
+            "event_type": "transfer_started",
+            "occurred_at": "2026-08-31T15:46:00-03:00",
+            "operator": "operador-test",
+            "application_version": "1.10.0",
+            "request_oid": "248871",
+            "mode": "manual",
+            "severity": "info",
+            "data": {"credit_line_id": 2684},
+        }
+        headers = self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL)
+        first = self.client.post(
+            "/api/v1/transfer-trace-events",
+            json={"events": [event]},
+            headers=headers,
+        )
+        duplicate = self.client.post(
+            "/api/v1/transfer-trace-events",
+            json={"events": [event]},
+            headers=headers,
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), {"accepted": 1, "duplicates": 0, "received": 1})
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(
+            duplicate.json(), {"accepted": 0, "duplicates": 1, "received": 1}
+        )
+
+        response = self.client.get(
+            "/api/v1/transfer-trace-events",
+            params={"request_oid": "248871", "event_type": "transfer_started"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pagination"]["total"], 1)
+        stored = response.json()["items"][0]
+        self.assertEqual(stored["event_id"], "event-001")
+        self.assertEqual(stored["authenticated_client_id"], "transferencias-dev-1")
+        self.assertEqual(stored["data"], {"credit_line_id": 2684})
+        self.assertEqual(stored["occurred_at"], "2026-08-31T18:46:00+00:00")
+
+        outside_range = self.client.get(
+            "/api/v1/transfer-trace-events",
+            params={"occurred_from": "2026-09-01T00:00:00Z"},
+            headers=headers,
+        )
+        self.assertEqual(outside_range.status_code, 200)
+        self.assertEqual(outside_range.json()["pagination"]["total"], 0)
+
+    def test_only_transferencias_client_can_ingest_transfer_trace_events(self) -> None:
+        response = self.client.post(
+            "/api/v1/transfer-trace-events",
+            json={
+                "events": [
+                    {
+                        "event_id": "event-forbidden",
+                        "session_id": "session-001",
+                        "client_instance_id": "desktop-001",
+                        "event_type": "app_started",
+                        "occurred_at": "2026-08-31T15:46:00Z",
+                        "operator": "operador-test",
+                        "application_version": "1.10.0",
+                    }
+                ]
+            },
+            headers=self._client_headers(ClientRole.VALIDADOR),
+        )
+        self.assertEqual(response.status_code, 403)
 
     def test_webhook_signature_is_required_when_configured(self) -> None:
         payload = self._metamap_payload(
@@ -590,6 +746,7 @@ class MetaMapServerApiTests(unittest.TestCase):
             ).scalars().all()
 
     def _fetch_resource_payload(self, resource_url: str) -> dict:
+        self._resource_fetch_calls.append(resource_url)
         verification_id = resource_url.rstrip("/").rsplit("/", 1)[-1]
         return self._resource_payloads.get(verification_id, {})
 
@@ -620,12 +777,14 @@ class MetaMapServerApiTests(unittest.TestCase):
                 "title": "Importe total",
                 "value": amount_raw,
             }
-        if document_number is not None:
-            fields["variableKey11"] = {
-                "title": "Documento",
-                "value": document_number,
-            }
         payload = {"steps": [{"fields": fields}]}
-        if applicant_name is not None:
-            payload["applicantName"] = applicant_name
+        if applicant_name is not None or document_number is not None:
+            document_fields = {}
+            if applicant_name is not None:
+                document_fields["fullName"] = {"value": applicant_name}
+            if document_number is not None:
+                document_fields["documentNumber"] = {"value": document_number}
+            payload["documents"] = [
+                {"type": "national-id", "fields": document_fields}
+            ]
         return payload

@@ -49,6 +49,7 @@ class SubmitFormToKestra
             'submission_channel' => 'redunisol-web',
             'prequalification_available' => $prequalification['available'] ?? null,
             'prequalified' => $prequalification['prequalified'] ?? null,
+            'route_to_whatsapp' => $prequalification['route_to_whatsapp'] ?? null,
             'prequalification_reason' => $this->normalizeString($prequalification['reason'] ?? null),
             'prequalification_message' => $this->normalizeString($prequalification['message'] ?? null),
             'prequalification_rule_version' => $this->normalizeString($prequalification['rule_version'] ?? null),

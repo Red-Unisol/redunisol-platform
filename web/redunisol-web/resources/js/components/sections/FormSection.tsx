@@ -82,6 +82,7 @@ const situacionesLaborales = [
     'Jubilado Provincial',
     'Empleado Público Provincial',
     'Policía',
+    'Policía Federal',
     'Docente',
     'Personal de Salud',
     'Jubilado Nacional',
@@ -1011,6 +1012,9 @@ export default function FormSection({
     );
     const [formData, setFormData] = useState<LeadFormData>(INITIAL_FORM);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [lastSubmittedFingerprint, setLastSubmittedFingerprint] = useState<
+        string | null
+    >(null);
     const [reciboUrl, setReciboUrl] = useState<string | null>(null);
     const [reciboUploadError, setReciboUploadError] = useState<string | null>(
         null,
@@ -1018,6 +1022,7 @@ export default function FormSection({
     const [uploading, setUploading] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const submissionInProgressRef = useRef(false);
 
     const updateFormData: React.Dispatch<React.SetStateAction<LeadFormData>> = (
         action,
@@ -1043,6 +1048,23 @@ export default function FormSection({
         () => validateCuil(formData.cuil),
         [formData.cuil],
     );
+    const formFingerprint = useMemo(
+        () =>
+            JSON.stringify({
+                landingSlug,
+                landingTitle,
+                cuil: formData.cuil,
+                email: formData.email,
+                celular: formData.celular,
+                terminos: formData.terminos,
+                provincia: formData.provincia,
+                situacionLaboral: formData.situacionLaboral,
+                banco: formData.banco,
+                reciboUrl,
+            }),
+        [formData, landingSlug, landingTitle, reciboUrl],
+    );
+    const wasAlreadySubmitted = formFingerprint === lastSubmittedFingerprint;
     const clientErrors = useMemo((): FormErrors => {
         const errors: FormErrors = {};
 
@@ -1085,6 +1107,9 @@ export default function FormSection({
     };
 
     const handleSubmit = async () => {
+        if (submissionInProgressRef.current || wasAlreadySubmitted) return;
+
+        submissionInProgressRef.current = true;
         setIsSubmitting(true);
 
         const params = new URLSearchParams(window.location.search);
@@ -1166,6 +1191,7 @@ export default function FormSection({
                       ok?: boolean;
                       message?: string;
                       qualified?: boolean;
+                      route_to_whatsapp?: boolean;
                       errors?: Record<string, string[]>;
                   })
                 : null;
@@ -1211,11 +1237,13 @@ export default function FormSection({
             }
 
             setFormErrors({});
+            setLastSubmittedFingerprint(formFingerprint);
 
             const responseData = data as {
                 ok?: boolean;
                 message?: string;
                 qualified?: boolean;
+                route_to_whatsapp?: boolean;
             };
 
             if (responseData.qualified === false) {
@@ -1231,6 +1259,13 @@ export default function FormSection({
                 landing_slug: landingSlug,
                 landing_title: landingTitle,
             });
+
+            if (responseData.route_to_whatsapp === false) {
+                setErrorMessage(responseData.message ?? null);
+                setResult('not_qualified');
+                return;
+            }
+
             setResult('success');
         } catch {
             setErrorMessage(
@@ -1238,6 +1273,7 @@ export default function FormSection({
             );
             setResult('error');
         } finally {
+            submissionInProgressRef.current = false;
             setIsSubmitting(false);
         }
     };
@@ -1273,6 +1309,7 @@ export default function FormSection({
         setReciboUploadError(null);
         setFormErrors({});
         setAttemptedSteps(new Set());
+        setLastSubmittedFingerprint(null);
     };
 
     const handleSkipRecibo = () => {
@@ -1419,6 +1456,7 @@ export default function FormSection({
                                 onClick={goNext}
                                 disabled={
                                     isSubmitting ||
+                                    (isLastStep && wasAlreadySubmitted) ||
                                     (step === 2 &&
                                         (uploading ||
                                             (!!formData.recibo &&
@@ -1430,7 +1468,9 @@ export default function FormSection({
                                 {isLastStep
                                     ? isSubmitting
                                         ? 'Enviando...'
-                                        : 'Enviar'
+                                        : wasAlreadySubmitted
+                                          ? 'Enviado'
+                                          : 'Enviar'
                                     : 'Continuar'}
                             </button>
                         </div>

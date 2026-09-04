@@ -7,14 +7,24 @@ from typing import Any
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
+from .contact_service import upsert_contact
 from .credixsa_employer_service import update_lead_with_credixsa_output
-from .lead_service import get_lead, update_lead_fields
+from .lead_service import (
+    build_submission_from_lead,
+    get_lead,
+    resolve_processing_policy_enum_id,
+    update_lead_fields,
+)
 from .logger import Logger, create_logger
 from .normalization import normalize_birthdate
 from .vimarx_service import sync_lead_vimarx_enrichment
 
 
 ARGENTINA_TIMEZONE = timezone(timedelta(hours=-3))
+FINGURU_SOURCE_ID = "3729"
+IDENTITY_UNCHANGED = "unchanged"
+IDENTITY_SANITIZED = "sanitized"
+IDENTITY_UNRESOLVED = "unresolved"
 
 
 def select_next_new_lead_for_prefill(
@@ -35,11 +45,16 @@ def select_next_new_lead_for_prefill(
         "crm.lead.list",
         {
             "filter": lead_filter,
-            "order": {"ID": "ASC"},
+            "order": {
+                config.fields.lead_backfill_attempts: "ASC",
+                "ID": "ASC",
+            },
             "select": [
                 "ID",
                 "CONTACT_ID",
                 config.fields.lead_cuil,
+                config.fields.lead_dni,
+                config.fields.lead_source,
                 config.fields.lead_backfill_attempts,
             ],
             "start": 0,
@@ -53,12 +68,26 @@ def select_next_new_lead_for_prefill(
         lead_id = _optional_int(lead.get("ID"))
         if lead_id is None:
             continue
+        cuil = _digits(lead.get(config.fields.lead_cuil))
+        dni = _digits(lead.get(config.fields.lead_dni))
+        source_id = _optional_str(lead.get(config.fields.lead_source)) or ""
+        credix_identifier = credix_identifier_for_prefill(
+            source_id=source_id,
+            cuil=cuil,
+            dni=dni,
+        )
         return {
             "ok": True,
             "action": "selected",
             "has_pending": True,
             "lead_id": str(lead_id),
-            "cuil": _optional_str(lead.get(config.fields.lead_cuil)) or "",
+            "cuil": cuil,
+            "dni": dni,
+            "source_id": source_id,
+            "credix_identifier": credix_identifier,
+            "needs_identity_sanitization": (
+                source_id == FINGURU_SOURCE_ID and len(cuil) == 8
+            ),
             "attempts": _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0,
             "message": f"Lead {lead_id} seleccionado para backfill.",
         }
@@ -69,6 +98,10 @@ def select_next_new_lead_for_prefill(
         "has_pending": False,
         "lead_id": "",
         "cuil": "",
+        "dni": "",
+        "source_id": "",
+        "credix_identifier": "",
+        "needs_identity_sanitization": False,
         "attempts": 0,
         "message": "No hay leads en INGRESO pendientes de backfill.",
     }
@@ -105,11 +138,39 @@ def prefill_lead(
         )
 
     previous_attempts = _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0
-    if previous_attempts >= max_attempts:
+    cuil = _optional_str(lead.get(config.fields.lead_cuil))
+
+    if cuil is None:
         update_lead_fields(
             client,
             lead_id_int,
             {"STATUS_ID": config.lead_statuses.preclassification},
+        )
+        return _result(
+            action="advanced_partial",
+            lead_id=lead_id_int,
+            lead_status=config.lead_statuses.preclassification,
+            attempts=previous_attempts,
+            errors=["missing_cuil"],
+            message=(
+                "Lead sin CUIL; se omite el enriquecimiento dependiente del CUIL "
+                "y se avanza a PRECLASIFICACION."
+            ),
+        )
+
+    if previous_attempts >= max_attempts:
+        completed_fields = {
+            "STATUS_ID": config.lead_statuses.preclassification,
+            config.fields.lead_processing_policy: resolve_processing_policy_enum_id(
+                client,
+                config,
+                "skip",
+            ),
+        }
+        update_lead_fields(
+            client,
+            lead_id_int,
+            completed_fields,
         )
         return _result(
             action="advanced_partial",
@@ -124,16 +185,82 @@ def prefill_lead(
         )
 
     attempts = previous_attempts + 1
-    update_lead_fields(
-        client,
-        lead_id_int,
-        {config.fields.lead_backfill_attempts: attempts},
-    )
+    counter_persisted = False
+    try:
+        update_lead_fields(
+            client,
+            lead_id_int,
+            {config.fields.lead_backfill_attempts: attempts},
+        )
+        refreshed_lead = get_lead(client, lead_id_int, active_logger)
+        persisted_attempts = (
+            _optional_int(
+                refreshed_lead.get(config.fields.lead_backfill_attempts)
+            ) or 0
+        )
+        counter_persisted = persisted_attempts >= attempts
+    except Exception as exc:
+        active_logger.error(
+            f"No se pudo persistir o verificar el contador del lead "
+            f"{lead_id_int}: {exc}"
+        )
     errors: list[str] = []
-    cuil = _optional_str(lead.get(config.fields.lead_cuil))
+    if not counter_persisted:
+        errors.append("attempt_counter_not_persisted")
+
+    identity = resolve_prefill_identity(
+        source_id=lead.get(config.fields.lead_source),
+        cuil=lead.get(config.fields.lead_cuil),
+        dni=lead.get(config.fields.lead_dni),
+        credixsa_output=credixsa_output,
+    )
+    cuil = _optional_str(identity["effective_cuil"])
+
+    if identity["status"] == IDENTITY_SANITIZED and cuil:
+        update_lead_fields(client, lead_id_int, {config.fields.lead_cuil: cuil})
+        lead[config.fields.lead_cuil] = cuil
+
+    should_link_finguru_contact = (
+        str(lead.get(config.fields.lead_source) or "").strip() == FINGURU_SOURCE_ID
+        and bool(cuil)
+        and _is_valid_cuil(cuil or "")
+        and (_optional_int(lead.get("CONTACT_ID")) or 0) <= 0
+    )
+    if identity["status"] == IDENTITY_SANITIZED or should_link_finguru_contact:
+        try:
+            contact = upsert_contact(
+                client,
+                config,
+                build_submission_from_lead(lead, config),
+                active_logger,
+                birthdate=normalize_birthdate(arca_output.get("fecha_nacimiento")),
+            )
+            update_lead_fields(client, lead_id_int, {"CONTACT_ID": contact.contact_id})
+            lead["CONTACT_ID"] = str(contact.contact_id)
+        except Exception as exc:
+            active_logger.error(
+                f"CUIL saneado, pero no se pudo vincular el contacto del lead {lead_id_int}: {exc}"
+            )
+            errors.append("contact")
+    if identity["status"] == IDENTITY_UNRESOLVED:
+        errors.append("identity")
 
     if cuil is None:
-        errors.append("missing_cuil")
+        try:
+            credix_result = update_lead_with_credixsa_output(
+                lead_id=lead_id_int,
+                credixsa_output=credixsa_output,
+                env=env,
+                bitrix_client=client,
+                logger=active_logger,
+            )
+            if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+                errors.append("credixsa")
+        except Exception as exc:
+            active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
+            errors.append("credixsa")
+        if identity["status"] != IDENTITY_UNRESOLVED:
+            errors.append("missing_cuil")
     else:
         arca_applied = False
         try:
@@ -195,21 +322,38 @@ def prefill_lead(
 
     errors = list(dict.fromkeys(errors))
     exhausted = attempts >= max_attempts
-    should_advance = not errors or exhausted
+    should_advance = not errors or exhausted or not counter_persisted
     next_status = current_status
     if should_advance:
         next_status = config.lead_statuses.preclassification
-        update_lead_fields(client, lead_id_int, {"STATUS_ID": next_status})
+        update_lead_fields(
+            client,
+            lead_id_int,
+            {
+                "STATUS_ID": next_status,
+                config.fields.lead_processing_policy: resolve_processing_policy_enum_id(
+                    client,
+                    config,
+                    "skip",
+                ),
+            },
+        )
 
     if not errors:
         action = "advanced"
         message = "Backfill completo; lead movido a PRECLASIFICACION."
-    elif exhausted:
+    elif exhausted or not counter_persisted:
         action = "advanced_partial"
-        message = (
-            "Backfill parcial luego de agotar reintentos; "
-            "lead movido a PRECLASIFICACION."
-        )
+        if exhausted:
+            message = (
+                "Backfill parcial luego de agotar reintentos; "
+                "lead movido a PRECLASIFICACION."
+            )
+        else:
+            message = (
+                "No se pudo persistir el contador de reintentos; "
+                "para no bloquear la cola, el lead se movio a PRECLASIFICACION."
+            )
     else:
         action = "retry_pending"
         message = "Backfill incompleto; el lead permanece en INGRESO para reintentar."
@@ -265,6 +409,7 @@ def _apply_arca_output(
     if full_name:
         lead_fields["TITLE"] = full_name
         lead_fields["NAME"] = full_name
+        lead_fields["LAST_NAME"] = ""
     if birthdate and config.fields.lead_birthdate:
         lead_fields[config.fields.lead_birthdate] = birthdate
     if birthdate and config.fields.lead_contact_birthdate:
@@ -356,3 +501,87 @@ def _optional_str(raw_value: object) -> str | None:
         return None
     value = str(raw_value).strip()
     return value or None
+
+
+def credix_identifier_for_prefill(
+    *,
+    source_id: object,
+    cuil: object,
+    dni: object,
+) -> str:
+    normalized_cuil = _digits(cuil)
+    normalized_dni = _digits(dni)
+    if str(source_id or "").strip() != FINGURU_SOURCE_ID or len(normalized_cuil) != 8:
+        return normalized_cuil
+    if len(normalized_dni) != 8 or normalized_dni != normalized_cuil:
+        return ""
+    return normalized_dni
+
+
+def resolve_prefill_identity(
+    *,
+    source_id: object,
+    cuil: object,
+    dni: object,
+    credixsa_output: dict[str, Any],
+) -> dict[str, object]:
+    normalized_cuil = _digits(cuil)
+    normalized_dni = _digits(dni)
+    source = str(source_id or "").strip()
+    if source != FINGURU_SOURCE_ID or len(normalized_cuil) != 8:
+        return {
+            "status": IDENTITY_UNCHANGED,
+            "effective_cuil": normalized_cuil,
+            "sanitized": False,
+            "reason": "not_required",
+        }
+
+    identifier = credix_identifier_for_prefill(
+        source_id=source,
+        cuil=normalized_cuil,
+        dni=normalized_dni,
+    )
+    if not identifier:
+        return _unresolved_identity("dni_cuil_mismatch")
+
+    returned_cuil = _digits(credixsa_output.get("cuit"))
+    if not bool(credixsa_output.get("ok")):
+        return _unresolved_identity("credixsa_error")
+    if str(credixsa_output.get("status") or "").strip() != "single":
+        return _unresolved_identity("credixsa_not_single")
+    if not _is_valid_cuil(returned_cuil):
+        return _unresolved_identity("invalid_returned_cuil")
+    if returned_cuil[2:10] != identifier:
+        return _unresolved_identity("returned_cuil_dni_mismatch")
+
+    return {
+        "status": IDENTITY_SANITIZED,
+        "effective_cuil": returned_cuil,
+        "sanitized": True,
+        "reason": "credixsa_single_match",
+    }
+
+
+def _unresolved_identity(reason: str) -> dict[str, object]:
+    return {
+        "status": IDENTITY_UNRESOLVED,
+        "effective_cuil": "",
+        "sanitized": False,
+        "reason": reason,
+    }
+
+
+def _digits(value: object) -> str:
+    return re.sub(r"\D", "", str(value or ""))
+
+
+def _is_valid_cuil(value: str) -> bool:
+    if len(value) != 11:
+        return False
+    weights = (5, 4, 3, 2, 7, 6, 5, 4, 3, 2)
+    check_digit = 11 - sum(int(digit) * weight for digit, weight in zip(value[:10], weights)) % 11
+    if check_digit == 11:
+        check_digit = 0
+    elif check_digit == 10:
+        check_digit = 9
+    return check_digit == int(value[-1])

@@ -2,8 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Blog;
+use App\Models\Page;
 use App\Models\Regulator;
 use App\Models\SiteSetting;
+use App\Services\SeoService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -51,7 +54,7 @@ class HandleInertiaRequests extends Middleware
                 try {
                     return [
                         'regulators' => Regulator::active()->orderBy('sort_order')->get()->toArray(),
-                        'settings'   => SiteSetting::allAsArray(),
+                        'settings' => SiteSetting::allAsArray(),
                     ];
                 } catch (\Throwable $e) {
                     return ['regulators' => [], 'settings' => []];
@@ -68,13 +71,33 @@ class HandleInertiaRequests extends Middleware
         $appName = config('app.name', 'Red Unisol');
         $currentUrl = $request->url();
         $defaultDescription = 'Soluciones de crédito personalizadas para jubilados y policías';
+        $currentPath = $request->path();
+        $pageSlug = $currentPath === '/' ? '/' : '/'.ltrim($currentPath, '/');
+        $model = Page::where('slug', $pageSlug)->first();
+
+        if (! $model && str_starts_with($currentPath, 'blog/')) {
+            $model = Blog::where('slug', substr($currentPath, strlen('blog/')))->first();
+        }
+
+        if ($model) {
+            $seoService = app(SeoService::class);
+
+            return [
+                'metaTitle' => $model->meta_title ?: $seoService->generateMetaTitle($model),
+                'metaDescription' => $model->meta_description ?: $seoService->generateMetaDescription($model),
+                'keyword' => $model->keyword,
+                'robots' => $seoService->getRobotsTag($model),
+                'canonical' => $seoService->getCanonicalUrl($model),
+                'structuredData' => json_encode($seoService->getStructuredData($model)),
+            ];
+        }
 
         return [
-            'metaTitle'       => $appName,
+            'metaTitle' => $appName,
             'metaDescription' => $defaultDescription,
-            'keyword'         => null,
-            'robots'          => 'index, follow',
-            'canonical'       => $currentUrl,
+            'keyword' => null,
+            'robots' => 'index, follow',
+            'canonical' => $currentUrl,
         ];
     }
 }

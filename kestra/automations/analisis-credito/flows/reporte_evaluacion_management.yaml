@@ -1,0 +1,92 @@
+id: reporte_evaluacion_management
+namespace: redunisol
+
+description: Genera y publica en Filament el reporte evaluatorio acumulado de meses cerrados.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  domain: analisis-credito
+  kind: schedule-webhook
+  integration: devexpress-evaluate
+  schedule_scope: prod_only
+
+inputs:
+  - id: from_month
+    type: STRING
+    required: false
+    description: Mes inicial opcional en formato YYYY-MM. Por defecto 2025-10.
+  - id: to_month
+    type: STRING
+    required: false
+    description: Mes final opcional en formato YYYY-MM. Por defecto el ultimo mes cerrado.
+
+tasks:
+  - id: generar_reporte
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - reporte_evaluacion_report/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/srv/redunisol-reports:/reports"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra openpyxl requests urllib3 > /dev/null
+    env:
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : '{}' }}"
+      REPORT_INPUT_FROM_MONTH: "{{ inputs.from_month ?? '' }}"
+      REPORT_INPUT_TO_MONTH: "{{ inputs.to_month ?? '' }}"
+      REPORT_DEFAULT_FROM_MONTH: "2025-10"
+      REPORTS_ROOT: "/reports"
+      REPORTE_EVALUACION_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      REPORTE_EVALUACION_TIMEOUT_SECONDS: "{{ envs.reporte_evaluacion_timeout_seconds ?? '60' }}"
+      REPORTE_EVALUACION_PER_DAY_MAX: "{{ envs.reporte_evaluacion_per_day_max ?? '20000' }}"
+      REPORTE_EVALUACION_VERIFY_SSL: "false"
+      REPORTE_EVALUACION_SAMPLE_SEED: "202510"
+    commands:
+      - python -m reporte_evaluacion_report.kestra_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.generar_reporte.vars.ok }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.status }}"
+  - id: from_month
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.from_month }}"
+  - id: to_month
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.to_month }}"
+  - id: month_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.month_count }}"
+  - id: latest_path
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.latest_path }}"
+  - id: history_path
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.history_path }}"
+  - id: error
+    type: STRING
+    value: "{{ outputs.generar_reporte.vars.error }}"
+
+triggers:
+  - id: primer_dia_del_mes
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "15 7 1 * *"
+    timezone: America/Argentina/Buenos_Aires
+  - id: webhook_manual
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_WEBHOOK_KEY') }}"
+    wait: false
+    returnOutputs: false
+    responseContentType: application/json

@@ -26,6 +26,10 @@ def main() -> int:
             "has_pending": False,
             "lead_id": "",
             "cuil": "",
+            "dni": "",
+            "source_id": "",
+            "credix_identifier": "",
+            "needs_identity_sanitization": False,
             "attempts": 0,
             "message": str(exc),
         }

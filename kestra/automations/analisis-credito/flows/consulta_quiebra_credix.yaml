@@ -65,6 +65,10 @@ tasks:
   - id: consultar_quiebra
     type: io.kestra.plugin.scripts.python.Commands
     runIf: "{{ outputs.responder_cache.vars.cache_hit == false }}"
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 2
     namespaceFiles:
       enabled: true
       include:
@@ -79,7 +83,7 @@ tasks:
       CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "30"
-      CREDIX_DEBUG: "{{ envs.credix_debug ?? 'true' }}"
+      CREDIX_DEBUG: "{{ envs.credix_debug ?? 'false' }}"
       CREDIX_DEBUG_DIR: "/data/credixsa-cache/debug"
       CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
       CREDIX_USER: "{{ secret('CREDIX_USER') }}"

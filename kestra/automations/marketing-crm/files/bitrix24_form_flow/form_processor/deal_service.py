@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import unicodedata
 from typing import Any
 
@@ -13,6 +14,15 @@ DEAL_ENTITY_TYPE_ID = 2
 LEAD_ENTITY_TYPE_ID = 1
 CONTACT_ENTITY_TYPE_ID = 3
 OPEN_LINE_ACTIVITY_PROVIDER_ID = "IMOPENLINES_SESSION"
+
+
+class NoOnlineSellersError(RuntimeError):
+    """Raised when a configured routing pool has no currently available seller."""
+
+    def __init__(self, configured_pool: tuple[int, ...]) -> None:
+        super().__init__("No hay vendedores online disponibles para asignar la negociacion.")
+        self.configured_pool = configured_pool
+
 
 DEAL_DIRECT_FIELD_MAPPINGS = {
     "cuil": "ufCrm_64FF4F9B5C195",
@@ -46,6 +56,47 @@ DEAL_ENUM_FIELD_MAPPINGS = {
 }
 
 DEAL_SOCIO_NUEVO_FIELD = "ufCrm_1727360234"
+
+
+@dataclass(frozen=True)
+class AssignmentResolution:
+    assigned_by_id: int
+    strategy: str
+    configured_pool: tuple[int, ...]
+    online_pool: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ChatTransferResult:
+    found_chat_ids: tuple[int, ...]
+    transferred_chat_ids: tuple[int, ...]
+    skipped_chats: tuple[tuple[int, str], ...]
+
+    @property
+    def transferred_count(self) -> int:
+        return len(self.transferred_chat_ids)
+
+    @property
+    def skipped_non_distributable_count(self) -> int:
+        return sum(
+            reason == "non_distributable_open_line"
+            for _chat_id, reason in self.skipped_chats
+        )
+
+    @property
+    def status(self) -> str:
+        if not self.found_chat_ids:
+            return "no_chats_found"
+        if self.transferred_chat_ids and self.skipped_chats:
+            return "partially_transferred"
+        if self.transferred_chat_ids:
+            return "transferred"
+        if self.skipped_chats and all(
+            reason == "non_distributable_open_line"
+            for _chat_id, reason in self.skipped_chats
+        ):
+            return "non_distributable_open_line"
+        return "no_transferable_session"
 
 
 def ensure_won_lead_deal(
@@ -172,17 +223,17 @@ def resolve_round_robin_assignee(
     pool: tuple[int, ...],
     legacy_province_label: str | None,
     logger: Logger,
-) -> int:
+) -> AssignmentResolution:
     if not pool:
         raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
 
     online_pool = _online_pool_users(client, pool=pool, logger=logger)
     if not online_pool:
-        raise RuntimeError("No hay vendedores online disponibles para asignar la negociacion.")
+        raise NoOnlineSellersError(pool)
 
     legacy_filter = _legacy_bucket_filter(client, province_label=legacy_province_label)
     if contact_id is not None:
-        previous_assignee = _latest_pool_assignee_for_contact(
+        previous_assignment = _latest_pool_assignee_for_contact(
             client,
             pool=online_pool,
             contact_id=contact_id,
@@ -192,8 +243,14 @@ def resolve_round_robin_assignee(
             legacy_filter=legacy_filter,
             logger=logger,
         )
-        if previous_assignee is not None:
-            return previous_assignee
+        if previous_assignment is not None:
+            assigned_by_id, strategy = previous_assignment
+            return AssignmentResolution(
+                assigned_by_id=assigned_by_id,
+                strategy=strategy,
+                configured_pool=pool,
+                online_pool=online_pool,
+            )
 
     deals = _list_deals(
         client,
@@ -206,6 +263,7 @@ def resolve_round_robin_assignee(
         select=["id", "assignedById", "categoryId", "createdTime", bucket_field],
         max_items=1,
     )
+    round_robin_strategy = "round_robin"
     if not deals and legacy_filter:
         deals = _list_deals(
             client,
@@ -224,6 +282,8 @@ def resolve_round_robin_assignee(
             ],
             max_items=1,
         )
+        if deals:
+            round_robin_strategy = "legacy_round_robin"
     pool_set = set(pool)
     for deal in deals:
         raw_assignee = deal.get("assignedById")
@@ -236,9 +296,23 @@ def resolve_round_robin_assignee(
         for offset in range(1, len(pool) + 1):
             candidate = pool[(previous_index + offset) % len(pool)]
             if candidate in online_pool:
-                return candidate
+                return AssignmentResolution(
+                    assigned_by_id=candidate,
+                    strategy=(
+                        "single_seller"
+                        if len(pool) == 1
+                        else round_robin_strategy
+                    ),
+                    configured_pool=pool,
+                    online_pool=online_pool,
+                )
 
-    return online_pool[0]
+    return AssignmentResolution(
+        assigned_by_id=online_pool[0],
+        strategy="single_seller" if len(pool) == 1 else "round_robin_initial",
+        configured_pool=pool,
+        online_pool=online_pool,
+    )
 
 
 def _online_pool_users(
@@ -286,7 +360,7 @@ def _latest_pool_assignee_for_contact(
     bucket_field: str,
     legacy_filter: dict[str, Any],
     logger: Logger,
-) -> int | None:
+) -> tuple[int, str] | None:
     logger.info(f"Buscando vendedor recurrente para contacto {contact_id}.")
     deals = _list_deals(
         client,
@@ -301,7 +375,7 @@ def _latest_pool_assignee_for_contact(
         assigned_by_id = str(deal.get("assignedById") or "")
         if assigned_by_id in pool_set:
             logger.info(f"Contacto {contact_id} reutiliza vendedor {assigned_by_id}.")
-            return int(assigned_by_id)
+            return int(assigned_by_id), "contact_history"
     if legacy_filter:
         legacy_deals = _list_deals(
             client,
@@ -324,7 +398,7 @@ def _latest_pool_assignee_for_contact(
                 logger.info(
                     f"Contacto {contact_id} reutiliza vendedor historico {assigned_by_id}."
                 )
-                return int(assigned_by_id)
+                return int(assigned_by_id), "legacy_contact_history"
     return None
 
 
@@ -406,8 +480,9 @@ def assign_open_line_chats_to_user(
     contact_id: int | None,
     deal_id: int,
     assigned_by_id: int,
+    distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
-) -> int:
+) -> ChatTransferResult:
     chat_ids: list[int] = []
     for entity_type, entity_id in (
         ("lead", lead_id),
@@ -426,33 +501,61 @@ def assign_open_line_chats_to_user(
             if isinstance(chat, dict) and _is_positive_int(chat.get("CHAT_ID") or chat.get("chat_id")):
                 chat_ids.append(int(str(chat.get("CHAT_ID") or chat.get("chat_id"))))
 
-    transferred = 0
-    for chat_id in dict.fromkeys(chat_ids):
-        if not _has_current_open_line_session(client, chat_id=chat_id, logger=logger):
+    found_chat_ids = tuple(dict.fromkeys(chat_ids))
+    transferred_chat_ids: list[int] = []
+    skipped_chats: list[tuple[int, str]] = []
+    for chat_id in found_chat_ids:
+        transferable, reason = _open_line_session_transferability(
+            client,
+            chat_id=chat_id,
+            distributable_open_line_ids=distributable_open_line_ids,
+            logger=logger,
+        )
+        if not transferable:
+            skipped_chats.append((chat_id, reason))
             continue
         client.call(
             "imopenlines.operator.transfer",
             {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
         )
-        transferred += 1
+        transferred_chat_ids.append(chat_id)
         logger.info(f"Chat Open Lines {chat_id} transferido al vendedor {assigned_by_id}.")
-    return transferred
+    return ChatTransferResult(
+        found_chat_ids=found_chat_ids,
+        transferred_chat_ids=tuple(transferred_chat_ids),
+        skipped_chats=tuple(skipped_chats),
+    )
 
 
-def _has_current_open_line_session(
+def _open_line_session_transferability(
     client: BitrixClient,
     *,
     chat_id: int,
+    distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
-) -> bool:
+) -> tuple[bool, str]:
     try:
         dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
     except RuntimeError as exc:
         logger.error(f"No se pudo inspeccionar el chat Open Lines {chat_id}: {exc}")
-        return False
+        return False, "inspection_error"
     if not isinstance(dialog, dict):
         logger.error(f"imopenlines.dialog.get devolvio un payload invalido para el chat {chat_id}.")
-        return False
+        return False, "invalid_dialog"
+
+    open_line_id = _open_line_id(dialog)
+    if open_line_id is None:
+        logger.error(
+            f"Chat Open Lines {chat_id} sin identificador de linea valido; "
+            "se omite por seguridad."
+        )
+        return False, "non_distributable_open_line"
+    if open_line_id not in distributable_open_line_ids:
+        logger.info(
+            f"Chat Open Lines {chat_id} omitido: linea {open_line_id} no habilitada "
+            "para distribucion comercial."
+        )
+        return False, "non_distributable_open_line"
 
     entity_data = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "")
     parts = entity_data.split("|")
@@ -461,7 +564,16 @@ def _has_current_open_line_session(
     has_session = _is_positive_int(session_id) and text_enabled in (True, "Y", "y", 1)
     if not has_session:
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
-    return has_session
+        return False, "no_current_transferable_session"
+    return True, "transferable"
+
+
+def _open_line_id(dialog: dict[str, Any]) -> int | None:
+    entity_id = str(dialog.get("entity_id") or dialog.get("ENTITY_ID") or "")
+    parts = entity_id.split("|")
+    if len(parts) < 2 or not _is_positive_int(parts[1]):
+        return None
+    return int(parts[1])
 
 
 def notify_distribution_supervisor(
@@ -472,6 +584,7 @@ def notify_distribution_supervisor(
     deal_title: str,
     bucket_label: str,
     assigned_by_id: int,
+    assigned_by_name: str | None = None,
     action: str,
     chat_transferred: bool,
     logger: Logger,
@@ -484,10 +597,12 @@ def notify_distribution_supervisor(
         "manual_review": "Revisión manual",
         "rejected": "Rechazada",
     }.get(action, _notification_text(action))
-    assignee_name = _user_display_name(client, assigned_by_id=assigned_by_id, logger=logger)
+    assignee_name = assigned_by_name or user_display_name(
+        client, assigned_by_id=assigned_by_id, logger=logger
+    )
     chat_label = "Sí" if chat_transferred else "No"
     message = (
-        "[B]Nueva negociacion de Catamarca asignada[/B]\n"
+        "[B]Nueva negociación comercial asignada[/B]\n"
         f"Nombre: {safe_deal_title}\n"
         f"Negociacion: [URL={deal_url}]#{deal_id}[/URL]\n"
         f"Bucket: {_notification_text(bucket_label)}\n"
@@ -496,7 +611,7 @@ def notify_distribution_supervisor(
         f"Chat transferido: {chat_label}"
     )
     message_out = (
-        f"Nueva negociacion de Catamarca asignada. Nombre: {safe_deal_title}. "
+        f"Nueva negociación comercial asignada. Nombre: {safe_deal_title}. "
         f"Negociacion #{deal_id}. Bucket: {_notification_text(bucket_label)}. "
         f"Resultado: {action_label}. "
         f"Responsable: {assignee_name}. Chat transferido: {chat_label}. {deal_url}"
@@ -574,7 +689,7 @@ def notify_unmatched_routing(
     return True
 
 
-def _user_display_name(
+def user_display_name(
     client: BitrixClient,
     *,
     assigned_by_id: int,

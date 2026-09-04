@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import os
 from typing import Any
 
@@ -12,11 +13,12 @@ from .deal_service import (
     ensure_won_lead_deal,
     find_deal_by_lead,
 )
-from .lead_service import get_lead, lead_enum_label, lead_has_commercial_owner
+from .lead_service import get_lead, lead_enum_label
 from .logger import create_logger, Logger
 
 
 EXPECTED_EVENT = "ONCRMLEADUPDATE"
+PREQUALIFICATION_CUTOFF_ENV = "BITRIX24_PREQUALIFICATION_CUTOFF"
 
 
 def process_lead_update_event(
@@ -42,15 +44,16 @@ def process_lead_update_event(
         contact_id = _optional_int(lead.get("CONTACT_ID"))
 
         if lead_status == config.lead_statuses.preclassification:
-            if not lead_has_commercial_owner(client, lead, config, "kestra"):
+            cutoff = _optional_str(source.get(PREQUALIFICATION_CUTOFF_ENV))
+            if cutoff and _is_before_cutoff(lead, cutoff):
                 return _event_result(
                     ok=True,
                     action="skipped",
-                    reason="commercial_owner_not_kestra",
+                    reason="lead_before_prequalification_cutoff",
                     lead_id=lead_id,
                     lead_status=lead_status,
                     message=(
-                        "El lead esta en PRECLASIFICACION pero su motor comercial no es Kestra."
+                        "El lead esta en PRECLASIFICACION pero fue creado antes del corte Kestra."
                     ),
                 )
 
@@ -59,6 +62,7 @@ def process_lead_update_event(
                 env=source,
                 bitrix_client=client,
                 logger=active_logger,
+                take_commercial_ownership=True,
             )
             return _event_result(
                 ok=bool(classification.get("ok")),
@@ -79,7 +83,7 @@ def process_lead_update_event(
                 message="El lead no esta en estado ganado; no se crea negociacion.",
             )
 
-        catamarca_kestra = _is_catamarca_kestra_lead(
+        kestra_classified = _is_kestra_classified_lead(
             client,
             config,
             lead,
@@ -118,12 +122,12 @@ def process_lead_update_event(
             logger=active_logger,
             stage_id=(
                 config.deal.pending_qualification_stage_id
-                if catamarca_kestra
+                if kestra_classified
                 else None
             ),
             assigned_by_id=(
                 config.deal.provisional_user_id
-                if catamarca_kestra
+                if kestra_classified
                 else None
             ),
         )
@@ -225,18 +229,17 @@ def _mark_lead_converted(
     )
 
 
-def _is_catamarca_kestra_lead(
+def _is_kestra_classified_lead(
     client: Any,
     config: Any,
     lead: dict[str, Any],
     logger: Logger,
 ) -> bool:
     province = lead_enum_label(client, lead, config.fields.lead_province)
-    is_catamarca = str(province or "").strip().lower() == "catamarca"
-    if not is_catamarca:
-        logger.info("El lead ganado no pertenece al circuito Catamarca Kestra.")
-        return False
-    return lead_has_commercial_owner(client, lead, config, "kestra")
+    supported = str(province or "").strip().lower() in {"catamarca", "cordoba"}
+    if not supported:
+        logger.info("El lead ganado no pertenece a una provincia clasificada por Kestra.")
+    return supported
 
 
 def _extract_lead_id(payload: dict[str, Any]) -> int:
@@ -256,6 +259,23 @@ def _extract_lead_id(payload: dict[str, Any]) -> int:
         if lead_id is not None:
             return lead_id
     raise ValueError("El evento Bitrix no contiene data.FIELDS.ID.")
+
+
+def _is_before_cutoff(lead: dict[str, Any], cutoff: str) -> bool:
+    date_create = _optional_str(lead.get("DATE_CREATE"))
+    if not date_create:
+        raise ValueError("El lead no contiene DATE_CREATE para aplicar el corte de precalificacion.")
+    return _parse_datetime(date_create) < _parse_datetime(cutoff)
+
+
+def _parse_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"Fecha invalida para el corte de precalificacion: {value}.") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"La fecha de precalificacion no contiene zona horaria: {value}.")
+    return parsed
 
 
 def _nested_get(payload: dict[str, Any], path: tuple[str, ...]) -> Any:

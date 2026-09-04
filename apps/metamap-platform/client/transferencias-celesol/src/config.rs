@@ -13,19 +13,17 @@ use crate::secure_config;
 pub struct AppConfig {
     pub server: ServerConfig,
     pub core: CoreConfig,
+    pub mark_paid: MarkPaidConfig,
     pub coinag: CoinagConfig,
     pub operator_name: String,
     pub poll_interval: Duration,
     pub request_timeout: Duration,
     pub receipts_dir: PathBuf,
+    pub automatic_receipts_dir: PathBuf,
     pub completed_log_path: PathBuf,
-    pub enabled_credit_lines: EnabledCreditLinesConfig,
-}
-
-#[derive(Clone)]
-pub struct EnabledCreditLinesConfig {
-    pub path: PathBuf,
-    pub values: Vec<String>,
+    pub credit_lines_path: PathBuf,
+    pub creditor_whitelist_path: PathBuf,
+    pub trace_outbox_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -40,6 +38,19 @@ pub struct ServerConfig {
 pub struct CoreConfig {
     pub base_url: String,
     pub allow_invalid_certs: bool,
+}
+
+#[derive(Clone)]
+pub struct MarkPaidConfig {
+    pub endpoint_url: String,
+    pub auth_token: String,
+    pub allow_invalid_certs: bool,
+}
+
+impl MarkPaidConfig {
+    pub fn is_complete(&self) -> bool {
+        !self.endpoint_url.trim().is_empty() && !self.auth_token.trim().is_empty()
+    }
 }
 
 #[derive(Clone, Default)]
@@ -259,10 +270,24 @@ impl AppConfig {
             },
             core: CoreConfig {
                 base_url: optional_value(values, "TRANSFERENCIAS_CORE_BASE_URL")
-                    .unwrap_or_else(|| "https://celesol.dyndns.org:5050".to_owned()),
+                    .unwrap_or_else(|| "https://celesol.dyndns.org:5002".to_owned()),
                 allow_invalid_certs: parse_bool_value(
                     values,
                     "TRANSFERENCIAS_CORE_ALLOW_INVALID_CERTS",
+                    true,
+                )?,
+            },
+            mark_paid: MarkPaidConfig {
+                endpoint_url: optional_value(values, "TRANSFERENCIAS_MARK_PAID_ENDPOINT")
+                    .unwrap_or_else(|| {
+                        "https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada"
+                            .to_owned()
+                    }),
+                auth_token: optional_value(values, "TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN")
+                    .unwrap_or_default(),
+                allow_invalid_certs: parse_bool_value(
+                    values,
+                    "TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS",
                     true,
                 )?,
             },
@@ -275,12 +300,31 @@ impl AppConfig {
                 optional_value(values, "TRANSFERENCIAS_RECEIPTS_DIR").as_deref(),
                 "receipts",
             ),
+            automatic_receipts_dir: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_AUTO_RECEIPTS_DIR").as_deref(),
+                "receipts-automaticas",
+            ),
             completed_log_path: resolve_path(
                 base_dir,
                 optional_value(values, "TRANSFERENCIAS_COMPLETED_LOG_PATH").as_deref(),
                 "transferencias_realizadas.jsonl",
             ),
-            enabled_credit_lines: load_enabled_credit_lines(values, base_dir)?,
+            credit_lines_path: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_LINEAS_CONFIG_PATH").as_deref(),
+                "lineas.toml",
+            ),
+            creditor_whitelist_path: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_ACREEDORES_CONFIG_PATH").as_deref(),
+                "acreedores-confiables.toml",
+            ),
+            trace_outbox_path: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_TRACE_OUTBOX_PATH").as_deref(),
+                "transfer-trace-outbox.jsonl",
+            ),
         })
     }
 }
@@ -402,31 +446,6 @@ pub fn read_config_file_value(name: &str) -> Option<String> {
     optional_value(&values, name)
 }
 
-fn load_enabled_credit_lines(
-    values: &ConfigValues,
-    base_dir: &Path,
-) -> Result<EnabledCreditLinesConfig> {
-    let path = resolve_enabled_lines_path(values, base_dir);
-    if !path.exists() {
-        let contents = DEFAULT_ENABLED_CREDIT_LINES.join("\n");
-        fs::write(&path, format!("{contents}\n")).with_context(|| {
-            format!(
-                "No se pudo crear el archivo de lineas habilitadas {:?}",
-                path
-            )
-        })?;
-    }
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("No se pudo leer el archivo {:?}", path))?;
-    let values = raw
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    Ok(EnabledCreditLinesConfig { path, values })
-}
-
 fn parse_env_value(raw: &str) -> String {
     if raw.len() >= 2 {
         if (raw.starts_with('"') && raw.ends_with('"'))
@@ -453,41 +472,6 @@ fn default_config_candidates() -> &'static [&'static str] {
         &["transferencias.env.enc"]
     }
 }
-
-fn resolve_enabled_lines_path(values: &ConfigValues, base_dir: &Path) -> PathBuf {
-    if let Some(custom_path) = optional_value(values, "TRANSFERENCIAS_LINEAS_HABILITADAS_PATH") {
-        return resolve_path(base_dir, Some(custom_path.as_str()), "lineas_habilitadas");
-    }
-
-    let plain = base_dir.join("lineas_habilitadas");
-    if plain.exists() {
-        return plain;
-    }
-
-    let txt = base_dir.join("lineas_habilitadas.txt");
-    if txt.exists() {
-        return txt;
-    }
-
-    plain
-}
-
-const DEFAULT_ENABLED_CREDIT_LINES: &[&str] = &[
-    "AMEJUCA ESPECIAL",
-    "AMEJUCA PREMIUM",
-    "AMELaR",
-    "CLUB MUTUAL UNC CBU",
-    "COMER RECURRENTE CBU",
-    "CRUZ DEL EJE especial",
-    "CRUZ DEL EJE -premium-",
-    "DASPU HABERES",
-    "MUDON HABERES",
-    "MUDON HABERES SOCIOS NUEVOS",
-    "MUNIC. CARLOS PAZ 1-6",
-    "MUNIC. CARLOS PAZ 7-24",
-    "MUNIC. CARLOS PAZ PERMAN IRREG",
-    "MUNIC. CARLOS PAZ PERMAN SIT 1",
-];
 
 fn read_config_text(path: &Path, passphrase_override: Option<&str>) -> Result<String> {
     let raw = fs::read_to_string(path)

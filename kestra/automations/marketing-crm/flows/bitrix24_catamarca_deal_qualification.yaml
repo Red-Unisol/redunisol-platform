@@ -1,7 +1,7 @@
 id: bitrix24_catamarca_deal_qualification
 namespace: redunisol
 
-description: Califica negociaciones Catamarca pendientes, aplica BCRA y asigna vendedor definitivo.
+description: Clasifica negociaciones internas pendientes, aplica reglas comerciales y distribuye por bucket.
 
 concurrency:
   limit: 1
@@ -37,7 +37,10 @@ tasks:
       BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"
       BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
       BITRIX24_LEAD_REJECTION_REASON_FIELD: "{{ envs.bitrix24_lead_rejection_reason_field }}"
+      BITRIX24_LEAD_BCRA_STATUS_FIELD: "{{ envs.bitrix24_lead_bcra_status_field }}"
+      BITRIX24_LEAD_BCRA_RESULT_FIELD: "{{ envs.bitrix24_lead_bcra_result_field }}"
       BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
+      BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
       BITRIX24_LEAD_ES_SOCIO_FIELD: "{{ envs.bitrix24_lead_es_socio_field ?? 'UF_CRM_1728998183' }}"
       BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_COUNT_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_count_field ?? 'UF_CRM_VIMARX_CRED_ACT_CNT' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
@@ -47,13 +50,29 @@ tasks:
       BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID: "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"
       BITRIX24_DEAL_MANUAL_REVIEW_STAGE_ID: "{{ envs.bitrix24_deal_manual_review_stage_id ?? 'C1:KESTRA_REVIEW' }}"
       BITRIX24_DEAL_ROUTING_REVIEW_STAGE_ID: "{{ envs.bitrix24_deal_routing_review_stage_id ?? 'C1:KESTRA_ROUTE_REVIEW' }}"
+      BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID: "{{ envs.bitrix24_deal_assignment_queue_stage_id ?? 'C1:KESTRA_QUEUE' }}"
       BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_bcra_rejected_stage_id ?? 'C1:5' }}"
+      BITRIX24_DEAL_COMMERCIAL_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_commercial_rejected_stage_id ?? 'C1:KESTRA_REVIEW' }}"
       BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
       BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID: "{{ envs.bitrix24_deal_distribution_notification_user_id ?? '57' }}"
+      BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS: "{{ envs.bitrix24_distributable_open_line_ids ?? '1' }}"
       BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
       BITRIX24_DEAL_ROUTING_BUCKET_FIELD: "{{ envs.bitrix24_deal_routing_bucket_field ?? 'ufCrmRouteBucket' }}"
-      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
+      BITRIX24_DEAL_QUEUE_ACTION_FIELD: "{{ envs.bitrix24_deal_queue_action_field ?? 'ufCrmKqAction' }}"
+      BITRIX24_DEAL_QUEUE_REASON_FIELD: "{{ envs.bitrix24_deal_queue_reason_field ?? 'ufCrmKqReason' }}"
+      BITRIX24_DEAL_QUEUE_TARGET_STAGE_FIELD: "{{ envs.bitrix24_deal_queue_target_stage_field ?? 'ufCrmKqStage' }}"
+      BITRIX24_DEAL_QUEUE_ENQUEUED_AT_FIELD: "{{ envs.bitrix24_deal_queue_enqueued_at_field ?? 'ufCrmKqAt' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455,116561,110059' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_DEAL_BCRA_MAX_AGE_DAYS: "{{ envs.bitrix24_deal_bcra_max_age_days ?? '7' }}"
+      BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS: "{{ envs.bitrix24_deal_cordoba_jubilados_user_ids ?? '10451,71159,68579,90231,29,110059,116561' }}"
+      BITRIX24_DEAL_CORDOBA_UNC_USER_IDS: "{{ envs.bitrix24_deal_cordoba_unc_user_ids ?? '53121' }}"
+      BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS: "{{ envs.bitrix24_deal_cordoba_general_user_ids ?? '10451,71159,68579,90231,29,116561,110059' }}"
+      BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY: "{{ envs.bitrix24_distribution_business_hours_only ?? 'true' }}"
+      BITRIX24_DISTRIBUTION_TIMEZONE: "{{ envs.bitrix24_distribution_timezone ?? 'America/Argentina/Cordoba' }}"
+      BITRIX24_DISTRIBUTION_WORKDAYS: "{{ envs.bitrix24_distribution_workdays ?? 'MO,TU,WE,TH,FR' }}"
+      BITRIX24_DISTRIBUTION_FROM: "{{ envs.bitrix24_distribution_from ?? '00:00' }}"
+      BITRIX24_DISTRIBUTION_TO: "{{ envs.bitrix24_distribution_to ?? '17:00' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
       - python -m bitrix24_form_flow.kestra_catamarca_deal_select_entrypoint
@@ -80,9 +99,36 @@ outputs:
   - id: ok
     type: BOOLEAN
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.ok : outputs.seleccionar_negociacion.vars.ok }}"
+  - id: trace_schema_version
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.trace_schema_version : outputs.seleccionar_negociacion.vars.trace_schema_version }}"
+  - id: event_type
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.event_type : outputs.seleccionar_negociacion.vars.event_type }}"
   - id: action
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.action : outputs.seleccionar_negociacion.vars.action }}"
+  - id: commercial_action
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_action : outputs.seleccionar_negociacion.vars.commercial_action }}"
+  - id: commercial_reason
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_reason : outputs.seleccionar_negociacion.vars.commercial_reason }}"
+  - id: commercial_stage_id
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.commercial_stage_id : outputs.seleccionar_negociacion.vars.commercial_stage_id }}"
+  - id: distribution_action
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.distribution_action : outputs.seleccionar_negociacion.vars.distribution_action }}"
+  - id: distribution_reason
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.distribution_reason : outputs.seleccionar_negociacion.vars.distribution_reason }}"
+  - id: business_decision
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.business_decision : outputs.seleccionar_negociacion.vars.business_decision }}"
+  - id: business_reason
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.business_reason : outputs.seleccionar_negociacion.vars.business_reason }}"
   - id: deal_id
     type: STRING
     value: "{{ outputs.seleccionar_negociacion.vars.deal_id }}"
@@ -97,13 +143,100 @@ outputs:
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.reason : '' }}"
   - id: assigned_by_id
     type: STRING
-    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
+    value: "{{ outputs.calificar_negociacion.vars.assigned_by_id is defined ? outputs.calificar_negociacion.vars.assigned_by_id : '' }}"
+  - id: assigned_by_name
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assigned_by_name : '' }}"
+  - id: previous_assigned_by_id
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars.previous_assigned_by_id is defined ? outputs.calificar_negociacion.vars.previous_assigned_by_id : '' }}"
   - id: routing_bucket
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.routing_bucket : '' }}"
   - id: commercial_line
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars.commercial_line is defined ? outputs.calificar_negociacion.vars.commercial_line : '' }}"
+  - id: processed_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.processed_at : '' }}"
+  - id: contact_id
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars.contact_id is defined ? outputs.calificar_negociacion.vars.contact_id : '' }}"
+  - id: deal_title
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.deal_title : '' }}"
+  - id: stage_before
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.stage_before : '' }}"
+  - id: province
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.province : '' }}"
+  - id: employment_status
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.employment_status : '' }}"
+  - id: payment_bank
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.payment_bank : '' }}"
+  - id: source
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.source : '' }}"
+  - id: within_business_hours
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.within_business_hours : '' }}"
+  - id: assignment_strategy
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.assignment_strategy : '' }}"
+  - id: configured_pool
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.configured_pool : '' }}"
+  - id: online_pool
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.online_pool : '' }}"
+  - id: linked_activity_count
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.linked_activity_count : '0' }}"
+  - id: transferred_chat_count
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.transferred_chat_count : '0' }}"
+  - id: chat_transfer_status
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.chat_transfer_status : 'not_evaluated' }}"
+  - id: found_chat_ids
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.found_chat_ids : '' }}"
+  - id: transferred_chat_ids
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.transferred_chat_ids : '' }}"
+  - id: skipped_chat_ids
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_chat_ids : '' }}"
+  - id: skipped_chat_reasons
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_chat_reasons : '' }}"
+  - id: skipped_non_distributable_chat_count
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.skipped_non_distributable_chat_count : '0' }}"
+  - id: rule_version
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.rule_version : '' }}"
+  - id: bcra_snapshot_checked_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_snapshot_checked_at : '' }}"
+  - id: bcra_snapshot_age_days
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_snapshot_age_days : '' }}"
+  - id: bcra_snapshot_refreshed
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_snapshot_refreshed : false }}"
+  - id: bcra_refresh_outcome
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_refresh_outcome : 'not_evaluated' }}"
+  - id: bcra_retry_attempts
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_retry_attempts : '0' }}"
+  - id: bcra_next_retry_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.bcra_next_retry_at : '' }}"
   - id: message
     type: STRING
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.message : outputs.seleccionar_negociacion.vars.message }}"

@@ -50,7 +50,9 @@ tasks:
       BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'NEW' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_LEAD_STATUS_EXTERNAL_REFERRAL: "{{ envs.bitrix24_lead_status_external_referral ?? '13' }}"
       BITRIX24_LEAD_STATUS_CONVERTED: "{{ envs.bitrix24_lead_status_converted ?? 'CONVERTED' }}"
+      BITRIX24_PREQUALIFICATION_CUTOFF: "{{ envs.bitrix24_prequalification_cutoff ?? '2026-08-07T12:28:19-03:00' }}"
       BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
       BITRIX24_DEAL_STAGE_ID: "{{ envs.bitrix24_deal_stage_id ?? 'C1:NEW' }}"
       BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID: "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"
@@ -58,7 +60,7 @@ tasks:
       BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID: "{{ envs.bitrix24_deal_bcra_rejected_stage_id ?? 'C1:5' }}"
       BITRIX24_DEAL_PROVISIONAL_USER_ID: "{{ envs.bitrix24_deal_provisional_user_id ?? '57' }}"
       BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
-      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455' }}"
+      BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455,116561,110059' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:

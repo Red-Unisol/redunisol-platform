@@ -8,6 +8,7 @@ DEFAULT_LEAD_FIELDS = {
     "processing_policy": "UF_CRM_PROCESSING_POLICY",
     "commercial_owner": "UF_CRM_COMM_OWNER",
     "cuil": "UF_CRM_1693840106704",
+    "dni": "UF_CRM_LEAD_1711392404332",
     "situacion_laboral": "UF_CRM_1714071903",
     "banco_cobro": "UF_CRM_LEAD_1711458190312",
     "provincia": "UF_CRM_64E65D2B2136C",
@@ -53,13 +54,41 @@ DEFAULT_DEAL_CONFIG = {
     "pending_qualification_stage_id": "C1:KESTRA_PENDING",
     "manual_review_stage_id": "C1:KESTRA_REVIEW",
     "routing_review_stage_id": "C1:KESTRA_ROUTE_REVIEW",
+    "assignment_queue_stage_id": "C1:KESTRA_QUEUE",
     "bcra_rejected_stage_id": "C1:5",
+    "commercial_rejected_stage_id": "C1:KESTRA_REVIEW",
     "provisional_user_id": 57,
     "distribution_notification_user_id": 57,
+    "distributable_open_line_ids": (1,),
     "commercial_line_field": "ufCrm_659EBB0445E8E",
     "routing_bucket_field": "ufCrmRouteBucket",
-    "round_robin_user_ids": (68579, 10451, 29, 90231, 71159, 113457, 113455),
+    "queue_action_field": "ufCrmKqAction",
+    "queue_reason_field": "ufCrmKqReason",
+    "queue_target_stage_field": "ufCrmKqStage",
+    "queue_enqueued_at_field": "ufCrmKqAt",
+    "round_robin_user_ids": (
+        68579,
+        10451,
+        29,
+        90231,
+        71159,
+        113457,
+        113455,
+        116561,
+        110059,
+    ),
     "round_robin_lookback_days": 30,
+    "cordoba_jubilados_user_ids": (
+        10451,
+        71159,
+        68579,
+        90231,
+        29,
+        110059,
+        116561,
+    ),
+    "cordoba_unc_user_ids": (53121,),
+    "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29, 116561, 110059),
 }
 
 
@@ -69,6 +98,7 @@ class BitrixFieldsConfig:
     lead_processing_policy: str
     lead_commercial_owner: str
     lead_cuil: str
+    lead_dni: str
     lead_employment_status: str
     lead_payment_bank: str
     lead_province: str
@@ -132,6 +162,7 @@ class LeadStatusesConfig:
     preclassification: str
     qualified: str
     rejected: str
+    external_referral: str
     converted: str
 
 
@@ -155,13 +186,23 @@ class DealConfig:
     pending_qualification_stage_id: str
     manual_review_stage_id: str
     routing_review_stage_id: str
+    assignment_queue_stage_id: str
     bcra_rejected_stage_id: str
+    commercial_rejected_stage_id: str
     provisional_user_id: int
     distribution_notification_user_id: int
+    distributable_open_line_ids: tuple[int, ...]
     commercial_line_field: str
     routing_bucket_field: str
+    queue_action_field: str
+    queue_reason_field: str
+    queue_target_stage_field: str
+    queue_enqueued_at_field: str
     round_robin_user_ids: tuple[int, ...]
     round_robin_lookback_days: int
+    cordoba_jubilados_user_ids: tuple[int, ...]
+    cordoba_unc_user_ids: tuple[int, ...]
+    cordoba_general_user_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -193,6 +234,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_LEAD_FIELDS["commercial_owner"],
             ),
             lead_cuil=source.get("BITRIX24_LEAD_CUIL_FIELD", DEFAULT_LEAD_FIELDS["cuil"]),
+            lead_dni=source.get("BITRIX24_LEAD_DNI_FIELD", DEFAULT_LEAD_FIELDS["dni"]),
             lead_employment_status=source.get(
                 "BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD",
                 DEFAULT_LEAD_FIELDS["situacion_laboral"],
@@ -312,6 +354,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             or "NEW",
             qualified=_required_env(source, "BITRIX24_LEAD_STATUS_QUALIFIED"),
             rejected=_required_env(source, "BITRIX24_LEAD_STATUS_REJECTED"),
+            external_referral=source.get(
+                "BITRIX24_LEAD_STATUS_EXTERNAL_REFERRAL",
+                "13",
+            ).strip()
+            or "13",
             converted=source.get("BITRIX24_LEAD_STATUS_CONVERTED", "CONVERTED").strip()
             or "CONVERTED",
         ),
@@ -362,11 +409,21 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["routing_review_stage_id"],
+            assignment_queue_stage_id=source.get(
+                "BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["assignment_queue_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["assignment_queue_stage_id"],
             bcra_rejected_stage_id=source.get(
                 "BITRIX24_DEAL_BCRA_REJECTED_STAGE_ID",
                 DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["bcra_rejected_stage_id"],
+            commercial_rejected_stage_id=source.get(
+                "BITRIX24_DEAL_COMMERCIAL_REJECTED_STAGE_ID",
+                DEFAULT_DEAL_CONFIG["commercial_rejected_stage_id"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["commercial_rejected_stage_id"],
             provisional_user_id=_optional_int(
                 source,
                 "BITRIX24_DEAL_PROVISIONAL_USER_ID",
@@ -376,6 +433,11 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 source,
                 "BITRIX24_DEAL_DISTRIBUTION_NOTIFICATION_USER_ID",
                 default=DEFAULT_DEAL_CONFIG["distribution_notification_user_id"],
+            ),
+            distributable_open_line_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS",
+                default=DEFAULT_DEAL_CONFIG["distributable_open_line_ids"],
             ),
             commercial_line_field=source.get(
                 "BITRIX24_DEAL_COMMERCIAL_LINE_FIELD",
@@ -387,6 +449,26 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["routing_bucket_field"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["routing_bucket_field"],
+            queue_action_field=source.get(
+                "BITRIX24_DEAL_QUEUE_ACTION_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_action_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_action_field"],
+            queue_reason_field=source.get(
+                "BITRIX24_DEAL_QUEUE_REASON_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_reason_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_reason_field"],
+            queue_target_stage_field=source.get(
+                "BITRIX24_DEAL_QUEUE_TARGET_STAGE_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_target_stage_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_target_stage_field"],
+            queue_enqueued_at_field=source.get(
+                "BITRIX24_DEAL_QUEUE_ENQUEUED_AT_FIELD",
+                DEFAULT_DEAL_CONFIG["queue_enqueued_at_field"],
+            ).strip()
+            or DEFAULT_DEAL_CONFIG["queue_enqueued_at_field"],
             round_robin_user_ids=_optional_int_tuple(
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
@@ -396,6 +478,21 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS",
                 default=DEFAULT_DEAL_CONFIG["round_robin_lookback_days"],
+            ),
+            cordoba_jubilados_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_jubilados_user_ids"],
+            ),
+            cordoba_unc_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_UNC_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_unc_user_ids"],
+            ),
+            cordoba_general_user_ids=_optional_int_tuple(
+                source,
+                "BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS",
+                default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),

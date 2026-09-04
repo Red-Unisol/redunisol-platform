@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 import json
 from typing import Any
 
@@ -20,14 +21,17 @@ from .config import load_config
 from .contact_service import upsert_contact
 from .input_parser import normalize_business_input, parse_body
 from .lead_service import (
-    build_submission_from_lead,
     build_lead_contact_birthdate_field,
+    build_prequalification_input_from_lead,
     create_lead,
     get_lead,
     lead_has_commercial_owner,
+    prequalification_title_from_lead,
+    resolve_commercial_owner_enum_id,
     sync_contact_birthdate_to_leads,
     update_lead_bcra_snapshot,
     update_lead_fields,
+    update_lead_prequalification_result,
     update_lead_status,
 )
 from .logger import create_logger, Logger
@@ -42,6 +46,9 @@ from .vimarx_service import (
     resolve_arca_birthdate,
     sync_lead_vimarx_enrichment,
 )
+
+
+PREQUALIFICATION_EXCLUDED_ASSIGNEE_IDS = {7}
 
 
 def process_form_body(
@@ -174,7 +181,7 @@ def prequalify_submission(
             "contact_id": None,
             "lead_id": None,
             "lead_status": None,
-            "action": "qualified" if qualification.qualified else "rejected",
+            "action": qualification.outcome,
             "reason": qualification.reason,
             "message": qualification.message,
             "rejection_label": qualification.rejection_label,
@@ -299,6 +306,7 @@ def classify_lead(
     bcra_client: Any | None = None,
     logger: Logger | None = None,
     force_processing: bool = False,
+    take_commercial_ownership: bool = False,
 ) -> dict[str, object]:
     active_logger = logger or create_logger()
     contact_id: int | None = None
@@ -317,15 +325,31 @@ def classify_lead(
         lead = get_lead(client, lead_id_int, active_logger)
         contact_id = _optional_int(lead.get("CONTACT_ID"))
         lead_status = _optional_str(lead.get("STATUS_ID"))
-        can_take_commercial_decision = force_processing or lead_has_commercial_owner(
-            client,
-            lead,
-            config,
-            "kestra",
+
+        assigned_by_id = _optional_int(lead.get("ASSIGNED_BY_ID"))
+        if not force_processing and assigned_by_id in PREQUALIFICATION_EXCLUDED_ASSIGNEE_IDS:
+            active_logger.info(
+                f"Lead {lead_id_int} omitido: responsable excluido de la precalificacion Kestra."
+            )
+            return skipped_result(
+                contact_id=contact_id,
+                lead_id=lead_id_int,
+                lead_status=lead_status,
+                reason="excluded_assignee",
+                message="El responsable del lead esta excluido de la precalificacion automatica.",
+            )
+
+        can_take_commercial_decision = (
+            force_processing
+            or take_commercial_ownership
+            or lead_has_commercial_owner(client, lead, config, "kestra")
         )
 
-        submission = build_submission_from_lead(lead, config)
-        qualification = evaluate_prequalification(submission)
+        submission = build_prequalification_input_from_lead(lead, config)
+        qualification = evaluate_prequalification(
+            submission,
+            evaluated_at=_lead_created_at(lead),
+        )
         active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
 
         if not can_take_commercial_decision:
@@ -343,13 +367,23 @@ def classify_lead(
                 ),
             )
 
-        lead_status = update_lead_status(
+        lead_status = update_lead_prequalification_result(
             client,
             config,
             lead_id_int,
-            qualification.qualified,
-            qualification.rejection_label if not qualification.qualified else None,
-            active_logger,
+            outcome=qualification.outcome,
+            rejection_reason=(
+                qualification.rejection_label
+                if qualification.outcome == "rejected"
+                else None
+            ),
+            title=prequalification_title_from_lead(lead, config, submission),
+            commercial_owner_id=(
+                resolve_commercial_owner_enum_id(client, config, "kestra")
+                if take_commercial_ownership
+                else None
+            ),
+            logger=active_logger,
         )
 
         return success_result(
@@ -359,6 +393,7 @@ def classify_lead(
             lead_status=lead_status,
             message=qualification.message,
             reason=qualification.reason,
+            action=qualification.outcome,
         )
     except Exception as exc:
         active_logger.error(str(exc))
@@ -442,6 +477,16 @@ def _extract_should_reject_from_raw(raw_payload: str) -> bool | None:
     return None
 
 
+def _lead_created_at(lead: dict[str, object]) -> datetime | None:
+    raw_value = str(lead.get("DATE_CREATE") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def _evaluate_submission_with_bcra(
     submission: Any,
     *,
@@ -495,8 +540,6 @@ def submission_payload_with_original_tracking(
 
 def _should_consult_bcra(submission: Any, qualification: QualificationResult) -> bool:
     if not qualification.qualified:
-        return False
-    if submission.province.key == "la_rioja":
         return False
     return True
 

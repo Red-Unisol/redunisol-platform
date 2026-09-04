@@ -42,6 +42,8 @@ tasks:
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
       BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_DNI_FIELD: "{{ envs.bitrix24_lead_dni_field ?? 'UF_CRM_LEAD_1711392404332' }}"
+      BITRIX24_LEAD_SOURCE_FIELD: "{{ envs.bitrix24_lead_source_field }}"
       BITRIX24_LEAD_BACKFILL_ATTEMPTS_FIELD: "{{ envs.bitrix24_lead_backfill_attempts_field ?? 'UF_CRM_KSTRA_BF_ATTEMPTS' }}"
       BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'UC_5N2OEO' }}"
       BITRIX24_LEAD_STATUS_PRECLASSIFICATION: "{{ envs.bitrix24_lead_status_preclassification ?? 'NEW' }}"
@@ -51,23 +53,46 @@ tasks:
     commands:
       - python -m bitrix24_form_flow.kestra_lead_prefill_select_entrypoint
 
-  - id: consultar_arca
-    type: io.kestra.plugin.core.flow.Subflow
-    runIf: "{{ outputs.seleccionar_lead.vars.has_pending and outputs.seleccionar_lead.vars.cuil != '' }}"
-    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
-    flowId: consulta_padron_a13
-    inputs:
-      cuit_cuil: "{{ outputs.seleccionar_lead.vars.cuil }}"
-    wait: true
-    transmitFailed: false
-
   - id: consultar_credixsa
     type: io.kestra.plugin.core.flow.Subflow
-    runIf: "{{ outputs.seleccionar_lead.vars.has_pending and outputs.seleccionar_lead.vars.cuil != '' }}"
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending and outputs.seleccionar_lead.vars.credix_identifier != '' }}"
     namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
     flowId: consulta_quiebra_credix
     inputs:
-      cuit: "{{ outputs.seleccionar_lead.vars.cuil }}"
+      cuit: "{{ outputs.seleccionar_lead.vars.credix_identifier }}"
+    wait: true
+    transmitFailed: false
+
+  - id: resolver_identidad
+    type: io.kestra.plugin.scripts.python.Commands
+    runIf: "{{ outputs.seleccionar_lead.vars.has_pending }}"
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: ghcr.io/kestra-io/pydata:latest
+    beforeCommands:
+      - pip install kestra > /dev/null
+    env:
+      PREFILL_SOURCE_ID: "{{ outputs.seleccionar_lead.vars.source_id }}"
+      PREFILL_CUIL: "{{ outputs.seleccionar_lead.vars.cuil }}"
+      PREFILL_DNI: "{{ outputs.seleccionar_lead.vars.dni }}"
+      CREDIX_OK: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+      CREDIX_STATUS: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+      CREDIX_CUIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+      CREDIX_ERROR: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.error ?? '') : 'not_executed' }}"
+    commands:
+      - python -m bitrix24_form_flow.kestra_lead_prefill_identity_entrypoint
+
+  - id: consultar_arca
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.resolver_identidad is defined and outputs.resolver_identidad.vars.effective_cuil != '' }}"
+    namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
+    flowId: consulta_padron_a13
+    inputs:
+      cuit_cuil: "{{ outputs.resolver_identidad.vars.effective_cuil }}"
     wait: true
     transmitFailed: false
 
@@ -101,6 +126,7 @@ tasks:
       CREDIX_CACHE_HIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
       CREDIX_CACHED_AT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
       VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
       VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
@@ -108,6 +134,7 @@ tasks:
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
       BITRIX24_LEAD_COMMERCIAL_OWNER_FIELD: "{{ envs.bitrix24_lead_commercial_owner_field ?? 'UF_CRM_COMM_OWNER' }}"
       BITRIX24_LEAD_CUIL_FIELD: "{{ envs.bitrix24_lead_cuil_field }}"
+      BITRIX24_LEAD_DNI_FIELD: "{{ envs.bitrix24_lead_dni_field ?? 'UF_CRM_LEAD_1711392404332' }}"
       BITRIX24_LEAD_EMPLOYMENT_STATUS_FIELD: "{{ envs.bitrix24_lead_employment_status_field }}"
       BITRIX24_LEAD_PAYMENT_BANK_FIELD: "{{ envs.bitrix24_lead_payment_bank_field }}"
       BITRIX24_LEAD_PROVINCE_FIELD: "{{ envs.bitrix24_lead_province_field }}"

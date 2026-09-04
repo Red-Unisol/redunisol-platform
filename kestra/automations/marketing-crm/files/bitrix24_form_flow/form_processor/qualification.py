@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from .input_parser import NormalizedInput, PrequalificationInput
 
@@ -11,13 +13,29 @@ class QualificationResult:
     reason: str
     message: str
     rejection_label: str | None = None
+    outcome: str = "rejected"
+    measurement_qualified: bool | None = None
+    route_to_whatsapp: bool | None = None
+
+    @property
+    def is_measurement_qualified(self) -> bool:
+        if self.measurement_qualified is None:
+            return self.qualified
+        return self.measurement_qualified
+
+    @property
+    def should_route_to_whatsapp(self) -> bool:
+        if self.route_to_whatsapp is None:
+            return self.qualified
+        return self.route_to_whatsapp
 
 
-EXTERNAL_REFERRAL_PROVINCES = {
-    "neuquen",
-    "rio_negro",
-    "santa_fe",
-}
+EXTERNAL_REFERRAL_OUTCOME = "external_referral"
+BUENOS_AIRES_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
+POLICIA_FEDERAL_INITIAL_START = date(2026, 8, 31)
+POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE = date(2026, 9, 14)
+POLICIA_FEDERAL_INITIAL_REASON = "policia_federal_caba_initial_period"
+POLICIA_FEDERAL_INITIAL_REJECTION_LABEL = "POLICÍA FEDERAL CABA - PERÍODO INICIAL"
 
 
 QUALIFICATION_RULES = {
@@ -32,9 +50,10 @@ QUALIFICATION_RULES = {
             "daspu",
             "jubilado_provincial",
             "jubilado_nacional",
+            "jubilado_municipal",
             "pensionado",
         },
-        "bank_optional_for": {"jubilado_provincial"},
+        "bank_optional_for": {"jubilado_provincial", "pensionado"},
         "allowed_banks_by_status": {
             "empleado_publico_provincial": {"banco_de_la_provincia_de_cordoba_s_a"},
             "empleado_publico_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
@@ -42,7 +61,7 @@ QUALIFICATION_RULES = {
             "docente": {"banco_de_la_provincia_de_cordoba_s_a"},
             "personal_de_salud": {"banco_de_la_provincia_de_cordoba_s_a"},
             "jubilado_nacional": {"banco_de_la_provincia_de_cordoba_s_a"},
-            "pensionado": {"banco_de_la_provincia_de_cordoba_s_a"},
+            "jubilado_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
         },
     },
     "catamarca": {
@@ -54,6 +73,7 @@ QUALIFICATION_RULES = {
         }
     },
     "la_rioja": {
+        "external_referral": True,
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
             "empleado_publico_municipal",
@@ -61,20 +81,64 @@ QUALIFICATION_RULES = {
             "docente",
         },
     },
+    "rio_negro": {
+        "external_referral": True,
+        "allowed_employment_statuses": {
+            "empleado_publico_provincial",
+            "policia",
+            "jubilado_provincial",
+            "pensionado",
+        },
+        "bank_optional_for": {
+            "empleado_publico_provincial",
+            "policia",
+        },
+        "allowed_banks_by_status": {
+            "jubilado_provincial": {
+                "banco_de_la_nacion_argentina",
+                "banco_patagonia_s_a",
+            },
+            "pensionado": {
+                "banco_de_la_nacion_argentina",
+                "banco_patagonia_s_a",
+            },
+        },
+    },
+    "santa_fe": {
+        "external_referral": True,
+        "allowed_employment_statuses": {
+            "empleado_publico_provincial",
+            "policia",
+            "jubilado_provincial",
+            "pensionado",
+        },
+    },
+    "neuquen": {
+        "external_referral": True,
+        "allowed_employment_statuses": {
+            "empleado_publico_provincial",
+            "empleado_publico_municipal",
+            "policia",
+            "jubilado_provincial",
+        },
+    },
 }
 
 
 def evaluate_prequalification(
     submission: NormalizedInput | PrequalificationInput,
+    *,
+    evaluated_at: datetime | None = None,
 ) -> QualificationResult:
-    if submission.province.key in EXTERNAL_REFERRAL_PROVINCES:
+    if _is_policia_federal_caba_initial_period(submission, evaluated_at=evaluated_at):
         return QualificationResult(
             qualified=False,
-            reason="external_referral",
-            message=(
-                f'La provincia "{submission.province.label}" se deriva a vendedor externo y no se procesa automaticamente.'
-            ),
-            rejection_label="OTRA PROVINCIA",
+            reason=POLICIA_FEDERAL_INITIAL_REASON,
+            message="Tu situación no califica para esta solicitud.",
+            rejection_label=POLICIA_FEDERAL_INITIAL_REJECTION_LABEL,
+            outcome="rejected",
+            measurement_qualified=True,
+            route_to_whatsapp=False,
         )
 
     rule = QUALIFICATION_RULES.get(submission.province.key)
@@ -84,6 +148,7 @@ def evaluate_prequalification(
             reason="province_not_eligible",
             message=f'La provincia "{submission.province.label}" no califica.',
             rejection_label="OTRA PROVINCIA",
+            outcome="rejected",
         )
 
     if submission.employment_status.key not in rule["allowed_employment_statuses"]:
@@ -96,15 +161,12 @@ def evaluate_prequalification(
                 f"no califica para {submission.province.label}."
             ),
             rejection_label=rejection_label,
+            outcome="rejected",
         )
 
     bank_optional_for = rule.get("bank_optional_for", set())
     if submission.employment_status.key in bank_optional_for:
-        return QualificationResult(
-            qualified=True,
-            reason="qualified",
-            message=f"La persona califica para {submission.province.label}.",
-        )
+        return _approved_result(submission, rule)
 
     allowed_banks_by_status = rule.get("allowed_banks_by_status", {})
     allowed_banks = allowed_banks_by_status.get(submission.employment_status.key)
@@ -114,17 +176,62 @@ def evaluate_prequalification(
             reason="payment_bank_not_eligible",
             message=f'El banco "{submission.payment_bank.label}" no califica para {submission.province.label}.',
             rejection_label="OTRO BANCO",
+            outcome="rejected",
+        )
+
+    return _approved_result(submission, rule)
+
+
+def evaluate_qualification(
+    submission: NormalizedInput,
+    *,
+    evaluated_at: datetime | None = None,
+) -> QualificationResult:
+    return evaluate_prequalification(submission, evaluated_at=evaluated_at)
+
+
+def _is_policia_federal_caba_initial_period(
+    submission: NormalizedInput | PrequalificationInput,
+    *,
+    evaluated_at: datetime | None,
+) -> bool:
+    if submission.province.key not in {"caba", "ciudad_autonoma_de_buenos_aires"}:
+        return False
+    if submission.employment_status.key != "policia_federal":
+        return False
+
+    local_date = _as_buenos_aires_date(evaluated_at)
+    return POLICIA_FEDERAL_INITIAL_START <= local_date < POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE
+
+
+def _as_buenos_aires_date(value: datetime | None) -> date:
+    if value is None:
+        return datetime.now(BUENOS_AIRES_TIMEZONE).date()
+    if value.tzinfo is None:
+        return value.replace(tzinfo=BUENOS_AIRES_TIMEZONE).date()
+    return value.astimezone(BUENOS_AIRES_TIMEZONE).date()
+
+
+def _approved_result(
+    submission: NormalizedInput | PrequalificationInput,
+    rule: dict[str, object],
+) -> QualificationResult:
+    if bool(rule.get("external_referral")):
+        return QualificationResult(
+            qualified=False,
+            reason=EXTERNAL_REFERRAL_OUTCOME,
+            message=(
+                f'La persona califica para derivacion a vendedor externo en "{submission.province.label}".'
+            ),
+            outcome=EXTERNAL_REFERRAL_OUTCOME,
         )
 
     return QualificationResult(
         qualified=True,
         reason="qualified",
         message=f"La persona califica para {submission.province.label}.",
+        outcome="qualified",
     )
-
-
-def evaluate_qualification(submission: NormalizedInput) -> QualificationResult:
-    return evaluate_prequalification(submission)
 
 
 def _employment_status_rejection_label(employment_status_key: str) -> str:

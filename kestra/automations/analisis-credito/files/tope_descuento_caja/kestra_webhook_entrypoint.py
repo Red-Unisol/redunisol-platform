@@ -21,6 +21,18 @@ class InvalidRequestError(ValueError):
     pass
 
 
+class PersonaNoEncontradaError(ValueError):
+    """La Caja respondio que el CUIL no esta en su padron.
+
+    Es un resultado de negocio valido, no un fallo de la automatizacion.
+    """
+
+
+def _es_persona_no_encontrada(mensaje: str) -> bool:
+    normalizado = " ".join(str(mensaje or "").strip().lower().split())
+    return "no se encontr" in normalizado and "la persona" in normalizado
+
+
 def main() -> int:
     result: Dict[str, Any]
     status = "technical_error"
@@ -79,6 +91,19 @@ def main() -> int:
         status = "invalid_request"
         exit_code = 0
         _log_event("tope_descuento_caja_invalid_request", error=str(exc))
+    except PersonaNoEncontradaError as exc:
+        result = {
+            "ok": False,
+            "cuil": cuil,
+            "nombre": "",
+            "apellido": "",
+            "disponible": 0.0,
+            "tope_descuento": 0.0,
+            "error": str(exc),
+        }
+        status = "not_found"
+        exit_code = 0
+        _log_event("tope_descuento_caja_not_found", cuil=cuil, error=str(exc))
     except Exception as exc:
         result = {
             "ok": False,
@@ -197,7 +222,9 @@ def obtener_token_caja(
     return token_caja
 
 
-def solicitar_permissions(token_semilla: str, cidi_cookie: str, body_cifrado: str) -> str:
+def solicitar_permissions(
+    token_semilla: str, cidi_cookie: str, body_cifrado: str
+) -> str:
     base_url = _require_env("CAJA_BASE_URL")
     origin, referer = _origin_and_referer(base_url, "/")
     url = _join_url(base_url, "/api/security/permissions")
@@ -243,7 +270,9 @@ def _obtener_datos(cidi_cookie: str, token_caja: str, cuil: str):
     return datos_persona, cupo_disponible
 
 
-def obtener_datos_persona(cidi_cookie: str, token_caja: str, cuil: str) -> Dict[str, Any]:
+def obtener_datos_persona(
+    cidi_cookie: str, token_caja: str, cuil: str
+) -> Dict[str, Any]:
     base_url = _require_env("CAJA_BASE_URL")
     origin, referer = _origin_and_referer(base_url, "/")
     body = armar_body_cifrado({"cuil": cuil}, os.getenv("CAJA_ENCRYPT_PASS", ""))
@@ -264,6 +293,10 @@ def obtener_datos_persona(cidi_cookie: str, token_caja: str, cuil: str) -> Dict[
         timeout=30,
     )
     if response.status_code >= 400:
+        if _es_persona_no_encontrada(response.text):
+            raise PersonaNoEncontradaError(
+                f"Error al obtener datos de persona: {response.text}"
+            )
         raise ValueError(f"Error al obtener datos de persona: {response.text}")
     return response.json()
 
