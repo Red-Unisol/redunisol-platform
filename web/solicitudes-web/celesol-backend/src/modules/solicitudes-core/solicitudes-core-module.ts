@@ -62,6 +62,7 @@ import { SolicitudWorkflowRepositoryImpl } from "./infrastructure/repositories/S
 import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/repositories/WorkflowTransitionAdminRepositoryImpl";
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
+import { EvaluateListLineaPrestamoLegacyIdResolver } from "./infrastructure/services/EvaluateListLineaPrestamoLegacyIdResolver";
 import { PrismaWorkflowStateCatalog } from "./infrastructure/services/PrismaWorkflowStateCatalog";
 import { SolicitudWorkflowEngine } from "./domain/workflow/SolicitudWorkflowEngine";
 import { SolicitudTransitionPolicy } from "./domain/workflow/SolicitudTransitionPolicy";
@@ -136,6 +137,11 @@ export function createSolicitudesCoreRouter(
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
+  const lineaPrestamoLegacyIdResolver =
+    new EvaluateListLineaPrestamoLegacyIdResolver({
+      baseUrl: env.LEGACY_API_BASE_URL,
+      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    });
   const authRepository = new AuthRepositoryImpl(
     new AuthPrismaDatasource(prisma),
   );
@@ -189,6 +195,7 @@ export function createSolicitudesCoreRouter(
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     authRepository,
     gateway: crearPrestamoGateway,
+    lineaPrestamoLegacyIdResolver,
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,

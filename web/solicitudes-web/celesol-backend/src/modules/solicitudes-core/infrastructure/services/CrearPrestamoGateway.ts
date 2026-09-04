@@ -25,8 +25,14 @@ export type CrearPrestamoInput = {
   cuotas: number;
   fechaEmision: string;
   integrantes: CrearPrestamoIntegrante[];
+  /**
+   * ID de F.Module.Cuentas.Prestamos.LineaPrestamo -- NO el Oid de
+   * PreSolicitud.Module.LineaPrestamoPresolicitud que guarda la solicitud.
+   * Lo traduce LineaPrestamoLegacyIdResolver antes de llegar aca.
+   */
   lineaPrestamo: string;
-  montoDeseado: string;
+  /** Numerico a proposito: como texto el legado lo descarta. Ver abajo. */
+  montoDeseado: number;
   vendedor: string;
 };
 
@@ -56,15 +62,31 @@ export class CrearPrestamoGateway {
       response = await this.fetcher(
         new URL(CREAR_PRESTAMO_PATH, this.baseUrl),
         {
+          // ATENCION: EL ORDEN DE ESTAS CLAVES ES SIGNIFICATIVO. NO ORDENAR
+          // ALFABETICAMENTE.
+          //
+          // El legado aplica el bloque `campos` en el orden en que llega, y
+          // asignar LineaPrestamo RESETEA Cuotas al minimo de esa linea. Con
+          // Cuotas antes (que es donde lo deja el orden alfabetico) el valor
+          // que mandamos se pierde siempre: el prestamo se creaba con el
+          // minimo de la linea -- 1 cuota para AMEJUCA ESPECIAL, 6 para CAJA
+          // PREMIUM +1 -- sin devolver ningun error.
+          //
+          // MontoDeseado va como numero, no como texto: en string el legado lo
+          // descarta y el prestamo queda en 0,00, tambien en silencio.
+          //
+          // Verificado contra el ambiente real (prestamo 440143): con este
+          // orden y estos tipos, sale con 36 cuotas y $6.000.000. Con Cuotas
+          // arriba o el monto como string, no.
           body: JSON.stringify({
             campos: {
-              Cuotas: input.cuotas,
               FechaEmision: input.fechaEmision,
               Integrantes: input.integrantes.map((integrante) => ({
                 Socio: integrante.socio,
                 TipoRelacion: integrante.tipoRelacion,
               })),
               LineaPrestamo: input.lineaPrestamo,
+              Cuotas: input.cuotas,
               MontoDeseado: input.montoDeseado,
               Vendedor: input.vendedor,
             },
