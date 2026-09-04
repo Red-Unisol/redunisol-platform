@@ -1,15 +1,18 @@
 import hashlib
 import hmac
 import json
+import sqlite3
 import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from metamap_server import __version__
 from metamap_server.api import create_app
@@ -70,6 +73,15 @@ class MetaMapServerApiTests(unittest.TestCase):
                 "git_sha": "test-git-sha",
             },
         )
+
+    def test_sqlite_uses_wal_and_extended_busy_timeout(self) -> None:
+        store = self.client.app.state.validation_store
+        with store._engine.connect() as connection:
+            journal_mode = connection.exec_driver_sql("PRAGMA journal_mode").scalar_one()
+            busy_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
+
+        self.assertEqual(journal_mode, "wal")
+        self.assertEqual(busy_timeout, 10_000)
 
     def test_validation_completed_is_persisted_and_normalized(self) -> None:
         self._resource_payloads["verif-100"] = self._metamap_resource_payload(
@@ -553,7 +565,7 @@ class MetaMapServerApiTests(unittest.TestCase):
         self.assertEqual(validation["total_amount_raw"], "$ 2.580.681,70")
         self.assertEqual(validation["total_amount_value"], "2580681.70")
 
-    def test_internal_webhook_receipts_endpoint_prunes_logs_older_than_one_week(self) -> None:
+    def test_receipt_cleanup_runs_explicitly_and_not_during_reads(self) -> None:
         self._post_metamap_webhook(
             self._metamap_payload(
                 event_name="verification_started",
@@ -583,6 +595,15 @@ class MetaMapServerApiTests(unittest.TestCase):
             headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
         )
         self.assertEqual(response.status_code, 200)
+        receipts = response.json()["receipts"]
+        self.assertEqual(len(receipts), 2)
+
+        deleted = store.prune_old_metamap_webhook_receipts()
+        self.assertEqual(deleted, 1)
+        response = self.client.get(
+            "/api/v1/internal/metamap/webhook-receipts",
+            headers=self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL),
+        )
         receipts = response.json()["receipts"]
         self.assertEqual(len(receipts), 1)
         self.assertEqual(receipts[0]["verification_id"], "verif-recent-receipt")
@@ -653,6 +674,56 @@ class MetaMapServerApiTests(unittest.TestCase):
         )
         self.assertEqual(outside_range.status_code, 200)
         self.assertEqual(outside_range.json()["pagination"]["total"], 0)
+
+    def test_concurrent_duplicate_trace_events_are_atomic(self) -> None:
+        event = {
+            "event_id": "event-concurrent",
+            "session_id": "session-concurrent",
+            "client_instance_id": "desktop-001",
+            "event_type": "transfer_started",
+            "occurred_at": "2026-09-04T13:00:00+00:00",
+            "operator": "operador-test",
+            "application_version": "2.0.2",
+            "request_oid": "249999",
+            "mode": "automatic",
+            "severity": "info",
+            "data": {},
+        }
+        store = self.client.app.state.validation_store
+        workers = 8
+        barrier = threading.Barrier(workers)
+
+        def insert_same_event() -> tuple[int, int]:
+            barrier.wait()
+            return store.record_transfer_trace_events(
+                events=[event], authenticated_client_id="transferencias-dev-1"
+            )
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(executor.map(lambda _: insert_same_event(), range(workers)))
+
+        self.assertEqual(sum(accepted for accepted, _ in results), 1)
+        self.assertEqual(sum(duplicates for _, duplicates in results), workers - 1)
+
+    def test_sqlite_write_transaction_retries_transient_lock(self) -> None:
+        store = self.client.app.state.validation_store
+        attempts = 0
+
+        def transient_operation(_session) -> str:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise OperationalError(
+                    "INSERT",
+                    {},
+                    sqlite3.OperationalError("database is locked"),
+                )
+            return "stored"
+
+        result = store._run_write_transaction(transient_operation)
+
+        self.assertEqual(result, "stored")
+        self.assertEqual(attempts, 3)
 
     def test_only_transferencias_client_can_ingest_transfer_trace_events(self) -> None:
         response = self.client.post(

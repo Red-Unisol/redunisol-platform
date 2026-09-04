@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import sleep
+from typing import Callable, TypeVar
 
 from sqlalchemy import (
     Boolean,
@@ -15,7 +17,10 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.types import JSON
 
@@ -43,6 +48,11 @@ from .workflow import (
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_T = TypeVar("_T")
+_SQLITE_WRITE_ATTEMPTS = 3
+_SQLITE_WRITE_RETRY_SECONDS = 0.05
 
 
 class Base(DeclarativeBase):
@@ -145,7 +155,8 @@ class SqlValidationStore:
     def bootstrap_clients(self, clients: list[BootstrapClient]) -> None:
         if not clients:
             return
-        with self._session_factory() as session:
+
+        def operation(session: Session) -> None:
             for bootstrap in clients:
                 row = session.get(ClientRow, bootstrap.client_id)
                 hashed_secret = hash_client_secret(bootstrap.client_secret)
@@ -163,7 +174,8 @@ class SqlValidationStore:
                     row.display_name = bootstrap.display_name
                     row.is_active = True
                     row.updated_at = _utc_now()
-            session.commit()
+
+        self._run_write_transaction(operation)
 
     def authenticate_client(self, client_id: str, client_secret: str) -> AuthenticatedClient:
         with self._session_factory() as session:
@@ -212,8 +224,7 @@ class SqlValidationStore:
         resolved_user_id = user_id or extract_user_id(payload)
         event_timestamp = extract_event_timestamp(payload)
 
-        with self._session_factory() as session:
-            self._prune_old_metamap_webhook_receipts(session)
+        def operation(session: Session) -> ValidationRecord:
             row = session.get(ValidationRow, verification_id)
             if row is None:
                 row = ValidationRow(
@@ -283,8 +294,10 @@ class SqlValidationStore:
                     )
                 if normalized_status == ValidationStatus.COMPLETED:
                     row.completed_at = event_timestamp or now
-            session.commit()
+            session.flush()
             return self._to_validation_record(row)
+
+        return self._run_write_transaction(operation)
 
     def record_metamap_webhook_receipt(
         self,
@@ -299,8 +312,7 @@ class SqlValidationStore:
         processing_status: str,
         processing_error: str | None = None,
     ) -> None:
-        with self._session_factory() as session:
-            self._prune_old_metamap_webhook_receipts(session)
+        def operation(session: Session) -> None:
             session.add(
                 MetamapWebhookReceiptRow(
                     event_name=event_name,
@@ -314,12 +326,11 @@ class SqlValidationStore:
                     payload=payload,
                 )
             )
-            session.commit()
+
+        self._run_write_transaction(operation)
 
     def list_metamap_webhook_receipts(self, limit: int = 50) -> list[dict]:
         with self._session_factory() as session:
-            if self._prune_old_metamap_webhook_receipts(session):
-                session.commit()
             stmt = (
                 select(MetamapWebhookReceiptRow)
                 .order_by(MetamapWebhookReceiptRow.id.desc())
@@ -331,32 +342,32 @@ class SqlValidationStore:
     def record_transfer_trace_events(
         self, *, events: list[dict], authenticated_client_id: str
     ) -> tuple[int, int]:
-        accepted = 0
-        duplicates = 0
-        with self._session_factory() as session:
+        def operation(session: Session) -> tuple[int, int]:
+            accepted = 0
+            duplicates = 0
             for event in events:
-                if session.get(TransferTraceEventRow, event["event_id"]) is not None:
+                values = {
+                    "event_id": event["event_id"],
+                    "session_id": event["session_id"],
+                    "client_instance_id": event["client_instance_id"],
+                    "authenticated_client_id": authenticated_client_id,
+                    "event_type": event["event_type"],
+                    "occurred_at": event["occurred_at"],
+                    "operator": event["operator"],
+                    "application_version": event["application_version"],
+                    "request_oid": event.get("request_oid"),
+                    "mode": event.get("mode"),
+                    "severity": event["severity"],
+                    "data": event.get("data") or {},
+                }
+                result = session.execute(self._insert_trace_event_if_absent(values))
+                if result.rowcount == 1:
+                    accepted += 1
+                else:
                     duplicates += 1
-                    continue
-                session.add(
-                    TransferTraceEventRow(
-                        event_id=event["event_id"],
-                        session_id=event["session_id"],
-                        client_instance_id=event["client_instance_id"],
-                        authenticated_client_id=authenticated_client_id,
-                        event_type=event["event_type"],
-                        occurred_at=event["occurred_at"],
-                        operator=event["operator"],
-                        application_version=event["application_version"],
-                        request_oid=event.get("request_oid"),
-                        mode=event.get("mode"),
-                        severity=event["severity"],
-                        data=event.get("data") or {},
-                    )
-                )
-                accepted += 1
-            session.commit()
-        return accepted, duplicates
+            return accepted, duplicates
+
+        return self._run_write_transaction(operation)
 
     def search_transfer_trace_events(
         self,
@@ -405,8 +416,6 @@ class SqlValidationStore:
 
     def get_validation(self, verification_id: str) -> ValidationRecord:
         with self._session_factory() as session:
-            if self._prune_old_metamap_webhook_receipts(session):
-                session.commit()
             row = session.get(ValidationRow, verification_id)
             if row is None:
                 raise WorkflowError(f"Validacion {verification_id} inexistente.")
@@ -419,7 +428,7 @@ class SqlValidationStore:
         reviewed_by_client_id: str,
         reviewed_by_display_name: str | None = None,
     ) -> ValidationRecord:
-        with self._session_factory() as session:
+        def operation(session: Session) -> ValidationRecord:
             row = session.get(ValidationRow, verification_id)
             if row is None:
                 raise WorkflowError(f"Validacion {verification_id} inexistente.")
@@ -427,8 +436,10 @@ class SqlValidationStore:
                 row.reviewed_at = _utc_now()
                 row.reviewed_by_client_id = reviewed_by_client_id
                 row.reviewed_by_display_name = reviewed_by_display_name
-                session.commit()
+                session.flush()
             return self._to_validation_record(row)
+
+        return self._run_write_transaction(operation)
 
     def update_validation_enrichment(
         self,
@@ -447,7 +458,7 @@ class SqlValidationStore:
         applicant_name: str | None = None,
         document_number: str | None = None,
     ) -> ValidationRecord:
-        with self._session_factory() as session:
+        def operation(session: Session) -> ValidationRecord:
             row = session.get(ValidationRow, verification_id)
             if row is None:
                 raise WorkflowError(f"Validacion {verification_id} inexistente.")
@@ -469,8 +480,10 @@ class SqlValidationStore:
             row.total_amount_value = total_amount_value or row.total_amount_value
             row.applicant_name = applicant_name or row.applicant_name
             row.document_number = document_number or row.document_number
-            session.commit()
+            session.flush()
             return self._to_validation_record(row)
+
+        return self._run_write_transaction(operation)
 
     def search_validations(
         self,
@@ -487,8 +500,6 @@ class SqlValidationStore:
         q: str | None = None,
     ) -> tuple[list[ValidationRecord], int]:
         with self._session_factory() as session:
-            if self._prune_old_metamap_webhook_receipts(session):
-                session.commit()
             conditions = self._build_validation_conditions(
                 verification_id=verification_id,
                 user_id=user_id,
@@ -539,14 +550,49 @@ class SqlValidationStore:
             rows = session.execute(stmt).scalars().all()
             return [self._to_validation_record(row) for row in rows]
 
-    def _prune_old_metamap_webhook_receipts(self, session: Session) -> bool:
+    def prune_old_metamap_webhook_receipts(self) -> int:
+        def operation(session: Session) -> int:
+            return self._prune_old_metamap_webhook_receipts(session)
+
+        return self._run_write_transaction(operation)
+
+    def _prune_old_metamap_webhook_receipts(self, session: Session) -> int:
         threshold = (datetime.now(timezone.utc) - METAMAP_WEBHOOK_RECEIPT_RETENTION).isoformat()
         result = session.execute(
             delete(MetamapWebhookReceiptRow).where(
                 MetamapWebhookReceiptRow.received_at < threshold
             )
         )
-        return bool(result.rowcount)
+        return max(result.rowcount or 0, 0)
+
+    def _insert_trace_event_if_absent(self, values: dict):
+        dialect = self._engine.dialect.name
+        if dialect == "sqlite":
+            return (
+                sqlite_insert(TransferTraceEventRow)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=[TransferTraceEventRow.event_id])
+            )
+        if dialect == "postgresql":
+            return postgresql_insert(TransferTraceEventRow).values(
+                **values
+            ).on_conflict_do_nothing(index_elements=[TransferTraceEventRow.event_id])
+        raise RuntimeError(f"Unsupported SQL dialect for trace idempotency: {dialect}")
+
+    def _run_write_transaction(self, operation: Callable[[Session], _T]) -> _T:
+        attempts = _SQLITE_WRITE_ATTEMPTS if self._engine.dialect.name == "sqlite" else 1
+        for attempt in range(attempts):
+            try:
+                with self._session_factory() as session:
+                    result = operation(session)
+                    session.commit()
+                    return result
+            except OperationalError as exc:
+                is_locked = "database is locked" in str(exc).lower()
+                if not is_locked or attempt + 1 >= attempts:
+                    raise
+                sleep(_SQLITE_WRITE_RETRY_SECONDS * (2**attempt))
+        raise RuntimeError("Unreachable database retry state.")
 
     def _build_validation_conditions(
         self,
