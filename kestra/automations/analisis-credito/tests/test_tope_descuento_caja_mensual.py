@@ -518,6 +518,10 @@ class FlowContractTests(unittest.TestCase):
         self.assertIn("timeout: PT5H", flow)
         self.assertIn("id: invalid_cuil_count", flow)
         self.assertIn("id: rebuild_only", flow)
+        self.assertRegex(
+            flow,
+            r"id: rebuild_only\s+type: BOOLEAN\s+required: true\s+defaults: false",
+        )
         self.assertIn("REPORT_REBUILD_ONLY", flow)
 
     def test_run_month_validation(self) -> None:

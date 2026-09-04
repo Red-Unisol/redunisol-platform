@@ -30,7 +30,7 @@ inputs:
     description: Pausa entre consultas Caja. Por defecto 3 segundos.
   - id: rebuild_only
     type: BOOLEAN
-    required: false
+    required: true
     defaults: false
     description: Regenera el Excel desde un checkpoint completo sin consultar Caja.
 
