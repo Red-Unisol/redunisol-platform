@@ -21,6 +21,8 @@ Este corte deja resuelto:
 - listado, busqueda y fetch puntual de validaciones
 - bootstrap de clientes autenticados por rol
 - retencion de receipts/logs de MetaMap por 7 dias
+- limpieza de receipts al iniciar y luego cada hora, fuera del camino de las consultas
+- SQLite configurado en modo WAL, con espera y reintentos acotados ante contencion transitoria
 - tests de API y persistencia
 - eventos append-only de trazabilidad de transferencias, idempotentes por `event_id`
 - consulta de trazas por solicitud, sesion, instalacion, operador y tipo de evento
@@ -213,6 +215,11 @@ Filtros soportados:
 
 Devuelve la validacion consolidada para un `verification_id`, exclusivamente desde SQL.
 
+Cuando el runtime usa SQLite, el servidor habilita WAL para permitir lecturas mientras hay
+una escritura en curso. Las escrituras esperan hasta 10 segundos por un lock y se reintentan
+dos veces con backoff corto. La retencion de receipts sigue siendo de 7 dias, pero su limpieza
+se ejecuta al iniciar y una vez por hora; ningun endpoint de lectura dispara un `DELETE`.
+
 ## Compatibilidad y consistencia
 
 Se conservan las rutas, cabeceras de autenticacion, codigos HTTP, filtros y estructuras JSON existentes. El enriquecimiento externo pasa a ser eventualmente consistente: la respuesta del webhook puede contener inicialmente `null` en campos que solo existan en el recurso remoto, y las lecturas posteriores los exponen cuando termina el trabajo en segundo plano.
@@ -248,7 +255,8 @@ Devuelve receipts recientes de MetaMap para debugging.
 `POST /api/v1/transfer-trace-events` acepta lotes de hasta 100 eventos autenticados con el
 rol `transferencias_celesol`. La tabla `transfer_trace_events` es append-only y usa
 `event_id` como clave idempotente: reenviar el mismo evento lo cuenta como duplicado sin
-crear otra fila.
+crear otra fila. La insercion usa una unica operacion atomica `insert-if-absent`, incluso si
+dos requests concurrentes envian el mismo `event_id`.
 
 `GET /api/v1/transfer-trace-events` permite filtrar por `request_oid`, `session_id`,
 `client_instance_id`, `operator`, `event_type`, `occurred_from` y `occurred_to`, con

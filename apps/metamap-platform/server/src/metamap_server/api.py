@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -41,6 +42,7 @@ from .workflow import (
 
 
 logger = logging.getLogger(__name__)
+_RECEIPT_CLEANUP_INTERVAL_SECONDS = 60 * 60
 
 
 class TransferTraceEventInput(BaseModel):
@@ -102,8 +104,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(current_app: FastAPI):
         _queue_pending_enrichments(current_app)
-        yield
-        current_app.state.background_enricher.shutdown()
+        cleanup_task = asyncio.create_task(_run_periodic_receipt_cleanup(current_app))
+        try:
+            yield
+        finally:
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
+            except asyncio.CancelledError:
+                pass
+            current_app.state.background_enricher.shutdown()
 
     app = FastAPI(
         title="MetaMap Platform Server",
@@ -118,6 +128,7 @@ def create_app(
         sql_store = SqlValidationStore(engine)
         sql_store.init_schema()
         sql_store.bootstrap_clients(resolved_settings.bootstrap_clients)
+        sql_store.prune_old_metamap_webhook_receipts()
         app.state.validation_store = sql_store
     else:
         app.state.validation_store = store
@@ -621,3 +632,17 @@ def _queue_pending_enrichments(app: FastAPI) -> None:
             submitted,
             limit,
         )
+
+
+async def _run_periodic_receipt_cleanup(app: FastAPI) -> None:
+    prune = getattr(app.state.validation_store, "prune_old_metamap_webhook_receipts", None)
+    if not callable(prune):
+        return
+    while True:
+        await asyncio.sleep(_RECEIPT_CLEANUP_INTERVAL_SECONDS)
+        try:
+            deleted = await asyncio.to_thread(prune)
+            if deleted:
+                logger.info("Pruned expired MetaMap webhook receipts: deleted=%s", deleted)
+        except Exception:
+            logger.exception("Periodic MetaMap webhook receipt cleanup failed.")
