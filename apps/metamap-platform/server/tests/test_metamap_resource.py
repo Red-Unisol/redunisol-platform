@@ -4,7 +4,11 @@ import unittest
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
-from metamap_server.metamap_resource import MetaMapResourceClient, fetch_metamap_resource
+from metamap_server.metamap_resource import (
+    MetaMapResourceClient,
+    extract_validation_enrichment,
+    fetch_metamap_resource,
+)
 
 
 class _FakeResponse:
@@ -22,6 +26,108 @@ class _FakeResponse:
 
 
 class MetaMapResourceTests(unittest.TestCase):
+    def test_enrichment_uses_explicit_document_and_template_paths(self) -> None:
+        payload = {
+            "deviceFingerprint": {
+                "os": {"name": "Android"},
+                "documentId": "wrong-device-document-id",
+            },
+            "signedDocumentDetails": [
+                {
+                    "documentId": "wrong-pdf-document-id",
+                    "customVariables": {
+                        "request": {"title": "Solicitud", "value": "249200"},
+                        "loan": {"title": "NumeroPrestamo", "value": "1010999"},
+                        "requested": {
+                            "title": "Importe solicitado",
+                            "value": "$ 1.000.000,00",
+                        },
+                        "liquidated": {
+                            "title": "Importe liquidado",
+                            "value": "$ 1.200.000,00",
+                        },
+                        "total": {
+                            "title": "Importe total",
+                            "value": "$ 1.500.000,00",
+                        },
+                    },
+                }
+            ],
+            "documents": [
+                {
+                    "type": "national-id",
+                    "fields": {
+                        "documentNumber": {"value": "30111222"},
+                        "fullName": {"value": "Ada Lovelace"},
+                    },
+                }
+            ],
+        }
+
+        enrichment = extract_validation_enrichment(payload)
+
+        self.assertEqual(enrichment.request_number, "249200")
+        self.assertEqual(enrichment.loan_number, "1010999")
+        self.assertEqual(enrichment.document_number, "30111222")
+        self.assertEqual(enrichment.applicant_name, "Ada Lovelace")
+        self.assertEqual(enrichment.requested_amount_value, "1000000.00")
+        self.assertEqual(enrichment.liquidated_amount_value, "1200000.00")
+        self.assertEqual(enrichment.total_amount_value, "1500000.00")
+        self.assertEqual(enrichment.amount_value, "1500000.00")
+
+    def test_enrichment_prefers_metadata_and_ignores_ambiguous_global_keys(self) -> None:
+        payload = {
+            "metadata": {
+                "requestNumber": "249201",
+                "loanNumber": "1011000",
+                "requestedAmount": "100,00",
+                "liquidatedAmount": "120,00",
+                "totalAmount": "150,00",
+            },
+            "name": "Wrong root name",
+            "documentId": "wrong-root-document-id",
+            "amount": "999,00",
+            "documents": [
+                {
+                    "type": "national-id",
+                    "fields": {
+                        "documentNumber": {"value": "32123456"},
+                        "firstName": {"value": "Grace"},
+                        "surname": {"value": "Hopper"},
+                    },
+                }
+            ],
+        }
+
+        enrichment = extract_validation_enrichment(payload)
+
+        self.assertEqual(enrichment.request_number, "249201")
+        self.assertEqual(enrichment.loan_number, "1011000")
+        self.assertEqual(enrichment.applicant_name, "Grace Hopper")
+        self.assertEqual(enrichment.document_number, "32123456")
+        self.assertEqual(enrichment.requested_amount_value, "100.00")
+        self.assertEqual(enrichment.liquidated_amount_value, "120.00")
+        self.assertEqual(enrichment.total_amount_value, "150.00")
+
+    def test_enrichment_is_independent_of_payload_key_order(self) -> None:
+        fields = {
+            "documentNumber": {"value": "30111222"},
+            "fullName": {"value": "Ada Lovelace"},
+        }
+        first = {
+            "deviceFingerprint": {"os": {"name": "Android"}},
+            "documents": [{"type": "national-id", "fields": fields}],
+        }
+        second = {
+            "documents": [{"fields": fields, "type": "national-id"}],
+            "deviceFingerprint": {"os": {"name": "Android"}},
+        }
+
+        self.assertEqual(
+            extract_validation_enrichment(first),
+            extract_validation_enrichment(second),
+        )
+
     def test_fetch_resource_uses_client_credentials_jwt_when_available(self) -> None:
         requests = []
 

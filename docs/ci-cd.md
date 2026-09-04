@@ -101,8 +101,8 @@ Construye y despliega `apps/metamap-platform/server/` en
 
 Comportamiento:
 
-- corre automaticamente en push a `dev` cuando cambia el servidor o el workflow
-- desde `main` debe ejecutarse manualmente mediante `workflow_dispatch`
+- corre automaticamente en push a `main` o `dev` cuando cambia el servidor o el workflow
+- tambien admite ejecucion manual mediante `workflow_dispatch`
 - publica la imagen con tags `dev-<git-sha>` y `dev-latest` en GHCR
 - descifra el runtime env versionado y actualiza Docker Compose por SSH
 - valida primero `/health` dentro de la VPS y despues el healthcheck publico
@@ -113,7 +113,8 @@ distribuir despues el ZIP desktop. El cliente conserva eventos en su outbox si e
 de trazabilidad todavia no esta disponible, pero ese estado no debe mantenerse como forma
 normal de operacion.
 
-No existe deploy automatico de este servidor desde `main` ni deploy automatico a prod.
+El merge a `main` despliega automaticamente el runtime operativo actual. No existe un
+workflow separado de deploy a prod.
 
 Checkpoint historico del 2026-09-03: el run manual `33771696321` desplego desde `main` el
 server `0.7.0`, commit `1e47df0`, y se verificaron el healthcheck publico y la proteccion

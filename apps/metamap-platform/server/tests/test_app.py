@@ -548,6 +548,10 @@ class MetaMapServerApiTests(unittest.TestCase):
         )
         self.assertEqual(validation["amount_raw"], "$ 2.580.681,70")
         self.assertEqual(validation["amount_value"], "2580681.70")
+        self.assertEqual(validation["liquidated_amount_raw"], "$ 1.770.000,00")
+        self.assertEqual(validation["liquidated_amount_value"], "1770000.00")
+        self.assertEqual(validation["total_amount_raw"], "$ 2.580.681,70")
+        self.assertEqual(validation["total_amount_value"], "2580681.70")
 
     def test_internal_webhook_receipts_endpoint_prunes_logs_older_than_one_week(self) -> None:
         self._post_metamap_webhook(
@@ -773,12 +777,14 @@ class MetaMapServerApiTests(unittest.TestCase):
                 "title": "Importe total",
                 "value": amount_raw,
             }
-        if document_number is not None:
-            fields["variableKey11"] = {
-                "title": "Documento",
-                "value": document_number,
-            }
         payload = {"steps": [{"fields": fields}]}
-        if applicant_name is not None:
-            payload["applicantName"] = applicant_name
+        if applicant_name is not None or document_number is not None:
+            document_fields = {}
+            if applicant_name is not None:
+                document_fields["fullName"] = {"value": applicant_name}
+            if document_number is not None:
+                document_fields["documentNumber"] = {"value": document_number}
+            payload["documents"] = [
+                {"type": "national-id", "fields": document_fields}
+            ]
         return payload

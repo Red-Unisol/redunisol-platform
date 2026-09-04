@@ -76,6 +76,10 @@ class ValidationRow(Base):
     amount_value: Mapped[str | None] = mapped_column(String(64))
     requested_amount_raw: Mapped[str | None] = mapped_column(String(120))
     requested_amount_value: Mapped[str | None] = mapped_column(String(64))
+    liquidated_amount_raw: Mapped[str | None] = mapped_column(String(120))
+    liquidated_amount_value: Mapped[str | None] = mapped_column(String(64))
+    total_amount_raw: Mapped[str | None] = mapped_column(String(120))
+    total_amount_value: Mapped[str | None] = mapped_column(String(64))
     applicant_name: Mapped[str | None] = mapped_column(String(255))
     document_number: Mapped[str | None] = mapped_column(String(120))
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
@@ -188,6 +192,10 @@ class SqlValidationStore:
         amount_value: str | None = None,
         requested_amount_raw: str | None = None,
         requested_amount_value: str | None = None,
+        liquidated_amount_raw: str | None = None,
+        liquidated_amount_value: str | None = None,
+        total_amount_raw: str | None = None,
+        total_amount_value: str | None = None,
         applicant_name: str | None = None,
         document_number: str | None = None,
     ) -> ValidationRecord:
@@ -221,6 +229,10 @@ class SqlValidationStore:
                     amount_value=amount_value,
                     requested_amount_raw=requested_amount_raw,
                     requested_amount_value=requested_amount_value,
+                    liquidated_amount_raw=liquidated_amount_raw,
+                    liquidated_amount_value=liquidated_amount_value,
+                    total_amount_raw=total_amount_raw,
+                    total_amount_value=total_amount_value,
                     applicant_name=applicant_name,
                     document_number=document_number,
                     metadata_json=metadata,
@@ -248,6 +260,14 @@ class SqlValidationStore:
                 row.requested_amount_value = (
                     requested_amount_value or row.requested_amount_value
                 )
+                row.liquidated_amount_raw = (
+                    liquidated_amount_raw or row.liquidated_amount_raw
+                )
+                row.liquidated_amount_value = (
+                    liquidated_amount_value or row.liquidated_amount_value
+                )
+                row.total_amount_raw = total_amount_raw or row.total_amount_raw
+                row.total_amount_value = total_amount_value or row.total_amount_value
                 row.applicant_name = applicant_name or row.applicant_name
                 row.document_number = document_number or row.document_number
                 row.last_received_at = now
@@ -420,6 +440,10 @@ class SqlValidationStore:
         amount_value: str | None = None,
         requested_amount_raw: str | None = None,
         requested_amount_value: str | None = None,
+        liquidated_amount_raw: str | None = None,
+        liquidated_amount_value: str | None = None,
+        total_amount_raw: str | None = None,
+        total_amount_value: str | None = None,
         applicant_name: str | None = None,
         document_number: str | None = None,
     ) -> ValidationRecord:
@@ -435,6 +459,14 @@ class SqlValidationStore:
             row.requested_amount_value = (
                 requested_amount_value or row.requested_amount_value
             )
+            row.liquidated_amount_raw = (
+                liquidated_amount_raw or row.liquidated_amount_raw
+            )
+            row.liquidated_amount_value = (
+                liquidated_amount_value or row.liquidated_amount_value
+            )
+            row.total_amount_raw = total_amount_raw or row.total_amount_raw
+            row.total_amount_value = total_amount_value or row.total_amount_value
             row.applicant_name = applicant_name or row.applicant_name
             row.document_number = document_number or row.document_number
             session.commit()
@@ -562,6 +594,18 @@ class SqlValidationStore:
                     func.lower(
                         func.coalesce(ValidationRow.requested_amount_value, "")
                     ).like(pattern),
+                    func.lower(
+                        func.coalesce(ValidationRow.liquidated_amount_raw, "")
+                    ).like(pattern),
+                    func.lower(
+                        func.coalesce(ValidationRow.liquidated_amount_value, "")
+                    ).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.total_amount_raw, "")).like(
+                        pattern
+                    ),
+                    func.lower(func.coalesce(ValidationRow.total_amount_value, "")).like(
+                        pattern
+                    ),
                     func.lower(func.coalesce(ValidationRow.applicant_name, "")).like(pattern),
                     func.lower(func.coalesce(ValidationRow.document_number, "")).like(pattern),
                     func.lower(func.coalesce(ValidationRow.resource_url, "")).like(pattern),
@@ -583,6 +627,10 @@ class SqlValidationStore:
             amount_value=row.amount_value,
             requested_amount_raw=row.requested_amount_raw,
             requested_amount_value=row.requested_amount_value,
+            liquidated_amount_raw=row.liquidated_amount_raw,
+            liquidated_amount_value=row.liquidated_amount_value,
+            total_amount_raw=row.total_amount_raw,
+            total_amount_value=row.total_amount_value,
             applicant_name=row.applicant_name,
             document_number=row.document_number,
             metadata=row.metadata_json or {},
@@ -641,6 +689,10 @@ class SqlValidationStore:
             "amount_value": "VARCHAR(64)",
             "requested_amount_raw": "VARCHAR(120)",
             "requested_amount_value": "VARCHAR(64)",
+            "liquidated_amount_raw": "VARCHAR(120)",
+            "liquidated_amount_value": "VARCHAR(64)",
+            "total_amount_raw": "VARCHAR(120)",
+            "total_amount_value": "VARCHAR(64)",
             "applicant_name": "VARCHAR(255)",
             "document_number": "VARCHAR(120)",
             "reviewed_at": "VARCHAR(64)",
