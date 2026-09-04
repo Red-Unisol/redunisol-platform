@@ -64,3 +64,6 @@ jobs:
 
       - name: Build Consulta CUAD image
         run: docker build kestra/automations/analisis-credito/docker/consulta-cuad -t analisis-credito-consulta-cuad:test
+
+      - name: Build Consulta CUAD Masivo image
+        run: docker build kestra/automations/analisis-credito/docker/consulta-cuad-masivo -t analisis-credito-consulta-cuad-masivo:test

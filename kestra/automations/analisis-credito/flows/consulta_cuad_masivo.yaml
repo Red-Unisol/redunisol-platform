@@ -1,0 +1,106 @@
+id: consulta_cuad_masivo
+namespace: redunisol
+
+description: Consulta CUAD Santa Fe para un lote cargado en Excel y publica los resultados de la ejecucion.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: batch
+  domain: analisis-credito
+  integration: cuad
+  transport: browser-ocr
+
+inputs:
+  - id: archivo_cuiles
+    type: FILE
+    required: true
+    allowedFileExtensions:
+      - .xlsx
+      - .xlsm
+  - id: hoja
+    type: STRING
+    required: false
+  - id: columna
+    type: STRING
+    required: false
+  - id: limite
+    type: INT
+    defaults: 10
+  - id: incluir_movimientos
+    type: BOOLEAN
+    defaults: false
+  - id: demora_seconds
+    type: FLOAT
+    defaults: 12.0
+  - id: pausa_cada
+    type: INT
+    defaults: 50
+  - id: pausa_larga_seconds
+    type: FLOAT
+    defaults: 180.0
+
+tasks:
+  - id: ejecutar_consulta_cuad_masivo
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - consulta_cuad_masivo/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
+    containerImage: ghcr.io/red-unisol/analisis-credito-consulta-cuad-masivo:latest
+    inputFiles:
+      entrada.xlsx: "{{ inputs.archivo_cuiles }}"
+    outputFiles:
+      - salida/**
+    env:
+      CUAD_MASIVO_INPUT_FILE: entrada.xlsx
+      CUAD_MASIVO_OUTPUT_DIR: salida
+      CUAD_MASIVO_HOJA: "{{ inputs.hoja ?? '' }}"
+      CUAD_MASIVO_COLUMNA: "{{ inputs.columna ?? '' }}"
+      CUAD_MASIVO_LIMITE: "{{ inputs.limite }}"
+      CUAD_MASIVO_INCLUIR_MOVIMIENTOS: "{{ inputs.incluir_movimientos }}"
+      CUAD_MASIVO_DEMORA_SECONDS: "{{ inputs.demora_seconds }}"
+      CUAD_MASIVO_PAUSA_CADA: "{{ inputs.pausa_cada }}"
+      CUAD_MASIVO_PAUSA_LARGA_SECONDS: "{{ inputs.pausa_larga_seconds }}"
+      CUAD_LOGIN_URL: "https://www.santafe.gov.ar/cuad/"
+      CUAD_TIMEOUT_SECONDS: "60"
+      CUAD_MAX_INTENTOS: "25"
+      CUAD_CAPTCHA_LEN: "6"
+      CUAD_CAPTCHA_MODELO: "pixtral-12b-latest"
+      CUAD_CAPTCHA_ESCALA: "8"
+      CUAD_PRE_SUBMIT_DELAY_MS: "1500"
+      CUAD_POST_SUBMIT_WAIT_MS: "3000"
+      CUAD_USUARIO: "{{ secret('CUAD_USUARIO') }}"
+      CUAD_PASSWORD: "{{ secret('CUAD_PASSWORD') }}"
+      MISTRAL_API_KEY: "{{ secret('MISTRAL_API_KEY') }}"
+    commands:
+      - python -m consulta_cuad_masivo.kestra_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.vars.ok }}"
+  - id: completed
+    type: BOOLEAN
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.vars.completed }}"
+  - id: consulted_count
+    type: INT
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.vars.consulted_count }}"
+  - id: ok_count
+    type: INT
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.vars.ok_count }}"
+  - id: not_found_count
+    type: INT
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.vars.not_found_count }}"
+  - id: pending_retry_count
+    type: INT
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.vars.pending_retry_count }}"
+  - id: results_file
+    type: URI
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.outputFiles['salida/resultados.ndjson'] }}"
+  - id: totals_file
+    type: URI
+    value: "{{ outputs.ejecutar_consulta_cuad_masivo.outputFiles['salida/resultados_totales.xlsx'] }}"

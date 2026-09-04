@@ -13,6 +13,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `consulta_padron_a13`
 - `consulta_empleador`
 - `consulta_cuad`
+- `consulta_cuad_masivo`
 
 ## renovacion_cruz_del_eje
 
@@ -526,3 +527,42 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_cuad/**`
+
+## consulta_cuad_masivo
+
+Consulta CUAD para un lote cargado manualmente desde la ejecucion de Kestra.
+Recibe un Excel `.xlsx` o `.xlsm` con una columna `CUIL` o `CUIT`; permite
+elegir la hoja y la columna cuando no se detectan automaticamente.
+
+El lote se normaliza y deduplica antes de iniciar sesion. Por seguridad, el
+limite inicial es `10`, los movimientos detallados estan desactivados y el
+ritmo por defecto es una consulta cada 12 segundos, con una pausa de tres
+minutos cada 50 socios.
+
+### Salida
+
+La ejecucion conserva estos archivos para descargar desde Kestra:
+
+- `cuiles_normalizados.json`: lote final utilizado
+- `resultados.ndjson`: un registro por CUIL con el estado de la consulta
+- `resultados_totales.xlsx`: resultados de cupo y totales
+- `resultados_movimientos.xlsx`: solo si se activa `incluir_movimientos`
+
+Cada ejecucion es aislada. Si quedan resultados pendientes por un error de
+sesion o red, se debe descargar el NDJSON y usarlo para preparar una nueva
+corrida; esta primera version no comparte estado entre ejecuciones.
+
+### Variables y secrets
+
+Usa los mismos secrets de CUAD que el flow individual:
+
+- `CUAD_USUARIO`
+- `CUAD_PASSWORD`
+- `MISTRAL_API_KEY`
+
+El login es automatico por OCR con `pixtral-12b-latest`; no admite captcha
+manual porque el task corre en un contenedor sin interfaz grafica.
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/consulta_cuad_masivo/**`
