@@ -6,6 +6,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
+- `tope_descuento_caja_mensual`
 - `afip_contacto_por_dni`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
@@ -111,6 +112,60 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
+
+## tope_descuento_caja_mensual
+
+Genera el reporte privado mensual de topes de Caja y lo publica para management.
+
+### Universo
+
+El flow une y deduplica CUILs de dos fuentes:
+
+- Core/Vimarx: todos los prestamos vigentes o historicos cuyo padre de linea es
+  `LINEAS CAJA JUBILADOS_FIAT` (`LineaPrestamo.Superior.ID = 2756`). Este filtro
+  excluye las lineas de Caja Santa Fe, que pertenecen a otro padre.
+- Bitrix: jubilados provinciales de Cordoba, y pensionados de Cordoba cuyo banco
+  de cobro es Banco de la Provincia de Cordoba. Si el lead no contiene un CUIL
+  de 11 digitos, busca el CUIL en el contacto asociado.
+
+Los enums Bitrix se validan contra la metadata live antes de iniciar la tanda.
+Si no coinciden con los IDs esperados, el flow falla sin consultar Caja ni
+publicar archivos.
+
+### Ejecucion
+
+- corre el dia 1 de cada mes a las 05:00, hora de Buenos Aires
+- el schedule solo se despliega en produccion
+- reutiliza una sesion CIDI/Caja y la renueva cada 40 minutos o ante `401/403`
+- espera 3 segundos entre consultas
+- reintenta fallos tecnicos y frena ante `429` u 8 fallos consecutivos
+- guarda cada resultado en un checkpoint mensual append-only
+- una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
+
+Inputs manuales opcionales:
+
+- `run_month`: mes de checkpoint e historico, `YYYY-MM`
+- `limit`: cantidad maxima para una prueba; impide la publicacion
+- `pause_seconds`: pausa entre consultas Caja
+
+### Salidas
+
+```text
+/reports/analisis-credito/tope-descuento-caja/
+  ultimo.xlsx
+  historico/
+    YYYY-MM.xlsx
+  .state/
+    YYYY-MM.jsonl
+```
+
+El `.jsonl` no es visible en Filament. Los Excel se publican mediante reemplazo
+atomico solamente cuando no quedan CUILs pendientes.
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
+- `kestra/automations/analisis-credito/files/tope_descuento_caja_mensual/**`
 
 ## afip_contacto_por_dni
 

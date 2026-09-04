@@ -68,3 +68,25 @@ El flow `reporte_evaluacion_management` genera el acumulado desde octubre de 202
 ```
 
 Tambien puede iniciarse desde Kestra con inputs opcionales `from_month` y `to_month`, o mediante su webhook asincrono. El webhook acepta un objeto JSON opcional como `{"from_month":"2026-01","to_month":"2026-07"}`; sin body usa el periodo acumulado por defecto. Solo admite meses cerrados.
+
+## Topes mensuales de Caja
+
+El flow `tope_descuento_caja_mensual` corre el dia 1 de cada mes a las 05:00
+(hora de Buenos Aires). Toma los CUILs elegibles desde Core/Vimarx y Bitrix,
+consulta Caja una sola vez por CUIL deduplicado y publica:
+
+```text
+/srv/redunisol-reports/
+  analisis-credito/
+    tope-descuento-caja/
+      ultimo.xlsx
+      historico/
+        YYYY-MM.xlsx
+      .state/
+        YYYY-MM.jsonl
+```
+
+El checkpoint permite reanudar una corrida cortada sin repetir respuestas
+definitivas. Filament ignora `.jsonl`, por lo que el estado intermedio no aparece
+en **Gestion > Reportes**. Una corrida con `limit`, errores tecnicos pendientes o
+corte por rate limit no publica ni reemplaza los Excel visibles.
