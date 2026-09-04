@@ -41,6 +41,7 @@ from tope_descuento_caja_mensual.sources import (
     Candidate,
     SourceStats,
     VimarxClient,
+    is_valid_cuil,
     merge_candidates,
     normalize_cuil,
 )
@@ -126,6 +127,12 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(normalize_cuil(["", "27-22222222-3"]), "27222222223")
         self.assertEqual(normalize_cuil("12345678"), "")
 
+    def test_cuil_checksum_validation(self) -> None:
+        self.assertTrue(is_valid_cuil("20111111112"))
+        self.assertTrue(is_valid_cuil("27222222228"))
+        self.assertFalse(is_valid_cuil("27222222223"))
+        self.assertFalse(is_valid_cuil("12345678"))
+
     def test_merge_candidates_preserves_all_origins(self) -> None:
         merged = merge_candidates(
             [Candidate("20111111112", from_core=True, core_loan_ids={"10"})],
@@ -192,9 +199,9 @@ class CheckpointAndRunnerTests(unittest.TestCase):
             checkpoint.append(ResultRow("20111111112", "completed", "before"))
             caja = FakeCaja(
                 {
-                    "27222222223": [
+                    "27222222228": [
                         CajaTechnicalError("temporal"),
-                        CajaResult("27222222223", "Ana", "Perez", 100.0, 20.0),
+                        CajaResult("27222222228", "Ana", "Perez", 100.0, 20.0),
                     ],
                     "20333333334": [CajaPersonNotFoundError("no encontrada")],
                 }
@@ -203,7 +210,7 @@ class CheckpointAndRunnerTests(unittest.TestCase):
             summary = run_candidates(
                 [
                     Candidate("20111111112"),
-                    Candidate("27222222223"),
+                    Candidate("27222222228"),
                     Candidate("20333333334"),
                 ],
                 checkpoint,
@@ -218,7 +225,35 @@ class CheckpointAndRunnerTests(unittest.TestCase):
             self.assertEqual(summary.queried, 2)
             self.assertEqual(summary.completed, 1)
             self.assertEqual(summary.not_found, 1)
+            self.assertEqual(summary.invalid_cuils, 0)
             self.assertEqual(sleeps, [5, 3])
+
+    def test_invalid_cuil_is_reported_without_querying_caja_or_consuming_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Checkpoint(Path(directory) / "state.jsonl")
+            checkpoint.append(ResultRow("27222222223", "not_found", "before"))
+            caja = FakeCaja(
+                {
+                    "20111111112": [
+                        CajaResult("20111111112", "Ana", "Perez", 100.0, 20.0)
+                    ]
+                }
+            )
+            summary = run_candidates(
+                [Candidate("27222222223"), Candidate("20111111112")],
+                checkpoint,
+                caja=caja,
+                now=lambda: datetime(2026, 8, 28, 12, 0),
+                sleep=lambda _: None,
+                limit=1,
+            )
+            latest = checkpoint.latest()
+            self.assertEqual(caja.calls, ["20111111112"])
+            self.assertEqual(summary.queried, 1)
+            self.assertEqual(summary.invalid_cuils, 1)
+            self.assertEqual(summary.pending, 0)
+            self.assertEqual(latest["27222222223"].status, "invalid_cuil")
+            self.assertIn("digito verificador", latest["27222222223"].error)
 
     def test_limited_run_never_counts_as_complete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -231,7 +266,7 @@ class CheckpointAndRunnerTests(unittest.TestCase):
                 }
             )
             summary = run_candidates(
-                [Candidate("20111111112"), Candidate("27222222223")],
+                [Candidate("20111111112"), Candidate("20333333334")],
                 checkpoint,
                 caja=caja,
                 now=lambda: datetime(2026, 8, 28, 12, 0),
@@ -276,12 +311,19 @@ class ReportTests(unittest.TestCase):
                 core_loan_ids={"9"},
                 core_line_names={"Caja"},
                 bitrix_lead_ids={"11"},
-            )
+            ),
+            Candidate("27222222223", from_bitrix_jubilado=True),
         ]
         results = {
             "20111111112": ResultRow(
                 "20111111112", "completed", "2026-08-28T12:00:00", "Ana", "Perez", 10, 20
-            )
+            ),
+            "27222222223": ResultRow(
+                "27222222223",
+                "invalid_cuil",
+                "2026-08-28T12:00:00",
+                error="CUIL con digito verificador invalido.",
+            ),
         }
         workbook = build_workbook(
             candidates, results, SourceStats(core_rows=1), datetime(2026, 8, 28)
@@ -290,7 +332,9 @@ class ReportTests(unittest.TestCase):
         headers = [cell.value for cell in workbook["Resultados"][1]]
         self.assertIn("origen_core", headers)
         self.assertIn("origen_bitrix_jubilado", headers)
-        self.assertEqual(workbook["Resumen"].cell(3, 2).value, 1)
+        self.assertEqual(workbook["Resultados"].cell(3, 6).value, "invalid_cuil")
+        self.assertEqual(workbook["Resumen"].cell(3, 2).value, 2)
+        self.assertEqual(workbook["Resumen"].cell(6, 2).value, 1)
 
     def test_publish_is_atomic_and_uses_month_for_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -322,6 +366,7 @@ class FlowContractTests(unittest.TestCase):
         self.assertIn("schedule_scope: prod_only", flow)
         self.assertIn('"/srv/redunisol-reports:/reports"', flow)
         self.assertIn("timeout: PT5H", flow)
+        self.assertIn("id: invalid_cuil_count", flow)
 
     def test_run_month_validation(self) -> None:
         now = datetime(2026, 8, 28)

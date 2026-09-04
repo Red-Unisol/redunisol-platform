@@ -140,6 +140,8 @@ publicar archivos.
 - espera 3 segundos entre consultas
 - reintenta fallos tecnicos y frena ante `429` u 8 fallos consecutivos
 - guarda cada resultado en un checkpoint mensual append-only
+- conserva los CUILs con digito verificador invalido como `invalid_cuil` en el
+  checkpoint y en el Excel, sin enviarlos a Caja
 - una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
 
 Inputs manuales opcionales:

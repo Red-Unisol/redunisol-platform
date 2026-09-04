@@ -92,6 +92,9 @@ outputs:
   - id: queried_count
     type: INT
     value: "{{ outputs.generar_reporte.vars.queried_count }}"
+  - id: invalid_cuil_count
+    type: INT
+    value: "{{ outputs.generar_reporte.vars.invalid_cuil_count }}"
   - id: pending_count
     type: INT
     value: "{{ outputs.generar_reporte.vars.pending_count }}"

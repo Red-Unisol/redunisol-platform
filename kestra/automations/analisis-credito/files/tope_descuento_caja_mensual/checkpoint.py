@@ -21,7 +21,7 @@ class ResultRow:
 
     @property
     def resolved(self) -> bool:
-        return self.status in {"completed", "not_found"}
+        return self.status in {"completed", "not_found", "invalid_cuil"}
 
 
 class Checkpoint:
