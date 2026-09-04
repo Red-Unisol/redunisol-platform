@@ -116,6 +116,7 @@ export function useSolicitudDetailHydration({
           firmaDigitalmente: solicitud.firmaDigitalmente === true,
           ingresosConyuge: legacyValueToString(conyuge.ingresosMensuales),
           linea: lineaDescripcion,
+          lineaPrestamoLegacyOid: "",
           localidad: titular.localidad ?? "",
           localidadLaboral: economicosLaborales.domicilioLaboralLocalidad ?? "",
           montoAFinanciar: legacyValueToString(solicitud.montoAFinanciar),

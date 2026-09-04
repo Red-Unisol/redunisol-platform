@@ -544,7 +544,8 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
         defaultLineaOid={selectedLinea?.oid ?? undefined}
         lineas={lineas}
         onApply={(valores) => {
-          setValue("linea", valores.linea, { shouldValidate: true });
+          setValue("linea", valores.lineaOid, { shouldValidate: true });
+          setValue("lineaPrestamoLegacyOid", valores.lineaOid);
           setValue("montoAFinanciar", valores.montoAFinanciar);
           setValue("cuotas", valores.cuotas);
           setValue("cuotaResultante", valores.cuotaResultante);
