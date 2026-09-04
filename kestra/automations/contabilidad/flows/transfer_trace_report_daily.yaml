@@ -1,0 +1,74 @@
+id: transfer_trace_report_daily
+namespace: redunisol
+
+description: Genera el informe diario de solicitudes observadas, transferencias, cancelaciones y tiempos desde la trazabilidad central.
+
+labels:
+  env: prod
+  team: redunisol
+  domain: contabilidad
+  kind: schedule
+  integration: transferencias-metamap
+  schedule_scope: prod_only
+
+inputs:
+  - id: run_date
+    type: STRING
+    required: false
+    description: Fecha operativa YYYY-MM-DD. Si se omite, informa el día anterior en hora Argentina.
+
+tasks:
+  - id: generar_informe
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - transfer_trace_report/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/srv/redunisol-reports:/reports"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install kestra openpyxl requests > /dev/null
+    env:
+      TRANSFER_TRACE_REPORT_DATE: "{{ inputs.run_date ?? '' }}"
+      TRANSFER_TRACE_BASE_URL: "{{ envs.transferencias_server_base_url ?? 'https://kestra.redunisol.com.ar/metamap-platform' }}"
+      TRANSFER_TRACE_CLIENT_ID: "{{ secret('TRANSFERENCIAS_SERVER_CLIENT_ID') }}"
+      TRANSFER_TRACE_CLIENT_SECRET: "{{ secret('TRANSFERENCIAS_SERVER_CLIENT_SECRET') }}"
+      TRANSFER_TRACE_COVERAGE_FROM: "{{ envs.transfer_trace_coverage_from ?? '2026-09-03' }}"
+      TRANSFER_TRACE_REPORT_ROOT: "/reports"
+    commands:
+      - python -m transfer_trace_report.generate
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ outputs.generar_informe.vars.ok }}"
+  - id: run_date
+    type: STRING
+    value: "{{ outputs.generar_informe.vars.run_date }}"
+  - id: completed_request_count
+    type: INT
+    value: "{{ outputs.generar_informe.vars.completed_request_count }}"
+  - id: candidate_coverage_available
+    type: BOOLEAN
+    value: "{{ outputs.generar_informe.vars.candidate_coverage_available }}"
+  - id: not_transferred_via_app_count
+    type: STRING
+    value: "{{ outputs.generar_informe.vars.not_transferred_via_app_count ?? 'Sin cobertura' }}"
+  - id: latest_path
+    type: STRING
+    value: "{{ outputs.generar_informe.vars.latest_path }}"
+  - id: history_path
+    type: STRING
+    value: "{{ outputs.generar_informe.vars.history_path }}"
+  - id: metadata_path
+    type: STRING
+    value: "{{ outputs.generar_informe.vars.metadata_path }}"
+
+triggers:
+  - id: todos_los_dias
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 10 * * *"
+    timezone: America/Argentina/Buenos_Aires

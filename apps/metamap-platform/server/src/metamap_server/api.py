@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from time import monotonic
 from typing import Any
 
@@ -17,6 +18,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field, field_validator
 
 from . import __version__
 from .config import AppSettings, load_settings_from_env
@@ -39,6 +41,47 @@ from .workflow import (
 
 
 logger = logging.getLogger(__name__)
+
+
+class TransferTraceEventInput(BaseModel):
+    event_id: str = Field(min_length=1, max_length=120)
+    session_id: str = Field(min_length=1, max_length=120)
+    client_instance_id: str = Field(min_length=1, max_length=120)
+    event_type: str = Field(min_length=1, max_length=120)
+    occurred_at: datetime
+    operator: str = Field(min_length=1, max_length=255)
+    application_version: str = Field(min_length=1, max_length=64)
+    request_oid: str | None = Field(default=None, max_length=120)
+    mode: str | None = Field(default=None, max_length=32)
+    severity: str = Field(default="info", min_length=1, max_length=32)
+    data: dict = Field(default_factory=dict)
+
+    @field_validator(
+        "event_id",
+        "session_id",
+        "client_instance_id",
+        "event_type",
+        "operator",
+        "application_version",
+        "severity",
+    )
+    @classmethod
+    def require_nonempty_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El valor no puede estar vacio.")
+        return normalized
+
+    @field_validator("occurred_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at debe incluir zona horaria.")
+        return value
+
+
+class TransferTraceBatchInput(BaseModel):
+    events: list[TransferTraceEventInput] = Field(min_length=1, max_length=100)
 
 
 def get_store(app: FastAPI) -> Any:
@@ -242,6 +285,10 @@ def create_app(
                     amount_value=enrichment.amount_value,
                     requested_amount_raw=enrichment.requested_amount_raw,
                     requested_amount_value=enrichment.requested_amount_value,
+                    liquidated_amount_raw=enrichment.liquidated_amount_raw,
+                    liquidated_amount_value=enrichment.liquidated_amount_value,
+                    total_amount_raw=enrichment.total_amount_raw,
+                    total_amount_value=enrichment.total_amount_value,
                     applicant_name=enrichment.applicant_name,
                     document_number=enrichment.document_number,
                 )
@@ -427,6 +474,71 @@ def create_app(
         _ = current_client
         receipts = validation_store.list_metamap_webhook_receipts(limit=limit)
         return {"receipts": receipts}
+
+    @app.post("/api/v1/transfer-trace-events")
+    def ingest_transfer_trace_events(
+        batch: TransferTraceBatchInput,
+        validation_store: Any = Depends(_store_dependency),
+        current_client: AuthenticatedClient = Depends(_authenticate_client),
+    ) -> dict:
+        _require_client_role(current_client, ClientRole.TRANSFERENCIAS_CELESOL)
+        events = []
+        for event in batch.events:
+            item = event.model_dump(mode="json")
+            item["severity"] = item["severity"].strip().lower()
+            item["occurred_at"] = event.occurred_at.astimezone(timezone.utc).isoformat()
+            events.append(item)
+        accepted, duplicates = validation_store.record_transfer_trace_events(
+            events=events,
+            authenticated_client_id=current_client.client_id,
+        )
+        return {
+            "accepted": accepted,
+            "duplicates": duplicates,
+            "received": len(events),
+        }
+
+    @app.get("/api/v1/transfer-trace-events")
+    def list_transfer_trace_events(
+        limit: int = Query(100, ge=1, le=500),
+        offset: int = Query(0, ge=0, le=100_000),
+        request_oid: str | None = Query(None),
+        session_id: str | None = Query(None),
+        client_instance_id: str | None = Query(None),
+        operator: str | None = Query(None),
+        event_type: str | None = Query(None),
+        occurred_from: datetime | None = Query(None),
+        occurred_to: datetime | None = Query(None),
+        validation_store: Any = Depends(_store_dependency),
+        current_client: AuthenticatedClient = Depends(_authenticate_client),
+    ) -> dict:
+        _ = current_client
+        items, total = validation_store.search_transfer_trace_events(
+            limit=limit,
+            offset=offset,
+            request_oid=request_oid,
+            session_id=session_id,
+            client_instance_id=client_instance_id,
+            operator=operator,
+            event_type=event_type,
+            occurred_from=(
+                occurred_from.astimezone(timezone.utc).isoformat()
+                if occurred_from
+                else None
+            ),
+            occurred_to=(
+                occurred_to.astimezone(timezone.utc).isoformat() if occurred_to else None
+            ),
+        )
+        return {
+            "items": items,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "returned": len(items),
+                "total": total,
+            },
+        }
 
     return app
 

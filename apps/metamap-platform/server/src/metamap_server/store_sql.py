@@ -76,6 +76,10 @@ class ValidationRow(Base):
     amount_value: Mapped[str | None] = mapped_column(String(64))
     requested_amount_raw: Mapped[str | None] = mapped_column(String(120))
     requested_amount_value: Mapped[str | None] = mapped_column(String(64))
+    liquidated_amount_raw: Mapped[str | None] = mapped_column(String(120))
+    liquidated_amount_value: Mapped[str | None] = mapped_column(String(64))
+    total_amount_raw: Mapped[str | None] = mapped_column(String(120))
+    total_amount_value: Mapped[str | None] = mapped_column(String(64))
     applicant_name: Mapped[str | None] = mapped_column(String(255))
     document_number: Mapped[str | None] = mapped_column(String(120))
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
@@ -104,6 +108,24 @@ class MetamapWebhookReceiptRow(Base):
     headers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSON)
     received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
+
+
+class TransferTraceEventRow(Base):
+    __tablename__ = "transfer_trace_events"
+
+    event_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    client_instance_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    authenticated_client_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    occurred_at: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    received_at: Mapped[str] = mapped_column(String(64), default=_utc_now, nullable=False)
+    operator: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    application_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_oid: Mapped[str | None] = mapped_column(String(120), index=True)
+    mode: Mapped[str | None] = mapped_column(String(32))
+    severity: Mapped[str] = mapped_column(String(32), nullable=False)
+    data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
 class SqlValidationStore:
@@ -170,6 +192,10 @@ class SqlValidationStore:
         amount_value: str | None = None,
         requested_amount_raw: str | None = None,
         requested_amount_value: str | None = None,
+        liquidated_amount_raw: str | None = None,
+        liquidated_amount_value: str | None = None,
+        total_amount_raw: str | None = None,
+        total_amount_value: str | None = None,
         applicant_name: str | None = None,
         document_number: str | None = None,
     ) -> ValidationRecord:
@@ -203,6 +229,10 @@ class SqlValidationStore:
                     amount_value=amount_value,
                     requested_amount_raw=requested_amount_raw,
                     requested_amount_value=requested_amount_value,
+                    liquidated_amount_raw=liquidated_amount_raw,
+                    liquidated_amount_value=liquidated_amount_value,
+                    total_amount_raw=total_amount_raw,
+                    total_amount_value=total_amount_value,
                     applicant_name=applicant_name,
                     document_number=document_number,
                     metadata_json=metadata,
@@ -230,6 +260,14 @@ class SqlValidationStore:
                 row.requested_amount_value = (
                     requested_amount_value or row.requested_amount_value
                 )
+                row.liquidated_amount_raw = (
+                    liquidated_amount_raw or row.liquidated_amount_raw
+                )
+                row.liquidated_amount_value = (
+                    liquidated_amount_value or row.liquidated_amount_value
+                )
+                row.total_amount_raw = total_amount_raw or row.total_amount_raw
+                row.total_amount_value = total_amount_value or row.total_amount_value
                 row.applicant_name = applicant_name or row.applicant_name
                 row.document_number = document_number or row.document_number
                 row.last_received_at = now
@@ -290,6 +328,81 @@ class SqlValidationStore:
             rows = session.execute(stmt).scalars().all()
             return [self._serialize_metamap_webhook_receipt(row) for row in rows]
 
+    def record_transfer_trace_events(
+        self, *, events: list[dict], authenticated_client_id: str
+    ) -> tuple[int, int]:
+        accepted = 0
+        duplicates = 0
+        with self._session_factory() as session:
+            for event in events:
+                if session.get(TransferTraceEventRow, event["event_id"]) is not None:
+                    duplicates += 1
+                    continue
+                session.add(
+                    TransferTraceEventRow(
+                        event_id=event["event_id"],
+                        session_id=event["session_id"],
+                        client_instance_id=event["client_instance_id"],
+                        authenticated_client_id=authenticated_client_id,
+                        event_type=event["event_type"],
+                        occurred_at=event["occurred_at"],
+                        operator=event["operator"],
+                        application_version=event["application_version"],
+                        request_oid=event.get("request_oid"),
+                        mode=event.get("mode"),
+                        severity=event["severity"],
+                        data=event.get("data") or {},
+                    )
+                )
+                accepted += 1
+            session.commit()
+        return accepted, duplicates
+
+    def search_transfer_trace_events(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        request_oid: str | None = None,
+        session_id: str | None = None,
+        client_instance_id: str | None = None,
+        operator: str | None = None,
+        event_type: str | None = None,
+        occurred_from: str | None = None,
+        occurred_to: str | None = None,
+    ) -> tuple[list[dict], int]:
+        conditions = []
+        for column, value in (
+            (TransferTraceEventRow.request_oid, request_oid),
+            (TransferTraceEventRow.session_id, session_id),
+            (TransferTraceEventRow.client_instance_id, client_instance_id),
+            (TransferTraceEventRow.operator, operator),
+            (TransferTraceEventRow.event_type, event_type),
+        ):
+            if value and value.strip():
+                conditions.append(column == value.strip())
+        if occurred_from:
+            conditions.append(TransferTraceEventRow.occurred_at >= occurred_from)
+        if occurred_to:
+            conditions.append(TransferTraceEventRow.occurred_at <= occurred_to)
+        with self._session_factory() as session:
+            stmt = select(TransferTraceEventRow)
+            count_stmt = select(func.count()).select_from(TransferTraceEventRow)
+            if conditions:
+                stmt = stmt.where(*conditions)
+                count_stmt = count_stmt.where(*conditions)
+            stmt = (
+                stmt.order_by(
+                    TransferTraceEventRow.occurred_at.desc(),
+                    TransferTraceEventRow.event_id.desc(),
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            rows = session.execute(stmt).scalars().all()
+            total = int(session.execute(count_stmt).scalar_one())
+            return [self._serialize_transfer_trace_event(row) for row in rows], total
+
     def get_validation(self, verification_id: str) -> ValidationRecord:
         with self._session_factory() as session:
             if self._prune_old_metamap_webhook_receipts(session):
@@ -327,6 +440,10 @@ class SqlValidationStore:
         amount_value: str | None = None,
         requested_amount_raw: str | None = None,
         requested_amount_value: str | None = None,
+        liquidated_amount_raw: str | None = None,
+        liquidated_amount_value: str | None = None,
+        total_amount_raw: str | None = None,
+        total_amount_value: str | None = None,
         applicant_name: str | None = None,
         document_number: str | None = None,
     ) -> ValidationRecord:
@@ -342,6 +459,14 @@ class SqlValidationStore:
             row.requested_amount_value = (
                 requested_amount_value or row.requested_amount_value
             )
+            row.liquidated_amount_raw = (
+                liquidated_amount_raw or row.liquidated_amount_raw
+            )
+            row.liquidated_amount_value = (
+                liquidated_amount_value or row.liquidated_amount_value
+            )
+            row.total_amount_raw = total_amount_raw or row.total_amount_raw
+            row.total_amount_value = total_amount_value or row.total_amount_value
             row.applicant_name = applicant_name or row.applicant_name
             row.document_number = document_number or row.document_number
             session.commit()
@@ -469,6 +594,18 @@ class SqlValidationStore:
                     func.lower(
                         func.coalesce(ValidationRow.requested_amount_value, "")
                     ).like(pattern),
+                    func.lower(
+                        func.coalesce(ValidationRow.liquidated_amount_raw, "")
+                    ).like(pattern),
+                    func.lower(
+                        func.coalesce(ValidationRow.liquidated_amount_value, "")
+                    ).like(pattern),
+                    func.lower(func.coalesce(ValidationRow.total_amount_raw, "")).like(
+                        pattern
+                    ),
+                    func.lower(func.coalesce(ValidationRow.total_amount_value, "")).like(
+                        pattern
+                    ),
                     func.lower(func.coalesce(ValidationRow.applicant_name, "")).like(pattern),
                     func.lower(func.coalesce(ValidationRow.document_number, "")).like(pattern),
                     func.lower(func.coalesce(ValidationRow.resource_url, "")).like(pattern),
@@ -490,6 +627,10 @@ class SqlValidationStore:
             amount_value=row.amount_value,
             requested_amount_raw=row.requested_amount_raw,
             requested_amount_value=row.requested_amount_value,
+            liquidated_amount_raw=row.liquidated_amount_raw,
+            liquidated_amount_value=row.liquidated_amount_value,
+            total_amount_raw=row.total_amount_raw,
+            total_amount_value=row.total_amount_value,
             applicant_name=row.applicant_name,
             document_number=row.document_number,
             metadata=row.metadata_json or {},
@@ -519,6 +660,23 @@ class SqlValidationStore:
             "received_at": row.received_at,
         }
 
+    def _serialize_transfer_trace_event(self, row: TransferTraceEventRow) -> dict:
+        return {
+            "event_id": row.event_id,
+            "session_id": row.session_id,
+            "client_instance_id": row.client_instance_id,
+            "authenticated_client_id": row.authenticated_client_id,
+            "event_type": row.event_type,
+            "occurred_at": row.occurred_at,
+            "received_at": row.received_at,
+            "operator": row.operator,
+            "application_version": row.application_version,
+            "request_oid": row.request_oid,
+            "mode": row.mode,
+            "severity": row.severity,
+            "data": row.data or {},
+        }
+
     def _ensure_validation_columns(self) -> None:
         inspector = inspect(self._engine)
         if "validations" not in inspector.get_table_names():
@@ -531,6 +689,10 @@ class SqlValidationStore:
             "amount_value": "VARCHAR(64)",
             "requested_amount_raw": "VARCHAR(120)",
             "requested_amount_value": "VARCHAR(64)",
+            "liquidated_amount_raw": "VARCHAR(120)",
+            "liquidated_amount_value": "VARCHAR(64)",
+            "total_amount_raw": "VARCHAR(120)",
+            "total_amount_value": "VARCHAR(64)",
             "applicant_name": "VARCHAR(255)",
             "document_number": "VARCHAR(120)",
             "reviewed_at": "VARCHAR(64)",

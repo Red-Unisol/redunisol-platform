@@ -11,9 +11,11 @@ use reqwest::blocking::Client;
 use serde_json::{Value, json};
 
 use crate::{
+    cancellations::{TransferLeg, TransferLegKind},
     config::CoinagConfig,
     models::{CoinagTransferGuard, HydratedCase},
     ssh_transport::{SshHttpClient, TransportRequest, TransportResponse},
+    trace,
     validation::{format_money, normalize_digits, parse_decimal},
 };
 
@@ -54,6 +56,7 @@ pub struct TransferLookupResponse {
 #[derive(Clone, Debug)]
 pub struct CbuLookupResponse {
     pub cuil: Option<String>,
+    pub holder_name: Option<String>,
     pub account_type_code: Option<String>,
     pub account_type_label: Option<String>,
 }
@@ -141,6 +144,7 @@ impl CoinagClient {
             RequestBody::default(),
         )?;
         let coinag_cuil = extract_coinag_cuil(&response);
+        let holder_name = extract_coinag_holder_name(&response);
         let account_type_code = extract_cbu_account_type_code(&response);
         let account_type_label = account_type_code
             .as_deref()
@@ -157,6 +161,7 @@ impl CoinagClient {
         );
         Ok(CbuLookupResponse {
             cuil: coinag_cuil,
+            holder_name,
             account_type_code,
             account_type_label,
         })
@@ -260,6 +265,67 @@ impl CoinagClient {
         }
     }
 
+    pub fn fetch_transfer_guard_status_by_id(&self, id_trx_cliente: &str) -> CoinagTransferGuard {
+        match self.request_transfer_lookup_by_id(id_trx_cliente) {
+            Ok(response) => map_transfer_guard_status(&response.body),
+            Err(error) if is_transfer_not_found_error(&error) => CoinagTransferGuard::NotFound,
+            Err(error) => CoinagTransferGuard::Error {
+                detail: error.to_string(),
+            },
+        }
+    }
+
+    pub fn lookup_transfer_by_id_trx_cliente(
+        &self,
+        id_trx_cliente: &str,
+    ) -> Result<Option<TransferLookupResponse>> {
+        match self.request_transfer_lookup_by_id(id_trx_cliente) {
+            Ok(response) => Ok(Some(response)),
+            Err(error) if is_transfer_not_found_error(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn transfer_guard_from_lookup(response: &TransferLookupResponse) -> CoinagTransferGuard {
+        map_transfer_guard_status(&response.body)
+    }
+
+    pub fn verify_lookup_matches_leg(
+        response: &TransferLookupResponse,
+        leg: &TransferLeg,
+    ) -> Result<()> {
+        let root = response.body.get("response").unwrap_or(&response.body);
+        let cbu = find_value_by_key(root, "cbuCredito")
+            .or_else(|| {
+                root.get("credito")
+                    .and_then(|value| find_value_by_key(value, "cbu"))
+            })
+            .and_then(value_to_string)
+            .and_then(normalize_digits)
+            .ok_or_else(|| anyhow!("Coinag no devolvio el CBU credito de la pata existente."))?;
+        let cuit = find_value_by_key(root, "cuitCredito")
+            .or_else(|| {
+                root.get("credito")
+                    .and_then(|value| find_value_by_key(value, "cuit"))
+            })
+            .and_then(value_to_string)
+            .and_then(normalize_digits)
+            .ok_or_else(|| anyhow!("Coinag no devolvio el CUIT credito de la pata existente."))?;
+        let amount = find_value_by_key(root, "importe")
+            .and_then(value_to_string)
+            .and_then(|value| parse_decimal(&value))
+            .ok_or_else(|| anyhow!("Coinag no devolvio el importe de la pata existente."))?;
+        if normalize_digits(&leg.cbu).as_deref() != Some(cbu.as_str())
+            || normalize_digits(&leg.cuit).as_deref() != Some(cuit.as_str())
+            || leg.amount.round_dp(2) != amount.round_dp(2)
+        {
+            return Err(anyhow!(
+                "La pata existente en Coinag no coincide con CBU, CUIT e importe del plan actual."
+            ));
+        }
+        Ok(())
+    }
+
     pub fn lookup_transfer_by_id_coelsa(
         &self,
         id_coelsa: &str,
@@ -308,6 +374,17 @@ impl CoinagClient {
             normalized_request_number,
             id_trx_cliente
         );
+        self.request_transfer_lookup_by_id(&id_trx_cliente)
+            .map(|mut response| {
+                response.request_number = normalized_request_number;
+                response
+            })
+    }
+
+    fn request_transfer_lookup_by_id(
+        &self,
+        id_trx_cliente: &str,
+    ) -> Result<TransferLookupResponse> {
         let body = self.request_authorized_json(
             Method::GET,
             format!(
@@ -318,13 +395,18 @@ impl CoinagClient {
             RequestBody::default(),
         )?;
         Ok(TransferLookupResponse {
-            request_number: normalized_request_number,
-            id_trx_cliente,
+            request_number: String::new(),
+            id_trx_cliente: id_trx_cliente.to_owned(),
             body,
         })
     }
 
     pub fn build_transfer_payload(&self, case: &HydratedCase) -> Result<Value> {
+        if crate::cancellations::is_candidate(&case.core) {
+            return Err(anyhow!(
+                "Una cancelacion debe ejecutarse por patas; se rechazo el payload unico."
+            ));
+        }
         let cuit_debito = normalize_digits(self.config.cuit_debito.as_str())
             .ok_or_else(|| anyhow!("TRANSFERENCIAS_COINAG_CUIT_DEBITO no es valido."))?;
         let cbu_debito = normalize_digits(self.config.cbu_debito.as_str())
@@ -368,6 +450,66 @@ impl CoinagClient {
             "importe": amount.round_dp(2).to_string(),
             "descripcion": self.config.descripcion,
         }))
+    }
+
+    pub fn build_transfer_leg_payload(
+        &self,
+        case: &HydratedCase,
+        leg: &TransferLeg,
+    ) -> Result<Value> {
+        let cuit_debito = normalize_digits(self.config.cuit_debito.as_str())
+            .ok_or_else(|| anyhow!("TRANSFERENCIAS_COINAG_CUIT_DEBITO no es valido."))?;
+        let cbu_debito = normalize_digits(self.config.cbu_debito.as_str())
+            .ok_or_else(|| anyhow!("TRANSFERENCIAS_COINAG_CBU_DEBITO no es valido."))?;
+        let titular_debito = self.config.titular_debito.trim();
+        if titular_debito.is_empty() {
+            return Err(anyhow!(
+                "TRANSFERENCIAS_COINAG_TITULAR_DEBITO es obligatorio."
+            ));
+        }
+        Ok(json!({
+            "idTrxCliente": self.build_cancellation_id_trx_cliente(case.request_oid(), leg)?,
+            "cuitDebito": cuit_debito,
+            "cbuDebito": cbu_debito,
+            "titularDebito": titular_debito,
+            "cuitCredito": leg.cuit,
+            "cbuCredito": leg.cbu,
+            "concepto": self.config.concepto,
+            "importe": leg.amount.round_dp(2).to_string(),
+            "descripcion": self.config.descripcion,
+        }))
+    }
+
+    pub fn build_cancellation_id_trx_cliente(
+        &self,
+        request_number: &str,
+        leg: &TransferLeg,
+    ) -> Result<String> {
+        let empresa = normalize_digits(self.config.id_empresa.as_str()).ok_or_else(|| {
+            anyhow!("TRANSFERENCIAS_COINAG_ID_EMPRESA es obligatorio para cancelaciones.")
+        })?;
+        let request = normalize_digits(request_number)
+            .ok_or_else(|| anyhow!("Numero de solicitud invalido."))?;
+        if request.len() > 8 {
+            return Err(anyhow!(
+                "La solicitud excede los 8 digitos admitidos para patas."
+            ));
+        }
+        let (kind, reference) = match leg.kind {
+            TransferLegKind::Member => ('1', 0_u64),
+            TransferLegKind::Creditor => {
+                let id = leg
+                    .key
+                    .strip_prefix("creditor:")
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .ok_or_else(|| anyhow!("Clave de acreedor invalida: {}", leg.key))?;
+                ('2', id)
+            }
+        };
+        if reference > 999_999 {
+            return Err(anyhow!("El ID de detalle excede 6 digitos: {reference}"));
+        }
+        Ok(format!("{empresa}{request:0>8}{kind}{reference:0>6}"))
     }
 
     fn fetch_saldo_actual(&self, cbu: &str) -> Result<Value> {
@@ -544,6 +686,16 @@ impl CoinagClient {
         let is_token_request =
             url.trim_end_matches('/') == self.config.token_url.trim_end_matches('/');
         if !is_token_request {
+            trace::record_audit(
+                "coinag_http_request",
+                None,
+                None,
+                json!({
+                    "method": method_name,
+                    "url": url,
+                    "body": String::from_utf8_lossy(&body.bytes),
+                }),
+            );
             log::info!(
                 target: "coinag_http",
                 "{}",
@@ -793,6 +945,25 @@ fn extract_coinag_cuil(body: &Value) -> Option<String> {
         })
 }
 
+fn extract_coinag_holder_name(body: &Value) -> Option<String> {
+    let response = body.get("response").unwrap_or(body);
+    response
+        .get("titulares")
+        .and_then(Value::as_array)
+        .and_then(|titulares| {
+            titulares.iter().find_map(|titular| {
+                ["razonSocial", "nombre", "denominacion", "titular"]
+                    .into_iter()
+                    .find_map(|key| titular.get(key).and_then(value_to_string))
+            })
+        })
+        .or_else(|| {
+            ["razonSocial", "nombre", "denominacion", "titular"]
+                .into_iter()
+                .find_map(|key| response.get(key).and_then(value_to_string))
+        })
+}
+
 fn extract_cbu_account_type_code(body: &Value) -> Option<String> {
     let response = body.get("response").unwrap_or(body);
     response
@@ -854,6 +1025,23 @@ fn value_to_string(value: &Value) -> Option<String> {
         Value::String(text) => Some(text.trim().to_owned()).filter(|text| !text.is_empty()),
         Value::Number(number) => Some(number.to_string()),
         Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn find_value_by_key<'a>(value: &'a Value, expected: &str) -> Option<&'a Value> {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(expected))
+            .map(|(_, value)| value)
+            .or_else(|| {
+                map.values()
+                    .find_map(|value| find_value_by_key(value, expected))
+            }),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|value| find_value_by_key(value, expected)),
         _ => None,
     }
 }
@@ -1066,6 +1254,17 @@ fn log_coinag_http_response(
     is_token_request: bool,
 ) {
     if is_token_request {
+        trace::record_audit(
+            "coinag_oauth_response",
+            None,
+            None,
+            json!({
+                "method": method,
+                "url": url,
+                "status": response.status.as_u16(),
+                "body_omitted": true,
+            }),
+        );
         log::info!(
             target: "coinag_http",
             "OAuth respondio status={} para {} {}. Body omitido por contener credenciales de sesion.",
@@ -1075,6 +1274,17 @@ fn log_coinag_http_response(
         );
         return;
     }
+    trace::record_audit(
+        "coinag_http_response",
+        None,
+        None,
+        json!({
+            "method": method,
+            "url": url,
+            "status": response.status.as_u16(),
+            "body": String::from_utf8_lossy(&response.body),
+        }),
+    );
     log::info!(
         target: "coinag_http",
         "{}",
@@ -1150,6 +1360,7 @@ mod tests {
         classify_coelsa_transfer_status, extract_cbu_account_type_code, map_transfer_guard_status,
     };
     use crate::{
+        cancellations::{TransferLeg, TransferLegKind},
         config::CoinagConfig,
         models::{CoreSnapshot, HydratedCase},
     };
@@ -1210,6 +1421,75 @@ mod tests {
             payload.get("importe").and_then(|value| value.as_str()),
             Some("800")
         );
+    }
+
+    #[test]
+    fn cancellation_ids_are_stable_and_distinguish_member_from_detail() {
+        let client = CoinagClient {
+            direct_http: None,
+            ssh_http: None,
+            config: CoinagConfig {
+                id_empresa: "12345".to_owned(),
+                ..Default::default()
+            },
+            token_cache: Arc::new(Mutex::new(TokenCache::default())),
+        };
+        let member = TransferLeg {
+            key: "member".to_owned(),
+            kind: TransferLegKind::Member,
+            amount: Decimal::new(1_335_000, 0),
+            cbu: "0000003100015780238648".to_owned(),
+            cuit: "20301112223".to_owned(),
+            holder_name: None,
+        };
+        let creditor = TransferLeg {
+            key: "creditor:1296".to_owned(),
+            kind: TransferLegKind::Creditor,
+            amount: Decimal::new(565_000, 0),
+            cbu: "0970099413001097400111".to_owned(),
+            cuit: "30625567382".to_owned(),
+            holder_name: Some("MUDON".to_owned()),
+        };
+
+        assert_eq!(
+            client
+                .build_cancellation_id_trx_cliente("246729", &member)
+                .unwrap(),
+            "12345002467291000000"
+        );
+        assert_eq!(
+            client
+                .build_cancellation_id_trx_cliente("246729", &creditor)
+                .unwrap(),
+            "12345002467292001296"
+        );
+    }
+
+    #[test]
+    fn existing_leg_must_match_destination_and_amount() {
+        let leg = TransferLeg {
+            key: "creditor:1296".to_owned(),
+            kind: TransferLegKind::Creditor,
+            amount: Decimal::new(565_000, 0),
+            cbu: "0970099413001097400111".to_owned(),
+            cuit: "30625567382".to_owned(),
+            holder_name: None,
+        };
+        let response = super::TransferLookupResponse {
+            request_number: String::new(),
+            id_trx_cliente: "id".to_owned(),
+            body: json!({
+                "response": {
+                    "credito": { "cbu": leg.cbu, "cuit": leg.cuit },
+                    "importe": "565000.00"
+                }
+            }),
+        };
+
+        CoinagClient::verify_lookup_matches_leg(&response, &leg).unwrap();
+        let mut changed = leg.clone();
+        changed.amount += Decimal::ONE;
+        assert!(CoinagClient::verify_lookup_matches_leg(&response, &changed).is_err());
     }
 
     #[test]

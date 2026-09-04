@@ -22,6 +22,8 @@ Este corte deja resuelto:
 - bootstrap de clientes autenticados por rol
 - retencion de receipts/logs de MetaMap por 7 dias
 - tests de API y persistencia
+- eventos append-only de trazabilidad de transferencias, idempotentes por `event_id`
+- consulta de trazas por solicitud, sesion, instalacion, operador y tipo de evento
 - CI de validacion y build de imagen
 - deploy automatico a `dev`
 
@@ -101,8 +103,14 @@ Los ejemplos versionados son:
 En GitHub Actions, la validacion de esos `.env.enc` usa `RUNTIME_ENV_KEY`
 desde el environment `vps-infra`.
 
-El deploy automatico `dev` usa el mismo environment `vps-infra`, publica una
-imagen en GHCR y actualiza el runtime remoto en `/opt/metamap-platform-server-dev`.
+El deploy usa el mismo environment `vps-infra`, publica una imagen en GHCR y actualiza el
+runtime remoto en `/opt/metamap-platform-server-dev`. Corre automaticamente cuando los
+cambios del servidor o de su workflow llegan a `main` o `dev`; tambien puede ejecutarse
+manualmente mediante `Deploy MetaMap Server Dev` con `workflow_dispatch`.
+
+Para cambios coordinados con el cliente desktop, desplegar primero el servidor y distribuir
+despues el ZIP de `transferencias-celesol`. Este es el runtime operativo publicado
+actualmente; no existe un workflow separado de deploy a produccion.
 
 ## Auth actual
 
@@ -112,6 +120,8 @@ Endpoints autenticados por cliente:
 - `GET /api/v1/validations/{verification_id}`
 - `POST /api/v1/validations/{verification_id}/review`
 - `GET /api/v1/internal/metamap/webhook-receipts`
+- `POST /api/v1/transfer-trace-events`
+- `GET /api/v1/transfer-trace-events`
 
 Cabeceras requeridas:
 
@@ -157,6 +167,10 @@ Respuesta tipo:
     "amount_value": "223456.78",
     "requested_amount_raw": "123.456,78",
     "requested_amount_value": "123456.78",
+    "liquidated_amount_raw": "200.000,00",
+    "liquidated_amount_value": "200000.00",
+    "total_amount_raw": "223.456,78",
+    "total_amount_value": "223456.78",
     "event_count": 1
   }
 }
@@ -184,6 +198,10 @@ Filtros soportados:
 - `amount_value`
 - `requested_amount_raw`
 - `requested_amount_value`
+- `liquidated_amount_raw`
+- `liquidated_amount_value`
+- `total_amount_raw`
+- `total_amount_value`
 - `event_name`
 - `normalized_status`
 - `q`
@@ -199,6 +217,17 @@ Devuelve la validacion consolidada para un `verification_id`, exclusivamente des
 
 Se conservan las rutas, cabeceras de autenticacion, codigos HTTP, filtros y estructuras JSON existentes. El enriquecimiento externo pasa a ser eventualmente consistente: la respuesta del webhook puede contener inicialmente `null` en campos que solo existan en el recurso remoto, y las lecturas posteriores los exponen cuando termina el trabajo en segundo plano.
 
+La proyeccion del recurso de MetaMap usa rutas deterministicas:
+
+- documento: `documents[*].fields.documentNumber.value`, priorizando el documento `national-id`
+- nombre: `fullName`, o `firstName` y `surname`, dentro del mismo documento
+- solicitud y prestamo: claves explicitas de `metadata`, con fallback a variables de template cuyos titulos coincidan exactamente bajo `steps[*].data.signedDocumentDetails[*].customVariables`
+- importes solicitado, liquidado y total: campos separados, desde `metadata` o desde esas mismas variables de template con titulos exactos
+
+`amount_raw` y `amount_value` se mantienen por compatibilidad y contienen, en orden de preferencia, el importe total, el liquidado o el solicitado. No se recorren claves globales genericas como `name`, `documentId` o `amount`.
+
+Por decision de negocio, `identityStatus` no interviene en la elegibilidad actual y este cambio no modifica ese comportamiento.
+
 ### `POST /api/v1/validations/{verification_id}/review`
 
 Marca la validacion como revisada.
@@ -213,6 +242,17 @@ Reglas actuales:
 ### `GET /api/v1/internal/metamap/webhook-receipts`
 
 Devuelve receipts recientes de MetaMap para debugging.
+
+### Trazabilidad de transferencias
+
+`POST /api/v1/transfer-trace-events` acepta lotes de hasta 100 eventos autenticados con el
+rol `transferencias_celesol`. La tabla `transfer_trace_events` es append-only y usa
+`event_id` como clave idempotente: reenviar el mismo evento lo cuenta como duplicado sin
+crear otra fila.
+
+`GET /api/v1/transfer-trace-events` permite filtrar por `request_oid`, `session_id`,
+`client_instance_id`, `operator`, `event_type`, `occurred_from` y `occurred_to`, con
+paginacion `limit`/`offset`. Las fechas de ocurrencia se normalizan a UTC al ingresar.
 
 ## Estructura
 

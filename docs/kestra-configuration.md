@@ -95,6 +95,9 @@ Ejemplos reales:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
 - `ENV_BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 - `SECRET_BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
 - `SECRET_BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
@@ -377,6 +380,9 @@ Referenciadas hoy desde los flows:
 - `bitrix24_deal_commercial_line_field`
 - `bitrix24_deal_round_robin_user_ids`
 - `bitrix24_deal_round_robin_lookback_days`
+- `bitrix24_deal_cordoba_jubilados_user_ids`
+- `bitrix24_deal_cordoba_unc_user_ids`
+- `bitrix24_deal_cordoba_general_user_ids`
 
 En la infraestructura actual corresponden a:
 
@@ -402,6 +408,9 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
 - `ENV_BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 
 En el pipeline actual:
@@ -747,6 +756,19 @@ Consecuencia practica:
 - cambiar una variable global de la instancia impacta potencialmente a cualquier flow que la consuma en cualquier namespace de esa instancia
 
 Esto no bloquea el modelo actual, pero si en el futuro dev y prod necesitan valores distintos dentro de la misma instancia, habra que definir una estrategia mas fina.
+
+## Runtime Del Informe De Transferencias
+
+El flow `kestra/automations/contabilidad/flows/transfer_trace_report_daily.yaml`
+usa:
+
+- `ENV_TRANSFERENCIAS_SERVER_BASE_URL`: base pública del MetaMap Platform Server
+- `ENV_TRANSFER_TRACE_COVERAGE_FROM`: primer día incluido al reconstruir el backlog
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_ID`: cliente autenticado del server
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_SECRET`: secreto del cliente autenticado
+
+Los valores reales no se copian al flow ni a esta documentación. El informe usa
+estas credenciales exclusivamente para leer `/api/v1/transfer-trace-events`.
 
 ## Referencias
 

@@ -548,6 +548,10 @@ class MetaMapServerApiTests(unittest.TestCase):
         )
         self.assertEqual(validation["amount_raw"], "$ 2.580.681,70")
         self.assertEqual(validation["amount_value"], "2580681.70")
+        self.assertEqual(validation["liquidated_amount_raw"], "$ 1.770.000,00")
+        self.assertEqual(validation["liquidated_amount_value"], "1770000.00")
+        self.assertEqual(validation["total_amount_raw"], "$ 2.580.681,70")
+        self.assertEqual(validation["total_amount_value"], "2580681.70")
 
     def test_internal_webhook_receipts_endpoint_prunes_logs_older_than_one_week(self) -> None:
         self._post_metamap_webhook(
@@ -596,6 +600,79 @@ class MetaMapServerApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(wrong_secret.status_code, 401)
+
+    def test_transfer_trace_events_are_append_only_idempotent_and_searchable(self) -> None:
+        event = {
+            "event_id": "event-001",
+            "session_id": "session-001",
+            "client_instance_id": "desktop-001",
+            "event_type": "transfer_started",
+            "occurred_at": "2026-08-31T15:46:00-03:00",
+            "operator": "operador-test",
+            "application_version": "1.10.0",
+            "request_oid": "248871",
+            "mode": "manual",
+            "severity": "info",
+            "data": {"credit_line_id": 2684},
+        }
+        headers = self._client_headers(ClientRole.TRANSFERENCIAS_CELESOL)
+        first = self.client.post(
+            "/api/v1/transfer-trace-events",
+            json={"events": [event]},
+            headers=headers,
+        )
+        duplicate = self.client.post(
+            "/api/v1/transfer-trace-events",
+            json={"events": [event]},
+            headers=headers,
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), {"accepted": 1, "duplicates": 0, "received": 1})
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(
+            duplicate.json(), {"accepted": 0, "duplicates": 1, "received": 1}
+        )
+
+        response = self.client.get(
+            "/api/v1/transfer-trace-events",
+            params={"request_oid": "248871", "event_type": "transfer_started"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pagination"]["total"], 1)
+        stored = response.json()["items"][0]
+        self.assertEqual(stored["event_id"], "event-001")
+        self.assertEqual(stored["authenticated_client_id"], "transferencias-dev-1")
+        self.assertEqual(stored["data"], {"credit_line_id": 2684})
+        self.assertEqual(stored["occurred_at"], "2026-08-31T18:46:00+00:00")
+
+        outside_range = self.client.get(
+            "/api/v1/transfer-trace-events",
+            params={"occurred_from": "2026-09-01T00:00:00Z"},
+            headers=headers,
+        )
+        self.assertEqual(outside_range.status_code, 200)
+        self.assertEqual(outside_range.json()["pagination"]["total"], 0)
+
+    def test_only_transferencias_client_can_ingest_transfer_trace_events(self) -> None:
+        response = self.client.post(
+            "/api/v1/transfer-trace-events",
+            json={
+                "events": [
+                    {
+                        "event_id": "event-forbidden",
+                        "session_id": "session-001",
+                        "client_instance_id": "desktop-001",
+                        "event_type": "app_started",
+                        "occurred_at": "2026-08-31T15:46:00Z",
+                        "operator": "operador-test",
+                        "application_version": "1.10.0",
+                    }
+                ]
+            },
+            headers=self._client_headers(ClientRole.VALIDADOR),
+        )
+        self.assertEqual(response.status_code, 403)
 
     def test_webhook_signature_is_required_when_configured(self) -> None:
         payload = self._metamap_payload(
@@ -700,12 +777,14 @@ class MetaMapServerApiTests(unittest.TestCase):
                 "title": "Importe total",
                 "value": amount_raw,
             }
-        if document_number is not None:
-            fields["variableKey11"] = {
-                "title": "Documento",
-                "value": document_number,
-            }
         payload = {"steps": [{"fields": fields}]}
-        if applicant_name is not None:
-            payload["applicantName"] = applicant_name
+        if applicant_name is not None or document_number is not None:
+            document_fields = {}
+            if applicant_name is not None:
+                document_fields["fullName"] = {"value": applicant_name}
+            if document_number is not None:
+                document_fields["documentNumber"] = {"value": document_number}
+            payload["documents"] = [
+                {"type": "national-id", "fields": document_fields}
+            ]
         return payload

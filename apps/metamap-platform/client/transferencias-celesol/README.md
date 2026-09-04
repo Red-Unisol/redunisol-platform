@@ -12,7 +12,11 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
   - titularidad Coinag via CUIL/CUIT
-- transferencia automatica habilitada/pausada para lineas explicitamente autorizadas
+- configuracion unificada de lineas por ID estable, editable desde la aplicacion
+- cancelaciones detectadas por `MontoCancelaciones` o `DetalleFormaPago.Count()`, sin depender del nombre de la linea
+- cancelaciones ejecutadas como patas independientes al socio y a cada acreedor
+- whitelist dinamica por CUIT juridico + CBU, con validacion Coinag en cada operacion
+- transferencia automatica habilitada/pausada para lineas marcadas como automaticas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
 - si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
   - documento MetaMap vs core
@@ -21,6 +25,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - envio a Coinag si el runtime esta configurado
 - generacion de comprobante PDF simple
 - carga del comprobante confirmado en el core y marcado de la solicitud como `Pagada`
+- trazabilidad central append-only con outbox local durable e idempotencia por evento
 
 ## Variables de entorno minimas
 
@@ -62,13 +67,32 @@ Opcionales frecuentes:
 - `TRANSFERENCIAS_RECEIPTS_DIR`
 - `TRANSFERENCIAS_AUTO_RECEIPTS_DIR` default `receipts-automaticas`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
+- `TRANSFERENCIAS_LINEAS_CONFIG_PATH` default `lineas.toml` junto a la configuracion
+- `TRANSFERENCIAS_ACREEDORES_CONFIG_PATH` default `acreedores-confiables.toml`
+- `TRANSFERENCIAS_TRACE_OUTBOX_PATH` default `transfer-trace-outbox.jsonl`
 
-Automaticas:
+Configuracion de lineas:
 
-- `TRANSFERENCIAS_AUTO_LINEAS` allowlist exacta de lineas separadas por coma o punto y coma
-- `TRANSFERENCIAS_AUTO_LINEAS_PATH` archivo alternativo con una linea por renglon
+- `lineas.toml` reemplaza los archivos historicos `lineas_habilitadas` y `lineas_automaticas`
+- la identidad se resuelve exclusivamente por `LineaPrestamo.ID`; codigo y descripcion son informativos
+- si el archivo no existe, se consultan las lineas con solicitudes en los ultimos tres meses y todas se crean `inhabilitada`
+- `Configurar lineas` permite elegir `Inhabilitada`, `Habilitada` o `Automatica` por separado para creditos normales y cancelaciones
+- `Refrescar desde el core` conserva el modo de IDs que siguen activos, actualiza sus metadatos, incorpora IDs nuevos inhabilitados y retira los que ya no tienen actividad en la ventana de tres meses
+- el orden del archivo no modifica el comportamiento
+- el guardado crea `lineas.toml.bak` y reemplaza el archivo principal de forma atomica
 
-Si no se define ninguna linea automatica, el control habilitado/pausado queda deshabilitado.
+Cancelaciones:
+
+- una solicitud es candidata si `MontoCancelaciones != 0` o `DetalleFormaPago.Count() > 0`
+- antes de transferir deben coincidir la suma de detalles, `MontoCancelaciones`, `abs(Monto En Mano)`, `MontoAFinanciar` y el unico campo bancario no nulo
+- cada CBU se consulta siempre en Coinag; CUIT juridico, nombre y cuenta en pesos son bloqueantes
+- una entidad o un CBU nuevos generan advertencia y requieren confirmacion manual; la accion `Confiar acreedor` los agrega a la whitelist atomica
+- cualquier advertencia impide el modo automatico
+- se hace preflight de todas las patas antes del primer envio y cada pata tiene un `idTrxCliente` estable
+- un reintento solo omite una pata previa si Coinag confirma que CBU, CUIT e importe coinciden exactamente
+- el core se marca `Pagada` unicamente despues de confirmar todas las patas y generar el comprobante conjunto
+
+Si no hay ninguna linea marcada como automatica, el control habilitado/pausado queda deshabilitado.
 Cada apertura de la app comienza con las transferencias automaticas pausadas. Al habilitarlas, procesa una solicitud elegible por vez; al pausarlas, deja terminar la transferencia en curso y no comienza la siguiente.
 Las automaticas solo corren si la solicitud esta verde, sin warnings ni bloqueos, con MetaMap `completed`.
 Los comprobantes de automaticas se generan en `TRANSFERENCIAS_AUTO_RECEIPTS_DIR`, separado de los comprobantes manuales.
@@ -148,6 +172,27 @@ El script busca estos archivos locales dentro de `package-input/`:
 
 El zip se genera en `dist/`.
 
+La fuente local canonica para las credenciales y la passphrase de empaquetado es la
+seccion `Transferencias Celesol - entorno canonico de empaquetado` de `credentials.txt`.
+Ese archivo nunca se versiona. El insumo que consume el build es
+`package-input/transferencias.env.enc`, que tambien queda fuera de Git y debe conservarse
+cifrado; nunca distribuyas el entorno en texto plano.
+
+Antes de crear el ZIP, el script descifra temporalmente el entorno y valida el contrato
+operativo completo:
+
+- `TRANSFERENCIAS_CORE_BASE_URL=https://celesol.dyndns.org:5002` para `EvaluateList` y
+  `EvaluateObj`.
+- `TRANSFERENCIAS_MARK_PAID_ENDPOINT=https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada`.
+- `TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN` presente y no vacio.
+- `TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS=true`.
+
+Los puertos no son intercambiables: `5002` consulta el Core y `35010` registra el
+comprobante y cambia la solicitud a `Pagada`. Si falta cualquiera de estas variables o
+apunta a otro servicio, el build se cancela. La passphrase se toma de
+`TRANSFERENCIAS_CONFIG_PASSPHRASE` o se solicita de forma interactiva; el plaintext
+temporal se elimina siempre al terminar la validacion.
+
 Recomendacion importante para que el paquete funcione sin tocar rutas por instalacion:
 
 - en `transferencias.env.enc`, defini `TRANSFERENCIAS_COINAG_SSH_PRIVATE_KEY_PATH=ssh/coinag_tunnel_key`
@@ -180,6 +225,12 @@ Cada transferencia deja eventos JSON correlacionables en ese mismo archivo con e
 
 Los requests y responses operativos de Coinag tambien se registran completos con el target
 `coinag_http`. Se omiten solamente el body OAuth, tokens, passwords y claves SSH.
+
+Los eventos `transfer_audit` y las trazas HTTP de Coinag tambien se guardan primero en la
+outbox JSONL y se envian en lotes al server. Cada evento incluye IDs de evento, sesion e instalacion, operador, version,
+fecha local, solicitud, modo y datos operativos. Si el server no responde, la transferencia
+no se bloquea: los eventos permanecen pendientes y se reintentan durante la sesion o en el
+proximo arranque. Un marcador de sesion permite detectar cierres no limpios.
 
 ## Smoke en debug
 
@@ -251,3 +302,8 @@ La confirmacion por estado Coelsa reconoce:
 - `0601`, `0602`, `0612`, `2100` o `2000`: transferencia pendiente; continua el polling
 - estados explicitos de error/rechazo/no completada: transferencia rechazada
 - estados desconocidos: se mantienen pendientes para evitar falsos rechazos
+
+Desde 2.0.1, cada sesión emite además `transfer_candidate_observed` una sola vez por
+OID cuando una solicitud aparece en la lista `A Transferir`. Esta señal permite
+calcular el universo observado y las solicitudes que no fueron completadas vía app
+sin recurrir a fuentes externas.

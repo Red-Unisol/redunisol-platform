@@ -15,3 +15,6 @@ lineas_habilitadas.txt
 run-transferencias.local.ps1
 run-transferencias.ps1
 transferencias_realizadas.jsonl
+transfer-trace-outbox.jsonl
+transfer-trace-outbox.client-id
+transfer-trace-outbox.session

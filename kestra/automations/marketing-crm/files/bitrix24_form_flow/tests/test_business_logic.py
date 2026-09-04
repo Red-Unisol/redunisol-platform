@@ -535,7 +535,10 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(routing.reason, "province_cordoba")
         self.assertEqual(routing.bucket.key, "cordoba_general")
-        self.assertEqual(routing.bucket.seller_ids, (10451, 71159, 68579, 90231, 29))
+        self.assertEqual(
+            routing.bucket.seller_ids,
+            (10451, 71159, 68579, 90231, 29, 116561, 110059),
+        )
 
     def test_routing_still_requires_employment_status(self) -> None:
         config = load_config(self.env)
@@ -569,9 +572,18 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.routing_bucket_field, "ufCrmRouteBucket")
         self.assertEqual(
             config.deal.round_robin_user_ids,
-            (68579, 10451, 29, 90231, 71159, 113457, 113455),
+            (68579, 10451, 29, 90231, 71159, 113457, 113455, 116561, 110059),
         )
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
+        self.assertEqual(
+            config.deal.cordoba_jubilados_user_ids,
+            (10451, 71159, 68579, 90231, 29, 110059, 116561),
+        )
+        self.assertEqual(config.deal.cordoba_unc_user_ids, (53121,))
+        self.assertEqual(
+            config.deal.cordoba_general_user_ids,
+            (10451, 71159, 68579, 90231, 29, 116561, 110059),
+        )
         self.assertEqual(config.lead_statuses.new, "UC_5N2OEO")
         self.assertEqual(config.lead_statuses.preclassification, "NEW")
         self.assertEqual(config.lead_statuses.external_referral, "13")
@@ -4034,7 +4046,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual(
             bucket_query["filter"]["@assignedById"],
-            [68579, 10451, 29, 90231, 71159, 113457, 113455],
+            [68579, 10451, 29, 90231, 71159, 113457, 113455, 116561, 110059],
         )
         self.assertEqual(bucket_query["filter"]["=ufCrmRouteBucket"], "catamarca_general")
         self.assertEqual(bucket_query["start"], 0)
@@ -4962,7 +4974,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["routing_bucket"], "cordoba_general")
         self.assertEqual(result["assigned_by_id"], 10451)
         self.assertEqual(result["assignment_strategy"], "round_robin_initial")
-        self.assertEqual(result["configured_pool"], "10451,71159,68579,90231,29")
+        self.assertEqual(
+            result["configured_pool"],
+            "10451,71159,68579,90231,29,116561,110059",
+        )
         self.assertEqual(result["online_pool"], "10451")
         self.assertEqual(client.deals[940]["ufCrm_659EBB0445E8E"], "CBU")
 
@@ -4987,7 +5002,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "cbu_approved")
         self.assertEqual(result["routing_bucket"], "cordoba_general")
         self.assertEqual(result["assigned_by_id"], 71159)
-        self.assertEqual(result["configured_pool"], "10451,71159,68579,90231,29")
+        self.assertEqual(
+            result["configured_pool"],
+            "10451,71159,68579,90231,29,116561,110059",
+        )
         self.assertEqual(result["online_pool"], "71159")
         self.assertEqual(client.deals[941]["ufCrm_659EBB0445E8E"], "CBU")
 
@@ -5067,7 +5085,10 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["distribution_reason"], "assignment_queued")
         self.assertEqual(result["assigned_by_id"], 57)
         self.assertEqual(result["routing_bucket"], "cordoba_general")
-        self.assertEqual(result["configured_pool"], "10451,71159,68579,90231,29")
+        self.assertEqual(
+            result["configured_pool"],
+            "10451,71159,68579,90231,29,116561,110059",
+        )
         self.assertEqual(result["online_pool"], "")
         self.assertEqual(client.deals[948]["stageId"], "C1:KESTRA_QUEUE")
         self.assertEqual(client.deals[948]["assignedById"], 57)

@@ -1,8 +1,29 @@
-# Plan De Transferencias Automaticas
+# Plan Historico De Transferencias Automaticas
 
 Fecha: 2026-07-14
 
-Estado: plan inicial simplificado
+Estado: historico; implementacion original superada por Transferencias Celesol 2.0.0
+
+> Este documento conserva las decisiones iniciales y no debe usarse como runbook operativo.
+> El contrato vigente, la configuracion y los comandos de build estan en
+> `apps/metamap-platform/client/transferencias-celesol/README.md`.
+
+## Diferencias Del Estado Vigente
+
+Desde la version 2.0.0:
+
+- el cupo incremental de sesion fue reemplazado por el control global
+  `HABILITADAS / PAUSADAS`; cada apertura comienza pausada
+- las lineas se configuran por ID estable en `lineas.toml`, con permisos separados para
+  creditos normales y cancelaciones
+- el comprobante confirmado se registra en el core y la solicitud se marca `Pagada`;
+  la carga manual ya no es el camino normal
+- las cancelaciones se detectan por sus datos y se ejecutan como patas independientes al
+  socio y a cada acreedor, con preflight e idempotencia por pata
+- la auditoria local se replica al MetaMap Platform Server mediante una outbox durable e
+  IDs de evento idempotentes
+
+El resto del documento explica el punto de partida de julio de 2026.
 
 ## Objetivo
 

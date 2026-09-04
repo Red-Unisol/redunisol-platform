@@ -94,6 +94,33 @@ Importante:
 - por `push` sigue corriendo solo desde `main`
 - manualmente puede correrse desde `main` o `dev`, pero sigue aplicando sobre la misma instancia compartida en `/opt/kestra`
 
+### `deploy-metamap-server-dev.yml`
+
+Construye y despliega `apps/metamap-platform/server/` en
+`/opt/metamap-platform-server-dev`.
+
+Comportamiento:
+
+- corre automaticamente en push a `main` o `dev` cuando cambia el servidor o el workflow
+- tambien admite ejecucion manual mediante `workflow_dispatch`
+- publica la imagen con tags `dev-<git-sha>` y `dev-latest` en GHCR
+- descifra el runtime env versionado y actualiza Docker Compose por SSH
+- valida primero `/health` dentro de la VPS y despues el healthcheck publico
+  `https://kestra.redunisol.com.ar/metamap-platform/health`
+
+Para cambios coordinados con `transferencias-celesol`, desplegar primero el servidor y
+distribuir despues el ZIP desktop. El cliente conserva eventos en su outbox si el endpoint
+de trazabilidad todavia no esta disponible, pero ese estado no debe mantenerse como forma
+normal de operacion.
+
+El merge a `main` despliega automaticamente el runtime operativo actual. No existe un
+workflow separado de deploy a prod.
+
+Checkpoint historico del 2026-09-03: el run manual `33771696321` desplego desde `main` el
+server `0.7.0`, commit `1e47df0`, y se verificaron el healthcheck publico y la proteccion
+autenticada del endpoint de trazabilidad. Para conocer el estado actual, volver a consultar
+el runtime.
+
 ### `deploy-zipline-dev.yml`
 
 Despliega `platform/zipline/` en `/opt/zipline-dev`.
