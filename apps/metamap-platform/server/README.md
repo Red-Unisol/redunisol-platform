@@ -221,8 +221,8 @@ La proyeccion del recurso de MetaMap usa rutas deterministicas:
 
 - documento: `documents[*].fields.documentNumber.value`, priorizando el documento `national-id`
 - nombre: `fullName`, o `firstName` y `surname`, dentro del mismo documento
-- solicitud y prestamo: claves explicitas de `metadata`, con fallback a variables de template cuyos titulos coincidan exactamente
-- importes solicitado, liquidado y total: campos separados, desde `metadata` o variables de template con titulos exactos
+- solicitud y prestamo: claves explicitas de `metadata`, con fallback a variables de template cuyos titulos coincidan exactamente bajo `steps[*].data.signedDocumentDetails[*].customVariables`
+- importes solicitado, liquidado y total: campos separados, desde `metadata` o desde esas mismas variables de template con titulos exactos
 
 `amount_raw` y `amount_value` se mantienen por compatibilidad y contienen, en orden de preferencia, el importe total, el liquidado o el solicitado. No se recorren claves globales genericas como `name`, `documentId` o `amount`.
 
