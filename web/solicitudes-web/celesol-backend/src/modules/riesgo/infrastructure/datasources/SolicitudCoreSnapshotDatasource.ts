@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import type { DbClient } from "../../../../db/prisma";
+import { parseArgentineDecimalString } from "../../../solicitudes-core/application/services/formatFinSolicitudFields";
 import type { CalculadoraMutualSolicitudSnapshot } from "../services/CalculadoraMutualLegacyGateway";
 
 const solicitudSnapshotInclude = {
@@ -67,9 +68,9 @@ function mapSolicitudSnapshotRecord(
     antiguedadLaboral: record.datosLaborales?.antiguedadLaboralMeses ?? null,
     convenio: null,
     cuitTitular: record.titular?.cuit ?? null,
-    cuotaResultante: record.cuotaResultante
-      ? Number(record.cuotaResultante)
-      : null,
+    // La cuota se guarda en formato argentino ("677.916,20"), asi que Number()
+    // devolveria NaN. Se usa el mismo parser que el endpoint de firma.
+    cuotaResultante: parseArgentineDecimalString(record.cuotaResultante),
     cuotas: record.cuotas,
     cupoDisponibleVendedor: record.cupoTitular
       ? Number(record.cupoTitular)

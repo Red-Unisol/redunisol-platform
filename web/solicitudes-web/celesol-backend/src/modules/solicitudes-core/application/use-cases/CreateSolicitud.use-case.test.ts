@@ -152,6 +152,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
       workflowStateCatalog,
@@ -194,6 +195,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
       workflowStateCatalog,
@@ -225,6 +227,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
       workflowStateCatalog,
@@ -251,6 +254,7 @@ describe("CreateSolicitudUseCase", () => {
       findByLegacyUserAndOid: async () => null,
     };
     const useCase = new CreateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
       workflowStateCatalog,
@@ -279,6 +283,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
       workflowStateCatalog,
@@ -311,6 +316,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
       workflowStateCatalog,

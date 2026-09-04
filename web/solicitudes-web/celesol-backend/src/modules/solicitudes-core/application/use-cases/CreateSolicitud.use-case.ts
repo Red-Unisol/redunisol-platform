@@ -8,21 +8,25 @@ import {
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type { WorkflowStateCatalog } from "../../domain/services/WorkflowStateCatalog";
+import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 
 type Dependencies = {
   lineasPrestamoCatalog: LineasPrestamoCatalog;
   repository: SolicitudesCoreRepository;
+  simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
 };
 
 export class CreateSolicitudUseCase {
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly repository: SolicitudesCoreRepository;
+  private readonly simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   private readonly workflowStateCatalog: WorkflowStateCatalog;
 
   constructor(dependencies: Dependencies) {
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.repository = dependencies.repository;
+    this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.workflowStateCatalog = dependencies.workflowStateCatalog;
   }
 
@@ -54,6 +58,16 @@ export class CreateSolicitudUseCase {
     if (!initialState) {
       throw new WorkflowInitialStateNotConfiguredError();
     }
+
+    // La cuota y la fecha del primer vencimiento las calcula el legado, igual
+    // que hace Vimarx al guardar. Si no se pueden obtener se guarda lo que
+    // haya mandado el formulario (que puede venir del simulador) o null.
+    const simulacion = await this.simularCuotaSolicitud.execute({
+      cuotas: input.cuotas ?? null,
+      fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
+      lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
+      montoAFinanciar: input.montoAFinanciar ?? null,
+    });
 
     return this.repository.create({
       createdBy: input.createdBy,
@@ -99,9 +113,13 @@ export class CreateSolicitudUseCase {
         tipoGarantia: garantia.tipoGarantia ?? null,
         tipoRelacion: garantia.tipoRelacion ?? null,
       })),
-      cuotaResultante: input.cuotaResultante ?? null,
+      cuotaResultante:
+        simulacion?.cuotaResultante ?? input.cuotaResultante ?? null,
       cuotas: input.cuotas ?? null,
-      fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
+      fechaPrimerVencimiento:
+        simulacion?.fechaPrimerVencimiento ??
+        input.fechaPrimerVencimiento ??
+        null,
       datosLaborales: {
         actividadLaboral: input.datosLaborales.actividadLaboral ?? null,
         antiguedadLaboralMeses:
