@@ -192,6 +192,19 @@ export class SolicitudPrestamoDataIncompleteError extends SolicitudesError {
   }
 }
 
+export class SolicitudLineaPrestamoLegacyIdUnresolvedError extends SolicitudesError {
+  readonly lineaDescripcion: string;
+
+  constructor(lineaDescripcion: string) {
+    super(
+      `No se pudo determinar la línea "${lineaDescripcion}" en el sistema legado. No se creó el préstamo: crearlo sin resolverla lo daría de alta con otra línea y otra tasa.`,
+      409,
+    );
+    this.name = "SolicitudLineaPrestamoLegacyIdUnresolvedError";
+    this.lineaDescripcion = lineaDescripcion;
+  }
+}
+
 export class SolicitudTitularSocioLegacyRequiredError extends SolicitudesError {
   constructor() {
     super(

@@ -9,10 +9,12 @@ import type { SocioRepository } from "../../../socios/domain/repositories/SocioR
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
+import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import {
   ForbiddenSolicitudAccessError,
   SolicitudCoreNotFoundError,
   SolicitudLegacyOidAlreadyExistsError,
+  SolicitudLineaPrestamoLegacyIdUnresolvedError,
   SolicitudPrestamoDataIncompleteError,
   SolicitudTitularSocioLegacyRequiredError,
   SolicitudTitularSocioRequiredForWorkflowError,
@@ -39,6 +41,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
       },
     });
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway,
       repository,
@@ -57,8 +60,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
       cuotas: 6,
       fechaEmision: TODAY,
       integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
-      lineaPrestamo: "LP-1",
-      montoDeseado: "10000",
+      lineaPrestamo: "LP-REAL-1",
+      montoDeseado: 10000,
       vendedor: "347",
     });
     assert.deepEqual(receivedUpdate, {
@@ -75,6 +78,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("allows a system admin regardless of ownerId", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
@@ -97,6 +101,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudCoreNotFoundError when the solicitud does not exist", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository({ findById: async () => null }),
@@ -117,6 +122,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudLegacyOidAlreadyExistsError when legacyOid is already set", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository({
@@ -139,6 +145,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws ForbiddenSolicitudAccessError when the current user is not the solicitud owner", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
@@ -159,6 +166,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudPrestamoDataIncompleteError listing missing fields when montoAFinanciar and cuotas are null", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository({
@@ -188,6 +196,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioRequiredForWorkflowError when no socio matches the titular", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
@@ -208,6 +217,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioLegacyRequiredError when the socio has no nroSocioLegacy", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
@@ -231,6 +241,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("does not persist anything when the gateway rejects the creation", async () => {
     let updateCalled = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway({
         crear: async () => {
@@ -261,6 +272,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator user is not found", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository({ findById: async () => null }),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
@@ -281,6 +293,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator has no legacy user id", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
@@ -300,6 +313,37 @@ describe("CreatePrestamoLegacyUseCase", () => {
       SolicitudVendedorLegacyRequiredError,
     );
   });
+
+  it("does not call the gateway when the linea cannot be resolved in the legacy system", async () => {
+    let crearCalled = false;
+    const gateway = fakeGateway({
+      crear: async () => {
+        crearCalled = true;
+        return { id: "555000" };
+      },
+    });
+    const useCase = new CreatePrestamoLegacyUseCase({
+      authRepository: authRepository(),
+      gateway,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(null),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      SolicitudLineaPrestamoLegacyIdUnresolvedError,
+    );
+    // Lo importante no es solo que falle, sino que NO llegue a crear nada: un
+    // prestamo con la linea equivocada no da error y queda mal en silencio.
+    assert.equal(crearCalled, false);
+  });
 });
 
 function fakeGateway(
@@ -309,6 +353,17 @@ function fakeGateway(
     crear: async () => ({ id: "999" }),
     ...impl,
   } as unknown as CrearPrestamoGateway;
+}
+
+// Devuelve un id distinto del que guarda la solicitud ("LP-1") a proposito: asi
+// las aserciones sobre el payload prueban que se manda el id TRADUCIDO y no el
+// Oid de presolicitud que quedo guardado.
+function lineaPrestamoResolver(
+  resolved: string | null = "LP-REAL-1",
+): LineaPrestamoLegacyIdResolver {
+  return {
+    resolveByPresolicitudOid: async () => resolved,
+  };
 }
 
 function authRepository(

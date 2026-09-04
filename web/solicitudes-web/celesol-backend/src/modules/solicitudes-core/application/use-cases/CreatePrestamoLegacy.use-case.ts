@@ -7,11 +7,13 @@ import {
   ForbiddenSolicitudAccessError,
   SolicitudCoreNotFoundError,
   SolicitudLegacyOidAlreadyExistsError,
+  SolicitudLineaPrestamoLegacyIdUnresolvedError,
   SolicitudPrestamoDataIncompleteError,
   SolicitudTitularSocioLegacyRequiredError,
   SolicitudTitularSocioRequiredForWorkflowError,
   SolicitudVendedorLegacyRequiredError,
 } from "../../domain/solicitudes-core-errors";
+import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import type { AuthRepository } from "../../../auth/domain/repositories/AuthRepository";
 import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
@@ -20,6 +22,7 @@ import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/servi
 type Dependencies = {
   authRepository: Pick<AuthRepository, "findById">;
   gateway: CrearPrestamoGateway;
+  lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
   repository: SolicitudesCoreRepository;
   sociosRepository: SocioRepository;
   solicitudesLegacyGateway: Pick<SolicitudesLegacyGateway, "getVendedorLegacyId">;
@@ -30,6 +33,7 @@ export class CreatePrestamoLegacyUseCase {
   private readonly authRepository: Pick<AuthRepository, "findById">;
   private readonly findSolicitudTitularSocio: FindSolicitudTitularSocio;
   private readonly gateway: CrearPrestamoGateway;
+  private readonly lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
   private readonly repository: SolicitudesCoreRepository;
   private readonly solicitudesLegacyGateway: Pick<
     SolicitudesLegacyGateway,
@@ -43,6 +47,8 @@ export class CreatePrestamoLegacyUseCase {
       sociosRepository: dependencies.sociosRepository,
     });
     this.gateway = dependencies.gateway;
+    this.lineaPrestamoLegacyIdResolver =
+      dependencies.lineaPrestamoLegacyIdResolver;
     this.repository = dependencies.repository;
     this.solicitudesLegacyGateway = dependencies.solicitudesLegacyGateway;
     this.today = dependencies.today;
@@ -107,12 +113,28 @@ export class CreatePrestamoLegacyUseCase {
       throw new SolicitudVendedorLegacyRequiredError();
     }
 
+    // La solicitud guarda el Oid de la linea tal como se la ofrecimos al
+    // vendedor, que pertenece a otra tabla del legado y casi nunca coincide con
+    // el ID que espera CrearPrestamo. Se traduce aca, en el ultimo momento, y
+    // no al guardar la solicitud: el Oid guardado es el que se usa para
+    // reencontrar la linea en la lista del vendedor al editarla.
+    const lineaPrestamoLegacyId =
+      await this.lineaPrestamoLegacyIdResolver.resolveByPresolicitudOid(
+        solicitud.lineaPrestamoLegacyOid,
+      );
+
+    if (lineaPrestamoLegacyId === null) {
+      throw new SolicitudLineaPrestamoLegacyIdUnresolvedError(
+        solicitud.lineaPrestamoDescripcion,
+      );
+    }
+
     const result = await this.gateway.crear({
       cuotas: solicitud.cuotas as number,
       fechaEmision: this.today(),
       integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" }],
-      lineaPrestamo: solicitud.lineaPrestamoLegacyOid,
-      montoDeseado: String(solicitud.montoAFinanciar),
+      lineaPrestamo: lineaPrestamoLegacyId,
+      montoDeseado: solicitud.montoAFinanciar as number,
       vendedor: String(vendedorLegacyId),
     });
 
