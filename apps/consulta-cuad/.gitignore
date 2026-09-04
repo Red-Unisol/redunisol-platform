@@ -1,0 +1,12 @@
+corridas/
+
+# Credenciales y material de sesion local.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.txt
+cookies/
+cookies*.json
+*.cookie
