@@ -40,7 +40,7 @@ export type SimulacionAplicada = {
   cuotaResultante: string;
   cuotas: string;
   fechaPrimerVencimiento: string;
-  linea: string;
+  lineaOid: string;
   montoAFinanciar: string;
 };
 
@@ -267,7 +267,7 @@ export function SimuladorPrestamoModal({
   }, [open, lineaOid, montoAFinanciar, cuotas, fechaPrimerVencimiento]);
 
   function handleAplicar() {
-    if (!simulacion || !selectedLinea?.descripcion) {
+    if (!simulacion || !selectedLinea?.oid) {
       return;
     }
 
@@ -278,7 +278,7 @@ export function SimuladorPrestamoModal({
         fechaPrimerVencimiento ||
         simulacion.fechaPrimerVencimiento?.slice(0, 10) ||
         "",
-      linea: selectedLinea.descripcion,
+      lineaOid: selectedLinea.oid,
       montoAFinanciar: formatMoneyValue(String(simulacion.montoAFinanciar)),
     });
   }

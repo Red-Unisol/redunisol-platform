@@ -31,6 +31,17 @@ export function SolicitudMainSection({
   register,
   selectedLinea,
 }: SolicitudMainSectionProps) {
+  const lineaOptions = lineas.flatMap((linea) => {
+    const descripcion = linea.descripcion?.trim() ?? "";
+    const oid = linea.oid?.trim() ?? "";
+
+    if (!descripcion) {
+      return [];
+    }
+
+    return [{ label: descripcion, value: oid || descripcion }];
+  });
+
   return (
     <Section title="Solicitud">
       <div className="grid gap-3 md:grid-cols-2">
@@ -43,13 +54,7 @@ export function SolicitudMainSection({
                 <StyledSelect
                   disabled={isLoadingLineas}
                   onChange={field.onChange}
-                  options={lineas.flatMap((linea) => {
-                    const descripcion = linea.descripcion ?? "";
-
-                    return descripcion
-                      ? [{ label: descripcion, value: descripcion }]
-                      : [];
-                  })}
+                  options={lineaOptions}
                   placeholder={
                     isLoadingLineas
                       ? "Cargando líneas..."

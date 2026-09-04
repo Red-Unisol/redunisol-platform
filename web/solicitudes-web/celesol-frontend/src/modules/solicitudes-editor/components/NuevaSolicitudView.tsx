@@ -116,6 +116,16 @@ export function NuevaSolicitudView({
   isWorkflowTransitionDisabled,
 }: NuevaSolicitudViewProps) {
   const [isGarantiaModalOpen, setIsGarantiaModalOpen] = useState(false);
+  const lineaOptions = lineas.flatMap((linea) => {
+    const descripcion = linea.descripcion?.trim() ?? "";
+    const oid = linea.oid?.trim() ?? "";
+
+    if (!descripcion) {
+      return [];
+    }
+
+    return [{ label: descripcion, value: oid || descripcion }];
+  });
 
   return (
     <>
@@ -189,13 +199,7 @@ export function NuevaSolicitudView({
                         disabled={isLoadingLineas}
                         invalid={!!errors?.linea}
                         onChange={field.onChange}
-                        options={lineas.flatMap((linea) => {
-                          const descripcion = linea.descripcion ?? "";
-
-                          return descripcion
-                            ? [{ label: descripcion, value: descripcion }]
-                            : [];
-                        })}
+                        options={lineaOptions}
                         placeholder={
                           isLoadingLineas
                             ? "Cargando líneas..."
