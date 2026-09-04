@@ -27,6 +27,10 @@ class ValidationEnrichment:
     amount_value: str | None = None
     requested_amount_raw: str | None = None
     requested_amount_value: str | None = None
+    liquidated_amount_raw: str | None = None
+    liquidated_amount_value: str | None = None
+    total_amount_raw: str | None = None
+    total_amount_value: str | None = None
     applicant_name: str | None = None
     document_number: str | None = None
 
@@ -38,6 +42,10 @@ class ValidationEnrichment:
             amount_value=self.amount_value or fallback.amount_value,
             requested_amount_raw=self.requested_amount_raw or fallback.requested_amount_raw,
             requested_amount_value=self.requested_amount_value or fallback.requested_amount_value,
+            liquidated_amount_raw=self.liquidated_amount_raw or fallback.liquidated_amount_raw,
+            liquidated_amount_value=self.liquidated_amount_value or fallback.liquidated_amount_value,
+            total_amount_raw=self.total_amount_raw or fallback.total_amount_raw,
+            total_amount_value=self.total_amount_value or fallback.total_amount_value,
             applicant_name=self.applicant_name or fallback.applicant_name,
             document_number=self.document_number or fallback.document_number,
         )
@@ -246,7 +254,10 @@ def extract_validation_enrichment(payload: Any) -> ValidationEnrichment:
     request_number = _extract_request_number(payload)
     loan_number = _extract_loan_number(payload)
     requested_amount_raw = _extract_requested_amount(payload)
-    amount_raw = _extract_amount(payload, fallback=requested_amount_raw)
+    liquidated_amount_raw = _extract_liquidated_amount(payload)
+    total_amount_raw = _extract_total_amount(payload)
+    # Backwards-compatible aggregate used by the transfer client today.
+    amount_raw = total_amount_raw or liquidated_amount_raw or requested_amount_raw
     return ValidationEnrichment(
         request_number=request_number,
         loan_number=loan_number,
@@ -254,110 +265,143 @@ def extract_validation_enrichment(payload: Any) -> ValidationEnrichment:
         amount_value=_parse_decimal_string(amount_raw),
         requested_amount_raw=requested_amount_raw,
         requested_amount_value=_parse_decimal_string(requested_amount_raw),
+        liquidated_amount_raw=liquidated_amount_raw,
+        liquidated_amount_value=_parse_decimal_string(liquidated_amount_raw),
+        total_amount_raw=total_amount_raw,
+        total_amount_value=_parse_decimal_string(total_amount_raw),
         applicant_name=_extract_name(payload),
         document_number=_extract_document(payload),
     )
 
 
 def _extract_request_number(payload: Any) -> str | None:
-    return _find_labeled_value(payload, ["solicitud"]) or _search_key_contains(
-        payload,
-        ["solicitud", "request number", "request_number"],
-    )
+    return _metadata_value(
+        payload, ["requestNumber", "request_number", "solicitud"]
+    ) or _template_value(payload, ["solicitud"])
 
 
 def _extract_loan_number(payload: Any) -> str | None:
-    return _find_labeled_value(payload, ["numero prestamo", "numeroprestamo"]) or _search_exact(
-        payload,
-        ["loanNumber", "loan_number", "numeroPrestamo", "NumeroPrestamo"],
-    )
+    return _metadata_value(
+        payload, ["loanNumber", "loan_number", "numeroPrestamo"]
+    ) or _template_value(payload, ["numero prestamo", "numeroprestamo"])
 
 
 def _extract_requested_amount(payload: Any) -> str | None:
-    return _find_labeled_value(
-        payload,
-        ["importe solicitado", "monto solicitado"],
-        exact=True,
-    ) or _search_exact(
-        payload,
-        ["requestedAmount", "requested_amount", "importeSolicitado"],
-    )
+    return _metadata_value(
+        payload, ["requestedAmount", "requested_amount", "importeSolicitado"]
+    ) or _template_value(payload, ["importe solicitado", "monto solicitado"])
 
 
-def _extract_amount(payload: Any, *, fallback: str | None = None) -> str | None:
-    return _find_labeled_value(
+def _extract_liquidated_amount(payload: Any) -> str | None:
+    return _metadata_value(
         payload,
-        ["importe total", "monto total"],
-        exact=True,
-    ) or _find_labeled_value(
-        payload,
-        ["importe liquidado", "monto liquidado"],
-        exact=True,
-    ) or _search_exact(
-        payload,
-        ["totalAmount", "total_amount", "importeTotal", "liquidatedAmount", "liquidated_amount"],
-    ) or _find_labeled_value(
-        payload,
-        ["importe solicitado", "monto solicitado", "importe", "monto"],
-    ) or fallback or _search_exact(
-        payload,
-        ["amount", "requestedAmount", "requested_amount", "importeSolicitado"],
-    )
+        ["liquidatedAmount", "liquidated_amount", "importeLiquidado"],
+    ) or _template_value(payload, ["importe liquidado", "monto liquidado"])
+
+
+def _extract_total_amount(payload: Any) -> str | None:
+    return _metadata_value(
+        payload, ["totalAmount", "total_amount", "importeTotal"]
+    ) or _template_value(payload, ["importe total", "monto total"])
 
 
 def _extract_name(payload: Any) -> str | None:
-    direct_name = _search_exact(
-        payload,
-        ["name", "fullName", "full_name", "applicantName", "applicant_name"],
-    )
-    if direct_name:
-        return direct_name
-    first_name = _search_exact(payload, ["firstName", "first_name"])
-    last_name = _search_exact(payload, ["lastName", "last_name"])
-    if first_name and last_name:
-        return f"{first_name} {last_name}"
-    return first_name or last_name
+    document = _national_id_document(payload)
+    fields = document.get("fields", {}) if document else {}
+    full_name = _field_value(fields, ["fullName", "full_name"])
+    if full_name:
+        return full_name
+    first_name = _field_value(fields, ["firstName", "first_name"])
+    surname = _field_value(fields, ["surname", "lastName", "last_name"])
+    parts = [part for part in (first_name, surname) if part]
+    return " ".join(parts) or None
 
 
 def _extract_document(payload: Any) -> str | None:
-    return _find_labeled_value(
-        payload,
-        ["documento", "numero documento", "dni"],
-    ) or _search_exact(
-        payload,
-        [
-            "documentNumber",
-            "document_number",
-            "documentId",
-            "document_id",
-            "dni",
-            "nationalId",
-            "national_id",
-            "personalNumber",
-        ],
-    ) or _search_key_contains(
-        payload,
-        ["documento", "document number", "document_number", "dni"],
-    )
+    document = _national_id_document(payload)
+    fields = document.get("fields", {}) if document else {}
+    return _field_value(fields, ["documentNumber", "document_number"])
 
 
-def _find_labeled_value(
-    payload: Any,
-    keywords: list[str],
-    *,
-    exact: bool = False,
-) -> str | None:
-    for label, value in _iter_labeled_values(payload):
-        if _label_matches(label, keywords, exact=exact):
-            return value
+def _national_id_document(payload: Any) -> dict | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("documents"), list):
+        return None
+    documents = [item for item in payload["documents"] if isinstance(item, dict)]
+    for document in documents:
+        document_type = _value_to_string(document.get("type")) or _value_to_string(
+            document.get("documentType")
+        )
+        if _normalize_label(document_type or "") == "national id":
+            return document
+    # Some resource versions omit the document type. A document exposing the
+    # documented national-ID number field is still unambiguous.
+    for document in documents:
+        fields = document.get("fields")
+        if isinstance(fields, dict) and _field_value(
+            fields, ["documentNumber", "document_number"]
+        ):
+            return document
     return None
 
 
-def _label_matches(label: str, keywords: list[str], *, exact: bool = False) -> bool:
-    normalized = _normalize_label(label)
-    if exact:
-        return any(_normalize_label(keyword) == normalized for keyword in keywords)
-    return any(_normalize_label(keyword) in normalized for keyword in keywords)
+def _field_value(fields: Any, keys: list[str]) -> str | None:
+    if not isinstance(fields, dict):
+        return None
+    for key in keys:
+        if key in fields:
+            value = _value_to_string(fields[key])
+            if value:
+                return value
+    return None
+
+
+def _metadata_value(payload: Any, keys: list[str]) -> str | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("metadata"), dict):
+        return None
+    return _field_value(payload["metadata"], keys)
+
+
+def _template_value(payload: Any, titles: list[str]) -> str | None:
+    expected = {_normalize_label(title) for title in titles}
+    for field in _iter_template_fields(payload):
+        title = _value_to_string(field.get("title"))
+        if title and _normalize_label(title) in expected:
+            value = _value_to_string(field.get("value"))
+            if value:
+                return value
+            atomic_params = field.get("atomicFieldParams")
+            if isinstance(atomic_params, dict):
+                value = _value_to_string(atomic_params.get("value")) or _value_to_string(
+                    atomic_params.get("defaultValue")
+                )
+                if value:
+                    return value
+    return None
+
+
+def _iter_template_fields(payload: Any) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    fields: list[dict] = []
+    signed_details = payload.get("signedDocumentDetails")
+    if isinstance(signed_details, list):
+        for detail in signed_details:
+            if isinstance(detail, dict) and isinstance(detail.get("customVariables"), dict):
+                fields.extend(
+                    value
+                    for value in detail["customVariables"].values()
+                    if isinstance(value, dict)
+                )
+    steps = payload.get("steps")
+    if isinstance(steps, list):
+        for step in steps:
+            if isinstance(step, dict) and isinstance(step.get("fields"), dict):
+                fields.extend(
+                    value
+                    for value in step["fields"].values()
+                    if isinstance(value, dict)
+                )
+    return fields
 
 
 def _normalize_label(value: str) -> str:
@@ -369,68 +413,6 @@ def _normalize_label(value: str) -> str:
         .replace("-", " ")
         .split()
     )
-
-
-def _search_exact(payload: Any, keys: list[str]) -> str | None:
-    stack = [payload]
-    while stack:
-        current = stack.pop()
-        if isinstance(current, dict):
-            for key, value in current.items():
-                if key in keys:
-                    text = _value_to_string(value)
-                    if text:
-                        return text
-                if isinstance(value, (dict, list)):
-                    stack.append(value)
-        elif isinstance(current, list):
-            stack.extend(current)
-    return None
-
-
-def _search_key_contains(payload: Any, keywords: list[str]) -> str | None:
-    stack = [payload]
-    while stack:
-        current = stack.pop()
-        if isinstance(current, dict):
-            for key, value in current.items():
-                if _label_matches(key, keywords):
-                    text = _value_to_string(value)
-                    if text:
-                        return text
-                if isinstance(value, (dict, list)):
-                    stack.append(value)
-        elif isinstance(current, list):
-            stack.extend(current)
-    return None
-
-
-def _iter_labeled_values(payload: Any) -> list[tuple[str, str]]:
-    matches: list[tuple[str, str]] = []
-    stack = [payload]
-    while stack:
-        current = stack.pop()
-        if isinstance(current, dict):
-            label = None
-            for key in ("title", "label", "name"):
-                label = _value_to_string(current.get(key))
-                if label:
-                    break
-            value = _value_to_string(current.get("value"))
-            if not value:
-                atomic_field_params = current.get("atomicFieldParams")
-                if isinstance(atomic_field_params, dict):
-                    value = _value_to_string(atomic_field_params.get("value")) or _value_to_string(
-                        atomic_field_params.get("defaultValue")
-                    )
-            if label and value:
-                matches.append((label, value))
-            for value in current.values():
-                if isinstance(value, (dict, list)):
-                    stack.append(value)
-        elif isinstance(current, list):
-            stack.extend(current)
-    return matches
 
 
 def _value_to_string(value: Any) -> str | None:

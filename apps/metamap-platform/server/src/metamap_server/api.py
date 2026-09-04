@@ -285,6 +285,10 @@ def create_app(
                     amount_value=enrichment.amount_value,
                     requested_amount_raw=enrichment.requested_amount_raw,
                     requested_amount_value=enrichment.requested_amount_value,
+                    liquidated_amount_raw=enrichment.liquidated_amount_raw,
+                    liquidated_amount_value=enrichment.liquidated_amount_value,
+                    total_amount_raw=enrichment.total_amount_raw,
+                    total_amount_value=enrichment.total_amount_value,
                     applicant_name=enrichment.applicant_name,
                     document_number=enrichment.document_number,
                 )
