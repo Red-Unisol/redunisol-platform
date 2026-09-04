@@ -617,6 +617,7 @@ function buildUseCase(overrides?: {
   };
 
   return new UpdateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
     fieldAccessRulesRepository:
       overrides?.fieldAccessRulesRepository ?? buildFieldAccessRulesRepository(),
     lineasPrestamoCatalog:

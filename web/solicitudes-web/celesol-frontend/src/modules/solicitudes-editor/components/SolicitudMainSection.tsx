@@ -162,11 +162,22 @@ export function SolicitudMainSection({
               </span>
             ) : null}
           </Field>
+          {/*
+            Solo lectura: la cuota la calcula el legado al guardar, a partir de
+            monto, cuotas, linea, tasa y fecha de primer vencimiento. No hay
+            caso donde se escriba a mano.
+
+            Ademas no puede ser un MoneyInputField: ese componente reformatea
+            con formatMoneyValue en cada render, que borra todo lo que no sea
+            digito. Una cuota de 677.916,20 se mostraba como $67.791.620.
+          */}
           <Field label="Cuota Resultante">
-            <MoneyInputField
-              className={fieldClassName}
-              control={control}
-              name="cuotaResultante"
+            <Input
+              className="bg-disabled-background text-disabled-foreground"
+              placeholder="Se calcula al guardar"
+              readOnly
+              tabIndex={-1}
+              {...register("cuotaResultante")}
             />
           </Field>
           <Field label="Nro Operación">

@@ -61,6 +61,7 @@ import { SolicitudesCoreRepositoryImpl } from "./infrastructure/repositories/Sol
 import { SolicitudWorkflowRepositoryImpl } from "./infrastructure/repositories/SolicitudWorkflowRepositoryImpl";
 import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/repositories/WorkflowTransitionAdminRepositoryImpl";
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
+import { SimularCuotaSolicitud } from "./application/services/SimularCuotaSolicitud";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
 import { EvaluateListLineaPrestamoLegacyIdResolver } from "./infrastructure/services/EvaluateListLineaPrestamoLegacyIdResolver";
 import { PrismaWorkflowStateCatalog } from "./infrastructure/services/PrismaWorkflowStateCatalog";
@@ -161,9 +162,13 @@ export function createSolicitudesCoreRouter(
     repository: solicitudWorkflowRepository,
     transitionPolicy: workflowTransitionPolicy,
   });
+  const simularCuotaSolicitud = new SimularCuotaSolicitud({
+    gateway: prestamosSimulacionGateway,
+  });
   const createSolicitudUseCase = new CreateSolicitudUseCase({
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
+    simularCuotaSolicitud,
     workflowStateCatalog,
   });
   const getSolicitudByIdUseCase = new GetSolicitudByIdUseCase({
@@ -184,6 +189,7 @@ export function createSolicitudesCoreRouter(
     fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
+    simularCuotaSolicitud,
   });
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
     adjuntoRepository: solicitudAdjuntoRepository,

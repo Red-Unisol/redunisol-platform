@@ -20,7 +20,11 @@ import {
 import { Input } from "@/shared/components/ui/input";
 import { StyledSelect } from "@/shared/components/ui/styled-select";
 import { TableLoader } from "@/shared/components/ui/table-loader";
-import { formatMoneyValue, parseMoneyValue } from "@/shared/utils/money-format";
+import {
+  formatDecimalMoneyValue,
+  formatMoneyValue,
+  parseMoneyValue,
+} from "@/shared/utils/money-format";
 
 type SimuladorPrestamoFormValues = {
   capitalFinanciado: string;
@@ -214,7 +218,7 @@ export function SimuladorPrestamoModal({
     setValue("capitalFinanciado", formatMoneyValue(String(result.capital)));
     setValue(
       "cuotaResultante",
-      formatMoneyValue(String(result.cuotaResultante)),
+      formatDecimalMoneyValue(result.cuotaResultante),
     );
     setValue("gastosAdministrativos", formatMoneyValue(String(result.gastos)));
     setValue("tasa", String(result.tasa));
@@ -272,7 +276,7 @@ export function SimuladorPrestamoModal({
     }
 
     onApply?.({
-      cuotaResultante: formatMoneyValue(String(simulacion.cuotaResultante)),
+      cuotaResultante: formatDecimalMoneyValue(simulacion.cuotaResultante),
       cuotas: String(simulacion.cuotas),
       fechaPrimerVencimiento:
         fechaPrimerVencimiento ||
