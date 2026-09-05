@@ -26,6 +26,11 @@ El flow `form_management_report_daily` genera el informe de formulario a Bitrix 
 
 ## Preparación de la VPS
 
+El volumen `/srv/redunisol-reports` reside en la **VPS PRINCIPAL / DATTAWEB**,
+segun el nombre del bloque en `credentials.txt`. Para inspeccionar o descargar
+reportes por SSH, usar ese bloque y su comando exacto. La **VPS DE ALTA
+SEGURIDAD / DATTAWEB** no aloja este volumen.
+
 Ejecutar una sola vez:
 
 ```bash
