@@ -11,6 +11,11 @@ compartido de aprobación se documentan en [`README.md`](README.md).
 - El responsable del lead no se usa como mecanismo de distribucion.
 - Los buckets se evaluan en el orden documentado.
 
+Los responsables y su orden se administran desde **Configuración > Distribución
+Bitrix** en el panel de Red Unisol. Las listas de este documento y las variables de
+entorno quedan como valores iniciales y fallback si el panel no está disponible.
+Un vendedor pausado permanece visible en el panel pero no recibe asignaciones nuevas.
+
 ## Buckets
 
 ### `catamarca_general`

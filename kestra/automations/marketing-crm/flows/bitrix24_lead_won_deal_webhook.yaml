@@ -62,6 +62,7 @@ tasks:
       BITRIX24_DEAL_COMMERCIAL_LINE_FIELD: "{{ envs.bitrix24_deal_commercial_line_field ?? 'ufCrm_659EBB0445E8E' }}"
       BITRIX24_DEAL_ROUND_ROBIN_USER_IDS: "{{ envs.bitrix24_deal_round_robin_user_ids ?? '68579,10451,29,90231,71159,113457,113455,116561,110059' }}"
       BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS: "{{ envs.bitrix24_deal_round_robin_lookback_days ?? '30' }}"
+      BITRIX24_ROUTING_CONFIG_URL: "{{ envs.bitrix24_routing_config_url ?? 'https://redunisol.com.ar/api/internal/bitrix-routing' }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
       - python -m bitrix24_form_flow.kestra_lead_won_deal_entrypoint
