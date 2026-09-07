@@ -32,6 +32,7 @@ type EditableSolicitudSectionValues = {
 type EditableTitularValues = {
   apellidoDenominacion: string;
   cbu: string;
+  cbuNoHabitual: string;
   celular: string;
   cuit: string;
   domicilioCalle: string;
@@ -602,6 +603,7 @@ export function mapSolicitudCoreToEditableValues(
         solicitud.titular.apellidoDenominacion,
       ),
       cbu: toEditableString(solicitud.titular.cbu),
+      cbuNoHabitual: toEditableString(solicitud.titular.cbuNoHabitual),
       celular: toDisplayPhone(solicitud.titular.celular),
       cuit: toEditableString(solicitud.titular.cuit),
       domicilioCalle: toEditableString(solicitud.titular.domicilioCalle),

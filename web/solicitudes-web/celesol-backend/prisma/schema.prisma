@@ -283,6 +283,7 @@ model SolicitudTitular {
   nroPuerta                    String?   @map("nro_puerta")
   localidad                    String?
   cbu                          String?
+  cbuNoHabitual                String?   @map("cbu_no_habitual")
   personaExpuestaPoliticamente Boolean?  @map("persona_expuesta_politicamente")
   sexo                         String?
   nacionalidad                 String?

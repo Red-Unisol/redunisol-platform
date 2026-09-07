@@ -115,6 +115,7 @@ const createInput = (): CreateSolicitudInput => ({
   titular: {
     apellidoDenominacion: "Perez",
     cbu: "2850590940090418135201",
+    cbuNoHabitual: "0140000803401234567890",
     celular: "1122334455",
     cuit: "20333444559",
     domicilioCalle: "Siempre Viva",
@@ -421,6 +422,7 @@ class InMemorySolicitudesCoreRepository implements SolicitudesCoreRepository {
       titular: {
         apellidoDenominacion: "Perez",
         cbu: "2850590940090418135201",
+        cbuNoHabitual: null,
         celular: "1122334455",
         cuit: "20333444559",
         domicilioCalle: "Siempre Viva",

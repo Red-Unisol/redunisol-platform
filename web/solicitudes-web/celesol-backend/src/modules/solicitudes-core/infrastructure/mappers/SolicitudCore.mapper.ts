@@ -179,6 +179,7 @@ export class SolicitudCoreMapper {
       titular: {
         apellidoDenominacion: record.titular?.apellidoDenominacion ?? null,
         cbu: record.titular?.cbu ?? null,
+        cbuNoHabitual: record.titular?.cbuNoHabitual ?? null,
         celular: record.titular?.celular ?? null,
         cuit: record.titular?.cuit ?? null,
         domicilioCalle: record.titular?.domicilioCalle ?? null,

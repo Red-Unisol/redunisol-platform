@@ -218,7 +218,7 @@ export function NuevaSolicitudTitularFields({
       <LegacyField label="Cbu Transferencias Cuenta No Habitual">
         <input
           className={legacyFieldClassName}
-          {...register("cbuTransferenciasCuentaNoHabitual")}
+          {...register("cbuNoHabitual")}
         />
       </LegacyField>
       <LegacyField className="items-start" label="Observaciones">

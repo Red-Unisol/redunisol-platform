@@ -154,6 +154,7 @@ export class CreateSolicitudUseCase {
       titular: {
         apellidoDenominacion: input.titular.apellidoDenominacion,
         cbu: input.titular.cbu ?? null,
+        cbuNoHabitual: input.titular.cbuNoHabitual ?? null,
         celular: input.titular.celular ?? null,
         cuit: input.titular.cuit ?? null,
         domicilioCalle: input.titular.domicilioCalle ?? null,

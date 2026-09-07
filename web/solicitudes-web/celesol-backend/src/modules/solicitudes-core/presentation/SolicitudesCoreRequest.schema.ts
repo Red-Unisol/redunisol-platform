@@ -166,6 +166,7 @@ export const createSolicitudBodySchema = z.object({
   titular: z.object({
     apellidoDenominacion: z.string().trim().min(1),
     cbu: z.string().trim().min(1).optional(),
+    cbuNoHabitual: z.string().trim().min(1).optional(),
     celular: z.string().trim().min(1).optional(),
     cuit: z.string().trim().min(1).optional(),
     domicilioCalle: z.string().trim().min(1).optional(),
@@ -292,6 +293,7 @@ export const patchSolicitudBodySchema = z.object({
     .object({
       apellidoDenominacion: z.string().trim().min(1).optional(),
       cbu: nullableTrimmedStringSchema.optional(),
+      cbuNoHabitual: nullableTrimmedStringSchema.optional(),
       celular: nullableTrimmedStringSchema.optional(),
       cuit: nullableTrimmedStringSchema.optional(),
       domicilioCalle: nullableTrimmedStringSchema.optional(),

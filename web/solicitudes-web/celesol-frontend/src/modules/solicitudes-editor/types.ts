@@ -18,7 +18,7 @@ export type NuevaSolicitudFormValues = {
   celular: string;
 
   cbu: string;
-  cbuTransferenciasCuentaNoHabitual: string;
+  cbuNoHabitual: string;
   clit: string;
   cupoTitular: string;
 
