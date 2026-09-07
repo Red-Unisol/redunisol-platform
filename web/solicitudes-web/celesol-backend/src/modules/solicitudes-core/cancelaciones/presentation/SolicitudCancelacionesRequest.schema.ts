@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { cbuSchema } from "../../presentation/cbu.schema";
+
 const requiredTrimmedStringSchema = z.preprocess((value) => {
   if (typeof value !== "string") {
     return value;
@@ -29,7 +31,7 @@ export const solicitudCancelacionByIdParamsSchema = z.object({
 });
 
 export const createSolicitudCancelacionBodySchema = z.object({
-  cbu: requiredTrimmedStringSchema,
+  cbu: cbuSchema,
   cuentaADebitar: requiredTrimmedStringSchema,
   cuentaBancaria: requiredTrimmedStringSchema,
   monto: montoSchema,
@@ -39,7 +41,7 @@ export const createSolicitudCancelacionBodySchema = z.object({
 });
 
 export const updateSolicitudCancelacionBodySchema = z.object({
-  cbu: optionalTrimmedStringSchema,
+  cbu: cbuSchema.optional(),
   cuentaADebitar: optionalTrimmedStringSchema,
   cuentaBancaria: optionalTrimmedStringSchema,
   monto: montoSchema.optional(),
