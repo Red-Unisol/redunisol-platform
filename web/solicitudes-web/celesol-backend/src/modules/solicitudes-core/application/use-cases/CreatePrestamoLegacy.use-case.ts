@@ -1,5 +1,6 @@
 import type { CreatePrestamoLegacyInput } from "../dtos/CreatePrestamoLegacy.dto";
 import { buildLinkFirmaDigital } from "../services/buildLinkFirmaDigital";
+import { EnsureSolicitudTitularHasRequiredDataForConfirmar } from "../services/EnsureSolicitudTitularHasRequiredDataForConfirmar";
 import { FindSolicitudTitularSocio } from "../services/FindSolicitudTitularSocio";
 import type { CrearPrestamoGateway } from "../../infrastructure/services/CrearPrestamoGateway";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
@@ -31,6 +32,7 @@ type Dependencies = {
 
 export class CreatePrestamoLegacyUseCase {
   private readonly authRepository: Pick<AuthRepository, "findById">;
+  private readonly ensureSolicitudTitularHasRequiredDataForConfirmar: EnsureSolicitudTitularHasRequiredDataForConfirmar;
   private readonly findSolicitudTitularSocio: FindSolicitudTitularSocio;
   private readonly gateway: CrearPrestamoGateway;
   private readonly lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
@@ -43,6 +45,10 @@ export class CreatePrestamoLegacyUseCase {
 
   constructor(dependencies: Dependencies) {
     this.authRepository = dependencies.authRepository;
+    this.ensureSolicitudTitularHasRequiredDataForConfirmar =
+      new EnsureSolicitudTitularHasRequiredDataForConfirmar({
+        solicitudesRepository: dependencies.repository,
+      });
     this.findSolicitudTitularSocio = new FindSolicitudTitularSocio({
       sociosRepository: dependencies.sociosRepository,
     });
@@ -86,6 +92,18 @@ export class CreatePrestamoLegacyUseCase {
     if (missingFieldLabels.length > 0) {
       throw new SolicitudPrestamoDataIncompleteError(missingFieldLabels);
     }
+
+    // El prestamo se genera en Confirmada, y para confirmar ya se exigen estos
+    // datos del titular. Pero el boton depende del dueño del estado actual, no
+    // del estado, asi que Riesgo puede generarlo apenas le llega la solicitud
+    // -- antes de que se haya pedido nada de esto.
+    //
+    // En el flujo normal esta validacion no cambia nada: la solicitud ya paso
+    // por la misma al confirmar. Solo frena el atajo, que dejaba prestamos
+    // reales en Vimarx para solicitudes que despues no se pueden confirmar.
+    await this.ensureSolicitudTitularHasRequiredDataForConfirmar.execute(
+      input.solicitudId,
+    );
 
     const socio = await this.findSolicitudTitularSocio.execute(
       solicitud.titular,

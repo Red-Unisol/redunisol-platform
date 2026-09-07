@@ -194,6 +194,50 @@ describe("CreatePrestamoLegacyUseCase", () => {
     );
   });
 
+  it("does not create the prestamo when the titular is missing data required to confirm", async () => {
+    // El boton depende del dueño del estado actual, no del estado, asi que
+    // Riesgo puede generar el prestamo apenas le llega la solicitud -- antes de
+    // que se haya exigido nada del titular. Sin esta validacion quedaban
+    // prestamos reales en Vimarx para solicitudes que despues no se podian
+    // confirmar.
+    let crearCalled = false;
+    const useCase = new CreatePrestamoLegacyUseCase({
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      gateway: fakeGateway({
+        crear: async () => {
+          crearCalled = true;
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository({
+        findById: async () =>
+          solicitud({
+            titular: { ...solicitud().titular, cbu: null },
+          }),
+      }),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      (error: unknown) => {
+        assert.equal(
+          (error as { name?: string }).name,
+          "SolicitudTitularDataIncompleteForConfirmarError",
+        );
+        return true;
+      },
+    );
+    assert.equal(crearCalled, false);
+  });
+
   it("throws SolicitudTitularSocioRequiredForWorkflowError when no socio matches the titular", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
@@ -489,20 +533,23 @@ function solicitud(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
       vehiculo: null,
       vivienda: null,
     },
+    // Titular completo: generar el prestamo exige los mismos datos que
+    // confirmar la solicitud.
     titular: {
       apellidoDenominacion: "Perez",
-      cbu: null,
+      cbu: "2850590940090418135201",
       cbuNoHabitual: null,
-      celular: null,
+      celular: "1122334455",
       cuit: "20-33344455-9",
       domicilioCalle: null,
-      email: null,
+      email: "juan@example.com",
+      fechaNacimiento: "1990-05-20",
       localidad: null,
       nombre: "Juan",
       nroDocumento: "33.344.455",
       nroPuerta: null,
       nroSocio: null,
-      sexo: null,
+      sexo: "M",
       tipoDocumento: "DNI",
     },
     updatedAt: new Date("2026-05-18T10:00:00.000Z"),
