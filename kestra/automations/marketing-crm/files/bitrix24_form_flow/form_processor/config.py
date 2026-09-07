@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
+from urllib.error import URLError
+from urllib.request import urlopen
 
 
 DEFAULT_LEAD_FIELDS = {
@@ -219,6 +222,7 @@ class AppConfig:
 
 def load_config(env: dict[str, str] | None = None) -> AppConfig:
     source = dict(os.environ if env is None else env)
+    routing_pools = _load_routing_pools(source)
 
     return AppConfig(
         base_url=_strip_trailing_slashes(_required_env(source, "BITRIX24_BASE_URL")),
@@ -469,34 +473,84 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                 DEFAULT_DEAL_CONFIG["queue_enqueued_at_field"],
             ).strip()
             or DEFAULT_DEAL_CONFIG["queue_enqueued_at_field"],
-            round_robin_user_ids=_optional_int_tuple(
-                source,
-                "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
-                default=DEFAULT_DEAL_CONFIG["round_robin_user_ids"],
+            round_robin_user_ids=routing_pools.get(
+                "catamarca_general",
+                _optional_int_tuple(
+                    source,
+                    "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS",
+                    default=DEFAULT_DEAL_CONFIG["round_robin_user_ids"],
+                ),
             ),
             round_robin_lookback_days=_optional_int(
                 source,
                 "BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS",
                 default=DEFAULT_DEAL_CONFIG["round_robin_lookback_days"],
             ),
-            cordoba_jubilados_user_ids=_optional_int_tuple(
-                source,
-                "BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS",
-                default=DEFAULT_DEAL_CONFIG["cordoba_jubilados_user_ids"],
+            cordoba_jubilados_user_ids=routing_pools.get(
+                "cordoba_jubilados",
+                _optional_int_tuple(
+                    source,
+                    "BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS",
+                    default=DEFAULT_DEAL_CONFIG["cordoba_jubilados_user_ids"],
+                ),
             ),
-            cordoba_unc_user_ids=_optional_int_tuple(
-                source,
-                "BITRIX24_DEAL_CORDOBA_UNC_USER_IDS",
-                default=DEFAULT_DEAL_CONFIG["cordoba_unc_user_ids"],
+            cordoba_unc_user_ids=routing_pools.get(
+                "cordoba_unc",
+                _optional_int_tuple(
+                    source,
+                    "BITRIX24_DEAL_CORDOBA_UNC_USER_IDS",
+                    default=DEFAULT_DEAL_CONFIG["cordoba_unc_user_ids"],
+                ),
             ),
-            cordoba_general_user_ids=_optional_int_tuple(
-                source,
-                "BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS",
-                default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
+            cordoba_general_user_ids=routing_pools.get(
+                "cordoba_general",
+                _optional_int_tuple(
+                    source,
+                    "BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS",
+                    default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
+                ),
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),
     )
+
+
+def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
+    url = env.get("BITRIX24_ROUTING_CONFIG_URL", "").strip()
+    if not url:
+        return {}
+
+    try:
+        with urlopen(url, timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    pools: dict[str, tuple[int, ...]] = {}
+    for key in (
+        "catamarca_general",
+        "cordoba_jubilados",
+        "cordoba_unc",
+        "cordoba_general",
+    ):
+        values = payload.get(key)
+        if not isinstance(values, list):
+            continue
+
+        try:
+            user_ids = tuple(int(value) for value in values)
+        except (TypeError, ValueError):
+            continue
+
+        if any(user_id <= 0 for user_id in user_ids) or len(set(user_ids)) != len(user_ids):
+            continue
+
+        pools[key] = user_ids
+
+    return pools
 
 
 def _required_env(env: dict[str, str], key: str) -> str:

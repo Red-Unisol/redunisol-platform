@@ -174,6 +174,11 @@ Valores actualmente confirmados en el CRM:
 - `BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS=10451,71159,68579,90231,29,110059,116561`
 - `BITRIX24_DEAL_CORDOBA_UNC_USER_IDS=53121` (`Gloria Fernandez`)
 - `BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS=10451,71159,68579,90231,29,116561,110059`
+
+Los cuatro pools pueden administrarse desde **Configuración > Distribución Bitrix**
+en Filament. Los flows consultan
+`https://redunisol.com.ar/api/internal/bitrix-routing` al comenzar; si la consulta
+falla o la URL no está configurada, conservan estos valores de entorno como fallback.
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN=<token del webhook de salida ONCRMLEADUPDATE>`
 - `BITRIX24_CONTACT_CUIL_FIELD=UF_CRM_65B7E48033FCD`
 - `BITRIX24_LEAD_CUIL_FIELD=UF_CRM_1693840106704`

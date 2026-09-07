@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -589,6 +589,47 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.lead_statuses.external_referral, "13")
         self.assertEqual(config.fields.lead_backfill_attempts, "UF_CRM_KSTRA_BF_ATTEMPTS")
         self.assertEqual(config.fields.lead_dni, "UF_CRM_LEAD_1711392404332")
+
+    def test_config_uses_remote_routing_pools_including_empty_buckets(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "catamarca_general": [29, 68579],
+                "cordoba_jubilados": [10451],
+                "cordoba_unc": [],
+                "cordoba_general": [116561, 110059],
+            }
+        ).encode("utf-8")
+        env = {
+            **self.env,
+            "BITRIX24_ROUTING_CONFIG_URL": "https://redunisol.test/api/internal/bitrix-routing",
+        }
+
+        with patch(
+            "bitrix24_form_flow.form_processor.config.urlopen",
+            return_value=response,
+        ):
+            config = load_config(env)
+
+        self.assertEqual(config.deal.round_robin_user_ids, (29, 68579))
+        self.assertEqual(config.deal.cordoba_jubilados_user_ids, (10451,))
+        self.assertEqual(config.deal.cordoba_unc_user_ids, ())
+        self.assertEqual(config.deal.cordoba_general_user_ids, (116561, 110059))
+
+    def test_config_keeps_existing_pools_when_remote_config_is_unavailable(self) -> None:
+        env = {
+            **self.env,
+            "BITRIX24_ROUTING_CONFIG_URL": "https://redunisol.test/api/internal/bitrix-routing",
+            "BITRIX24_DEAL_ROUND_ROBIN_USER_IDS": "29,10451",
+        }
+
+        with patch(
+            "bitrix24_form_flow.form_processor.config.urlopen",
+            side_effect=OSError("unavailable"),
+        ):
+            config = load_config(env)
+
+        self.assertEqual(config.deal.round_robin_user_ids, (29, 10451))
 
     def test_prequalification_cutover_dry_run_and_apply(self) -> None:
         client = FakeBitrixClient()
