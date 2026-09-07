@@ -21,7 +21,7 @@ const createInput = (): CreateSolicitudCancelacionInput => ({
   },
   workflowOwnerId: "owner-1",
   cuentaADebitar: "1234567890",
-  cbu: "0000003100012345678901",
+  cbu: "0000003100012345678907",
   cuentaBancaria: "Caja de Ahorro",
   socio: "Juan Perez",
   socioLegacyId: "SOC-1",
@@ -61,7 +61,7 @@ describe("CreateSolicitudCancelacionUseCase", () => {
 
     assert.equal(result.id, "canc-1");
     assert.equal(receivedRecord?.solicitudId, "sol-1");
-    assert.equal(receivedRecord?.cbu, "0000003100012345678901");
+    assert.equal(receivedRecord?.cbu, "0000003100012345678907");
     assert.equal(receivedRecord?.createdBy, "user-1");
     assert.equal(receivedRecord?.socioLegacyId, "SOC-1");
     assert.equal(typeof receivedRecord?.cancelacionId, "string");

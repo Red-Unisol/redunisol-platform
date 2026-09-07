@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { cbuSchema } from "./cbu.schema";
+
 const MIN_TITULAR_AGE_YEARS = 18;
 const MAX_TITULAR_AGE_YEARS = 85;
 
@@ -165,8 +167,8 @@ export const createSolicitudBodySchema = z.object({
   }).strict(),
   titular: z.object({
     apellidoDenominacion: z.string().trim().min(1),
-    cbu: z.string().trim().min(1).optional(),
-    cbuNoHabitual: z.string().trim().min(1).optional(),
+    cbu: cbuSchema.optional(),
+    cbuNoHabitual: cbuSchema.optional(),
     celular: z.string().trim().min(1).optional(),
     cuit: z.string().trim().min(1).optional(),
     domicilioCalle: z.string().trim().min(1).optional(),
@@ -292,8 +294,8 @@ export const patchSolicitudBodySchema = z.object({
   titular: z
     .object({
       apellidoDenominacion: z.string().trim().min(1).optional(),
-      cbu: nullableTrimmedStringSchema.optional(),
-      cbuNoHabitual: nullableTrimmedStringSchema.optional(),
+      cbu: z.union([cbuSchema, z.null()]).optional(),
+      cbuNoHabitual: z.union([cbuSchema, z.null()]).optional(),
       celular: nullableTrimmedStringSchema.optional(),
       cuit: nullableTrimmedStringSchema.optional(),
       domicilioCalle: nullableTrimmedStringSchema.optional(),
