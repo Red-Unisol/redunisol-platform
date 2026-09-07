@@ -1500,6 +1500,15 @@ function TitularFields({
         readOnlyValue={formatText(titular.cbu)}
         value={values.cbu}
       />
+      <EditableTextInput
+        {...getReadonlyProps("titular.cbuNoHabitual")}
+        disabled={!isFieldEditableByKey("titular.cbuNoHabitual")}
+        isEditing={isEditing}
+        label="CBU Transferencias Cuenta No Habitual"
+        onChange={(value) => onChange("cbuNoHabitual", value)}
+        readOnlyValue={formatText(titular.cbuNoHabitual)}
+        value={values.cbuNoHabitual}
+      />
     </div>
   );
 }

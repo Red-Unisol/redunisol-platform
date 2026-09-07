@@ -345,6 +345,7 @@ function workflowExecutionResult() {
       titular: {
         apellidoDenominacion: null,
         cbu: null,
+        cbuNoHabitual: null,
         celular: null,
         cuit: null,
         domicilioCalle: null,

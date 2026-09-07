@@ -635,6 +635,7 @@ function baseSolicitud(): SolicitudCore {
     titular: {
       apellidoDenominacion: "Perez",
       cbu: null,
+      cbuNoHabitual: null,
       celular: "1199999999",
       cuit: "20-33344455-9",
       domicilioCalle: null,

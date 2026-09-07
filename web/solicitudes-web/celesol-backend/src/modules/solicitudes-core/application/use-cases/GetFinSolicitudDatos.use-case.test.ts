@@ -56,6 +56,7 @@ function buildSolicitud(
     titular: {
       apellidoDenominacion: "SCHIERANO",
       cbu: null,
+      cbuNoHabitual: null,
       celular: "3425912911",
       cuit: null,
       domicilioCalle: "LIBERTAD 2461",

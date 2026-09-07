@@ -30,6 +30,7 @@ export type SolicitudFieldKey =
   | "solicitud.vendedorSolicitud"
   | "titular.apellidoDenominacion"
   | "titular.cbu"
+  | "titular.cbuNoHabitual"
   | "titular.celular"
   | "titular.cuit"
   | "titular.domicilioCalle"
@@ -129,6 +130,7 @@ export type SolicitudCoreCapabilities = {
 export type SolicitudCoreTitular = {
   apellidoDenominacion: string | null;
   cbu: string | null;
+  cbuNoHabitual: string | null;
   celular: string | null;
   cuit: string | null;
   domicilioCalle: string | null;

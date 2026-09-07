@@ -101,6 +101,7 @@ export function mapNuevaSolicitudFormToCreateSolicitudCoreRequest(
         values.apellidoDenominacion,
       ),
       cbu: toTrimmedString(values.cbu),
+      cbuNoHabitual: toTrimmedString(values.cbuNoHabitual),
       celular: toTrimmedString(values.celular),
       cuit: toTrimmedString(values.cuit),
       domicilioCalle: toTrimmedString(values.domicilioCalle),

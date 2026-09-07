@@ -93,6 +93,7 @@ describe("SolicitudCoreMapper", () => {
       titular: {
         apellidoDenominacion: "Perez",
         cbu: null,
+        cbuNoHabitual: null,
         celular: "1199999999",
         cuit: null,
         domicilioCalle: null,

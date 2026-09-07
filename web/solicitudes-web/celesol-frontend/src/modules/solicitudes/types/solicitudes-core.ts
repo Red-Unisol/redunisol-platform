@@ -1,6 +1,7 @@
 export type CreateSolicitudCoreTitularRequest = {
   apellidoDenominacion: string;
   cbu?: string;
+  cbuNoHabitual?: string;
   celular?: string;
   cuit?: string;
   domicilioCalle?: string;
@@ -171,6 +172,7 @@ export type SolicitudFieldKey =
   | "solicitud.vendedorSolicitud"
   | "titular.apellidoDenominacion"
   | "titular.cbu"
+  | "titular.cbuNoHabitual"
   | "titular.celular"
   | "titular.cuit"
   | "titular.domicilioCalle"
@@ -329,6 +331,7 @@ export type SolicitudCoreAssignableAgent = {
 export type SolicitudCoreTitularResponse = {
   apellidoDenominacion: string | null;
   cbu: string | null;
+  cbuNoHabitual: string | null;
   celular: string | null;
   cuit: string | null;
   domicilioCalle: string | null;
