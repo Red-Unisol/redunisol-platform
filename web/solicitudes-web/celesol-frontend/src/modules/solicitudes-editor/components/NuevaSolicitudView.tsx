@@ -51,6 +51,8 @@ const VALIDATION_FIELDS: Array<{
   { key: "apellidoDenominacion", label: "Apellido / Denominación" },
   { key: "nombre", label: "Nombre" },
   { key: "fechaNacimiento", label: "Fecha de nacimiento" },
+  { key: "cbu", label: "CBU" },
+  { key: "cbuNoHabitual", label: "CBU Transferencias Cuenta No Habitual" },
 ];
 
 type NuevaSolicitudViewProps = {

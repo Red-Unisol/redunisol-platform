@@ -213,10 +213,15 @@ export function NuevaSolicitudTitularFields({
         />
       </LegacyField>
       <LegacyField label="CBU">
-        <input className={legacyFieldClassName} {...register("cbu")} />
+        <input
+          aria-invalid={!!errors?.cbu}
+          className={legacyFieldClassName}
+          {...register("cbu")}
+        />
       </LegacyField>
       <LegacyField label="Cbu Transferencias Cuenta No Habitual">
         <input
+          aria-invalid={!!errors?.cbuNoHabitual}
           className={legacyFieldClassName}
           {...register("cbuNoHabitual")}
         />

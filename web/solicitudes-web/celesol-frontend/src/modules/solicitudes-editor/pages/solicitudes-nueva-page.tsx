@@ -8,6 +8,7 @@ import type { Socio } from "@/modules/socios/types";
 import { SolicitudWorkflowActionDialog } from "@/modules/solicitudes-core/components/solicitud-workflow-action-dialog";
 import { useExecuteSolicitudCoreTransitionMutation } from "@/modules/solicitudes-core/hooks/use-execute-solicitud-core-transition-mutation";
 import { useSolicitudCoreTransitionsQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-transitions-query";
+import { esCbuValido } from "@/shared/utils/cbu";
 import { parseMoneyValue } from "@/shared/utils/money-format";
 import { useCreateSolicitudCoreMutation } from "@/modules/solicitudes-editor/hooks/use-create-solicitud-core-mutation";
 import { mapNuevaSolicitudFormToCreateSolicitudCoreRequest } from "@/modules/solicitudes-editor/utils/solicitud-core-mappers";
@@ -158,11 +159,11 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
   async function onCreateSolicitud() {
     const values = getValues();
 
-    clearErrors(REQUIRED_FIELDS.map(({ name }) => name));
+    clearErrors(VALIDATED_FIELDS.map(({ name }) => name));
 
-    const invalid = REQUIRED_FIELDS.filter(({ name, validate }) => {
+    const invalid = VALIDATED_FIELDS.filter(({ name, optional, validate }) => {
       const value = String(values[name] ?? "").trim();
-      if (!value) return true;
+      if (!value) return !optional;
       return validate ? !validate(value) : false;
     });
 
@@ -247,9 +248,12 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     setAdjuntos(nextAdjuntos);
   }
 
-  const REQUIRED_FIELDS: Array<{
+  // Campos que se validan al guardar. Los que llevan `optional: true` no son
+  // obligatorios: vacios pasan, pero si tienen algo tiene que ser valido.
+  const VALIDATED_FIELDS: Array<{
     name: keyof NuevaSolicitudFormValues;
     label: string;
+    optional?: boolean;
     validate?: (value: string) => boolean;
   }> = [
     { name: "linea", label: "Línea de préstamo" },
@@ -269,6 +273,13 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     { name: "apellidoDenominacion", label: "Apellido / Denominación" },
     { name: "nombre", label: "Nombre" },
     { name: "fechaNacimiento", label: "Fecha de nacimiento" },
+    { name: "cbu", label: "CBU", optional: true, validate: esCbuValido },
+    {
+      name: "cbuNoHabitual",
+      label: "CBU Transferencias Cuenta No Habitual",
+      optional: true,
+      validate: esCbuValido,
+    },
   ];
 
   function onEditAdjunto(
