@@ -61,7 +61,7 @@ Flow principal:
 
 - `transfer_trace_report_daily`
 - namespace runtime por ambiente: `redunisol.<env>.contabilidad`
-- schedule prod: todos los días a las 10:00 `America/Argentina/Buenos_Aires`
+- schedule prod: todos los días a las 07:30 `America/Argentina/Buenos_Aires`
 - fecha informada por defecto: el día calendario anterior
 
 La fuente única es `MetaMap Platform Server /api/v1/transfer-trace-events`.
@@ -70,13 +70,20 @@ cuando una solicitud aparece en `A Transferir`. El informe reconstruye desde esa
 observaciones el universo de solicitudes y considera **No realizada vía app** a
 toda solicitud observada que no tenga una transferencia confirmada por la app.
 
+El informe es una foto acumulada desde `transfer_trace_coverage_from` hasta el
+cierre de la fecha informada. El resumen y las hojas de detalle mantienen todo
+el histórico cubierto, por lo que el reporte no queda vacío en días sin
+operaciones. El resumen conserva además una sección separada con la actividad
+exclusiva de la fecha de corte.
+
 El informe muestra:
 
 - solicitudes nuevas observadas y backlog no realizado vía app
 - transferencias y cancelaciones manuales y automáticas
-- tiempos promedio por modalidad y para cancelaciones
+- tiempos promedio desde la primera detección en `A Transferir` hasta que la
+  solicitud queda marcada como `Pagada`, por modalidad y para cancelaciones
 - intentos bloqueados, pendientes o con registro final pendiente
-- volumen de eventos técnicos por tipo
+- volumen acumulado de eventos técnicos por tipo
 
 Storage publicado:
 
@@ -92,6 +99,11 @@ reporte consulta desde `transfer_trace_coverage_from` hasta el cierre de esa fec
 para reconstruir el backlog. Antes de que exista al menos un evento
 `transfer_candidate_observed`, el indicador se muestra como `Sin cobertura`, no
 como cero.
+
+Los tiempos operativos requieren los dos extremos para cada OID:
+`transfer_candidate_observed` y `mark_paid_request_succeeded`. El tiempo técnico
+del intento dentro de la app se conserva en el detalle, pero no alimenta los
+promedios del resumen.
 
 Configuración requerida en el runtime Kestra:
 

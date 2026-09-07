@@ -65,6 +65,16 @@ Debe documentarse el evento de ingreso al universo, el evento terminal, la
 deduplicación y la fecha desde la que ambos están disponibles. Sin esa señal, el
 resultado se muestra como `Sin cobertura`, nunca como `0`.
 
+De la misma manera, un tiempo operativo debe usar hitos del proceso de negocio.
+Para Transferencias Celesol se mide desde la primera observación de la solicitud
+en `A Transferir` hasta `mark_paid_request_succeeded`. La duración técnica entre
+el inicio y el cierre del intento de la app no sustituye esa métrica.
+
+El Excel de Transferencias Celesol se publica como una foto acumulada desde el
+inicio de cobertura hasta la fecha de corte. Las hojas de operaciones,
+solicitudes y eventos conservan el histórico cubierto; el resumen separa los
+indicadores acumulados de la actividad exclusiva del último día.
+
 ## Implementación en Kestra
 
 - Código: `kestra/automations/<dominio>/files/<informe>/`.
