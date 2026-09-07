@@ -224,6 +224,14 @@ function buildTitularPatch(
     nextPatch.cbu = cbu;
   }
 
+  const cbuNoHabitual = toOptionalStringPatch(
+    values.cbuNoHabitual,
+    titular.cbuNoHabitual,
+  );
+  if (cbuNoHabitual !== undefined) {
+    nextPatch.cbuNoHabitual = cbuNoHabitual;
+  }
+
   const celular = toOptionalPhonePatch(values.celular, titular.celular);
   if (celular !== undefined) {
     nextPatch.celular = celular;
