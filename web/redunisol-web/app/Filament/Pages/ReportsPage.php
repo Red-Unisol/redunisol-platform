@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Support\ReportCatalog;
 use App\Support\ReportRepository;
 use BackedEnum;
 use Filament\Pages\Page;
@@ -23,8 +24,8 @@ class ReportsPage extends Page
 
     protected string $view = 'filament.pages.reports';
 
-    public function getReports(): Collection
+    public function getReportGroups(): Collection
     {
-        return app(ReportRepository::class)->all();
+        return app(ReportCatalog::class)->groups(app(ReportRepository::class)->all());
     }
 }
