@@ -70,5 +70,5 @@ outputs:
 triggers:
   - id: todos_los_dias
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "0 10 * * *"
+    cron: "30 7 * * *"
     timezone: America/Argentina/Buenos_Aires

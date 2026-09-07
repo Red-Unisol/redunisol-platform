@@ -61,7 +61,7 @@ Flow principal:
 
 - `transfer_trace_report_daily`
 - namespace runtime por ambiente: `redunisol.<env>.contabilidad`
-- schedule prod: todos los días a las 10:00 `America/Argentina/Buenos_Aires`
+- schedule prod: todos los días a las 07:30 `America/Argentina/Buenos_Aires`
 - fecha informada por defecto: el día calendario anterior
 
 La fuente única es `MetaMap Platform Server /api/v1/transfer-trace-events`.
