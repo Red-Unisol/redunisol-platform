@@ -36,6 +36,21 @@ describe("EnsureSolicitudTitularHasRequiredDataForConfirmar", () => {
       });
     });
 
+    it("requires the CBU: sin el no se puede transferir el prestamo", async () => {
+      const service = new EnsureSolicitudTitularHasRequiredDataForConfirmar({
+        solicitudesRepository: solicitudesRepository({
+          findById: async () => solicitud({ cbu: null }),
+        }),
+      });
+
+      const result = await service.check("sol-1");
+
+      assert.deepEqual(result, {
+        isComplete: false,
+        missingLabels: ["CBU"],
+      });
+    });
+
     it("throws SolicitudCoreNotFoundError when the solicitud does not exist", async () => {
       const service = new EnsureSolicitudTitularHasRequiredDataForConfirmar({
         solicitudesRepository: solicitudesRepository({
@@ -126,7 +141,7 @@ function solicitud(
     },
     titular: {
       apellidoDenominacion: "Perez",
-      cbu: null,
+      cbu: "2850590940090418135201",
       cbuNoHabitual: null,
       celular: "1199999999",
       cuit: "20-33344455-9",

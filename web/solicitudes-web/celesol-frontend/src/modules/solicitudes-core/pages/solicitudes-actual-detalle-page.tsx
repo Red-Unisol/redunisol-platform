@@ -180,6 +180,7 @@ const CONFIRMAR_ACTION_CODE = "confirmar";
 
 type TitularConfirmarRequiredFieldKey =
   | "apellidoDenominacion"
+  | "cbu"
   | "celular"
   | "cuit"
   | "email"
@@ -204,6 +205,7 @@ const TITULAR_CONFIRMAR_REQUIRED_FIELDS: TitularConfirmarRequiredField[] = [
   { key: "cuit", label: "CUIT" },
   { key: "email", label: "Email" },
   { key: "celular", label: "Celular" },
+  { key: "cbu", label: "CBU" },
 ];
 
 function validateTitularRequiredForConfirmar(
