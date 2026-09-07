@@ -70,6 +70,12 @@ cuando una solicitud aparece en `A Transferir`. El informe reconstruye desde esa
 observaciones el universo de solicitudes y considera **No realizada vía app** a
 toda solicitud observada que no tenga una transferencia confirmada por la app.
 
+El informe es una foto acumulada desde `transfer_trace_coverage_from` hasta el
+cierre de la fecha informada. El resumen y las hojas de detalle mantienen todo
+el histórico cubierto, por lo que el reporte no queda vacío en días sin
+operaciones. El resumen conserva además una sección separada con la actividad
+exclusiva de la fecha de corte.
+
 El informe muestra:
 
 - solicitudes nuevas observadas y backlog no realizado vía app
@@ -77,7 +83,7 @@ El informe muestra:
 - tiempos promedio desde la primera detección en `A Transferir` hasta que la
   solicitud queda marcada como `Pagada`, por modalidad y para cancelaciones
 - intentos bloqueados, pendientes o con registro final pendiente
-- volumen de eventos técnicos por tipo
+- volumen acumulado de eventos técnicos por tipo
 
 Storage publicado:
 

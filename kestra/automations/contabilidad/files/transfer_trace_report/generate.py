@@ -373,6 +373,7 @@ def configure_print(sheet, *, print_area: str | None = None) -> None:
 def build_workbook(run_date: date, events: list[dict[str, Any]], operations: list[Operation], candidates: list[Candidate], *, coverage_from: date) -> Workbook:
     day_operations = [item for item in operations if item.started_at.date() == run_date]
     day_paid_candidates = [item for item in candidates if item.paid_at is not None and item.paid_at.date() == run_date]
+    paid_candidates = [item for item in candidates if item.paid_at is not None and item.paid_at.date() <= run_date]
     new_candidates = [item for item in candidates if item.first_observed_at.date() == run_date]
     pending_candidates = [item for item in candidates if item.first_observed_at.date() <= run_date and not item.completed_via_app]
     minimum = datetime.min.replace(tzinfo=ARGENTINA_TIMEZONE)
@@ -384,24 +385,24 @@ def build_workbook(run_date: date, events: list[dict[str, Any]], operations: lis
     summary.title = "Resumen"
     summary.sheet_view.showGridLines = False
     summary.merge_cells("A1:H1")
-    summary["A1"] = "REPORTE DIARIO DE TRANSFERENCIAS"
+    summary["A1"] = "REPORTE ACUMULADO DE TRANSFERENCIAS"
     summary["A1"].fill = PatternFill("solid", fgColor=NAVY)
     summary["A1"].font = Font(color=WHITE, bold=True, size=16)
     summary["A1"].alignment = Alignment(horizontal="center")
     summary.row_dimensions[1].height = 34
     summary.merge_cells("A2:H2")
-    summary["A2"] = f"Fecha operativa: {run_date:%d/%m/%Y} · Hora Argentina · Cobertura desde {coverage_from:%d/%m/%Y}"
+    summary["A2"] = f"Período: {coverage_from:%d/%m/%Y} al {run_date:%d/%m/%Y} · Hora Argentina"
     summary["A2"].alignment = Alignment(horizontal="center")
     metrics = [
-        ("Solicitudes observadas nuevas", len(new_candidates) if candidate_coverage else "Sin cobertura", "Primera observación en A Transferir durante el día"),
+        ("Solicitudes observadas acumuladas", len(candidates) if candidate_coverage else "Sin cobertura", "OID únicos observados en A Transferir durante el período"),
         ("Pendientes no realizadas vía app", len(pending_candidates) if candidate_coverage else "Sin cobertura", "Observadas hasta el cierre sin finalización vía app"),
-        ("Realizadas vía app", distinct_completed(day_operations), "OID únicos confirmados durante el día"),
-        ("Realizadas manualmente", distinct_completed(day_operations, mode="Manual"), "OID únicos"),
-        ("Realizadas automáticamente", distinct_completed(day_operations, mode="Automática"), "OID únicos"),
-        ("Cancelaciones manuales", distinct_completed(day_operations, mode="Manual", operation_type="Cancelación"), "OID únicos completados"),
-        ("Cancelaciones automáticas", distinct_completed(day_operations, mode="Automática", operation_type="Cancelación"), "OID únicos completados"),
-        ("Pagadas con tiempo medible", len(day_paid_candidates), "Con primera detección en A Transferir y marca Pagada"),
-        ("Eventos técnicos del día", len(day_events), "Eventos de trazabilidad recibidos"),
+        ("Realizadas vía app acumuladas", distinct_completed(operations), "OID únicos confirmados durante el período"),
+        ("Realizadas manualmente", distinct_completed(operations, mode="Manual"), "OID únicos acumulados"),
+        ("Realizadas automáticamente", distinct_completed(operations, mode="Automática"), "OID únicos acumulados"),
+        ("Cancelaciones manuales", distinct_completed(operations, mode="Manual", operation_type="Cancelación"), "OID únicos acumulados"),
+        ("Cancelaciones automáticas", distinct_completed(operations, mode="Automática", operation_type="Cancelación"), "OID únicos acumulados"),
+        ("Pagadas con tiempo medible", len(paid_candidates), "Acumuladas con primera detección en A Transferir y marca Pagada"),
+        ("Eventos técnicos acumulados", len(events), "Eventos de trazabilidad recibidos durante el período"),
     ]
     summary.append([])
     summary.append(["Indicador", "Valor", "Unidad / definición"])
@@ -422,11 +423,11 @@ def build_workbook(run_date: date, events: list[dict[str, Any]], operations: lis
         cell.fill = PatternFill("solid", fgColor=BLUE)
         cell.font = Font(color=WHITE, bold=True)
     for row_index, mode in enumerate(("Manual", "Automática"), mode_row + 1):
-        avg_all = average_time_to_paid(day_paid_candidates, mode=mode)
-        avg_cancellation = average_time_to_paid(day_paid_candidates, mode=mode, operation_type="Cancelación")
+        avg_all = average_time_to_paid(paid_candidates, mode=mode)
+        avg_cancellation = average_time_to_paid(paid_candidates, mode=mode, operation_type="Cancelación")
         average_value = avg_all / 60 if avg_all is not None else ("Sin cobertura" if not candidate_coverage else "Sin datos")
         cancellation_average_value = avg_cancellation / 60 if avg_cancellation is not None else ("Sin cobertura" if not candidate_coverage else "Sin datos")
-        values = (mode, distinct_completed(day_operations, mode=mode), average_value, distinct_completed(day_operations, mode=mode, operation_type="Cancelación"), cancellation_average_value)
+        values = (mode, distinct_completed(operations, mode=mode), average_value, distinct_completed(operations, mode=mode, operation_type="Cancelación"), cancellation_average_value)
         for column, value in enumerate(values, 1):
             summary.cell(row_index, column, value)
         summary.cell(row_index, 3).number_format = "0.00"
@@ -445,12 +446,33 @@ def build_workbook(run_date: date, events: list[dict[str, Any]], operations: lis
         duration_chart.add_data(Reference(summary, min_col=3, min_row=mode_row, max_row=mode_row + 2), titles_from_data=True)
         duration_chart.set_categories(Reference(summary, min_col=1, min_row=mode_row + 1, max_row=mode_row + 2))
         summary.add_chart(duration_chart, "G19")
-    configure_print(summary, print_area="A1:R34" if has_duration_data else "A1:R18")
+
+    daily_row = 21
+    daily_metrics = [
+        ("Solicitudes observadas nuevas", len(new_candidates) if candidate_coverage else "Sin cobertura", "Primera observación durante la fecha de corte"),
+        ("Intentos iniciados vía app", len(day_operations), "Intentos cuyo transfer_started ocurrió durante la fecha de corte"),
+        ("Realizadas vía app", distinct_completed(day_operations), "OID únicos confirmados durante la fecha de corte"),
+        ("Realizadas manualmente", distinct_completed(day_operations, mode="Manual"), "OID únicos"),
+        ("Realizadas automáticamente", distinct_completed(day_operations, mode="Automática"), "OID únicos"),
+        ("Pagadas con tiempo medible", len(day_paid_candidates), "Marca Pagada durante la fecha de corte"),
+        ("Eventos técnicos", len(day_events), "Eventos recibidos durante la fecha de corte"),
+    ]
+    for column, value in enumerate((f"Actividad del {run_date:%d/%m/%Y}", "Valor", "Unidad / definición"), 1):
+        summary.cell(daily_row, column, value)
+    for cell in summary[daily_row][:3]:
+        cell.fill = PatternFill("solid", fgColor=BLUE)
+        cell.font = Font(color=WHITE, bold=True)
+    for row_index, values in enumerate(daily_metrics, daily_row + 1):
+        for column, value in enumerate(values, 1):
+            summary.cell(row_index, column, value)
+        summary.cell(row_index, 1).font = Font(color=NAVY, bold=True)
+        summary.cell(row_index, 2).alignment = Alignment(horizontal="right")
+    configure_print(summary, print_area="A1:R34" if has_duration_data else "A1:E28")
 
     operation_sheet = workbook.create_sheet("Operaciones app")
     operation_sheet.append(["Primera detección A Transferir", "Marcada Pagada", "Solicitud OID", "Modalidad", "Tipo", "Resultado", "Tiempo hasta Pagada segundos", "Tiempo hasta Pagada minutos", "Línea", "Línea ID", "Importe", "Operador", "Versión app", "ID externos", "Patas cancelación", "Eventos", "Inicio técnico del intento", "Fin técnico del intento", "Duración técnica segundos", "Sesión", "Instancia"])
     candidates_by_oid = {item.request_oid: item for item in candidates}
-    for item in day_operations:
+    for item in operations:
         candidate = candidates_by_oid.get(item.request_oid)
         detected_at = candidate.first_observed_at if candidate else None
         paid_at = item.paid_at
@@ -488,7 +510,7 @@ def build_workbook(run_date: date, events: list[dict[str, Any]], operations: lis
 
     types_sheet = workbook.create_sheet("Eventos técnicos")
     types_sheet.append(["Tipo de evento", "Cantidad", "Severidad"])
-    counts = Counter((str(item.get("event_type") or ""), str(item.get("severity") or "")) for item in day_events)
+    counts = Counter((str(item.get("event_type") or ""), str(item.get("severity") or "")) for item in events)
     for (event_type, severity), count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])):
         types_sheet.append([event_type, count, severity])
     compact_sheet(types_sheet, widths={1: 50})
@@ -497,13 +519,14 @@ def build_workbook(run_date: date, events: list[dict[str, Any]], operations: lis
     methodology = workbook.create_sheet("Metodología")
     methodology.append(["Concepto", "Definición aplicada"])
     definitions = [
-        ("Período", f"Día {run_date.isoformat()} en America/Argentina/Buenos_Aires; backlog reconstruido desde {coverage_from.isoformat()}."),
+        ("Período", f"Acumulado desde {coverage_from.isoformat()} hasta el cierre de {run_date.isoformat()} en America/Argentina/Buenos_Aires."),
+        ("Fecha de corte", "El resumen conserva una sección separada con la actividad ocurrida únicamente durante el último día del período."),
         ("Solicitud observada", "OID que la app informó mediante transfer_candidate_observed al verlo en la lista A Transferir."),
         ("No realizada vía app", "Solicitud observada hasta el cierre del día sin una transferencia confirmada por la app."),
         ("Realizada vía app", "Intento iniciado por la app con confirmación bancaria; puede quedar pendiente el registro final del comprobante."),
         ("Manual / automática", "Valor mode del evento transfer_started."),
         ("Cancelación", "Operación que contiene eventos cancellation_leg_* dentro del mismo intento."),
-        ("Tiempo hasta Pagada", "Segundos entre la primera observación transfer_candidate_observed de la solicitud en A Transferir y mark_paid_request_succeeded. No se calcula si falta alguno de los dos eventos."),
+        ("Tiempo hasta Pagada", "Segundos entre la primera observación transfer_candidate_observed de la solicitud en A Transferir y mark_paid_request_succeeded. Los promedios son acumulados y no se calculan si falta alguno de los dos eventos."),
         ("Tiempo técnico", "Inicio y fin del intento dentro de la app se conservan sólo como detalle técnico; no alimentan el tiempo operativo del resumen."),
         ("Cobertura", "Las solicitudes no realizadas vía app sólo son medibles desde clientes que emiten transfer_candidate_observed. Si no hay esa señal, el resumen muestra Sin cobertura."),
         ("Fuente única", "MetaMap Platform Server /api/v1/transfer-trace-events."),
@@ -565,14 +588,13 @@ def main() -> int:
     session = requests.Session()
     session.headers.update({"X-Client-Id": require_env("TRANSFER_TRACE_CLIENT_ID"), "X-Client-Secret": require_env("TRANSFER_TRACE_CLIENT_SECRET")})
     base_url = require_env("TRANSFER_TRACE_BASE_URL")
-    historical_events: list[dict[str, Any]] = []
-    for event_type in sorted(TRANSFER_EVENT_TYPES | {"transfer_candidate_observed"}):
-        historical_events.extend(fetch_trace_events(session, base_url, start, end, event_type=event_type))
+    events = fetch_trace_events(session, base_url, start, end)
     day_start = datetime.combine(run_date, datetime_time.min, ARGENTINA_TIMEZONE)
-    day_events = fetch_trace_events(session, base_url, day_start, end)
-    events_by_id = {str(item.get("event_id") or ""): item for item in historical_events}
-    events_by_id.update({str(item.get("event_id") or ""): item for item in day_events})
-    events = list(events_by_id.values())
+    day_events = [
+        item
+        for item in events
+        if (parse_datetime(item.get("occurred_at")) or start) >= day_start
+    ]
     operations = build_operations(events)
     candidates = build_candidates(events, operations)
     day_operations = [item for item in operations if item.started_at.date() == run_date]
@@ -595,6 +617,19 @@ def main() -> int:
         "average_automatic_detection_to_paid_seconds": average_time_to_paid(day_paid_candidates, mode="Automática"),
         "average_manual_cancellation_detection_to_paid_seconds": average_time_to_paid(day_paid_candidates, mode="Manual", operation_type="Cancelación"),
         "average_automatic_cancellation_detection_to_paid_seconds": average_time_to_paid(day_paid_candidates, mode="Automática", operation_type="Cancelación"),
+        "cumulative_trace_event_count": len(events),
+        "cumulative_candidate_count": len(candidates) if candidate_coverage else None,
+        "cumulative_operation_attempt_count": len(operations),
+        "cumulative_completed_request_count": distinct_completed(operations),
+        "cumulative_completed_manual_count": distinct_completed(operations, mode="Manual"),
+        "cumulative_completed_automatic_count": distinct_completed(operations, mode="Automática"),
+        "cumulative_manual_cancellation_count": distinct_completed(operations, mode="Manual", operation_type="Cancelación"),
+        "cumulative_automatic_cancellation_count": distinct_completed(operations, mode="Automática", operation_type="Cancelación"),
+        "cumulative_paid_with_measurable_time_count": len([item for item in candidates if item.paid_at is not None and item.paid_at.date() <= run_date]),
+        "cumulative_average_manual_detection_to_paid_seconds": average_time_to_paid(candidates, mode="Manual"),
+        "cumulative_average_automatic_detection_to_paid_seconds": average_time_to_paid(candidates, mode="Automática"),
+        "cumulative_average_manual_cancellation_detection_to_paid_seconds": average_time_to_paid(candidates, mode="Manual", operation_type="Cancelación"),
+        "cumulative_average_automatic_cancellation_detection_to_paid_seconds": average_time_to_paid(candidates, mode="Automática", operation_type="Cancelación"),
     }
     workbook = build_workbook(run_date, events, operations, candidates, coverage_from=coverage_from)
     latest, dated, metadata_path = publish(workbook, metadata, Path(env("TRANSFER_TRACE_REPORT_ROOT", DEFAULT_REPORT_ROOT)), run_date)

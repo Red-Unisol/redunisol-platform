@@ -126,6 +126,25 @@ class TransferTraceReportTest(unittest.TestCase):
             self.assertTrue(dated.exists())
             self.assertTrue(metadata.exists())
 
+    def test_workbook_keeps_prior_operations_in_cumulative_snapshot(self):
+        events = [
+            event("transfer_candidate_observed", "2026-09-03T09:00:00-03:00", mode=None),
+            event("transfer_started", "2026-09-03T10:00:00-03:00"),
+            event("mark_paid_request_succeeded", "2026-09-03T10:00:40-03:00"),
+        ]
+        operations = REPORT.build_operations(events)
+        candidates = REPORT.build_candidates(events, operations)
+        workbook = REPORT.build_workbook(
+            date(2026, 9, 6), events, operations, candidates, coverage_from=date(2026, 9, 3)
+        )
+
+        self.assertEqual(workbook["Resumen"]["B5"].value, 1)
+        self.assertEqual(workbook["Resumen"]["B7"].value, 1)
+        self.assertEqual(workbook["Resumen"]["B22"].value, 0)
+        self.assertEqual(workbook["Resumen"]["B23"].value, 0)
+        self.assertEqual(workbook["Operaciones app"]["C2"].value, "100")
+        self.assertEqual(workbook["Eventos técnicos"].max_row, 4)
+
 
 if __name__ == "__main__":
     unittest.main()
