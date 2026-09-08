@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from openpyxl.chart import LineChart, Reference
-from openpyxl.formatting.rule import FormulaRule
+from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.pagebreak import Break
 
@@ -15,7 +15,8 @@ def build_monthly_comparison(workbook, months):
     ws = workbook.create_sheet("Comparativo mensual")
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = "B5"
-    for col, width in zip("ABCDE", [18, 24, 24, 25, 18]):
+    ws.sheet_format.defaultRowHeight = 6
+    for col, width in zip("ABCDE", [15, 21, 21, 22, 16]):
         ws.column_dimensions[col].width = width
     # Series auxiliares: NA() evita dibujar pendientes como ceros en Excel.
     for col in "FGHI":
@@ -24,10 +25,10 @@ def build_monthly_comparison(workbook, months):
     def heading(row, text, *, dark=False):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
         cell = ws.cell(row, 1, text)
-        cell.font = Font(name="Calibri", size=13 if dark else 11, bold=dark, color="FFFFFF" if dark else "374151")
+        cell.font = Font(name="Calibri", size=12 if dark else 10, bold=dark, color="FFFFFF" if dark else "374151")
         cell.fill = PatternFill("solid", fgColor="17365D" if dark else "EAF0F7")
         cell.alignment = Alignment(wrap_text=True, vertical="center", indent=1)
-        ws.row_dimensions[row].height = 32
+        ws.row_dimensions[row].height = 23
 
     def table(row, title, metric=None):
         heading(row, title)
@@ -39,7 +40,7 @@ def build_monthly_comparison(workbook, months):
             cell.font = Font(name="Calibri", bold=True, color="FFFFFF")
             cell.fill = PatternFill("solid", fgColor="305496")
             cell.alignment = Alignment(wrap_text=True, vertical="center", indent=1)
-        ws.row_dimensions[row + 1].height = 34
+        ws.row_dimensions[row + 1].height = 25
         start = row + 2
         for index, month in enumerate(months):
             r = start + index
@@ -61,21 +62,28 @@ def build_monthly_comparison(workbook, months):
             ws.cell(r, 4, f'=IF(AND(COUNT(B{r}:C{r})=2,B{r}>0),C{r}/B{r}-1,"")')
             for col in range(1, 6):
                 cell = ws.cell(r, col)
-                cell.font = Font(name="Calibri", size=11, bold=col == 3, color="243746")
+                cell.font = Font(name="Calibri", size=10, bold=col == 3, color="243746")
                 cell.fill = PatternFill("solid", fgColor="F2F5F9" if index % 2 == 0 else "FFFFFF")
                 cell.alignment = Alignment(vertical="center", indent=1)
             ws.cell(r, 2).number_format = ws.cell(r, 3).number_format = MONEY if metric is None else "0.00"
             ws.cell(r, 4).number_format = VARIATION
             ws.cell(r, 5).number_format = "0.00%"
-            ws.row_dimensions[r].height = 29
+            ws.row_dimensions[r].height = 19
         end = start + len(months) - 1
-        for operator, fill, color in [
-            ("lessThan" if metric is not None else "greaterThan", "E2F0D9", "375623"),
-            ("greaterThan" if metric is not None else "lessThan", "FFC7CE", "9C0006"),
-        ]:
-            ws.conditional_formatting.add(f"D{start}:D{end}", FormulaRule(
-                formula=[f'AND(ISNUMBER($D{start}),$D{start}{"<" if operator == "lessThan" else ">"}0)'],
-                fill=PatternFill("solid", fgColor=fill, bgColor=fill), font=Font(color=color, bold=True)))
+        # Escalas continuas: comparar meses sin convertir el pendiente en cero.
+        green, yellow, red = "B7D7A8", "FFF2CC", "EA9999"
+        ws.conditional_formatting.add(f"D{start}:D{end}", ColorScaleRule(
+            start_type="num", start_value=-0.10, start_color=green if metric is not None else red,
+            mid_type="num", mid_value=0, mid_color=yellow,
+            end_type="num", end_value=0.10, end_color=red if metric is not None else green))
+        if metric is not None:
+            ws.conditional_formatting.add(f"C{start}:C{end}", ColorScaleRule(
+                start_type="min", start_color=green, mid_type="percentile", mid_value=50,
+                mid_color=yellow, end_type="max", end_color=red))
+        ws.conditional_formatting.add(f"E{start}:E{end}", ColorScaleRule(
+            start_type="num", start_value=0.001, start_color=red,
+            mid_type="num", mid_value=0.003, mid_color=yellow,
+            end_type="num", end_value=0.005, end_color=green))
         return start, end
 
     def chart(anchor, data_start, data_end, title, unit):
@@ -95,7 +103,7 @@ def build_monthly_comparison(workbook, months):
         plot.title.overlay = False
         plot.y_axis.title.overlay = False
         plot.style = 2
-        plot.height, plot.width = 7, 22
+        plot.height, plot.width = 4, 19.5
         plot.legend.position = "b"
         plot.legend.overlay = False
         plot.display_blanks = "gap"
@@ -112,11 +120,11 @@ def build_monthly_comparison(workbook, months):
         plot.series[0].graphicalProperties.line.prstDash = "sysDot"
         ws.add_chart(plot, f"A{anchor}")
         for r in range(anchor, anchor + 12):
-            ws.row_dimensions[r].height = 18
+            ws.row_dimensions[r].height = 10
 
     heading(1, "Comparativo mensual", dark=True)
-    heading(2, "Flechas: variación frente a la referencia, no frente al mes anterior. En tiempos, bajar mejora; subir empeora.")
-    ws.row_dimensions[2].height = 38
+    heading(2, "Histórico completo del período. Verde: menor tiempo o mayor tasa; rojo: lo contrario. Flechas: variación frente a la referencia.")
+    ws.row_dimensions[2].height = 32
     row = 4
     for title, first_metric in [("Primera respuesta", 0), ("Transferencias", 2)]:
         heading(row, title, dark=True)
@@ -128,7 +136,7 @@ def build_monthly_comparison(workbook, months):
         ws.row_breaks.append(Break(id=row - 1))
     heading(row, "Comisiones", dark=True)
     heading(row + 1, "Referencia: máximo teórico (0,5% de colocación). El total y la tasa efectiva quedan pendientes hasta completar la evaluación y los legajos.")
-    ws.row_dimensions[row + 1].height = 40
+    ws.row_dimensions[row + 1].height = 32
     start, end = table(row + 3, "Total definitivo y distancia al máximo teórico")
     chart(end + 2, start, end, "Comisiones · total y máximo teórico", "Pesos")
     # La referencia monetaria no se confunde con el objetivo de tiempos.

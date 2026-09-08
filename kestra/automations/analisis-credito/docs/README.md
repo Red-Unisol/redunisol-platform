@@ -703,7 +703,11 @@ intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
 mes están el conteo de legajos, sus rangos, la comisión y el total definitivo.
 Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
 Comparativo mensual es la tercera hoja, con cinco columnas visibles y bloques
-verticales de primera respuesta, transferencias y comisiones. Mediana y promedio
+verticales de primera respuesta, transferencias y comisiones. Muestra todos los
+meses del período solicitado (por defecto, octubre de 2025 al último mes cerrado),
+sin recortar el histórico a los últimos meses. Las filas y gráficos son compactos;
+los resultados usan una escala verde–amarillo–rojo por métrica, las tasas una
+escala fija entre 0,1% y 0,5%, y las variaciones una escala centrada en cero. Mediana y promedio
 se muestran por separado; cada bloque tiene un gráfico de resultado y referencia
 (en tiempos, el gráfico muestra el promedio). Variación significa resultado /
 referencia - 1, no cambio contra el mes anterior. En tiempos, bajar es verde y

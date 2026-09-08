@@ -190,6 +190,19 @@ class CommissionsTests(unittest.TestCase):
         self.assertEqual(sheet._charts[0].series[0].val.numRef.f, "'Comparativo mensual'!$H$14:$H$16")
         self.assertTrue(all(not chart.x_axis.delete and not chart.y_axis.delete for chart in sheet._charts))
 
+    def test_comparison_keeps_full_history_with_continuous_color_scales(self):
+        workbook = Workbook()
+        workbook.active.title = "Comparativo mensual"
+        months = ["2025-10", "2025-11", "2025-12", *[f"2026-{m:02d}" for m in range(1, 9)]]
+        sheet = build_monthly_comparison(workbook, months)
+        self.assertEqual([sheet.cell(r, 1).value for r in range(7, 18)], months)
+        self.assertEqual([sheet.cell(r, 1).value for r in range(95, 106)], months)
+        rules = [rule for key in sheet.conditional_formatting for rule in sheet.conditional_formatting[key]]
+        self.assertEqual(len(rules), 14)
+        self.assertTrue(all(rule.type == "colorScale" for rule in rules))
+        self.assertLessEqual(sheet.row_dimensions[7].height, 19)
+        self.assertIn("$H$22:$H$32", sheet._charts[0].series[0].val.numRef.f)
+
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict("os.environ", {
