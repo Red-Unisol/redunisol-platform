@@ -658,13 +658,17 @@ solo en producción. No modifica el dashboard ni las salidas del flow anterior.
   Se clasifica sin redondear la métrica y se redondea cada comisión a centavos.
 - Pesos: mediana/promedio de respuesta 20% cada uno; mediana/promedio de
   transferencia 15% cada uno. Comisión = colocación × peso × tasa.
-- Legajos: hasta 30 solicitudes pagadas al azar por mes, con la misma semilla
-  reproducible del reporte original. El 30% manual y el total definitivo quedan
-  pendientes de definir los objetivos de legajos. La hoja Comisiones permite
-  cargar cuántos legajos estuvieron correctos (entero entre 0 y el tamaño de
-  la muestra) y calcula su porcentaje. Vacío significa revisión pendiente.
-  La carga se guarda en la copia del Excel del operador; una generación nueva
-  comienza en blanco y no importa revisiones manuales de copias anteriores.
+- Legajos: 30 solicitudes pagadas al azar por mes, con la misma semilla
+  reproducible. En Muestreo legajos se elige Correcto (verde), Incorrecto
+  (rojo) o A revisar (amarillo), con observaciones opcionales. Comisiones
+  cuenta cada estado por mes mediante referencias a la tabla, incluso al ordenar.
+- Legajos correctos: 28–30 = tasa 0,5%; 26–27 = 0,3%; 0–25 = 0,1%.
+  Comisión = colocación × 30% × tasa. Solo se liquida cuando los 30 casos
+  están resueltos. Casos vacíos/no reconocidos y muestras distintas de 30
+  mantienen pendiente la comisión, sin normalizar ni extrapolar el puntaje.
+- El total definitivo suma el subtotal automático y la comisión de legajos
+  únicamente cuando ambos están completos. La revisión se guarda en la copia
+  del operador; una nueva generación inicia todos los casos como A revisar.
 - Si faltan métricas de alguno de los tres meses o la referencia es cero,
   la comisión queda pendiente; no se reemplaza por cero.
 
@@ -696,7 +700,8 @@ SQLite y JSON son evidencia operativa privada; no aparecen en el catálogo de
 reportes descargables. La primera hoja, Comisiones, unifica objetivos e
 importes en bloques verticales por mes y métrica: referencia, resultado,
 intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
-mes están la entrada manual de legajos y el subtotal automático. El Excel
+mes están el conteo de legajos, sus rangos, la comisión y el total definitivo.
+Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales. El Excel
 conserva colocación, métricas de referencia, reglas y feriados, además del detalle
 original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
 el JSON conserva los resultados numéricos calculados en Python.

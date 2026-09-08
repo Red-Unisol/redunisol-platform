@@ -84,8 +84,9 @@ su propia tarjeta en Gestión > Reportes y mantienen sus salidas independientes.
 
 Incluye objetivos sobre los tres meses anteriores, feriados nacionales
 obligatorios y comisiones sobre la colocación consultada por API. Los 30
-legajos se seleccionan al azar; su revisión y el total definitivo quedan
-pendientes de intervención humana. La carpeta privada `datos/` conserva
+legajos se seleccionan al azar; el operador marca Correcto, Incorrecto o
+A revisar en Muestreo legajos. Al resolver los 30 se calcula la comisión
+y, si las demás métricas están completas, el total definitivo. La carpeta privada `datos/` conserva
 SQLite y JSON de cada ejecución y no se muestra entre los archivos descargables.
 
 Ver [reglas y mantenimiento del calendario](../kestra/automations/analisis-credito/docs/README.md#reporte_evaluacion_comisiones_management).

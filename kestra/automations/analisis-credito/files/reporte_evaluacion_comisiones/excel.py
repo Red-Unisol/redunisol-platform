@@ -16,13 +16,13 @@ from openpyxl.workbook.properties import CalcProperties
 from reporte_evaluacion_report.core import MonthlyReport
 
 from .calendar import CALENDAR_DESCRIPTION, CALENDAR_VERSION, SOURCES
-from .core import EXCLUDED_SELLERS, MANUAL_WEIGHT, METRICS, RULE_VERSION, Loan, previous_months
+from .core import EXCLUDED_SELLERS, MANUAL_RULES, MANUAL_WEIGHT, METRICS, RULE_VERSION, Loan, previous_months
 
 MONEY = '"$" #,##0.00'
 
 
 def build_commission_sheet(workbook, months, reports, loans, ref_rows, placement_ranges):
-    """Una ficha vertical por mes; las entradas manuales nunca liquidan legajos."""
+    """Una ficha vertical por mes con liquidacion ligada a la revision de cada legajo."""
     ws = workbook.create_sheet("Comisiones")
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = "A4"
@@ -46,10 +46,10 @@ def build_commission_sheet(workbook, months, reports, loans, ref_rows, placement
 
     band(1, 1, 8, "Evaluación y comisiones", fill="17365D", bold=True, color="FFFFFF")
     ws.row_dimensions[1].height = 34
-    band(2, 1, 8, "Menor tiempo es mejor. Cada mes muestra objetivos, tramo alcanzado y comisión. Celda azul: completar legajos.", fill="EAF0F7")
+    band(2, 1, 8, "Menor tiempo es mejor. Cada mes muestra objetivos, tramo alcanzado y comisión. Revisar cada caso en Muestreo legajos.", fill="EAF0F7")
     ws.row_dimensions[2].height = 32
     for index, month in enumerate(months):
-        top = 4 + index * 56
+        top = 4 + index * 64
         report = reports[month]
         band(top, 1, 8, report.month_label, fill="17365D", bold=True, color="FFFFFF")
         ws.row_dimensions[top].height = 32
@@ -108,39 +108,49 @@ def build_commission_sheet(workbook, months, reports, loans, ref_rows, placement
 
         manual = top + 44
         band(manual, 1, 8, "Legajos · revisión humana", fill="305496", bold=True, color="FFFFFF")
-        for col, text in [(1, "Legajos correctos · completar"), (3, "Legajos de la muestra"), (5, "Porcentaje correcto"), (7, "Peso en el esquema")]:
+        for col, text in [(1, "Correctos"), (3, "Incorrectos"), (5, "A revisar / sin resolver"), (7, "Legajos en la muestra")]:
             band(manual + 1, col, col + 1, text, fill="EAF0F7", bold=True)
-        ws.row_dimensions[manual + 1].height = 32
         r = manual + 2
-        entry = band(r, 1, 2, fill="DAE8FC", color="0000FF", fmt="0")
-        entry.protection = Protection(locked=False)
-        entry.comment = Comment("Ingresar un número entero de legajos correctos, entre 0 y la cantidad de la muestra. Dejar vacío hasta finalizar la revisión. Los objetivos de legajos todavía no están definidos.", "Red Unisol")
-        band(r, 3, 4, len(report.legajos_sample), fmt="0")
-        input_valid = f'IFERROR(AND(ISNUMBER(A{r}),A{r}=INT(A{r}),A{r}>=0,A{r}<=C{r},C{r}>0),FALSE)'
-        band(r, 5, 6, f'=IF({input_valid},A{r}/C{r},"")', fmt="0.0%")
-        band(r, 7, 8, float(MANUAL_WEIGHT), fmt="0%")
-        validation = DataValidation(type="whole", operator="between", formula1="0", formula2=f"$C${r}", allow_blank=True)
-        validation.showErrorMessage = True
-        validation.errorStyle = "stop"
-        validation.errorTitle = "Cantidad inválida"
-        validation.error = "Ingresar un entero entre 0 y la cantidad de legajos de la muestra."
-        validation.showInputMessage = True
-        validation.promptTitle = "Resultado de la revisión"
-        validation.prompt = "Completar los legajos correctos. Vacío significa pendiente; 0 significa ninguno correcto."
-        validation.add(entry)
-        ws.add_data_validation(validation)
-        band(manual + 3, 1, 8, "Completar la celda azul y guardar una copia del Excel. La carga queda en esa copia; una nueva generación comienza en blanco.", fill="EAF0F7")
+        has_samples = any(reports[m].legajos_sample for m in months)
+        for col, status, fill in [(1, "Correcto", "E2F0D9"), (3, "Incorrecto", "FCE4D6")]:
+            count = f'=COUNTIFS(RevisionLegajos[Mes],"{month}",RevisionLegajos[Revisión],"{status}")' if has_samples else '=0'
+            band(r, col, col + 1, count, fmt="0", fill=fill, bold=True)
+        band(r, 7, 8, f'=COUNTIF(RevisionLegajos[Mes],"{month}")' if has_samples else '=0', fmt="0")
+        band(r, 5, 6, f'=G{r}-A{r}-C{r}', fmt="0", fill="FFF2CC", bold=True)
+        complete = f"AND(G{r}='Reglas'!$B$13,G{r}={len(report.legajos_sample)},E{r}=0)"
+        band(manual + 3, 1, 8, f'=IF(G{r}<>\'Reglas\'!$B$13,"Pendiente: se requiere una muestra de 30 legajos",IF({complete},"Revisión completa · comisión calculada","Pendiente: resolver todos los legajos en Muestreo legajos"))', fill="EAF0F7")
         ws.row_dimensions[manual + 3].height = 32
-        band(manual + 4, 1, 2, "Estado de revisión", bold=True)
-        band(manual + 4, 3, 8, f'=IF(C{r}=0,"Sin legajos disponibles",IF(A{r}="","Pendiente de revisión humana",IF({input_valid},"Revisión cargada · objetivos pendientes","Cantidad inválida: revisar la celda azul")))')
-        band(manual + 5, 1, 4, "Comisión de legajos (30%)", bold=True)
-        band(manual + 5, 5, 8, "Pendiente de definir objetivos", fill="FFF2CC")
-        subtotal = manual + 7
+        for col, text in [(1, "Objetivo"), (3, "Legajos correctos"), (5, "Tasa de comisión"), (7, "Tramo alcanzado")]:
+            band(manual + 4, col, col + 1, text, bold=True)
+        conditions = [f"A{r}>='Reglas'!$B$11", f"AND(A{r}>='Reglas'!$B$12,A{r}<'Reglas'!$B$11)", f"A{r}<'Reglas'!$B$12"]
+        intervals = ['=\'Reglas\'!B11&" a "&\'Reglas\'!B13', '=\'Reglas\'!B12&" a "&(\'Reglas\'!B11-1)', '="0 a "&(\'Reglas\'!B12-1)']
+        for tier, (label, condition, interval, fill) in enumerate(zip(["Máximo", "Medio", "Bajo"], conditions, intervals, ["E2F0D9", "FFF2CC", "FCE4D6"])):
+            line = manual + 5 + tier
+            band(line, 1, 2, label, fill=fill)
+            band(line, 3, 4, interval, fill=fill)
+            band(line, 5, 6, f"='Reglas'!B{8 + tier}", fmt="0.0%", fill=fill)
+            band(line, 7, 8, f'=IF({complete},IF({condition},"ALCANZADO",""),"Pendiente")', fill=fill, bold=True)
+            ws.conditional_formatting.add(f"A{line}:H{line}", FormulaRule(
+                formula=[f'AND({complete},{condition})'.replace(f'A{r}', f'$A${r}').replace(f'G{r}', f'$G${r}').replace(f'E{r}', f'$E${r}')],
+                font=Font(bold=True, color="17365D"),
+                border=Border(top=Side(style="medium", color="17365D"), bottom=Side(style="medium", color="17365D")),
+            ))
+        link = band(manual + 8, 1, 8, "→ Ir a Muestreo legajos y seleccionar el resultado de cada revisión", color="0563C1")
+        link.hyperlink = "#'Muestreo legajos'!A1"
+        band(manual + 9, 1, 2, "Peso en el esquema")
+        band(manual + 9, 3, 4, float(MANUAL_WEIGHT), fmt="0%")
+        band(manual + 9, 5, 6, "Tasa aplicada", bold=True)
+        rate = f"G{manual + 9}"
+        band(manual + 9, 7, 8, f'=IF({complete},IF({conditions[0]},\'Reglas\'!$B$8,IF({conditions[1]},\'Reglas\'!$B$9,\'Reglas\'!$B$10)),"")', fmt="0.0%", bold=True)
+        manual_amount = f"E{manual + 10}"
+        band(manual + 10, 1, 4, "Comisión de legajos (30%)", bold=True)
+        band(manual + 10, 5, 8, f'=IF(ISNUMBER({rate}),ROUND({placement}*C{manual + 9}*{rate},2),"")', fmt=MONEY, fill="E2F0D9", bold=True)
+        subtotal = manual + 12
         amounts = ",".join(amount_cells)
         band(subtotal, 1, 4, "Subtotal automático · componente del 70%", fill="E2F0D9", bold=True)
         band(subtotal, 5, 8, f'=IF(COUNT({amounts})=4,SUM({amounts}),"")', fill="E2F0D9", bold=True, fmt=MONEY)
-        band(subtotal + 1, 1, 4, "Total definitivo", bold=True)
-        band(subtotal + 1, 5, 8, "Pendiente de la comisión de legajos", fill="FFF2CC")
+        band(subtotal + 1, 1, 4, "Total definitivo", fill="17365D", bold=True, color="FFFFFF")
+        band(subtotal + 1, 5, 8, f'=IF(COUNT(E{subtotal},{manual_amount})=2,SUM(E{subtotal},{manual_amount}),"Pendiente de completar evaluación")', fill="17365D", bold=True, color="FFFFFF", fmt=MONEY)
         # Al imprimir, mantener completos los bloques: dos metricas por pagina.
         if index:
             ws.row_breaks.append(Break(id=top - 1))
@@ -198,6 +208,48 @@ def table_sheet(workbook: Any, name: str, title: str, subtitle: str, headers: li
     return ws
 
 
+def build_review_sheet(workbook, months, reports):
+    # La v1 conserva su hoja original. Solo la v2 agrega decisiones humanas.
+    del workbook["Muestreo legajos"]
+    rows = [
+        [month, item.get("solicitud_oid"), item.get("nro_socio"), item.get("linea"), "A revisar", None]
+        for month in months for item in reports[month].legajos_sample
+    ]
+    ws = table_sheet(workbook, "Muestreo legajos", "Legajos seleccionados · revisión humana",
+                     "Elegir Correcto (verde), Incorrecto (rojo) o A revisar (amarillo). Comisiones cuenta los resultados por mes. Guardar una copia revisada.",
+                     ["Mes", "Solicitud", "Número de socio", "Línea", "Revisión", "Observaciones"], rows, "RevisionLegajos")
+    for col, width in zip("ABCDEF", [16, 15, 18, 36, 21, 42]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "C5"
+    ws["A3"] = "← Volver a Comisiones"
+    ws["A3"].hyperlink = "#'Comisiones'!A1"
+    ws["A3"].font = Font(color="0563C1", underline="single")
+    if rows:
+        end = len(rows) + 4
+        validation = DataValidation(type="list", formula1='"Correcto,Incorrecto,A revisar"', allow_blank=False)
+        validation.showDropDown = False
+        validation.showErrorMessage = True
+        validation.errorStyle = "stop"
+        validation.errorTitle = "Seleccionar un estado"
+        validation.error = "Elegir Correcto, Incorrecto o A revisar."
+        validation.showInputMessage = True
+        validation.promptTitle = "Revisión del legajo"
+        validation.prompt = "Resolver cada caso. A revisar mantiene pendiente la comisión del mes."
+        validation.add(f"E5:E{end}")
+        ws.add_data_validation(validation)
+        for status, fill, color in [("Correcto", "E2F0D9", "375623"), ("Incorrecto", "FFC7CE", "9C0006"), ("A revisar", "FFF2CC", "7F6000")]:
+            ws.conditional_formatting.add(f"E5:E{end}", FormulaRule(
+                formula=[f'$E5="{status}"'], fill=PatternFill("solid", fgColor=fill, bgColor=fill), font=Font(bold=True, color=color)))
+        for row in range(5, end + 1):
+            ws.row_dimensions[row].height = 32
+            for col in [5, 6]:
+                ws.cell(row, col).protection = Protection(locked=False)
+            ws.cell(row, 5).fill = PatternFill("solid", fgColor="FFF2CC")
+            ws.cell(row, 5).comment = Comment("La comisión solo se calcula con 30 legajos resueltos. Vacíos o valores no reconocidos cuentan como pendientes.", "Red Unisol")
+    workbook.move_sheet(ws, offset=1 - workbook.index(ws))
+    return ws
+
+
 def enrich_workbook(
     workbook: Any, *, reports: Sequence[MonthlyReport], months: Sequence[str],
     loans: dict[str, list[Loan]], calendar: dict, extracted_at: datetime,
@@ -252,10 +304,13 @@ def enrich_workbook(
         ["Tasa hasta 100% (inclusive)", 0.005],                      # B8
         ["Tasa más de 100% hasta 110% (inclusive)", 0.003],          # B9
         ["Tasa más de 110%", 0.001],                               # B10
+        ["Legajos: mínimo máximo", MANUAL_RULES["high_min"]],                          # B11
+        ["Legajos: mínimo medio", MANUAL_RULES["medium_min"]],                           # B12
+        ["Legajos: muestra requerida", MANUAL_RULES["sample_size"]],                       # B13
         ["Referencia", "Media simple de los tres meses anteriores, sin redondear antes de clasificar."],
         ["Pesos", "Respuesta: 20% mediana + 20% promedio. Transferencia: 15% mediana + 15% promedio. Legajos: 30% manual."],
         ["Sin datos / referencia cero", "Comisión pendiente, no se asigna tasa ni se muestra un total definitivo."],
-        ["Legajos", "Hasta 30 solicitudes pagadas por mes. Completar cantidad correcta en Comisiones; objetivos y comisión manual pendientes de definición."],
+        ["Legajos", "Revisar 30 legajos: 28–30 correctos = 0,5%; 26–27 = 0,3%; 0–25 = 0,1%. Todos deben estar resueltos; muestras menores a 30 quedan pendientes."],
         ["Calendario", CALENDAR_DESCRIPTION],
         ["Versión de calendario", CALENDAR_VERSION],
         ["Extracción iniciada (Buenos Aires)", extracted_at.isoformat()],
@@ -283,9 +338,8 @@ def enrich_workbook(
     for row in overview.iter_rows(min_col=1, max_col=2):
         if str(row[0].value).startswith(("Regla de", "Definicion de punta")):
             row[1].value = f"{row[1].value}. Se excluyen feriados nacionales obligatorios."
-    sample = workbook["Muestreo legajos"]
-    sample["A2"] = "Muestra reproducible de hasta 30 solicitudes pagadas por mes. Revisión manual; no se asigna puntaje ni comisión de legajos."
-    sample.row_dimensions[2].height = 34
+    build_review_sheet(workbook, months, by_month)
     workbook.move_sheet(summary, offset=-workbook.index(summary))
+    workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))
     workbook.active = 0
     workbook.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True, forceFullCalc=True)

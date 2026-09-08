@@ -156,21 +156,23 @@ class CommissionsTests(unittest.TestCase):
             self.assertEqual(old.read_bytes(), b"original")
             self.assertEqual(len(list(latest.parent.joinpath("datos").glob("*.sqlite"))), 2)
 
-    def test_manual_input_is_independent_per_month_and_capped_by_actual_sample(self):
+    def test_review_counts_are_independent_per_month_and_require_full_sample(self):
         months = ["2026-07", "2026-08"]
         reports = {m: build_month_report(dataset(m, count=n), log=lambda _: None) for m, n in zip(months, [7, 0])}
         refs = {m: r for r, m in enumerate(["2026-04", "2026-05", "2026-06", *months], 5)}
         sheet = build_commission_sheet(Workbook(), months, reports, {m: [] for m in months}, refs, {m: (5, 4) for m in months})
-        self.assertEqual(sheet["C50"].value, 7)
-        self.assertEqual(sheet["C106"].value, 0)
-        for row, validation in zip([50, 106], sheet.data_validations.dataValidation):
-            self.assertIsNone(sheet[f"A{row}"].value)
-            self.assertFalse(sheet[f"A{row}"].protection.locked)
-            self.assertEqual(str(validation.sqref), f"A{row}")
-            self.assertEqual(validation.formula1, "0")
-            self.assertEqual(validation.formula2, f"$C${row}")
-            self.assertIn(f"C{row}>0", sheet[f"E{row}"].value)
-        self.assertEqual([item.id for item in sheet.row_breaks.brk], [27, 59, 83])
+        for row, month in [(50, "2026-07"), (114, "2026-08")]:
+            self.assertIn('COUNTIFS(RevisionLegajos[Mes],"'+month+'"', sheet[f"A{row}"].value)
+            self.assertIn('COUNTIF(RevisionLegajos[Mes],"'+month+'"', sheet[f"G{row}"].value)
+            self.assertIn("'Reglas'!$B$13", sheet[f"G{row + 7}"].value)
+        self.assertIn("G50=7", sheet["G57"].value)
+        self.assertIn("G114=0", sheet["G121"].value)
+        self.assertEqual(len(sheet.data_validations.dataValidation), 0)
+        self.assertEqual([item.id for item in sheet.row_breaks.brk], [27, 67, 91])
+        # Baseline months can have samples while the requested month has none.
+        empty = build_commission_sheet(Workbook(), ["2026-08"], reports, {"2026-08": []}, refs, {"2026-08": (5, 4)})
+        self.assertEqual(empty["A50"].value, "=0")
+        self.assertEqual(empty["G50"].value, "=0")
 
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,18 +191,29 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("Objetivos y comisiones", workbook.sheetnames)
             sheet = workbook["Comisiones"]
             self.assertEqual(sheet.max_column, 8)
-            self.assertIsNone(sheet["A50"].value)
-            self.assertEqual(sheet["C50"].value, 30)
-            self.assertIn('IFERROR', sheet["E50"].value)
-            self.assertEqual(sheet["E56"].value, "Pendiente de la comisión de legajos")
-            self.assertIn("COUNT(G10,G20,G30,G40)=4", sheet["E55"].value)
+            self.assertIn('"Correcto"', sheet["A50"].value)
+            self.assertIn('"Incorrecto"', sheet["C50"].value)
+            self.assertEqual(sheet["E50"].value, "=G50-A50-C50")
+            self.assertIn("COUNT(E60,E58)=2", sheet["E61"].value)
+            self.assertIn("COUNT(G10,G20,G30,G40)=4", sheet["E60"].value)
+            self.assertIn("E50=0", sheet["G57"].value)
+            self.assertEqual(workbook["Reglas"]["B11"].value, 28)
+            self.assertEqual(workbook["Reglas"]["B12"].value, 26)
+            self.assertEqual(workbook["Reglas"]["B13"].value, 30)
             self.assertIn("C10<=A10", sheet["G16"].value)
             self.assertIn("ALCANZADO", sheet["G12"].value)
-            validation = sheet.data_validations.dataValidation[0]
-            self.assertEqual(str(validation.sqref), "A50")
-            self.assertEqual(validation.type, "whole")
-            self.assertEqual(validation.formula2, "$C$50")
+            review = workbook["Muestreo legajos"]
+            self.assertEqual(workbook.sheetnames[1], "Muestreo legajos")
+            self.assertEqual([review.cell(row, 5).value for row in range(5, 35)], ["A revisar"] * 30)
+            self.assertTrue(all(review.cell(row, 2).value for row in range(5, 35)))
+            validation = review.data_validations.dataValidation[0]
+            self.assertEqual(str(validation.sqref), "E5:E34")
+            self.assertEqual(validation.type, "list")
+            self.assertEqual(validation.formula1, '"Correcto,Incorrecto,A revisar"')
             self.assertTrue(validation.showErrorMessage)
+            rules = review.conditional_formatting[next(iter(review.conditional_formatting))]
+            self.assertEqual(len(rules), 3)
+            self.assertTrue(all(rule.dxf.fill.fgColor == rule.dxf.fill.bgColor for rule in rules))
             for row in sheet:
                 for cell in row:
                     if cell.data_type == "f":
@@ -213,6 +226,7 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("https://", meta.base_url)
             audit = json.loads(next(paths.glob("*.json")).read_text(encoding="utf-8"))
             self.assertIsNone(audit["manual_commission"])
+            self.assertEqual(audit["manual_rules"]["high_min"], 28)
             self.assertNotIn("2026-07-10", audit["calendar"])
             self.assertEqual(sum(Decimal(row["amount"]) for row in audit["commissions"]), Decimal(3500))
             workbook.close()

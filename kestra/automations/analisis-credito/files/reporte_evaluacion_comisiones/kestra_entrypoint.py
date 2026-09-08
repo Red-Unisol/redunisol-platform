@@ -21,7 +21,7 @@ from reporte_evaluacion_report.storage import SQLiteDatasetStore
 
 from .calendar import CALENDAR_DESCRIPTION, CALENDAR_VERSION, SOURCES, national_holidays
 from .core import (
-    RULE_VERSION, CommissionApiClient, evaluate_commissions, fetch_loans, loan_filter,
+    RULE_VERSION, MANUAL_RULES, CommissionApiClient, evaluate_commissions, fetch_loans, loan_filter,
     loan_snapshot, previous_months,
 )
 from .excel import enrich_workbook
@@ -114,7 +114,7 @@ def generate_report(now: datetime | None = None) -> dict:
             "from_month": from_month, "to_month": to_month, "reference_months": extraction_months,
             "sample_seed": seed, "queries": {month: loan_filter(month) for month in months},
             "loans": loan_snapshot(loans), "commissions": commissions,
-            "manual_commission": None, "manual_status": "Pendiente de revision humana",
+            "manual_rules": MANUAL_RULES, "manual_commission": None, "manual_status": "Pendiente de revision humana",
         }
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, default=str), encoding="utf-8")
         write_report_workbook(
