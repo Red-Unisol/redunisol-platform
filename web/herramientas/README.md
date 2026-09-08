@@ -45,6 +45,11 @@ La pantalla interna de objetivos vive en:
 /objetivos/{OBJECTIVES_DASHBOARD_PRIVATE_SLUG}
 ```
 
+Los promedios del mes en curso usan las mismas métricas y feriados nacionales obligatorios
+que el informe de comisiones. El objetivo es la media simple de los tres promedios
+mensuales anteriores; con un mes sin datos queda pendiente. Verde hasta el objetivo,
+amarillo hasta el 110% y rojo por encima.
+
 El backend lee un snapshot JSON desde `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH` y lo expone al frontend sin cache. Kestra debe publicar ese archivo con este contrato minimo:
 
 ```json

@@ -43,6 +43,12 @@ def decimal_value(value: Any) -> Decimal:
     return result
 
 
+def reference_average(history: Sequence[Any]) -> Decimal | None:
+    if len(history) != 3 or any(value is None for value in history):
+        return None
+    return sum(map(decimal_value, history)) / 3
+
+
 def commission_rate(result: Decimal, reference: Decimal) -> Decimal | None:
     if not result.is_finite() or not reference.is_finite() or result < 0 or reference < 0:
         raise ValueError("Metricas invalidas para calcular comisiones.")
@@ -132,7 +138,7 @@ def evaluate_commissions(
         for group, statistic, label, weight in METRICS:
             value = report.summary[group][statistic]
             history = [by_month[m].summary[group][statistic] if m in by_month else None for m in baseline]
-            reference = None if any(v is None for v in history) else sum(map(decimal_value, history)) / 3
+            reference = reference_average(history)
             metric = None if value is None else decimal_value(value)
             rate = None if metric is None or reference is None else commission_rate(metric, reference)
             amount = None if rate is None else (total * rate * weight).quantize(CENT, rounding=ROUND_HALF_UP)

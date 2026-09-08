@@ -645,7 +645,7 @@ Ambos archivos se reemplazan de forma atomica para evitar descargas incompletas.
 Segundo reporte independiente: conserva el evaluatorio anterior y agrega una tarjeta
 **Evaluación y comisiones** en Gestión > Reportes. Usa los mismos inputs, secretos,
 semilla de muestreo y período acumulado; su horario mensual es 08:15 Buenos Aires,
-solo en producción. No modifica el dashboard ni las salidas del flow anterior.
+solo en producción. No modifica las salidas del flow evaluatorio anterior. El dashboard usa el mismo calendario y cálculo de referencias que v2.
 
 ### Reglas confirmadas
 
@@ -808,3 +808,14 @@ Variables:
 
 - `kestra/automations/analisis-credito/files/mudon_credixsa_report/**`
 - reutiliza `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
+
+### Cálculos compartidos con el dashboard de objetivos
+
+El snapshot del dashboard conserva sus dos indicadores de promedio (primera respuesta
+y transferencia) y el mes actual hasta la fecha de actualización. Reutiliza las funciones
+de métricas del informe y su calendario de feriados nacionales obligatorios.
+El objetivo es la media simple de los tres promedios mensuales anteriores, con igual
+peso por mes. Si falta un mes, queda sin objetivo. Los colores reutilizan los tramos
+de comisiones: hasta 100% verde, más de 100% hasta 110% amarillo, superiores rojo;
+referencia cero o datos ausentes quedan neutrales. Ya no admite un umbral independiente
+por variable de entorno. El flujo incluye ambos paquetes compartidos y holidays==0.104.
