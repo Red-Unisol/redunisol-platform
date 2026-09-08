@@ -1,4 +1,7 @@
-import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
+import type {
+  LineaPrestamoLegacy,
+  LineaPrestamoLegacyIdResolver,
+} from "../../domain/services/LineaPrestamoLegacyIdResolver";
 
 type EvaluatePrimitive = boolean | null | number | string;
 type EvaluateRow = EvaluatePrimitive[];
@@ -18,6 +21,10 @@ type Config = {
 
 const EVALUATE_LIST_PATH = "/api/Empresa/EvaluateList";
 const LINEA_PRESTAMO_TIPO = "F.Module.Cuentas.Prestamos.LineaPrestamo";
+// El nombre de la propiedad lleva espacios y la "c" en minuscula, tal cual esta
+// definida en Vimarx: con cualquier otra grafia la API responde "El camino de la
+// propiedad no es correcto" en vez de devolver filas.
+const LINEA_PRESTAMO_CAMPOS = "ID;[Terminos y condiciones].Descripcion";
 
 export class EvaluateListLineaPrestamoLegacyIdResolver
   implements LineaPrestamoLegacyIdResolver
@@ -34,7 +41,7 @@ export class EvaluateListLineaPrestamoLegacyIdResolver
 
   async resolveByPresolicitudOid(
     presolicitudOid: string,
-  ): Promise<string | null> {
+  ): Promise<LineaPrestamoLegacy | null> {
     const oid = presolicitudOid.trim();
 
     // El Oid se interpola en la expresion de criterios, asi que solo se acepta
@@ -51,7 +58,7 @@ export class EvaluateListLineaPrestamoLegacyIdResolver
         new URL(EVALUATE_LIST_PATH, this.baseUrl),
         {
           body: JSON.stringify({
-            campos: "ID",
+            campos: LINEA_PRESTAMO_CAMPOS,
             // max 2 a proposito: con una fila alcanza para resolver, y la
             // segunda solo sirve para detectar que hay mas de una candidata.
             cmd: `[LineaSolicitud.Oid] = ${oid}`,
@@ -81,7 +88,7 @@ export class EvaluateListLineaPrestamoLegacyIdResolver
     }
   }
 
-  private mapResponse(body: unknown): string | null {
+  private mapResponse(body: unknown): LineaPrestamoLegacy | null {
     if (!Array.isArray(body) || body.length !== 1) {
       return null;
     }
@@ -92,8 +99,16 @@ export class EvaluateListLineaPrestamoLegacyIdResolver
       return null;
     }
 
-    const value = row[0];
+    const id = this.mapId(row[0]);
 
+    if (id === null) {
+      return null;
+    }
+
+    return { codigoMutual: this.mapCodigoMutual(row[1]), id };
+  }
+
+  private mapId(value: EvaluatePrimitive | undefined): string | null {
     if (typeof value === "number" && Number.isInteger(value)) {
       return String(value);
     }
@@ -103,5 +118,17 @@ export class EvaluateListLineaPrestamoLegacyIdResolver
     }
 
     return null;
+  }
+
+  // Sin codigo de mutual el prestamo se crea igual: solo hace que la firma
+  // caiga en el documento por defecto. Por eso esto nunca aborta.
+  private mapCodigoMutual(value: EvaluatePrimitive | undefined): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const codigoMutual = value.trim();
+
+    return codigoMutual === "" ? null : codigoMutual;
   }
 }

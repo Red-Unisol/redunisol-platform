@@ -9,7 +9,10 @@ import type { SocioRepository } from "../../../socios/domain/repositories/SocioR
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
-import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
+import type {
+  LineaPrestamoLegacy,
+  LineaPrestamoLegacyIdResolver,
+} from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import {
   ForbiddenSolicitudAccessError,
   SolicitudCoreNotFoundError,
@@ -70,7 +73,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
         solicitud: {
           legacyOid: "555000",
           linkFirmaDigital:
-            "https://redunisol.com.ar/finalizar.php?linea=Personal&ntrans=0&sol=555000",
+            "https://redunisol.com.ar/finalizar.php?linea=amejuca&ntrans=0&sol=555000",
         },
       },
     });
@@ -401,9 +404,13 @@ function fakeGateway(
 
 // Devuelve un id distinto del que guarda la solicitud ("LP-1") a proposito: asi
 // las aserciones sobre el payload prueban que se manda el id TRADUCIDO y no el
-// Oid de presolicitud que quedo guardado.
+// Oid de presolicitud que quedo guardado. El codigo de mutual tambien difiere
+// de la descripcion de la solicitud ("Personal") por la misma razon.
 function lineaPrestamoResolver(
-  resolved: string | null = "LP-REAL-1",
+  resolved: LineaPrestamoLegacy | null = {
+    codigoMutual: "amejuca",
+    id: "LP-REAL-1",
+  },
 ): LineaPrestamoLegacyIdResolver {
   return {
     resolveByPresolicitudOid: async () => resolved,
