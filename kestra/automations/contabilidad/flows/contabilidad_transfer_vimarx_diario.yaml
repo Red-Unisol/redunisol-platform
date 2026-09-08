@@ -48,7 +48,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_excel_vimarx.vars.ok }}"
   - id: run_date
     type: STRING

@@ -21,7 +21,7 @@ inputs:
     required: true
     defaults: 500
   - id: dry_run
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: true
 
@@ -54,13 +54,13 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.sincronizar_fechas.vars.ok }}"
   - id: action
     type: STRING
     value: "{{ outputs.sincronizar_fechas.vars.action }}"
   - id: dry_run
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.sincronizar_fechas.vars.dry_run }}"
   - id: checked_count
     type: STRING

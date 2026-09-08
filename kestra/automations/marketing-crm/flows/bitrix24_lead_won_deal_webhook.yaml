@@ -66,7 +66,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.procesar_actualizacion_lead.vars.ok }}"
   - id: action
     type: STRING

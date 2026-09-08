@@ -42,7 +42,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_tope.vars.ok }}"
   - id: cuil
     type: STRING

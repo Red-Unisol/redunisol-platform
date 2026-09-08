@@ -62,10 +62,10 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_empleador.vars.ok }}"
   - id: found
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_empleador.vars.found }}"
   - id: status
     type: STRING

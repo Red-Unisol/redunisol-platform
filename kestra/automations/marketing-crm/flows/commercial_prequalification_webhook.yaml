@@ -25,13 +25,13 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.preclasificar.vars.ok }}"
   - id: prequalified
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.preclasificar.vars.prequalified }}"
   - id: route_to_whatsapp
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.preclasificar.vars.route_to_whatsapp }}"
   - id: reason
     type: STRING
