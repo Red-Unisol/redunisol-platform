@@ -15,6 +15,7 @@ from openpyxl.workbook.properties import CalcProperties
 
 from reporte_evaluacion_report.core import MonthlyReport
 
+from .comparison import build_monthly_comparison
 from .calendar import CALENDAR_DESCRIPTION, CALENDAR_VERSION, SOURCES
 from .core import EXCLUDED_SELLERS, MANUAL_RULES, MANUAL_WEIGHT, METRICS, RULE_VERSION, Loan, previous_months
 
@@ -331,15 +332,11 @@ def enrich_workbook(
                 ["Fecha", "Descripción"], [[day.isoformat(), name] for day, name in calendar.items()], "FeriadosNacionales")
     workbook["Feriados nacionales"].column_dimensions["B"].width = 90
 
-    overview = workbook["Resumen ejecutivo"]
-    overview["A1"] = "Reporte evaluatorio comercial — v2 con feriados nacionales"
-    overview["A2"] = f"Generado: {extracted_at:%d/%m/%Y %H:%M} | {CALENDAR_DESCRIPTION}"
-    overview.row_dimensions[2].height = 42
-    for row in overview.iter_rows(min_col=1, max_col=2):
-        if str(row[0].value).startswith(("Regla de", "Definicion de punta")):
-            row[1].value = f"{row[1].value}. Se excluyen feriados nacionales obligatorios."
+    del workbook["Resumen ejecutivo"]
+    comparison = build_monthly_comparison(workbook, months)
     build_review_sheet(workbook, months, by_month)
     workbook.move_sheet(summary, offset=-workbook.index(summary))
     workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))
+    workbook.move_sheet(comparison, offset=2 - workbook.index(comparison))
     workbook.active = 0
     workbook.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True, forceFullCalc=True)

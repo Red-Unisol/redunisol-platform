@@ -18,6 +18,7 @@ from reporte_evaluacion_comisiones.calendar import national_holidays
 from reporte_evaluacion_comisiones.core import (
     CommissionApiClient, Loan, commission_rate, evaluate_commissions, fetch_loans, previous_months,
 )
+from reporte_evaluacion_comisiones.comparison import build_monthly_comparison
 from reporte_evaluacion_comisiones.excel import build_commission_sheet
 from reporte_evaluacion_comisiones.kestra_entrypoint import atomic_publish, generate_report
 
@@ -174,6 +175,21 @@ class CommissionsTests(unittest.TestCase):
         self.assertEqual(empty["A50"].value, "=0")
         self.assertEqual(empty["G50"].value, "=0")
 
+    def test_comparison_links_every_month_and_charts_without_pending_zeroes(self):
+        workbook = Workbook()
+        workbook.active.title = "Comparativo mensual"
+        workbook.create_sheet("Comisiones")
+        sheet = build_monthly_comparison(workbook, ["2026-06", "2026-07", "2026-08"])
+        self.assertIn("'Comisiones'!C10", sheet["C7"].value)
+        self.assertIn("'Comisiones'!C74", sheet["C8"].value)
+        self.assertIn("'Comisiones'!C138", sheet["C9"].value)
+        self.assertIn("'Comisiones'!E189", sheet["C65"].value)
+        self.assertIn("'Comisiones'!C133", sheet["E65"].value)
+        self.assertEqual(sheet["I65"].value, '=IF(ISNUMBER(C65),C65,NA())')
+        self.assertEqual(len(sheet._charts), 3)
+        self.assertEqual(sheet._charts[0].series[0].val.numRef.f, "'Comparativo mensual'!$H$14:$H$16")
+        self.assertTrue(all(not chart.x_axis.delete and not chart.y_axis.delete for chart in sheet._charts))
+
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict("os.environ", {
@@ -187,6 +203,16 @@ class CommissionsTests(unittest.TestCase):
             self.assertEqual([call.args[1] for call in fetch.call_args_list], ["2026-05", "2026-06", "2026-07", "2026-08"])
             workbook = load_workbook(result["latest_path"])
             self.assertEqual(workbook.sheetnames[0], "Comisiones")
+            self.assertNotIn("Resumen ejecutivo", workbook.sheetnames)
+            comparison = workbook["Comparativo mensual"]
+            self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
+            self.assertEqual(len(comparison._charts), 3)
+            self.assertTrue(all(comparison.column_dimensions[c].hidden for c in "FGHI"))
+            self.assertEqual(comparison["C7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
+            self.assertIn("C7/B7-1", comparison["D7"].value)
+            self.assertIn("↓", comparison["D7"].number_format)
+            self.assertEqual(comparison["I12"].value, '=IF(ISNUMBER(C12),C12,NA())')
+            self.assertFalse(comparison._charts[0].visible_cells_only)
             self.assertEqual(len(workbook["Muestreo legajos"]["A"]) - 4, 30)
             self.assertNotIn("Objetivos y comisiones", workbook.sheetnames)
             sheet = workbook["Comisiones"]

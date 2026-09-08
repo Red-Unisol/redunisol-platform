@@ -701,7 +701,17 @@ reportes descargables. La primera hoja, Comisiones, unifica objetivos e
 importes en bloques verticales por mes y métrica: referencia, resultado,
 intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
 mes están el conteo de legajos, sus rangos, la comisión y el total definitivo.
-Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales. El Excel
+Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
+Comparativo mensual es la tercera hoja, con cinco columnas visibles y bloques
+verticales de primera respuesta, transferencias y comisiones. Mediana y promedio
+se muestran por separado; cada bloque tiene un gráfico de resultado y referencia
+(en tiempos, el gráfico muestra el promedio). Variación significa resultado /
+referencia - 1, no cambio contra el mes anterior. En tiempos, bajar es verde y
+subir es rojo. En comisiones, la referencia es el máximo teórico de 0,5% de la
+colocación y la tasa efectiva es el total definitivo / colocación; si falta la
+revisión, el resultado y el gráfico permanecen pendientes, sin sustituir por cero.
+Las series auxiliares quedan ocultas. Se elimina Resumen ejecutivo solamente en
+v2: Comisiones asume ese rol y las estadísticas ampliadas siguen en el detalle. El Excel
 conserva colocación, métricas de referencia, reglas y feriados, además del detalle
 original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
 el JSON conserva los resultados numéricos calculados en Python.
