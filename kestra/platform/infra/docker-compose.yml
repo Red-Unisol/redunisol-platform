@@ -3,6 +3,11 @@ services:
     image: postgres:${POSTGRES_VERSION}
     restart: unless-stopped
     shm_size: 128mb
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -20,6 +25,11 @@ services:
   kestra:
     image: kestra/kestra:${KESTRA_VERSION}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     user: "root"
     command: server standalone --config /etc/kestra/application.yaml
     depends_on:
