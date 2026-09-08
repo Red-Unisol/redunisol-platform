@@ -38,7 +38,7 @@ class TopeDescuentoCajaTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("trigger is defined and trigger.body is defined", flow_source)
-        self.assertIn("{'cuil': inputs.cuil ?? ''} | json", flow_source)
+        self.assertIn("{'cuil': inputs.cuil ?? ''} | toJson", flow_source)
 
     def test_entrypoint_returns_success_for_invalid_request(self) -> None:
         with (

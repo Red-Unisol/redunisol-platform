@@ -34,7 +34,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | json }}"
+      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | toJson }}"
       CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
       VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
