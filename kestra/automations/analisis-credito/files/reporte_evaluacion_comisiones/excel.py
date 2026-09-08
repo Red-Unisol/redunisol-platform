@@ -296,7 +296,7 @@ def enrich_workbook(
         for col in (9, 10):
             placements.cell(row, col).number_format = MONEY
 
-    summary = build_commission_sheet(workbook, months, by_month, loans, ref_row, placement_ranges)
+    summary = build_commission_sheet(workbook, [months[-1]], by_month, loans, ref_row, placement_ranges)
 
     rules_rows = [
         ["Versión de reglas", RULE_VERSION],                          # B5
@@ -333,8 +333,8 @@ def enrich_workbook(
     workbook["Feriados nacionales"].column_dimensions["B"].width = 90
 
     del workbook["Resumen ejecutivo"]
-    comparison = build_monthly_comparison(workbook, months)
     build_review_sheet(workbook, months, by_month)
+    comparison = build_monthly_comparison(workbook, months, ref_row, placement_ranges)
     workbook.move_sheet(summary, offset=-workbook.index(summary))
     workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))
     workbook.move_sheet(comparison, offset=2 - workbook.index(comparison))

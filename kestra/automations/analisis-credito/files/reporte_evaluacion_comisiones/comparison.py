@@ -4,12 +4,15 @@ from openpyxl.chart import LineChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.pagebreak import Break
+from openpyxl.utils import get_column_letter
+
+from .core import METRICS, previous_months
 
 MONEY = '"$" #,##0.00'
 VARIATION = '"↑ "0.0%;"↓ "0.0%;"→ "0.0%'
 
 
-def build_monthly_comparison(workbook, months):
+def build_monthly_comparison(workbook, months, reference_rows, placement_ranges):
     """Vista compacta enlazada al resumen, incluida la revision humana editable."""
     del workbook["Comparativo mensual"]
     ws = workbook.create_sheet("Comparativo mensual")
@@ -19,8 +22,9 @@ def build_monthly_comparison(workbook, months):
     for col, width in zip("ABCDE", [15, 21, 21, 22, 16]):
         ws.column_dimensions[col].width = width
     # Series auxiliares: NA() evita dibujar pendientes como ceros en Excel.
-    for col in "FGHI":
+    for col in "FGHIJK":
         ws.column_dimensions[col].hidden = True
+    metric_rows = {}
 
     def heading(row, text, *, dark=False):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
@@ -44,18 +48,41 @@ def build_monthly_comparison(workbook, months):
         start = row + 2
         for index, month in enumerate(months):
             r = start + index
-            top = 4 + index * 64
             ws.cell(r, 1, month)
             if metric is not None:
-                source = top + 6 + metric * 10
-                ref = f"'Comisiones'!A{source}"
-                result = f"'Comisiones'!C{source}"
-                rate = f"'Comisiones'!G{source + 6}"
-                ws.cell(r, 2, f'=IF(ISNUMBER({ref}),{ref},"")')
-                ws.cell(r, 5, f'=IF(ISNUMBER({rate}),{rate},"")')
+                metric_rows[month, metric] = r
+                if month == months[-1]:
+                    source = 10 + metric * 10
+                    ref = f"'Comisiones'!A{source}"
+                    result = f"'Comisiones'!C{source}"
+                    rate = f"'Comisiones'!G{source + 6}"
+                    ws.cell(r, 2, f'=IF(ISNUMBER({ref}),{ref},"")')
+                    ws.cell(r, 5, f'=IF(ISNUMBER({rate}),{rate},"")')
+                else:
+                    col = get_column_letter(3 + metric)
+                    sources = ",".join(f"'Metricas referencia'!{col}{reference_rows[m]}" for m in previous_months(month))
+                    result = f"'Metricas referencia'!{col}{reference_rows[month]}"
+                    ws.cell(r, 2, f'=IF(COUNT({sources})=3,AVERAGE({sources}),"")')
+                    valid = f"AND(COUNT(B{r}:C{r})=2,B{r}>0)"
+                    ws.cell(r, 5, f'=IF({valid},IF(C{r}<=B{r}*\'Reglas\'!$B$6,\'Reglas\'!$B$8,IF(C{r}<=B{r}*\'Reglas\'!$B$7,\'Reglas\'!$B$9,\'Reglas\'!$B$10)),"")')
             else:
-                placement = f"'Comisiones'!C{top + 1}"
-                result = f"'Comisiones'!E{top + 57}"
+                start_loan, end_loan = placement_ranges[month]
+                ws.cell(r, 6, f"=SUM('Colocacion Core'!I{start_loan}:I{end_loan})" if end_loan >= start_loan else "=0")
+                placement = f"F{r}"
+                if month == months[-1]:
+                    result = "'Comisiones'!E61"
+                else:
+                    # Historico independiente de la ficha del mes a liquidar.
+                    rates = [f"E{metric_rows[month, m]}" for m in range(4)]
+                    amounts = ",".join(f"ROUND({placement}*{weight}*{rate},2)" for rate, (_, _, _, weight) in zip(rates, METRICS))
+                    ws.cell(r, 10, f'=IF(COUNT({",".join(rates)})=4,SUM({amounts}),"")')
+                    if "RevisionLegajos" in workbook["Muestreo legajos"].tables:
+                        correct = f'COUNTIFS(RevisionLegajos[Mes],A{r},RevisionLegajos[Revisión],"Correcto")'
+                        incorrect = f'COUNTIFS(RevisionLegajos[Mes],A{r},RevisionLegajos[Revisión],"Incorrecto")'
+                        complete = f"AND(COUNTIF(RevisionLegajos[Mes],A{r})='Reglas'!$B$13,{correct}+{incorrect}='Reglas'!$B$13)"
+                        rate = f"IF({correct}>='Reglas'!$B$11,'Reglas'!$B$8,IF({correct}>='Reglas'!$B$12,'Reglas'!$B$9,'Reglas'!$B$10))"
+                        ws.cell(r, 11, f'=IF({complete},ROUND({placement}*\'Comisiones\'!$C$57*{rate},2),"")')
+                    result = f'IF(COUNT(J{r}:K{r})=2,SUM(J{r}:K{r}),"Pendiente")'
                 ws.cell(r, 2, f"=ROUND({placement}*'Reglas'!$B$8,2)")
                 ws.cell(r, 5, f'=IF(AND(ISNUMBER(C{r}),{placement}>0),C{r}/{placement},"")')
             ws.cell(r, 3, f'=IF(ISNUMBER({result}),{result},"Pendiente")')

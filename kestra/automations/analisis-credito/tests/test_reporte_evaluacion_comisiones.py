@@ -23,6 +23,12 @@ from reporte_evaluacion_comisiones.excel import build_commission_sheet
 from reporte_evaluacion_comisiones.kestra_entrypoint import atomic_publish, generate_report
 
 
+def comparison_fixture(workbook, months):
+    workbook.create_sheet("Muestreo legajos")
+    refs = {m: r for r, m in enumerate(sorted(set(previous_months(months[0]) + months)), 5)}
+    return build_monthly_comparison(workbook, months, refs, {m: (5, 4) for m in months})
+
+
 def dataset(month: str, *, count: int = 1, across_holiday: bool = False) -> MonthDataset:
     year, number = map(int, month.split("-"))
     start = datetime(year, number, 3, 9)
@@ -179,12 +185,12 @@ class CommissionsTests(unittest.TestCase):
         workbook = Workbook()
         workbook.active.title = "Comparativo mensual"
         workbook.create_sheet("Comisiones")
-        sheet = build_monthly_comparison(workbook, ["2026-06", "2026-07", "2026-08"])
-        self.assertIn("'Comisiones'!C10", sheet["C7"].value)
-        self.assertIn("'Comisiones'!C74", sheet["C8"].value)
-        self.assertIn("'Comisiones'!C138", sheet["C9"].value)
-        self.assertIn("'Comisiones'!E189", sheet["C65"].value)
-        self.assertIn("'Comisiones'!C133", sheet["E65"].value)
+        sheet = comparison_fixture(workbook, ["2026-06", "2026-07", "2026-08"])
+        self.assertIn("'Metricas referencia'!C8", sheet["C7"].value)
+        self.assertIn("'Metricas referencia'!C9", sheet["C8"].value)
+        self.assertIn("'Comisiones'!C10", sheet["C9"].value)
+        self.assertIn("'Comisiones'!E61", sheet["C65"].value)
+        self.assertIn("C65/F65", sheet["E65"].value)
         self.assertEqual(sheet["I65"].value, '=IF(ISNUMBER(C65),C65,NA())')
         self.assertEqual(len(sheet._charts), 3)
         self.assertEqual(sheet._charts[0].series[0].val.numRef.f, "'Comparativo mensual'!$H$14:$H$16")
@@ -194,7 +200,7 @@ class CommissionsTests(unittest.TestCase):
         workbook = Workbook()
         workbook.active.title = "Comparativo mensual"
         months = ["2025-10", "2025-11", "2025-12", *[f"2026-{m:02d}" for m in range(1, 9)]]
-        sheet = build_monthly_comparison(workbook, months)
+        sheet = comparison_fixture(workbook, months)
         self.assertEqual([sheet.cell(r, 1).value for r in range(7, 18)], months)
         self.assertEqual([sheet.cell(r, 1).value for r in range(95, 106)], months)
         rules = [rule for key in sheet.conditional_formatting for rule in sheet.conditional_formatting[key]]
@@ -202,6 +208,25 @@ class CommissionsTests(unittest.TestCase):
         self.assertTrue(all(rule.type == "colorScale" for rule in rules))
         self.assertLessEqual(sheet.row_dimensions[7].height, 19)
         self.assertIn("$H$22:$H$32", sheet._charts[0].series[0].val.numRef.f)
+
+    def test_generation_has_only_latest_commission_but_full_comparison(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict("os.environ", {
+                "REPORTE_EVALUACION_BASE_URL": "https://example.invalid", "REPORTS_ROOT": tmp,
+                "REPORT_INPUT_FROM_MONTH": "2026-06", "REPORT_INPUT_TO_MONTH": "2026-08", "TRIGGER_BODY_JSON": "{}",
+            }), patch("reporte_evaluacion_comisiones.kestra_entrypoint.CommissionApiClient"), \
+                patch("reporte_evaluacion_comisiones.kestra_entrypoint.fetch_month_dataset", side_effect=lambda client, month, **kw: dataset(month, count=31)), \
+                patch("reporte_evaluacion_comisiones.kestra_entrypoint.fetch_loans", side_effect=lambda client, month, limit: [sample_loan(month)]):
+                result = generate_report(datetime(2026, 9, 1, 8, 15))
+            workbook = load_workbook(result["latest_path"])
+            self.assertEqual(workbook["Comisiones"]["A4"].value, "2026-08")
+            self.assertEqual(workbook["Comisiones"].max_row, 61)
+            self.assertIn('"2026-08"', workbook["Comisiones"]["A50"].value)
+            self.assertEqual([workbook["Comparativo mensual"].cell(r, 1).value for r in range(7, 10)], ["2026-06", "2026-07", "2026-08"])
+            self.assertEqual(workbook["Muestreo legajos"].max_row, 94)
+            self.assertIn("RevisionLegajos", workbook["Comparativo mensual"]["K63"].value)
+            self.assertIn("'Comisiones'!E61", workbook["Comparativo mensual"]["C65"].value)
+            workbook.close()
 
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
         with tempfile.TemporaryDirectory() as tmp:

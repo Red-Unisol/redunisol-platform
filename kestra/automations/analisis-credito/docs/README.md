@@ -697,15 +697,19 @@ Publica en `/reports/analisis-credito/reporte-evaluacion-comisiones/`:
 - `datos/<mismo-id>.json`: préstamos, filtros, reglas, calendario y resultados.
 
 SQLite y JSON son evidencia operativa privada; no aparecen en el catálogo de
-reportes descargables. La primera hoja, Comisiones, unifica objetivos e
-importes en bloques verticales por mes y métrica: referencia, resultado,
+reportes descargables. La primera hoja, Comisiones, analiza exclusivamente
+el mes final del período (`to_month`), que por defecto es el último mes cerrado.
+No repite las liquidaciones anteriores. Unifica objetivos e importes por métrica: referencia, resultado,
 intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
-mes están el conteo de legajos, sus rangos, la comisión y el total definitivo.
+mes a liquidar están el conteo de legajos, sus rangos, la comisión y el total definitivo.
 Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
 Comparativo mensual es la tercera hoja, con cinco columnas visibles y bloques
 verticales de primera respuesta, transferencias y comisiones. Muestra todos los
 meses del período solicitado (por defecto, octubre de 2025 al último mes cerrado),
-sin recortar el histórico a los últimos meses. Las filas y gráficos son compactos;
+sin recortar el histórico a los últimos meses. Sus referencias y liquidaciones
+históricas se calculan desde las métricas, colocación y revisiones de cada mes,
+sin depender de bloques históricos en la primera hoja. El mes actual se enlaza
+a la ficha de Comisiones para reflejar su revisión. Las filas y gráficos son compactos;
 los resultados usan una escala verde–amarillo–rojo por métrica, las tasas una
 escala fija entre 0,1% y 0,5%, y las variaciones una escala centrada en cero. Mediana y promedio
 se muestran por separado; cada bloque tiene un gráfico de resultado y referencia
