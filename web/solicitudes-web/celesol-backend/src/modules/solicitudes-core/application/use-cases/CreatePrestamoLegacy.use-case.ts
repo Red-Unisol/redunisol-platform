@@ -136,12 +136,12 @@ export class CreatePrestamoLegacyUseCase {
     // el ID que espera CrearPrestamo. Se traduce aca, en el ultimo momento, y
     // no al guardar la solicitud: el Oid guardado es el que se usa para
     // reencontrar la linea en la lista del vendedor al editarla.
-    const lineaPrestamoLegacyId =
+    const lineaPrestamo =
       await this.lineaPrestamoLegacyIdResolver.resolveByPresolicitudOid(
         solicitud.lineaPrestamoLegacyOid,
       );
 
-    if (lineaPrestamoLegacyId === null) {
+    if (lineaPrestamo === null) {
       throw new SolicitudLineaPrestamoLegacyIdUnresolvedError(
         solicitud.lineaPrestamoDescripcion,
       );
@@ -151,14 +151,14 @@ export class CreatePrestamoLegacyUseCase {
       cuotas: solicitud.cuotas as number,
       fechaEmision: this.today(),
       integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" }],
-      lineaPrestamo: lineaPrestamoLegacyId,
+      lineaPrestamo: lineaPrestamo.id,
       montoDeseado: solicitud.montoAFinanciar as number,
       vendedor: String(vendedorLegacyId),
     });
 
     const linkFirmaDigital = buildLinkFirmaDigital(
       result.id,
-      solicitud.lineaPrestamoDescripcion,
+      lineaPrestamo.codigoMutual,
     );
 
     return this.repository.update(input.solicitudId, {

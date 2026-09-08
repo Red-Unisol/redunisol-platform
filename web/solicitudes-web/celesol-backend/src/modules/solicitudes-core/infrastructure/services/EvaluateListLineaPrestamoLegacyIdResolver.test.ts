@@ -15,22 +15,36 @@ describe("EvaluateListLineaPrestamoLegacyIdResolver", () => {
         capturedUrl = String(input);
         capturedBody = JSON.parse(String(init?.body));
 
-        return { json: async () => [[2674]], ok: true };
+        return { json: async () => [[2674, "amejuca"]], ok: true };
       },
     );
 
     const result = await resolver.resolveByPresolicitudOid("2673");
 
-    assert.equal(result, "2674");
+    assert.deepEqual(result, { codigoMutual: "amejuca", id: "2674" });
     assert.equal(
       capturedUrl,
       "https://legacy.example.com/api/Empresa/EvaluateList",
     );
     assert.deepEqual(capturedBody, {
-      campos: "ID",
+      campos: "ID;[Terminos y condiciones].Descripcion",
       cmd: "[LineaSolicitud.Oid] = 2673",
       max: 2,
       tipo: "F.Module.Cuentas.Prestamos.LineaPrestamo",
+    });
+  });
+
+  it("resolves the linea even when it has no codigo de mutual", async () => {
+    // Pasa seguido: de las 124 lineas que hoy puede elegir un vendedor, 26 no
+    // tienen cargado [Terminos y condiciones]. El prestamo se crea igual.
+    const resolver = new EvaluateListLineaPrestamoLegacyIdResolver(
+      CONFIG,
+      async () => ({ json: async () => [[2674, null]], ok: true }),
+    );
+
+    assert.deepEqual(await resolver.resolveByPresolicitudOid("2673"), {
+      codigoMutual: null,
+      id: "2674",
     });
   });
 
@@ -46,7 +60,13 @@ describe("EvaluateListLineaPrestamoLegacyIdResolver", () => {
   it("returns null when more than one linea points back to that oid", async () => {
     const resolver = new EvaluateListLineaPrestamoLegacyIdResolver(
       CONFIG,
-      async () => ({ json: async () => [[2585], [2608]], ok: true }),
+      async () => ({
+        json: async () => [
+          [2585, "muci"],
+          [2608, "caja"],
+        ],
+        ok: true,
+      }),
     );
 
     assert.equal(await resolver.resolveByPresolicitudOid("2586"), null);
@@ -58,7 +78,7 @@ describe("EvaluateListLineaPrestamoLegacyIdResolver", () => {
       CONFIG,
       async () => {
         called = true;
-        return { json: async () => [[1]], ok: true };
+        return { json: async () => [[1, "caja"]], ok: true };
       },
     );
 
