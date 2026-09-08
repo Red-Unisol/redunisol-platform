@@ -181,21 +181,19 @@ class CommissionsTests(unittest.TestCase):
         self.assertEqual(empty["A50"].value, "=0")
         self.assertEqual(empty["G50"].value, "=0")
 
-    def test_comparison_links_every_month_and_charts_without_pending_zeroes(self):
+    def test_comparison_links_all_four_metrics_in_each_month_row(self):
         workbook = Workbook()
         workbook.active.title = "Comparativo mensual"
-        workbook.create_sheet("Comisiones")
         sheet = comparison_fixture(workbook, ["2026-06", "2026-07", "2026-08"])
-        self.assertIn("'Metricas referencia'!C8", sheet["C7"].value)
-        self.assertIn("'Metricas referencia'!C9", sheet["C8"].value)
-        self.assertIn("'Comisiones'!C10", sheet["C9"].value)
-        self.assertIsNone(sheet.freeze_panes)
+        for metric, col in enumerate("BCDE"):
+            source_col = chr(ord("C") + metric)
+            self.assertIn(f"'Metricas referencia'!{source_col}8", sheet[f"{col}7"].value)
+            self.assertIn(f"'Metricas referencia'!{source_col}9", sheet[f"{col}8"].value)
+            self.assertIn(f"'Comisiones'!C{10 + metric * 10}", sheet[f"{col}9"].value)
+            self.assertIn('"Pendiente"', sheet[f"{col}7"].value)
         self.assertIsNone(sheet.sheet_view.pane)
-        self.assertFalse(any("Colocacion Core" in str(cell.value) or "Total definitivo" in str(cell.value) for row in sheet for cell in row))
-        self.assertEqual(len(sheet.row_breaks.brk), 1)
-        self.assertEqual(len(sheet._charts), 2)
-        self.assertEqual(sheet._charts[0].series[0].val.numRef.f, "'Comparativo mensual'!$H$14:$H$16")
-        self.assertTrue(all(not chart.x_axis.delete and not chart.y_axis.delete for chart in sheet._charts))
+        self.assertEqual(sheet.max_column, 5)
+        self.assertEqual(len(sheet._charts), 0)
 
     def test_comparison_keeps_full_history_with_continuous_color_scales(self):
         workbook = Workbook()
@@ -203,12 +201,12 @@ class CommissionsTests(unittest.TestCase):
         months = ["2025-10", "2025-11", "2025-12", *[f"2026-{m:02d}" for m in range(1, 9)]]
         sheet = comparison_fixture(workbook, months)
         self.assertEqual([sheet.cell(r, 1).value for r in range(7, 18)], months)
-        self.assertEqual([sheet.cell(r, 1).value for r in range(65, 76)], months)
+        self.assertEqual(sheet.max_row, 19)
         rules = [rule for key in sheet.conditional_formatting for rule in sheet.conditional_formatting[key]]
-        self.assertEqual(len(rules), 12)
+        self.assertEqual(len(rules), 4)
         self.assertTrue(all(rule.type == "colorScale" for rule in rules))
-        self.assertLessEqual(sheet.row_dimensions[7].height, 19)
-        self.assertIn("$H$22:$H$32", sheet._charts[0].series[0].val.numRef.f)
+        self.assertEqual({str(key.sqref) for key in sheet.conditional_formatting}, {f"{col}7:{col}17" for col in "BCDE"})
+        self.assertLessEqual(sheet.row_dimensions[7].height or sheet.sheet_format.defaultRowHeight, 19)
 
     def test_generation_has_only_latest_commission_but_full_comparison(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -243,13 +241,9 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("Resumen ejecutivo", workbook.sheetnames)
             comparison = workbook["Comparativo mensual"]
             self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
-            self.assertEqual(len(comparison._charts), 2)
-            self.assertTrue(all(comparison.column_dimensions[c].hidden for c in "FGHI"))
-            self.assertEqual(comparison["C7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
-            self.assertIn("C7/B7-1", comparison["D7"].value)
-            self.assertIn("↓", comparison["D7"].number_format)
-            self.assertEqual(comparison["I12"].value, '=IF(ISNUMBER(C12),C12,NA())')
-            self.assertFalse(comparison._charts[0].visible_cells_only)
+            self.assertEqual(comparison.max_column, 5)
+            self.assertEqual(comparison["B7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
+            self.assertIn("'Comisiones'!C40", comparison["E7"].value)
             self.assertEqual(len(workbook["Muestreo legajos"]["A"]) - 4, 30)
             self.assertNotIn("Objetivos y comisiones", workbook.sheetnames)
             sheet = workbook["Comisiones"]

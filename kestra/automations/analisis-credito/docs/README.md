@@ -703,19 +703,15 @@ No repite las liquidaciones anteriores. Unifica objetivos e importes por métric
 intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
 mes a liquidar están el conteo de legajos, sus rangos, la comisión y el total definitivo.
 Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
-Comparativo mensual es la tercera hoja, con cinco columnas visibles y bloques
-verticales de primera respuesta y transferencias, sin comparar importes de comisiones.
-Muestra todos los meses del período solicitado (por defecto, octubre de 2025 al
-último mes cerrado), sin recortar el histórico. Las referencias históricas se
-calculan desde las métricas de cada mes; el mes actual se enlaza a la ficha de
-Comisiones. No inmoviliza filas ni columnas. Las filas y gráficos son compactos;
-los resultados usan una escala verde–amarillo–rojo por métrica, las tasas una
-escala fija entre 0,1% y 0,5%, y las variaciones una escala centrada en cero. Mediana y promedio
-se muestran por separado; cada bloque tiene un gráfico de resultado y referencia
-(en tiempos, el gráfico muestra el promedio). Variación significa resultado /
-referencia - 1, no cambio contra el mes anterior. En tiempos, bajar es verde y
-subir es rojo. Los resultados pendientes no se representan como ceros.
-Las series auxiliares quedan ocultas. Se elimina Resumen ejecutivo solamente en
+Comparativo mensual es la tercera hoja: una tabla horizontal con una fila por mes
+y cinco columnas: mes, mediana y promedio de primera respuesta, y mediana y
+promedio de transferencias. Conserva todos los meses del período solicitado
+(por defecto, octubre de 2025 al último mes cerrado), sin referencias, variaciones,
+tasas ni importes históricos. Cada métrica conserva su escala continua
+verde–amarillo–rojo: menor tiempo es verde y mayor tiempo es rojo. Los datos
+históricos se enlazan a las métricas fuente y el último mes a Comisiones.
+No inmoviliza paneles; no incluye gráficos ni series auxiliares. Los valores
+faltantes quedan pendientes. Se elimina Resumen ejecutivo solamente en
 v2: Comisiones asume ese rol y las estadísticas ampliadas siguen en el detalle. El Excel
 conserva colocación, métricas de referencia, reglas y feriados, además del detalle
 original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
