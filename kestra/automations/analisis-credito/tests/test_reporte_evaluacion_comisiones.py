@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from reporte_evaluacion_report.analysis import build_month_report, business_seconds_between
 from reporte_evaluacion_report.core import MonthDataset, NovedadEvent, derive_month_seed
@@ -18,6 +18,7 @@ from reporte_evaluacion_comisiones.calendar import national_holidays
 from reporte_evaluacion_comisiones.core import (
     CommissionApiClient, Loan, commission_rate, evaluate_commissions, fetch_loans, previous_months,
 )
+from reporte_evaluacion_comisiones.excel import build_commission_sheet
 from reporte_evaluacion_comisiones.kestra_entrypoint import atomic_publish, generate_report
 
 
@@ -155,6 +156,22 @@ class CommissionsTests(unittest.TestCase):
             self.assertEqual(old.read_bytes(), b"original")
             self.assertEqual(len(list(latest.parent.joinpath("datos").glob("*.sqlite"))), 2)
 
+    def test_manual_input_is_independent_per_month_and_capped_by_actual_sample(self):
+        months = ["2026-07", "2026-08"]
+        reports = {m: build_month_report(dataset(m, count=n), log=lambda _: None) for m, n in zip(months, [7, 0])}
+        refs = {m: r for r, m in enumerate(["2026-04", "2026-05", "2026-06", *months], 5)}
+        sheet = build_commission_sheet(Workbook(), months, reports, {m: [] for m in months}, refs, {m: (5, 4) for m in months})
+        self.assertEqual(sheet["C50"].value, 7)
+        self.assertEqual(sheet["C106"].value, 0)
+        for row, validation in zip([50, 106], sheet.data_validations.dataValidation):
+            self.assertIsNone(sheet[f"A{row}"].value)
+            self.assertFalse(sheet[f"A{row}"].protection.locked)
+            self.assertEqual(str(validation.sqref), f"A{row}")
+            self.assertEqual(validation.formula1, "0")
+            self.assertEqual(validation.formula2, f"$C${row}")
+            self.assertIn(f"C{row}>0", sheet[f"E{row}"].value)
+        self.assertEqual([item.id for item in sheet.row_breaks.brk], [27, 59, 83])
+
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict("os.environ", {
@@ -169,10 +186,25 @@ class CommissionsTests(unittest.TestCase):
             workbook = load_workbook(result["latest_path"])
             self.assertEqual(workbook.sheetnames[0], "Comisiones")
             self.assertEqual(len(workbook["Muestreo legajos"]["A"]) - 4, 30)
-            self.assertEqual(workbook["Comisiones"]["J5"].value, "Pendiente de revisión humana")
-            self.assertIsNone(workbook["Comisiones"]["K5"].value)
-            self.assertIn("COUNT(D5:G5)=4", workbook["Comisiones"]["H5"].value)
-            self.assertIn("K5<=I5", workbook["Objetivos y comisiones"]["N5"].value)
+            self.assertNotIn("Objetivos y comisiones", workbook.sheetnames)
+            sheet = workbook["Comisiones"]
+            self.assertEqual(sheet.max_column, 8)
+            self.assertIsNone(sheet["A50"].value)
+            self.assertEqual(sheet["C50"].value, 30)
+            self.assertIn('IFERROR', sheet["E50"].value)
+            self.assertEqual(sheet["E56"].value, "Pendiente de la comisión de legajos")
+            self.assertIn("COUNT(G10,G20,G30,G40)=4", sheet["E55"].value)
+            self.assertIn("C10<=A10", sheet["G16"].value)
+            self.assertIn("ALCANZADO", sheet["G12"].value)
+            validation = sheet.data_validations.dataValidation[0]
+            self.assertEqual(str(validation.sqref), "A50")
+            self.assertEqual(validation.type, "whole")
+            self.assertEqual(validation.formula2, "$C$50")
+            self.assertTrue(validation.showErrorMessage)
+            for row in sheet:
+                for cell in row:
+                    if cell.data_type == "f":
+                        self.assertNotIn("Objetivos y comisiones", cell.value)
             self.assertEqual(workbook["Colocacion Core"]["I5"].value, 1000000)
             self.assertEqual(workbook["Colocacion Core"]["J5"].value, 1200000)
             paths = Path(result["latest_path"]).parent / "datos"

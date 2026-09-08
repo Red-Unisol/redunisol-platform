@@ -660,7 +660,11 @@ solo en producción. No modifica el dashboard ni las salidas del flow anterior.
   transferencia 15% cada uno. Comisión = colocación × peso × tasa.
 - Legajos: hasta 30 solicitudes pagadas al azar por mes, con la misma semilla
   reproducible del reporte original. El 30% manual y el total definitivo quedan
-  pendientes de revisión humana. No se asigna una calificación automática.
+  pendientes de definir los objetivos de legajos. La hoja Comisiones permite
+  cargar cuántos legajos estuvieron correctos (entero entre 0 y el tamaño de
+  la muestra) y calcula su porcentaje. Vacío significa revisión pendiente.
+  La carga se guarda en la copia del Excel del operador; una generación nueva
+  comienza en blanco y no importa revisiones manuales de copias anteriores.
 - Si faltan métricas de alguno de los tres meses o la referencia es cero,
   la comisión queda pendiente; no se reemplaza por cero.
 
@@ -689,8 +693,11 @@ Publica en `/reports/analisis-credito/reporte-evaluacion-comisiones/`:
 - `datos/<mismo-id>.json`: préstamos, filtros, reglas, calendario y resultados.
 
 SQLite y JSON son evidencia operativa privada; no aparecen en el catálogo de
-reportes descargables. El Excel contiene hojas de comisiones, objetivos,
-colocación, métricas de referencia, reglas y feriados, además del detalle
+reportes descargables. La primera hoja, Comisiones, unifica objetivos e
+importes en bloques verticales por mes y métrica: referencia, resultado,
+intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
+mes están la entrada manual de legajos y el subtotal automático. El Excel
+conserva colocación, métricas de referencia, reglas y feriados, además del detalle
 original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
 el JSON conserva los resultados numéricos calculados en Python.
 
