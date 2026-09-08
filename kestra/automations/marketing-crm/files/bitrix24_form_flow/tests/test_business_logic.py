@@ -84,6 +84,7 @@ from bitrix24_form_flow.form_processor.prequalification_cutover import (
 from bitrix24_form_flow.form_processor.receipt_file import _filename_from_content_disposition
 from bitrix24_form_flow.form_processor.routing_bucket import resolve_routing_bucket
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
+from bitrix24_form_flow.form_processor.volume_compensation import apply_volume_compensation
 
 
 class FormCatalogAndWhatsappTests(unittest.TestCase):
@@ -540,6 +541,60 @@ class BusinessLogicTests(unittest.TestCase):
             (10451, 71159, 68579, 90231, 29, 116561, 110059),
         )
 
+    @patch("bitrix24_form_flow.form_processor.volume_compensation.urlopen")
+    def test_volume_compensation_accepts_an_online_replacement(self, mock_urlopen) -> None:
+        response = MagicMock()
+        response.read.return_value = json.dumps({
+            "assigned_user_id": 10451,
+            "compensated": True,
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = response
+        config = load_config({
+            **self.env,
+            "BITRIX24_VOLUME_COMPENSATION_URL": "https://redunisol.test/allocate",
+            "BITRIX24_VOLUME_COMPENSATION_TOKEN": "secret",
+        })
+
+        assigned, compensated = apply_volume_compensation(
+            config,
+            deal_id=931,
+            bucket_key="catamarca_general",
+            online_pool=(68579, 10451),
+            proposed_user_id=68579,
+            recurring=False,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(assigned, 10451)
+        self.assertTrue(compensated)
+
+    @patch("bitrix24_form_flow.form_processor.volume_compensation.urlopen")
+    def test_volume_compensation_never_replaces_a_recurring_owner(self, mock_urlopen) -> None:
+        response = MagicMock()
+        response.read.return_value = json.dumps({
+            "assigned_user_id": 10451,
+            "compensated": True,
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = response
+        config = load_config({
+            **self.env,
+            "BITRIX24_VOLUME_COMPENSATION_URL": "https://redunisol.test/allocate",
+            "BITRIX24_VOLUME_COMPENSATION_TOKEN": "secret",
+        })
+
+        assigned, compensated = apply_volume_compensation(
+            config,
+            deal_id=931,
+            bucket_key="catamarca_general",
+            online_pool=(68579, 10451),
+            proposed_user_id=68579,
+            recurring=True,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(assigned, 68579)
+        self.assertFalse(compensated)
+
     def test_routing_still_requires_employment_status(self) -> None:
         config = load_config(self.env)
         routing = resolve_routing_bucket(
@@ -575,6 +630,9 @@ class BusinessLogicTests(unittest.TestCase):
             (68579, 10451, 29, 90231, 71159, 113457, 113455, 116561, 110059),
         )
         self.assertEqual(config.deal.round_robin_lookback_days, 30)
+        self.assertIsNone(config.deal.volume_compensation_url)
+        self.assertIsNone(config.deal.volume_compensation_token)
+        self.assertEqual(config.deal.volume_compensation_scope, "default")
         self.assertEqual(
             config.deal.cordoba_jubilados_user_ids,
             (10451, 71159, 68579, 90231, 29, 110059, 116561),

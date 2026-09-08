@@ -147,6 +147,9 @@ Opcionales para override de campos del lead:
 - `BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
 - `BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
 - `BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
+- `BITRIX24_ROUTING_CONFIG_URL`
+- `BITRIX24_VOLUME_COMPENSATION_URL`
+- `BITRIX24_VOLUME_COMPENSATION_TOKEN`
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 
 Valores actualmente confirmados en el CRM:
@@ -179,6 +182,13 @@ Los cuatro pools pueden administrarse desde **Configuración > Distribución Bit
 en Filament. Los flows consultan
 `https://redunisol.com.ar/api/internal/bitrix-routing` al comenzar; si la consulta
 falla o la URL no está configurada, conservan estos valores de entorno como fallback.
+
+El endpoint de compensación registra el balance diario por bucket. Cuenta las
+recurrencias sin modificarlas y puede reemplazar sólo uno de cada cuatro resultados
+no recurrentes del round-robin. Requiere el mismo token en
+`BITRIX24_VOLUME_COMPENSATION_TOKEN` (Kestra) y
+`BITRIX_ROUTING_ALLOCATION_TOKEN` (Red Unisol Web). Si el endpoint falla, el flow
+conserva la asignación propuesta originalmente.
 - `BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN=<token del webhook de salida ONCRMLEADUPDATE>`
 - `BITRIX24_CONTACT_CUIL_FIELD=UF_CRM_65B7E48033FCD`
 - `BITRIX24_LEAD_CUIL_FIELD=UF_CRM_1693840106704`

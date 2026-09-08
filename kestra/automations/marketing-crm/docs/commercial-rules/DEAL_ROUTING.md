@@ -125,5 +125,16 @@ comercial y `queued / assignment_queued` en distribucion.
 Cuando un bucket contiene mas de un vendedor:
 
 1. se reutiliza el vendedor anterior del contacto si pertenece al pool y esta disponible;
-2. si no, se aplica round-robin dentro del bucket;
-3. si no hay un vendedor disponible, el caso debe usar `manual_fallback`.
+2. toda asignación, incluida la recurrencia, actualiza el balance del día para los
+   vendedores que estaban habilitados y online en ese momento;
+3. si no hay recurrencia, tres de cada cuatro casos mantienen el round-robin y el
+   cuarto se asigna al vendedor online con mayor déficit de la jornada;
+4. el déficit es `volumen esperado - volumen recibido`, se calcula por bucket y se
+   reinicia cada día sin arrastrar diferencias históricas;
+5. un vendedor offline o pausado no acumula volumen esperado y la compensación no
+   puede producir más de dos asignaciones consecutivas al mismo vendedor;
+6. si no hay un vendedor disponible, el caso debe usar `manual_fallback`.
+
+La recurrencia tiene prioridad absoluta: la compensación la contabiliza, pero nunca
+cambia su responsable. Si el servicio de balance no está disponible, la operación
+continúa con la recurrencia y el round-robin normales.
