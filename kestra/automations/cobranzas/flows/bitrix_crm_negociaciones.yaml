@@ -27,7 +27,7 @@ tasks:
     beforeCommands:
       - pip install kestra requests > /dev/null
     env:
-      TRIGGER_BODY_JSON: "{{ (trigger.body is defined) ? (trigger.body | json) : (trigger.parameters | json) }}"
+      TRIGGER_BODY_JSON: "{{ (trigger.body is defined) ? (trigger.body | toJson) : (trigger.parameters | toJson) }}"
       TRIGGER_BODY_RAW: "{{ (trigger.body is defined) ? trigger.body : '' }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
@@ -68,8 +68,8 @@ tasks:
     beforeCommands:
       - pip install kestra > /dev/null
     env:
-      NEW_PLAN_JSON: "{{ (outputs.leer_plan_existente.value ?? null) | json }}"
-      LEGACY_PLAN_JSON: "{{ (outputs.leer_plan_legacy.value ?? null) | json }}"
+      NEW_PLAN_JSON: "{{ (outputs.leer_plan_existente.value ?? null) | toJson }}"
+      LEGACY_PLAN_JSON: "{{ (outputs.leer_plan_legacy.value ?? null) | toJson }}"
     commands:
       - python -m bitrix_crm_negociaciones.kestra_plan_guard_entrypoint
 

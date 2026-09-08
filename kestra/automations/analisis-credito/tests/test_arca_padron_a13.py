@@ -40,11 +40,11 @@ class ArcaPadronA13Tests(unittest.TestCase):
         expected = "trigger is defined and trigger.body is defined"
         self.assertEqual(flow_source.count(expected), 1)
         self.assertIn(
-            "({'cuit_cuil': inputs.cuit_cuil ?? ''} | json)",
+            "({'cuit_cuil': inputs.cuit_cuil ?? ''} | toJson)",
             flow_source,
         )
         self.assertNotIn(
-            "inputs.cuit_cuil ? ({'cuit_cuil': inputs.cuit_cuil} | json)",
+            "inputs.cuit_cuil ? ({'cuit_cuil': inputs.cuit_cuil} | toJson)",
             flow_source,
         )
 

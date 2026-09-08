@@ -56,7 +56,7 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
             "trigger is defined and trigger.body is defined"
         )
         self.assertEqual(flow_source.count(expected), 3)
-        self.assertNotIn("trigger is defined ? (trigger.body | json)", flow_source)
+        self.assertNotIn("trigger is defined ? (trigger.body | toJson)", flow_source)
 
     def test_flow_outputs_are_safe_when_cache_tasks_do_not_run(self) -> None:
         flow_source = (

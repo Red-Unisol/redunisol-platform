@@ -52,7 +52,7 @@ tasks:
       - python -c "import openpyxl" 2>/dev/null || pip install --no-cache-dir openpyxl==3.1.5 > /dev/null
     env:
       RUN_MODE: "{{ inputs.run_mode }}"
-      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'force_refresh': inputs.force_refresh ?? false, 'retry_errors': inputs.retry_errors ?? false} | json) }}"
+      TRIGGER_BODY_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | toJson) : ({'force_refresh': inputs.force_refresh ?? false, 'retry_errors': inputs.retry_errors ?? false} | toJson) }}"
       MUDON_STATE_DB_PATH: /data/credixsa-cache/mudon-report.sqlite
       CREDIX_CACHE_SQLITE_PATH: /data/credixsa-cache/credixsa.sqlite
       REPORTS_ROOT: /reports
