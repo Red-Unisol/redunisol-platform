@@ -45,13 +45,13 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_contacto.vars.ok }}"
   - id: status
     type: STRING
     value: "{{ outputs.consultar_contacto.vars.status }}"
   - id: found
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_contacto.vars.found }}"
   - id: dni
     type: STRING

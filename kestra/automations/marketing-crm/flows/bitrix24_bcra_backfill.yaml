@@ -49,7 +49,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.sincronizar_bcra.vars.ok }}"
   - id: action
     type: STRING
@@ -76,7 +76,7 @@ outputs:
     type: STRING
     value: "{{ outputs.sincronizar_bcra.vars.temporary_error_count }}"
   - id: rate_limited
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.sincronizar_bcra.vars.rate_limited }}"
   - id: message
     type: STRING

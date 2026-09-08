@@ -46,7 +46,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_snapshot.vars.ok }}"
   - id: status
     type: STRING

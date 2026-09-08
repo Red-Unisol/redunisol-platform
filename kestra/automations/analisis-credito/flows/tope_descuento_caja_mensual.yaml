@@ -29,7 +29,7 @@ inputs:
     required: false
     description: Pausa entre consultas Caja. Por defecto 3 segundos.
   - id: rebuild_only
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: false
     description: Regenera el Excel desde un checkpoint completo sin consultar Caja.
@@ -84,7 +84,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_reporte.vars.ok }}"
   - id: status
     type: STRING
@@ -105,7 +105,7 @@ outputs:
     type: INT
     value: "{{ outputs.generar_reporte.vars.pending_count }}"
   - id: rebuild_only
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_reporte.vars.rebuild_only }}"
   - id: ignored_new_candidate_count
     type: INT

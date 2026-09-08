@@ -186,10 +186,10 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.ejecutar_sondeo.vars.ok }}"
   - id: hay_candidatos
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.ejecutar_sondeo.vars.hay_candidatos }}"
   - id: cantidad_solicitudes
     type: STRING

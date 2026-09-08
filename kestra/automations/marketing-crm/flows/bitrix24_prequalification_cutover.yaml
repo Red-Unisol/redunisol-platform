@@ -11,7 +11,7 @@ labels:
 
 inputs:
   - id: dry_run
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: true
   - id: date_from
@@ -49,7 +49,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.centralizar_ownership.vars.ok }}"
   - id: action
     type: STRING

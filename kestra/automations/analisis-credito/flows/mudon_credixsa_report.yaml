@@ -23,12 +23,12 @@ inputs:
     defaults: manual
     description: Modo interno de la ejecucion (manual, monthly o resume).
   - id: force_refresh
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: false
     description: Ignora caches vigentes al iniciar una corrida manual nueva.
   - id: retry_errors
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: false
     description: Reabre los errores definitivos de la ultima corrida.
@@ -78,7 +78,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.procesar_lote.vars.ok }}"
   - id: status
     type: STRING

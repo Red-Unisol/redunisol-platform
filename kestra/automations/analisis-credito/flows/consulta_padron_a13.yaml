@@ -59,10 +59,10 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_padron.vars.ok }}"
   - id: found
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.consultar_padron.vars.found }}"
   - id: status
     type: STRING

@@ -29,13 +29,13 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.replicar_payload.vars.ok }}"
   - id: forward_attempted
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.replicar_payload.vars.forward_attempted }}"
   - id: forward_connected
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.replicar_payload.vars.forward_connected }}"
   - id: forward_target
     type: STRING

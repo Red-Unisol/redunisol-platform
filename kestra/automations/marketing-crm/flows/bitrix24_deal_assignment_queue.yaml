@@ -68,7 +68,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.procesar_colas.vars.ok }}"
   - id: processed_at
     type: STRING
