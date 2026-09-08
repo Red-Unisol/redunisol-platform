@@ -27,7 +27,7 @@ tasks:
     beforeCommands:
       - pip install kestra > /dev/null
     env:
-      TRIGGER_BODY_JSON: "{{ trigger.body | json }}"
+      TRIGGER_BODY_JSON: "{{ trigger.body | toJson }}"
       BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN: "{{ secret('BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN') }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"

@@ -44,7 +44,7 @@ tasks:
     beforeCommands:
       - pip install kestra requests > /dev/null
     env:
-      PLAN_JSON: "{{ outputs.leer_plan.value | json }}"
+      PLAN_JSON: "{{ outputs.leer_plan.value | toJson }}"
       ACTION_ORDER: "{{ inputs.action_order }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"

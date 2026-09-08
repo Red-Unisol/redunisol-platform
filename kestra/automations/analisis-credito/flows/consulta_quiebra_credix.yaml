@@ -30,7 +30,7 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
+      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | toJson) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | toJson) }}"
     commands:
       - python -m consulta_quiebra_credix.cache_lookup_entrypoint
 
@@ -55,9 +55,9 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
-      CREDIX_CACHE_BY_CUIL_JSON: "{{ (outputs.leer_cache_cuil.value ?? null) | json }}"
-      CREDIX_CACHE_BY_NAME_JSON: "{{ (outputs.leer_cache_nombre.value ?? null) | json }}"
+      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | toJson) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | toJson) }}"
+      CREDIX_CACHE_BY_CUIL_JSON: "{{ (outputs.leer_cache_cuil.value ?? null) | toJson }}"
+      CREDIX_CACHE_BY_NAME_JSON: "{{ (outputs.leer_cache_nombre.value ?? null) | toJson }}"
       CREDIX_CACHE_MAX_AGE_DAYS: "7"
     commands:
       - python -m consulta_quiebra_credix.cache_response_entrypoint
@@ -80,7 +80,7 @@ tasks:
         - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
     containerImage: ghcr.io/red-unisol/analisis-credito-precalentar-cache-credixsa-v2:latest
     env:
-      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | json) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | json) }}"
+      CREDIX_REQUEST_JSON: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body | toJson) : ({'cuit': inputs.cuit ?? '', 'nombre': inputs.nombre ?? ''} | toJson) }}"
       CREDIX_LOGIN_URL: "https://www.credixsa.com/nuevo/login.php"
       CREDIX_TIMEOUT_SECONDS: "30"
       CREDIX_DEBUG: "{{ envs.credix_debug ?? 'false' }}"
@@ -88,8 +88,8 @@ tasks:
       CREDIX_CLIENTE: "{{ secret('CREDIX_CLIENTE') }}"
       CREDIX_USER: "{{ secret('CREDIX_USER') }}"
       CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
-      CREDIX_CACHE_BY_CUIL_JSON: "{{ (outputs.leer_cache_cuil.value ?? null) | json }}"
-      CREDIX_CACHE_BY_NAME_JSON: "{{ (outputs.leer_cache_nombre.value ?? null) | json }}"
+      CREDIX_CACHE_BY_CUIL_JSON: "{{ (outputs.leer_cache_cuil.value ?? null) | toJson }}"
+      CREDIX_CACHE_BY_NAME_JSON: "{{ (outputs.leer_cache_nombre.value ?? null) | toJson }}"
       CREDIX_CACHE_MAX_AGE_DAYS: "7"
       CREDIX_CACHE_SQLITE_PATH: "/data/credixsa-cache/credixsa.sqlite"
     commands:
