@@ -640,6 +640,96 @@ Ambos archivos se reemplazan de forma atomica para evitar descargas incompletas.
 
 - `kestra/automations/analisis-credito/files/reporte_evaluacion_report/**`
 
+## reporte_evaluacion_comisiones_management
+
+Segundo reporte independiente: conserva el evaluatorio anterior y agrega una tarjeta
+**Evaluación y comisiones** en Gestión > Reportes. Usa los mismos inputs, secretos,
+semilla de muestreo y período acumulado; su horario mensual es 08:15 Buenos Aires,
+solo en producción. No modifica las salidas del flow evaluatorio anterior. El dashboard usa el mismo calendario y cálculo de referencias que v2.
+
+### Reglas confirmadas
+
+- Referencia: media simple de las métricas de los tres meses anteriores. Extrae
+  esos tres meses adicionales aunque queden fuera del período solicitado.
+- Tiempos laborales de lunes a viernes, 08:00–17:00, descontando únicamente
+  feriados nacionales obligatorios argentinos. Días turísticos no laborables y
+  Jueves Santo cuentan como hábiles, salvo coincidencia con un feriado obligatorio.
+- Resultado <= referencia: 0,5%; > referencia y <= 110%: 0,3%; > 110%: 0,1%.
+  Se clasifica sin redondear la métrica y se redondea cada comisión a centavos.
+- Pesos: mediana/promedio de respuesta 20% cada uno; mediana/promedio de
+  transferencia 15% cada uno. Comisión = colocación × peso × tasa.
+- Legajos: 30 solicitudes pagadas al azar por mes, con la misma semilla
+  reproducible. En Muestreo legajos se elige Correcto (verde), Incorrecto
+  (rojo) o A revisar (amarillo), con observaciones opcionales. Comisiones
+  cuenta cada estado por mes mediante referencias a la tabla, incluso al ordenar.
+- Legajos correctos: 28–30 = tasa 0,5%; 26–27 = 0,3%; 0–25 = 0,1%.
+  Comisión = colocación × 30% × tasa. Solo se liquida cuando los 30 casos
+  están resueltos. Casos vacíos/no reconocidos y muestras distintas de 30
+  mantienen pendiente la comisión, sin normalizar ni extrapolar el puntaje.
+- El total definitivo suma el subtotal automático y la comisión de legajos
+  únicamente cuando ambos están completos. La revisión se guarda en la copia
+  del operador; una nueva generación inicia todos los casos como A revisar.
+- Si faltan métricas de alguno de los tres meses o la referencia es cero,
+  la comisión queda pendiente; no se reemplaza por cero.
+
+### Base del Core y trazabilidad
+
+Consulta `Evaluate` y `EvaluateList` sobre `F.Module.Cuentas.Prestamos.Prestamo`.
+Filtra por `FechaEmision` del mes, `Solicitud.Estado.Descripcion = 'Pagada'` y
+excluye vendedores Alvaro Pajon, Gabriela Acosta, Jorgelina Marin,
+Karina Altamirano y Martin Rodriguez, reproduciendo el procedimiento del operador.
+La base monetaria es `MontoADesembolsar` (Monto Deseado), no `Capital`.
+Las métricas conservan el universo y las exclusiones de líneas del evaluatorio;
+los filtros de colocación se aplican por separado.
+
+Comprueba cantidad antes/después, filas únicas y filtros. Si se alcanza el límite
+de extracción o hay inconsistencias, falla sin reemplazar `ultimo.xlsx`.
+El control de cantidades no equivale a una transacción consistente del Core:
+un importe podría cambiar sin cambiar el número de préstamos.
+Los meses cerrados pueden variar por actualizaciones posteriores del Core;
+cada ejecución conserva su propia evidencia, sin reemplazar la anterior.
+
+Publica en `/reports/analisis-credito/reporte-evaluacion-comisiones/`:
+
+- `ultimo.xlsx`: reemplazo atómico, visible después de guardar la evidencia.
+- `historico/<fecha-hora-microsegundos-id>.xlsx`: una copia por ejecución.
+- `datos/<mismo-id>.sqlite`: eventos extraídos, incluyendo meses de referencia.
+- `datos/<mismo-id>.json`: préstamos, filtros, reglas, calendario y resultados.
+
+SQLite y JSON son evidencia operativa privada; no aparecen en el catálogo de
+reportes descargables. La primera hoja, Comisiones, analiza exclusivamente
+el mes final del período (`to_month`), que por defecto es el último mes cerrado.
+No repite las liquidaciones anteriores. Unifica objetivos e importes por métrica: referencia, resultado,
+intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
+mes a liquidar están el conteo de legajos, sus rangos, la comisión y el total definitivo.
+Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
+Comparativo mensual es la tercera hoja: una tabla horizontal con una fila por mes
+y siete columnas: mes, mediana y promedio de primera respuesta, transferencias
+y punta a punta. Punta a punta es informativo y no interviene en las comisiones. Conserva todos los meses del período solicitado
+(por defecto, octubre de 2025 al último mes cerrado), sin referencias, variaciones,
+tasas ni importes históricos. Cada métrica conserva su escala continua
+verde–amarillo–rojo: menor tiempo es verde y mayor tiempo es rojo. Los datos
+históricos se enlazan a las métricas fuente y el último mes a Comisiones.
+No inmoviliza paneles; no incluye gráficos ni series auxiliares. Los valores
+faltantes quedan pendientes. Se elimina Resumen ejecutivo solamente en
+v2: Comisiones asume ese rol y las estadísticas ampliadas siguen en el detalle. El Excel
+conserva colocación, métricas de referencia, reglas y feriados, además del detalle
+original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
+el JSON conserva los resultados numéricos calculados en Python.
+
+### Mantenimiento del calendario
+
+`reporte_evaluacion_comisiones/calendar.py` fija `holidays==0.104`, filtra los
+opcionales y corrige el traslado nacional del 12 al 10 de octubre de 2025.
+Las fuentes oficiales quedan dentro del reporte. El calendario admite
+2017–2026; actualizarlo y revisar las disposiciones anuales antes de procesar
+2027. Fuera de ese rango falla explícitamente, incluyendo años de eventos
+históricos que intervengan en los intervalos medidos.
+
+Namespace files: `reporte_evaluacion_comisiones/**` y
+`reporte_evaluacion_report/**`. El paquete compartido mantiene los valores
+predeterminados del reporte anterior, sin exclusión de feriados.
+
 ## mudon_credixsa_report
 
 Genera el padron de socios con credito activo en las lineas `MUDON HABERES` y
@@ -718,3 +808,14 @@ Variables:
 
 - `kestra/automations/analisis-credito/files/mudon_credixsa_report/**`
 - reutiliza `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
+
+### Cálculos compartidos con el dashboard de objetivos
+
+El snapshot del dashboard conserva sus dos indicadores de promedio (primera respuesta
+y transferencia) y el mes actual hasta la fecha de actualización. Reutiliza las funciones
+de métricas del informe y su calendario de feriados nacionales obligatorios.
+El objetivo es la media simple de los tres promedios mensuales anteriores, con igual
+peso por mes. Si falta un mes, queda sin objetivo. Los colores reutilizan los tramos
+de comisiones: hasta 100% verde, más de 100% hasta 110% amarillo, superiores rojo;
+referencia cero o datos ausentes quedan neutrales. Ya no admite un umbral independiente
+por variable de entorno. El flujo incluye ambos paquetes compartidos y holidays==0.104.

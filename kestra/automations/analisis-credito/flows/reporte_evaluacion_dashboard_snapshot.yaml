@@ -24,17 +24,18 @@ tasks:
       enabled: true
       include:
         - reporte_evaluacion_dashboard/**
+        - reporte_evaluacion_report/**
+        - reporte_evaluacion_comisiones/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       volumes:
         - "/opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion"
     containerImage: python:3.12-slim
     beforeCommands:
-      - pip install kestra requests urllib3 > /dev/null
+      - pip install kestra requests urllib3 holidays==0.104 > /dev/null
     env:
       OBJECTIVES_RUN_MONTH: "{{ inputs.run_month ?? '' }}"
       OBJECTIVES_DASHBOARD_SNAPSHOT_PATH: "/data/reporte-evaluacion/dashboard/latest.json"
-      OBJECTIVES_YELLOW_THRESHOLD_PCT: "{{ envs.objectives_yellow_threshold_pct ?? '15' }}"
       REPORTE_EVALUACION_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       REPORTE_EVALUACION_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
       REPORTE_EVALUACION_TIMEOUT_SECONDS: "{{ envs.reporte_evaluacion_timeout_seconds ?? '60' }}"

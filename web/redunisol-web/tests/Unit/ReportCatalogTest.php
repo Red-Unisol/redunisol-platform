@@ -48,3 +48,17 @@ function fakeReport(string $path, int $modifiedAt): array
         'modified_at' => $modifiedAt,
     ];
 }
+
+test('it keeps evaluation and commissions as separate report cards', function () {
+    $groups = (new ReportCatalog)->groups(collect([
+        fakeReport('analisis-credito/reporte-evaluacion/ultimo.xlsx', 1000),
+        fakeReport('analisis-credito/reporte-evaluacion-comisiones/ultimo.xlsx', 2000),
+        fakeReport('analisis-credito/reporte-evaluacion-comisiones/historico/run.xlsx', 1900),
+    ]))->keyBy('key');
+
+    expect($groups)->toHaveCount(2)
+        ->and($groups['analisis-credito/reporte-evaluacion']['title'])->toBe('Reporte de evaluación')
+        ->and($groups['analisis-credito/reporte-evaluacion']['history'])->toHaveCount(0)
+        ->and($groups['analisis-credito/reporte-evaluacion-comisiones']['title'])->toBe('Evaluación y comisiones')
+        ->and($groups['analisis-credito/reporte-evaluacion-comisiones']['history'])->toHaveCount(1);
+});

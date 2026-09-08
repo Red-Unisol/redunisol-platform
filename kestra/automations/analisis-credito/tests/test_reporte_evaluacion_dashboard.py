@@ -13,7 +13,7 @@ if str(FILES_ROOT) not in sys.path:
 from reporte_evaluacion_dashboard.generate_snapshot import (  # noqa: E402
     NovedadEvent,
     compute_first_response_minutes,
-    main,
+    main, metric_payload, classify_state, compute_transfer_minutes,
 )
 
 
@@ -89,6 +89,35 @@ class ReporteEvaluacionDashboardTests(unittest.TestCase):
         ]
 
         self.assertEqual(compute_first_response_minutes(events), [15.0, 30.0])
+
+    def test_target_weights_months_equally_and_requires_all_three(self):
+        metric = metric_payload(metric_id="first_response", name="Respuesta", current_values=[25],
+                                target_month_values=[[10] * 100, [20], [60]])
+        self.assertEqual(metric["objetivo_min"], 30)
+        self.assertEqual(metric["casos_objetivo"], 102)
+        self.assertEqual(metric["estado"], "verde")
+        missing = metric_payload(metric_id="transfer", name="Transferencia", current_values=[25],
+                                 target_month_values=[[10], [], [60]])
+        self.assertIsNone(missing["objetivo_min"])
+        self.assertEqual(missing["estado"], "neutral")
+
+    def test_thresholds_match_commissions(self):
+        for actual, expected in [(100, "verde"), (100.01, "amarillo"), (110, "amarillo"), (110.01, "rojo")]:
+            self.assertEqual(classify_state(actual, 100), expected)
+        self.assertEqual(classify_state(0, 0), "neutral")
+        self.assertEqual(classify_state(None, 10), "neutral")
+
+    def test_mandatory_holidays_but_not_optional_tourism_days(self):
+        for start, end, expected in [
+            (datetime(2026, 7, 8, 16), datetime(2026, 7, 10, 9), 120),
+            (datetime(2026, 7, 10, 8), datetime(2026, 7, 10, 9), 60),
+        ]:
+            events = [make_event(event_id=i, solicitud_oid=1, linea="PROPIA", state=state, created_at=dt)
+                      for i, state, dt in [(1, "RevisionRiesgo", start), (2, "Confirmada", end)]]
+            self.assertEqual(compute_first_response_minutes(events), [expected])
+            events = [make_event(event_id=i, solicitud_oid=1, linea="PROPIA", state=state, created_at=dt)
+                      for i, state, dt in [(1, "A Transferir", start), (2, "Pagada", end)]]
+            self.assertEqual(compute_transfer_minutes(events), [expected])
 
     def test_main_emits_warning_outputs_when_snapshot_succeeds(self) -> None:
         with (

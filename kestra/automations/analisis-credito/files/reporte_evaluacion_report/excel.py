@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Collection, Dict, Optional, Sequence
 
 from .analysis import business_seconds_between, summarize_metric_rows_by_status, summarize_minutes
 from .core import MonthlyReport, format_period_label, normalize_text
@@ -494,7 +494,9 @@ def _classify_state_area(state_value: Optional[str]) -> str:
     return STATE_AREA_MAP.get(normalize_text(state_value), "Misc")
 
 
-def _build_state_duration_rows(report: MonthlyReport) -> list[Dict[str, Any]]:
+def _build_state_duration_rows(
+    report: MonthlyReport, *, excluded_dates: Collection[date] = (),
+) -> list[Dict[str, Any]]:
     grouped_rows: dict[int, list[Dict[str, Any]]] = defaultdict(list)
     for row in report.base_rows:
         if row.get("estado_detectado") and row.get("event_ts") is not None:
@@ -527,7 +529,7 @@ def _build_state_duration_rows(report: MonthlyReport) -> list[Dict[str, Any]]:
             business_minutes = 0.0
             if start_ts is not None and end_ts is not None:
                 calendar_minutes = max((end_ts - start_ts).total_seconds() / 60.0, 0.0)
-                business_minutes = business_seconds_between(start_ts, end_ts) / 60.0
+                business_minutes = business_seconds_between(start_ts, end_ts, excluded_dates=excluded_dates) / 60.0
 
             duration_rows.append(
                 {
@@ -629,6 +631,8 @@ def write_report_workbook(
     effective_seed: int,
     run_started_at: datetime,
     dataset_created_at: Optional[datetime] = None,
+    excluded_dates: Collection[date] = (),
+    workbook_enricher: Optional[Callable[[Any], None]] = None,
 ) -> None:
     if Workbook is None:
         raise RuntimeError(
@@ -886,7 +890,7 @@ def write_report_workbook(
     transfer_rows = [row for report in month_reports for row in _with_period_context(report, report.transfer)]
     end_to_end_rows = [row for report in month_reports for row in _with_period_context(report, report.end_to_end)]
     sample_rows = [row for report in month_reports for row in _with_period_context(report, report.legajos_sample)]
-    state_duration_rows = [row for report in month_reports for row in _build_state_duration_rows(report)]
+    state_duration_rows = [row for report in month_reports for row in _build_state_duration_rows(report, excluded_dates=excluded_dates)]
     metric_quantile_rows = []
     metric_catalog = [
         ("Primera respuesta", "first_response"),
@@ -965,7 +969,7 @@ def write_report_workbook(
     ]
     state_time_summary_rows = []
     for report in month_reports:
-        month_state_rows = _build_state_duration_rows(report)
+        month_state_rows = _build_state_duration_rows(report, excluded_dates=excluded_dates)
         state_time_summary_rows.extend(
             _state_time_summary_rows(
                 month_state_rows,
@@ -1163,4 +1167,6 @@ def write_report_workbook(
             max_width=int(sheet.get("max_width", 42)),
         )
 
+    if workbook_enricher is not None:
+        workbook_enricher(workbook)
     workbook.save(path)

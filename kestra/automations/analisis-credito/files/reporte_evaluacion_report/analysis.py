@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import random
 import statistics
-from datetime import datetime, time, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from datetime import date, datetime, time, timedelta
+from typing import Any, Collection, Dict, List, Optional, Sequence
 
 from .core import (
     ANALYSIS_EXCLUDED_LINE_KEYWORDS,
@@ -19,7 +19,9 @@ from .core import (
 )
 
 
-def business_seconds_between(start_dt: datetime, end_dt: datetime) -> float:
+def business_seconds_between(
+    start_dt: datetime, end_dt: datetime, *, excluded_dates: Collection[date] = (),
+) -> float:
     if end_dt <= start_dt:
         return 0.0
     work_start = time(8, 0, 0)
@@ -29,7 +31,7 @@ def business_seconds_between(start_dt: datetime, end_dt: datetime) -> float:
     end_day = end_dt.date()
 
     while current_day <= end_day:
-        if current_day.weekday() >= 5:
+        if current_day.weekday() >= 5 or current_day in excluded_dates:
             current_day += timedelta(days=1)
             continue
         day_start = datetime.combine(current_day, work_start)
@@ -72,7 +74,9 @@ def display_final_status_label(value: Optional[str]) -> str:
     return normalized.title()
 
 
-def compute_first_response_metrics(events_by_solicitud: Dict[int, List[NovedadEvent]]) -> List[Dict[str, Any]]:
+def compute_first_response_metrics(
+    events_by_solicitud: Dict[int, List[NovedadEvent]], *, excluded_dates: Collection[date] = (),
+) -> List[Dict[str, Any]]:
     details: List[Dict[str, Any]] = []
     for solicitud_oid, items in events_by_solicitud.items():
         state_events = sorted_state_events(items)
@@ -107,7 +111,9 @@ def compute_first_response_metrics(events_by_solicitud: Dict[int, List[NovedadEv
                 "revision_riesgo_inicio": first_rr_event.created_at,
                 "primera_respuesta": response_event.created_at,
                 "estado_primera_respuesta": response_event.parsed_state,
-                "minutos": business_seconds_between(first_rr_event.created_at, response_event.created_at) / 60.0,
+                "minutos": business_seconds_between(
+                    first_rr_event.created_at, response_event.created_at, excluded_dates=excluded_dates,
+                ) / 60.0,
             }
         )
     return details
@@ -127,7 +133,9 @@ def is_analysis_excluded_solicitud(items: Sequence[NovedadEvent]) -> bool:
     return any(is_analysis_excluded_line(event.linea_descripcion) for event in items)
 
 
-def compute_transfer_metrics(events_by_solicitud: Dict[int, List[NovedadEvent]]) -> List[Dict[str, Any]]:
+def compute_transfer_metrics(
+    events_by_solicitud: Dict[int, List[NovedadEvent]], *, excluded_dates: Collection[date] = (),
+) -> List[Dict[str, Any]]:
     details: List[Dict[str, Any]] = []
     for solicitud_oid, items in events_by_solicitud.items():
         with_datetime = [event for event in items if event.created_at is not None]
@@ -171,6 +179,7 @@ def compute_transfer_metrics(events_by_solicitud: Dict[int, List[NovedadEvent]])
         business_minutes = business_seconds_between(
             transfer_for_measure.created_at,
             last_paid.created_at,
+            excluded_dates=excluded_dates,
         ) / 60.0
         if business_minutes < 0:
             continue
@@ -188,7 +197,9 @@ def compute_transfer_metrics(events_by_solicitud: Dict[int, List[NovedadEvent]])
     return details
 
 
-def compute_end_to_end_metrics(events_by_solicitud: Dict[int, List[NovedadEvent]]) -> List[Dict[str, Any]]:
+def compute_end_to_end_metrics(
+    events_by_solicitud: Dict[int, List[NovedadEvent]], *, excluded_dates: Collection[date] = (),
+) -> List[Dict[str, Any]]:
     details: List[Dict[str, Any]] = []
     for solicitud_oid, items in events_by_solicitud.items():
         state_events = sorted_state_events(items)
@@ -200,7 +211,9 @@ def compute_end_to_end_metrics(events_by_solicitud: Dict[int, List[NovedadEvent]
         if final_event is None or start_event.created_at is None or final_event.created_at is None:
             continue
 
-        business_minutes = business_seconds_between(start_event.created_at, final_event.created_at) / 60.0
+        business_minutes = business_seconds_between(
+            start_event.created_at, final_event.created_at, excluded_dates=excluded_dates,
+        ) / 60.0
         if business_minutes < 0:
             continue
 
@@ -375,7 +388,9 @@ def _events_by_solicitud(events: Sequence[NovedadEvent]) -> Dict[int, List[Noved
     return grouped
 
 
-def build_month_report(dataset: MonthDataset, log: LogFn = print) -> MonthlyReport:
+def build_month_report(
+    dataset: MonthDataset, log: LogFn = print, *, excluded_dates: Collection[date] = (),
+) -> MonthlyReport:
     all_events_by_solicitud = _events_by_solicitud(dataset.history_events)
     excluded_analysis_oids = {
         solicitud_oid
@@ -387,9 +402,9 @@ def build_month_report(dataset: MonthDataset, log: LogFn = print) -> MonthlyRepo
         for solicitud_oid, items in all_events_by_solicitud.items()
         if solicitud_oid not in excluded_analysis_oids
     }
-    first_response = compute_first_response_metrics(events_by_solicitud)
-    transfer = compute_transfer_metrics(events_by_solicitud)
-    end_to_end = compute_end_to_end_metrics(events_by_solicitud)
+    first_response = compute_first_response_metrics(events_by_solicitud, excluded_dates=excluded_dates)
+    transfer = compute_transfer_metrics(events_by_solicitud, excluded_dates=excluded_dates)
+    end_to_end = compute_end_to_end_metrics(events_by_solicitud, excluded_dates=excluded_dates)
     end_to_end_by_final_status = summarize_metric_rows_by_status(end_to_end)
     legajos_sample = build_legajos_sample(
         events_by_solicitud,

@@ -74,6 +74,23 @@ El flow `reporte_evaluacion_management` genera el acumulado desde octubre de 202
 
 Tambien puede iniciarse desde Kestra con inputs opcionales `from_month` y `to_month`, o mediante su webhook asincrono. El webhook acepta un objeto JSON opcional como `{"from_month":"2026-01","to_month":"2026-07"}`; sin body usa el periodo acumulado por defecto. Solo admite meses cerrados.
 
+## Evaluación y comisiones
+
+El flow adicional `reporte_evaluacion_comisiones_management` publica en
+`analisis-credito/reporte-evaluacion-comisiones/`, con su propio `ultimo.xlsx`
+e histórico por ejecución. Corre el día 1 a las 08:15 Buenos Aires y admite
+los mismos meses cerrados que el evaluatorio anterior. Ambos reportes tienen
+su propia tarjeta en Gestión > Reportes y mantienen sus salidas independientes.
+
+Incluye objetivos sobre los tres meses anteriores, feriados nacionales
+obligatorios y comisiones sobre la colocación consultada por API. Los 30
+legajos se seleccionan al azar; el operador marca Correcto, Incorrecto o
+A revisar en Muestreo legajos. Al resolver los 30 se calcula la comisión
+y, si las demás métricas están completas, el total definitivo. La carpeta privada `datos/` conserva
+SQLite y JSON de cada ejecución y no se muestra entre los archivos descargables.
+
+Ver [reglas y mantenimiento del calendario](../kestra/automations/analisis-credito/docs/README.md#reporte_evaluacion_comisiones_management).
+
 ## Topes mensuales de Caja
 
 El flow `tope_descuento_caja_mensual` corre el dia 1 de cada mes a las 05:00

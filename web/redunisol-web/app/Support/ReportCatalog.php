@@ -19,6 +19,10 @@ class ReportCatalog
             'title' => 'Reporte de evaluación',
             'description' => 'Evaluaciones crediticias acumuladas para el período mensual seleccionado.',
         ],
+        'analisis-credito/reporte-evaluacion-comisiones' => [
+            'title' => 'Evaluación y comisiones',
+            'description' => 'Objetivos sobre los tres meses anteriores, feriados nacionales y comisiones. Legajos pendientes de revisión humana.',
+        ],
         'analisis-credito/tope-descuento-caja' => [
             'title' => 'Tope de descuento de Caja',
             'description' => 'Consultas de cupo y topes de descuento utilizados en el análisis crediticio.',

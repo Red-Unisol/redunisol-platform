@@ -1864,7 +1864,7 @@ function normalizeObjectiveState(rawState, actualMin, targetMin) {
     if (actualMin <= targetMin) {
         return 'green';
     }
-    if (actualMin <= targetMin * 1.15) {
+    if (actualMin <= targetMin * 1.10) {
         return 'yellow';
     }
     return 'red';
