@@ -256,3 +256,69 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->not->toContain('RED UNISOL proporciona la infraestructura tecnológica')
         ->not->toContain('Entidad otorgante');
 });
+
+it('resolves loan data from the solicitudes-web api on the /finalizar-nvo route', function () {
+    // El sistema nuevo guarda la solicitud en su propia base y solo crea el
+    // prestamo en Vimarx, asi que ahi no queda solicitud para consultar. Por eso
+    // esta ruta le pregunta al backend de solicitudes-web, que expone el mismo
+    // contrato en la misma ruta.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'nombreSocio' => 'Ana Gomez',
+            'cuotas' => '6',
+            'prestamoCFT' => '3.20',
+            'prestamoTEM' => '0.10',
+            'prestamoTNA' => '2.95',
+            'prestamoTEA' => '18.30',
+            'NumeroPrestamo' => '440327',
+            'CapitalOriginal' => '250000.00',
+            'MontoPrestamo' => '312000.00',
+            'PrimerVencimiento' => '2026-10-10T00:00:00',
+            'Vencimiento' => '2027-03-10T00:00:00',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=amejuca')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.loan.solicitud', '440327')
+            ->where('finalizar.loan.nombre', 'Ana Gomez')
+            ->where('finalizar.loan.monto_total_display', '$ 250.000,00')
+            ->where('finalizar.loan.cuotas', '6')
+            // El documento a firmar se sigue eligiendo por la linea, igual que
+            // en el circuito de siempre: la ruta nueva no lo toca.
+            ->where('finalizar.metamap.flow_id', '6453eb1ed9e6ce001d5b3858')
+        );
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327');
+});
+
+it('keeps the legacy routes pointing at vimarx', function () {
+    // Lo que protege al circuito diario: los links que ya circulan no pasan por
+    // /finalizar-nvo, asi que siguen preguntandole a Vimarx aunque la API nueva
+    // este configurada.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/249405' => Http::response([
+            'nombreSocio' => 'Juan Perez',
+            'montoAfinanciar' => '$ 100.000,00',
+            'cuotaResultante' => '25000,00',
+            'cuotas' => '6',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=249405&ntrans=0&linea=amejuca')->assertOk();
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://caja.example.test/api/redunisol/finSolicitud/0/249405');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'solicitudes.example.test'));
+});

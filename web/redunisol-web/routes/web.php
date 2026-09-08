@@ -72,6 +72,10 @@ Route::get('/autores/{slug}', [BlogController::class, 'author'])->name('author.s
 
 Route::get('/finalizar', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar');
 Route::get('/finalizar.php', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar.legacy');
+// Misma pagina, pero los datos del prestamo salen del sistema nuevo de
+// solicitudes en vez de Vimarx. Es una ruta aparte a proposito: los links que
+// ya circulan no la usan, asi que el circuito de siempre queda intacto.
+Route::get('/finalizar-nvo', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar.solicitudes');
 
 require __DIR__.'/settings.php';
 

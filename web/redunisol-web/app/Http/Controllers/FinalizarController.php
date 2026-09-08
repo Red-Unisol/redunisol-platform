@@ -57,6 +57,7 @@ class FinalizarController extends Controller
             $request->query('sol'),
             $request->query('ntrans'),
             $request->query('linea'),
+            $request->routeIs('finalizar.solicitudes'),
         );
 
         if ($finalizar['loan'] === null) {

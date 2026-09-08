@@ -9,7 +9,14 @@ use Illuminate\Support\Str;
 
 class FinalizarSolicitudService
 {
-    public function resolve(?string $sol, ?string $ntrans, ?string $linea): array
+    /**
+     * @param  bool  $desdeSolicitudesWeb  true cuando el link viene del sistema
+     *                                     nuevo de solicitudes, que guarda el
+     *                                     prestamo en su propia base y no en
+     *                                     Vimarx. Lo unico que cambia es a que
+     *                                     API se le piden los datos.
+     */
+    public function resolve(?string $sol, ?string $ntrans, ?string $linea, bool $desdeSolicitudesWeb = false): array
     {
         $requestedLinea = $linea;
         $linea = $this->normalizeLine($requestedLinea);
@@ -31,7 +38,7 @@ class FinalizarSolicitudService
             return $this->resolveIts($result, $sol);
         }
 
-        return $this->resolveLegacy($result, $sol, $ntrans ?: '0', $linea);
+        return $this->resolveLegacy($result, $sol, $ntrans ?: '0', $linea, $desdeSolicitudesWeb);
     }
 
     public function fallbackLoanFromQuery(?string $monto, ?string $cuotas, ?string $nro): ?array
@@ -62,9 +69,13 @@ class FinalizarSolicitudService
         ];
     }
 
-    private function resolveLegacy(array $result, string $sol, string $ntrans, string $linea): array
+    private function resolveLegacy(array $result, string $sol, string $ntrans, string $linea, bool $desdeSolicitudesWeb = false): array
     {
-        $client = $linea === 'fiat' ? 'fiat' : 'caja';
+        $client = match (true) {
+            $desdeSolicitudesWeb => 'solicitudes',
+            $linea === 'fiat' => 'fiat',
+            default => 'caja',
+        };
         $baseUrl = (string) config("finalizar.legacy_clients.{$client}.base_url", '');
 
         if ($baseUrl === '') {
