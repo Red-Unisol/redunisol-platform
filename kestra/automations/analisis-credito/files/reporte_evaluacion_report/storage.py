@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Sequence
@@ -29,7 +30,7 @@ class SQLiteDatasetStore:
                 )
             self.path.unlink()
 
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn:
             self._initialize(conn)
             self._write_meta(conn, meta)
             for month in months:
@@ -41,7 +42,7 @@ class SQLiteDatasetStore:
         if not self.path.exists():
             raise FileNotFoundError(f"No existe la base SQLite: {self.path}")
 
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn:
             conn.row_factory = sqlite3.Row
             meta = self._load_meta(conn)
             months = []
