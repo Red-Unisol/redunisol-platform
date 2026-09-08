@@ -35,16 +35,19 @@ try {
         Start-Sleep -Milliseconds 100
     }
     $log = Join-Path $fixture 'logs/transferencias.log'
+    if (-not (Test-Path -LiteralPath $log)) {
+        $log = Join-Path $fixture 'logs/transferencias-debug.log'
+    }
     $text = Get-Content -Raw -LiteralPath $log
     if ($text -notmatch 'transfer_enabled=false\. mark_paid_enabled=false') {
         throw 'Could not verify in the log that banking services remained disabled'
     }
-    Write-Output 'Release GUI rendered its first frame and acknowledged the update; banking disabled.'
+    Write-Output 'GUI rendered its first frame and acknowledged the update; banking disabled.'
     $process.Refresh()
     $process.CloseMainWindow() | Out-Null
     if (-not $process.WaitForExit(10000)) { throw 'GUI did not close cleanly' }
     if ($process.ExitCode -ne 0) { throw "GUI exited with $($process.ExitCode)" }
-    Write-Output 'Release GUI closed cleanly.'
+    Write-Output 'GUI closed cleanly.'
     Write-Output "Synthetic test evidence: $fixture"
 }
 finally {

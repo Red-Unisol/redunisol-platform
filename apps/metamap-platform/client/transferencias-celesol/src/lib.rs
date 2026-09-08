@@ -13,6 +13,7 @@ pub mod creditor_whitelist;
 pub mod logging;
 pub mod mark_paid_client;
 pub mod models;
+pub mod paid_recovery;
 pub mod receipt;
 pub mod secure_config;
 pub mod server_client;

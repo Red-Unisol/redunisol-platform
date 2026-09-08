@@ -110,8 +110,17 @@ pub fn init(server: ServerClient, operator: String, outbox_path: PathBuf) -> Res
 }
 
 pub fn record_audit(event_type: &str, request_oid: Option<&str>, mode: Option<&str>, data: Value) {
+    let _ = try_record_audit(event_type, request_oid, mode, data);
+}
+
+pub fn try_record_audit(
+    event_type: &str,
+    request_oid: Option<&str>,
+    mode: Option<&str>,
+    data: Value,
+) -> bool {
     let Some(runtime) = RUNTIME.get() else {
-        return;
+        return false;
     };
     let event = TransferTraceEvent {
         event_id: Uuid::new_v4().to_string(),
@@ -123,7 +132,16 @@ pub fn record_audit(event_type: &str, request_oid: Option<&str>, mode: Option<&s
         application_version: BUILD_TAG.to_owned(),
         request_oid: request_oid.map(str::to_owned),
         mode: mode.map(str::to_owned),
-        severity: "info".to_owned(),
+        severity: if event_type == "transfer_candidate_evaluated"
+            && ["blockers", "warnings"]
+                .iter()
+                .any(|key| data[*key].as_array().is_some_and(|items| !items.is_empty()))
+        {
+            "warning"
+        } else {
+            "info"
+        }
+        .to_owned(),
         data,
     };
     match runtime.state.lock() {
@@ -135,16 +153,17 @@ pub fn record_audit(event_type: &str, request_oid: Option<&str>, mode: Option<&s
                 },
             ) {
                 log::error!("No se pudo persistir un evento de trazabilidad: {error:#}");
-                return;
+                return false;
             }
             state.pending.push(event);
         }
         Err(error) => {
             log::error!("No se pudo bloquear la outbox de trazabilidad: {error}");
-            return;
+            return false;
         }
     }
     let _ = runtime.sender.send(WorkerCommand::Flush);
+    true
 }
 
 pub fn shutdown() {
