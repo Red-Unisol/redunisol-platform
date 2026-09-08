@@ -334,7 +334,7 @@ def enrich_workbook(
 
     del workbook["Resumen ejecutivo"]
     build_review_sheet(workbook, months, by_month)
-    comparison = build_monthly_comparison(workbook, months, ref_row, placement_ranges)
+    comparison = build_monthly_comparison(workbook, months, ref_row)
     workbook.move_sheet(summary, offset=-workbook.index(summary))
     workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))
     workbook.move_sheet(comparison, offset=2 - workbook.index(comparison))

@@ -26,7 +26,7 @@ from reporte_evaluacion_comisiones.kestra_entrypoint import atomic_publish, gene
 def comparison_fixture(workbook, months):
     workbook.create_sheet("Muestreo legajos")
     refs = {m: r for r, m in enumerate(sorted(set(previous_months(months[0]) + months)), 5)}
-    return build_monthly_comparison(workbook, months, refs, {m: (5, 4) for m in months})
+    return build_monthly_comparison(workbook, months, refs)
 
 
 def dataset(month: str, *, count: int = 1, across_holiday: bool = False) -> MonthDataset:
@@ -189,10 +189,11 @@ class CommissionsTests(unittest.TestCase):
         self.assertIn("'Metricas referencia'!C8", sheet["C7"].value)
         self.assertIn("'Metricas referencia'!C9", sheet["C8"].value)
         self.assertIn("'Comisiones'!C10", sheet["C9"].value)
-        self.assertIn("'Comisiones'!E61", sheet["C65"].value)
-        self.assertIn("C65/F65", sheet["E65"].value)
-        self.assertEqual(sheet["I65"].value, '=IF(ISNUMBER(C65),C65,NA())')
-        self.assertEqual(len(sheet._charts), 3)
+        self.assertIsNone(sheet.freeze_panes)
+        self.assertIsNone(sheet.sheet_view.pane)
+        self.assertFalse(any("Colocacion Core" in str(cell.value) or "Total definitivo" in str(cell.value) for row in sheet for cell in row))
+        self.assertEqual(len(sheet.row_breaks.brk), 1)
+        self.assertEqual(len(sheet._charts), 2)
         self.assertEqual(sheet._charts[0].series[0].val.numRef.f, "'Comparativo mensual'!$H$14:$H$16")
         self.assertTrue(all(not chart.x_axis.delete and not chart.y_axis.delete for chart in sheet._charts))
 
@@ -202,9 +203,9 @@ class CommissionsTests(unittest.TestCase):
         months = ["2025-10", "2025-11", "2025-12", *[f"2026-{m:02d}" for m in range(1, 9)]]
         sheet = comparison_fixture(workbook, months)
         self.assertEqual([sheet.cell(r, 1).value for r in range(7, 18)], months)
-        self.assertEqual([sheet.cell(r, 1).value for r in range(95, 106)], months)
+        self.assertEqual([sheet.cell(r, 1).value for r in range(65, 76)], months)
         rules = [rule for key in sheet.conditional_formatting for rule in sheet.conditional_formatting[key]]
-        self.assertEqual(len(rules), 14)
+        self.assertEqual(len(rules), 12)
         self.assertTrue(all(rule.type == "colorScale" for rule in rules))
         self.assertLessEqual(sheet.row_dimensions[7].height, 19)
         self.assertIn("$H$22:$H$32", sheet._charts[0].series[0].val.numRef.f)
@@ -224,8 +225,6 @@ class CommissionsTests(unittest.TestCase):
             self.assertIn('"2026-08"', workbook["Comisiones"]["A50"].value)
             self.assertEqual([workbook["Comparativo mensual"].cell(r, 1).value for r in range(7, 10)], ["2026-06", "2026-07", "2026-08"])
             self.assertEqual(workbook["Muestreo legajos"].max_row, 94)
-            self.assertIn("RevisionLegajos", workbook["Comparativo mensual"]["K63"].value)
-            self.assertIn("'Comisiones'!E61", workbook["Comparativo mensual"]["C65"].value)
             workbook.close()
 
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
@@ -244,7 +243,7 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("Resumen ejecutivo", workbook.sheetnames)
             comparison = workbook["Comparativo mensual"]
             self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
-            self.assertEqual(len(comparison._charts), 3)
+            self.assertEqual(len(comparison._charts), 2)
             self.assertTrue(all(comparison.column_dimensions[c].hidden for c in "FGHI"))
             self.assertEqual(comparison["C7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
             self.assertIn("C7/B7-1", comparison["D7"].value)
