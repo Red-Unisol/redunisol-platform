@@ -35,11 +35,11 @@ class ConsultaEmpleadorTests(unittest.TestCase):
         expected = "trigger is defined and trigger.body is defined"
         self.assertEqual(flow_source.count(expected), 1)
         self.assertIn(
-            "({'dni': inputs.dni ?? '', 'cuit': inputs.cuit ?? '', 'tipo': inputs.tipo ?? ''} | json)",
+            "({'dni': inputs.dni ?? '', 'cuit': inputs.cuit ?? '', 'tipo': inputs.tipo ?? ''} | toJson)",
             flow_source,
         )
         self.assertNotIn(
-            "TRIGGER_BODY_JSON: \"{{ trigger.body | json }}\"",
+            "TRIGGER_BODY_JSON: \"{{ trigger.body | toJson }}\"",
             flow_source,
         )
 
