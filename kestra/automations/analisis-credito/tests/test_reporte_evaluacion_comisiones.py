@@ -191,8 +191,12 @@ class CommissionsTests(unittest.TestCase):
             self.assertIn(f"'Metricas referencia'!{source_col}9", sheet[f"{col}8"].value)
             self.assertIn(f"'Comisiones'!C{10 + metric * 10}", sheet[f"{col}9"].value)
             self.assertIn('"Pendiente"', sheet[f"{col}7"].value)
+        for col, source_col in [("F", "G"), ("G", "H")]:
+            for row, source_row in [(7, 8), (8, 9), (9, 10)]:
+                self.assertIn(f"'Metricas referencia'!{source_col}{source_row}", sheet[f"{col}{row}"].value)
+                self.assertNotIn("'Comisiones'!", sheet[f"{col}{row}"].value)
         self.assertIsNone(sheet.sheet_view.pane)
-        self.assertEqual(sheet.max_column, 5)
+        self.assertEqual(sheet.max_column, 7)
         self.assertEqual(len(sheet._charts), 0)
 
     def test_comparison_keeps_full_history_with_continuous_color_scales(self):
@@ -203,9 +207,9 @@ class CommissionsTests(unittest.TestCase):
         self.assertEqual([sheet.cell(r, 1).value for r in range(7, 18)], months)
         self.assertEqual(sheet.max_row, 19)
         rules = [rule for key in sheet.conditional_formatting for rule in sheet.conditional_formatting[key]]
-        self.assertEqual(len(rules), 4)
+        self.assertEqual(len(rules), 6)
         self.assertTrue(all(rule.type == "colorScale" for rule in rules))
-        self.assertEqual({str(key.sqref) for key in sheet.conditional_formatting}, {f"{col}7:{col}17" for col in "BCDE"})
+        self.assertEqual({str(key.sqref) for key in sheet.conditional_formatting}, {f"{col}7:{col}17" for col in "BCDEFG"})
         self.assertLessEqual(sheet.row_dimensions[7].height or sheet.sheet_format.defaultRowHeight, 19)
 
     def test_generation_has_only_latest_commission_but_full_comparison(self):
@@ -241,9 +245,14 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("Resumen ejecutivo", workbook.sheetnames)
             comparison = workbook["Comparativo mensual"]
             self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
-            self.assertEqual(comparison.max_column, 5)
+            self.assertEqual(comparison.max_column, 7)
             self.assertEqual(comparison["B7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
             self.assertIn("'Comisiones'!C40", comparison["E7"].value)
+            refs = workbook["Metricas referencia"]
+            self.assertEqual(refs["G8"].value, 25)
+            self.assertEqual(refs["H8"].value, 25)
+            self.assertIn("'Metricas referencia'!G8", comparison["F7"].value)
+            self.assertIn("'Metricas referencia'!H8", comparison["G7"].value)
             self.assertEqual(len(workbook["Muestreo legajos"]["A"]) - 4, 30)
             self.assertNotIn("Objetivos y comisiones", workbook.sheetnames)
             sheet = workbook["Comisiones"]

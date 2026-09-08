@@ -704,8 +704,8 @@ intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
 mes a liquidar están el conteo de legajos, sus rangos, la comisión y el total definitivo.
 Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
 Comparativo mensual es la tercera hoja: una tabla horizontal con una fila por mes
-y cinco columnas: mes, mediana y promedio de primera respuesta, y mediana y
-promedio de transferencias. Conserva todos los meses del período solicitado
+y siete columnas: mes, mediana y promedio de primera respuesta, transferencias
+y punta a punta. Punta a punta es informativo y no interviene en las comisiones. Conserva todos los meses del período solicitado
 (por defecto, octubre de 2025 al último mes cerrado), sin referencias, variaciones,
 tasas ni importes históricos. Cada métrica conserva su escala continua
 verde–amarillo–rojo: menor tiempo es verde y mayor tiempo es rojo. Los datos

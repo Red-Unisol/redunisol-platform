@@ -263,15 +263,17 @@ def enrich_workbook(
         metrics_rows.append([
             month, report.summary["solicitudes_count"],
             *[report.summary[group][statistic] for group, statistic, _, _ in METRICS],
+            report.summary["end_to_end"]["mediana_minutos"],
+            report.summary["end_to_end"]["promedio_minutos"],
         ])
     refs = table_sheet(
         workbook, "Metricas referencia", "Métricas para calcular los objetivos",
         "Valores sin redondear para el cálculo. Cada objetivo usa la media simple de los tres meses anteriores, con el mismo calendario laboral.",
-        ["Mes", "Solicitudes analizadas", *[label for _, _, label, _ in METRICS]], metrics_rows, "MetricasReferencia",
+        ["Mes", "Solicitudes analizadas", *[label for _, _, label, _ in METRICS], "Mediana punta a punta", "Promedio punta a punta"], metrics_rows, "MetricasReferencia",
     )
     ref_row = {month: row for row, month in enumerate(reference_months, 5)}
     for row in range(5, refs.max_row + 1):
-        for col in range(3, 7):
+        for col in range(3, 9):
             refs.cell(row, col).number_format = "0.0000"
 
     placement_rows = []
