@@ -1,10 +1,15 @@
 [CmdletBinding()]
 param(
-    [string]$Profile = "release"
+    [string]$Profile = "release",
+    [string]$PackageInputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+if ($env:GITHUB_ACTIONS -eq 'true' -or $env:CI -eq 'true') {
+    throw 'El paquete inicial contiene configuracion local: no se permite construirlo en CI.'
+}
 
 if ($Profile -ne "release") {
     throw "Solo se soporta Profile=release para empaquetado."
@@ -12,11 +17,13 @@ if ($Profile -ne "release") {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $cargoTomlPath = Join-Path $scriptDir "Cargo.toml"
-$packageInputDir = Join-Path $scriptDir "package-input"
+$packageInputDir = if ($PackageInputDirectory) {
+    (Resolve-Path -LiteralPath $PackageInputDirectory).Path
+} else { Join-Path $scriptDir "package-input" }
 $packageInputSshDir = Join-Path $packageInputDir "ssh"
 $encryptedEnvPath = Join-Path $packageInputDir "transferencias.env.enc"
 $distDir = Join-Path $scriptDir "dist"
-$stagingDir = Join-Path $distDir "staging"
+$stagingDir = Join-Path $distDir ("staging-" + [guid]::NewGuid().ToString('N'))
 $exePath = Join-Path $scriptDir "target\\release\\transferencias-celesol.exe"
 $configToolPath = Join-Path $scriptDir "target\\release\\encrypt_transferencias_env.exe"
 $requiredCoreBaseUrl = "https://celesol.dyndns.org:5002"
@@ -189,9 +196,6 @@ try {
         -RequiredCoreBaseUrl $requiredCoreBaseUrl `
         -RequiredMarkPaidEndpoint $requiredMarkPaidEndpoint
 
-    if (Test-Path -LiteralPath $stagingDir) {
-        Remove-Item -LiteralPath $stagingDir -Recurse -Force
-    }
     New-Item -ItemType Directory -Path $packageSshDir -Force | Out-Null
 
     Copy-Item -LiteralPath $exePath -Destination (Join-Path $packageRoot "transferencias-celesol.exe")

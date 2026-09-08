@@ -1,6 +1,6 @@
 [package]
 name = "transferencias-celesol"
-version = "2.0.2"
+version = "2.1.0"
 edition = "2024"
 
 [dependencies]
@@ -8,7 +8,7 @@ aes-gcm = { version = "0.10.3", features = ["std"] }
 anyhow = "1.0.98"
 base64 = "0.22.1"
 bytes = "1.10.1"
-chrono = { version = "0.4.42", features = ["clock"] }
+chrono = { version = "0.4.42", features = ["clock", "serde"] }
 eframe = "0.33.0"
 egui = "0.33.0"
 egui_extras = "0.33.0"
@@ -28,6 +28,9 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 serde_urlencoded = "0.7.1"
 sha2 = "0.10.9"
+ring = "0.17.14"
+semver = "1.0.27"
+fs2 = "0.4.3"
 toml = "0.9.8"
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["logging", "ring", "tls12"] }
@@ -37,6 +40,7 @@ webpki-roots = "1.0.2"
 
 [dev-dependencies]
 lopdf = { version = "0.31.0", default-features = false }
+tempfile = "3.23.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }

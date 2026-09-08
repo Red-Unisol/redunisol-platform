@@ -1,5 +1,96 @@
 # Transferencias Celesol
 
+## Autoactualizacion desde 2.1.0
+
+La version Windows release comprueba actualizaciones antes de abrir la configuracion
+y antes de iniciar los servicios operativos. Usa HTTPS con validacion de certificados,
+sin redirects ni credenciales de la app, en
+`https://kestra.redunisol.com.ar/metamap-platform/updates/transferencias/latest.json`.
+
+El manifiesto se verifica con Ed25519 y una clave publica embebida en el ejecutable.
+Incluye version, aplicacion, canal, arquitectura, SHA-256, tamano y vencimiento. La
+firma cubre todos esos campos. El cliente rechaza firmas invalidas, versiones
+incompatibles, descargas truncadas, metadatos vencidos y retrocesos de version.
+Conserva la version mas alta observada para rechazar replays despues de un rollback.
+El vencimiento es de 90 dias; mantener el canal activo requiere publicar una nueva
+version antes de ese plazo. Si la comprobacion falla, se informa en la ventana de
+inicio y el operador puede continuar con la version instalada. No hay actualizaciones
+obligatorias en esta primera version.
+
+La actualizacion cambia solamente `transferencias-celesol.exe`. Conserva el entorno
+cifrado, claves SSH, lineas, acreedores, comprobantes, log antirreenvio, identidad de
+instalacion y outbox. Las rutas existentes no cambian. La carpeta de instalacion debe
+ser escribible por el usuario y el ejecutable debe conservar su nombre original.
+Un bloqueo de archivo impide abrir dos instancias de la misma instalacion.
+
+Se copia el ejecutable actual como `.transferencias-update/helper.exe`; esa copia
+actua como proceso auxiliar, espera el cierre, vuelve a verificar la descarga y hace
+un respaldo durable `previous.exe` seguido de un reemplazo con `MoveFileExW` en el
+mismo volumen, sin retirar primero el EXE instalado. No hay un segundo binario
+que deba actualizarse por separado. Un journal permite recuperar una instalacion
+interrumpida. La version nueva confirma el arranque en su primer frame de interfaz;
+si termina antes (incluida la cancelacion de la configuracion inicial), se restaura la
+anterior. Si se interrumpe tambien el helper, la proxima apertura inicia la recuperacion.
+No se mata una app que espera la passphrase. Una version que fallo queda identificada
+por hash y no se reinstala en bucle. El respaldo queda disponible luego del exito.
+
+Las actualizaciones se aplican exclusivamente al arranque. Las transferencias
+automaticas siguen comenzando pausadas. Los builds debug no consultan el canal.
+La recuperacion cubre el ejecutable; cambios futuros de formatos de datos deben ser
+compatibles con la version anterior o incorporar su propia migracion y recuperacion.
+La firma Ed25519 de este canal no reemplaza un certificado Windows Authenticode ni
+garantiza eliminar advertencias de SmartScreen.
+
+### Publicacion y primera instalacion
+
+1. Mergear el cambio de servidor para exponer `/updates/transferencias/` con el volumen
+   `/srv/redunisol-updates:/updates:ro`. No requiere modificar Apache ni DNS.
+2. Mergear el cliente y crear un tag `transferencias-v2.1.0` sobre el commit aprobado
+   de `main`. El tag debe coincidir exactamente con la version de `Cargo.toml`.
+3. `transferencias-release.yml` prueba y compila en Windows; firma y publica desde
+   un job separado en el environment `vps-infra`. No ejecuta `build-package.ps1`.
+   Usa `TRANSFERENCIAS_UPDATE_SIGNING_KEY`, los accesos SSH existentes y la variable
+   publica `TRANSFERENCIAS_UPDATE_KNOWN_HOSTS` para verificar la identidad de la VPS.
+   Ese environment debe permitir tags `transferencias-v*`.
+4. La VPS recibe un directorio inmutable por version y un `latest.json` firmado que
+   se promueve atomicamente al final. Una publicacion interrumpida puede reintentarse;
+   no se permite reemplazar una version con bytes diferentes ni retroceder el canal.
+5. Construir la primera instalacion **localmente** con `build-package.ps1`; el script
+   rechaza ejecucion en CI. Admite `-PackageInputDirectory` para usar insumos locales
+   desde otra carpeta sin copiarlos al checkout. Distribuir el ZIP por el canal privado
+   habitual. Para una instalacion existente, reemplazar una vez el EXE con la app cerrada
+   y conservar sus archivos. A partir de esa apertura, se actualiza sola.
+
+El repositorio contiene solo codigo, ejemplos sin valores reales y la clave publica.
+Ninguna variante real del entorno (en claro o cifrada), clave SSH operativa, dato de
+instalacion o ZIP inicial debe subirse a Git, Actions, artifacts ni al canal de updates.
+`tools/check_release_inputs.py` comprueba esta restriccion en CI. El artifact de build
+contiene exclusivamente el EXE, y la publicacion usa una lista explicita de archivos.
+
+La clave privada de firma se genero localmente y se cargo con `gh secret set`, sin
+mostrarla. Consultar su ubicacion local en `credentials.txt`. No reutilizar la clave
+SSH ni la passphrase del entorno como clave de firma. La clave publica tiene ID
+`production-2026`. Para rotarla hay que distribuir primero una version firmada por la
+clave vigente que confie tambien en la siguiente; nunca tomar claves del servidor de
+descargas como nueva raiz de confianza. Este protocolo no implementa TUF completo;
+sus controles de version y vencimiento siguen los principios de su
+[especificacion](https://theupdateframework.github.io/specification/).
+
+### Verificacion local
+
+```powershell
+cargo test --locked --all-targets
+cargo build --locked --release --bin transferencias-celesol
+python -m unittest discover -s tools -p "test_*.py"
+python tools/check_release_inputs.py
+```
+
+Las pruebas Windows ejecutan procesos reales desde directorios temporales, con claves
+efimeras: reemplazo con app abierta, cierre ordenado, arranque correcto, fallo prematuro
+y binario rechazado por Windows. Tambien prueban firma, vencimiento, integridad,
+descargas interrumpidas, bloqueo de instancias, journal, antirretroceso, preservacion de
+datos y publicacion interrumpida. No consultan bancos ni usan entornos operativos.
+
 Cliente desktop en Rust para operar solicitudes del core financiero en estado `A Transferir`.
 
 ## Estado de este corte
