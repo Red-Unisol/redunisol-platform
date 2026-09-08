@@ -520,7 +520,7 @@ class FlowContractTests(unittest.TestCase):
         self.assertIn("id: rebuild_only", flow)
         self.assertRegex(
             flow,
-            r"id: rebuild_only\s+type: BOOLEAN\s+required: true\s+defaults: false",
+            r"id: rebuild_only\s+type: BOOL\s+required: true\s+defaults: false",
         )
         self.assertIn("REPORT_REBUILD_ONLY", flow)
 

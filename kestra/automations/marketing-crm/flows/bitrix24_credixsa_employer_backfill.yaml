@@ -28,7 +28,7 @@ inputs:
     required: true
     defaults: 300
   - id: dry_run
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: false
 
@@ -117,13 +117,13 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.ok : outputs.seleccionar_lead.vars.ok }}"
   - id: action
     type: STRING
     value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.action : outputs.seleccionar_lead.vars.action }}"
   - id: has_pending
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.seleccionar_lead.vars.has_pending }}"
   - id: lead_id
     type: STRING
@@ -135,7 +135,7 @@ outputs:
     type: STRING
     value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.status : '' }}"
   - id: dry_run
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.dry_run : (inputs.dry_run ?? false) }}"
   - id: checked_count
     type: STRING

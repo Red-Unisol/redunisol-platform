@@ -43,7 +43,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_informe.vars.ok }}"
   - id: run_date
     type: STRING
@@ -52,7 +52,7 @@ outputs:
     type: INT
     value: "{{ outputs.generar_informe.vars.completed_request_count }}"
   - id: candidate_coverage_available
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_informe.vars.candidate_coverage_available }}"
   - id: not_transferred_via_app_count
     type: STRING

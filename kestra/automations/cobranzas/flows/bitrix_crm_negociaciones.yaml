@@ -126,7 +126,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.procesar_webhook.vars.ok }}"
   - id: action
     type: STRING
@@ -153,7 +153,7 @@ outputs:
     type: STRING
     value: "{{ outputs.procesar_webhook.vars.legacy_plan_key }}"
   - id: plan_already_exists
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.procesar_webhook.vars.plan_key != '' and (outputs.evaluar_plan_guard.vars.plan_already_exists ?? false) }}"
   - id: plan_guard_reason
     type: STRING

@@ -56,7 +56,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.generar_reporte.vars.ok }}"
   - id: status
     type: STRING

@@ -69,7 +69,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.procesar_accion.vars.ok }}"
   - id: action
     type: STRING
