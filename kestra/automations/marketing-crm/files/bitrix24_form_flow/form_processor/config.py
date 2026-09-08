@@ -206,6 +206,9 @@ class DealConfig:
     cordoba_jubilados_user_ids: tuple[int, ...]
     cordoba_unc_user_ids: tuple[int, ...]
     cordoba_general_user_ids: tuple[int, ...]
+    volume_compensation_url: str | None
+    volume_compensation_token: str | None
+    volume_compensation_scope: str
 
 
 @dataclass(frozen=True)
@@ -509,6 +512,16 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                     "BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS",
                     default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
                 ),
+            ),
+            volume_compensation_url=_optional_env(
+                source, "BITRIX24_VOLUME_COMPENSATION_URL"
+            ),
+            volume_compensation_token=_optional_env(
+                source, "BITRIX24_VOLUME_COMPENSATION_TOKEN"
+            ),
+            volume_compensation_scope=(
+                source.get("BITRIX24_VOLUME_COMPENSATION_SCOPE", "default").strip()
+                or "default"
             ),
         ),
         timeout_seconds=_optional_int(source, "BITRIX24_TIMEOUT_SECONDS", default=30),

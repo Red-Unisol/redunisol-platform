@@ -56,4 +56,9 @@ return [
         'default_lead_source' => env('KESTRA_FORM_DEFAULT_LEAD_SOURCE', 'Google'),
     ],
 
+    'bitrix_routing' => [
+        'allocation_token' => env('BITRIX_ROUTING_ALLOCATION_TOKEN'),
+        'compensation_every' => (int) env('BITRIX_ROUTING_COMPENSATION_EVERY', 4),
+    ],
+
 ];

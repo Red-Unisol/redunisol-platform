@@ -74,6 +74,7 @@ el inicio del universo en la hoja `Resumen`.
 | `legacy_round_robin` | Continúa el round-robin usando negociaciones históricas sin bucket. |
 | `round_robin_initial` | No existe antecedente; toma el primer vendedor online del pool. |
 | `single_seller` | El bucket tiene un único vendedor configurado. |
+| `volume_compensation` | Caso no recurrente usado para reducir el déficit de volumen de la jornada. |
 | `outside_hours_manual` | Fuera de horario queda con Maru. |
 | `assignment_queue_waiting` | Ningún vendedor del bucket está disponible; espera en la cola de ese bucket. |
 | `assignment_queue_distributed` | Un reintento de la cola encontró vendedor y completó la asignación. |

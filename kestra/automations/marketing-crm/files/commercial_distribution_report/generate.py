@@ -35,6 +35,7 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "legacy_round_robin": "Round-robin calculado con negociaciones históricas",
     "round_robin_initial": "Primer vendedor online por falta de antecedentes",
     "single_seller": "Único vendedor configurado para el bucket",
+    "volume_compensation": "Compensación del déficit de volumen de la jornada",
     "outside_hours_manual": "Fuera de horario laboral; gestión manual con Maru",
     "no_online_sellers_manual": "Sin vendedores online; gestión manual con Maru",
     "assignment_queue": "En cola temporal hasta que haya un vendedor disponible",
@@ -324,6 +325,7 @@ def distribution_status(
         "legacy_round_robin",
         "round_robin_initial",
         "single_seller",
+        "volume_compensation",
     }:
         return "Distribuido"
     if action == "manual_review":

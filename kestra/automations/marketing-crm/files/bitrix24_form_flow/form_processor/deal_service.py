@@ -8,6 +8,7 @@ from .bitrix_client import BitrixClient
 from .config import AppConfig
 from .logger import Logger
 from .receipt_file import build_bitrix_file_data
+from .volume_compensation import apply_volume_compensation
 
 
 DEAL_ENTITY_TYPE_ID = 2
@@ -217,6 +218,7 @@ def resolve_round_robin_assignee(
     config: AppConfig,
     *,
     contact_id: int | None,
+    deal_id: int,
     lead_id: int,
     bucket_key: str,
     bucket_field: str,
@@ -245,6 +247,15 @@ def resolve_round_robin_assignee(
         )
         if previous_assignment is not None:
             assigned_by_id, strategy = previous_assignment
+            assigned_by_id, _compensated = apply_volume_compensation(
+                config,
+                deal_id=deal_id,
+                bucket_key=bucket_key,
+                online_pool=online_pool,
+                proposed_user_id=assigned_by_id,
+                recurring=True,
+                logger=logger,
+            )
             return AssignmentResolution(
                 assigned_by_id=assigned_by_id,
                 strategy=strategy,
@@ -296,10 +307,21 @@ def resolve_round_robin_assignee(
         for offset in range(1, len(pool) + 1):
             candidate = pool[(previous_index + offset) % len(pool)]
             if candidate in online_pool:
+                assigned_by_id, compensated = apply_volume_compensation(
+                    config,
+                    deal_id=deal_id,
+                    bucket_key=bucket_key,
+                    online_pool=online_pool,
+                    proposed_user_id=candidate,
+                    recurring=False,
+                    logger=logger,
+                )
                 return AssignmentResolution(
-                    assigned_by_id=candidate,
+                    assigned_by_id=assigned_by_id,
                     strategy=(
-                        "single_seller"
+                        "volume_compensation"
+                        if compensated
+                        else "single_seller"
                         if len(pool) == 1
                         else round_robin_strategy
                     ),
@@ -307,9 +329,25 @@ def resolve_round_robin_assignee(
                     online_pool=online_pool,
                 )
 
+    proposed_user_id = online_pool[0]
+    assigned_by_id, compensated = apply_volume_compensation(
+        config,
+        deal_id=deal_id,
+        bucket_key=bucket_key,
+        online_pool=online_pool,
+        proposed_user_id=proposed_user_id,
+        recurring=False,
+        logger=logger,
+    )
     return AssignmentResolution(
-        assigned_by_id=online_pool[0],
-        strategy="single_seller" if len(pool) == 1 else "round_robin_initial",
+        assigned_by_id=assigned_by_id,
+        strategy=(
+            "volume_compensation"
+            if compensated
+            else "single_seller"
+            if len(pool) == 1
+            else "round_robin_initial"
+        ),
         configured_pool=pool,
         online_pool=online_pool,
     )
