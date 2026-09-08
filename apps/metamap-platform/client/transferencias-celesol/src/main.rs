@@ -11,12 +11,58 @@ use transferencias_celesol::{
     APP_NAME_WITH_TAG,
     app::TransferenciasApp,
     config::{self, AppConfig},
-    logging, trace,
+    logging, trace, update,
 };
 
 fn main() -> eframe::Result<()> {
+    if let Some(result) = update::run_helper_if_requested() {
+        if let Err(error) = result {
+            show_startup_error("No se pudo completar la actualizacion", &error);
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    let root = std::env::current_exe()
+        .expect("Ruta del ejecutable")
+        .parent()
+        .expect("Directorio del ejecutable")
+        .to_path_buf();
+    let _instance_lock = match update::InstanceLock::acquire(&root) {
+        Ok(lock) => lock,
+        Err(error) => {
+            show_startup_error("No se pudo abrir Transferencias", &error);
+            return Ok(());
+        }
+    };
+    let trial = std::env::args().any(|arg| arg == "--update-trial");
+    let restored = std::env::args().any(|arg| arg == "--update-restored");
+    if !trial {
+        match update::recovery_needed(&root) {
+            Ok(true) => {
+                if let Err(error) = update::start_recovery(&root) {
+                    show_startup_error("Recuperacion de actualizacion", &error);
+                }
+                return Ok(());
+            }
+            Ok(false) => (),
+            Err(error) => {
+                show_startup_error("Recuperacion de actualizacion", &error);
+                return Ok(());
+            }
+        }
+    }
     if let Err(error) = logging::init_logging() {
         eprintln!("No se pudo inicializar logging: {error}");
+    }
+    if cfg!(all(windows, not(debug_assertions))) && !trial && !restored {
+        match check_updates_window(root.clone()) {
+            Ok(true) => return Ok(()),
+            Ok(false) => (),
+            Err(error) => {
+                show_startup_error("Comprobacion de actualizaciones", &error);
+                return Ok(());
+            }
+        }
     }
     let config = match load_runtime_config() {
         Ok(config) => config,
@@ -55,10 +101,112 @@ fn main() -> eframe::Result<()> {
     let result = eframe::run_native(
         APP_NAME_WITH_TAG,
         native_options,
-        Box::new(move |_creation_context| Ok(Box::new(app))),
+        Box::new(move |_creation_context| Ok(Box::new(ReadyApp { app, root, trial }))),
     );
     trace::shutdown();
     result
+}
+
+struct ReadyApp {
+    app: TransferenciasApp,
+    root: std::path::PathBuf,
+    trial: bool,
+}
+
+impl eframe::App for ReadyApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.app.update(ctx, frame);
+        if self.trial {
+            if let Err(error) = update::mark_ready(&self.root) {
+                log::error!("No se pudo confirmar la nueva version: {error:#}");
+                ctx.send_viewport_cmd(ViewportCommand::Close);
+            }
+            self.trial = false;
+        }
+    }
+}
+
+fn check_updates_window(root: std::path::PathBuf) -> Result<bool> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let result = Arc::new(Mutex::new(None));
+    let app_result = result.clone();
+    let worker = std::thread::spawn(move || {
+        let outcome = std::panic::catch_unwind(|| update::check_and_stage(&root))
+            .unwrap_or_else(|_| Err(anyhow!("Fallo inesperado al comprobar actualizaciones")));
+        let _ = sender.send(outcome);
+    });
+    eframe::run_native(
+        "Actualizaciones de Transferencias",
+        eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([540.0, 220.0])
+                .with_resizable(false),
+            ..Default::default()
+        },
+        Box::new(move |_| {
+            Ok(Box::new(UpdateCheckApp {
+                receiver,
+                result: app_result,
+                error: None,
+                done: false,
+            }))
+        }),
+    )
+    .map_err(|error| anyhow!("No se pudo mostrar el actualizador: {error}"))?;
+    worker
+        .join()
+        .map_err(|_| anyhow!("Fallo al finalizar la comprobacion"))?;
+    let outcome = result
+        .lock()
+        .map_err(|_| anyhow!("Estado del actualizador invalido"))?
+        .take();
+    outcome.ok_or_else(|| anyhow!("La comprobacion no termino"))
+}
+
+struct UpdateCheckApp {
+    receiver: std::sync::mpsc::Receiver<Result<bool>>,
+    result: Arc<Mutex<Option<bool>>>,
+    error: Option<String>,
+    done: bool,
+}
+
+impl eframe::App for UpdateCheckApp {
+    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if let Ok(outcome) = self.receiver.try_recv() {
+            self.done = true;
+            match outcome {
+                Ok(updated) => {
+                    *self.result.lock().unwrap() = Some(updated);
+                    ctx.send_viewport_cmd(ViewportCommand::Close);
+                }
+                Err(error) => {
+                    log::warn!("No se pudo actualizar: {error:#}");
+                    self.error = Some("No se pudo verificar o descargar una actualizacion. Podes continuar con la version instalada. El detalle quedo registrado en el log.".into());
+                }
+            }
+        }
+        if ctx.input(|i| i.viewport().close_requested()) && self.result.lock().unwrap().is_none() {
+            ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+        }
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Actualizaciones de Transferencias");
+            ui.add_space(12.0);
+            if let Some(error) = &self.error {
+                ui.label(error);
+                ui.add_space(12.0);
+                if ui.button("Continuar con la version instalada").clicked() {
+                    *self.result.lock().unwrap() = Some(false);
+                    ctx.send_viewport_cmd(ViewportCommand::Close);
+                }
+            } else if !self.done {
+                ui.spinner();
+                ui.label(
+                    "Comprobando y preparando la ultima version. La app se abrira al terminar.",
+                );
+            }
+        });
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+    }
 }
 
 fn show_startup_error(title: &str, error: &anyhow::Error) {

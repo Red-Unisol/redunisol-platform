@@ -27,6 +27,7 @@ from .db import create_db_engine
 from .enrichment import BackgroundEnricher
 from .metamap_resource import MetaMapResourceClient, extract_validation_enrichment
 from .metrics import MetricsRegistry
+from .updates import update_router
 from .security import AuthenticatedClient, AuthenticationError, verify_metamap_signature
 from .store_sql import SqlValidationStore
 from .workflow import (
@@ -122,6 +123,7 @@ def create_app(
     )
     app.state.settings = resolved_settings
     app.state.metrics = MetricsRegistry()
+    app.include_router(update_router())
 
     if store is None:
         engine = create_db_engine(resolved_settings.database_url)

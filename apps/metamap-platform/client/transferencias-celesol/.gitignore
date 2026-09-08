@@ -18,3 +18,9 @@ transferencias_realizadas.jsonl
 transfer-trace-outbox.jsonl
 transfer-trace-outbox.client-id
 transfer-trace-outbox.session
+.transferencias-update/
+.transferencias-instance.lock
+*.env.enc
+*.key
+lineas.toml
+acreedores-confiables.toml

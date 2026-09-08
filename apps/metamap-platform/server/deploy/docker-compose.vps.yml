@@ -8,6 +8,7 @@ services:
       - .env
     volumes:
       - metamap_platform_server_data:/data
+      - /srv/redunisol-updates:/updates:ro
     restart: unless-stopped
 
 volumes:
