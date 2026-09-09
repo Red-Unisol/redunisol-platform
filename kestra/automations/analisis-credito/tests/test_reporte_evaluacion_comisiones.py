@@ -55,6 +55,14 @@ def sample_loan(month: str = "2026-08") -> Loan:
 
 
 class CommissionsTests(unittest.TestCase):
+    def setUp(self):
+        # Live line metadata is covered separately; preserve integration tests
+        # using an explicit unmapped group instead of making network requests.
+        patcher = patch("reporte_evaluacion_comisiones.kestra_entrypoint.fetch_line_context",
+                        return_value={"applications": {}, "lines": {}})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_confirmed_rate_boundaries(self):
         for value, expected in [("9.5", ".005"), ("10", ".005"), ("10.00001", ".003"), ("11", ".003"), ("11.00001", ".001")]:
             with self.subTest(value=value):
@@ -249,6 +257,8 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("Resumen ejecutivo", workbook.sheetnames)
             comparison = workbook["Comparativo mensual"]
             self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
+            self.assertEqual(workbook.sheetnames[3], "Cambios en tiempos")
+            self.assertIn("ResumenCambioTiempos", workbook["Cambios en tiempos"].tables)
             self.assertEqual(comparison.max_column, 7)
             self.assertEqual(comparison["B7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
             self.assertIn("'Comisiones'!C40", comparison["E7"].value)
@@ -296,6 +306,9 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("https://", meta.base_url)
             audit = json.loads(next(paths.glob("*.json")).read_text(encoding="utf-8"))
             self.assertIsNone(audit["manual_commission"])
+            self.assertEqual(len(audit["time_mix"]), 3)
+            self.assertEqual({item["month"] for item in audit["time_mix"]}, {"2026-08"})
+            self.assertIn("line_context", audit)
             self.assertEqual(audit["manual_rules"]["high_min"], 28)
             self.assertNotIn("2026-07-10", audit["calendar"])
             self.assertEqual(sum(Decimal(row["amount"]) for row in audit["commissions"]), Decimal(3500))

@@ -721,6 +721,45 @@ conserva colocación, métricas de referencia, reglas y feriados, además del de
 original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
 el JSON conserva los resultados numéricos calculados en Python.
 
+### Análisis de cambios en los tiempos (v2)
+
+La cuarta hoja, **Cambios en tiempos**, compara cada mes con el anterior para los
+promedios de primera respuesta, transferencia y punta a punta. Incluye el mes
+anterior al inicio solicitado usando la extracción de referencia existente.
+Conserva exactamente los casos, calendario y exclusiones de cada métrica del reporte.
+
+Los grupos son `ID de línea superior × operación × antigüedad`. Se consulta
+`Solicitud.LineaPrestamo.ID/Descripcion/Superior.ID/Superior.Descripcion` por OID;
+no se unen líneas por nombres potencialmente repetidos. Las clasificaciones son
+las actuales del Core, no una reconstrucción de la jerarquía histórica. Los casos
+sin mapeo o con descripción inconsistente se conservan como **Sin clasificar**.
+
+- **Cancelaciones**: nombre de la línea contiene `cancel`, ignorando mayúsculas
+  y acentos. Las demás se rotulan **Otras operaciones**; no se afirma que sean simples.
+- **Nueva**: solo el mes calendario de la primera actividad disponible en Core,
+  obtenida con el mínimo histórico de `NovedadSolicitud.Fecha` para el ID de línea.
+  No se usa el inicio del período extraído como fecha de alta. Esta fecha no demuestra
+  creación ni aprendizaje del equipo. Fechas ausentes quedan con antigüedad desconocida.
+- Los atributos se cruzan: una línea nueva de cancelaciones integra un solo grupo.
+  Se fija la antigüedad al mes comparado en ambos lados de cada comparación para
+  evitar aportes artificiales por el paso de nueva a existente.
+
+Para grupos con casos en ambos meses, siendo `p` su participación y `u` su promedio:
+
+- Mix: `(p_actual - p_anterior) × (u_actual + u_anterior) / 2`.
+- Performance interna: `(u_actual - u_anterior) × (p_actual + p_anterior) / 2`.
+- Grupos sin casos en uno de los meses: el aporte ponderado entrante o saliente
+  queda separado en **Entradas/salidas**, sin inventar un promedio para el mes ausente.
+
+La suma de los tres componentes concilia con la variación total en minutos.
+Si cualquiera de los meses carece de casos, no se calcula descomposición.
+No se descomponen medianas ni se atribuye causalidad al componente de performance.
+La hoja conserva cantidades y sumas de minutos por grupo, calcula los efectos con
+fórmulas y expone un control de conciliación. Un bloque intermedio suma aportes por
+cancelaciones y antigüedad entre todos los superiores, sin doble conteo. El catálogo al pie permite auditar
+superiores, clasificación de cancelaciones y primera actividad. El manifiesto JSON
+guarda el mapeo por solicitud, reglas y resultados numéricos para reproducir el análisis.
+
 ### Mantenimiento del calendario
 
 `reporte_evaluacion_comisiones/calendar.py` fija `holidays==0.104`, filtra los

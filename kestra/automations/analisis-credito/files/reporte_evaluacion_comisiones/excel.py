@@ -254,6 +254,7 @@ def build_review_sheet(workbook, month, report):
 def enrich_workbook(
     workbook: Any, *, reports: Sequence[MonthlyReport], months: Sequence[str],
     loans: dict[str, list[Loan]], calendar: dict, extracted_at: datetime,
+    time_mix=None, line_context=None,
 ) -> None:
     by_month = {report.month_value: report for report in reports}
     reference_months = sorted(by_month)
@@ -341,5 +342,8 @@ def enrich_workbook(
     workbook.move_sheet(summary, offset=-workbook.index(summary))
     workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))
     workbook.move_sheet(comparison, offset=2 - workbook.index(comparison))
+    if time_mix is not None and line_context is not None:
+        from .time_mix_excel import build_time_mix_sheet
+        build_time_mix_sheet(workbook, time_mix, line_context)
     workbook.active = 0
     workbook.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True, forceFullCalc=True)
