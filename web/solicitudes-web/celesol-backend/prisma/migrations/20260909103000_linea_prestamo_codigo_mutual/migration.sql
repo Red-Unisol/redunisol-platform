@@ -1,0 +1,12 @@
+-- Codigo de la mutual de la linea de prestamo, tal como esta cargado en la
+-- propiedad [Terminos y condiciones] de F.Module.Cuentas.Prestamos.LineaPrestamo.
+-- Es la clave con la que el finalizar elige que documento de Metamap se firma.
+--
+-- Se guarda al crear el prestamo, que es cuando se resuelve la linea real del
+-- legado. Hasta ahora solo se usaba para armar el link y se descartaba, asi que
+-- el finalizar dependia del parametro de la URL para saber que documento mostrar.
+--
+-- Nullable por dos motivos: las solicitudes anteriores a esta columna no lo
+-- tienen, y hay lineas en Vimarx sin el campo cargado. En los dos casos el
+-- finalizar cae en el documento por defecto, que es lo que ya hacia.
+ALTER TABLE "solicitudes" ADD COLUMN "linea_prestamo_codigo_mutual" TEXT;

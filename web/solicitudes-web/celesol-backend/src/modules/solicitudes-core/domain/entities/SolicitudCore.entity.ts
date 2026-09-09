@@ -227,6 +227,10 @@ export type SolicitudCore = {
   id: string;
   garantias: SolicitudCoreGarantia[];
   legacyOid: string | null;
+  // Codigo de la mutual de la linea, de [Terminos y condiciones] en el legado.
+  // Se resuelve y se guarda al crear el prestamo: es lo que decide que
+  // documento de Metamap firma el socio.
+  lineaPrestamoCodigoMutual?: string | null;
   lineaPrestamoDescripcion: string;
   lineaPrestamoLegacyOid: string;
   nroOperacion?: string | null;

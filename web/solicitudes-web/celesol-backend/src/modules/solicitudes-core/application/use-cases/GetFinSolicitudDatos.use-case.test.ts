@@ -30,6 +30,7 @@ function buildSolicitud(
     id: "sol-1",
     garantias: [],
     legacyOid: "228418",
+    lineaPrestamoCodigoMutual: "amejuca",
     lineaPrestamoDescripcion: "Personal",
     lineaPrestamoLegacyOid: "LP-1",
     conyuge: null,
@@ -225,5 +226,35 @@ describe("GetFinSolicitudDatosUseCase", () => {
       () => useCase.execute({ sol: "228418" }),
       SolicitudPrestamoNoGeneradoError,
     );
+  });
+});
+
+describe("GetFinSolicitudDatosUseCase - linea", () => {
+  it("devuelve el codigo de mutual guardado en la solicitud", async () => {
+    // Es lo que permite que el finalizar elija el documento sin mirar el
+    // parametro de la URL, que se puede editar a mano.
+    const useCase = new GetFinSolicitudDatosUseCase({
+      legacyGateway: buildLegacyGateway(buildPrestamo()),
+      repository: buildRepository(buildSolicitud()),
+    });
+
+    const datos = await useCase.execute({ sol: "228418" });
+
+    assert.equal(datos.linea, "amejuca");
+  });
+
+  it("devuelve null cuando la solicitud no lo tiene guardado", async () => {
+    // Solicitudes anteriores a la columna, y lineas de Vimarx sin el campo
+    // cargado. En los dos casos el finalizar cae en el documento por defecto.
+    const useCase = new GetFinSolicitudDatosUseCase({
+      legacyGateway: buildLegacyGateway(buildPrestamo()),
+      repository: buildRepository(
+        buildSolicitud({ lineaPrestamoCodigoMutual: null }),
+      ),
+    });
+
+    const datos = await useCase.execute({ sol: "228418" });
+
+    assert.equal(datos.linea, null);
   });
 });

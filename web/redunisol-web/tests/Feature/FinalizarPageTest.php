@@ -322,3 +322,77 @@ it('keeps the legacy routes pointing at vimarx', function () {
     Http::assertSent(fn ($request) => $request->url() === 'https://caja.example.test/api/redunisol/finSolicitud/0/249405');
     Http::assertNotSent(fn ($request) => str_contains($request->url(), 'solicitudes.example.test'));
 });
+
+it('ignores the linea in the url and uses the one that comes with the loan', function () {
+    // El nucleo del asunto: la linea decide que documento de Metamap firma el
+    // socio. Mientras salga de la query, cualquiera que edite el link elige que
+    // contrato firma y nada lo delata. En la ruta nueva la linea viaja con el
+    // prestamo, asi que el parametro deja de importar.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => 'amejuca',
+        ], 200),
+    ]);
+
+    // Se pide MUDON en la URL, pero el prestamo es de amejuca.
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'amejuca')
+            ->where('finalizar.metamap.flow_id', '6453eb1ed9e6ce001d5b3858')
+            ->where('finalizar.metamap.doc_id', '4f4a8d2a-f361-49b5-9532-0528a83516e2')
+        );
+});
+
+it('falls back to the url linea when the loan does not carry one', function () {
+    // Prestamos creados antes de que se guardara el codigo, y lineas de Vimarx
+    // sin el campo cargado. Ahi el link que armo el sistema es la unica fuente.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => null,
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'mudon')
+            ->where('finalizar.metamap.flow_id', '63906e4db76a55001cb05858')
+        );
+});
+
+it('keeps honouring the url linea on the legacy route', function () {
+    // Vimarx no devuelve la linea, asi que el circuito de siempre no cambia.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/249405' => Http::response([
+            'nombreSocio' => 'Juan Perez',
+            'montoAfinanciar' => '$ 100.000,00',
+            'cuotaResultante' => '25000,00',
+            'cuotas' => '6',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=249405&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'mudon')
+            ->where('finalizar.metamap.flow_id', '63906e4db76a55001cb05858')
+        );
+});

@@ -152,6 +152,7 @@ model Solicitud {
   cupoTitular              Decimal?                   @map("cupo_titular") @db.Decimal(18, 2)
   firmaDigitalmente        Boolean                    @default(false) @map("firma_digitalmente")
   linkFirmaDigital         String?                    @map("link_firma_digital")
+  lineaPrestamoCodigoMutual String?                   @map("linea_prestamo_codigo_mutual")
   ejecutivoSolicitud       String?                    @map("ejecutivo_solicitud")
   vendedorSolicitud        String?                    @map("vendedor_solicitud")
   vendedorId               String?                    @map("vendedor_id") @db.Uuid

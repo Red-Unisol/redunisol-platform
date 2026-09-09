@@ -72,6 +72,9 @@ describe("CreatePrestamoLegacyUseCase", () => {
       patch: {
         solicitud: {
           legacyOid: "555000",
+          // Se persiste ademas de viajar en el link: es lo que despues usa el
+          // finalizar para elegir el documento sin mirar la URL.
+          lineaPrestamoCodigoMutual: "amejuca",
           linkFirmaDigital:
             "https://redunisol.com.ar/finalizar.php?linea=amejuca&ntrans=0&sol=555000",
         },
