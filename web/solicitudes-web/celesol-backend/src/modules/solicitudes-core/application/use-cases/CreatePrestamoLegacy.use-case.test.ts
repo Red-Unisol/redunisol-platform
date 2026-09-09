@@ -25,6 +25,7 @@ import {
 } from "../../domain/solicitudes-core-errors";
 import { CreatePrestamoLegacyUseCase } from "./CreatePrestamoLegacy.use-case";
 
+const LINK_FIRMA_BASE_URL = "https://redunisol.com.ar/finalizar.php";
 const TODAY = "2026-07-22";
 
 describe("CreatePrestamoLegacyUseCase", () => {
@@ -44,6 +45,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
       },
     });
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway,
@@ -81,6 +83,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("allows a system admin regardless of ownerId", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -104,6 +107,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudCoreNotFoundError when the solicitud does not exist", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -125,6 +129,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudLegacyOidAlreadyExistsError when legacyOid is already set", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -148,6 +153,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws ForbiddenSolicitudAccessError when the current user is not the solicitud owner", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -169,6 +175,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudPrestamoDataIncompleteError listing missing fields when montoAFinanciar and cuotas are null", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -205,6 +212,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
     // confirmar.
     let crearCalled = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway({
@@ -243,6 +251,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioRequiredForWorkflowError when no socio matches the titular", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -264,6 +273,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioLegacyRequiredError when the socio has no nroSocioLegacy", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -288,6 +298,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("does not persist anything when the gateway rejects the creation", async () => {
     let updateCalled = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway({
@@ -319,6 +330,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator user is not found", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository({ findById: async () => null }),
       gateway: fakeGateway(),
@@ -340,6 +352,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator has no legacy user id", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
       gateway: fakeGateway(),
@@ -372,6 +385,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
     const useCase = new CreatePrestamoLegacyUseCase({
       authRepository: authRepository(),
       gateway,
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(null),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository(),

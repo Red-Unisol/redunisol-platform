@@ -6,6 +6,11 @@ const normalizeCommaSeparatedList = (value: string) =>
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
 
+// El finalizar de siempre. Sirve de default para no cambiar el comportamiento
+// de produccion mientras dev apunta a su propia ruta.
+const FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO =
+  "https://redunisol.com.ar/finalizar.php";
+
 const envSchema = z.object({
   ACCESS_TOKEN_SECRET: z
     .string()
@@ -53,6 +58,21 @@ const envSchema = z.object({
     .int("EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES must be an integer")
     .positive("EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES must be greater than 0")
     .default(15),
+  // URL completa de la pagina de firma digital, incluido el path: en el link
+  // que se le manda al socio se le agregan linea, ntrans y sol. Cambia por
+  // ambiente porque dev tiene su propio sitio y su propia ruta.
+  //
+  // El preprocess es a proposito y no decorativo: docker compose pasa la
+  // variable como cadena vacia cuando el env no la define, y una cadena vacia
+  // no dispara el default de zod -- haria fallar la validacion y el server no
+  // arrancaria. Vacia o ausente caen las dos en el valor por defecto.
+  FINALIZAR_FIRMA_DIGITAL_BASE_URL: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() !== ""
+        ? value.trim()
+        : FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO,
+    z.string().url("FINALIZAR_FIRMA_DIGITAL_BASE_URL must be a valid URL"),
+  ),
   LEGACY_API_BASE_URL: z.string().url("LEGACY_API_BASE_URL must be a valid URL"),
   LEGACY_API_TIMEOUT_MS: z.coerce
     .number()
