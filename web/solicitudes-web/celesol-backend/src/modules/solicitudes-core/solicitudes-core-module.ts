@@ -202,6 +202,7 @@ export function createSolicitudesCoreRouter(
     authRepository,
     gateway: crearPrestamoGateway,
     lineaPrestamoLegacyIdResolver,
+    linkFirmaDigitalBaseUrl: env.FINALIZAR_FIRMA_DIGITAL_BASE_URL,
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,

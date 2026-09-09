@@ -24,6 +24,7 @@ type Dependencies = {
   authRepository: Pick<AuthRepository, "findById">;
   gateway: CrearPrestamoGateway;
   lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
+  linkFirmaDigitalBaseUrl: string;
   repository: SolicitudesCoreRepository;
   sociosRepository: SocioRepository;
   solicitudesLegacyGateway: Pick<SolicitudesLegacyGateway, "getVendedorLegacyId">;
@@ -36,6 +37,7 @@ export class CreatePrestamoLegacyUseCase {
   private readonly findSolicitudTitularSocio: FindSolicitudTitularSocio;
   private readonly gateway: CrearPrestamoGateway;
   private readonly lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
+  private readonly linkFirmaDigitalBaseUrl: string;
   private readonly repository: SolicitudesCoreRepository;
   private readonly solicitudesLegacyGateway: Pick<
     SolicitudesLegacyGateway,
@@ -55,6 +57,7 @@ export class CreatePrestamoLegacyUseCase {
     this.gateway = dependencies.gateway;
     this.lineaPrestamoLegacyIdResolver =
       dependencies.lineaPrestamoLegacyIdResolver;
+    this.linkFirmaDigitalBaseUrl = dependencies.linkFirmaDigitalBaseUrl;
     this.repository = dependencies.repository;
     this.solicitudesLegacyGateway = dependencies.solicitudesLegacyGateway;
     this.today = dependencies.today;
@@ -157,6 +160,7 @@ export class CreatePrestamoLegacyUseCase {
     });
 
     const linkFirmaDigital = buildLinkFirmaDigital(
+      this.linkFirmaDigitalBaseUrl,
       result.id,
       lineaPrestamo.codigoMutual,
     );
