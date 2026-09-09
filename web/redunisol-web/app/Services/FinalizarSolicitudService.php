@@ -129,13 +129,31 @@ class FinalizarSolicitudService
         if ($desdeSolicitudesWeb) {
             $lineaDelPrestamo = $this->matchedLineKey(Arr::get($payload, 'linea'));
 
-            $result['codigo_mutual'] = $this->codigoMutualDelPayload($payload);
+            $codigoMutual = $this->codigoMutualDelPayload($payload);
+            $result['codigo_mutual'] = $codigoMutual;
 
-            if ($lineaDelPrestamo !== null && $lineaDelPrestamo !== 'its') {
-                $linea = $lineaDelPrestamo;
+            // Alcanza con que el prestamo traiga codigo: no hace falta que ese
+            // codigo tenga entrada en el config. Cuando no la tiene va el
+            // documento por defecto, que es lo mismo que hace el legado.
+            //
+            // Volver al parametro de la URL en ese caso dejaria el agujero
+            // abierto justo para el grupo mas grande que no esta en el config:
+            // Celesol, 699 prestamos en seis meses.
+            if ($codigoMutual !== null) {
+                $esLineaDelConfig =
+                    $lineaDelPrestamo !== null && $lineaDelPrestamo !== 'its';
+
+                $linea = $esLineaDelConfig
+                    ? $lineaDelPrestamo
+                    : (string) config('finalizar.default_line', 'caja');
+
                 $result['linea'] = $linea;
                 $result['line_label'] = $this->lineLabel($linea);
-                $result['metamap'] = $this->metamapConfig($this->lineConfig($linea));
+                $result['metamap'] = $this->metamapConfig(
+                    $esLineaDelConfig
+                        ? $this->lineConfig($lineaDelPrestamo)
+                        : $this->defaultMetamapConfig(),
+                );
             }
         }
 
