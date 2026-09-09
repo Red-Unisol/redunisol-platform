@@ -199,6 +199,33 @@ Alcance actual del workflow:
 - corre `docker compose config`, `docker compose pull` y `docker compose up -d`
 - limpia el plaintext descifrado al terminar
 
+### Recarga de application.yaml
+
+El contenido de un bind mount no forma parte del hash de servicio de Compose.
+Reemplazar application.yaml mediante install puede dejar al contenedor montado
+sobre el archivo anterior, incluso si el deploy termina exitosamente.
+
+Deploy Infra calcula SHA-256 del archivo staged y exporta KESTRA_CONFIG_SHA256.
+La etiqueta io.redunisol.kestra-config-sha256 pertenece exclusivamente al
+servicio Kestra: al cambiar su valor, Compose recrea ese servicio. Un archivo
+identico mantiene la etiqueta y no fuerza recreacion. El deploy comprueba
+despues que el hash del archivo dentro del contenedor coincida con el esperado.
+No se agrega esta variable calculada al archivo cifrado de secretos.
+
+En operaciones manuales, exportar la misma variable calculada desde el archivo
+que se va a aplicar; si se omite, la etiqueta toma el valor unmanaged. No usar
+una recreacion global para recargar solamente Kestra.
+
+Intervencion autorizada del 2026-09-09: se ejecuto en /opt/kestra
+docker compose --env-file .env up -d --no-deps --force-recreate --no-build
+--pull never kestra para cargar la configuracion ya mergeada en 9671fe8.
+Se verifico cambio del contenedor Kestra, imagen identica y mismo ID/fecha
+de inicio de PostgreSQL. Host y contenedor quedaron con el mismo archivo.
+Una tarea temporal sin triggers, con bind de solo lectura, verifico que ve
+la carpeta y SQLite compartidos; se retiro la definicion de prueba conservando
+su ejecucion. La cola interna de alertas y su contador quedaron en cero.
+No se hicieron consultas al proveedor CredixSA en esta verificacion.
+
 Fuera de alcance en esta version:
 
 - configuracion de Apache del host
