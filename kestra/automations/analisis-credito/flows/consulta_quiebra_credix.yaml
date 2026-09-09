@@ -97,7 +97,7 @@ tasks:
 
   - id: guardar_cache_cuil
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.consultar_quiebra is defined) and outputs.consultar_quiebra.vars.cuil_cache_should_persist }}"
+    runIf: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') and outputs.consultar_quiebra.vars.cuil_cache_should_persist }}"
     key: "{{ outputs.consultar_quiebra.vars.cuil_cache_key }}"
     value: "{{ outputs.consultar_quiebra.vars.cache_value_json }}"
     kvType: JSON
@@ -106,7 +106,7 @@ tasks:
 
   - id: guardar_cache_nombre
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.consultar_quiebra is defined) and outputs.consultar_quiebra.vars.name_cache_should_persist }}"
+    runIf: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') and outputs.consultar_quiebra.vars.name_cache_should_persist }}"
     key: "{{ outputs.consultar_quiebra.vars.name_cache_key }}"
     value: "{{ outputs.consultar_quiebra.vars.cache_value_json }}"
     kvType: JSON
@@ -116,37 +116,37 @@ tasks:
 outputs:
   - id: ok
     type: BOOL
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.ok ?? false) : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.ok ?? false) : false) }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.ok ?? false) : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.ok ?? false) : false) }}"
   - id: status
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.status ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.status ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.status ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.status ?? '') : '') }}"
   - id: cuit
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.cuit ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cuit ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.cuit ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cuit ?? '') : '') }}"
   - id: nombre
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.nombre ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.nombre ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.nombre ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.nombre ?? '') : '') }}"
   - id: rows_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.rows_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.rows_json ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.rows_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.rows_json ?? '') : '') }}"
   - id: data_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.data_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.data_json ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.data_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.data_json ?? '') : '') }}"
   - id: normalized_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.normalized_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.normalized_json ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.normalized_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.normalized_json ?? '') : '') }}"
   - id: response_json
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.response_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.response_json ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.response_json ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.response_json ?? '') : '') }}"
   - id: error
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.error ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.error ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.error ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.error ?? '') : '') }}"
   - id: cache_hit
     type: BOOL
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.cache_hit ?? false) : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cache_hit ?? false) : false) }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.cache_hit ?? false) : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cache_hit ?? false) : false) }}"
   - id: cached_at
     type: STRING
-    value: "{{ (outputs.consultar_quiebra is defined) ? (outputs.consultar_quiebra.vars.cached_at ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cached_at ?? '') : '') }}"
+    value: "{{ (tasks.consultar_quiebra.state != 'SKIPPED') ? (outputs.consultar_quiebra.vars.cached_at ?? '') : ((outputs.responder_cache is defined) ? (outputs.responder_cache.vars.cached_at ?? '') : '') }}"
 
 triggers:
   - id: webhook
