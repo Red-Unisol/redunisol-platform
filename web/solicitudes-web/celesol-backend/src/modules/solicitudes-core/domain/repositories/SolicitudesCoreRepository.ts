@@ -106,6 +106,7 @@ export type UpdateSolicitudCorePatch = {
     legacyOid?: string;
     linkFirmaDigital?: string | null;
     firmaDigitalmente?: boolean;
+    lineaPrestamoCodigoMutual?: string | null;
     lineaPrestamoDescripcion?: string;
     lineaPrestamoLegacyOid?: string;
     montoAFinanciar?: number | null;

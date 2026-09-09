@@ -113,6 +113,24 @@ class FinalizarSolicitudService
             return $result;
         }
 
+        // El sistema nuevo devuelve la linea junto con el prestamo, asi que se
+        // usa esa y se descarta la de la URL. Vimarx no la devuelve y por eso
+        // el circuito de siempre sigue dependiendo del parametro.
+        //
+        // Importa porque la linea decide que documento de Metamap firma el
+        // socio: mientras salga de la query, cualquiera que edite el link
+        // elige que contrato firma, y nada lo delata.
+        if ($desdeSolicitudesWeb) {
+            $lineaDelPrestamo = $this->matchedLineKey(Arr::get($payload, 'linea'));
+
+            if ($lineaDelPrestamo !== null && $lineaDelPrestamo !== 'its') {
+                $linea = $lineaDelPrestamo;
+                $result['linea'] = $linea;
+                $result['line_label'] = $this->lineLabel($linea);
+                $result['metamap'] = $this->metamapConfig($this->lineConfig($linea));
+            }
+        }
+
         $result['loan'] = $this->mapLegacyLoan($payload, $sol, $ntrans, $linea);
         $result['metamap']['metadata'] = $this->buildMetamapMetadata($result['loan'], $result['metamap']['doc_id']);
 

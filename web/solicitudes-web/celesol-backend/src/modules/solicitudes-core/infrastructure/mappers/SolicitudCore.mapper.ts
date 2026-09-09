@@ -115,6 +115,9 @@ export class SolicitudCoreMapper {
           | string
           | null
           | undefined) ?? null,
+      lineaPrestamoCodigoMutual:
+        ((record as unknown as Record<string, unknown>)
+          .lineaPrestamoCodigoMutual as string | null | undefined) ?? null,
       estadoActual: {
         code: record.estadoActual.code,
         id: record.estadoActual.id,

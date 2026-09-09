@@ -168,6 +168,9 @@ export class CreatePrestamoLegacyUseCase {
     return this.repository.update(input.solicitudId, {
       solicitud: {
         legacyOid: result.id,
+        // Se guarda ademas de usarse en el link: el finalizar lo necesita
+        // para elegir el documento sin depender del parametro de la URL.
+        lineaPrestamoCodigoMutual: lineaPrestamo.codigoMutual,
         linkFirmaDigital,
       },
     });

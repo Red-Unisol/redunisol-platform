@@ -791,6 +791,7 @@ export class SolicitudesCorePrismaDatasource {
         legacyOid: patch.solicitud?.legacyOid,
         linkFirmaDigital: patch.solicitud?.linkFirmaDigital,
         firmaDigitalmente: patch.solicitud?.firmaDigitalmente,
+        lineaPrestamoCodigoMutual: patch.solicitud?.lineaPrestamoCodigoMutual,
         lineaPrestamoDescripcion: patch.solicitud?.lineaPrestamoDescripcion,
         lineaPrestamoLegacyOid: patch.solicitud?.lineaPrestamoLegacyOid,
         montoAFinanciar: patch.solicitud?.montoAFinanciar,
