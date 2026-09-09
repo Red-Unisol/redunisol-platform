@@ -209,15 +209,15 @@ def table_sheet(workbook: Any, name: str, title: str, subtitle: str, headers: li
     return ws
 
 
-def build_review_sheet(workbook, months, reports):
+def build_review_sheet(workbook, month, report):
     # La v1 conserva su hoja original. Solo la v2 agrega decisiones humanas.
     del workbook["Muestreo legajos"]
     rows = [
         [month, item.get("solicitud_oid"), item.get("nro_socio"), item.get("linea"), "A revisar", None]
-        for month in months for item in reports[month].legajos_sample
+        for item in report.legajos_sample
     ]
-    ws = table_sheet(workbook, "Muestreo legajos", "Legajos seleccionados · revisión humana",
-                     "Elegir Correcto (verde), Incorrecto (rojo) o A revisar (amarillo). Comisiones cuenta los resultados por mes. Guardar una copia revisada.",
+    ws = table_sheet(workbook, "Muestreo legajos", "Legajos seleccionados del último mes · revisión humana",
+                     f"Muestra de {month}. Elegir Correcto (verde), Incorrecto (rojo) o A revisar (amarillo). Guardar una copia revisada.",
                      ["Mes", "Solicitud", "Número de socio", "Línea", "Revisión", "Observaciones"], rows, "RevisionLegajos")
     for col, width in zip("ABCDEF", [16, 15, 18, 36, 21, 42]):
         ws.column_dimensions[col].width = width
@@ -335,7 +335,8 @@ def enrich_workbook(
     workbook["Feriados nacionales"].column_dimensions["B"].width = 90
 
     del workbook["Resumen ejecutivo"]
-    build_review_sheet(workbook, months, by_month)
+    latest_month = months[-1]
+    build_review_sheet(workbook, latest_month, by_month[latest_month])
     comparison = build_monthly_comparison(workbook, months, ref_row)
     workbook.move_sheet(summary, offset=-workbook.index(summary))
     workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))

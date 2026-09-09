@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 from reporte_evaluacion_report.core import EvaluateApiClient, MonthlyReport, month_start_end
 
-RULE_VERSION = "comisiones-2026-09-08-legajos"
+RULE_VERSION = "comisiones-2026-09-09-legajos-ultimo-mes"
 MANUAL_RULES = {"sample_size": 30, "high_min": 28, "medium_min": 26, "high_rate": "0.005", "medium_rate": "0.003", "low_rate": "0.001", "require_complete_review": True}
 EXCLUDED_SELLERS = (
     "Alvaro Pajon", "Gabriela Acosta", "Jorgelina Marin", "Karina Altamirano", "Martin Rodriguez",
