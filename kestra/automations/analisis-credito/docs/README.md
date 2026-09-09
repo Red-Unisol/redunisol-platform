@@ -661,10 +661,10 @@ solo en producción. No modifica las salidas del flow evaluatorio anterior. El d
   Se clasifica sin redondear la métrica y se redondea cada comisión a centavos.
 - Pesos: mediana/promedio de respuesta 20% cada uno; mediana/promedio de
   transferencia 15% cada uno. Comisión = colocación × peso × tasa.
-- Legajos: 30 solicitudes pagadas al azar por mes, con la misma semilla
-  reproducible. En Muestreo legajos se elige Correcto (verde), Incorrecto
-  (rojo) o A revisar (amarillo), con observaciones opcionales. Comisiones
-  cuenta cada estado por mes mediante referencias a la tabla, incluso al ordenar.
+- Legajos: 30 solicitudes pagadas al azar del mes final (`to_month`), con la
+  misma semilla reproducible. En Muestreo legajos se elige Correcto (verde),
+  Incorrecto (rojo) o A revisar (amarillo), con observaciones opcionales.
+  Comisiones cuenta cada estado mediante referencias a la tabla, incluso al ordenar.
 - Legajos correctos: 28–30 = tasa 0,5%; 26–27 = 0,3%; 0–25 = 0,1%.
   Comisión = colocación × 30% × tasa. Solo se liquida cuando los 30 casos
   están resueltos. Casos vacíos/no reconocidos y muestras distintas de 30
@@ -705,7 +705,8 @@ el mes final del período (`to_month`), que por defecto es el último mes cerrad
 No repite las liquidaciones anteriores. Unifica objetivos e importes por métrica: referencia, resultado,
 intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
 mes a liquidar están el conteo de legajos, sus rangos, la comisión y el total definitivo.
-Muestreo legajos es la segunda hoja y permite ingresar las revisiones individuales.
+Muestreo legajos es la segunda hoja y permite ingresar las 30 revisiones individuales
+del mes final. No incluye muestras de los meses históricos del comparativo.
 Comparativo mensual es la tercera hoja: una tabla horizontal con una fila por mes
 y siete columnas: mes, mediana y promedio de primera respuesta, transferencias
 y punta a punta. Punta a punta es informativo y no interviene en las comisiones. Conserva todos los meses del período solicitado

@@ -226,7 +226,11 @@ class CommissionsTests(unittest.TestCase):
             self.assertEqual(workbook["Comisiones"].max_row, 61)
             self.assertIn('"2026-08"', workbook["Comisiones"]["A50"].value)
             self.assertEqual([workbook["Comparativo mensual"].cell(r, 1).value for r in range(7, 10)], ["2026-06", "2026-07", "2026-08"])
-            self.assertEqual(workbook["Muestreo legajos"].max_row, 94)
+            review = workbook["Muestreo legajos"]
+            self.assertEqual(review.max_row, 34)
+            self.assertEqual([review.cell(row, 1).value for row in range(5, 35)], ["2026-08"] * 30)
+            self.assertNotIn("2026-06", [cell.value for cell in review["A"]])
+            self.assertNotIn("2026-07", [cell.value for cell in review["A"]])
             workbook.close()
 
     def test_generation_fetches_baseline_and_keeps_manual_commission_empty(self):
