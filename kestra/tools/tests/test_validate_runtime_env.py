@@ -40,6 +40,7 @@ class ValidateRuntimeEnvTests(unittest.TestCase):
             env.write_text(
                 "\n".join(
                     [
+                        "KESTRA_VERSION=v2.0.0",
                         "KESTRA_ADMIN_EMAIL=admin@kestra.local",
                         "KESTRA_ADMIN_PASSWORD=admin-password",
                         "SECRET_REPORTS_KESTRA_USERNAME=YWRtaW5Aa2VzdHJhLmxvY2Fs",
@@ -55,12 +56,25 @@ class ValidateRuntimeEnvTests(unittest.TestCase):
 
             self.assertEqual(runtime_value_errors(env), [])
 
+            env.write_text(
+                env.read_text(encoding="utf-8").replace(
+                    "KESTRA_VERSION=v2.0.0",
+                    "KESTRA_VERSION=latest",
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                runtime_value_errors(env),
+                ["KESTRA_VERSION must be pinned to v2.0.0, not latest"],
+            )
+
     def test_rejects_mismatched_credentials_and_incomplete_pool(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / "runtime.env"
             env.write_text(
                 "\n".join(
                     [
+                        "KESTRA_VERSION=v2.0.0",
                         "KESTRA_ADMIN_EMAIL=admin@kestra.local",
                         "KESTRA_ADMIN_PASSWORD=admin-password",
                         "SECRET_REPORTS_KESTRA_USERNAME=b3RoZXJAdXNlci5sb2NhbA==",
