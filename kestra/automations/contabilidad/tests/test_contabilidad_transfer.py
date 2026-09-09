@@ -12,9 +12,25 @@ from contabilidad_transfer.cruce_mov_emp_vimarx import (
     build_report_rows,
     load_movements,
 )
+from contabilidad_transfer.runtime_paths import require_output_root
 
 
 class ContabilidadTransferTest(unittest.TestCase):
+    def test_requires_persistent_output_mount_before_processing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "contabilidad-transfer"
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "se esperaba el volumen persistente montado",
+            ):
+                require_output_root(missing)
+
+            self.assertFalse(missing.exists())
+
+            missing.mkdir()
+            self.assertEqual(require_output_root(missing), missing)
+
     def test_load_movements_keeps_rows_without_cuit_or_valid_amount(self) -> None:
         content = "\n".join(
             [

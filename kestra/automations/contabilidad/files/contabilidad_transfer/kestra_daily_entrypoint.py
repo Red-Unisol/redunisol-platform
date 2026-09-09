@@ -29,6 +29,7 @@ from contabilidad_transfer.cruce_mov_emp_vimarx import (
     load_movements,
     write_excel,
 )
+from contabilidad_transfer.runtime_paths import require_output_root
 
 
 DEFAULT_REMOTE_DIR = "."
@@ -136,7 +137,9 @@ def main() -> int:
     run_date_compact = run_date.replace("-", "")
     remote_dir = env("CONTABILIDAD_SFTP_REMOTE_DIR", DEFAULT_REMOTE_DIR)
     remote_pattern = env("CONTABILIDAD_SFTP_PATTERN", DEFAULT_REMOTE_PATTERN)
-    output_root = Path(env("CONTABILIDAD_OUTPUT_ROOT", DEFAULT_OUTPUT_ROOT))
+    output_root = require_output_root(
+        Path(env("CONTABILIDAD_OUTPUT_ROOT", DEFAULT_OUTPUT_ROOT))
+    )
     cache_dir = Path(env("CONTABILIDAD_CACHE_DIR", DEFAULT_CACHE_DIR))
     output_dir = output_root / run_date
 

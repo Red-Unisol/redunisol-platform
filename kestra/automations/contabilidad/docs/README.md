@@ -40,6 +40,9 @@ El task Docker monta esa ruta como:
 /data/contabilidad-transfer
 ```
 
+La ejecucion falla antes de descargar o procesar archivos si ese volumen
+persistente no esta disponible, para evitar un `SUCCESS` con outputs efimeros.
+
 Secrets requeridos en Kestra:
 
 - `CONTABILIDAD_SFTP_HOST`
