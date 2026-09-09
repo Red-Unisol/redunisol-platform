@@ -44,6 +44,7 @@ APPROVED_SELLER_POOLS = {
         "116561",
     },
 }
+PINNED_KESTRA_VERSION = "v2.0.0"
 
 
 def referenced_variables(compose_path: Path) -> set[str]:
@@ -83,6 +84,7 @@ def runtime_value_errors(env_path: Path) -> list[str]:
     errors: list[str] = []
 
     required = {
+        "KESTRA_VERSION",
         "KESTRA_ADMIN_EMAIL",
         "KESTRA_ADMIN_PASSWORD",
         "SECRET_REPORTS_KESTRA_USERNAME",
@@ -92,6 +94,12 @@ def runtime_value_errors(env_path: Path) -> list[str]:
     missing = sorted(required - values.keys())
     if missing:
         return [f"missing required runtime value: {key}" for key in missing]
+
+    if values["KESTRA_VERSION"] != PINNED_KESTRA_VERSION:
+        errors.append(
+            "KESTRA_VERSION must be pinned to "
+            f"{PINNED_KESTRA_VERSION}, not {values['KESTRA_VERSION']}"
+        )
 
     try:
         reports_username = decoded_runtime_secret(

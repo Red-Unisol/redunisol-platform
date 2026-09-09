@@ -24,6 +24,10 @@ Copiar `.env.example` a `.env` y completar:
 - `KESTRA_ADMIN_PASSWORD`
 - `KESTRA_PUBLIC_URL`
 
+`KESTRA_VERSION` debe permanecer fijada a `v2.0.0`. No usar `latest` ni
+`nightly`: una recreacion del contenedor podria incorporar cambios incompatibles
+sin un cambio equivalente en Git.
+
 ## Levantar el stack
 
 ```bash

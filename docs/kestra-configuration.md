@@ -69,6 +69,10 @@ En otras palabras:
 - Docker Compose lee `.env` y pasa el resultado al contenedor
 - para secrets, Kestra espera variables con prefijo `SECRET_` y valores codificados en Base64
 
+La imagen de Kestra esta fijada a `v2.0.0` mediante `KESTRA_VERSION`. No debe
+usarse `latest` ni `nightly`: las actualizaciones de version se hacen como un
+cambio explicito en Git, junto con la revision de su guia de migracion.
+
 La definicion versionada de ese mecanismo vive en:
 
 - `kestra/platform/infra/.env.example`
