@@ -65,7 +65,7 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
             / "consulta_quiebra_credix.yaml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("outputs.responder_cache is defined", flow_source)
+        self.assertIn("outputs.responder_cache.vars is defined", flow_source)
         self.assertIn("outputs.consultar_quiebra.vars.ok ?? false", flow_source)
 
     def test_parse_search_request_normalizes_fields(self) -> None:

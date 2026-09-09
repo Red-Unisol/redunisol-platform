@@ -42,6 +42,9 @@ jobs:
       - name: Run deploy tooling tests
         run: python -m unittest kestra.tools.tests.test_deploy_kestra
 
+      - name: Run CredixSA flow contract tests
+        run: python -m unittest kestra.tools.tests.test_credixsa_flow_contracts
+
       - name: Validate Zipline Dev Compose
         run: docker compose --env-file platform/zipline/zipline.dev.env.example -f platform/zipline/docker-compose.yml config -q
 
