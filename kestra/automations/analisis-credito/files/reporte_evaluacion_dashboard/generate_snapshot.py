@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - optional outside Kestra
     Kestra = None
 
 
-DEFAULT_BASE_URL = "https://celesol.dyndns.org:5050"
+DEFAULT_BASE_URL = "https://celesol.dyndns.org:5002"
 NOVEDAD_FIELDS = (
     "ID;Fecha;Texto;Creado.Descripcion;Solicitud.Oid;"
     "Solicitud.Socio.NroSocio;Solicitud.NroSocio;Solicitud.LineaPrestamo.Descripcion;"
