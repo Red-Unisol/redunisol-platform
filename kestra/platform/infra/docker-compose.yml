@@ -24,6 +24,9 @@ services:
 
   kestra:
     image: kestra/kestra:${KESTRA_VERSION}
+    labels:
+      # A bind-mounted file's contents are not part of Compose's config hash.
+      io.redunisol.kestra-config-sha256: ${KESTRA_CONFIG_SHA256:-unmanaged}
     restart: unless-stopped
     logging:
       driver: json-file

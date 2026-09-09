@@ -80,6 +80,7 @@ jobs:
           python kestra/tools/validate_runtime_env.py \
             --compose kestra/platform/infra/docker-compose.yml \
             --env kestra/platform/infra/kestra-runtime.env.enc \
+            --allow-missing KESTRA_CONFIG_SHA256 \
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
             --allow-missing SECRET_SMTP_PASSWORD
           printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/kestra-runtime.key"
@@ -92,6 +93,7 @@ jobs:
           python kestra/tools/validate_runtime_env.py \
             --compose kestra/platform/infra/docker-compose.yml \
             --env kestra/platform/infra/kestra-runtime.env \
+            --allow-missing KESTRA_CONFIG_SHA256 \
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
             --allow-missing SECRET_SMTP_PASSWORD \
             --validate-values
@@ -124,6 +126,9 @@ jobs:
           install -d -m 755 "$target_dir/data/credixsa-cache"
           install -d -m 755 "$target_dir/tmp"
 
+          # Tie the service definition to the file content, not its bind path.
+          export KESTRA_CONFIG_SHA256="$(sha256sum "$staging_dir/application.yaml" | cut -d ' ' -f 1)"
+
           docker compose \
             --env-file "$staging_dir/.env" \
             -f "$staging_dir/docker-compose.yml" \
@@ -136,6 +141,10 @@ jobs:
           cd "$target_dir"
           docker compose --env-file .env pull
           docker compose --env-file .env up -d
+          kestra_id="$(docker compose --env-file .env ps -q kestra)"
+          test -n "$kestra_id"
+          loaded_config_sha="$(docker exec "$kestra_id" sha256sum /etc/kestra/application.yaml | cut -d ' ' -f 1)"
+          test "$loaded_config_sha" = "$KESTRA_CONFIG_SHA256"
           docker compose ps
           EOF
 
