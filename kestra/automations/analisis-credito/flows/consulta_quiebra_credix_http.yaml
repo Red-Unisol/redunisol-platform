@@ -1,0 +1,14 @@
+id: consulta_quiebra_credix_http
+namespace: redunisol
+description: Retirado. Era scraping HTTP del portal, no una API oficial. Usar consulta_quiebra_credix.
+disabled: true
+labels:
+  env: prod
+  team: redunisol
+  domain: analisis-credito
+  integration: credixsa
+  lifecycle: retired
+tasks:
+  - id: retirado
+    type: io.kestra.plugin.core.execution.Fail
+    errorMessage: Flow retirado; usar consulta_quiebra_credix.

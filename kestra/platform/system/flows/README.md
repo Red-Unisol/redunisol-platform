@@ -9,6 +9,11 @@ negocio especifico.
   produccion falla, y avisa cuando el flow vuelve a estar sano. Deduplica por KV
   store con TTL de 30 dias para no re-alertar el mismo flow en loop.
 
+Los filtros de triggers usan when (Kestra 2). Cada HTTP tiene timeout de
+30 segundos y el flow un SLA de cancelacion a los 5 minutos. Una cola historica
+atascada requiere recuperacion separada; no se vacia por actualizar el YAML.
+Ver [runbook CredixSA](../../../automations/analisis-credito/docs/credixsa-recovery.md).
+
 ## Ambientes: este target se despliega solo a prod
 
 A diferencia de los dominios de `kestra/automations/`, el target `system` **no

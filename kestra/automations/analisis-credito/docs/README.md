@@ -294,6 +294,9 @@ Secrets:
 
 ## consulta_quiebra_credix
 
+Arquitectura, diferencias RPA/HTTP/cache y verificacion de despliegue:
+[CredixSA y recuperacion de Kestra 2](credixsa-recovery.md).
+
 Consulta CredixSA y devuelve `none`, `multiple` o `single`.
 
 Cuando hay un unico resultado, el flow entra al detalle, ejecuta `Actualizar Todo` si CredixSA muestra el paso de actualizaciones online, espera a que terminen los `Procesando...` y devuelve las secciones disponibles del informe final.

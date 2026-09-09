@@ -3,6 +3,12 @@ namespace: redunisol
 
 description: Observa ejecuciones fallidas y recuperaciones de Kestra en prod y envia alertas deduplicadas a Bitrix24.
 
+sla:
+  - id: limitar_duracion
+    type: MAX_DURATION
+    duration: PT5M
+    behavior: CANCEL
+
 concurrency:
   limit: 1
   behavior: QUEUE
@@ -21,6 +27,7 @@ tasks:
 
   - id: enviar_alerta_fallo
     type: io.kestra.plugin.core.http.Request
+    timeout: PT30S
     runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
     uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
@@ -41,6 +48,7 @@ tasks:
 
   - id: enviar_alerta_clear
     type: io.kestra.plugin.core.http.Request
+    timeout: PT30S
     runIf: "{{ trigger.state == 'SUCCESS' and ((outputs.leer_alerta_abierta.value ?? null) is not null) }}"
     uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
@@ -61,30 +69,10 @@ triggers:
     type: io.kestra.plugin.core.trigger.Flow
     states:
       - FAILED
-    preconditions:
-      id: fallos_redunisol_prod
-      where:
-        - id: namespaces_prod_excluyendo_system
-          filters:
-            - field: NAMESPACE
-              type: STARTS_WITH
-              value: redunisol.prod.
-            - field: NAMESPACE
-              type: NOT_EQUAL_TO
-              value: redunisol.prod.system
+    when: "{{ (flow.namespace | startsWith('redunisol.prod.')) and flow.namespace != 'redunisol.prod.system' }}"
 
   - id: detectar_recuperaciones_prod
     type: io.kestra.plugin.core.trigger.Flow
     states:
       - SUCCESS
-    preconditions:
-      id: recuperaciones_redunisol_prod
-      where:
-        - id: namespaces_prod_excluyendo_system
-          filters:
-            - field: NAMESPACE
-              type: STARTS_WITH
-              value: redunisol.prod.
-            - field: NAMESPACE
-              type: NOT_EQUAL_TO
-              value: redunisol.prod.system
+    when: "{{ (flow.namespace | startsWith('redunisol.prod.')) and flow.namespace != 'redunisol.prod.system' }}"
