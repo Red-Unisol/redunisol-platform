@@ -46,7 +46,12 @@ def main() -> int:
     output_payload = build_output_payload(result)
     _write_sqlite_cache_if_configured(output_payload)
     _emit_outputs_if_available(output_payload)
-    sys.stdout.write(output_payload["response_json"] + "\n")
+    if Kestra is None:
+        sys.stdout.write(output_payload["response_json"] + "\n")
+    else:
+        # The full contract is already emitted as Kestra outputs.
+        print(json.dumps({"event": "credixsa_completed", "status": output_payload["status"],
+                          "cache_hit": output_payload["cache_hit"]}))
     return exit_code
 
 

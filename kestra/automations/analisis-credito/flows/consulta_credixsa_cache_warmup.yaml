@@ -1,0 +1,14 @@
+id: consulta_credixsa_cache_warmup
+namespace: redunisol
+description: Retirado. Reemplazado por precalentar_cache_credixsa_v2_sondeo.
+disabled: true
+labels:
+  env: prod
+  team: redunisol
+  domain: analisis-credito
+  integration: credixsa
+  lifecycle: retired
+tasks:
+  - id: retirado
+    type: io.kestra.plugin.core.execution.Fail
+    errorMessage: Flow retirado; usar precalentar_cache_credixsa_v2_sondeo.

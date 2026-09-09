@@ -31,8 +31,10 @@ ON credixsa_cache(expires_at);
 
 def write_cache_entries(db_path: str, entries: list[dict[str, str]]) -> int:
     path = Path(db_path)
-    if not path.parent.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
+    # The shared directory is provisioned by Compose, not by an ephemeral task.
+    # Do not hide a missing Docker bind mount by creating a disposable database.
+    if not path.parent.is_dir():
+        raise RuntimeError("CredixSA cache directory is missing; verify the shared volume mount.")
 
     rows = []
     for entry in entries:
@@ -86,6 +88,8 @@ def write_cache_entries(db_path: str, entries: list[dict[str, str]]) -> int:
                 expires_at = excluded.expires_at,
                 payload_json = excluded.payload_json,
                 updated_at = CURRENT_TIMESTAMP
+            WHERE julianday(excluded.cached_at) >= julianday(credixsa_cache.cached_at)
+               OR julianday(credixsa_cache.cached_at) IS NULL
             """,
             rows,
         )
