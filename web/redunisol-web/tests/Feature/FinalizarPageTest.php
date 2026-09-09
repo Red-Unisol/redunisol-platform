@@ -396,3 +396,32 @@ it('keeps honouring the url linea on the legacy route', function () {
             ->where('finalizar.metamap.flow_id', '63906e4db76a55001cb05858')
         );
 });
+
+it('uses the default document when the loan codigo has no config entry', function () {
+    // Celesol no esta en el array lines. Antes se volvia al parametro de la
+    // URL, asi que justo para el grupo mas grande fuera del config se podia
+    // elegir el documento editando el link. Ahora manda el codigo del prestamo
+    // y, sin entrada propia, va el documento por defecto -- lo mismo que hace
+    // el legado con ?linea=Celesol.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440408' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => 'Celesol',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440408&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'caja')
+            ->where('finalizar.metamap.flow_id', '6453e19ef6fa8c001c7af03e')
+            ->where('finalizar.metamap.doc_id', 'e51bc831-5b64-417b-9f9d-ac9167317590')
+            ->where('finalizar.codigo_mutual', 'Celesol')
+        );
+});
