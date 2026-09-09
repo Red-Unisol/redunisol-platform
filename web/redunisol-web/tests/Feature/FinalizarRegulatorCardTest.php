@@ -172,3 +172,99 @@ it('does not resolve Fiat convention data for Caja or unknown lines', function (
             ->where('finalizar.regulator', null)
         );
 });
+
+it('shows the convenio of the loan and not the one in the url', function () {
+    // Mismo problema que con el documento: si la entidad sale de la query, el
+    // socio ve el convenio de una mutual y firma el documento de otra.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Regulator::create([
+        'short_name' => 'amejuca',
+        'name' => 'Asociacion Mutual Amejuca',
+        'cuit' => '30-69517717-45',
+        'inaes_mat' => '68',
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => 'amejuca',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.regulator.short_name', 'amejuca')
+        );
+});
+
+it('finds the convenio of a codigo that is not a config line', function () {
+    // Celesol no esta en el array lines, asi que 'linea' normaliza a caja. Si
+    // la entidad se buscara por ese valor normalizado, los prestamos de Celesol
+    // se quedarian sin tarjeta -- son los 699 de los ultimos seis meses.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Regulator::create([
+        'short_name' => 'Celesol',
+        'name' => 'Asociacion Mutual Celesol',
+        'cuit' => '30-11111111-1',
+        'inaes_mat' => '1',
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => 'Celesol',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'caja')
+            ->where('finalizar.regulator.short_name', 'Celesol')
+        );
+});
+
+it('keeps using the url linea for the convenio on the legacy route', function () {
+    // Vimarx no devuelve el codigo, asi que el circuito de siempre no cambia.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+
+    Regulator::create([
+        'short_name' => 'mudon',
+        'name' => 'Mutual de Docentes del Neuquen',
+        'cuit' => '30-62556738-2',
+        'inaes_mat' => '33',
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/249493' => Http::response([
+            'nombreSocio' => 'Juan Perez',
+            'montoAfinanciar' => '$ 500.000,00',
+            'cuotaResultante' => '164996,06',
+            'cuotas' => '6',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=249493&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.regulator.short_name', 'mudon')
+        );
+});

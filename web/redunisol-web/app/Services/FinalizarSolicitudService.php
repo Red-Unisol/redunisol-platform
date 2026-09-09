@@ -23,6 +23,12 @@ class FinalizarSolicitudService
         $lineConfig = $this->requestedLineConfig($requestedLinea) ?? $this->defaultMetamapConfig();
 
         $result = [
+            // Codigo de mutual tal cual viene con el prestamo, sin normalizar.
+            // Solo lo trae el sistema nuevo; el legado no lo devuelve. Se
+            // expone aparte de 'linea' porque esa es la clave del config, y hay
+            // codigos que no estan ahi (Celesol y otros caen en el default)
+            // pero si tienen entidad de convenio cargada.
+            'codigo_mutual' => null,
             'linea' => $linea,
             'line_label' => $this->lineLabel($linea),
             'loan' => null,
@@ -123,6 +129,8 @@ class FinalizarSolicitudService
         if ($desdeSolicitudesWeb) {
             $lineaDelPrestamo = $this->matchedLineKey(Arr::get($payload, 'linea'));
 
+            $result['codigo_mutual'] = $this->codigoMutualDelPayload($payload);
+
             if ($lineaDelPrestamo !== null && $lineaDelPrestamo !== 'its') {
                 $linea = $lineaDelPrestamo;
                 $result['linea'] = $linea;
@@ -135,6 +143,13 @@ class FinalizarSolicitudService
         $result['metamap']['metadata'] = $this->buildMetamapMetadata($result['loan'], $result['metamap']['doc_id']);
 
         return $result;
+    }
+
+    private function codigoMutualDelPayload(array $payload): ?string
+    {
+        $codigoMutual = trim((string) Arr::get($payload, 'linea', ''));
+
+        return $codigoMutual === '' ? null : $codigoMutual;
     }
 
     private function resolveIts(array $result, string $sol): array

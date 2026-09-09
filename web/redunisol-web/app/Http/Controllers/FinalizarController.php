@@ -68,7 +68,15 @@ class FinalizarController extends Controller
             );
         }
 
-        $finalizar['regulator'] = $this->resolveRegulatorForLine((string) $request->query('linea', ''));
+        // La entidad del convenio tiene que ser la del prestamo, no la que diga
+        // la URL: si sale de la query, el socio puede ver el convenio de una
+        // mutual y firmar el documento de otra con solo editar el link.
+        //
+        // Solo el sistema nuevo trae el codigo con el prestamo. Para el resto
+        // el parametro sigue siendo lo unico que hay, asi que no cambia nada.
+        $finalizar['regulator'] = $this->resolveRegulatorForLine(
+            (string) ($finalizar['codigo_mutual'] ?? $request->query('linea', '')),
+        );
 
         return Inertia::render('finalizar', [
             'settings'  => $settings,
