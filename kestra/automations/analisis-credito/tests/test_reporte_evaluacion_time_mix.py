@@ -34,15 +34,17 @@ class TimeMixTests(TestCase):
         self.assertAlmostEqual(perf["performance"], 5)
         self.assertEqual(perf["mix"], 0)
 
-    def test_simultaneous_changes_entries_exits_and_symmetry(self):
+    def test_simultaneous_changes_entries_exits_and_previous_weights(self):
         rng = random.Random(84)
         for _ in range(40):
             a = {k: group(rng.randint(1, 200), rng.random() * 400) for k in ["a", "b", "exit"]}
             b = {k: group(rng.randint(1, 200), rng.random() * 400) for k in ["a", "b", "entry"]}
             forward, backward = decompose(a, b), decompose(b, a)
             self.assertAlmostEqual(forward["change"], forward["mix"] + forward["performance"] + forward["entry_exit"])
-            for field in ("change", "mix", "performance", "entry_exit"):
-                self.assertAlmostEqual(forward[field], -backward[field])
+            self.assertAlmostEqual(forward["change"], -backward["change"])
+            common = next(r for r in forward["details"] if r["key"] == "a")
+            self.assertAlmostEqual(common["performance"], common["share_before"] * (common["mean_after"] - common["mean_before"]))
+            self.assertAlmostEqual(common["mix"], (common["share_after"] - common["share_before"]) * common["mean_after"])
             entry = next(r for r in forward["details"] if r["key"] == "entry")
             self.assertIsNone(entry["mean_before"])
             self.assertEqual(entry["performance"], 0)
@@ -116,6 +118,14 @@ class TimeMixTests(TestCase):
         for name in ("Comisiones", "Muestreo legajos", "Comparativo mensual"):
             wb.create_sheet(name)
         ws = build_time_mix_sheet(wb, [result], context())
+        self.assertEqual(wb.sheetnames[3], "Cambios en tiempos")
+        self.assertEqual(ws.max_column, 10)
+        self.assertEqual(ws["B3"].value, "2026-08")
+        self.assertEqual(ws["F3"].value, "Primera respuesta")
+        self.assertEqual(len(ws.data_validations.dataValidation), 3)
+        self.assertTrue(all(d.showErrorMessage for d in ws.data_validations.dataValidation))
+        self.assertNotIn("ResumenCambioTiempos", ws.tables)
+        ws = wb["Soporte tiempos"]
         t = ws.tables["DetalleCambioTiempos"]
         from openpyxl.utils.cell import range_boundaries
         _, start, _, end = range_boundaries(t.ref)
@@ -124,6 +134,19 @@ class TimeMixTests(TestCase):
         self.assertEqual(ws.cell(row, 16).value, 120)
         self.assertEqual(ws.cell(row, 17).value, 400)
         self.assertEqual(ws.cell(row, 10).value, f'=IF(F{row}>0,P{row}/F{row},"")')
+        self.assertIn(f'(K{row}-J{row})*H{row}', ws.cell(row, 13).value)
         self.assertIn(f'G11-SUM(H11:J11)', ws['K11'].value)
         self.assertEqual(end, row)
         self.assertIsNone(ws.freeze_panes)
+
+    def test_dashboard_accepts_json_snapshot_and_absent_months(self):
+        for before, after in [({}, {}), ({}, {("50", "Superior", "Cancelaciones", "Nueva · primer mes"): group(3, 12)})]:
+            result = dict(month="2026-08", previous_month="2026-07", label="Transferencia", **decompose(before, after))
+            wb = Workbook()
+            ws = build_time_mix_sheet(wb, json.loads(json.dumps([result])), context())
+            self.assertEqual(ws["F3"].value, "Transferencia")
+            self.assertIn("$V$1>0", ws["A6"].value)
+            self.assertIn("$W$1>0", ws["A6"].value)
+            labels = [c.value for c in ws["B"] if c.data_type != "f"]
+            self.assertIn("Cancelaciones · nueva", labels)
+            self.assertIn("Otras operaciones · nueva", labels)

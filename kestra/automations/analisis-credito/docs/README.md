@@ -723,8 +723,14 @@ el JSON conserva los resultados numéricos calculados en Python.
 
 ### Análisis de cambios en los tiempos (v2)
 
-La cuarta hoja, **Cambios en tiempos**, compara cada mes con el anterior para los
-promedios de primera respuesta, transferencia y punta a punta. Incluye el mes
+La cuarta hoja, **Cambios en tiempos**, presenta una comparación a la vez, con
+selectores de mes y métrica (primera respuesta, transferencia o punta a punta).
+Abre en el último mes y primera respuesta. Sigue la lectura de **Aporte controlado**:
+cuatro indicadores, ranking de superiores y un bloque corto de subcategorías.
+El ranking muestra los diez mayores aportes de desempeño en valor absoluto;
+el resto se agrega sin perder cantidades ni aportes. El selector de superior del
+bloque de cancelaciones/nuevas permite consultar cualquiera, incluso una del resto.
+Incluye el mes
 anterior al inicio solicitado usando la extracción de referencia existente.
 Conserva exactamente los casos, calendario y exclusiones de cada métrica del reporte.
 
@@ -746,18 +752,29 @@ sin mapeo o con descripción inconsistente se conservan como **Sin clasificar**.
 
 Para grupos con casos en ambos meses, siendo `p` su participación y `u` su promedio:
 
-- Mix: `(p_actual - p_anterior) × (u_actual + u_anterior) / 2`.
-- Performance interna: `(u_actual - u_anterior) × (p_actual + p_anterior) / 2`.
+- Mix: `(p_actual - p_anterior) × u_actual`.
+- Desempeño controlado: `(u_actual - u_anterior) × p_anterior`.
+  Mantiene fijo el peso del mes anterior, como el Excel local de referencia;
+  reemplaza el método simétrico de la primera propuesta de esta hoja. La interacción
+  entre cambio de tiempo y peso queda en mix. Cambian los componentes, no el total.
 - Grupos sin casos en uno de los meses: el aporte ponderado entrante o saliente
   queda separado en **Entradas/salidas**, sin inventar un promedio para el mes ausente.
 
 La suma de los tres componentes concilia con la variación total en minutos.
 Si cualquiera de los meses carece de casos, no se calcula descomposición.
 No se descomponen medianas ni se atribuye causalidad al componente de performance.
-La hoja conserva cantidades y sumas de minutos por grupo, calcula los efectos con
-fórmulas y expone un control de conciliación. Un bloque intermedio suma aportes por
-cancelaciones y antigüedad entre todos los superiores, sin doble conteo. El catálogo al pie permite auditar
-superiores, clasificación de cancelaciones y primera actividad. El manifiesto JSON
+Los cálculos se realizan dentro de `superior × operación × antigüedad` y luego
+se suman por superior: el desempeño no se calcula a partir del promedio agregado
+de la superior, que podría ocultar cambios de mix entre sus subcategorías.
+La vista principal muestra cancelaciones/otras operaciones cruzadas con
+nueva/existente, más faltantes cuando los hay; permite ver el total o una superior.
+Sus aportes siempre usan el denominador global y no se suman nuevamente al ranking.
+Los selectores recalculan todas las fórmulas, incluyendo el ranking, sin macros.
+La hoja final **Soporte tiempos** conserva historia completa, cantidades y sumas
+de minutos por grupo, fórmulas, controles de conciliación y catálogo para auditar
+superiores, cancelaciones y primera actividad. Solo se ocultan columnas auxiliares
+de los selectores; el detalle técnico sigue visible y enlazado desde la vista principal.
+El manifiesto JSON
 guarda el mapeo por solicitud, reglas y resultados numéricos para reproducir el análisis.
 
 ### Mantenimiento del calendario

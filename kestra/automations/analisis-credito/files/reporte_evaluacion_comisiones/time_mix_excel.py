@@ -8,10 +8,17 @@ from openpyxl.utils import get_column_letter
 from reporte_evaluacion_report.core import normalize_text
 
 NAME = "Cambios en tiempos"
+DATA_NAME = "Soporte tiempos"
 
 
 def build_time_mix_sheet(workbook, results, context):
-    ws = workbook.create_sheet(NAME)
+    from .time_mix_dashboard import build_dashboard
+    data = build_time_mix_data_sheet(workbook, results, context)
+    return build_dashboard(workbook, results, data)
+
+
+def build_time_mix_data_sheet(workbook, results, context):
+    ws = workbook.create_sheet(DATA_NAME)
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 75
     widths = [14, 23, 37, 22, 24, 14, 14, 14, 14, 16, 16, 16, 16, 16, 16, 18, 18, 23]
@@ -51,14 +58,14 @@ def build_time_mix_sheet(workbook, results, context):
     band(3, "Mix = cambio de participación de los grupos. Performance = cambio de tiempo dentro del grupo. Entradas/salidas = aporte de grupos sin casos en uno de los dos meses.")
     band(4, "Nueva = solo el mes de primera actividad histórica disponible en Core, no fecha de creación. Cancelaciones = nombre de línea que contiene ‘cancel’. Son atributos cruzados, sin doble conteo.")
     band(5, "La antigüedad se clasifica al mes comparado en ambos lados, para evitar efectos artificiales al madurar. Se agrupa por ID de superior y subcategorías; faltantes quedan identificados.")
-    band(6, "Método simétrico: mix = Δparticipación × promedio de tiempos; performance = Δtiempo × promedio de participaciones. La suma, más entradas/salidas, explica el cambio total.")
+    band(6, "Base anterior fija: desempeño = participación anterior × Δtiempo; mix = Δparticipación × tiempo actual. La suma, más entradas/salidas, explica el cambio total.")
     band(7, "Describe cambios, no prueba causalidad ni una curva de aprendizaje. Superior y línea son la clasificación actual de Core; ‘Sin clasificar’ conserva los casos con datos faltantes o inconsistentes.")
     band(9, "Resumen mensual · últimas comparaciones primero", True)
     ordered = sorted(results, key=lambda r: r["month"], reverse=True)
     summary_header = 10
     category_title = summary_header + len(ordered) + 3
     category_header = category_title + 2
-    category_count = sum(len({item["key"][2:] for item in r["details"]}) for r in ordered)
+    category_count = sum(len({tuple(item["key"][2:]) for item in r["details"]}) for r in ordered)
     band(category_title, "Lectura por cancelaciones y líneas nuevas", True)
     band(category_title + 1, "Aportes de cada subcategoría, sumados entre superiores. Una nueva de cancelaciones ocupa una sola fila. Estos aportes desglosan el resumen; no se suman nuevamente a él.")
     detail_title = category_header + category_count + 3
@@ -82,8 +89,8 @@ def build_time_mix_sheet(workbook, results, context):
                 9: f'=IF($D${summary_row}>0,G{r}/$D${summary_row},"")',
                 10: f'=IF(F{r}>0,P{r}/F{r},"")',
                 11: f'=IF(G{r}>0,Q{r}/G{r},"")',
-                12: f'=IF(AND($C${summary_row}>0,$D${summary_row}>0),IF(AND(F{r}>0,G{r}>0),(I{r}-H{r})*(K{r}+J{r})/2,0),"")',
-                13: f'=IF(AND($C${summary_row}>0,$D${summary_row}>0),IF(AND(F{r}>0,G{r}>0),(K{r}-J{r})*(I{r}+H{r})/2,0),"")',
+                12: f'=IF(AND($C${summary_row}>0,$D${summary_row}>0),IF(AND(F{r}>0,G{r}>0),(I{r}-H{r})*K{r},0),"")',
+                13: f'=IF(AND($C${summary_row}>0,$D${summary_row}>0),IF(AND(F{r}>0,G{r}>0),(K{r}-J{r})*H{r},0),"")',
                 14: f'=IF(AND($C${summary_row}>0,$D${summary_row}>0),IF(AND(F{r}>0,G{r}>0),0,Q{r}/$D${summary_row}-P{r}/$C${summary_row}),"")',
                 15: f'=IF(COUNT(L{r}:N{r})=3,SUM(L{r}:N{r}),"")',
             }.items():
@@ -96,7 +103,7 @@ def build_time_mix_sheet(workbook, results, context):
             ws.row_dimensions[r].height = 36
             detail_row += 1
         end = detail_row - 1
-        for operation, age in sorted({item["key"][2:] for item in result["details"]}):
+        for operation, age in sorted({tuple(item["key"][2:]) for item in result["details"]}):
             cr = category_row
             for col, value in enumerate([result["month"], result["label"], operation, age], 1):
                 cell(cr, col, value)
@@ -149,7 +156,7 @@ def build_time_mix_sheet(workbook, results, context):
                                 (9, "Ver catálogo de líneas", catalog_title)]:
         ws.merge_cells(start_row=8, start_column=col, end_row=8, end_column=col + 3)
         c = cell(8, col, label)
-        c.hyperlink = f"#'{NAME}'!A{target}"
+        c.hyperlink = f"#'{DATA_NAME}'!A{target}"
         c.font = Font(name="Calibri", size=11, color="0563C1", underline="single")
     ws.row_dimensions[8].height = 26
     for ref in [f"G11:J{summary_header + len(ordered)}", f"L{detail_header + 1}:O{detail_row - 1}"]:
@@ -162,5 +169,5 @@ def build_time_mix_sheet(workbook, results, context):
     ws.page_setup.paperSize = ws.PAPERSIZE_A3
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    workbook.move_sheet(ws, offset=3 - workbook.index(ws))
+    ws.sheet_properties.tabColor = "A6A6A6"
     return ws

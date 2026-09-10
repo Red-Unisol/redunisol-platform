@@ -13,7 +13,7 @@ TIME_METRICS = (
     ("transfer", "Transferencia"),
     ("end_to_end", "Punta a punta"),
 )
-MIX_VERSION = "mix-2026-09-primer-mes"
+MIX_VERSION = "mix-2026-09-base-anterior-primer-mes"
 MAPPING_FIELDS = "Oid;LineaPrestamo.ID;LineaPrestamo.Descripcion;LineaPrestamo.Superior.ID;LineaPrestamo.Superior.Descripcion"
 
 
@@ -120,8 +120,10 @@ def decompose(before, after):
         mix = performance = entry_exit = None
         if comparable:
             if u0 is not None and u1 is not None:
-                mix = (p1 - p0) * (u1 + u0) / 2
-                performance = (u1 - u0) * (p1 + p0) / 2
+                # Same controlled contribution as the local reference workbook:
+                # hold previous-month weights fixed, assign interaction to mix.
+                mix = (p1 - p0) * u1
+                performance = (u1 - u0) * p0
                 entry_exit = 0.0
             else:
                 mix = performance = 0.0

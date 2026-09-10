@@ -258,7 +258,8 @@ class CommissionsTests(unittest.TestCase):
             comparison = workbook["Comparativo mensual"]
             self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
             self.assertEqual(workbook.sheetnames[3], "Cambios en tiempos")
-            self.assertIn("ResumenCambioTiempos", workbook["Cambios en tiempos"].tables)
+            self.assertIn("ResumenCambioTiempos", workbook["Soporte tiempos"].tables)
+            self.assertEqual(workbook["Cambios en tiempos"]["B3"].value, "2026-08")
             self.assertEqual(comparison.max_column, 7)
             self.assertEqual(comparison["B7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
             self.assertIn("'Comisiones'!C40", comparison["E7"].value)
