@@ -9,6 +9,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `afip_contacto_por_dni`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
+- `consulta_credixsa_por_solicitud`
 - `precalentar_cache_credixsa_v2_sondeo`
 - `consulta_padron_a13`
 - `consulta_empleador`
@@ -221,6 +222,49 @@ Secrets:
 
 - `kestra/automations/analisis-credito/files/incoming_metamap_bridge/**`
 
+## consulta_credixsa_por_solicitud
+
+Dispara la consulta a CredixSA cuando se crea una solicitud en solicitudes-web,
+para que el informe ya este cacheado cuando lo pida el analista.
+
+No repite la logica: llama a `consulta_quiebra_credix` como subflow, asi que
+devuelve exactamente las mismas salidas y hereda cualquier mejora que se le
+haga a aquel.
+
+Existe como flow aparte por el carril de ejecucion. Con `concurrency: 1` los
+disparos automaticos se encolan entre si y no le compiten a un analista que
+esta esperando una respuesta. Ademas deja las ejecuciones distinguibles en la
+UI: las que vienen de una solicitud llevan la label `origin: solicitudes-web`.
+
+El orden de preferencia del dato lo resuelve quien llama (solicitudes-web):
+primero el CUIL, si no el documento, y como ultimo recurso el nombre. Conviene
+mandar CUIL siempre que se pueda: la cache por CUIL exige 11 digitos, asi que
+consultar con un documento de 8 guarda el informe solo bajo la clave por
+nombre, y una consulta posterior por CUIL no lo encuentra.
+
+Si CredixSA falla, la ejecucion no se marca como fallida (`transmitFailed:
+false`): es un precalentamiento best effort y el analista puede consultar en el
+momento como hasta ahora.
+
+### Entrada
+
+Webhook `POST` con JSON:
+
+```json
+{ "cuit": "20123456783", "nombre": "Juan Perez", "solicitud_id": "8ad74d71-..." }
+```
+
+`solicitud_id` no se usa en la consulta: sirve para saber que solicitud origino
+cada ejecucion cuando hay que revisar un caso.
+
+### Salida
+
+Las mismas que `consulta_quiebra_credix`, mas `solicitud_id`.
+
+### Secrets
+
+- `ANALISIS_CREDITO_CREDIXSA_SOLICITUD_WEBHOOK_KEY`
+
 ## consulta_quiebra_credix
 
 Consulta CredixSA y devuelve `none`, `multiple` o `single`.
@@ -273,6 +317,7 @@ Contrato serializado en `response_json`:
 Secrets:
 
 - `ANALISIS_CREDITO_QUIEBRA_WEBHOOK_KEY`
+- `ANALISIS_CREDITO_CREDIXSA_SOLICITUD_WEBHOOK_KEY`
 - `CREDIX_CLIENTE`
 - `CREDIX_USER`
 - `CREDIX_PASS`
