@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { PrecalentarCredixsaSolicitud } from "./PrecalentarCredixsaSolicitud";
+import { ConsultarCredixsaAlCrearSolicitud } from "./ConsultarCredixsaAlCrearSolicitud";
 
-describe("PrecalentarCredixsaSolicitud", () => {
+describe("ConsultarCredixsaAlCrearSolicitud", () => {
   it("prefiere el CUIL cuando el titular lo tiene", async () => {
     // La cache de CredixSA se indexa por CUIL de 11 digitos: consultar con el
     // documento guardaria el informe solo bajo la clave por nombre.
@@ -80,9 +80,9 @@ function build() {
 
   return {
     enviado: () => recibido,
-    servicio: new PrecalentarCredixsaSolicitud({
+    servicio: new ConsultarCredixsaAlCrearSolicitud({
       gateway: {
-        precalentar: async (input) => {
+        consultar: async (input) => {
           recibido = input;
         },
       },

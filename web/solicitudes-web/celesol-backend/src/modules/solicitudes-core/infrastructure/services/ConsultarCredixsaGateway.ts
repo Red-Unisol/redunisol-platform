@@ -11,12 +11,12 @@ type Config = {
    * dando vueltas por el repositorio, igual que hace redunisol-web con los
    * webhooks de Kestra.
    *
-   * Vacia deshabilita el precalentamiento sin romper nada.
+   * Vacia deshabilita la consulta sin romper nada.
    */
   webhookUrl: string;
 };
 
-export type PrecalentarCredixsaInput = {
+export type ConsultarCredixsaInput = {
   /** CUIL de 11 digitos, documento, o vacio si no hay ninguno. */
   cuit: string;
   nombre: string;
@@ -33,9 +33,9 @@ export type PrecalentarCredixsaInput = {
  *
  * Por lo mismo nunca propaga errores: si Kestra o CredixSA estan caidos, el
  * analista consulta en el momento como hasta ahora. Bloquear el alta de una
- * solicitud por un precalentamiento seria peor que no tenerlo.
+ * solicitud por esta consulta seria peor que no hacerla.
  */
-export class PrecalentarCredixsaGateway {
+export class ConsultarCredixsaGateway {
   private readonly fetcher: Fetcher;
   private readonly timeoutMs: number;
   private readonly webhookUrl: string;
@@ -46,7 +46,7 @@ export class PrecalentarCredixsaGateway {
     this.webhookUrl = config.webhookUrl;
   }
 
-  async precalentar(input: PrecalentarCredixsaInput): Promise<void> {
+  async consultar(input: ConsultarCredixsaInput): Promise<void> {
     if (!this.webhookUrl.trim()) {
       return;
     }

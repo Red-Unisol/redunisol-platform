@@ -1,4 +1,4 @@
-import type { PrecalentarCredixsaGateway } from "../../infrastructure/services/PrecalentarCredixsaGateway";
+import type { ConsultarCredixsaGateway } from "../../infrastructure/services/ConsultarCredixsaGateway";
 
 type TitularParaCredixsa = {
   apellidoDenominacion: string;
@@ -8,7 +8,7 @@ type TitularParaCredixsa = {
 };
 
 type Dependencies = {
-  gateway: Pick<PrecalentarCredixsaGateway, "precalentar">;
+  gateway: Pick<ConsultarCredixsaGateway, "consultar">;
 };
 
 /**
@@ -18,18 +18,18 @@ type Dependencies = {
  * El orden de preferencia importa: la cache de CredixSA se indexa por CUIL de
  * 11 digitos, asi que consultar con un documento de 8 guarda el informe solo
  * bajo la clave por nombre. Una consulta posterior por CUIL no lo encuentra y
- * vuelve a scrapear -- el precalentamiento se desaprovecha justo donde mas
+ * vuelve a scrapear -- la consulta anticipada se desaprovecha justo donde mas
  * sirve.
  */
-export class PrecalentarCredixsaSolicitud {
-  private readonly gateway: Pick<PrecalentarCredixsaGateway, "precalentar">;
+export class ConsultarCredixsaAlCrearSolicitud {
+  private readonly gateway: Pick<ConsultarCredixsaGateway, "consultar">;
 
   constructor(dependencies: Dependencies) {
     this.gateway = dependencies.gateway;
   }
 
   async execute(solicitudId: string, titular: TitularParaCredixsa) {
-    await this.gateway.precalentar({
+    await this.gateway.consultar({
       cuit: elegirIdentificador(titular),
       nombre: armarNombre(titular),
       solicitudId,

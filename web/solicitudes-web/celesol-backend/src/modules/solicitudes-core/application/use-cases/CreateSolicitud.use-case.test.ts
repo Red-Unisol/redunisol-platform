@@ -153,7 +153,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
-      precalentarCredixsaSolicitud: { execute: async () => undefined },
+      consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
     simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
@@ -197,7 +197,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
-      precalentarCredixsaSolicitud: { execute: async () => undefined },
+      consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
     simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
@@ -230,7 +230,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
-      precalentarCredixsaSolicitud: { execute: async () => undefined },
+      consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
     simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
@@ -258,7 +258,7 @@ describe("CreateSolicitudUseCase", () => {
       findByLegacyUserAndOid: async () => null,
     };
     const useCase = new CreateSolicitudUseCase({
-      precalentarCredixsaSolicitud: { execute: async () => undefined },
+      consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
     simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
@@ -288,7 +288,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
-      precalentarCredixsaSolicitud: { execute: async () => undefined },
+      consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
     simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
@@ -322,7 +322,7 @@ describe("CreateSolicitudUseCase", () => {
       }),
     };
     const useCase = new CreateSolicitudUseCase({
-      precalentarCredixsaSolicitud: { execute: async () => undefined },
+      consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
     simularCuotaSolicitud: { execute: async () => null },
       lineasPrestamoCatalog,
       repository,
@@ -446,13 +446,13 @@ class InMemorySolicitudesCoreRepository implements SolicitudesCoreRepository {
   }
 }
 
-describe("CreateSolicitudUseCase - precalentamiento de CredixSA", () => {
-  it("crea la solicitud aunque el precalentamiento falle", async () => {
+describe("CreateSolicitudUseCase - consulta a CredixSA", () => {
+  it("crea la solicitud aunque la consulta a CredixSA falle", async () => {
     // Es la razon de ser del "void" sin await: el vendedor esta esperando que
     // la solicitud se guarde, y CredixSA o Kestra pueden estar caidos.
     const useCase = new CreateSolicitudUseCase({
       lineasPrestamoCatalog: catalogoDeLineas(),
-      precalentarCredixsaSolicitud: {
+      consultarCredixsaAlCrearSolicitud: {
         execute: async () => {
           throw new Error("kestra caido");
         },
@@ -471,7 +471,7 @@ describe("CreateSolicitudUseCase - precalentamiento de CredixSA", () => {
     let recibido: { solicitudId: string } | undefined;
     const useCase = new CreateSolicitudUseCase({
       lineasPrestamoCatalog: catalogoDeLineas(),
-      precalentarCredixsaSolicitud: {
+      consultarCredixsaAlCrearSolicitud: {
         execute: async (solicitudId) => {
           recibido = { solicitudId };
         },

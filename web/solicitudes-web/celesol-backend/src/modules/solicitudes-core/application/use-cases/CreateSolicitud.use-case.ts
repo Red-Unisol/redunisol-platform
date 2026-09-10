@@ -8,12 +8,12 @@ import {
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type { WorkflowStateCatalog } from "../../domain/services/WorkflowStateCatalog";
-import type { PrecalentarCredixsaSolicitud } from "../services/PrecalentarCredixsaSolicitud";
+import type { ConsultarCredixsaAlCrearSolicitud } from "../services/ConsultarCredixsaAlCrearSolicitud";
 import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 
 type Dependencies = {
   lineasPrestamoCatalog: LineasPrestamoCatalog;
-  precalentarCredixsaSolicitud: Pick<PrecalentarCredixsaSolicitud, "execute">;
+  consultarCredixsaAlCrearSolicitud: Pick<ConsultarCredixsaAlCrearSolicitud, "execute">;
   repository: SolicitudesCoreRepository;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
@@ -21,8 +21,8 @@ type Dependencies = {
 
 export class CreateSolicitudUseCase {
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
-  private readonly precalentarCredixsaSolicitud: Pick<
-    PrecalentarCredixsaSolicitud,
+  private readonly consultarCredixsaAlCrearSolicitud: Pick<
+    ConsultarCredixsaAlCrearSolicitud,
     "execute"
   >;
   private readonly repository: SolicitudesCoreRepository;
@@ -31,8 +31,8 @@ export class CreateSolicitudUseCase {
 
   constructor(dependencies: Dependencies) {
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
-    this.precalentarCredixsaSolicitud =
-      dependencies.precalentarCredixsaSolicitud;
+    this.consultarCredixsaAlCrearSolicitud =
+      dependencies.consultarCredixsaAlCrearSolicitud;
     this.repository = dependencies.repository;
     this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.workflowStateCatalog = dependencies.workflowStateCatalog;
@@ -188,7 +188,7 @@ export class CreateSolicitudUseCase {
     // scrapeando, y el vendedor esta esperando que la solicitud se guarde. El
     // servicio no propaga errores, asi que el catch es por las dudas -- una
     // promesa rechazada sin manejar tumba el proceso en Node.
-    void this.precalentarCredixsaSolicitud
+    void this.consultarCredixsaAlCrearSolicitud
       .execute(solicitud.id, input.titular)
       .catch(() => undefined);
 

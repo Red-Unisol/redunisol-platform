@@ -77,16 +77,16 @@ const envSchema = z.object({
   // al crear una solicitud, con la clave incluida -- se guarda entera para que
   // la clave no quede en el codigo, igual que hace redunisol-web.
   //
-  // Vacia o ausente deshabilita el precalentamiento: la app arranca igual y el
+  // Vacia o ausente deshabilita la consulta: la app arranca igual y el
   // analista consulta CredixSA en el momento, como hasta ahora.
-  CREDIXSA_PRECALENTAR_WEBHOOK_URL: z
+  CREDIXSA_CONSULTA_WEBHOOK_URL: z
     .string()
     .trim()
     .default(""),
-  CREDIXSA_PRECALENTAR_TIMEOUT_MS: z.coerce
+  CREDIXSA_CONSULTA_TIMEOUT_MS: z.coerce
     .number()
-    .int("CREDIXSA_PRECALENTAR_TIMEOUT_MS must be an integer")
-    .positive("CREDIXSA_PRECALENTAR_TIMEOUT_MS must be greater than 0")
+    .int("CREDIXSA_CONSULTA_TIMEOUT_MS must be an integer")
+    .positive("CREDIXSA_CONSULTA_TIMEOUT_MS must be greater than 0")
     .default(5000),
   LEGACY_API_BASE_URL: z.string().url("LEGACY_API_BASE_URL must be a valid URL"),
   LEGACY_API_TIMEOUT_MS: z.coerce
