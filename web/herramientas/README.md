@@ -224,8 +224,16 @@ Archivos de deploy:
 
 Comportamiento esperado:
 
-- `dev`: deploy automatico al hacer push a `main` si hubo cambios en `web/herramientas/`
-- `prod`: deploy manual via `workflow_dispatch`
+- `dev`: deploy automatico al hacer push a `dev` si hubo cambios en la app,
+  la API de cache CredixSA o los workflows de Herramientas.
+- `prod`: deploy automatico al mergear a `main` cambios en `web/herramientas/`,
+  `apps/credixsa-cache-api/` o el workflow de produccion. Tambien se conserva
+  el deploy manual via `workflow_dispatch` desde `main` por `Nasst`.
+
+El evento automatico es `push` a `main`, por lo que tambien incluye pushes
+directos autorizados. Los cambios de otros sistemas de la monorepo no disparan
+este despliegue. Cada ejecucion usa el commit que la disparo y los despliegues
+de produccion se serializan sin cancelar uno que ya este en curso.
 
 El runtime no vive en GitHub secrets. Vive en archivos cifrados versionados en Git:
 
