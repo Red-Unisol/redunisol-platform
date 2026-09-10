@@ -44,7 +44,7 @@ def dataset(month: str, *, count: int = 1, across_holiday: bool = False) -> Mont
             (end + timedelta(minutes=5), "A Transferir"), (end + timedelta(minutes=15), "Pagada"),
         ]):
             events.append(NovedadEvent.from_api_row([
-                oid * 10 + index, timestamp.date().isoformat(), f"[{state}]",
+                (year * 100 + number) * 1000000 + oid * 10 + index, timestamp.date().isoformat(), f"[{state}]",
                 timestamp.strftime("%d/%m/%y %H:%M:%S") + " analista", oid, oid, oid, "LINEA CBU", "Pagada",
             ]))
     return MonthDataset(month, month, derive_month_seed(202510, month), events, list(range(1, count + 1)), events)
@@ -62,6 +62,14 @@ class CommissionsTests(unittest.TestCase):
                         return_value={"applications": {}, "lines": {}})
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Keep the real detector but provide a complete, nonempty working day so
+        # integration fixtures cannot accidentally infer a closure from a mock.
+        activity = patch("reporte_evaluacion_comisiones.operational_calendar.verify_day", side_effect=lambda client, day, limit: {
+            "records": [{"id": 900000, "date": day.isoformat() + "T09:00:00", "user": "aortega", "state": "Revisar", "application": 1}],
+            "count_before": 1, "count_after": 1,
+        })
+        activity.start()
+        self.addCleanup(activity.stop)
 
     def test_confirmed_rate_boundaries(self):
         for value, expected in [("9.5", ".005"), ("10", ".005"), ("10.00001", ".003"), ("11", ".003"), ("11.00001", ".001")]:
@@ -310,6 +318,8 @@ class CommissionsTests(unittest.TestCase):
             self.assertEqual(len(audit["time_mix"]), 3)
             self.assertEqual({item["month"] for item in audit["time_mix"]}, {"2026-08"})
             self.assertIn("line_context", audit)
+            self.assertIn("2026-07-10", audit["operational_calendar"]["extra_excluded_dates"])
+            self.assertIn("Jornadas evaluación", workbook.sheetnames)
             self.assertEqual(audit["manual_rules"]["high_min"], 28)
             self.assertNotIn("2026-07-10", audit["calendar"])
             self.assertEqual(sum(Decimal(row["amount"]) for row in audit["commissions"]), Decimal(3500))

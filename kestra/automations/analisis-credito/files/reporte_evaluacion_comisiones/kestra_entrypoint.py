@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from functools import partial
 from pathlib import Path
 
@@ -26,6 +26,7 @@ from .core import (
 )
 from .excel import enrich_workbook
 from .time_mix import fetch_line_context, analyze_time_mix
+from .operational_calendar import detect_operational_calendar, DEFAULT_USERS
 
 REPORT_DIRECTORY = "reporte-evaluacion-comisiones"
 
@@ -98,7 +99,12 @@ def generate_report(now: datetime | None = None) -> dict:
                 years.update(range(min(timestamps).year, max(timestamps).year + 1))
         calendar = national_holidays(years)
         exclusions = frozenset(calendar)
-        reports = [build_month_report(dataset, excluded_dates=exclusions) for dataset in datasets]
+        user_config = env("REPORTE_EVALUACION_ACTIVITY_USERS", "")
+        activity_users = tuple(u.strip() for u in user_config.split(",") if u.strip()) if user_config else DEFAULT_USERS
+        operational = detect_operational_calendar(client, datasets, calendar, today=now.date(), limit=limit, users=activity_users)
+        evaluation_closures = frozenset(date.fromisoformat(d) for d in operational["extra_excluded_dates"])
+        reports = [build_month_report(dataset, excluded_dates=exclusions,
+                                      first_response_extra_excluded_dates=evaluation_closures) for dataset in datasets]
         selected_reports = [report for report in reports if report.month_value in months]
         loans = {month: fetch_loans(client, month, limit) for month in months}
         commissions = evaluate_commissions(reports, loans, months)
@@ -118,6 +124,7 @@ def generate_report(now: datetime | None = None) -> dict:
             "sample_seed": seed, "queries": {month: loan_filter(month) for month in months},
             "loans": loan_snapshot(loans), "commissions": commissions,
             "line_context": line_context, "time_mix": time_mix,
+            "operational_calendar": operational,
             "manual_rules": MANUAL_RULES, "manual_commission": None, "manual_status": "Pendiente de revision humana",
         }
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, default=str), encoding="utf-8")
@@ -126,7 +133,7 @@ def generate_report(now: datetime | None = None) -> dict:
             run_started_at=now.replace(tzinfo=None), dataset_created_at=now.replace(tzinfo=None),
             excluded_dates=exclusions,
             workbook_enricher=partial(enrich_workbook, reports=reports, months=months, loans=loans, calendar=calendar, extracted_at=now,
-                                      time_mix=time_mix, line_context=line_context),
+                                      time_mix=time_mix, line_context=line_context, operational_calendar=operational),
         )
         latest, history = atomic_publish(workbook_path, dataset_path, manifest_path, Path(env("REPORTS_ROOT", "/reports")), now)
     result = {

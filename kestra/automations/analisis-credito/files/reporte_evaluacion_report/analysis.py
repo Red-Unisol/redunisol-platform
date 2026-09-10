@@ -390,6 +390,7 @@ def _events_by_solicitud(events: Sequence[NovedadEvent]) -> Dict[int, List[Noved
 
 def build_month_report(
     dataset: MonthDataset, log: LogFn = print, *, excluded_dates: Collection[date] = (),
+    first_response_extra_excluded_dates: Collection[date] = (),
 ) -> MonthlyReport:
     all_events_by_solicitud = _events_by_solicitud(dataset.history_events)
     excluded_analysis_oids = {
@@ -402,7 +403,9 @@ def build_month_report(
         for solicitud_oid, items in all_events_by_solicitud.items()
         if solicitud_oid not in excluded_analysis_oids
     }
-    first_response = compute_first_response_metrics(events_by_solicitud, excluded_dates=excluded_dates)
+    first_response = compute_first_response_metrics(
+        events_by_solicitud, excluded_dates=set(excluded_dates) | set(first_response_extra_excluded_dates),
+    )
     transfer = compute_transfer_metrics(events_by_solicitud, excluded_dates=excluded_dates)
     end_to_end = compute_end_to_end_metrics(events_by_solicitud, excluded_dates=excluded_dates)
     end_to_end_by_final_status = summarize_metric_rows_by_status(end_to_end)
@@ -438,6 +441,7 @@ def build_month_report(
         "analysis_excluded_solicitudes_count": len(excluded_analysis_oids),
         "analysis_excluded_line_keywords": list(ANALYSIS_EXCLUDED_LINE_KEYWORDS),
         "first_response": {"cases": len(first_response), **first_summary},
+        "first_response_extra_excluded_dates": sorted(day.isoformat() for day in first_response_extra_excluded_dates),
         "transfer": {"cases": len(transfer), **transfer_summary},
         "end_to_end": {"cases": len(end_to_end), **end_to_end_summary},
         "end_to_end_by_final_status": end_to_end_by_final_status,
