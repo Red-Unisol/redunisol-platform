@@ -1,10 +1,20 @@
 <?php
 
-use App\Http\Controllers\HerramientasController;
+use App\Http\Controllers\AnalisisController;
 use App\Http\Controllers\ContabilidadTransferController;
+use App\Http\Controllers\HerramientasController;
 use App\Http\Controllers\ObjectivesDashboardController;
+use App\Http\Middleware\AnalisisAccess;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/analisis', [AnalisisController::class, 'index'])->name('analisis');
+Route::post('/analisis/login', [AnalisisController::class, 'login']);
+Route::middleware(AnalisisAccess::class)->group(function () {
+    Route::post('/analisis/logout', [AnalisisController::class, 'logout']);
+    Route::get('/api/analisis/analysts', [AnalisisController::class, 'analysts']);
+    Route::get('/api/analisis/snapshot', [AnalisisController::class, 'snapshot']);
+});
 
 Route::get('/', [HerramientasController::class, 'index'])->name('home');
 Route::get('/credixsa', [HerramientasController::class, 'credixsa'])->name('credixsa');

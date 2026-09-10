@@ -13,6 +13,16 @@ return [
     ],
     'catalog' => [
         [
+            'id' => 'analisis',
+            'title' => 'Bandeja de análisis',
+            'description' => 'Seguí las solicitudes asignadas a tu usuario de Vimarx y recibí avisos de nuevas asignaciones.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Abrir bandeja',
+            'helper' => 'Acceso con la contraseña compartida del equipo de análisis.',
+        ],
+        [
             'id' => 'consulta-renovacion-cruz-del-eje',
             'title' => 'Consulta Renovacion Cruz del Eje',
             'description' => 'Ingresa un CUIL y consulta si el socio puede renovar su prestamo, con respuesta directa del flujo de analisis de credito.',
