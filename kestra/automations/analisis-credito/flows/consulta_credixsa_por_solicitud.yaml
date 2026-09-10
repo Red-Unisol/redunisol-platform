@@ -31,17 +31,14 @@ inputs:
   - id: cuit
     type: STRING
     required: false
-    defaults: ""
   - id: nombre
     type: STRING
     required: false
-    defaults: ""
   # Solo para rastrear: no se usa en la consulta, sirve para saber que solicitud
   # origino cada ejecucion cuando hay que revisar un caso.
   - id: solicitud_id
     type: STRING
     required: false
-    defaults: ""
 
 tasks:
   - id: consultar_credixsa
