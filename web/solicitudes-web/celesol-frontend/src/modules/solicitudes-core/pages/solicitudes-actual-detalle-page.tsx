@@ -68,6 +68,7 @@ import { usePatchSolicitudCoreMutation } from "@/modules/solicitudes-core/hooks/
 import { useAssignSolicitudToSelfMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-self-mutation";
 import { useAssignSolicitudToUserMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-user-mutation";
 import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-adjuntos-query";
+import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
 import { useCreateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-create-solicitud-core-cancelacion-mutation";
@@ -582,11 +583,12 @@ function CancelacionesSection({
   );
 }
 
-type SolicitudDetailVistaTab = "evaluacion" | "solicitud";
+type SolicitudDetailVistaTab = "credixsa" | "evaluacion" | "solicitud";
 
 const SOLICITUD_DETAIL_VISTA_TABS: TabItem<SolicitudDetailVistaTab>[] = [
   { label: "Solicitud", value: "solicitud" },
   { label: "Evaluación", value: "evaluacion" },
+  { label: "CredixSA", value: "credixsa" },
 ];
 
 const SimuladorPrestamoModal = lazy(() =>
@@ -3994,6 +3996,15 @@ export function SolicitudesActualDetallePage() {
             errorMessage={workflowHistoryErrorMessage}
             history={workflowHistory}
             isLoading={isLoadingWorkflowHistory}
+          />
+        </div>
+      ) : null}
+
+      {canViewCalculadora && vistaTab === "credixsa" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <CredixsaInformeSection
+            isActive={vistaTab === "credixsa"}
+            solicitudId={solicitudId}
           />
         </div>
       ) : null}
