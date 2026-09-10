@@ -1,5 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import AnalisisPage from './AnalisisPage.jsx';
+import { credixPrefill } from './analisis-state.js';
 import '../css/app.css';
 
 const rootElement = document.getElementById('app');
@@ -62,6 +64,11 @@ function App({ branding, tools }) {
 
     const openTool = (tool) => {
         if (tool.isPlaceholder || tool.status !== 'active') {
+            return;
+        }
+
+        if (tool.id === 'analisis') {
+            window.location.assign('/analisis');
             return;
         }
 
@@ -523,7 +530,9 @@ function CredixReportSections({ sections }) {
 }
 
 function CredixsaPage({ branding, tool }) {
-    const [formValues, setFormValues] = React.useState({ cuit: '', nombre: '' });
+    const prefill = React.useRef(credixPrefill(window.location.hash));
+    const autoStarted = React.useRef(false);
+    const [formValues, setFormValues] = React.useState(prefill.current);
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
@@ -531,7 +540,7 @@ function CredixsaPage({ branding, tool }) {
     const resultTone = getResultTone('consulta-quiebra-credix', result, error);
 
     const handleSubmit = async (event) => {
-        event.preventDefault();
+        event?.preventDefault();
 
         if (!tool?.endpoint) {
             setError('La herramienta todavia no tiene un endpoint configurado.');
@@ -565,6 +574,14 @@ function CredixsaPage({ branding, tool }) {
             setLoading(false);
         }
     };
+
+    React.useEffect(() => {
+        if (!autoStarted.current && (prefill.current.cuit || prefill.current.nombre)) {
+            autoStarted.current = true;
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            handleSubmit();
+        }
+    }, []);
 
     const clearToolState = () => {
         setFormValues({ cuit: '', nombre: '' });
@@ -2079,7 +2096,9 @@ function formatDateTime(value) {
 if (rootElement) {
     let component = <App branding={initialPayload.branding || {}} tools={initialPayload.tools || []} />;
 
-    if (initialPayload.mode === 'contabilidad-transfer') {
+    if (initialPayload.page === 'analisis') {
+        component = <AnalisisPage config={initialPayload.analisis || {}} />;
+    } else if (initialPayload.mode === 'contabilidad-transfer') {
         component = (
             <ContabilidadTransferApp
                 branding={initialPayload.branding || {}}
