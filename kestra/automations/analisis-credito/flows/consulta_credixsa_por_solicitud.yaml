@@ -1,0 +1,104 @@
+id: consulta_credixsa_por_solicitud
+namespace: redunisol
+
+description: >
+  Dispara la consulta a CredixSA cuando se crea una solicitud en solicitudes-web
+  y deja el informe cacheado para cuando lo pida el analista.
+
+# No repite la logica: llama al mismo flujo que usan los analistas a mano. Asi
+# devuelve exactamente lo mismo por construccion, y cualquier mejora que se le
+# haga a aquel se hereda sola.
+#
+# Existe como flujo aparte por el carril: nuestros disparos automaticos se
+# encolan entre si (concurrency 1) para no competirle a un analista esperando
+# una respuesta, y las ejecuciones quedan distinguibles en la UI de Kestra.
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  domain: analisis-credito
+  integration: credixsa
+  origin: solicitudes-web
+
+inputs:
+  # El orden de preferencia lo resuelve quien llama (solicitudes-web): primero
+  # el CUIL, si no el documento, y como ultimo recurso el nombre. Se acepta
+  # cualquiera de los dos campos porque el flujo de CredixSA tambien.
+  - id: cuit
+    type: STRING
+    required: false
+    defaults: ""
+  - id: nombre
+    type: STRING
+    required: false
+    defaults: ""
+  # Solo para rastrear: no se usa en la consulta, sirve para saber que solicitud
+  # origino cada ejecucion cuando hay que revisar un caso.
+  - id: solicitud_id
+    type: STRING
+    required: false
+    defaults: ""
+
+tasks:
+  - id: consultar_credixsa
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: "{{ flow.namespace }}"
+    flowId: consulta_quiebra_credix
+    inputs:
+      cuit: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body.cuit ?? '') : (inputs.cuit ?? '') }}"
+      nombre: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body.nombre ?? '') : (inputs.nombre ?? '') }}"
+    wait: true
+    # El precalentamiento es best effort: si CredixSA falla, el analista lo
+    # consulta en el momento como hasta ahora. No tiene sentido marcar la
+    # ejecucion como fallida y generar ruido en las alertas.
+    transmitFailed: false
+
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+  - id: status
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+  - id: cuit
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+  - id: nombre
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
+  - id: rows_json
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.rows_json ?? '') : '' }}"
+  - id: data_json
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.data_json ?? '') : '' }}"
+  - id: normalized_json
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
+  - id: response_json
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.response_json ?? '') : '' }}"
+  - id: error
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
+  - id: cache_hit
+    type: BOOLEAN
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
+  - id: cached_at
+    type: STRING
+    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
+  - id: solicitud_id
+    type: STRING
+    value: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body.solicitud_id ?? '') : (inputs.solicitud_id ?? '') }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('ANALISIS_CREDITO_CREDIXSA_SOLICITUD_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json
