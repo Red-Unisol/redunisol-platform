@@ -1,7 +1,7 @@
 type Fetcher = (
   input: string | URL,
   init?: RequestInit,
-) => Promise<{ ok: boolean }>;
+) => Promise<{ json(): Promise<unknown>; ok: boolean }>;
 
 type Config = {
   timeoutMs: number;
@@ -14,6 +14,24 @@ type Config = {
    * Vacia deshabilita la consulta sin romper nada.
    */
   webhookUrl: string;
+};
+
+/**
+ * Lo que devuelve el flow de Kestra. Los nombres son los de sus salidas.
+ *
+ * "normalized_json" es el informe ya estructurado (persona, bcra, previsional,
+ * aportes, quiebras, alertas). Los otros dos json son la respuesta cruda de
+ * CredixSA, que por ahora no usamos.
+ */
+export type InformeCredixsa = {
+  cachedAt: string;
+  cacheHit: boolean;
+  cuit: string;
+  error: string;
+  informe: unknown;
+  nombre: string;
+  ok: boolean;
+  status: string;
 };
 
 export type ConsultarCredixsaInput = {
@@ -44,6 +62,58 @@ export class ConsultarCredixsaGateway {
     this.fetcher = fetcher;
     this.timeoutMs = config.timeoutMs;
     this.webhookUrl = config.webhookUrl;
+  }
+
+  /**
+   * Igual que consultar(), pero espera la respuesta y devuelve el informe.
+   *
+   * Es lo que necesita la pestaña. El costo es que la peticion queda abierta
+   * lo que tarde CredixSA -- por eso el timeout de esta via es mucho mas
+   * generoso que el del disparo al crear la solicitud.
+   *
+   * Devuelve null en vez de fallar cuando no hay a quien consultar o cuando
+   * Kestra no responde: para la pestaña "no se pudo consultar" es un estado
+   * valido, no un error del servidor.
+   */
+  async obtenerInforme(
+    input: ConsultarCredixsaInput,
+    timeoutMs: number,
+  ): Promise<InformeCredixsa | null> {
+    if (!this.webhookUrl.trim()) {
+      return null;
+    }
+
+    if (!input.cuit.trim() && !input.nombre.trim()) {
+      return null;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await this.fetcher(this.webhookUrl, {
+        body: JSON.stringify({
+          cuit: input.cuit,
+          nombre: input.nombre,
+          solicitud_id: input.solicitudId,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return mapInforme(await response.json());
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async consultar(input: ConsultarCredixsaInput): Promise<void> {
@@ -79,4 +149,40 @@ export class ConsultarCredixsaGateway {
       clearTimeout(timeoutId);
     }
   }
+}
+
+function mapInforme(body: unknown): InformeCredixsa | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+
+  const salidas = body as Record<string, unknown>;
+
+  return {
+    cachedAt: texto(salidas.cached_at),
+    cacheHit: salidas.cache_hit === true,
+    cuit: texto(salidas.cuit),
+    error: texto(salidas.error),
+    // El flow lo devuelve como string JSON, no como objeto.
+    informe: parsearJson(texto(salidas.normalized_json)),
+    nombre: texto(salidas.nombre),
+    ok: salidas.ok === true,
+    status: texto(salidas.status),
+  };
+}
+
+function parsearJson(value: string): unknown {
+  if (!value.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function texto(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

@@ -16,6 +16,7 @@ import type { AssignSolicitudToUserUseCase } from "../application/use-cases/Assi
 import type { ListAssignableSolicitudAgentsUseCase } from "../application/use-cases/ListAssignableSolicitudAgents.use-case";
 import type { ListSolicitudHistoryUseCase } from "../application/use-cases/ListSolicitudHistory.use-case";
 import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/ListSolicitudTransitions.use-case";
+import { GetCredixsaSolicitudUseCase } from "../application/use-cases/GetCredixsaSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
@@ -69,6 +70,7 @@ type Dependencies = {
   getAnalistaDashboardStatsV2UseCase?: GetAnalistaDashboardStatsV2UseCase;
   listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
+  getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
@@ -90,6 +92,7 @@ export class SolicitudesCoreController {
   private readonly getAnalistaDashboardStatsV2UseCase?: GetAnalistaDashboardStatsV2UseCase;
   private readonly listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   private readonly listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
+  private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
@@ -115,6 +118,7 @@ export class SolicitudesCoreController {
     this.listSolicitudHistoryUseCase = dependencies.listSolicitudHistoryUseCase;
     this.listSolicitudTransitionsUseCase =
       dependencies.listSolicitudTransitionsUseCase;
+    this.getCredixsaSolicitudUseCase = dependencies.getCredixsaSolicitudUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
@@ -259,6 +263,37 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(solicitudes);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // El informe de CredixSA de la persona. Mismo criterio de acceso que los
+  // prestamos: es informacion para analizar, no para cargar.
+  //
+  // La consulta la hace el backend y no el navegador porque la URL del webhook
+  // lleva la clave adentro.
+  getCredixsa = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const informe = await this.getCredixsaSolicitudUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json({ credixsa: informe });
     } catch (error) {
       next(error);
     }
