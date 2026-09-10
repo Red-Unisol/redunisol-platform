@@ -83,6 +83,14 @@ const envSchema = z.object({
     .string()
     .trim()
     .default(""),
+  // Timeout de la via que le sirve el informe a la pestaña. Es alto a
+  // proposito: si la cache esta fria hay que esperar el scraping de CredixSA,
+  // que en las pruebas tardo ~41 segundos.
+  CREDIXSA_INFORME_TIMEOUT_MS: z.coerce
+    .number()
+    .int("CREDIXSA_INFORME_TIMEOUT_MS must be an integer")
+    .positive("CREDIXSA_INFORME_TIMEOUT_MS must be greater than 0")
+    .default(90000),
   CREDIXSA_CONSULTA_TIMEOUT_MS: z.coerce
     .number()
     .int("CREDIXSA_CONSULTA_TIMEOUT_MS must be an integer")

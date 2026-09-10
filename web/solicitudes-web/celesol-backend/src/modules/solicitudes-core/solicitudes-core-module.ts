@@ -30,6 +30,7 @@ import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPresta
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
+import { GetCredixsaSolicitudUseCase } from "./application/use-cases/GetCredixsaSolicitud.use-case";
 import { ConsultarCredixsaGateway } from "./infrastructure/services/ConsultarCredixsaGateway";
 import { ConsultarCredixsaAlCrearSolicitud } from "./application/services/ConsultarCredixsaAlCrearSolicitud";
 import { CreateSolicitudUseCase } from "./application/use-cases/CreateSolicitud.use-case";
@@ -168,11 +169,23 @@ export function createSolicitudesCoreRouter(
   const simularCuotaSolicitud = new SimularCuotaSolicitud({
     gateway: prestamosSimulacionGateway,
   });
+  // Un solo gateway para las dos vias: la que dispara al crear la solicitud y
+  // la que le sirve el informe a la pestaña. Comparten webhook y, por lo
+  // tanto, la misma cache.
+  const consultarCredixsaGateway = new ConsultarCredixsaGateway({
+    timeoutMs: env.CREDIXSA_CONSULTA_TIMEOUT_MS,
+    webhookUrl: env.CREDIXSA_CONSULTA_WEBHOOK_URL,
+  });
+  const getCredixsaSolicitudUseCase = new GetCredixsaSolicitudUseCase({
+    gateway: consultarCredixsaGateway,
+    repository: solicitudesCoreRepository,
+    // Mucho mas generoso que el del disparo al crear: aca hay alguien
+    // esperando el informe, y si la cache esta fria hay que bancarse el
+    // scraping de CredixSA.
+    timeoutMs: env.CREDIXSA_INFORME_TIMEOUT_MS,
+  });
   const consultarCredixsaAlCrearSolicitud = new ConsultarCredixsaAlCrearSolicitud({
-    gateway: new ConsultarCredixsaGateway({
-      timeoutMs: env.CREDIXSA_CONSULTA_TIMEOUT_MS,
-      webhookUrl: env.CREDIXSA_CONSULTA_WEBHOOK_URL,
-    }),
+    gateway: consultarCredixsaGateway,
   });
   const createSolicitudUseCase = new CreateSolicitudUseCase({
     consultarCredixsaAlCrearSolicitud,
@@ -316,6 +329,7 @@ export function createSolicitudesCoreRouter(
       solicitudesRepository: solicitudesCoreRepository,
     });
   const solicitudesCoreController = new SolicitudesCoreController({
+    getCredixsaSolicitudUseCase,
     listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,

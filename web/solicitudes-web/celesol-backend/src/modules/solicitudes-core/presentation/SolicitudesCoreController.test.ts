@@ -16,6 +16,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -55,6 +56,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -107,6 +109,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -148,6 +151,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects destination state fields in change state payloads", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -184,6 +188,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -227,6 +232,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -279,6 +285,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -331,6 +338,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -377,6 +385,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -441,6 +450,7 @@ describe("SolicitudesCoreController", () => {
     };
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase:
         createSolicitudUseCase as never,
       getCurrentUserUseCase: {
@@ -537,6 +547,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects forbidden canonical lookalike fields in patch payloads", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -602,6 +613,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -647,6 +659,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       createPrestamoLegacyUseCase: {
         execute: async (input: unknown) => {
@@ -691,6 +704,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       listAssignableSolicitudAgentsUseCase: {
         execute: async (input: unknown) => {
@@ -736,6 +750,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects assign-to-self when client tries to send actor override in body.user", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -775,6 +790,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -820,6 +836,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async (input: unknown) => {
@@ -866,6 +883,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects assignment body with invalid targetUserId", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -899,6 +917,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects assign-to-user when client tries to send actor override in body.user", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -941,6 +960,7 @@ describe("SolicitudesCoreController", () => {
     const conflictError = new SolicitudAlreadyAssignedError();
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -996,6 +1016,7 @@ describe("SolicitudesCoreController", () => {
   it("returns controlled 403 error when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1049,6 +1070,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1109,6 +1131,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1157,6 +1180,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1250,6 +1274,7 @@ describe("SolicitudesCoreController", () => {
   it("returns controlled 403 on create when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -1308,6 +1333,7 @@ describe("SolicitudesCoreController", () => {
   it("returns controlled 403 on update when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1364,6 +1390,7 @@ describe("SolicitudesCoreController", () => {
   it("returns forbidden when a non-admin user requests solicitud stats", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1395,6 +1422,7 @@ describe("SolicitudesCoreController", () => {
   it("returns stats for a system admin", async () => {
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({ ...authenticatedUser(), isSystemAdmin: true }),
@@ -1426,6 +1454,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1464,6 +1493,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsUseCase: {
         execute: async (input: unknown) => {
@@ -1503,6 +1533,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsV2UseCase: {
         execute: async (input: unknown) => {
@@ -1726,3 +1757,81 @@ function request(input: {
 function solicitudId() {
   return "11111111-1111-4111-8111-111111111111";
 }
+
+describe("SolicitudesCoreController.getCredixsa", () => {
+  it("rejects a VENDEDORES user", async () => {
+    let llamado = false;
+    const controller = buildCredixsaController("VENDEDORES", () => {
+      llamado = true;
+    });
+    let nextError: unknown;
+
+    await controller.getCredixsa(
+      request({ params: { id: solicitudId() } }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal((nextError as Error)?.name, "ForbiddenSolicitudAccessError");
+    assert.equal(llamado, false);
+  });
+
+  it("allows RIESGO and returns the informe", async () => {
+    const controller = buildCredixsaController("RIESGO");
+    const response = createResponse();
+
+    await controller.getCredixsa(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError(() => {}),
+    );
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { credixsa: { ok: true } });
+  });
+
+  it("allows a system admin even from VENDEDORES", async () => {
+    const controller = buildCredixsaController("VENDEDORES", undefined, true);
+    const response = createResponse();
+
+    await controller.getCredixsa(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError(() => {}),
+    );
+
+    assert.equal(response.statusCode, 200);
+  });
+});
+
+function buildCredixsaController(
+  ownerCode: string,
+  onExecute?: () => void,
+  isSystemAdmin = false,
+) {
+  return new SolicitudesCoreController({
+    createSolicitudUseCase: {} as never,
+    getCurrentUserUseCase: {
+      execute: async () => ({
+        ...authenticatedUser(),
+        isSystemAdmin,
+        workflowOwner: { code: ownerCode },
+      }),
+    } as never,
+    getCredixsaSolicitudUseCase: {
+      execute: async () => {
+        onExecute?.();
+
+        return { ok: true };
+      },
+    } as never,
+    listPrestamosDelSocioUseCase: {} as never,
+    ...workflowUseCases(),
+    getSolicitudByIdUseCase: {} as never,
+    listSolicitudesUseCase: {} as never,
+    updateSolicitudUseCase: {} as never,
+  } as never);
+}
+

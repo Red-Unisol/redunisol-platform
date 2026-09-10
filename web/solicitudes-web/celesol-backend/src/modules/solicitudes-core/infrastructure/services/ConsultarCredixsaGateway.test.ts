@@ -22,7 +22,7 @@ describe("ConsultarCredixsaGateway", () => {
       url = String(i);
       body = JSON.parse(String(init?.body));
 
-      return { ok: true };
+      return { json: async () => ({}), ok: true };
     });
 
     await gateway.consultar(INPUT);
@@ -43,7 +43,7 @@ describe("ConsultarCredixsaGateway", () => {
       async () => {
         llamado = true;
 
-        return { ok: true };
+        return { json: async () => ({}), ok: true };
       },
     );
 
@@ -57,7 +57,7 @@ describe("ConsultarCredixsaGateway", () => {
     const gateway = new ConsultarCredixsaGateway(CONFIG, async () => {
       llamado = true;
 
-      return { ok: true };
+      return { json: async () => ({}), ok: true };
     });
 
     await gateway.consultar({ cuit: "", nombre: "  ", solicitudId: "sol-1" });
@@ -77,9 +77,69 @@ describe("ConsultarCredixsaGateway", () => {
 
   it("no propaga el error cuando el webhook responde mal", async () => {
     const gateway = new ConsultarCredixsaGateway(CONFIG, async () => ({
+      json: async () => ({}),
       ok: false,
     }));
 
     await assert.doesNotReject(() => gateway.consultar(INPUT));
   });
 });
+
+describe("ConsultarCredixsaGateway.obtenerInforme", () => {
+  it("mapea las salidas del flow y parsea el informe", async () => {
+    // normalized_json llega como string JSON, no como objeto: si el flow
+    // cambiara eso, la pestaña quedaria vacia sin ningun error visible.
+    const gateway = new ConsultarCredixsaGateway(CONFIG, async () => ({
+      json: async () => ({
+        cache_hit: true,
+        cached_at: "2026-09-10T18:00:00",
+        cuit: "20359661305",
+        error: "",
+        nombre: "SALLITTO NICOLAS",
+        normalized_json: '{"persona":{"nombre_completo":"SALLITTO NICOLAS"}}',
+        ok: true,
+        status: "single",
+      }),
+      ok: true,
+    }));
+
+    const informe = await gateway.obtenerInforme(INPUT, 90000);
+
+    assert.equal(informe?.ok, true);
+    assert.equal(informe?.cacheHit, true);
+    assert.equal(informe?.status, "single");
+    assert.deepEqual(informe?.informe, {
+      persona: { nombre_completo: "SALLITTO NICOLAS" },
+    });
+  });
+
+  it("devuelve el informe en null si el JSON viene roto", async () => {
+    const gateway = new ConsultarCredixsaGateway(CONFIG, async () => ({
+      json: async () => ({ normalized_json: "{roto", ok: true }),
+      ok: true,
+    }));
+
+    const informe = await gateway.obtenerInforme(INPUT, 90000);
+
+    assert.equal(informe?.ok, true);
+    assert.equal(informe?.informe, null);
+  });
+
+  it("devuelve null cuando Kestra falla, sin propagar el error", async () => {
+    const gateway = new ConsultarCredixsaGateway(CONFIG, async () => {
+      throw new Error("kestra caido");
+    });
+
+    assert.equal(await gateway.obtenerInforme(INPUT, 90000), null);
+  });
+
+  it("devuelve null si el webhook no esta configurado", async () => {
+    const gateway = new ConsultarCredixsaGateway(
+      { ...CONFIG, webhookUrl: "" },
+      async () => ({ json: async () => ({}), ok: true }),
+    );
+
+    assert.equal(await gateway.obtenerInforme(INPUT, 90000), null);
+  });
+});
+
