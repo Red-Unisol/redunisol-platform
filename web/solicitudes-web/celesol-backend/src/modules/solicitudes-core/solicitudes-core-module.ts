@@ -177,7 +177,12 @@ export function createSolicitudesCoreRouter(
     webhookUrl: env.CREDIXSA_CONSULTA_WEBHOOK_URL,
   });
   const getCredixsaSolicitudUseCase = new GetCredixsaSolicitudUseCase({
-    gateway: consultarCredixsaGateway,
+    // Gateway propio: la pestaña va directo al flow de los analistas, sin la
+    // cola del envoltorio. Ver el comentario de la variable en config/env.
+    gateway: new ConsultarCredixsaGateway({
+      timeoutMs: env.CREDIXSA_INFORME_TIMEOUT_MS,
+      webhookUrl: env.CREDIXSA_INFORME_WEBHOOK_URL,
+    }),
     repository: solicitudesCoreRepository,
     // Mucho mas generoso que el del disparo al crear: aca hay alguien
     // esperando el informe, y si la cache esta fria hay que bancarse el

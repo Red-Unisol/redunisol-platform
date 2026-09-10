@@ -83,14 +83,25 @@ const envSchema = z.object({
     .string()
     .trim()
     .default(""),
-  // Timeout de la via que le sirve el informe a la pestaña. Es alto a
-  // proposito: si la cache esta fria hay que esperar el scraping de CredixSA,
-  // que en las pruebas tardo ~41 segundos.
+  // Webhook que consulta la pestaña. Apunta directo a consulta_quiebra_credix,
+  // el mismo flow que usan los analistas a mano, y NO al envoltorio que dispara
+  // la consulta al crear la solicitud.
+  //
+  // La diferencia importa: el envoltorio tiene concurrency 1 para que los
+  // disparos automaticos no se pisen entre si, y eso deja a la pestaña
+  // encolada detras de ellos. Lo que espera una persona no puede compartir
+  // cola con lo que corre en background.
+  //
+  // Las dos vias comparten la misma cache, asi que la consulta al crear la
+  // solicitud le sigue sirviendo a esta.
+  CREDIXSA_INFORME_WEBHOOK_URL: z.string().trim().default(""),
+  // Alto a proposito: con la cache fria hay que esperar el scraping, que en el
+  // ambiente real tardo entre 1 y 2 minutos.
   CREDIXSA_INFORME_TIMEOUT_MS: z.coerce
     .number()
     .int("CREDIXSA_INFORME_TIMEOUT_MS must be an integer")
     .positive("CREDIXSA_INFORME_TIMEOUT_MS must be greater than 0")
-    .default(90000),
+    .default(180000),
   CREDIXSA_CONSULTA_TIMEOUT_MS: z.coerce
     .number()
     .int("CREDIXSA_CONSULTA_TIMEOUT_MS must be an integer")
