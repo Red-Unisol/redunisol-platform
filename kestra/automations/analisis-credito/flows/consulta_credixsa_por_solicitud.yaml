@@ -59,7 +59,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
   - id: status
     type: STRING
@@ -86,7 +86,7 @@ outputs:
     type: STRING
     value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
   - id: cache_hit
-    type: BOOLEAN
+    type: BOOL
     value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
   - id: cached_at
     type: STRING
