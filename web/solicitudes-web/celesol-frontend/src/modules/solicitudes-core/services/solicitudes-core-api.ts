@@ -233,9 +233,17 @@ export type CredixsaInformeResponse = {
   status: string;
 };
 
+// El timeout por defecto del cliente son 15 segundos y esta consulta no entra
+// ahi: Kestra levanta un contenedor por tarea, asi que tarda entre 15 y 120
+// segundos incluso con el informe cacheado. Con el default, el navegador
+// cortaba antes de que respondiera y la pestaña mostraba "no se pudo
+// consultar" mientras la ejecucion terminaba bien en Kestra.
+const CREDIXSA_TIMEOUT_MS = 180000;
+
 export function getCredixsaSolicitud(solicitudId: string) {
   return apiClient.get<{ credixsa: CredixsaInformeResponse | null }>(
     `/solicitudes/${solicitudId}/credixsa`,
+    CREDIXSA_TIMEOUT_MS,
   );
 }
 
