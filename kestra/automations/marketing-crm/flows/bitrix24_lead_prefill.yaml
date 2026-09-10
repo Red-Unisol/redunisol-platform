@@ -142,7 +142,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.ok : outputs.seleccionar_lead.vars.ok }}"
   - id: action
     type: STRING

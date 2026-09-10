@@ -45,7 +45,7 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.cargar_formulario.vars.ok }}"
   - id: contact_id
     type: STRING

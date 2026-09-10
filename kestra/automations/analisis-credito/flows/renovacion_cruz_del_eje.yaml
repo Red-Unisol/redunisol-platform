@@ -36,10 +36,10 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.evaluar_renovacion.vars.ok }}"
   - id: puede_renovar
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.evaluar_renovacion.vars.puede_renovar }}"
   - id: saldo_renovacion
     type: FLOAT

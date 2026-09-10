@@ -14,7 +14,7 @@ inputs:
     type: STRING
     required: true
   - id: force_processing
-    type: BOOLEAN
+    type: BOOL
     required: true
     defaults: false
 
@@ -58,10 +58,10 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.clasificar.vars.ok }}"
   - id: qualified
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.clasificar.vars.qualified }}"
   - id: contact_id
     type: STRING

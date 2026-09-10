@@ -18,7 +18,7 @@ inputs:
     type: STRING
     required: true
   - id: qualified
-    type: BOOLEAN
+    type: BOOL
     required: true
   - id: reason
     type: STRING
@@ -94,10 +94,10 @@ tasks:
 
 outputs:
   - id: ok
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.persistir.vars.ok }}"
   - id: qualified
-    type: BOOLEAN
+    type: BOOL
     value: "{{ outputs.persistir.vars.qualified }}"
   - id: contact_id
     type: STRING
