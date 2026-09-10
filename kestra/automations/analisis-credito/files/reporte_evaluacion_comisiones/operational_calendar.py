@@ -17,6 +17,12 @@ CONFIRMED_CLOSURES = {
 FIELDS = "ID;Fecha;Texto;Creado.Descripcion;Solicitud.Oid;Creado.Usuario.UserName"
 
 
+def confirmed_closure_dates(today, confirmed=None):
+    """Shared deductions for commissions and the live objectives dashboard."""
+    confirmed = CONFIRMED_CLOSURES if confirmed is None else confirmed
+    return frozenset(day for day in confirmed if day < today)
+
+
 def verify_day(client, day, limit):
     """No zero can be inferred from API failure, truncation, or count changes."""
     cmd = f"[Fecha] >= #{day}# AND [Fecha] < #{day + timedelta(days=1)}#"
@@ -119,7 +125,7 @@ def detect_operational_calendar(client, datasets, national, *, today=None, limit
                      "reason": reason, "sample_event_ids": sorted(events_by_day[current])[:10]})
         current += timedelta(days=1)
     # Confirmed closures also apply to intervals outside the detection window.
-    extra_dates = {d for d in confirmed if d < today}
+    extra_dates = confirmed_closure_dates(today, confirmed)
     return {"version": VERSION, "scope": "Solo primera respuesta; jornada fija lunes a viernes 08:00–17:00",
             "users": list(users), "roster_status": "Orientativo: validar nómina; las alertas no generan descuentos automáticos",
             "decision_states": sorted(DECISION_STATES), "from_date": start.isoformat(),

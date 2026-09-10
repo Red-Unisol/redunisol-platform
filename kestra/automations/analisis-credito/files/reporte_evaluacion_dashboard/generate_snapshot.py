@@ -20,6 +20,7 @@ from reporte_evaluacion_report.analysis import (
 )
 from reporte_evaluacion_comisiones.calendar import national_holidays, CALENDAR_DESCRIPTION
 from reporte_evaluacion_comisiones.core import commission_rate, reference_average
+from reporte_evaluacion_comisiones.operational_calendar import confirmed_closure_dates
 
 try:
     from kestra import Kestra
@@ -290,7 +291,7 @@ def fetch_full_history_for_solicitudes(
     return list(dedup.values())
 
 
-def metric_minutes(events: Sequence[NovedadEvent], metric: str) -> list[float]:
+def metric_minutes(events: Sequence[NovedadEvent], metric: str, *, today: Optional[date] = None) -> list[float]:
     grouped: dict[int, list[NovedadEvent]] = {}
     for event in events:
         grouped.setdefault(event.solicitud_oid, []).append(event)
@@ -298,12 +299,15 @@ def metric_minutes(events: Sequence[NovedadEvent], metric: str) -> list[float]:
     years = [event.created_at.year for items in grouped.values() for event in items if event.created_at]
     # Include intervening years for histories spanning a year boundary.
     calendar = national_holidays(range(min(years), max(years) + 1)) if years else {}
+    exclusions = frozenset(calendar)
+    if metric == "first_response":
+        exclusions |= confirmed_closure_dates(today or datetime.now(LOCAL_TZ).date())
     compute = compute_first_response_metrics if metric == "first_response" else compute_transfer_metrics
-    return [row["minutos"] for row in compute(grouped, excluded_dates=calendar)]
+    return [row["minutos"] for row in compute(grouped, excluded_dates=exclusions)]
 
 
-def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float]:
-    return metric_minutes(events, "first_response")
+def compute_first_response_minutes(events: Sequence[NovedadEvent], *, today: Optional[date] = None) -> list[float]:
+    return metric_minutes(events, "first_response", today=today)
 
 
 def compute_transfer_minutes(events: Sequence[NovedadEvent]) -> list[float]:
@@ -327,15 +331,28 @@ def metric_payload(
     *, metric_id: str, name: str, current_values: Sequence[float],
     target_month_values: Sequence[Sequence[float]],
 ) -> dict[str, Any]:
-    actual = average(current_values)
-    monthly = [average(values) for values in target_month_values]
+    current = summarize_minutes(current_values)
+    monthly = [summarize_minutes(values) for values in target_month_values]
+    return {
+        "id": metric_id, "nombre": name,
+        **statistic_payload(current, monthly, "promedio_minutos"),
+        "mediana": statistic_payload(current, monthly, "mediana_minutos"),
+        "casos": len(current_values),
+        "casos_objetivo": sum(len(values) for values in target_month_values),
+    }
+
+
+def statistic_payload(
+    current: dict[str, Optional[float]], monthly_summaries: Sequence[dict[str, Optional[float]]],
+    statistic: str,
+) -> dict[str, Any]:
+    actual = current[statistic]
+    monthly = [summary[statistic] for summary in monthly_summaries]
     reference = reference_average(monthly)
     target = float(reference) if reference is not None else None
     delta_pct = ((actual - target) / target) * 100 if actual is not None and target is not None and target > 0 else None
     return {
-        "id": metric_id, "nombre": name, "actual_min": actual, "objetivo_min": target,
-        "delta_pct": delta_pct, "casos": len(current_values),
-        "casos_objetivo": sum(len(values) for values in target_month_values),
+        "actual_min": actual, "objetivo_min": target, "delta_pct": delta_pct,
         "estado": classify_state(actual, reference),
     }
 
@@ -428,11 +445,12 @@ def build_snapshot() -> tuple[Path, dict[str, Any], list[str]]:
         "periodo_actual": run_month,
         "periodo_objetivo": {
             "meses": target_months,
-            "descripcion": "Media simple de los promedios de los ultimos 3 meses cerrados",
+            "descripcion": "Media simple de cada estadistica mensual (promedio o mediana) de los ultimos 3 meses cerrados",
         },
         "actualizado_en": now.isoformat(),
         "reglas": {
             "calendario": CALENDAR_DESCRIPTION,
+            "cierres_primera_respuesta": sorted(day.isoformat() for day in confirmed_closure_dates(now.date())),
             "primera_respuesta": "desde primera RevisionRiesgo hasta primer cambio de estado posterior, solo horario laboral lunes a viernes 08:00-17:00",
             "transferencia": "ultimo Pagada y A Transferir inmediatamente anterior, solo horario laboral lunes a viernes 08:00-17:00",
             "lineas_excluidas_primera_respuesta": list(
@@ -449,8 +467,8 @@ def build_snapshot() -> tuple[Path, dict[str, Any], list[str]]:
             metric_payload(
                 metric_id="first_response",
                 name="Tiempo de Primera Respuesta",
-                current_values=compute_first_response_minutes(current_history),
-                target_month_values=[compute_first_response_minutes(history_by_month[m]) for m in target_months],
+                current_values=compute_first_response_minutes(current_history, today=now.date()),
+                target_month_values=[compute_first_response_minutes(history_by_month[m], today=now.date()) for m in target_months],
             ),
             metric_payload(
                 metric_id="transfer",

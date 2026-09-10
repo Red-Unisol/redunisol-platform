@@ -810,6 +810,12 @@ Estos cierres operativos se aplican **solo a primera respuesta**, incluyendo las
 referencias históricas, comisiones y aportes por superior derivados de esa métrica.
 Transferencia, punta a punta y duración por estado conservan el calendario nacional;
 no se asume que otras áreas comparten los cierres del equipo de evaluación.
+El dashboard de objetivos reutiliza estos cierres confirmados para el promedio y
+la mediana de primera respuesta, incluyendo los tres meses de referencia. Cada
+estadística usa la media simple de sus tres valores mensuales y los mismos rangos
+de comisiones; transferencia mantiene el calendario nacional. El snapshot conserva
+el promedio en los campos superiores y agrega `mediana` con resultado, objetivo,
+variación y estado propios.
 El comportamiento predeterminado del paquete compartido y de la v1 no cambia.
 
 `reporte_evaluacion_comisiones/calendar.py` fija `holidays==0.104`, filtra los

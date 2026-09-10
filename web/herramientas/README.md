@@ -131,10 +131,18 @@ La pantalla interna de objetivos vive en:
 /objetivos/{OBJECTIVES_DASHBOARD_PRIVATE_SLUG}
 ```
 
-Los promedios del mes en curso usan las mismas métricas y feriados nacionales obligatorios
-que el informe de comisiones. El objetivo es la media simple de los tres promedios
-mensuales anteriores; con un mes sin datos queda pendiente. Verde hasta el objetivo,
-amarillo hasta el 110% y rojo por encima.
+Cada categoría (primera respuesta y transferencia) muestra el promedio y la mediana
+del mes en curso, con objetivo y semáforo propios. Usa los mismos casos, intervalos,
+exclusiones de líneas y feriados nacionales obligatorios que evaluación y comisiones v2.
+Primera respuesta también descuenta los cierres confirmados del equipo, desde
+`reporte_evaluacion_comisiones/operational_calendar.py`; transferencia conserva el
+calendario nacional. Se aplica al mes actual y a las referencias históricas.
+
+El objetivo de cada estadística es la media simple de sus tres valores mensuales
+anteriores: para la mediana, la media de las tres medianas, sin agrupar ni ponderar
+casos de distintos meses. No se recortan extremos. Con un mes sin datos falta el
+objetivo; con referencia cero la evaluación queda pendiente. Verde hasta el objetivo,
+amarillo hasta el 110% y rojo por encima, clasificando sin redondear como comisiones v2.
 
 El backend lee un snapshot JSON desde `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH` y lo expone al frontend sin cache. Kestra debe publicar ese archivo con este contrato minimo:
 
@@ -148,6 +156,12 @@ El backend lee un snapshot JSON desde `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH` y lo 
       "nombre": "Tiempo de Primera Respuesta",
       "actual_min": 20.4,
       "objetivo_min": 21.95,
+      "mediana": {
+        "actual_min": 12.5,
+        "objetivo_min": 14.0,
+        "delta_pct": -10.714285714285714,
+        "estado": "verde"
+      },
       "casos": 850,
       "estado": "verde"
     },
@@ -156,6 +170,12 @@ El backend lee un snapshot JSON desde `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH` y lo 
       "nombre": "Tiempo de Transferencia",
       "actual_min": 27.6,
       "objetivo_min": 26.19,
+      "mediana": {
+        "actual_min": 15.0,
+        "objetivo_min": 14.0,
+        "delta_pct": 7.142857142857142,
+        "estado": "amarillo"
+      },
       "casos": 420,
       "estado": "amarillo"
     }
@@ -163,7 +183,13 @@ El backend lee un snapshot JSON desde `OBJECTIVES_DASHBOARD_SNAPSHOT_PATH` y lo 
 }
 ```
 
-Estados esperados: `verde`, `amarillo`, `rojo`. Si `estado` no viene, el frontend calcula una clasificacion provisoria contra el objetivo.
+Los campos superiores conservan el promedio; `mediana` contiene su resultado,
+referencia, variación y estado independientes. `casos` corresponde a ambos.
+Los faltantes se representan con `null`; cero es un tiempo válido. La pantalla acepta
+snapshots anteriores y muestra la mediana como **Sin datos** hasta que Kestra genere
+el nuevo contrato. El frontend y el generador pueden desplegarse en cualquier orden.
+
+Estados esperados: `verde`, `amarillo`, `rojo`, `neutral`. Si `estado` no viene, el frontend calcula una clasificacion provisoria contra el objetivo.
 
 ## Desarrollo local
 
