@@ -64,9 +64,11 @@ class AnalisisInbox
                     $analysts[mb_strtolower($username)] = ['username' => $username, 'name' => trim((string) $row[0]) ?: $username];
                 }
             }
-            ksort($analysts);
 
-            return array_values($analysts);
+            return array_values(array_filter(array_map(
+                fn ($username) => $analysts[$username] ?? null,
+                config('analisis.team'),
+            )));
         });
     }
 
