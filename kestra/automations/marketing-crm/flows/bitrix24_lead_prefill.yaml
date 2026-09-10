@@ -86,20 +86,20 @@ tasks:
     env:
       LEAD_ID: "{{ outputs.seleccionar_lead.vars.lead_id }}"
       BACKFILL_MAX_ATTEMPTS: "{{ inputs.max_attempts }}"
-      ARCA_OK: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.ok ?? false) : false }}"
-      ARCA_NOMBRE: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.nombre ?? '') : '' }}"
-      ARCA_APELLIDO: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.apellido ?? '') : '' }}"
-      ARCA_RAZON_SOCIAL: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.razon_social ?? '') : '' }}"
-      ARCA_FECHA_NACIMIENTO: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.fecha_nacimiento ?? '') : '' }}"
-      ARCA_ERROR: "{{ outputs.consultar_arca is defined ? (outputs.consultar_arca.outputs.error ?? '') : 'not_executed' }}"
-      CREDIX_OK: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
-      CREDIX_STATUS: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
-      CREDIX_CUIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
-      CREDIX_NOMBRE: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
-      CREDIX_NORMALIZED_JSON: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
-      CREDIX_ERROR: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.error ?? '') : 'not_executed' }}"
-      CREDIX_CACHE_HIT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
-      CREDIX_CACHED_AT: "{{ outputs.consultar_credixsa is defined ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
+      ARCA_OK: "{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.ok ?? false) : false }}"
+      ARCA_NOMBRE: "{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.nombre ?? '') : '' }}"
+      ARCA_APELLIDO: "{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.apellido ?? '') : '' }}"
+      ARCA_RAZON_SOCIAL: "{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.razon_social ?? '') : '' }}"
+      ARCA_FECHA_NACIMIENTO: "{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.fecha_nacimiento ?? '') : '' }}"
+      ARCA_ERROR: "{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.error ?? '') : 'not_executed' }}"
+      CREDIX_OK: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+      CREDIX_STATUS: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+      CREDIX_CUIT: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+      CREDIX_NOMBRE: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
+      CREDIX_NORMALIZED_JSON: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
+      CREDIX_ERROR: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.error ?? '') : 'not_executed' }}"
+      CREDIX_CACHE_HIT: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
+      CREDIX_CACHED_AT: "{{ outputs.consultar_credixsa.outputs is defined ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
       VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
       VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
@@ -143,25 +143,25 @@ tasks:
 outputs:
   - id: ok
     type: BOOL
-    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.ok : outputs.seleccionar_lead.vars.ok }}"
+    value: "{{ outputs.completar_backfill.vars is defined ? outputs.completar_backfill.vars.ok : outputs.seleccionar_lead.vars.ok }}"
   - id: action
     type: STRING
-    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.action : outputs.seleccionar_lead.vars.action }}"
+    value: "{{ outputs.completar_backfill.vars is defined ? outputs.completar_backfill.vars.action : outputs.seleccionar_lead.vars.action }}"
   - id: lead_id
     type: STRING
     value: "{{ outputs.seleccionar_lead.vars.lead_id }}"
   - id: lead_status
     type: STRING
-    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.lead_status : '' }}"
+    value: "{{ outputs.completar_backfill.vars is defined ? outputs.completar_backfill.vars.lead_status : '' }}"
   - id: attempts
     type: STRING
-    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.attempts : outputs.seleccionar_lead.vars.attempts }}"
+    value: "{{ outputs.completar_backfill.vars is defined ? outputs.completar_backfill.vars.attempts : outputs.seleccionar_lead.vars.attempts }}"
   - id: errors_json
     type: STRING
-    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.errors_json : '[]' }}"
+    value: "{{ outputs.completar_backfill.vars is defined ? outputs.completar_backfill.vars.errors_json : '[]' }}"
   - id: message
     type: STRING
-    value: "{{ outputs.completar_backfill is defined ? outputs.completar_backfill.vars.message : outputs.seleccionar_lead.vars.message }}"
+    value: "{{ outputs.completar_backfill.vars is defined ? outputs.completar_backfill.vars.message : outputs.seleccionar_lead.vars.message }}"
 
 triggers:
   - id: cada_minuto
