@@ -721,7 +721,96 @@ conserva colocación, métricas de referencia, reglas y feriados, además del de
 original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
 el JSON conserva los resultados numéricos calculados en Python.
 
+### Análisis de cambios en los tiempos (v2)
+
+La cuarta hoja, **Cambios en tiempos**, presenta una comparación a la vez, con
+selectores de mes y métrica (primera respuesta, transferencia o punta a punta).
+Abre en el último mes y primera respuesta. Sigue la lectura de **Aporte controlado**:
+cuatro indicadores, ranking de superiores y un bloque corto de subcategorías.
+El ranking muestra los diez mayores aportes de desempeño en valor absoluto;
+el resto se agrega sin perder cantidades ni aportes. El selector de superior del
+bloque de cancelaciones/nuevas permite consultar cualquiera, incluso una del resto.
+Incluye el mes
+anterior al inicio solicitado usando la extracción de referencia existente.
+Conserva exactamente los casos, calendario y exclusiones de cada métrica del reporte.
+
+Los grupos son `ID de línea superior × operación × antigüedad`. Se consulta
+`Solicitud.LineaPrestamo.ID/Descripcion/Superior.ID/Superior.Descripcion` por OID;
+no se unen líneas por nombres potencialmente repetidos. Las clasificaciones son
+las actuales del Core, no una reconstrucción de la jerarquía histórica. Los casos
+sin mapeo o con descripción inconsistente se conservan como **Sin clasificar**.
+
+- **Cancelaciones**: nombre de la línea contiene `cancel`, ignorando mayúsculas
+  y acentos. Las demás se rotulan **Otras operaciones**; no se afirma que sean simples.
+- **Nueva**: solo el mes calendario de la primera actividad disponible en Core,
+  obtenida con el mínimo histórico de `NovedadSolicitud.Fecha` para el ID de línea.
+  No se usa el inicio del período extraído como fecha de alta. Esta fecha no demuestra
+  creación ni aprendizaje del equipo. Fechas ausentes quedan con antigüedad desconocida.
+- Los atributos se cruzan: una línea nueva de cancelaciones integra un solo grupo.
+  Se fija la antigüedad al mes comparado en ambos lados de cada comparación para
+  evitar aportes artificiales por el paso de nueva a existente.
+
+Para grupos con casos en ambos meses, siendo `p` su participación y `u` su promedio:
+
+- Mix: `(p_actual - p_anterior) × u_actual`.
+- Desempeño controlado: `(u_actual - u_anterior) × p_anterior`.
+  Mantiene fijo el peso del mes anterior, como el Excel local de referencia;
+  reemplaza el método simétrico de la primera propuesta de esta hoja. La interacción
+  entre cambio de tiempo y peso queda en mix. Cambian los componentes, no el total.
+- Grupos sin casos en uno de los meses: el aporte ponderado entrante o saliente
+  queda separado en **Entradas/salidas**, sin inventar un promedio para el mes ausente.
+
+La suma de los tres componentes concilia con la variación total en minutos.
+Si cualquiera de los meses carece de casos, no se calcula descomposición.
+No se descomponen medianas ni se atribuye causalidad al componente de performance.
+Los cálculos se realizan dentro de `superior × operación × antigüedad` y luego
+se suman por superior: el desempeño no se calcula a partir del promedio agregado
+de la superior, que podría ocultar cambios de mix entre sus subcategorías.
+La vista principal muestra cancelaciones/otras operaciones cruzadas con
+nueva/existente, más faltantes cuando los hay; permite ver el total o una superior.
+Sus aportes siempre usan el denominador global y no se suman nuevamente al ranking.
+Los selectores recalculan todas las fórmulas, incluyendo el ranking, sin macros.
+La hoja final **Soporte tiempos** conserva historia completa, cantidades y sumas
+de minutos por grupo, fórmulas, controles de conciliación y catálogo para auditar
+superiores, cancelaciones y primera actividad. Solo se ocultan columnas auxiliares
+de los selectores; el detalle técnico sigue visible y enlazado desde la vista principal.
+El manifiesto JSON
+guarda el mapeo por solicitud, reglas y resultados numéricos para reproducir el análisis.
+
 ### Mantenimiento del calendario
+
+La última hoja **Jornadas evaluación** conserva la detección diaria y un listado
+de excepciones, fuera de la vista principal. El generador usa todas las novedades
+mensuales obtenidas por `EvaluateList`, no solo solicitudes cerradas ni las líneas
+del reporte, y agrupa por la fecha de creación del evento. Observa cualquier
+movimiento de los usuarios de referencia; Revisar, Rechazada, PreAprobado y Liquidada
+aportan además una señal de decisiones. La nómina es orientativa, configurable con
+`REPORTE_EVALUACION_ACTIVITY_USERS` (usuarios separados por comas); debe revisarse
+ante cambios de equipo. Las decisiones de usuarios fuera de esa nómina se señalan
+como actividad por atribuir, no como ausencia.
+
+Los días laborables sin actividad aparente y los cierres confirmados se revalidan
+en Core con `Count / EvaluateList / Count`, IDs únicos, fecha y autor
+`Creado.Usuario.UserName`. La consulta se filtra por `Fecha`, mientras la actividad
+se atribuye por creación; se unen las observaciones de todos los meses extraídos
+para no perder eventos desfasados dentro del período. La ausencia sigue siendo un
+indicio, no prueba de cierre. Límites, cambios de cantidad, fechas inválidas o errores
+quedan como **Sin datos completos**, nunca como prueba de que no se trabajó.
+
+**Solo cierres confirmados** agregan días descontados. `operational_calendar.py`
+registra el **10/07/2026**, confirmado por Santiago el 10/09/2026. Otros días
+sin movimientos quedan como **Posible no trabajado** y mantienen el calendario
+base hasta confirmación explícita y cambio en Git. Si hay actividad en un cierre
+confirmado, se muestra el conflicto; la confirmación explícita mantiene precedencia.
+No se usa el primer/último evento para reducir jornadas ni se descartan solicitudes
+extremas. La fecha, origen, cobertura, conteos, usuarios y decisión aplicada quedan
+en Excel; el manifiesto conserva además la regla y las verificaciones del Core.
+
+Estos cierres operativos se aplican **solo a primera respuesta**, incluyendo las
+referencias históricas, comisiones y aportes por superior derivados de esa métrica.
+Transferencia, punta a punta y duración por estado conservan el calendario nacional;
+no se asume que otras áreas comparten los cierres del equipo de evaluación.
+El comportamiento predeterminado del paquete compartido y de la v1 no cambia.
 
 `reporte_evaluacion_comisiones/calendar.py` fija `holidays==0.104`, filtra los
 opcionales y corrige el traslado nacional del 12 al 10 de octubre de 2025.

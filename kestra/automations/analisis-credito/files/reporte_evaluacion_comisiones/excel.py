@@ -254,6 +254,8 @@ def build_review_sheet(workbook, month, report):
 def enrich_workbook(
     workbook: Any, *, reports: Sequence[MonthlyReport], months: Sequence[str],
     loans: dict[str, list[Loan]], calendar: dict, extracted_at: datetime,
+    time_mix=None, line_context=None,
+    operational_calendar=None,
 ) -> None:
     by_month = {report.month_value: report for report in reports}
     reference_months = sorted(by_month)
@@ -323,6 +325,12 @@ def enrich_workbook(
         ["Histórico", "Cada ejecución conserva la base consultada. Una consulta posterior puede cambiar importes o estados de meses cerrados."],
         *[["Fuente del calendario", url] for url in SOURCES],
     ]
+    if operational_calendar is not None:
+        rules_rows.extend([
+            ["Jornadas de evaluación", "Primera respuesta aplica cierres confirmados adicionales. Ver Jornadas evaluación; los candidatos no se descuentan automáticamente."],
+            ["Cierres extra de primera respuesta", ", ".join(operational_calendar["extra_excluded_dates"]) or "Ninguno"],
+            ["Versión de detección de jornadas", operational_calendar["version"]],
+        ])
     rules = table_sheet(workbook, "Reglas", "Criterios y trazabilidad", "Calendario y parámetros aplicados a esta ejecución.", ["Concepto", "Valor"], rules_rows, "ReglasComisiones")
     rules.column_dimensions["A"].width = 47
     rules.column_dimensions["B"].width = 105
@@ -341,5 +349,11 @@ def enrich_workbook(
     workbook.move_sheet(summary, offset=-workbook.index(summary))
     workbook.move_sheet(workbook["Muestreo legajos"], offset=1 - workbook.index(workbook["Muestreo legajos"]))
     workbook.move_sheet(comparison, offset=2 - workbook.index(comparison))
+    if time_mix is not None and line_context is not None:
+        from .time_mix_excel import build_time_mix_sheet
+        build_time_mix_sheet(workbook, time_mix, line_context)
+    if operational_calendar is not None:
+        from .operational_calendar_excel import build_operational_calendar_sheet
+        build_operational_calendar_sheet(workbook, operational_calendar)
     workbook.active = 0
     workbook.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True, forceFullCalc=True)

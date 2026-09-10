@@ -44,7 +44,7 @@ def dataset(month: str, *, count: int = 1, across_holiday: bool = False) -> Mont
             (end + timedelta(minutes=5), "A Transferir"), (end + timedelta(minutes=15), "Pagada"),
         ]):
             events.append(NovedadEvent.from_api_row([
-                oid * 10 + index, timestamp.date().isoformat(), f"[{state}]",
+                (year * 100 + number) * 1000000 + oid * 10 + index, timestamp.date().isoformat(), f"[{state}]",
                 timestamp.strftime("%d/%m/%y %H:%M:%S") + " analista", oid, oid, oid, "LINEA CBU", "Pagada",
             ]))
     return MonthDataset(month, month, derive_month_seed(202510, month), events, list(range(1, count + 1)), events)
@@ -55,6 +55,22 @@ def sample_loan(month: str = "2026-08") -> Loan:
 
 
 class CommissionsTests(unittest.TestCase):
+    def setUp(self):
+        # Live line metadata is covered separately; preserve integration tests
+        # using an explicit unmapped group instead of making network requests.
+        patcher = patch("reporte_evaluacion_comisiones.kestra_entrypoint.fetch_line_context",
+                        return_value={"applications": {}, "lines": {}})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Keep the real detector but provide a complete, nonempty working day so
+        # integration fixtures cannot accidentally infer a closure from a mock.
+        activity = patch("reporte_evaluacion_comisiones.operational_calendar.verify_day", side_effect=lambda client, day, limit: {
+            "records": [{"id": 900000, "date": day.isoformat() + "T09:00:00", "user": "aortega", "state": "Revisar", "application": 1}],
+            "count_before": 1, "count_after": 1,
+        })
+        activity.start()
+        self.addCleanup(activity.stop)
+
     def test_confirmed_rate_boundaries(self):
         for value, expected in [("9.5", ".005"), ("10", ".005"), ("10.00001", ".003"), ("11", ".003"), ("11.00001", ".001")]:
             with self.subTest(value=value):
@@ -249,6 +265,9 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("Resumen ejecutivo", workbook.sheetnames)
             comparison = workbook["Comparativo mensual"]
             self.assertEqual(workbook.sheetnames[2], "Comparativo mensual")
+            self.assertEqual(workbook.sheetnames[3], "Cambios en tiempos")
+            self.assertIn("ResumenCambioTiempos", workbook["Soporte tiempos"].tables)
+            self.assertEqual(workbook["Cambios en tiempos"]["B3"].value, "2026-08")
             self.assertEqual(comparison.max_column, 7)
             self.assertEqual(comparison["B7"].value, '=IF(ISNUMBER(\'Comisiones\'!C10),\'Comisiones\'!C10,"Pendiente")')
             self.assertIn("'Comisiones'!C40", comparison["E7"].value)
@@ -296,6 +315,11 @@ class CommissionsTests(unittest.TestCase):
             self.assertNotIn("https://", meta.base_url)
             audit = json.loads(next(paths.glob("*.json")).read_text(encoding="utf-8"))
             self.assertIsNone(audit["manual_commission"])
+            self.assertEqual(len(audit["time_mix"]), 3)
+            self.assertEqual({item["month"] for item in audit["time_mix"]}, {"2026-08"})
+            self.assertIn("line_context", audit)
+            self.assertIn("2026-07-10", audit["operational_calendar"]["extra_excluded_dates"])
+            self.assertIn("Jornadas evaluación", workbook.sheetnames)
             self.assertEqual(audit["manual_rules"]["high_min"], 28)
             self.assertNotIn("2026-07-10", audit["calendar"])
             self.assertEqual(sum(Decimal(row["amount"]) for row in audit["commissions"]), Decimal(3500))
