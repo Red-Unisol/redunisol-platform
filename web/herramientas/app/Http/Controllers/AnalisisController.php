@@ -6,6 +6,7 @@ use App\Http\Middleware\AnalisisAccess;
 use App\Services\AnalisisInbox;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class AnalisisController extends Controller
@@ -64,7 +65,10 @@ class AnalisisController extends Controller
 
     public function snapshot(Request $request, AnalisisInbox $inbox)
     {
-        $data = $request->validate(['analyst' => ['required', 'string', 'max:100', 'regex:/^[\pL\pN_.@-]+$/u']]);
+        if (is_string($request->input('analyst'))) {
+            $request->merge(['analyst' => mb_strtolower(trim($request->input('analyst')))]);
+        }
+        $data = $request->validate(['analyst' => ['required', 'string', 'max:100', Rule::in(config('analisis.team'))]]);
 
         return $this->sourceResponse(fn () => $inbox->snapshot($data['analyst']));
     }

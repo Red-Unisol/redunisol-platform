@@ -75,8 +75,12 @@ class AnalisisTest extends TestCase
     public function test_analysts_use_actual_usernames_and_cache_the_source(): void
     {
         $this->login();
-        Http::fake(['core.test/*' => Http::response([['Darío', 'dmontaña'], ['Grupo sin usuario', null], ['Duplicado', 'dmontaña']])]);
-        $this->getJson('/api/analisis/analysts')->assertOk()->assertJsonCount(1, 'analysts')->assertJsonPath('analysts.0.username', 'dmontaña');
+        Http::fake(['core.test/*' => Http::response([
+            ['Otro usuario', 'vendedor'], ['Marín', 'jmarin'], ['Darío', 'dmontaña'],
+            ['Grupo sin usuario', null], ['Duplicado', 'dmontaña'], ['Salguero', 'ssalguero'], ['Ortega', 'aortega'],
+        ])]);
+        $response = $this->getJson('/api/analisis/analysts')->assertOk()->assertJsonCount(4, 'analysts');
+        $this->assertSame(['dmontaña', 'aortega', 'jmarin', 'ssalguero'], array_column($response->json('analysts'), 'username'));
         $this->getJson('/api/analisis/analysts')->assertOk();
         Http::assertSentCount(1);
     }
@@ -91,12 +95,12 @@ class AnalisisTest extends TestCase
         foreach ([114, 117, 121, 123, 999] as $state) {
             $rows[] = $this->row($state, $state);
         }
-        $rows[] = $this->row(2000, 114, 'otro');
+        $rows[] = $this->row(2000, 114, 'aortega');
         Http::fake(['core.test/*' => Http::response($rows)]);
         $this->getJson('/api/analisis/snapshot?'.http_build_query(['analyst' => 'DMONTAÑA']))
             ->assertOk()->assertJsonCount(5, 'items')->assertJsonPath('items.0.id', '999')
             ->assertJsonPath('items.0.assignment', '20:10')->assertJsonPath('items.0.date', '2025-01-01');
-        $this->getJson('/api/analisis/snapshot?analyst=otro')->assertJsonCount(1, 'items');
+        $this->getJson('/api/analisis/snapshot?analyst=aortega')->assertJsonCount(1, 'items');
         Http::assertSentCount(1);
         Http::assertSent(fn ($request) => ! str_contains($request['cmd'], 'Fecha')
             && str_contains($request['cmd'], '122') && str_contains($request['campos'], 'Cambio Ejecutivo')
@@ -107,6 +111,8 @@ class AnalisisTest extends TestCase
     {
         $this->login();
         $this->getJson('/api/analisis/snapshot?'.http_build_query(['analyst' => "' OR True"]))->assertStatus(422);
+        $this->getJson('/api/analisis/snapshot?analyst=vendedor')->assertStatus(422)->assertJsonValidationErrors(['analyst']);
+        $this->getJson('/api/analisis/snapshot?analyst[]=dmonta')->assertStatus(422);
         Http::assertNothingSent();
     }
 

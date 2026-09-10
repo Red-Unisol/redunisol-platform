@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'team' => ['dmontaña', 'aortega', 'jmarin', 'ssalguero'],
     'password_hash' => env('ANALISIS_PASSWORD_HASH', ''),
     'core_url' => env('ANALISIS_CORE_URL', ''),
     'core_token' => env('ANALISIS_CORE_TOKEN', ''),

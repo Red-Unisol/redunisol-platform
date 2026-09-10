@@ -45,6 +45,10 @@ lista de analistas como las solicitudes requieren esa sesion. El login conserva
 la proteccion CSRF y limita los intentos fallidos. Cambiar el hash invalida los
 accesos anteriores en la siguiente consulta.
 
+El selector muestra solamente `dmontaña`, `aortega`, `jmarin` y `ssalguero`,
+en ese orden, tomando sus nombres de Vimarx. El equipo se configura en
+`analisis.team`; la API tambien rechaza consultas de usuarios fuera de esa lista.
+
 La bandeja se actualiza cada 45 segundos mientras la pagina esta abierta. El
 servidor comparte un snapshot durante 15 segundos entre analistas y navegadores,
 con un lock para evitar consultas simultaneas iguales. La fuente es exclusivamente
