@@ -19,6 +19,7 @@ describe("SolicitudesCoreRoutes", () => {
         getAnalistaStatsV2: () => undefined,
         list: () => undefined,
         listAssignableAgents: () => undefined,
+        listPrestamosDelSocio: () => undefined,
         listHistory: () => undefined,
         listTransitions: () => undefined,
         simular: () => undefined,
@@ -44,7 +45,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 17), [
+    assert.deepEqual(routePaths.slice(0, 18), [
       "/",
       "/",
       "/stats",
@@ -56,6 +57,7 @@ describe("SolicitudesCoreRoutes", () => {
       "/:id/transitions",
       "/:id/transitions",
       "/:id/prestamo-legacy",
+      "/:id/prestamos-socio",
       "/:id/assignment/agents",
       "/:id/assignment/self",
       "/:id/assignment",

@@ -26,6 +26,7 @@ import { SolicitudCancelacionRepositoryImpl } from "./cancelaciones/infrastructu
 import { SolicitudCancelacionesController } from "./cancelaciones/presentation/SolicitudCancelacionesController";
 import { ChangeSolicitudStateUseCase } from "./application/use-cases/ChangeSolicitudState.use-case";
 import { CreatePrestamoLegacyUseCase } from "./application/use-cases/CreatePrestamoLegacy.use-case";
+import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
@@ -198,6 +199,11 @@ export function createSolicitudesCoreRouter(
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
   });
+  const listPrestamosDelSocioUseCase = new ListPrestamosDelSocioUseCase({
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+    sociosRepository,
+  });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     authRepository,
     gateway: crearPrestamoGateway,
@@ -301,6 +307,7 @@ export function createSolicitudesCoreRouter(
       solicitudesRepository: solicitudesCoreRepository,
     });
   const solicitudesCoreController = new SolicitudesCoreController({
+    listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,
     changeSolicitudStateUseCase,

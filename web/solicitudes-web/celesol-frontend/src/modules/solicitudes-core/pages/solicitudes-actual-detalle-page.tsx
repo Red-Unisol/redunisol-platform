@@ -25,7 +25,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
-import {
+import { canViewPrestamosDelSocio,
   canAccessRiesgoTools,
   canCreateSocio,
 } from "@/modules/auth/utils/auth-user";
@@ -68,6 +68,7 @@ import { usePatchSolicitudCoreMutation } from "@/modules/solicitudes-core/hooks/
 import { useAssignSolicitudToSelfMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-self-mutation";
 import { useAssignSolicitudToUserMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-user-mutation";
 import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-adjuntos-query";
+import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
 import { useCreateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-create-solicitud-core-cancelacion-mutation";
 import { useUpdateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-update-solicitud-core-cancelacion-mutation";
@@ -223,8 +224,16 @@ function validateTitularRequiredForConfirmar(
   };
 }
 
-type SolicitanteTab = "adjuntos" | "cancelaciones" | "solicitante";
-type SolicitanteContentTab = DatosPersonalesTab | "adjuntos" | "cancelaciones";
+type SolicitanteTab =
+  | "adjuntos"
+  | "cancelaciones"
+  | "prestamos"
+  | "solicitante";
+type SolicitanteContentTab =
+  | DatosPersonalesTab
+  | "adjuntos"
+  | "cancelaciones"
+  | "prestamos";
 
 const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Datos Personales", value: "datosPersonales" },
@@ -235,6 +244,14 @@ const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Adjuntos", value: "adjuntos" },
 ];
 
+// Vendedores no ve esta pestaña: es informacion para analizar, no para cargar.
+// El backend hace el mismo chequeo -- esto solo evita mostrar algo que daria
+// 403 al abrirlo.
+const PRESTAMOS_TAB: TabItem<SolicitanteContentTab> = {
+  label: "Préstamos",
+  value: "prestamos",
+};
+
 const CANCELACIONES_TABLE_COLUMNS = [
   "Cuenta a debitar",
   "CBU",
@@ -243,6 +260,127 @@ const CANCELACIONES_TABLE_COLUMNS = [
   "Socio",
   "Cuenta bancaria",
 ] as const;
+
+const PRESTAMOS_TABLE_COLUMNS = [
+  "Nº de préstamo",
+  "Línea",
+  "Fecha",
+  "Monto",
+  "Saldo",
+  "Vencimiento",
+] as const;
+
+type PrestamosDelSocioSectionProps = {
+  isActive: boolean;
+  solicitudId: string;
+};
+
+// Los prestamos que el socio ya tiene con la mutual. Salen de Vimarx en vivo,
+// no de nuestra base, y solo se piden cuando la pestaña esta abierta.
+function PrestamosDelSocioSection({
+  isActive,
+  solicitudId,
+}: PrestamosDelSocioSectionProps) {
+  const { data, error, isLoading } = usePrestamosDelSocioQuery(
+    solicitudId,
+    isActive,
+  );
+  const prestamos = data?.prestamos ?? [];
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] border-collapse text-sm">
+        <thead className="bg-background text-left text-xs text-foreground-secondary">
+          <tr>
+            {PRESTAMOS_TABLE_COLUMNS.map((column) => (
+              <th
+                className="border-r border-border px-3 py-2 font-medium"
+                key={column}
+              >
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+              >
+                Consultando préstamos...
+              </td>
+            </tr>
+          ) : error ? (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+              >
+                No se pudieron consultar los préstamos del socio.
+              </td>
+            </tr>
+          ) : prestamos.length > 0 ? (
+            prestamos.map((prestamo) => (
+              <tr
+                // Los no vigentes van atenuados: siguen siendo utiles como
+                // historial, pero no son la informacion principal.
+                className={
+                  prestamo.vigente
+                    ? "border-t border-border"
+                    : "border-t border-border text-foreground-secondary"
+                }
+                key={prestamo.legacyId ?? prestamo.nroCuenta}
+              >
+                <td className="border-r border-border px-3 py-2">
+                  {prestamo.nroCuenta || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {prestamo.lineaPrestamoDescripcion || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatLegacyDate(prestamo.fechaEmision)}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(prestamo.montoPrestamo) || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
+                </td>
+                <td className="px-3 py-2">
+                  {formatLegacyDate(prestamo.vencimiento)}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+              >
+                El socio no tiene préstamos registrados.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// El legado devuelve las fechas con hora ("2024-11-14T00:00:00"). Se corta en
+// vez de parsear a Date a proposito: construir un Date corre la fecha un dia
+// segun la zona horaria.
+function formatLegacyDate(value: string | null) {
+  if (!value) {
+    return PLACEHOLDER;
+  }
+
+  const [anio, mes, dia] = value.slice(0, 10).split("-");
+
+  return dia && mes && anio ? `${dia}/${mes}/${anio}` : PLACEHOLDER;
+}
 
 type CancelacionesSectionProps = {
   canManageCancelaciones: boolean;
@@ -2294,8 +2432,12 @@ function SolicitanteSection({
   >;
   titularValues: EditableSolicitudCoreValues["titular"];
 }) {
+  const { data: currentUserPrestamos } = useAuthSessionQuery();
+  const canViewPrestamos = canViewPrestamosDelSocio(currentUserPrestamos);
   const activeContentTab: SolicitanteContentTab =
-    activeTab === "adjuntos" || activeTab === "cancelaciones"
+    activeTab === "adjuntos" ||
+    activeTab === "cancelaciones" ||
+    activeTab === "prestamos"
       ? activeTab
       : datosPersonalesTab;
   const [selectedGarantiaIndexes, setSelectedGarantiaIndexes] = useState<
@@ -2366,7 +2508,11 @@ function SolicitanteSection({
       <SectionTabs<SolicitanteContentTab>
         activeTab={activeContentTab}
         onTabChange={(tab) => {
-          if (tab === "adjuntos" || tab === "cancelaciones") {
+          if (
+            tab === "adjuntos" ||
+            tab === "cancelaciones" ||
+            tab === "prestamos"
+          ) {
             onTabChange(tab);
             return;
           }
@@ -2374,9 +2520,18 @@ function SolicitanteSection({
           onTabChange("solicitante");
           onDatosPersonalesTabChange(tab);
         }}
-        tabs={SOLICITANTE_CONTENT_TABS}
+        tabs={
+          canViewPrestamos
+            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB]
+            : SOLICITANTE_CONTENT_TABS
+        }
       />
-      {activeContentTab === "cancelaciones" ? (
+      {activeContentTab === "prestamos" ? (
+        <PrestamosDelSocioSection
+          isActive={activeContentTab === "prestamos"}
+          solicitudId={solicitudId}
+        />
+      ) : activeContentTab === "cancelaciones" ? (
         <CancelacionesSection
           canManageCancelaciones={canManageCancelaciones}
           isEditing={isEditing}
