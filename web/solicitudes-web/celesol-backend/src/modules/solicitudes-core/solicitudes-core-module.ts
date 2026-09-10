@@ -30,6 +30,8 @@ import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPresta
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
+import { PrecalentarCredixsaGateway } from "./infrastructure/services/PrecalentarCredixsaGateway";
+import { PrecalentarCredixsaSolicitud } from "./application/services/PrecalentarCredixsaSolicitud";
 import { CreateSolicitudUseCase } from "./application/use-cases/CreateSolicitud.use-case";
 import { GetFieldAccessFieldCatalogUseCase } from "./application/use-cases/GetFieldAccessFieldCatalog.use-case";
 import { GetFieldAccessRuleByStateUseCase } from "./application/use-cases/GetFieldAccessRuleByState.use-case";
@@ -166,7 +168,14 @@ export function createSolicitudesCoreRouter(
   const simularCuotaSolicitud = new SimularCuotaSolicitud({
     gateway: prestamosSimulacionGateway,
   });
+  const precalentarCredixsaSolicitud = new PrecalentarCredixsaSolicitud({
+    gateway: new PrecalentarCredixsaGateway({
+      timeoutMs: env.CREDIXSA_PRECALENTAR_TIMEOUT_MS,
+      webhookUrl: env.CREDIXSA_PRECALENTAR_WEBHOOK_URL,
+    }),
+  });
   const createSolicitudUseCase = new CreateSolicitudUseCase({
+    precalentarCredixsaSolicitud,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
     simularCuotaSolicitud,
