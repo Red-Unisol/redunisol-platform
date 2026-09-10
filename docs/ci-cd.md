@@ -170,7 +170,11 @@ Despliegan `web/herramientas/` como aplicacion stateless y Git-managed.
 
 Comportamiento:
 
-- construyen una sola imagen Docker
+- produccion se despliega automaticamente con un push/merge a `main` que cambie
+  `web/herramientas/`, `apps/credixsa-cache-api/` o `deploy-herramientas-prod.yml`
+- desarrollo se despliega desde `dev`; produccion conserva el disparo manual
+  desde `main` por `Nasst`
+- construyen las imagenes Docker de Herramientas y su API de cache CredixSA
 - descifran el runtime env correspondiente desde Git
 - suben `docker-compose.vps.yml` y `.env` a la VPS
 - actualizan la app remota via `docker compose pull` y `up -d`
