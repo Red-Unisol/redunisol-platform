@@ -1776,6 +1776,7 @@ function ObjectivesDashboardApp({ branding, config }) {
                 <section className="objectives-title">
                     <p className="section__eyebrow">Seguimiento comercial</p>
                     <h1>Objetivos de tiempos</h1>
+                    <p>Promedio y mediana del mes. Cada objetivo usa la media de esa medida en los tres meses anteriores.</p>
                 </section>
 
                 {loading && (
@@ -1800,7 +1801,11 @@ function ObjectivesDashboardApp({ branding, config }) {
                 {!loading && !error && metrics.length > 0 && (
                     <section className="objective-grid">
                         {metrics.map((metric) => (
-                            <ObjectiveMetricCard key={metric.id} metric={metric} />
+                            <section className="objective-category" key={metric.id} aria-labelledby={`objective-${metric.id}`}>
+                                <h2 id={`objective-${metric.id}`}>{metric.nombre}</h2>
+                                <ObjectiveMetricCard metric={metric} label="Promedio" />
+                                <ObjectiveMetricCard metric={metric.mediana} label="Mediana" />
+                            </section>
                         ))}
                     </section>
                 )}
@@ -1809,20 +1814,20 @@ function ObjectivesDashboardApp({ branding, config }) {
     );
 }
 
-function ObjectiveMetricCard({ metric }) {
+function ObjectiveMetricCard({ metric, label }) {
     const state = normalizeObjectiveState(metric.estado, metric.actualMin, metric.objetivoMin);
     const deltaText = formatDelta(metric.actualMin, metric.objetivoMin);
 
     return (
         <article className={`objective-card objective-card--${state}`}>
             <div className="objective-card__top">
-                <h2>{metric.nombre}</h2>
+                <h3>{label}</h3>
                 <span className="objective-card__status">{objectiveStateLabel(state)}</span>
             </div>
 
             <div className="objective-card__value">
                 <strong>{formatMinutes(metric.actualMin)}</strong>
-                <span>actual</span>
+                <span>{label} actual</span>
             </div>
 
             <div className="objective-card__target">
@@ -1851,6 +1856,12 @@ function normalizeObjectiveMetrics(snapshot) {
         objetivoMin: toNumberOrNull(row.objetivo_min ?? row.target_min ?? row.objetivoMin),
         casos: toIntegerOrNull(row.casos ?? row.cases),
         estado: row.estado || row.status || null,
+        mediana: {
+            actualMin: toNumberOrNull(row.mediana?.actual_min ?? undefined),
+            objetivoMin: toNumberOrNull(row.mediana?.objetivo_min ?? undefined),
+            casos: toIntegerOrNull(row.casos ?? row.cases),
+            estado: row.mediana?.estado || null,
+        },
     }));
 }
 
@@ -1866,6 +1877,9 @@ function toIntegerOrNull(value) {
 
 function normalizeObjectiveState(rawState, actualMin, targetMin) {
     const state = String(rawState || '').toLowerCase();
+    if (state === 'neutral') {
+        return 'neutral';
+    }
     if (['verde', 'green', 'ok'].includes(state)) {
         return 'green';
     }
