@@ -34,8 +34,9 @@ tasks:
       pullPolicy: IF_NOT_PRESENT
     containerImage: ghcr.io/kestra-io/kestrapy:latest
     env:
-      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | json }}"
+      CREDIX_DAILY_INDEX_JSON: "{{ (outputs.leer_indice_diario.value ?? null) | toJson }}"
       CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
+      CREDIX_WARMUP_MAX_OID_FAILURES: "{{ envs.credixsa_warmup_max_oid_failures ?? '3' }}"
       VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
       VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
@@ -66,6 +67,7 @@ tasks:
       CREDIX_USER: "{{ secret('CREDIX_USER') }}"
       CREDIX_PASS: "{{ secret('CREDIX_PASS') }}"
       CREDIX_WARMUP_MAX_PER_RUN: "{{ envs.credixsa_warmup_max_per_run ?? '5' }}"
+      CREDIX_WARMUP_MAX_OID_FAILURES: "{{ envs.credixsa_warmup_max_oid_failures ?? '3' }}"
       CREDIX_WARMUP_CORE_MAX_ROWS: "{{ envs.credixsa_warmup_core_max_rows ?? '1000' }}"
       CREDIX_WARMUP_RETRY_ATTEMPTS: "{{ envs.credixsa_warmup_retry_attempts ?? '2' }}"
       CREDIX_CACHE_SQLITE_PATH: "/data/credixsa-cache/credixsa.sqlite"
@@ -78,7 +80,7 @@ tasks:
 
   - id: guardar_indice_diario
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and not outputs.precalentar_cache.vars.fatal_error }}"
+    runIf: "{{ (outputs.precalentar_cache.vars.fatal_error ?? true) == false }}"
     key: credixsa.daily.index
     value: "{{ outputs.precalentar_cache.vars.daily_index_json }}"
     kvType: JSON
@@ -87,7 +89,7 @@ tasks:
 
   - id: guardar_cache_1
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_1_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_1_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_1_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_1_value }}"
     kvType: JSON
@@ -96,7 +98,7 @@ tasks:
 
   - id: guardar_cache_2
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_2_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_2_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_2_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_2_value }}"
     kvType: JSON
@@ -105,7 +107,7 @@ tasks:
 
   - id: guardar_cache_3
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_3_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_3_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_3_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_3_value }}"
     kvType: JSON
@@ -114,7 +116,7 @@ tasks:
 
   - id: guardar_cache_4
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_4_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_4_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_4_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_4_value }}"
     kvType: JSON
@@ -123,7 +125,7 @@ tasks:
 
   - id: guardar_cache_5
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_5_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_5_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_5_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_5_value }}"
     kvType: JSON
@@ -132,7 +134,7 @@ tasks:
 
   - id: guardar_cache_6
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_6_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_6_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_6_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_6_value }}"
     kvType: JSON
@@ -141,7 +143,7 @@ tasks:
 
   - id: guardar_cache_7
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_7_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_7_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_7_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_7_value }}"
     kvType: JSON
@@ -150,7 +152,7 @@ tasks:
 
   - id: guardar_cache_8
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_8_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_8_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_8_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_8_value }}"
     kvType: JSON
@@ -159,7 +161,7 @@ tasks:
 
   - id: guardar_cache_9
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_9_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_9_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_9_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_9_value }}"
     kvType: JSON
@@ -168,7 +170,7 @@ tasks:
 
   - id: guardar_cache_10
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ (outputs.precalentar_cache is defined) and outputs.precalentar_cache.vars.cache_entry_10_enabled }}"
+    runIf: "{{ outputs.precalentar_cache.vars.cache_entry_10_enabled ?? false }}"
     key: "{{ outputs.precalentar_cache.vars.cache_entry_10_key }}"
     value: "{{ outputs.precalentar_cache.vars.cache_entry_10_value }}"
     kvType: JSON
@@ -177,7 +179,7 @@ tasks:
 
   - id: fallar_si_warmup_tuvo_errores
     type: io.kestra.plugin.core.execution.Fail
-    runIf: "{{ (outputs.precalentar_cache is defined) and (outputs.precalentar_cache.vars.has_errors ?? false) }}"
+    runIf: "{{ outputs.precalentar_cache.vars.has_errors ?? false }}"
     errorMessage: "Warmup de CredixSA finalizo con errores tecnicos. Revisar logs y outputs de precalentar_cache."
 
 outputs:

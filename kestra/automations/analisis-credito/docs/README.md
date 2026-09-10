@@ -267,6 +267,9 @@ Las mismas que `consulta_quiebra_credix`, mas `solicitud_id`.
 
 ## consulta_quiebra_credix
 
+Arquitectura, diferencias RPA/HTTP/cache y verificacion de despliegue:
+[CredixSA y recuperacion de Kestra 2](credixsa-recovery.md).
+
 Consulta CredixSA y devuelve `none`, `multiple` o `single`.
 
 Cuando hay un unico resultado, el flow entra al detalle, ejecuta `Actualizar Todo` si CredixSA muestra el paso de actualizaciones online, espera a que terminen los `Procesando...` y devuelve las secciones disponibles del informe final.
@@ -349,9 +352,9 @@ Corre cada minuto en horario util con concurrencia `1`. En cada corrida:
 6. solo si hay candidatos ejecuta el worker pesado de warmup
 7. el worker consulta CredixSA con retry por candidato
 8. guarda cache por CUIL y por nombre si el resultado es `single`
-9. actualiza el indice diario
+9. actualiza el indice diario, incluidos los fallos acumulados por OID
 
-Si CredixSA falla para un candidato dentro del worker, ese candidato no se marca como procesado; la siguiente corrida vuelve a intentarlo.
+Si CredixSA falla para un candidato dentro del worker, la siguiente corrida vuelve a intentarlo hasta alcanzar el limite diario configurado. Al llegar al limite, el OID queda descartado hasta el siguiente dia.
 
 ### Variables
 
@@ -369,6 +372,7 @@ Config en `envs`:
 - `local_tz` opcional, default `America/Argentina/Buenos_Aires`
 - `credix_debug` opcional, default `true` en los tasks del flow
 - `credixsa_warmup_max_per_run` opcional, default `5`
+- `credixsa_warmup_max_oid_failures` opcional, default `3`
 - `credixsa_warmup_core_max_rows` opcional, default `1000`
 - `credixsa_warmup_retry_attempts` opcional, default `2`
 

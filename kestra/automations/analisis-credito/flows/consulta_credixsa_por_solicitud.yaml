@@ -57,37 +57,37 @@ tasks:
 outputs:
   - id: ok
     type: BOOL
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
   - id: status
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
   - id: cuit
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
   - id: nombre
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
   - id: rows_json
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.rows_json ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.rows_json ?? '') : '' }}"
   - id: data_json
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.data_json ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.data_json ?? '') : '' }}"
   - id: normalized_json
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
   - id: response_json
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.response_json ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.response_json ?? '') : '' }}"
   - id: error
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
   - id: cache_hit
     type: BOOL
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
   - id: cached_at
     type: STRING
-    value: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
+    value: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
   - id: solicitud_id
     type: STRING
     value: "{{ (trigger is defined and trigger.body is defined) ? (trigger.body.solicitud_id ?? '') : (inputs.solicitud_id ?? '') }}"
