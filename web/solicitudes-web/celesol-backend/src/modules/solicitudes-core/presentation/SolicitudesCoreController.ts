@@ -16,6 +16,7 @@ import type { AssignSolicitudToUserUseCase } from "../application/use-cases/Assi
 import type { ListAssignableSolicitudAgentsUseCase } from "../application/use-cases/ListAssignableSolicitudAgents.use-case";
 import type { ListSolicitudHistoryUseCase } from "../application/use-cases/ListSolicitudHistory.use-case";
 import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/ListSolicitudTransitions.use-case";
+import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
@@ -68,6 +69,7 @@ type Dependencies = {
   getAnalistaDashboardStatsV2UseCase?: GetAnalistaDashboardStatsV2UseCase;
   listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
+  listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -88,6 +90,7 @@ export class SolicitudesCoreController {
   private readonly getAnalistaDashboardStatsV2UseCase?: GetAnalistaDashboardStatsV2UseCase;
   private readonly listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   private readonly listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
+  private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -112,6 +115,8 @@ export class SolicitudesCoreController {
     this.listSolicitudHistoryUseCase = dependencies.listSolicitudHistoryUseCase;
     this.listSolicitudTransitionsUseCase =
       dependencies.listSolicitudTransitionsUseCase;
+    this.listPrestamosDelSocioUseCase =
+      dependencies.listPrestamosDelSocioUseCase;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
@@ -254,6 +259,36 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(solicitudes);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Los prestamos que el socio ya tiene con la mutual. No los ve Vendedores:
+  // es informacion para analizar, no para cargar. Mismo criterio que la
+  // calculadora de riesgo, que tambien se restringe por area en el backend --
+  // ocultar la pestaña en el frontend no alcanza.
+  listPrestamosDelSocio = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const prestamos = await this.listPrestamosDelSocioUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json({ prestamos });
     } catch (error) {
       next(error);
     }

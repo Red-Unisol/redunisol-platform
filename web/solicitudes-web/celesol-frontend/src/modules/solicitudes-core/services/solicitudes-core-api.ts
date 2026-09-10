@@ -221,6 +221,25 @@ export function patchSolicitudCoreAdjunto(
   );
 }
 
+export type PrestamoDelSocioResponse = {
+  capital: number | null;
+  fechaEmision: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  montoPrestamo: number | null;
+  nroCuenta: string | null;
+  primerVencimiento: string | null;
+  saldo: number | null;
+  vencimiento: string | null;
+  vigente: boolean | null;
+};
+
+export function listPrestamosDelSocio(solicitudId: string) {
+  return apiClient.get<{ prestamos: PrestamoDelSocioResponse[] }>(
+    `/solicitudes/${solicitudId}/prestamos-socio`,
+  );
+}
+
 export function listSolicitudCoreCancelaciones(solicitudId: string) {
   return apiClient.get<SolicitudCoreCancelacionResponse[]>(
     `/solicitudes/${solicitudId}/cancelaciones`,

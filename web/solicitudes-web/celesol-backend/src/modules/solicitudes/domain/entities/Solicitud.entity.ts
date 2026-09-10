@@ -208,6 +208,25 @@ export type PrestamoOtorgadoLegacy = {
   vencimiento: string | null;
 };
 
+// Prestamo que el socio ya tiene con la mutual, para mostrarlo al analizar una
+// solicitud nueva. Sale de F.Module.Cuentas.Prestamos.Prestamo, vinculado por
+// la coleccion Integrantes.
+//
+// "vigente" lo calcula el legado, no lo deducimos nosotros. OJO: no significa
+// "tiene deuda" -- hay prestamos no vigentes con saldo pendiente.
+export type PrestamoDelSocioLegacy = {
+  capital: number | null;
+  fechaEmision: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  montoPrestamo: number | null;
+  nroCuenta: string | null;
+  primerVencimiento: string | null;
+  saldo: number | null;
+  vencimiento: string | null;
+  vigente: boolean | null;
+};
+
 export type LineaPrestamoPresolicitud = {
   cantidadMaximaCuotas: number | null;
   cantidadMinimaCuotas: number | null;

@@ -2,6 +2,7 @@ import { LegacySolicitudesUnavailableError } from "../../domain/solicitudes-erro
 import type { SolicitudesLegacyGateway } from "../../domain/services/SolicitudesLegacyGateway";
 import type {
   LineaPrestamoPresolicitud,
+  PrestamoDelSocioLegacy,
   PrestamoOtorgadoLegacy,
   SocioMutualCancelacionDetalle,
   SocioMutualCancelacionListItem,
@@ -196,6 +197,23 @@ const PRESTAMO_DIRECTO_FIELDS = [
   "CFT",
 ] as const;
 
+// Prestamos que ya tiene el socio. El vinculo con la persona no es un campo
+// sino la coleccion Integrantes, y la clave que la recorre es Socio.ID, que es
+// el mismo valor que guardamos como nroSocioLegacy (verificado contra la API
+// real). "Vigente" viene calculado del legado.
+const PRESTAMOS_DEL_SOCIO_FIELDS = [
+  "ID",
+  "NroCuenta",
+  "Vigente",
+  "LineaPrestamo.Descripcion",
+  "FechaEmision",
+  "MontoPrestamo",
+  "Capital",
+  "Saldo",
+  "PrimerVencimiento",
+  "Vencimiento",
+] as const;
+
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
   "Oid",
   "Vigente",
@@ -296,6 +314,10 @@ const lineasPrestamoFieldIndex = buildFieldIndexByName(
 const prestamoOtorgadoFieldIndex = buildFieldIndexByName(
   PRESTAMO_OTORGADO_FIELDS,
 );
+const prestamosDelSocioFieldIndex = buildFieldIndexByName(
+  PRESTAMOS_DEL_SOCIO_FIELDS,
+);
+
 const prestamoDirectoFieldIndex = buildFieldIndexByName(
   PRESTAMO_DIRECTO_FIELDS,
 );
@@ -438,6 +460,13 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   getSocioMutualCancelacionDetalleById(id: string) {
     return this.executeEvaluateObj(
       buildSocioMutualCancelacionDetalleDefinition(id),
+    );
+  }
+
+  listPrestamosDelSocio(socioLegacyId: string) {
+    return this.executeEvaluateList(
+      buildPrestamosDelSocioDefinition(socioLegacyId),
+      100,
     );
   }
 
@@ -724,6 +753,20 @@ export function buildPrestamoDirectoDefinitionByOid(
     buildCmd: () => `[ID]=${oid}`,
     fields: PRESTAMO_DIRECTO_FIELDS,
     mapRow: mapPrestamoDirectoRow,
+    tipo: "F.Module.Cuentas.Prestamos.Prestamo",
+  };
+}
+
+export function buildPrestamosDelSocioDefinition(
+  socioLegacyId: string,
+): EvaluateListDefinition<PrestamoDelSocioLegacy> {
+  return {
+    // El id se interpola en la expresion de criterios, asi que quien llama
+    // tiene que haberlo validado como entero antes (ver el caso de uso).
+    buildCmd: () => `Integrantes[Socio.ID = ${socioLegacyId}].Count() > 0`,
+    defaultMax: 100,
+    fields: PRESTAMOS_DEL_SOCIO_FIELDS,
+    mapRow: mapPrestamoDelSocioRow,
     tipo: "F.Module.Cuentas.Prestamos.Prestamo",
   };
 }
@@ -1646,6 +1689,41 @@ function mapPrestamoOtorgadoRow(row: EvaluateListRow): PrestamoOtorgadoLegacy {
       prestamoOtorgadoFieldIndex,
       "Prestamo.Vencimiento",
     ),
+  };
+}
+
+function mapPrestamoDelSocioRow(row: EvaluateListRow): PrestamoDelSocioLegacy {
+  return {
+    capital: getNumberValue(row, prestamosDelSocioFieldIndex, "Capital"),
+    fechaEmision: getStringValue(
+      row,
+      prestamosDelSocioFieldIndex,
+      "FechaEmision",
+    ),
+    legacyId: getStringValue(row, prestamosDelSocioFieldIndex, "ID"),
+    lineaPrestamoDescripcion: getStringValue(
+      row,
+      prestamosDelSocioFieldIndex,
+      "LineaPrestamo.Descripcion",
+    ),
+    montoPrestamo: getNumberValue(
+      row,
+      prestamosDelSocioFieldIndex,
+      "MontoPrestamo",
+    ),
+    nroCuenta: getStringValue(row, prestamosDelSocioFieldIndex, "NroCuenta"),
+    primerVencimiento: getStringValue(
+      row,
+      prestamosDelSocioFieldIndex,
+      "PrimerVencimiento",
+    ),
+    saldo: getNumberValue(row, prestamosDelSocioFieldIndex, "Saldo"),
+    vencimiento: getStringValue(
+      row,
+      prestamosDelSocioFieldIndex,
+      "Vencimiento",
+    ),
+    vigente: getBooleanValue(row, prestamosDelSocioFieldIndex, "Vigente"),
   };
 }
 
