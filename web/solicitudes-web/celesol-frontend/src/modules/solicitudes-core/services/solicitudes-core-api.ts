@@ -221,6 +221,24 @@ export function patchSolicitudCoreAdjunto(
   );
 }
 
+export type CredixsaInformeResponse = {
+  cachedAt: string;
+  cacheHit: boolean;
+  cuit: string;
+  error: string;
+  /** El informe normalizado: persona, bcra, previsional, aportes, quiebras, alertas. */
+  informe: unknown;
+  nombre: string;
+  ok: boolean;
+  status: string;
+};
+
+export function getCredixsaSolicitud(solicitudId: string) {
+  return apiClient.get<{ credixsa: CredixsaInformeResponse | null }>(
+    `/solicitudes/${solicitudId}/credixsa`,
+  );
+}
+
 export type PrestamoDelSocioResponse = {
   capital: number | null;
   fechaEmision: string | null;
