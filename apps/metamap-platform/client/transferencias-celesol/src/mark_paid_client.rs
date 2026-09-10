@@ -147,6 +147,57 @@ mod tests {
     }
 
     #[test]
+    fn recovery_only_retries_transient_http_failures() {
+        for code in [400, 401, 403, 404, 409, 422, 408, 429, 500, 502, 503, 504] {
+            let error = anyhow!(MarkPaidHttpError {
+                status_code: code,
+                body: "test".into(),
+                request_oid: "249427".into()
+            });
+            assert_eq!(
+                crate::paid_recovery::retryable(&error),
+                code >= 500 || matches!(code, 408 | 429)
+            );
+        }
+        assert!(!crate::paid_recovery::retryable(&anyhow!("PDF ausente")));
+    }
+
+    #[test]
+    fn recovery_checks_state_after_500_and_never_reuploads_after_acceptance() {
+        use crate::paid_recovery::{PaidState, recover};
+        use std::cell::Cell;
+        let checks = Cell::new(0);
+        let uploads = Cell::new(0);
+        recover(
+            || {
+                checks.set(checks.get() + 1);
+                match checks.get() {
+                    1 => Err(anyhow!("EvaluateList temporalmente inaccesible")),
+                    2..=4 => Ok(PaidState::Pending),
+                    _ => Ok(PaidState::Paid),
+                }
+            },
+            || {
+                uploads.set(uploads.get() + 1);
+                if uploads.get() == 1 {
+                    Err(anyhow!(MarkPaidHttpError {
+                        status_code: 500,
+                        body: "test".into(),
+                        request_oid: "249427".into()
+                    }))
+                } else {
+                    Ok(())
+                }
+            },
+            |_| {},
+            || Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(checks.get(), 5);
+        assert_eq!(uploads.get(), 2);
+    }
+
+    #[test]
     fn serializes_oid_using_the_existing_numero_solicitud_property() {
         let request = MarkPaidRequest {
             numero_solicitud: "248948",

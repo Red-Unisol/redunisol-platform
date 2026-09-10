@@ -1,5 +1,34 @@
 # Transferencias Celesol
 
+## Evaluaciones y recuperacion del comprobante (2.1.1)
+
+- Cada solicitud evaluada emite `transfer_candidate_evaluated`, aun sin pulsar
+  Transferir: estado, linea, inhabilitacion, bloqueos y advertencias. Se registra la
+  primera evaluacion de cada sesion y los cambios (incluida la resolucion), no cada
+  refresco identico. Incluye lineas inhabilitadas. Usa la outbox central existente.
+  Es evidencia de la evaluacion, no una afirmacion de por que el operador actuo por fuera.
+- Tras un error HTTP 5xx, 408, 429 o de transporte al registrar un comprobante de
+  una transferencia confirmada, consulta `EvaluateList` por Oid cada 30 segundos,
+  durante 10 minutos. El plazo puede extenderse por la consulta HTTP ya en curso.
+  `Pagada` confirma el resultado. Solo `A Transferir` autoriza otro envio del mismo
+  comprobante. Respuestas vacias, ambiguas o fallidas nunca autorizan un envio;
+  otro estado detiene la recuperacion para revision. Errores locales y otros 4xx
+  no se reintentan. Tras un envio HTTP 200 solo consulta, sin volver a cargar el PDF.
+- La recuperacion corre en el worker existente, mantiene bloqueado el boton de esa
+  solicitud y muestra `Transferida: verificando Pagada...`. Nunca llama al banco.
+  Las automaticas conservan su serializacion y esperan este resultado.
+  Los eventos `mark_paid_recovery_started`, `mark_paid_state_checked` y
+  `mark_paid_recovery_confirmed`/`mark_paid_recovery_failed` documentan el resultado,
+  junto con los eventos existentes de cada intento de carga.
+- Mantener la app abierta hasta terminar. No hay reanudacion automatica de esta
+  recuperacion tras cerrar la app; el PDF, antirreenvio bancario y trazas permanecen.
+  Al vencer el plazo queda pendiente para revision, sin repetir el pago bancario.
+- Consultar antes de reenviar no garantiza idempotencia del endpoint externo:
+  una peticion anterior podria seguir procesandose o el estado consultado estar
+  atrasado. No se encontro en esta monorepo el contrato/implementacion del core que
+  garantice deduplicacion del comprobante. No se afirma semantica exactamente una vez.
+  No se modifican endpoints ni credenciales del entorno local.
+
 ## Autoactualizacion desde 2.1.0
 
 La version Windows release comprueba actualizaciones antes de abrir la configuracion

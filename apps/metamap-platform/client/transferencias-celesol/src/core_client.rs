@@ -20,6 +20,16 @@ pub struct CoreClient {
 }
 
 impl CoreClient {
+    pub fn fetch_paid_state(&self, request_oid: &str) -> Result<crate::paid_recovery::PaidState> {
+        let result = self.evaluate_list(json!({
+            "cmd": build_eval_criteria("Oid", request_oid).context("Solicitud sin Oid")?,
+            "tipo": "PreSolicitud.Module.Solicitud",
+            "campos": "Oid;Estado.Descripcion",
+            "max": 2,
+        }))?;
+        parse_paid_state(&result, request_oid)
+    }
+
     pub fn new(config: &CoreConfig, timeout: std::time::Duration) -> Result<Self> {
         let http = Client::builder()
             .timeout(timeout)
@@ -281,6 +291,29 @@ impl CoreClient {
     }
 }
 
+fn parse_paid_state(value: &Value, request_oid: &str) -> Result<crate::paid_recovery::PaidState> {
+    use crate::paid_recovery::PaidState;
+    let rows = value
+        .as_array()
+        .ok_or_else(|| anyhow!("EvaluateList no devolvio una lista"))?;
+    if rows.len() != 1 {
+        return Err(anyhow!(
+            "EvaluateList no devolvio exactamente una solicitud"
+        ));
+    }
+    let oid = read_indexed_value(&rows[0], 0, &["Oid", "ID"]);
+    if oid.as_deref() != Some(request_oid.trim()) {
+        return Err(anyhow!("EvaluateList devolvio otra solicitud"));
+    }
+    let state = read_indexed_value(&rows[0], 1, &["Estado.Descripcion", "EstadoDescripcion"])
+        .ok_or_else(|| anyhow!("EvaluateList no devolvio el estado"))?;
+    Ok(match state.trim().to_lowercase().as_str() {
+        "pagada" => PaidState::Paid,
+        "a transferir" => PaidState::Pending,
+        _ => PaidState::Other(state),
+    })
+}
+
 fn parse_core_snapshot(value: &Value) -> CoreSnapshot {
     let request_amount_raw = read_indexed_value(value, 2, &["MontoAFinanciar"]);
     CoreSnapshot {
@@ -466,6 +499,37 @@ fn mask_value(value: &str, visible_suffix: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn paid_state_requires_exactly_one_matching_request_and_explicit_status() {
+        use super::parse_paid_state;
+        use crate::paid_recovery::PaidState;
+        assert_eq!(
+            parse_paid_state(&json!([[249427, "Pagada"]]), "249427").unwrap(),
+            PaidState::Paid
+        );
+        assert_eq!(
+            parse_paid_state(
+                &json!([{"Oid": "249427", "Estado.Descripcion": " A Transferir "}]),
+                "249427"
+            )
+            .unwrap(),
+            PaidState::Pending
+        );
+        for invalid in [
+            json!([]),
+            json!({}),
+            json!([[1, "Pagada"]]),
+            json!([[249427]]),
+            json!([[249427, "Pagada"], [249427, "Pagada"]]),
+        ] {
+            assert!(parse_paid_state(&invalid, "249427").is_err());
+        }
+        assert!(matches!(
+            parse_paid_state(&json!([[249427, "Anulada"]]), "249427").unwrap(),
+            PaidState::Other(_)
+        ));
+    }
+
     use serde_json::json;
 
     use super::{

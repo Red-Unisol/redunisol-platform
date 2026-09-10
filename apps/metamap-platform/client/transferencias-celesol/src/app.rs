@@ -1208,7 +1208,10 @@ impl eframe::App for TransferenciasApp {
                                     && item.validation.can_transfer()
                                     && !item.busy;
                                 if item.busy {
-                                    ui.label("Procesando...");
+                                    let recovering = self.services.recovering_receipts.read()
+                                        .map(|items| items.contains(item.request_oid())).unwrap_or(false);
+                                    ui.label(if recovering { "Transferida: verificando Pagada..." } else { "Procesando..." })
+                                        .on_hover_text(if recovering { "Recuperacion del comprobante cada 30 s, hasta 10 min. No repetir la transferencia ni cerrar la app." } else { "Operacion en curso." });
                                     return;
                                 }
                                 ui.vertical(|ui| {
@@ -1569,6 +1572,8 @@ struct AppServices {
     receipts_dir: PathBuf,
     automatic_receipts_dir: PathBuf,
     observed_candidates: Arc<RwLock<HashSet<String>>>,
+    observed_evaluations: Arc<RwLock<HashMap<String, Value>>>,
+    recovering_receipts: Arc<RwLock<HashSet<String>>>,
 }
 
 impl AppServices {
@@ -1685,6 +1690,8 @@ impl AppServices {
             receipts_dir: config.receipts_dir,
             automatic_receipts_dir: config.automatic_receipts_dir,
             observed_candidates: Arc::new(RwLock::new(HashSet::new())),
+            observed_evaluations: Arc::new(RwLock::new(HashMap::new())),
+            recovering_receipts: Arc::new(RwLock::new(HashSet::new())),
         };
         log::info!(
             "Servicios listos. transfer_enabled={}. mark_paid_enabled={}. lineas_habilitadas={} lineas_auto={} cancelaciones_habilitadas={} cancelaciones_auto={} lineas_path={:?}.",
@@ -1989,6 +1996,61 @@ impl AppServices {
     }
 
     fn register_paid_receipt(
+        &self,
+        request_oid: &str,
+        transfer_kind: TransferKind,
+        receipt_path: &std::path::Path,
+    ) -> Result<()> {
+        let initial = self.register_paid_receipt_once(request_oid, transfer_kind, receipt_path);
+        match initial {
+            Ok(()) => return Ok(()),
+            Err(error) if !crate::paid_recovery::retryable(&error) => return Err(error),
+            Err(_) => {}
+        }
+        let started = Instant::now();
+        if let Ok(mut items) = self.recovering_receipts.write() {
+            items.insert(request_oid.to_owned());
+        }
+        log_transfer_audit(
+            "mark_paid_recovery_started",
+            request_oid,
+            transfer_kind,
+            json!({"interval_seconds": 30, "window_seconds": 600, "receipt_path": receipt_path}),
+        );
+        let result = crate::paid_recovery::recover(
+            || {
+                let result = self.core.fetch_paid_state(request_oid);
+                log_transfer_audit(
+                    "mark_paid_state_checked",
+                    request_oid,
+                    transfer_kind,
+                    json!({"state": result.as_ref().ok().map(|state| format!("{state:?}")),
+                        "error": result.as_ref().err().map(|error| format!("{error:#}"))}),
+                );
+                result
+            },
+            || self.register_paid_receipt_once(request_oid, transfer_kind, receipt_path),
+            thread::sleep,
+            || started.elapsed(),
+        );
+        log_transfer_audit(
+            if result.is_ok() {
+                "mark_paid_recovery_confirmed"
+            } else {
+                "mark_paid_recovery_failed"
+            },
+            request_oid,
+            transfer_kind,
+            json!({"error": result.as_ref().err().map(|error| format!("{error:#}")),
+                "receipt_path": receipt_path, "elapsed_seconds": started.elapsed().as_secs()}),
+        );
+        if let Ok(mut items) = self.recovering_receipts.write() {
+            items.remove(request_oid);
+        }
+        result
+    }
+
+    fn register_paid_receipt_once(
         &self,
         request_oid: &str,
         transfer_kind: TransferKind,
@@ -2393,6 +2455,7 @@ impl AppServices {
             case.validation.blockers.len(),
             case.validation.warnings.len()
         );
+        self.record_evaluation(case);
         if !case.busy {
             if !runtime_errors.is_empty() {
                 case.message = Some(runtime_errors.join(" | "));
@@ -2419,6 +2482,7 @@ impl AppServices {
             blockers: vec![format!("Línea de crédito deshabilitada: {line}")],
             warnings: Vec::new(),
         };
+        self.record_evaluation(case);
         if !case.busy {
             case.message = None;
         }
@@ -2428,6 +2492,36 @@ impl AppServices {
             case.core.credit_line_id,
             case.core.credit_line_description
         );
+    }
+
+    fn record_evaluation(&self, case: &HydratedCase) {
+        let data = json!({
+            "request_status": case.core.request_status,
+            "credit_line_id": case.core.credit_line_id,
+            "disabled": case.validation.disabled,
+            "blockers": case.validation.blockers,
+            "warnings": case.validation.warnings,
+            "source": "evaluation",
+        });
+        let Ok(mut observed) = self.observed_evaluations.write() else {
+            log::warn!(
+                "No se pudo deduplicar la evaluacion de {}",
+                case.request_oid()
+            );
+            return;
+        };
+        if !evaluation_changed(&mut observed, case.request_oid(), &data) {
+            return;
+        }
+        if !trace::try_record_audit(
+            "transfer_candidate_evaluated",
+            Some(case.request_oid()),
+            None,
+            data,
+        ) {
+            // A failed local append must be tried again on the next evaluation.
+            observed.remove(case.request_oid());
+        }
     }
 
     fn execute_transfer(&self, case: HydratedCase, transfer_kind: TransferKind) -> WorkerEvent {
@@ -2702,7 +2796,7 @@ impl AppServices {
                     Some(path) => {
                         match self.register_paid_receipt(case.request_oid(), transfer_kind, path) {
                             Ok(()) => format!(
-                                "Transferencia confirmada para solicitud {} con idCoelsa {}. Comprobante registrado y solicitud marcada como Pagada.",
+                                "Transferencia confirmada para solicitud {} con idCoelsa {}. Estado Pagada confirmado en el core.",
                                 case.request_oid(),
                                 external_transfer_id
                             ),
@@ -2710,7 +2804,7 @@ impl AppServices {
                                 updated.message =
                                     Some("TRANSFERIDA - ERROR AL REGISTRAR COMPROBANTE".to_owned());
                                 format!(
-                                    "ATENCION: la transferencia de la solicitud {} fue confirmada con idCoelsa {}, pero no se pudo registrar el comprobante ni marcarla como Pagada. No repetir la transferencia; requiere revision. Error: {}",
+                                    "ATENCION: la transferencia de la solicitud {} fue confirmada con idCoelsa {}, pero no se pudo confirmar el registro en el core. No repetir la transferencia; requiere revision. Error: {}",
                                     case.request_oid(),
                                     external_transfer_id,
                                     error
@@ -3021,11 +3115,16 @@ impl AppServices {
                 );
             }
         };
-        let mark_paid_message =
-            match self.register_paid_receipt(case.request_oid(), transfer_kind, &receipt_path) {
-                Ok(()) => " Comprobante registrado y solicitud marcada como Pagada.".to_owned(),
-                Err(error) => format!(" No se pudo registrar el comprobante: {error}"),
-            };
+        let mark_paid_message = match self.register_paid_receipt(
+            case.request_oid(),
+            transfer_kind,
+            &receipt_path,
+        ) {
+            Ok(()) => " Estado Pagada confirmado en el core.".to_owned(),
+            Err(error) => format!(
+                " No se pudo confirmar el registro en el core. No repetir la transferencia: {error}"
+            ),
+        };
         case.transfer_guard = CoinagTransferGuard::YaTransferida;
         case.message = Some("YA TRANSFERIDA".to_owned());
         WorkerEvent::CaseUpdated {
@@ -3153,6 +3252,14 @@ fn format_reconcile_summary(summary: ReconcileSummary) -> String {
     )
 }
 
+fn evaluation_changed(observed: &mut HashMap<String, Value>, oid: &str, data: &Value) -> bool {
+    if observed.get(oid) == Some(data) {
+        return false;
+    }
+    observed.insert(oid.to_owned(), data.clone());
+    true
+}
+
 fn preserve_busy_items(
     current_items: &[HydratedCase],
     mut loaded_items: Vec<HydratedCase>,
@@ -3181,6 +3288,19 @@ fn preserve_busy_items(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn evaluation_records_first_observation_changes_and_resolution_without_transfer() {
+        let mut observed = HashMap::new();
+        let blocked = json!({"blockers": ["CBU invalido"], "warnings": []});
+        let warned = json!({"blockers": [], "warnings": ["Sin MetaMap"]});
+        let clear = json!({"blockers": [], "warnings": []});
+        assert!(evaluation_changed(&mut observed, "249427", &blocked));
+        assert!(!evaluation_changed(&mut observed, "249427", &blocked));
+        assert!(evaluation_changed(&mut observed, "249427", &warned));
+        assert!(evaluation_changed(&mut observed, "249427", &clear));
+        assert!(evaluation_changed(&mut observed, "249428", &clear));
+    }
 
     fn build_case(request_oid: &str, busy: bool, message: Option<&str>) -> HydratedCase {
         HydratedCase {
