@@ -73,12 +73,14 @@ const envSchema = z.object({
         : FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO,
     z.string().url("FINALIZAR_FIRMA_DIGITAL_BASE_URL must be a valid URL"),
   ),
-  // URL completa del webhook de Kestra que precalienta el informe de CredixSA
-  // al crear una solicitud, con la clave incluida -- se guarda entera para que
-  // la clave no quede en el codigo, igual que hace redunisol-web.
+  // URL completa del webhook de Kestra que consulta CredixSA al crear una
+  // solicitud (el envoltorio consulta_credixsa_por_solicitud), con la clave
+  // incluida -- se guarda entera para que la clave no quede en el codigo,
+  // igual que hace redunisol-web. El informe que devuelve queda guardado en
+  // la base para la pestaña.
   //
-  // Vacia o ausente deshabilita la consulta: la app arranca igual y el
-  // analista consulta CredixSA en el momento, como hasta ahora.
+  // Vacia o ausente deshabilita la consulta: la app arranca igual y la
+  // pestaña consulta CredixSA en el momento.
   CREDIXSA_CONSULTA_WEBHOOK_URL: z
     .string()
     .trim()
@@ -102,11 +104,20 @@ const envSchema = z.object({
     .int("CREDIXSA_INFORME_TIMEOUT_MS must be an integer")
     .positive("CREDIXSA_INFORME_TIMEOUT_MS must be greater than 0")
     .default(180000),
+  // Cuanto espera el alta de una solicitud la respuesta de Kestra para
+  // guardar el informe. Corre en segundo plano, sin nadie esperando del otro
+  // lado, asi que es alto: tiene que cubrir la cola del envoltorio
+  // (concurrency 1) mas el scraping.
+  //
+  // Subirlo de 5 minutos no sirve: el fetch de Node (undici) corta solo si la
+  // respuesta no empezo a llegar en ese tiempo, y el webhook de Kestra no
+  // manda nada hasta terminar. Si se corta no se pierde la consulta: el flow
+  // termina igual, deja la cache de Kestra lista y la pestaña la aprovecha.
   CREDIXSA_CONSULTA_TIMEOUT_MS: z.coerce
     .number()
     .int("CREDIXSA_CONSULTA_TIMEOUT_MS must be an integer")
     .positive("CREDIXSA_CONSULTA_TIMEOUT_MS must be greater than 0")
-    .default(5000),
+    .default(300000),
   LEGACY_API_BASE_URL: z.string().url("LEGACY_API_BASE_URL must be a valid URL"),
   LEGACY_API_TIMEOUT_MS: z.coerce
     .number()

@@ -1,6 +1,7 @@
 ﻿import type { Prisma } from "@prisma/client";
 
 import type { DbClient } from "../../../../db/prisma";
+import { ESTADOS_QUE_BORRAN_INFORME_CREDIXSA } from "../../domain/repositories/SolicitudCredixsaInformeRepository";
 import type {
   ExecuteSolicitudWorkflowPlanInput,
   SolicitudWorkflowRepository,
@@ -58,6 +59,7 @@ const transitionInclude = {
 type WorkflowExecutor = Pick<
   DbClient,
   | "solicitud"
+  | "solicitudCredixsaInforme"
   | "solicitudEstadoHistorial"
   | "workflowTransition"
   | "user"
@@ -288,6 +290,17 @@ export class SolicitudWorkflowPrismaDatasource {
               now: input.plan.command.now,
               solicitud,
               transition,
+            });
+          }
+
+          // La solicitud termino mal: se borra su informe de CredixSA en la
+          // misma transaccion, asi el borrado nunca queda a medias respecto
+          // del cambio de estado.
+          if (ESTADOS_QUE_BORRAN_INFORME_CREDIXSA.includes(transition.toState.code)) {
+            await executor.solicitudCredixsaInforme.deleteMany({
+              where: {
+                solicitudId: solicitud.id,
+              },
             });
           }
 

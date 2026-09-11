@@ -172,6 +172,7 @@ model Solicitud {
   garantias                SolicitudGarantia[]
   adjuntos                 SolicitudAdjunto[]
   cancelaciones            SolicitudCancelacion[]
+  credixsaInforme          SolicitudCredixsaInforme?
   estadoHistorial          SolicitudEstadoHistorial[]
   participants             SolicitudParticipant[]
 
@@ -431,6 +432,23 @@ model SolicitudCancelacion {
   @@index([solicitudId])
   @@index([createdBy])
   @@map("solicitud_cancelaciones")
+}
+
+// Informe de CredixSA de la solicitud, para que la pestaña no espere a Kestra.
+// Se borra al pasar a Desestimada, Rechazada o Vencida.
+model SolicitudCredixsaInforme {
+  id           String    @id @default(uuid()) @db.Uuid
+  solicitudId  String    @unique @map("solicitud_id") @db.Uuid
+  cuit         String
+  nombre       String
+  status       String
+  informe      Json
+  consultadoEn DateTime  @map("consultado_en")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  solicitud    Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@map("solicitud_credixsa_informes")
 }
 
 model SolicitudFieldAccessRule {
