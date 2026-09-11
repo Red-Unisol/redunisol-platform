@@ -18,6 +18,7 @@ import type { ListSolicitudHistoryUseCase } from "../application/use-cases/ListS
 import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/ListSolicitudTransitions.use-case";
 import { GetCredixsaSolicitudUseCase } from "../application/use-cases/GetCredixsaSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
+import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
@@ -34,6 +35,7 @@ import {
   getSolicitudesStatsQuerySchema,
   listSolicitudesQuerySchema,
   patchSolicitudBodySchema,
+  prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
   solicitudByIdParamsSchema,
   type AssignSolicitudToSelfBody,
@@ -43,6 +45,7 @@ import {
   type GetSolicitudesStatsQuery,
   type ListSolicitudesQuery,
   type PatchSolicitudBody,
+  type PrestamoDelSocioParams,
   type SimularPrestamoBody,
   type SolicitudByIdParams,
 } from "./SolicitudesCoreRequest.schema";
@@ -71,6 +74,7 @@ type Dependencies = {
   listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
   getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
+  getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
@@ -93,6 +97,7 @@ export class SolicitudesCoreController {
   private readonly listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   private readonly listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
   private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
+  private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
@@ -119,6 +124,7 @@ export class SolicitudesCoreController {
     this.listSolicitudTransitionsUseCase =
       dependencies.listSolicitudTransitionsUseCase;
     this.getCredixsaSolicitudUseCase = dependencies.getCredixsaSolicitudUseCase;
+    this.getPrestamoDelSocioUseCase = dependencies.getPrestamoDelSocioUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
@@ -324,6 +330,35 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json({ prestamos });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Detalle de un prestamo del socio, para el modal de la pestaña. Mismo
+  // criterio de acceso que la lista.
+  getPrestamoDelSocio = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<PrestamoDelSocioParams>(
+        prestamoDelSocioParamsSchema,
+        req.params,
+      );
+      const detalle = await this.getPrestamoDelSocioUseCase.execute({
+        prestamoId: params.prestamoId,
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(detalle);
     } catch (error) {
       next(error);
     }

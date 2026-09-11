@@ -42,6 +42,13 @@ export class SolicitudCoreNotFoundError extends SolicitudesError {
   }
 }
 
+export class PrestamoDelSocioNotFoundError extends SolicitudesError {
+  constructor() {
+    super("Prestamo del socio not found.", 404);
+    this.name = "PrestamoDelSocioNotFoundError";
+  }
+}
+
 export class SolicitudPrestamoNoGeneradoError extends SolicitudesError {
   constructor() {
     super("El préstamo de esta solicitud todavía no fue generado.", 400);

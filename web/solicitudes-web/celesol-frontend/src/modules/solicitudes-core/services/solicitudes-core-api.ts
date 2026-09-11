@@ -266,6 +266,34 @@ export function listPrestamosDelSocio(solicitudId: string) {
   );
 }
 
+export type PrestamoDelSocioDetalleResponse = {
+  asiento: string | null;
+  cobrador: string | null;
+  destino: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  nroCuenta: string | null;
+  ordenCompra: string | null;
+  /** Fraccion (0.1135), no porcentaje. */
+  tasaInicial: number | null;
+};
+
+export type CuotaPrestamoResponse = {
+  capital: number | null;
+  fecha: string | null;
+  montoTotal: number | null;
+  nroCuota: number | null;
+  saldoCuota: number | null;
+  saldoCuotaConPunitorios: number | null;
+};
+
+export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
+  return apiClient.get<{
+    cuotas: CuotaPrestamoResponse[];
+    prestamo: PrestamoDelSocioDetalleResponse;
+  }>(`/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}`);
+}
+
 export function listSolicitudCoreCancelaciones(solicitudId: string) {
   return apiClient.get<SolicitudCoreCancelacionResponse[]>(
     `/solicitudes/${solicitudId}/cancelaciones`,

@@ -1,7 +1,9 @@
 import { LegacySolicitudesUnavailableError } from "../../domain/solicitudes-errors";
 import type { SolicitudesLegacyGateway } from "../../domain/services/SolicitudesLegacyGateway";
 import type {
+  CuotaPrestamoLegacy,
   LineaPrestamoPresolicitud,
+  PrestamoDelSocioDetalleLegacy,
   PrestamoDelSocioLegacy,
   PrestamoOtorgadoLegacy,
   SocioMutualCancelacionDetalle,
@@ -214,6 +216,36 @@ const PRESTAMOS_DEL_SOCIO_FIELDS = [
   "Vencimiento",
 ] as const;
 
+// Detalle de un prestamo para el modal de la pestaña Préstamos. Estos nombres
+// no estan en la referencia del BOModel: se encontraron contra la API real,
+// comparando con la ficha del prestamo en Vimarx. "Orden de Compra" es
+// Referencia; Cobrador y Destino son objetos, y el texto que muestra Vimarx
+// esta en Denominacion y Nombre.
+const PRESTAMO_DEL_SOCIO_DETALLE_FIELDS = [
+  "ID",
+  "NroCuenta",
+  "Referencia",
+  "Cobrador.Denominacion",
+  "Destino.Nombre",
+  "Asiento.NroAsiento",
+  "LineaPrestamo.Descripcion",
+  "TasaInicial",
+] as const;
+
+// CuotaPrestamo trae, ademas del plan de cuotas, el desembolso y cada pago
+// como filas propias. Descripcion y Prestamo.NroCuenta no se muestran: se
+// piden solo para separar unas de otras (ver esCuotaDelPlan).
+const CUOTAS_DEL_PRESTAMO_FIELDS = [
+  "NroCuota",
+  "Fecha",
+  "MontoTotal",
+  "SaldoCuotaConPunitorios",
+  "SaldoCuota",
+  "Capital",
+  "Descripcion",
+  "Prestamo.NroCuenta",
+] as const;
+
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
   "Oid",
   "Vigente",
@@ -316,6 +348,12 @@ const prestamoOtorgadoFieldIndex = buildFieldIndexByName(
 );
 const prestamosDelSocioFieldIndex = buildFieldIndexByName(
   PRESTAMOS_DEL_SOCIO_FIELDS,
+);
+const prestamoDelSocioDetalleFieldIndex = buildFieldIndexByName(
+  PRESTAMO_DEL_SOCIO_DETALLE_FIELDS,
+);
+const cuotasDelPrestamoFieldIndex = buildFieldIndexByName(
+  CUOTAS_DEL_PRESTAMO_FIELDS,
 );
 
 const prestamoDirectoFieldIndex = buildFieldIndexByName(
@@ -468,6 +506,26 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       buildPrestamosDelSocioDefinition(socioLegacyId),
       100,
     );
+  }
+
+  async getPrestamoDelSocio(socioLegacyId: string, prestamoLegacyId: string) {
+    const prestamos = await this.executeEvaluateList(
+      buildPrestamoDelSocioDetalleDefinition(socioLegacyId, prestamoLegacyId),
+      1,
+    );
+
+    return prestamos[0] ?? null;
+  }
+
+  async listCuotasDelPrestamo(prestamoLegacyId: string) {
+    const filas = await this.executeEvaluateList(
+      buildCuotasDelPrestamoDefinition(prestamoLegacyId),
+    );
+
+    return filas
+      .filter((fila) => fila.esCuotaDelPlan)
+      .map((fila) => fila.cuota)
+      .sort((a, b) => (a.nroCuota ?? 0) - (b.nroCuota ?? 0));
   }
 
   listSociosCancelaciones() {
@@ -769,6 +827,66 @@ export function buildPrestamosDelSocioDefinition(
     mapRow: mapPrestamoDelSocioRow,
     tipo: "F.Module.Cuentas.Prestamos.Prestamo",
   };
+}
+
+export function buildPrestamoDelSocioDetalleDefinition(
+  socioLegacyId: string,
+  prestamoLegacyId: string,
+): EvaluateListDefinition<PrestamoDelSocioDetalleLegacy> {
+  return {
+    // Los dos ids se interpolan en la expresion de criterios, asi que quien
+    // llama tiene que haberlos validado como enteros antes (ver el caso de
+    // uso).
+    //
+    // La condicion sobre Integrantes no es redundante: es la que impide pedir
+    // por id el prestamo de otra persona cambiando el numero en la URL.
+    buildCmd: () =>
+      `[ID] = ${prestamoLegacyId} And Integrantes[Socio.ID = ${socioLegacyId}].Count() > 0`,
+    defaultMax: 1,
+    fields: PRESTAMO_DEL_SOCIO_DETALLE_FIELDS,
+    mapRow: mapPrestamoDelSocioDetalleRow,
+    tipo: "F.Module.Cuentas.Prestamos.Prestamo",
+  };
+}
+
+export function buildCuotasDelPrestamoDefinition(
+  prestamoLegacyId: string,
+): EvaluateListDefinition<{
+  cuota: CuotaPrestamoLegacy;
+  esCuotaDelPlan: boolean;
+}> {
+  return {
+    // Mismo cuidado que arriba: el id tiene que venir validado como entero.
+    buildCmd: () => `[Prestamo.ID] = ${prestamoLegacyId}`,
+    // Holgado a proposito: cada pago suma filas, y un tope corto podria dejar
+    // afuera cuotas del plan. El prestamo de 18 cuotas que se reviso tenia 46.
+    defaultMax: 2000,
+    fields: CUOTAS_DEL_PRESTAMO_FIELDS,
+    mapRow: mapCuotaDelPrestamoRow,
+    tipo: "F.Module.Cuentas.Prestamos.CuotaPrestamo",
+  };
+}
+
+// Vimarx guarda en CuotaPrestamo el plan de cuotas junto con el desembolso
+// ("Desembolso 17640860") y cada pago ("PG 17776618 31/8/2025"), y la API no
+// expone ningun campo que diga que es cada fila. Lo que las distingue es la
+// descripcion: las del plan son "<NroCuenta>/<NroCuota>". Verificado contra la
+// API real en prestamos de tres lineas y epocas distintas: en los tres quedaron
+// exactamente Cuotas + 1 filas (la cuota 0 incluida), sin huecos.
+export function esCuotaDelPlan(fila: {
+  descripcion: string | null;
+  nroCuenta: string | null;
+  nroCuota: number | null;
+}) {
+  if (
+    fila.descripcion === null ||
+    fila.nroCuenta === null ||
+    fila.nroCuota === null
+  ) {
+    return false;
+  }
+
+  return fila.descripcion.trim() === `${fila.nroCuenta.trim()}/${fila.nroCuota}`;
 }
 
 export function buildLineasPrestamoDefinitionByAgente(
@@ -1724,6 +1842,89 @@ function mapPrestamoDelSocioRow(row: EvaluateListRow): PrestamoDelSocioLegacy {
       "Vencimiento",
     ),
     vigente: getBooleanValue(row, prestamosDelSocioFieldIndex, "Vigente"),
+  };
+}
+
+function mapPrestamoDelSocioDetalleRow(
+  row: EvaluateListRow,
+): PrestamoDelSocioDetalleLegacy {
+  return {
+    asiento: getStringValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "Asiento.NroAsiento",
+    ),
+    cobrador: getStringValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "Cobrador.Denominacion",
+    ),
+    destino: getStringValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "Destino.Nombre",
+    ),
+    legacyId: getStringValue(row, prestamoDelSocioDetalleFieldIndex, "ID"),
+    lineaPrestamoDescripcion: getStringValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "LineaPrestamo.Descripcion",
+    ),
+    nroCuenta: getStringValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "NroCuenta",
+    ),
+    ordenCompra: getStringValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "Referencia",
+    ),
+    tasaInicial: getNumberValue(
+      row,
+      prestamoDelSocioDetalleFieldIndex,
+      "TasaInicial",
+    ),
+  };
+}
+
+function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
+  const nroCuota = getNumberValue(row, cuotasDelPrestamoFieldIndex, "NroCuota");
+
+  return {
+    cuota: {
+      capital: getNumberValue(row, cuotasDelPrestamoFieldIndex, "Capital"),
+      fecha: getStringValue(row, cuotasDelPrestamoFieldIndex, "Fecha"),
+      montoTotal: getNumberValue(
+        row,
+        cuotasDelPrestamoFieldIndex,
+        "MontoTotal",
+      ),
+      nroCuota,
+      saldoCuota: getNumberValue(
+        row,
+        cuotasDelPrestamoFieldIndex,
+        "SaldoCuota",
+      ),
+      saldoCuotaConPunitorios: getNumberValue(
+        row,
+        cuotasDelPrestamoFieldIndex,
+        "SaldoCuotaConPunitorios",
+      ),
+    },
+    esCuotaDelPlan: esCuotaDelPlan({
+      descripcion: getStringValue(
+        row,
+        cuotasDelPrestamoFieldIndex,
+        "Descripcion",
+      ),
+      nroCuenta: getStringValue(
+        row,
+        cuotasDelPrestamoFieldIndex,
+        "Prestamo.NroCuenta",
+      ),
+      nroCuota,
+    }),
   };
 }
 

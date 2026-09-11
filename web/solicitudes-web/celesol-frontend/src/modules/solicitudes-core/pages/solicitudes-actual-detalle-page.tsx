@@ -69,7 +69,9 @@ import { useAssignSolicitudToSelfMutation } from "@/modules/solicitudes-core/hoo
 import { useAssignSolicitudToUserMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-user-mutation";
 import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-adjuntos-query";
 import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
+import { PrestamoDelSocioDialog } from "@/modules/solicitudes-core/components/prestamo-del-socio-dialog";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
+import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
 import { useCreateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-create-solicitud-core-cancelacion-mutation";
 import { useUpdateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-update-solicitud-core-cancelacion-mutation";
@@ -287,6 +289,10 @@ function PrestamosDelSocioSection({
     isActive,
   );
   const prestamos = data?.prestamos ?? [];
+  // Id en Vimarx del prestamo abierto en el modal; null con el modal cerrado.
+  const [prestamoAbiertoId, setPrestamoAbiertoId] = useState<string | null>(
+    null,
+  );
 
   return (
     <div className="overflow-x-auto">
@@ -327,12 +333,26 @@ function PrestamosDelSocioSection({
               <tr
                 // Los no vigentes van atenuados: siguen siendo utiles como
                 // historial, pero no son la informacion principal.
-                className={
-                  prestamo.vigente
-                    ? "border-t border-border"
-                    : "border-t border-border text-foreground-secondary"
-                }
+                className={[
+                  "border-t border-border",
+                  prestamo.vigente ? "" : "text-foreground-secondary",
+                  prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 key={prestamo.legacyId ?? prestamo.nroCuenta}
+                onClick={() => {
+                  if (prestamo.legacyId) {
+                    setPrestamoAbiertoId(prestamo.legacyId);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && prestamo.legacyId) {
+                    setPrestamoAbiertoId(prestamo.legacyId);
+                  }
+                }}
+                tabIndex={prestamo.legacyId ? 0 : undefined}
+                title={prestamo.legacyId ? "Ver detalle del préstamo" : undefined}
               >
                 <td className="border-r border-border px-3 py-2">
                   {prestamo.nroCuenta || PLACEHOLDER}
@@ -366,21 +386,17 @@ function PrestamosDelSocioSection({
           )}
         </tbody>
       </table>
+      <PrestamoDelSocioDialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setPrestamoAbiertoId(null);
+          }
+        }}
+        prestamoId={prestamoAbiertoId}
+        solicitudId={solicitudId}
+      />
     </div>
   );
-}
-
-// El legado devuelve las fechas con hora ("2024-11-14T00:00:00"). Se corta en
-// vez de parsear a Date a proposito: construir un Date corre la fecha un dia
-// segun la zona horaria.
-function formatLegacyDate(value: string | null) {
-  if (!value) {
-    return PLACEHOLDER;
-  }
-
-  const [anio, mes, dia] = value.slice(0, 10).split("-");
-
-  return dia && mes && anio ? `${dia}/${mes}/${anio}` : PLACEHOLDER;
 }
 
 type CancelacionesSectionProps = {
