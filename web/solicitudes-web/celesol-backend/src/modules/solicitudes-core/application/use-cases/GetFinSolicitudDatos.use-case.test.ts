@@ -125,11 +125,13 @@ function buildLegacyGateway(
     getLegacyUserId: async () => null,
     getLineasPrestamoByLegacyUser: async () => [],
     getPrecarga: async () => [],
+    getPrestamoDelSocio: async () => null,
     getPrestamoOtorgadoByLegacyOid: async () => prestamo,
     getRecientes: async () => [],
     getSocioByDni: async () => [],
     getSocioMutualCancelacionDetalleById: async () => null,
     getVendedorLegacyId: async () => null,
+    listCuotasDelPrestamo: async () => [],
     listPrestamosDelSocio: async () => [],
     listSociosCancelaciones: async () => [],
   };

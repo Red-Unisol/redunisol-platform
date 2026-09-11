@@ -204,6 +204,12 @@ export const solicitudByIdParamsSchema = z.object({
   id: z.string().uuid("id must be a valid uuid"),
 });
 
+// "prestamoId" es el ID del prestamo en Vimarx. Solo digitos: se interpola en
+// la expresion de criterios del legado.
+export const prestamoDelSocioParamsSchema = solicitudByIdParamsSchema.extend({
+  prestamoId: z.string().regex(/^\d+$/, "prestamoId must be numeric"),
+});
+
 // Replica la forma de POST /api/redunisol/finSolicitud/:ntrans/:sol (ver
 // finalizar-api-caja-celesol-contrato.txt). "ntrans" se acepta pero no se
 // usa -- el legacy tampoco lo usaba, Laravel mandaba "0" por default.
@@ -350,6 +356,7 @@ export type GetAnalistaStatsQuery = z.infer<typeof getAnalistaStatsQuerySchema>;
 export type ListSolicitudesQuery = z.infer<typeof listSolicitudesQuerySchema>;
 export type PatchSolicitudBody = z.infer<typeof patchSolicitudBodySchema>;
 export type SolicitudByIdParams = z.infer<typeof solicitudByIdParamsSchema>;
+export type PrestamoDelSocioParams = z.infer<typeof prestamoDelSocioParamsSchema>;
 export type FinSolicitudParams = z.infer<typeof finSolicitudParamsSchema>;
 export type AssignSolicitudToSelfBody = z.infer<typeof assignSolicitudToSelfBodySchema>;
 export type AssignSolicitudToUserBody = z.infer<typeof assignSolicitudToUserBodySchema>;

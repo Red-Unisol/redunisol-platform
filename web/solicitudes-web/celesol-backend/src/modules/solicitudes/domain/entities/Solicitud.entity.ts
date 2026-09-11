@@ -227,6 +227,33 @@ export type PrestamoDelSocioLegacy = {
   vigente: boolean | null;
 };
 
+// Detalle de un prestamo del socio, para el modal de la pestaña Préstamos. Son
+// los datos que los analistas miraban en la ficha del prestamo en Vimarx.
+//
+// "tasaInicial" llega como fraccion (0.1135), no como porcentaje: Vimarx la
+// muestra multiplicada por 100 (11,350 %).
+export type PrestamoDelSocioDetalleLegacy = {
+  asiento: string | null;
+  cobrador: string | null;
+  destino: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  nroCuenta: string | null;
+  ordenCompra: string | null;
+  tasaInicial: number | null;
+};
+
+// Una cuota del plan de un prestamo. Solo las del plan: el desembolso y los
+// pagos tambien son filas de CuotaPrestamo en Vimarx, pero no son cuotas.
+export type CuotaPrestamoLegacy = {
+  capital: number | null;
+  fecha: string | null;
+  montoTotal: number | null;
+  nroCuota: number | null;
+  saldoCuota: number | null;
+  saldoCuotaConPunitorios: number | null;
+};
+
 export type LineaPrestamoPresolicitud = {
   cantidadMaximaCuotas: number | null;
   cantidadMinimaCuotas: number | null;
