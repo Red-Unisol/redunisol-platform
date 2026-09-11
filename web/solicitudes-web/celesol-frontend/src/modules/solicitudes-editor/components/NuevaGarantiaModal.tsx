@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import type { CreateSolicitudCoreGarantiaRequest } from "@/modules/solicitudes/types/solicitudes-core";
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
+import { formatMoneyAmount } from "@/shared/utils/money-format";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { DateInput } from "@/shared/components/ui/date-input";
@@ -181,12 +182,7 @@ export function NuevaGarantiaModal({
     setCelular(nextValues?.celular ?? "");
     setDomicilio(nextValues?.domicilio ?? "");
     setOcupacion(nextValues?.ocupacion ?? "");
-    setIngresoMensual(
-      nextValues?.ingresoMensual === null ||
-        nextValues?.ingresoMensual === undefined
-        ? ""
-        : String(nextValues.ingresoMensual),
-    );
+    setIngresoMensual(formatMoneyAmount(nextValues?.ingresoMensual));
     setFechaIngresoLaboral(nextValues?.fechaIngresoLaboral ?? "");
     setAntiguedadLaboralMeses(
       nextValues?.antiguedadLaboralMeses === null ||

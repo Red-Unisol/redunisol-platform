@@ -130,7 +130,7 @@ import type {
 } from "@/modules/socios/types";
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
-  formatMoneyValue,
+  formatMoneyAmount,
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
@@ -486,7 +486,7 @@ function CancelacionesSection({
           cbu: editingCancelacion.cbu,
           cuentaADebitar: editingCancelacion.cuentaADebitar,
           cuentaBancaria: editingCancelacion.cuentaBancaria,
-          monto: formatMoneyValue(String(editingCancelacion.monto)),
+          monto: formatMoneyAmount(editingCancelacion.monto),
           notas: editingCancelacion.notas ?? "",
           socio: editingCancelacion.socio,
           socioLegacyId: editingCancelacion.socioLegacyId ?? "",
