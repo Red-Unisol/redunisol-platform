@@ -1,5 +1,6 @@
 import type { ChangeSolicitudStateInput } from "../dtos/ChangeSolicitudState.dto";
 import { AnnotateSolicitudTransitionsBlockedReason } from "../services/AnnotateSolicitudTransitionsBlockedReason";
+import { EnsureSolicitudHasMontoRecibo } from "../services/EnsureSolicitudHasMontoRecibo";
 import { EnsureSolicitudHasPrestamoLegacy } from "../services/EnsureSolicitudHasPrestamoLegacy";
 import { EnsureSolicitudHasReciboSueldoAdjunto } from "../services/EnsureSolicitudHasReciboSueldoAdjunto";
 import { EnsureSolicitudTitularHasRequiredDataForConfirmar } from "../services/EnsureSolicitudTitularHasRequiredDataForConfirmar";
@@ -24,6 +25,7 @@ const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
 
 export class ChangeSolicitudStateUseCase {
   private readonly annotateSolicitudTransitionsBlockedReason: AnnotateSolicitudTransitionsBlockedReason;
+  private readonly ensureSolicitudHasMontoRecibo: EnsureSolicitudHasMontoRecibo;
   private readonly ensureSolicitudHasReciboSueldoAdjunto: EnsureSolicitudHasReciboSueldoAdjunto;
   private readonly ensureSolicitudHasPrestamoLegacy: EnsureSolicitudHasPrestamoLegacy;
   private readonly ensureSolicitudTitularHasRequiredDataForConfirmar: EnsureSolicitudTitularHasRequiredDataForConfirmar;
@@ -41,6 +43,9 @@ export class ChangeSolicitudStateUseCase {
       });
     this.ensureSolicitudHasReciboSueldoAdjunto = new EnsureSolicitudHasReciboSueldoAdjunto({
       adjuntoRepository: dependencies.adjuntoRepository,
+    });
+    this.ensureSolicitudHasMontoRecibo = new EnsureSolicitudHasMontoRecibo({
+      solicitudesRepository: dependencies.solicitudesRepository,
     });
     this.ensureSolicitudHasPrestamoLegacy = new EnsureSolicitudHasPrestamoLegacy({
       solicitudesRepository: dependencies.solicitudesRepository,
@@ -75,9 +80,12 @@ export class ChangeSolicitudStateUseCase {
 
     // The recibo-de-sueldo guard only applies to "enviar" (CargaVendedor -> Motor,
     // the first submission to Riesgo): a solicitud can't be sent for risk review
-    // without at least one non-deleted "Recibo de Sueldo" adjunto attached.
+    // without at least one non-deleted "Recibo de Sueldo" adjunto attached, nor
+    // without the monto del recibo loaded. Saving in CargaVendedor still works
+    // without them: they are only required to send.
     if (input.actionCode === "enviar") {
       await this.ensureSolicitudHasReciboSueldoAdjunto.execute(input.solicitudId);
+      await this.ensureSolicitudHasMontoRecibo.execute(input.solicitudId);
     }
 
     // The titular-required-data guard applies to "confirmar" (RevisionRiesgo or
