@@ -941,6 +941,42 @@ def _copy_custom_lead_fields_to_deal(
                 )
 
 
+def build_deal_vimarx_fields(
+    client: BitrixClient,
+    config: AppConfig,
+    lead_fields: dict[str, Any],
+) -> dict[str, Any]:
+    """Mirror a Vimarx snapshot, including empty values that invalidate old data."""
+    fields = {
+        deal_field: lead_fields[lead_field]
+        for lead_field, deal_field in _direct_custom_field_pairs(config)
+        if lead_field in lead_fields
+        and deal_field in {
+            DEAL_DIRECT_FIELD_MAPPINGS[key]
+            for key in ("cuil", "vimarx_nro_socio", "vimarx_creditos_activos_count",
+                        "vimarx_creditos_activos_detail", "vimarx_creditos_activos_raw")
+        }
+    }
+    lead_meta = client.get_lead_field(config.fields.lead_es_socio)
+    label = _enum_label_for_value(lead_meta, lead_fields[config.fields.lead_es_socio])
+    metadata = client.call("crm.item.fields", {"entityTypeId": DEAL_ENTITY_TYPE_ID})["fields"]
+    es_socio_field = DEAL_ENUM_FIELD_MAPPINGS["es_socio"]
+    value = _enum_id_for_label(metadata.get(es_socio_field, {}), label or "")
+    if value is None:
+        raise RuntimeError("No se pudo mapear Es socio al campo de la negociacion.")
+    fields[es_socio_field] = _deal_field_value(metadata[es_socio_field], value)
+    nuevo_label = _socio_nuevo_label(label or "")
+    nuevo_meta = metadata.get(DEAL_SOCIO_NUEVO_FIELD, {})
+    nuevo_id = _enum_id_for_label(nuevo_meta, nuevo_label) if nuevo_label else None
+    if nuevo_label and nuevo_id is None:
+        raise RuntimeError("No se pudo mapear Socio nuevo al campo de la negociacion.")
+    fields[DEAL_SOCIO_NUEVO_FIELD] = (
+        _deal_field_value(nuevo_meta, nuevo_id) if nuevo_id else
+        [] if nuevo_meta.get("isMultiple") is True else ""
+    )
+    return fields
+
+
 def _copy_receipt_file_to_deal(
     client: BitrixClient,
     config: AppConfig,

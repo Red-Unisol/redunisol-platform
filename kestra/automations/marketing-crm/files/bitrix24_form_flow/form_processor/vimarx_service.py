@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 import datetime as dt
 import json
 import os
@@ -79,6 +80,7 @@ class VimarxConfig:
     base_url: str
     timeout_seconds: float
     verify_tls: bool
+    bearer_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -123,17 +125,18 @@ def sync_lead_vimarx_enrichment(
     return enrichment.ok
 
 
-def load_vimarx_config_from_env() -> VimarxConfig:
-    base_url = os.getenv("VIMARX_EVAL_BASE_URL", "").strip().rstrip("/")
+def load_vimarx_config_from_env(env: Mapping[str, str] | None = None) -> VimarxConfig:
+    source = os.environ if env is None else env
+    base_url = source.get("VIMARX_EVAL_BASE_URL", "").strip().rstrip("/")
     if not base_url:
         raise ValueError("Falta VIMARX_EVAL_BASE_URL.")
 
-    timeout_raw = os.getenv("VIMARX_TIMEOUT_SECONDS", "60").strip()
+    timeout_raw = source.get("VIMARX_TIMEOUT_SECONDS", "60").strip()
     timeout_seconds = float(timeout_raw or "60")
     if timeout_seconds <= 0:
         raise ValueError("VIMARX_TIMEOUT_SECONDS debe ser mayor a cero.")
 
-    verify_tls = parse_bool(os.getenv("VIMARX_VERIFY_TLS", "false"))
+    verify_tls = parse_bool(source.get("VIMARX_VERIFY_TLS", "false"))
     if not verify_tls:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -141,6 +144,7 @@ def load_vimarx_config_from_env() -> VimarxConfig:
         base_url=base_url,
         timeout_seconds=timeout_seconds,
         verify_tls=verify_tls,
+        bearer_token=source.get("VIMARX_BEARER_TOKEN", "").strip(),
     )
 
 
@@ -299,9 +303,11 @@ def fetch_cuotas_by_cuil(cuil_digits: str, config: VimarxConfig) -> list[dict[st
     )
 
 
-def _build_headers() -> dict[str, str]:
+def _build_headers(config: VimarxConfig) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
-    token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
+    token = config.bearer_token
+    if token is None:
+        token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
@@ -330,7 +336,7 @@ def evaluate_list(
         try:
             response = session.post(
                 url,
-                headers=_build_headers(),
+                headers=_build_headers(config),
                 json=payload,
                 verify=config.verify_tls,
                 timeout=config.timeout_seconds,

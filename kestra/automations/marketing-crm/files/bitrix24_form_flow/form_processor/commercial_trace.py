@@ -5,6 +5,10 @@ TRACE_SCHEMA_VERSION = "deal-commercial-distribution-trace.v4"
 
 
 REASON_LABELS = {
+    "vimarx_retry_scheduled": "Vimarx no respondió; Kestra programó un nuevo intento sin tomar una decisión comercial.",
+    "vimarx_retry_exhausted": "Vimarx falló en tres intentos; requiere revisión manual de los datos.",
+    "vimarx_missing_cuil": "Falta un CUIL de 11 dígitos para actualizar los datos de Vimarx.",
+    "vimarx_configuration_error": "No se pudo consultar Vimarx por un problema de configuración.",
     "amejuca_premium": "Cumple las condiciones BCRA de AMEJUCA Premium.",
     "amejuca_special": "El perfil BCRA corresponde a la línea AMEJUCA Especial.",
     "amejuca_line_ambiguous_for_payment_bank_two": "Los datos no permiten elegir con certeza entre AMEJUCA Premium y Especial.",
@@ -90,6 +94,8 @@ def business_decision(
         return "Retirado de la cola y enviado a Maru"
     if action == "queue_waiting":
         return "Continúa en cola de distribución"
+    if action == "vimarx_pending":
+        return "Pendiente de información Vimarx"
     if action in {"bcra_pending", "pending_data"}:
         return "Pendiente de información BCRA"
     if action == "error":

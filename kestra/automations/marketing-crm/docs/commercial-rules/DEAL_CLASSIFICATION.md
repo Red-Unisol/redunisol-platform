@@ -38,6 +38,28 @@ Los rechazos comerciales no-BCRA tendrán como etapa objetivo **NO CALIFICA COME
 KESTRA**. Hasta crearla en Bitrix, Kestra debe dejarlos en **REVISIÓN MANUAL KESTRA**
 con el motivo de rechazo para que una persona ejecute el cierre.
 
+## Actualización de datos Vimarx antes de decidir
+
+Estado: **implementado, pendiente de deploy** (2026-09-11).
+
+Las negociaciones internas pendientes de Catamarca y Córdoba consultan Vimarx con
+el CUIL actual antes de aplicar las tablas comerciales, aunque su lead sea antiguo
+o ya esté convertido. Una respuesta válida actualiza afiliación y préstamos en el
+lead y en la negociación. Las tablas se evalúan con esa respuesta.
+
+Una falla de consulta deja el caso pendiente de datos y sin distribución. Al agotar
+tres intentos pasa a revisión manual con motivo `vimarx_retry_exhausted`. Falta de
+CUIL o configuración inválida producen revisión manual con motivo específico. Estos
+estados nunca equivalen a "No socio", cero créditos o rechazo comercial.
+
+Esta compuerta no modifica las condiciones de las líneas ni completa la cuota
+social AMEJUCA: si ese dato sigue faltando, la regla de recurrentes continúa
+requiriendo revisión manual. La política BCRA existente se resuelve primero;
+mientras BCRA esté pendiente, la consulta Vimarx espera.
+
+Detalle de persistencia y reintentos:
+[`../technical/vimarx-deal-refresh.md`](../technical/vimarx-deal-refresh.md).
+
 ## Catamarca — AMEJUCA
 
 Estado: **implementado en el PR #218, pendiente de deploy y auditoría en producción**.

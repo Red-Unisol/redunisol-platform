@@ -84,6 +84,7 @@ from bitrix24_form_flow.form_processor.prequalification_cutover import (
 from bitrix24_form_flow.form_processor.receipt_file import _filename_from_content_disposition
 from bitrix24_form_flow.form_processor.routing_bucket import resolve_routing_bucket
 from bitrix24_form_flow.form_processor.vimarx_service import VimarxEnrichment
+from bitrix24_form_flow.form_processor.deal_vimarx_refresh import VimarxRefreshResolution
 from bitrix24_form_flow.form_processor.volume_compensation import apply_volume_compensation
 
 
@@ -505,6 +506,14 @@ class FakeBcraClient:
 
 class BusinessLogicTests(unittest.TestCase):
     def setUp(self) -> None:
+        # These tests supply commercial snapshots directly. The real refresh and its
+        # qualification/queue integration are exercised in test_deal_vimarx_refresh.
+        refresh = patch(
+            "bitrix24_form_flow.form_processor.catamarca_deal_qualification.refresh_deal_vimarx",
+            side_effect=lambda client, config, lead, **kwargs: VimarxRefreshResolution(lead, "member"),
+        )
+        refresh.start()
+        self.addCleanup(refresh.stop)
         self.env = {
             "BITRIX24_BASE_URL": "https://example.bitrix24.com/rest",
             "BITRIX24_WEBHOOK_PATH": "1/token",
@@ -4670,7 +4679,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-08-26-cordoba-publico-policia-cbu-v1",
+            "2026-09-11-vimarx-refresh-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [

@@ -42,6 +42,9 @@ tasks:
       BITRIX24_LEAD_BCRA_DATA_RAW_FIELD: "{{ envs.bitrix24_lead_bcra_data_raw_field }}"
       BITRIX24_LEAD_BCRA_CHECKED_AT_FIELD: "{{ envs.bitrix24_lead_bcra_checked_at_field }}"
       BITRIX24_LEAD_ES_SOCIO_FIELD: "{{ envs.bitrix24_lead_es_socio_field ?? 'UF_CRM_1728998183' }}"
+      BITRIX24_LEAD_VIMARX_NRO_SOCIO_FIELD: "{{ envs.bitrix24_lead_vimarx_nro_socio_field ?? 'UF_CRM_VIMARX_NRO_SOCIO' }}"
+      BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_DETAIL_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_detail_field ?? 'UF_CRM_VIMARX_CRED_DET' }}"
+      BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_RAW_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_raw_field ?? 'UF_CRM_VIMARX_CRED_RAW' }}"
       BITRIX24_LEAD_VIMARX_CREDITOS_ACTIVOS_COUNT_FIELD: "{{ envs.bitrix24_lead_vimarx_creditos_activos_count_field ?? 'UF_CRM_VIMARX_CRED_ACT_CNT' }}"
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
@@ -96,10 +99,26 @@ tasks:
     env:
       <<: *bitrix_env
       DEAL_ID: "{{ outputs.seleccionar_negociacion.vars.deal_id }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
+      VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds }}"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls }}"
     commands:
       - python -m bitrix24_form_flow.kestra_catamarca_deal_qualification_entrypoint
 
 outputs:
+  - id: vimarx_refresh_outcome
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.vimarx_refresh_outcome : 'not_evaluated' }}"
+  - id: vimarx_snapshot_checked_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.vimarx_snapshot_checked_at : '' }}"
+  - id: vimarx_retry_attempts
+    type: INT
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.vimarx_retry_attempts : 0 }}"
+  - id: vimarx_next_retry_at
+    type: STRING
+    value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.vimarx_next_retry_at : '' }}"
   - id: ok
     type: BOOL
     value: "{{ outputs.calificar_negociacion.vars is defined ? outputs.calificar_negociacion.vars.ok : outputs.seleccionar_negociacion.vars.ok }}"
