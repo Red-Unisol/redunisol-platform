@@ -202,7 +202,7 @@ export function NuevaSolicitudTitularFields({
           )}
         />
       </LegacyField>
-      <LegacyField label="Monto Recibo">
+      <LegacyField label="Monto Recibo" required>
         <MoneyInputField control={control} name="montoRecibo" />
       </LegacyField>
       <LegacyField label="Fecha Ingreso Laboral">

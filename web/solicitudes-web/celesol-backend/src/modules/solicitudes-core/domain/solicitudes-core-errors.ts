@@ -104,6 +104,16 @@ export class SolicitudReciboSueldoAdjuntoRequiredForWorkflowError extends Solici
   }
 }
 
+export class SolicitudMontoReciboRequiredForWorkflowError extends SolicitudesError {
+  constructor() {
+    super(
+      "Debe cargar el monto del recibo antes de enviar la solicitud a Riesgo.",
+      409,
+    );
+    this.name = "SolicitudMontoReciboRequiredForWorkflowError";
+  }
+}
+
 export class SolicitudTitularDataIncompleteForConfirmarError extends SolicitudesError {
   readonly missingLabels: string[];
 

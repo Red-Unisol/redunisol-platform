@@ -7,6 +7,7 @@ import type { SolicitudAdjuntoRepository } from "../../adjuntos/domain/repositor
 import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import {
+  SolicitudMontoReciboRequiredForWorkflowError,
   SolicitudPrestamoLegacyRequiredForWorkflowError,
   SolicitudReciboSueldoAdjuntoRequiredForWorkflowError,
   SolicitudTitularDataIncompleteForConfirmarError,
@@ -513,6 +514,100 @@ describe("ChangeSolicitudStateUseCase", () => {
     );
   });
 
+  it("rejects enviar when the monto del recibo is empty or zero", async () => {
+    for (const montoRecibo of [null, 0]) {
+      const useCase = new ChangeSolicitudStateUseCase({
+        adjuntoRepository: adjuntoRepository(),
+        engine: {
+          execute: async () => {
+            throw new Error("not used");
+          },
+        } as unknown as SolicitudWorkflowEngine,
+        now: () => new Date("2026-05-18T12:00:00.000Z"),
+        sociosRepository: socioRepository(),
+        solicitudesRepository: solicitudesRepository({
+          findById: async () => solicitudConMontoRecibo(montoRecibo),
+        }),
+      });
+
+      await assert.rejects(
+        () =>
+          useCase.execute({
+            actionCode: "enviar",
+            currentUser: {
+              id: "user-1",
+              workflowOwnerId: "owner-1",
+            },
+            solicitudId: "sol-1",
+          }),
+        SolicitudMontoReciboRequiredForWorkflowError,
+      );
+    }
+  });
+
+  it("still enforces the monto-del-recibo guard for a system admin actor", async () => {
+    const useCase = new ChangeSolicitudStateUseCase({
+      adjuntoRepository: adjuntoRepository(),
+      engine: {
+        execute: async () => {
+          throw new Error("not used");
+        },
+      } as unknown as SolicitudWorkflowEngine,
+      now: () => new Date("2026-05-18T12:00:00.000Z"),
+      sociosRepository: socioRepository(),
+      solicitudesRepository: solicitudesRepository({
+        findById: async () => solicitudConMontoRecibo(null),
+      }),
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          actionCode: "enviar",
+          currentUser: {
+            id: "admin-1",
+            isSystemAdmin: true,
+            workflowOwnerId: "",
+          },
+          solicitudId: "sol-1",
+        }),
+      SolicitudMontoReciboRequiredForWorkflowError,
+    );
+  });
+
+  it("sends when there is a recibo de sueldo adjunto and the monto del recibo", async () => {
+    let received: Parameters<SolicitudWorkflowEngine["execute"]>[0] | null = null;
+    const useCase = new ChangeSolicitudStateUseCase({
+      adjuntoRepository: adjuntoRepository(),
+      engine: {
+        execute: async (input: Parameters<SolicitudWorkflowEngine["execute"]>[0]) => {
+          received = input;
+
+          return {
+            solicitud: solicitud(),
+            transitions: [],
+          };
+        },
+      } as unknown as SolicitudWorkflowEngine,
+      now: () => new Date("2026-05-18T12:00:00.000Z"),
+      sociosRepository: socioRepository(),
+      solicitudesRepository: solicitudesRepository({
+        findById: async () => solicitudConMontoRecibo(850000),
+      }),
+    });
+
+    await useCase.execute({
+      actionCode: "enviar",
+      currentUser: {
+        id: "user-1",
+        workflowOwnerId: "owner-1",
+      },
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(received?.["actionCode"], "enviar");
+  });
+
   it("annotates liquidar with blockedReason on the transitions returned after executing a transition", async () => {
     const engineStub = {
       execute: async () => ({
@@ -590,6 +685,18 @@ function solicitud(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
     ...baseSolicitud(),
     ...overrides,
   };
+}
+
+function solicitudConMontoRecibo(montoRecibo: number | null): SolicitudCore {
+  const base = baseSolicitud();
+
+  return {
+    ...base,
+    datosLaborales: {
+      ...base.datosLaborales,
+      montoRecibo,
+    },
+  } as SolicitudCore;
 }
 
 function baseSolicitud(): SolicitudCore {
