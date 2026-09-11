@@ -53,12 +53,14 @@ import { SimularPrestamoUseCase } from "./application/use-cases/SimularPrestamo.
 import { UpdateSolicitudUseCase } from "./application/use-cases/UpdateSolicitud.use-case";
 import { UpdateFieldAccessRuleUseCase } from "./application/use-cases/UpdateFieldAccessRule.use-case";
 import { UpdateWorkflowTransitionMetadataUseCase } from "./application/use-cases/UpdateWorkflowTransitionMetadata.use-case";
+import { SolicitudCredixsaInformesPrismaDatasource } from "./infrastructure/datasources/SolicitudCredixsaInformesPrismaDatasource";
 import { SolicitudFieldAccessAdminPrismaDatasource } from "./infrastructure/datasources/SolicitudFieldAccessAdminPrismaDatasource";
 import { SolicitudesCorePrismaDatasource } from "./infrastructure/datasources/SolicitudesCorePrismaDatasource";
 import { SolicitudWorkflowPrismaDatasource } from "./infrastructure/datasources/SolicitudWorkflowPrismaDatasource";
 import { SolicitudFieldAccessRulesPrismaDatasource } from "./infrastructure/datasources/SolicitudFieldAccessRulesPrismaDatasource";
 import { WorkflowTransitionAdminPrismaDatasource } from "./infrastructure/datasources/WorkflowTransitionAdminPrismaDatasource";
 import { WorkflowStatePrismaDatasource } from "./infrastructure/datasources/WorkflowStatePrismaDatasource";
+import { SolicitudCredixsaInformeRepositoryImpl } from "./infrastructure/repositories/SolicitudCredixsaInformeRepositoryImpl";
 import { SolicitudFieldAccessAdminRepositoryImpl } from "./infrastructure/repositories/SolicitudFieldAccessAdminRepositoryImpl";
 import { SolicitudFieldAccessRulesRepositoryImpl } from "./infrastructure/repositories/SolicitudFieldAccessRulesRepositoryImpl";
 import { SolicitudesCoreRepositoryImpl } from "./infrastructure/repositories/SolicitudesCoreRepositoryImpl";
@@ -169,28 +171,32 @@ export function createSolicitudesCoreRouter(
   const simularCuotaSolicitud = new SimularCuotaSolicitud({
     gateway: prestamosSimulacionGateway,
   });
-  // Un solo gateway para las dos vias: la que dispara al crear la solicitud y
-  // la que le sirve el informe a la pestaña. Comparten webhook y, por lo
-  // tanto, la misma cache.
-  const consultarCredixsaGateway = new ConsultarCredixsaGateway({
-    timeoutMs: env.CREDIXSA_CONSULTA_TIMEOUT_MS,
-    webhookUrl: env.CREDIXSA_CONSULTA_WEBHOOK_URL,
-  });
+  // Donde quedan los informes de CredixSA. Lo escriben las dos vias de abajo
+  // y la pestaña lee de aca antes de ir a Kestra.
+  const solicitudCredixsaInformeRepository =
+    new SolicitudCredixsaInformeRepositoryImpl(
+      new SolicitudCredixsaInformesPrismaDatasource(prisma),
+    );
   const getCredixsaSolicitudUseCase = new GetCredixsaSolicitudUseCase({
-    // Gateway propio: la pestaña va directo al flow de los analistas, sin la
-    // cola del envoltorio. Ver el comentario de la variable en config/env.
+    // La pestaña va directo al flow de los analistas, sin la cola del
+    // envoltorio. Ver el comentario de la variable en config/env.
     gateway: new ConsultarCredixsaGateway({
-      timeoutMs: env.CREDIXSA_INFORME_TIMEOUT_MS,
       webhookUrl: env.CREDIXSA_INFORME_WEBHOOK_URL,
     }),
+    informes: solicitudCredixsaInformeRepository,
     repository: solicitudesCoreRepository,
-    // Mucho mas generoso que el del disparo al crear: aca hay alguien
-    // esperando el informe, y si la cache esta fria hay que bancarse el
-    // scraping de CredixSA.
+    // Aca hay alguien esperando el informe, y si la cache esta fria hay que
+    // bancarse el scraping de CredixSA.
     timeoutMs: env.CREDIXSA_INFORME_TIMEOUT_MS,
   });
   const consultarCredixsaAlCrearSolicitud = new ConsultarCredixsaAlCrearSolicitud({
-    gateway: consultarCredixsaGateway,
+    // El alta pasa por el envoltorio, que encola los disparos automaticos
+    // para que no le compitan a un analista esperando en la pestaña.
+    gateway: new ConsultarCredixsaGateway({
+      webhookUrl: env.CREDIXSA_CONSULTA_WEBHOOK_URL,
+    }),
+    informes: solicitudCredixsaInformeRepository,
+    timeoutMs: env.CREDIXSA_CONSULTA_TIMEOUT_MS,
   });
   const createSolicitudUseCase = new CreateSolicitudUseCase({
     consultarCredixsaAlCrearSolicitud,

@@ -184,13 +184,19 @@ export class CreateSolicitudUseCase {
       vendedorSolicitud: authenticatedSellerName,
     });
 
-    // Sin await a proposito: la consulta a CredixSA puede tardar medio minuto
-    // scrapeando, y el vendedor esta esperando que la solicitud se guarde. El
-    // servicio no propaga errores, asi que el catch es por las dudas -- una
-    // promesa rechazada sin manejar tumba el proceso en Node.
+    // Sin await a proposito: la consulta a CredixSA puede tardar minutos entre
+    // la cola de Kestra y el scraping, y el vendedor esta esperando que la
+    // solicitud se guarde. El catch no es opcional -- una promesa rechazada
+    // sin manejar tumba el proceso en Node. Si falla, la pestaña consulta en
+    // el momento.
     void this.consultarCredixsaAlCrearSolicitud
       .execute(solicitud.id, input.titular)
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        console.error("credixsa_consulta_al_crear_failed", {
+          message: error instanceof Error ? error.message : String(error),
+          solicitudId: solicitud.id,
+        });
+      });
 
     return solicitud;
   }
