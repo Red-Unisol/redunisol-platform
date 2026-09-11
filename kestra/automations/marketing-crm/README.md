@@ -33,6 +33,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
 - Las fallas temporales de BCRA se persisten y reintentan con backoff durante 24 horas. Una negociación pendiente de BCRA no se rechaza ni se distribuye, y tampoco bloquea la clasificación de otras negociaciones. La política detallada vive en `docs/technical/bcra-retry-policy.md`.
+- Antes de clasificar negociaciones internas pendientes se consulta Vimarx con el CUIL actual, independientemente de la antigüedad o etapa del lead. El resultado se copia al lead y a la negociación. Las fallas se reintentan sin decidir ni distribuir; véase `docs/technical/vimarx-deal-refresh.md` (implementado, pendiente de deploy).
 - Finguru se identifica por `origenFormulario=3729`. Si DNI y CUIL contienen los mismos ocho digitos, CredixSA puede resolver el CUIL; solo se persiste cuando la respuesta es unica, contiene ese DNI y supera la validacion de checksum.
 - Una identidad Finguru ambigua o no encontrada no produce un CUIL inventado ni un rechazo comercial. Queda como enriquecimiento parcial bajo la politica normal de reintentos.
 - `ONCRMLEADUPDATE` precalifica cualquier lead en `PRECLASIFICACION (NEW)` creado desde

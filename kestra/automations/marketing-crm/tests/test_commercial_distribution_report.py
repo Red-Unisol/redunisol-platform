@@ -193,6 +193,20 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertEqual(row["bcra_retry_attempts"], 2)
         self.assertIsNotNone(row["bcra_next_retry_at"])
 
+    def test_vimarx_pending_is_distinguished_from_bcra_and_rejection(self):
+        raw = execution(action="vimarx_pending", strategy="commercial_data_pending")
+        raw["outputs"].update(
+            commercial_action="pending_data",
+            commercial_reason="vimarx_retry_scheduled",
+            commercial_stage_id="C1:KESTRA_PENDING",
+            distribution_action="not_applicable",
+            distribution_reason="commercial_data_pending",
+        )
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+        self.assertEqual(row["distribution_status"], "Pendiente Vimarx")
+        self.assertEqual(row["business_decision"], "Pendiente de información Vimarx")
+        self.assertIn("Vimarx no respondió", row["business_reason"])
+
     def test_adds_names_to_responsibles_and_pools_while_preserving_ids(self):
         row = REPORT.normalized(execution())
 

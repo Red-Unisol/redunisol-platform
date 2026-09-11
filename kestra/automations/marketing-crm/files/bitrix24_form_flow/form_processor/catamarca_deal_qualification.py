@@ -34,6 +34,7 @@ from .deal_service import (
     resolve_round_robin_assignee,
     user_display_name,
 )
+from .deal_vimarx_refresh import refresh_deal_vimarx, vimarx_retry_waiting
 from .lead_service import (
     build_submission_from_lead,
     get_lead,
@@ -77,7 +78,7 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-08-26-cordoba-publico-policia-cbu-v1"
+COMMERCIAL_RULE_VERSION = "2026-09-11-vimarx-refresh-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
@@ -113,7 +114,10 @@ def select_next_pending_catamarca_deal(
                     "=stageId": config.deal.pending_qualification_stage_id,
                 },
                 "order": {"id": "ASC"},
-                "select": ["id", "leadId", "contactId", "stageId"],
+                "select": [
+                    "id", "leadId", "contactId", "stageId",
+                    DEAL_DIRECT_FIELD_MAPPINGS["vimarx_creditos_activos_raw"],
+                ],
                 "start": start,
             },
         )
@@ -128,6 +132,8 @@ def select_next_pending_catamarca_deal(
             if deal_id is None or lead_id is None:
                 continue
             lead = get_lead(client, lead_id, active_logger)
+            if vimarx_retry_waiting(deal, lead, config, now=current_time):
+                continue
             if bcra_retry_waiting(
                 lead,
                 config,
@@ -279,7 +285,43 @@ def qualify_catamarca_deal(
             ),
             **bcra_trace,
         )
-    decision = bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
+    vimarx_resolution = refresh_deal_vimarx(
+        client, config, lead, deal=deal, lead_id=lead_id, deal_id=deal_id_int,
+        source=source, processed_at=processed_at, logger=active_logger,
+    )
+    lead = vimarx_resolution.lead
+    bcra_trace.update(vimarx_resolution.trace)
+    if vimarx_resolution.pending:
+        return _result(
+            action="vimarx_pending",
+            has_pending=True,
+            deal_id=deal_id_int,
+            lead_id=lead_id,
+            stage_id=config.deal.pending_qualification_stage_id,
+            reason=vimarx_resolution.reason,
+            processed_at=processed_at,
+            contact_id=contact_id,
+            deal_title=deal_title,
+            stage_before=current_stage,
+            previous_assigned_by_id=previous_assignee_id,
+            province=province,
+            employment_status=employment_status,
+            payment_bank=payment_bank,
+            source=source_label,
+            within_business_hours=within_business_hours,
+            assignment_strategy="commercial_data_pending",
+            commercial_action="pending_data",
+            commercial_reason=vimarx_resolution.reason,
+            commercial_stage_id=config.deal.pending_qualification_stage_id,
+            distribution_action="not_applicable",
+            distribution_reason="commercial_data_pending",
+            message="La decision queda pendiente; Kestra volvera a consultar Vimarx automaticamente.",
+            **bcra_trace,
+        )
+    decision = (
+        _manual(config, vimarx_resolution.reason) if vimarx_resolution.reason
+        else bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
+    )
     routing = resolve_routing_bucket(config, lead)
     province = routing.province or province
     bucket = routing.bucket
@@ -1917,6 +1959,10 @@ def _result(
     bcra_refresh_outcome: str = "not_evaluated",
     bcra_retry_attempts: int = 0,
     bcra_next_retry_at: str = "",
+    vimarx_refresh_outcome: str = "not_evaluated",
+    vimarx_snapshot_checked_at: str = "",
+    vimarx_retry_attempts: int = 0,
+    vimarx_next_retry_at: str = "",
     source: str = "",
     commercial_action: str = "",
     commercial_reason: str = "",
@@ -1926,7 +1972,7 @@ def _result(
     ok: bool = True,
 ) -> dict[str, object]:
     decision_label = business_decision(
-        commercial_action or action,
+        action if commercial_action == "pending_data" else commercial_action or action,
         commercial_line,
         assigned_by_id,
     )
@@ -1992,5 +2038,9 @@ def _result(
         "bcra_refresh_outcome": bcra_refresh_outcome,
         "bcra_retry_attempts": bcra_retry_attempts,
         "bcra_next_retry_at": bcra_next_retry_at,
+        "vimarx_refresh_outcome": vimarx_refresh_outcome,
+        "vimarx_snapshot_checked_at": vimarx_snapshot_checked_at,
+        "vimarx_retry_attempts": vimarx_retry_attempts,
+        "vimarx_next_retry_at": vimarx_next_retry_at,
         "rule_version": COMMERCIAL_RULE_VERSION,
     }

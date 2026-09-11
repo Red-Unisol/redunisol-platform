@@ -10,6 +10,7 @@
 | [`COMMERCIAL_PREQUALIFICATION_API.md`](COMMERCIAL_PREQUALIFICATION_API.md) | Contrato de pre-elegibilidad sin persistencia. |
 | [`CATAMARCA_DEAL_QUALIFICATION.md`](CATAMARCA_DEAL_QUALIFICATION.md) | Operación del clasificador de negociaciones Catamarca. |
 | [`bcra-retry-policy.md`](bcra-retry-policy.md) | Estado persistente, backoff y reanudación automática de consultas BCRA. |
+| [`vimarx-deal-refresh.md`](vimarx-deal-refresh.md) | Refresh Vimarx antes de clasificar, identidad consultada, copia al deal y reintentos. |
 | [`PREQUALIFICATION_CUTOVER_2026-08-07.md`](PREQUALIFICATION_CUTOVER_2026-08-07.md) | Registro y runbook del corte de precalificación hacia Kestra. |
 
 ## Regla de mantenimiento

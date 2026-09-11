@@ -50,6 +50,10 @@ ASSIGNMENT_STRATEGY_LABELS = {
     "technical_error": "La ejecución terminó con un error técnico",
 }
 REASON_LABELS = {
+    "vimarx_retry_scheduled": "Vimarx no respondió; Kestra programó un nuevo intento sin tomar una decisión comercial.",
+    "vimarx_retry_exhausted": "Vimarx falló en tres intentos; requiere revisión manual de los datos.",
+    "vimarx_missing_cuil": "Falta un CUIL de 11 dígitos para actualizar los datos de Vimarx.",
+    "vimarx_configuration_error": "No se pudo consultar Vimarx por un problema de configuración.",
     "amejuca_premium": (
         "Cumple las condiciones BCRA de AMEJUCA Premium: hasta cinco entidades "
         "en situación 2, ninguna superior a 2 y banco de cobro hasta situación 2."
@@ -289,6 +293,8 @@ def distribution_status(
         ):
             return "Sin vendedor disponible"
         return "Error técnico"
+    if action == "vimarx_pending":
+        return "Pendiente Vimarx"
     if action == "bcra_pending":
         return "Pendiente BCRA"
     if distribution_action == "assigned":
@@ -522,6 +528,8 @@ def add_user_displays(
 def business_decision(row: dict[str, Any]) -> str:
     action = row["commercial_action"]
     if action == "pending_data":
+        if row.get("action") == "vimarx_pending":
+            return "Pendiente de información Vimarx"
         return "Pendiente de información BCRA"
     if action == "approved":
         line = row["commercial_line"] or "comercial definida"
