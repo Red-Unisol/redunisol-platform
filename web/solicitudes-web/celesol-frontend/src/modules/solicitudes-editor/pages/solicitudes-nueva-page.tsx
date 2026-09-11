@@ -10,6 +10,7 @@ import { useExecuteSolicitudCoreTransitionMutation } from "@/modules/solicitudes
 import { useSolicitudCoreTransitionsQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-transitions-query";
 import { esCbuValido } from "@/shared/utils/cbu";
 import { parseMoneyValue } from "@/shared/utils/money-format";
+import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 import { useCreateSolicitudCoreMutation } from "@/modules/solicitudes-editor/hooks/use-create-solicitud-core-mutation";
 import { mapNuevaSolicitudFormToCreateSolicitudCoreRequest } from "@/modules/solicitudes-editor/utils/solicitud-core-mappers";
 import {
@@ -175,6 +176,16 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
           message: isEmpty ? `${label} es requerido` : `${label} es inválido`,
         });
       });
+      return;
+    }
+
+    const cuotasError = getCuotasFueraDeLineaError(
+      String(values.cuotas ?? ""),
+      selectedLinea,
+    );
+
+    if (cuotasError) {
+      setError("cuotas", { type: "validate", message: cuotasError });
       return;
     }
 

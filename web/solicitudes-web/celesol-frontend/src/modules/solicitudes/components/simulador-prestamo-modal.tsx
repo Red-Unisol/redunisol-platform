@@ -25,6 +25,7 @@ import {
   formatMoneyAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
+import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 
 type SimuladorPrestamoFormValues = {
   capitalFinanciado: string;
@@ -122,6 +123,7 @@ export function SimuladorPrestamoModal({
     eligibleLineas[0] ??
     null;
   const selectedLinea = eligibleLineas.find((linea) => linea.oid === lineaOid);
+  const cuotasError = getCuotasFueraDeLineaError(cuotas, selectedLinea);
   const simularPrestamoMutation = useSimularPrestamoMutation();
   const resetSimulacion = simularPrestamoMutation.reset;
   const simulacion: SimulacionPrestamoResponse | undefined =
@@ -175,6 +177,19 @@ export function SimuladorPrestamoModal({
 
   async function handleRecalcular() {
     if (!selectedLinea?.oid) {
+      return;
+    }
+
+    if (cuotasError) {
+      // Vimarx calcularia igual, con el maximo de la linea, y el resultado no
+      // corresponderia a lo que dice el campo. Se descarta el calculo anterior
+      // (y cualquiera en curso) para que no quede nada que aplicar.
+      requestSeqRef.current += 1;
+      resetSimulacion();
+      setValue("capitalFinanciado", "0,00");
+      setValue("cuotaResultante", "0,00");
+      setValue("gastosAdministrativos", "0,00");
+      setValue("total", "0,00");
       return;
     }
 
@@ -271,7 +286,7 @@ export function SimuladorPrestamoModal({
   }, [open, lineaOid, montoAFinanciar, cuotas, fechaPrimerVencimiento]);
 
   function handleAplicar() {
-    if (!simulacion || !selectedLinea?.oid) {
+    if (!simulacion || !selectedLinea?.oid || cuotasError) {
       return;
     }
 
@@ -407,7 +422,16 @@ export function SimuladorPrestamoModal({
                 <span className="text-[0.68rem] font-medium text-foreground-secondary">
                   Cuotas<span className="text-destructive"> *</span>
                 </span>
-                <Input className="h-8 text-xs" {...register("cuotas")} />
+                <Input
+                  aria-invalid={cuotasError ? true : undefined}
+                  className="h-8 text-xs"
+                  {...register("cuotas")}
+                />
+                {cuotasError ? (
+                  <span className="text-[0.68rem] text-destructive">
+                    {cuotasError}
+                  </span>
+                ) : null}
               </label>
               <label className="grid gap-1">
                 <span className="text-[0.68rem] font-medium text-foreground-secondary">
@@ -544,14 +568,19 @@ export function SimuladorPrestamoModal({
           >
             {simularPrestamoMutation.isPending ? "Calculando..." : "Calcular"}
           </Button>
-          <Button
-            disabled={!simulacion}
-            onClick={handleAplicar}
-            size="sm"
-            type="button"
-          >
-            Aplicar a Solicitud
-          </Button>
+          {/* Sin onApply no hay a donde aplicar (por ejemplo, alguien que no
+              puede editar la solicitud): mejor no mostrar un boton que no
+              hace nada. */}
+          {onApply ? (
+            <Button
+              disabled={!simulacion || cuotasError !== null}
+              onClick={handleAplicar}
+              size="sm"
+              type="button"
+            >
+              Aplicar a Solicitud
+            </Button>
+          ) : null}
         </footer>
       </DialogContent>
     </DialogRoot>

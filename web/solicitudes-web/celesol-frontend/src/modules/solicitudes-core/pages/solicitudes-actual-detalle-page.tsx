@@ -90,6 +90,7 @@ import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/so
 import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
 import { getEstadoBadgeVariant } from "@/modules/solicitudes-shared/utils/estado-badge-variant";
 import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
+import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
 import type {
   CreateSolicitudCoreGarantiaRequest,
@@ -3292,6 +3293,30 @@ export function SolicitudesActualDetallePage() {
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
 
+    // Solo si se cambiaron las cuotas: una solicitud que ya venia fuera de
+    // rango no tiene que bloquear otras ediciones. Si la linea no esta entre
+    // las del usuario no hay limites contra que comparar y no se valida.
+    const cuotasCambiaron =
+      currentValues.solicitud.cuotas.trim() !==
+      String(resolvedSolicitud.cuotas ?? "");
+    const cuotasError = cuotasCambiaron
+      ? getCuotasFueraDeLineaError(
+          currentValues.solicitud.cuotas,
+          lineasSimulador.find(
+            (linea) => linea.oid === resolvedSolicitud.lineaPrestamoLegacyOid,
+          ),
+        )
+      : null;
+
+    if (cuotasError) {
+      toast.error(cuotasError, {
+        duration: 3500,
+        icon: <CircleAlert className="size-5" />,
+        id: EDIT_SOLICITUD_ERROR_TOAST_ID,
+      });
+      return;
+    }
+
     const payload = mapEditableValuesToPatchSolicitudCoreRequest(
       currentValues,
       resolvedSolicitud,
@@ -4070,23 +4095,38 @@ export function SolicitudesActualDetallePage() {
               resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
             }
             lineas={lineasSimulador}
-            onApply={(valores) => {
-              setEditableValues((current) =>
-                current
-                  ? {
-                      ...current,
-                      solicitud: {
-                        ...current.solicitud,
-                        cuotaResultante: valores.cuotaResultante,
-                        cuotas: valores.cuotas,
-                        fechaPrimerVencimiento: valores.fechaPrimerVencimiento,
-                        montoAFinanciar: valores.montoAFinanciar,
-                      },
+            onApply={
+              canEnterEditMode
+                ? (valores) => {
+                    // El simulador se abre desde la barra aunque la solicitud
+                    // no este en edicion. Antes, aplicar en ese caso descartaba
+                    // los valores sin avisar; ahora entra en edicion con los
+                    // valores cargados, para revisarlos y guardar.
+                    if (!isEditing) {
+                      handleStartEditing();
                     }
-                  : current,
-              );
-              setIsSimuladorOpen(false);
-            }}
+
+                    setEditableValues((current) => {
+                      const base =
+                        current ??
+                        mapSolicitudCoreToEditableValues(resolvedSolicitud);
+
+                      return {
+                        ...base,
+                        solicitud: {
+                          ...base.solicitud,
+                          cuotaResultante: valores.cuotaResultante,
+                          cuotas: valores.cuotas,
+                          fechaPrimerVencimiento:
+                            valores.fechaPrimerVencimiento,
+                          montoAFinanciar: valores.montoAFinanciar,
+                        },
+                      };
+                    });
+                    setIsSimuladorOpen(false);
+                  }
+                : undefined
+            }
             onOpenChange={setIsSimuladorOpen}
             open={isSimuladorOpen}
           />
