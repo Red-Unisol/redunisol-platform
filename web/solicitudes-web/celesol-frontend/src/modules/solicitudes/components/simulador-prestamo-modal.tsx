@@ -22,7 +22,7 @@ import { StyledSelect } from "@/shared/components/ui/styled-select";
 import { TableLoader } from "@/shared/components/ui/table-loader";
 import {
   formatDecimalMoneyValue,
-  formatMoneyValue,
+  formatMoneyAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
 
@@ -71,7 +71,7 @@ function getLineaDefaults(linea?: LineaPrestamoPresolicitud | null) {
         : "",
     montoAFinanciar:
       linea?.montoMaximo !== null && linea?.montoMaximo !== undefined
-        ? formatMoneyValue(String(linea.montoMaximo))
+        ? formatMoneyAmount(linea.montoMaximo)
         : "",
     tasa:
       linea?.tasa !== null && linea?.tasa !== undefined
@@ -215,14 +215,14 @@ export function SimuladorPrestamoModal({
       return;
     }
 
-    setValue("capitalFinanciado", formatMoneyValue(String(result.capital)));
+    setValue("capitalFinanciado", formatMoneyAmount(result.capital));
     setValue(
       "cuotaResultante",
       formatDecimalMoneyValue(result.cuotaResultante),
     );
-    setValue("gastosAdministrativos", formatMoneyValue(String(result.gastos)));
+    setValue("gastosAdministrativos", formatMoneyAmount(result.gastos));
     setValue("tasa", String(result.tasa));
-    setValue("total", formatMoneyValue(String(result.total)));
+    setValue("total", formatMoneyAmount(result.total));
 
     const nextFechaPrimerVencimiento = result.fechaPrimerVencimiento
       ? result.fechaPrimerVencimiento.slice(0, 10)
@@ -283,7 +283,7 @@ export function SimuladorPrestamoModal({
         simulacion.fechaPrimerVencimiento?.slice(0, 10) ||
         "",
       lineaOid: selectedLinea.oid,
-      montoAFinanciar: formatMoneyValue(String(simulacion.montoAFinanciar)),
+      montoAFinanciar: formatMoneyAmount(simulacion.montoAFinanciar),
     });
   }
 
@@ -497,16 +497,16 @@ export function SimuladorPrestamoModal({
                           {cuota.fechaVencimiento.slice(0, 10)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.capital))}
+                          {formatMoneyAmount(cuota.capital)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.interes))}
+                          {formatMoneyAmount(cuota.interes)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.gastos))}
+                          {formatMoneyAmount(cuota.gastos)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.total))}
+                          {formatMoneyAmount(cuota.total)}
                         </td>
                       </tr>
                     ))}

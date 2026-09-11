@@ -9,6 +9,7 @@ import type {
   SolicitudCoreTitularResponse,
 } from "@/modules/solicitudes/types/solicitudes-core";
 import { parseMoneyValue } from "@/modules/solicitudes-editor/utils/money-format";
+import { formatMoneyAmount } from "@/shared/utils/money-format";
 import {
   toDisplayPhone,
   toLegacyPhone,
@@ -180,6 +181,10 @@ function toOptionalDatePatch(
     : normalizedNextValue;
 }
 
+// Para los campos de dinero. El campo guarda el texto formateado
+// ("$850.000,50"), que Number() no entiende: con toOptionalNumberPatch el
+// cambio se descartaba sin avisar y nunca llegaba al backend. Compara bien
+// contra el valor inicial porque la edicion arranca con formatMoneyAmount.
 function toOptionalMoneyPatch(
   nextValue: string,
   currentValue: number | null | undefined,
@@ -369,7 +374,7 @@ function buildConyugePatch(
     nextPatch.fechaNacimiento = fechaNacimiento;
   }
 
-  const ingresosMensuales = toOptionalNumberPatch(
+  const ingresosMensuales = toOptionalMoneyPatch(
     values.ingresosMensuales,
     conyuge.ingresosMensuales,
   );
@@ -438,7 +443,7 @@ function buildDatosLaboralesPatch(
     nextPatch.antiguedadLaboralMeses = antiguedadLaboralMeses;
   }
 
-  const descuentosSueldo = toOptionalNumberPatch(
+  const descuentosSueldo = toOptionalMoneyPatch(
     values.descuentosSueldo,
     datosLaborales.descuentosSueldo,
   );
@@ -494,7 +499,7 @@ function buildDatosLaboralesPatch(
     nextPatch.fechaIngresoLaboral = fechaIngresoLaboral;
   }
 
-  const montoRecibo = toOptionalNumberPatch(
+  const montoRecibo = toOptionalMoneyPatch(
     values.montoRecibo,
     datosLaborales.montoRecibo,
   );
@@ -548,7 +553,7 @@ export function mapSolicitudCoreToEditableValues(
           actividad: toEditableString(solicitud.conyuge.actividad),
           apellido: toEditableString(solicitud.conyuge.apellido),
           fechaNacimiento: toEditableDate(solicitud.conyuge.fechaNacimiento),
-          ingresosMensuales: toEditableNumber(
+          ingresosMensuales: formatMoneyAmount(
             solicitud.conyuge.ingresosMensuales,
           ),
           nacionalidad: toEditableString(solicitud.conyuge.nacionalidad),
@@ -565,7 +570,7 @@ export function mapSolicitudCoreToEditableValues(
       antiguedadLaboralMeses: toEditableNumber(
         solicitud.datosLaborales.antiguedadLaboralMeses,
       ),
-      descuentosSueldo: toEditableNumber(
+      descuentosSueldo: formatMoneyAmount(
         solicitud.datosLaborales.descuentosSueldo,
       ),
       domicilioLaboralCalle: toEditableString(
@@ -584,7 +589,7 @@ export function mapSolicitudCoreToEditableValues(
       fechaIngresoLaboral: toEditableDate(
         solicitud.datosLaborales.fechaIngresoLaboral,
       ),
-      montoRecibo: toEditableNumber(solicitud.datosLaborales.montoRecibo),
+      montoRecibo: formatMoneyAmount(solicitud.datosLaborales.montoRecibo),
       relacionLaboral: toEditableString(
         solicitud.datosLaborales.relacionLaboral,
       ),
@@ -599,8 +604,8 @@ export function mapSolicitudCoreToEditableValues(
       linkFirmaDigital: toEditableString(solicitud.linkFirmaDigital),
       firmaDigitalmente: solicitud.firmaDigitalmente,
       fechaPrimerVencimiento: toEditableDate(solicitud.fechaPrimerVencimiento),
-      cupoTitular: toEditableNumber(solicitud.cupoTitular),
-      montoAFinanciar: toEditableNumber(solicitud.montoAFinanciar),
+      cupoTitular: formatMoneyAmount(solicitud.cupoTitular),
+      montoAFinanciar: formatMoneyAmount(solicitud.montoAFinanciar),
       motivo: toEditableString(solicitud.motivo),
       nroOperacion: toEditableString(solicitud.nroOperacion),
       observaciones: toEditableString(solicitud.observaciones),
@@ -684,7 +689,7 @@ export function mapEditableValuesToPatchSolicitudCoreRequest(
     solicitudPatch.firmaDigitalmente = values.solicitud.firmaDigitalmente;
   }
 
-  const montoAFinanciar = toOptionalNumberPatch(
+  const montoAFinanciar = toOptionalMoneyPatch(
     values.solicitud.montoAFinanciar,
     solicitud.montoAFinanciar,
   );

@@ -3,7 +3,7 @@ import { useForm, useWatch } from "react-hook-form";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 
-import { formatMoneyValue } from "@/shared/utils/money-format";
+import { formatMoneyAmount } from "@/shared/utils/money-format";
 
 import {
   ESTADO_CIVIL_OPTIONS,
@@ -91,7 +91,7 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[]) {
     ) {
       form.setValue(
         "montoAFinanciar",
-        formatMoneyValue(String(selectedLinea.montoMaximo)),
+        formatMoneyAmount(selectedLinea.montoMaximo),
         {
           shouldDirty: false,
           shouldTouch: false,

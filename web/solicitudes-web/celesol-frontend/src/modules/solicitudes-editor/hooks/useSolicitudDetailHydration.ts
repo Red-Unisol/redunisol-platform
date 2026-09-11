@@ -8,7 +8,10 @@ import { normalizeSolicitudNumber } from "@/modules/solicitudes/utils/solicitud-
 
 import { NUEVA_SOLICITUD_DEFAULT_VALUES } from "../constants/solicitud-default-values";
 import type { NuevaSolicitudFormValues } from "../types";
-import { legacyValueToString } from "../utils/legacy-options";
+import {
+  legacyMoneyToString,
+  legacyValueToString,
+} from "../utils/legacy-options";
 
 export function useSolicitudDetailHydration({
   isDetailRoute,
@@ -91,11 +94,11 @@ export function useSolicitudDetailHydration({
           apellidoDenominacion: titular.apellido ?? "",
           cbu: titular.cbu ?? "",
           celular: titular.celular ?? "",
-          cupoTitular: legacyValueToString(solicitud.cupoTitular),
+          cupoTitular: legacyMoneyToString(solicitud.cupoTitular),
           cuotaResultante: solicitud.cuotaResultante ?? "",
           cuotas: legacyValueToString(solicitud.cuotas),
           cuit: titular.cuit ?? "",
-          descuentosSueldo: legacyValueToString(
+          descuentosSueldo: legacyMoneyToString(
             economicosLaborales.descuentosSueldo,
           ),
           documento: titular.tipoDocumento ?? "DNI",
@@ -114,13 +117,13 @@ export function useSolicitudDetailHydration({
           fechaNacimientoConyuge: conyuge.fechaNacimiento ?? "",
           fechaPrimerVencimiento: solicitud.fechaPrimerVencimiento ?? "",
           firmaDigitalmente: solicitud.firmaDigitalmente === true,
-          ingresosConyuge: legacyValueToString(conyuge.ingresosMensuales),
+          ingresosConyuge: legacyMoneyToString(conyuge.ingresosMensuales),
           linea: lineaDescripcion,
           lineaPrestamoLegacyOid: "",
           localidad: titular.localidad ?? "",
           localidadLaboral: economicosLaborales.domicilioLaboralLocalidad ?? "",
-          montoAFinanciar: legacyValueToString(solicitud.montoAFinanciar),
-          montoRecibo: legacyValueToString(
+          montoAFinanciar: legacyMoneyToString(solicitud.montoAFinanciar),
+          montoRecibo: legacyMoneyToString(
             economicosLaborales.montoRecibo ?? titular.montoRecibo,
           ),
           motivo: solicitud.motivo ?? "",

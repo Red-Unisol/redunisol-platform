@@ -36,7 +36,7 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
         <input
           aria-invalid={invalid || undefined}
           className={className ?? defaultMoneyInputClassName}
-          inputMode="numeric"
+          inputMode="decimal"
           name={field.name}
           onBlur={field.onBlur}
           onChange={(event) =>
@@ -74,7 +74,7 @@ export function StaticMoneyInput({
     <Input
       className={className}
       disabled={disabled}
-      inputMode="numeric"
+      inputMode="decimal"
       onChange={(event) => {
         const formattedValue = formatMoneyValue(event.target.value);
         if (controlledValue === undefined) {
