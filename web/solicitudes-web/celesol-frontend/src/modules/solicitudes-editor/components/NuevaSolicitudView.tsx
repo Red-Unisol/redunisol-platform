@@ -176,11 +176,14 @@ export function NuevaSolicitudView({
                 <CircleAlert className="mt-0.5 size-4 shrink-0" />
                 <div>
                   <p className="font-medium">
-                    Completá los siguientes campos antes de guardar:
+                    Revisá los siguientes campos antes de guardar:
                   </p>
                   <ul className="mt-1 list-inside list-disc">
+                    {/* El mensaje dice el motivo ("La línea permite hasta 6
+                        cuotas."); el nombre del campo solo no alcanzaba cuando
+                        el valor estaba cargado pero fuera de rango. */}
                     {errorItems.map(({ key, label }) => (
-                      <li key={key}>{label}</li>
+                      <li key={key}>{errors[key]?.message || label}</li>
                     ))}
                   </ul>
                 </div>
