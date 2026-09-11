@@ -153,6 +153,10 @@ import { ApiError } from "@/shared/services/http/api-error";
 
 const EDIT_SOLICITUD_ERROR_TOAST_ID = "edit-solicitud-core-error";
 const EDIT_SOLICITUD_SUCCESS_TOAST_ID = "edit-solicitud-core-success";
+// Id propio a proposito: sonner publica el dismiss en el frame siguiente, y
+// handleSaveChanges hace dismiss de EDIT_SOLICITUD_ERROR_TOAST_ID justo antes
+// de validar. Con ese id, el aviso se mostraba y se borraba en el acto.
+const EDIT_SOLICITUD_CUOTAS_ERROR_TOAST_ID = "edit-solicitud-core-cuotas-error";
 const DELETE_ADJUNTO_ERROR_TOAST_ID = "delete-solicitud-core-adjunto-error";
 const DELETE_ADJUNTO_SUCCESS_TOAST_ID = "delete-solicitud-core-adjunto-success";
 const DOWNLOAD_ADJUNTO_ERROR_TOAST_ID = "download-solicitud-core-adjunto-error";
@@ -3312,7 +3316,7 @@ export function SolicitudesActualDetallePage() {
       toast.error(cuotasError, {
         duration: 3500,
         icon: <CircleAlert className="size-5" />,
-        id: EDIT_SOLICITUD_ERROR_TOAST_ID,
+        id: EDIT_SOLICITUD_CUOTAS_ERROR_TOAST_ID,
       });
       return;
     }
