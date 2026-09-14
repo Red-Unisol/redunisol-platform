@@ -15,6 +15,7 @@ from .deal_service import (
 )
 from .lead_service import get_lead, lead_enum_label
 from .logger import create_logger, Logger
+from .routing_bucket import resolve_routing_bucket
 
 
 EXPECTED_EVENT = "ONCRMLEADUPDATE"
@@ -237,6 +238,9 @@ def _is_kestra_classified_lead(
 ) -> bool:
     province = lead_enum_label(client, lead, config.fields.lead_province)
     supported = str(province or "").strip().lower() in {"catamarca", "cordoba"}
+    if not supported:
+        routing = resolve_routing_bucket(config, lead)
+        supported = routing.bucket is not None and routing.bucket.key == "policia_federal_caba"
     if not supported:
         logger.info("El lead ganado no pertenece a una provincia clasificada por Kestra.")
     return supported

@@ -8,6 +8,7 @@ test('it exposes the current seller pools when no custom configuration exists', 
     $this->getJson('/api/internal/bitrix-routing')
         ->assertOk()
         ->assertJsonPath('catamarca_general.0', 68579)
+        ->assertJsonPath('policia_federal_caba', [8057])
         ->assertJsonPath('cordoba_unc', [53121]);
 });
 
@@ -38,4 +39,18 @@ test('an authenticated user can open the routing settings page', function () {
         ->assertOk()
         ->assertSee('Catamarca — General')
         ->assertSee('Pausado');
+});
+
+test('federal police sellers can be changed and paused without changing other pools', function () {
+    app(BitrixRoutingConfig::class)->save([
+        'policia_federal_caba' => [
+            ['user_id' => 8057, 'paused' => true],
+            ['user_id' => 53121, 'paused' => false],
+        ],
+    ]);
+
+    $this->getJson('/api/internal/bitrix-routing')
+        ->assertOk()
+        ->assertJsonPath('policia_federal_caba', [53121])
+        ->assertJsonPath('cordoba_unc', [53121]);
 });

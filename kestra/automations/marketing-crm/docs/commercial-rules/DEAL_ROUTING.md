@@ -65,6 +65,17 @@ Un vendedor pausado permanece visible en el panel pero no recibe asignaciones nu
   - Julieta Aguilera (`116561`)
   - Agustin Villagra (`110059`)
 
+### `policia_federal_caba`
+
+- Regla `PFC-ROUTE-010`: Policía Federal + CABA, lead creado desde el 14/09/2026.
+- Responsable inicial: Stefania Salguero (`8057`), editable desde el panel.
+- Incluye la revisión comercial y respeta las reglas generales de horario,
+  disponibilidad, cola y transferencia de chat.
+- Excluye leads históricos y fechas ausentes o inválidas.
+- Estado: implementado, pendiente de deploy.
+
+Detalle aprobado: [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).
+
 ### `manual_fallback`
 
 - Criterio: negociacion interna que no coincide con una regla de distribucion.

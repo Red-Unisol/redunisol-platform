@@ -25,9 +25,10 @@ Durante ese período:
 El email del segmento queda a cargo de una automatización de Bitrix24 que puede
 usar el motivo `4175` como condición de entrada.
 
-Fuera del período, Policía Federal + CABA conserva por ahora el rechazo general
-por provincia. El circuito comercial posterior al 14 de septiembre se implementa
-por separado y solo debe aplicar a presentaciones nuevas.
+Desde el 14/09/2026, las presentaciones nuevas califican y habilitan WhatsApp.
+La apertura y asignación inicial a Stefania se definen en
+[`../commercial-rules/POLICIA_FEDERAL_CABA.md`](../commercial-rules/POLICIA_FEDERAL_CABA.md).
+La cohorte inicial conserva su tratamiento; no se reprocesa automáticamente.
 
 ## Esquema Bitrix24
 

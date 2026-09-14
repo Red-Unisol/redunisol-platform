@@ -195,3 +195,15 @@ DASPU Haberes no tiene rechazo BCRA automático documentado. Para Club Mutual CB
 cuatro o más entidades en situación 4/5 producen revisión manual, no rechazo. Los
 límites de Club Mutual CBU son 60 años para mujeres y 65 para hombres; si el género o
 la edad no son confiables, corresponde revisión manual.
+
+
+## Policía Federal + CABA
+
+Para los leads nuevos habilitados desde el 14/09/2026, aplica la política general
+de revisión manual, sin línea automática: no hay tabla crediticia aprobada para
+este convenio. Motivo: `policia_federal_caba_requires_commercial_review`.
+Se conserva el tratamiento de BCRA/Vimarx y sus reintentos del circuito habitual.
+No se reutilizan las tablas crediticias de Córdoba ni Catamarca.
+
+Estado: implementado, pendiente de deploy. Alcance y autorización:
+[`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).

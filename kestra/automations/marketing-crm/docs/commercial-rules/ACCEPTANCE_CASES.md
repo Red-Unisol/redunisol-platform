@@ -174,3 +174,10 @@ Un caso no reemplaza la tabla normativa de clasificación.
 - **Dado** cualquier negociación que necesita edad, afiliación, banco o BCRA para
   decidir y el dato no es confiable.
 - **Entonces** queda en **REVISIÓN MANUAL KESTRA** y nunca se rechaza por presunción.
+
+
+## Policía Federal + CABA
+
+Los casos de corte horario del 14/09, segmentación, asignación a Stefania y cola
+están en [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md#casos-de-aceptación).
+Estado: implementado y probado localmente, pendiente de deploy.

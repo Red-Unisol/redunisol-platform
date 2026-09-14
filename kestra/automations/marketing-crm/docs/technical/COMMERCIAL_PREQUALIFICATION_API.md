@@ -96,10 +96,15 @@ Entre el 31 de agosto y el 13 de septiembre de 2026, inclusive, la combinación
 conversión sin mostrar el CTA de WhatsApp; en CRM el lead se conserva como
 rechazado con el motivo específico `POLICÍA FEDERAL CABA - PERÍODO INICIAL`.
 
-Fuera de esa ventana, y para Policía Federal en cualquier otra provincia, se
+Antes de esa ventana, y para Policía Federal en cualquier otra provincia, se
 aplican las reglas generales de rechazo. El detalle operativo se documenta en
 `POLICIA_FEDERAL_CABA_INITIAL_2026.md`.
 
 El backend encola la persistencia del formulario cualquiera sea el resultado de
 preclasificación. Por lo tanto, la respuesta no confirma que el lead ya exista en
 Bitrix; confirma que el trabajo de persistencia fue encolado.
+
+
+Desde el 14/09/2026, Policía Federal + CABA devuelve `prequalified: true` y
+`route_to_whatsapp: true`, con motivo `policia_federal_caba_commercial`.
+Versión de regla: `2026-09-14-policia-federal-caba-commercial`.

@@ -111,3 +111,10 @@ versión.
 | 2026-08-11 | Catamarca | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218; producción conserva la versión anterior |
 | 2026-08-11 | Córdoba | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218 |
 | 2026-08-10 | Distribución de negociaciones | Implementado, pendiente de deploy | Criterio acordado | PR #218 |
+
+
+## Policía Federal + CABA
+
+La apertura comercial del 14/09/2026, su autorización y casos de aceptación se
+definen en [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).
+Estado: implementado, pendiente de deploy.

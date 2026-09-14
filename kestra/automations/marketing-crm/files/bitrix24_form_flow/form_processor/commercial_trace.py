@@ -59,6 +59,7 @@ REASON_LABELS = {
     "missing_membership_data": "No se pudo confirmar si es socio nuevo o recurrente.",
     "missing_prequalification_data": "Faltan datos de la precalificación necesarios para evaluar la negociación.",
     "unsupported_cordoba_employment_status": "La situación laboral no tiene una regla comercial automática en Córdoba.",
+    "policia_federal_caba_requires_commercial_review": "Policía Federal CABA: evaluación de oferta por el equipo comercial.",
     "province_not_supported_for_deal_classification": "La provincia no tiene clasificación comercial automática.",
     "missing_routing_data": "Faltan provincia o situación laboral para determinar el grupo de distribución.",
     "no_matching_bucket": "No existe un grupo de distribución configurado para esos datos.",

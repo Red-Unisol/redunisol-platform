@@ -42,6 +42,7 @@ from .lead_service import (
 )
 from .logger import Logger, create_logger
 from .routing_bucket import resolve_routing_bucket, routing_bucket_by_key
+from .qualification import is_policia_federal_caba
 
 
 @dataclass(frozen=True)
@@ -78,10 +79,11 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-09-11-vimarx-refresh-v1"
+COMMERCIAL_RULE_VERSION = "2026-09-14-policia-federal-caba-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
+    "policia_federal_caba",
     "catamarca_general",
     "cordoba_jubilados",
     "cordoba_unc",
@@ -1352,6 +1354,8 @@ def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> Comm
     except ValueError:
         return _manual(config, "missing_prequalification_data")
 
+    if is_policia_federal_caba(submission):
+        return _manual(config, "policia_federal_caba_requires_commercial_review")
     if submission.province.key == "catamarca":
         return _evaluate_catamarca(client, config, lead, submission.payment_bank.label)
     if submission.province.key == "cordoba":
