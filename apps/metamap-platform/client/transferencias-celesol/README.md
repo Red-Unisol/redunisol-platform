@@ -1,5 +1,28 @@
 # Transferencias Celesol
 
+## Transferencias a terceros (2.2.0)
+
+Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/22097/).
+
+- Si el CUIT informado por Coinag para el CBU difiere del CUIT del solicitante,
+  la solicitud muestra una advertencia y queda excluida de transferencias automaticas.
+  La comparacion usa CUIT normalizado, no diferencias de escritura en el nombre.
+- El operador puede transferir manualmente: el cartel muestra solicitante, importe,
+  CBU y titular receptor (nombre si el banco lo informa y CUIT). Debe escribir
+  exactamente `TRANSFERIR` para habilitar la confirmacion. Cancelar o abrir otro
+  cartel borra esa autorizacion; no se guarda una excepcion permanente.
+- Antes del envio se vuelven a consultar los datos. Si cambian la solicitud, CUIT,
+  CBU, linea, importe o plan de cancelacion autorizado, se exige confirmar de nuevo.
+  El payload bancario usa el CUIT del titular del CBU consultado en Coinag.
+- La excepcion solo resuelve la diferencia de titularidad. Una consulta fallida,
+  titular desconocido, moneda incompatible, inconsistencia documental o de importes,
+  linea inhabilitada y controles contra reenvios siguen bloqueando la operacion.
+- En cancelaciones aplica al destino del Monto En Mano; las verificaciones y la
+  whitelist de las entidades acreedoras conservan sus reglas.
+- `third_party_transfer_authorized` registra operador, confirmacion y destino
+  aprobado en la traza existente. `third_party_confirmation_required` registra
+  intentos detenidos por falta de autorizacion o cambios en los datos.
+
 ## Evaluaciones y recuperacion del comprobante (2.1.1)
 
 - Cada solicitud evaluada emite `transfer_candidate_evaluated`, aun sin pulsar
@@ -131,7 +154,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - validaciones bloqueantes de:
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
-  - titularidad Coinag via CUIL/CUIT
+  - consulta de titularidad Coinag via CUIL/CUIT (terceros requieren confirmacion escrita)
 - configuracion unificada de lineas por ID estable, editable desde la aplicacion
 - cancelaciones detectadas por `MontoCancelaciones` o `DetalleFormaPago.Count()`, sin depender del nombre de la linea
 - cancelaciones ejecutadas como patas independientes al socio y a cada acreedor
@@ -205,7 +228,7 @@ Cancelaciones:
 
 - una solicitud es candidata si `MontoCancelaciones != 0` o `DetalleFormaPago.Count() > 0`
 - antes de transferir deben coincidir la suma de detalles, `MontoCancelaciones`, `abs(Monto En Mano)`, `MontoAFinanciar` y el unico campo bancario no nulo
-- cada CBU se consulta siempre en Coinag; CUIT juridico, nombre y cuenta en pesos son bloqueantes
+- cada CBU se consulta siempre en Coinag; para acreedores, CUIT juridico, nombre y cuenta en pesos son bloqueantes
 - una entidad o un CBU nuevos generan advertencia y requieren confirmacion manual; la accion `Confiar acreedor` los agrega a la whitelist atomica
 - cualquier advertencia impide el modo automatico
 - se hace preflight de todas las patas antes del primer envio y cada pata tiene un `idTrxCliente` estable

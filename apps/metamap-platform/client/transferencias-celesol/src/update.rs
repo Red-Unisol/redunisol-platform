@@ -829,6 +829,11 @@ mod tests {
                 fs::copy(&compiled, &staged).unwrap();
             }
             let (envelope, key) = signed(|m| {
+                // The helper runs this build, so the fixture must target a newer version.
+                let current = Version::parse(crate::BUILD_TAG).unwrap();
+                m.version =
+                    Version::new(current.major, current.minor, current.patch + 1).to_string();
+                m.filename = format!("{}/{EXE}", m.version);
                 m.sha256 = hash_file(&staged).unwrap();
                 m.size = fs::metadata(&staged).unwrap().len();
             });

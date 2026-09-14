@@ -62,6 +62,7 @@ pub struct CoreSnapshot {
     pub bank_coinag_cba_amount_raw: Option<String>,
     pub bank_coinag_cba_amount: Option<Decimal>,
     pub coinag_cuil: Option<String>,
+    pub coinag_holder_name: Option<String>,
     pub coinag_account_type_code: Option<String>,
     pub coinag_account_type_label: Option<String>,
     pub refreshed_label: Option<String>,
