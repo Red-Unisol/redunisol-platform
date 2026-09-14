@@ -7,14 +7,31 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class CredixsaFlowContractsTests(unittest.TestCase):
-    def test_prefill_idle_uses_selector_outputs(self):
-        flow = yaml.safe_load((ROOT / "kestra/automations/marketing-crm/flows/bitrix24_lead_prefill.yaml").read_text())
-        tasks = {t["id"]: t for t in flow["tasks"]}
+    def test_prefill_batch_is_serialized_and_children_are_bounded(self):
+        root = ROOT / "kestra/automations/marketing-crm/flows"
+        parent = yaml.safe_load((root / "bitrix24_lead_prefill.yaml").read_text())
+        child = yaml.safe_load((root / "bitrix24_lead_prefill_one.yaml").read_text())
+        self.assertEqual(parent["concurrency"]["limit"], 1)
+        parallel = parent["tasks"][1]
+        self.assertEqual(parallel["concurrent"], 2)
+        self.assertEqual(len(parallel["tasks"]), 2)
+        for i, task in enumerate(parallel["tasks"]):
+            self.assertEqual(task["runIf"], "{{ outputs.seleccionar_lote.vars.count > " + str(i) + " }}")
+            self.assertTrue(task["wait"])
+            self.assertFalse(task["transmitFailed"])
+            self.assertEqual(task["flowId"], child["id"])
+        self.assertEqual(parent["tasks"][2]["id"], "verificar_lote")
+        self.assertEqual(len(parent["tasks"][2]["conditions"]), 2)
+        self.assertEqual(child["concurrency"]["limit"], 2)
+        self.assertNotIn("triggers", child)
+        for task in parent["tasks"] + child["tasks"]:
+            if "containerImage" in task:
+                self.assertNotIn("beforeCommands", task)
+                self.assertIn("@sha256:", task["containerImage"])
+                self.assertEqual(task["taskRunner"]["pullPolicy"], "IF_NOT_PRESENT")
+        tasks = {t["id"]: t for t in child["tasks"]}
         self.assertEqual(tasks["consultar_arca"]["runIf"], "{{ (outputs.resolver_identidad.vars.effective_cuil ?? '') != '' }}")
-        for output in flow["outputs"]:
-            if "outputs.completar_backfill" in output["value"]:
-                self.assertIn("outputs.completar_backfill.vars is defined", output["value"])
-        for task in flow["tasks"]:
+        for task in child["tasks"]:
             for expression in task.get("env", {}).values():
                 for subflow in ("consultar_arca", "consultar_credixsa"):
                     if "outputs." + subflow in expression:

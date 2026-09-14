@@ -9,6 +9,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_form_webhook.yaml`: flow de intake del formulario y respuesta al frontend.
 - `flows/commercial_prequalification_webhook.yaml`: endpoint de pre-elegibilidad sin persistencia ni consultas externas.
 - `flows/bitrix24_lead_prefill.yaml`: backfill de leads en `INGRESO (UC_5N2OEO)` con CredixSA, ARCA, Vimarx y BCRA. Para Finguru sanea primero el DNI copiado como CUIL, vincula el contacto y luego ejecuta el enriquecimiento normal.
+- `flows/bitrix24_lead_prefill_one.yaml`: enriquecimiento interno de un lead seleccionado; el scheduler espera hasta dos subflows en paralelo.
 - `flows/bitrix24_lead_classification.yaml`: flow interno de clasificacion por `lead_id`.
 - `flows/bitrix24_prequalification_cutover.yaml`: cutover manual, con dry-run, del ownership activo hacia Kestra.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: receptor de `ONCRMLEADUPDATE`; clasifica `PRECLASIFICACION (NEW)` y crea negociaciones desde `RESULTADO GANADO`.
@@ -52,3 +53,37 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - Cada resultado terminal publica datos auditables en la ejecucion Kestra. El reporte diario los transforma en `marketing/distribucion-negociaciones/ultimo.xlsx` y conserva una copia historica por fecha.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.
 - Aunque el dominio se llame `marketing-crm`, la integracion actual sigue siendo con Bitrix24, por eso se mantienen nombres internos `bitrix24_*` donde ya forman parte del contrato tecnico.
+
+## Capacidad del prefill
+
+El scheduler `bitrix24_lead_prefill` conserva `concurrency.limit: 1` y su cron
+cada minuto. Selecciona hasta dos leads distintos de la primera pagina de INGRESO,
+ordenados por intentos e ID, y espera ambos subflows antes de seleccionar otro lote.
+Si un hijo falla, el padre espera igualmente al otro antes de fallar: las ramas
+usan `transmitFailed: false` y una comprobacion final valida ambos estados. Esto
+evita liberar el selector mientras el otro hijo sigue escribiendo.
+No se solapan en una tanda los leads que comparten contacto o DNI (incluido el DNI
+extraido del CUIL, para cubrir la resolucion de identidad Finguru).
+Los duplicados conservan su lugar para tandas posteriores; no se descartan.
+
+`bitrix24_lead_prefill_one` tiene un limite global de dos ejecuciones y no tiene
+trigger. No ejecutar el hijo manualmente ni reanudar ejecuciones historicas mientras
+el scheduler este activo: la exclusion por identidad pertenece al selector, no a
+un bloqueo distribuido entre cualquier escritura del CRM.
+Al cancelar una tanda, cancelar en cascada y comprobar que terminaron los hijos
+antes de iniciar otro procesamiento. No subir la concurrencia del selector.
+
+Las tareas Python de estos dos flows usan la imagen publica `kestrapy` fijada por
+digest, con `kestra` y `requests` preinstalados y `pullPolicy: IF_NOT_PRESENT`.
+No ejecutan pip durante el procesamiento. Los proveedores y sus subflows mantienen
+sus consultas, cache y politica de reintentos actuales.
+
+El padre publica `lead_ids` y `count`; cada hijo conserva `lead_id`, `action`,
+`attempts` y `errors_json` para auditar el resultado individual. Para medir capacidad,
+contar resultados `advanced`/`advanced_partial` de los hijos, no tandas del padre.
+
+Para desplegar: subir primero los namespace files modificados y el hijo; publicar
+el padre al final. Una ejecucion anterior del padre termina con su revision original
+antes de la siguiente tanda. Para volver a procesamiento individual: restaurar el
+YAML anterior del padre y esperar el cierre de la tanda en curso; el selector Python
+conserva la funcion original de un solo lead.
