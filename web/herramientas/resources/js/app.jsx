@@ -23,6 +23,15 @@ const icons = {
             <path d="M18 15.5L20 17.5L24 13.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
+    'file-archive': (
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path d="M9 4.5H17L22 9.5V22.5C22 23.6 21.1 24.5 20 24.5H9C7.9 24.5 7 23.6 7 22.5V6.5C7 5.4 7.9 4.5 9 4.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M17 4.5V9.5H22" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M11 13H18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M11 17H18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M11 21H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+    ),
     plus: (
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
             <rect x="4" y="4" width="20" height="20" rx="6" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" />
@@ -67,6 +76,17 @@ function App({ branding, tools }) {
 
         if (tool.id === 'consulta-quiebra-credix') {
             window.location.assign(tool.href || '/credixsa');
+            return;
+        }
+
+        if (tool.openMode === 'external') {
+            if (!tool.href) {
+                setSelectedToolId(tool.id);
+                setError('La herramienta todavia no tiene una URL configurada.');
+                return;
+            }
+
+            window.open(tool.href, '_blank', 'noopener,noreferrer');
             return;
         }
 
@@ -183,7 +203,7 @@ function App({ branding, tools }) {
                                         {isPlaceholder ? 'Proximamente' : 'Activo'}
                                     </span>
                                     <span className="tool-card__action">
-                                        {isPlaceholder ? 'Proximamente' : 'Abrir'}
+                                        {isPlaceholder ? 'Proximamente' : (tool.actionLabel || 'Abrir')}
                                     </span>
                                 </div>
                             </button>

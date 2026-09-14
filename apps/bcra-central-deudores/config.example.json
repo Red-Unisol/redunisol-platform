@@ -1,0 +1,53 @@
+{
+  "api_url": "https://celesol.dyndns.org:5050/api/Empresa/EvaluateList",
+  "fecha_corte": "2026-04-30",
+  "max": 200,
+  "cmd": "Prestamo.SaldoPrestamo > 25000 and Prestamo.Estado = 'Activa'",
+  "tipo": "F.Module.Cuentas.Prestamos.CuotaPrestamo",
+  "campos": "Prestamo.NroCuenta;Prestamo.LineaPrestamo.Superior.Descripcion;Prestamo.LineaPrestamo.Descripcion;Prestamo.SocioTitular.Socio.CUIT;Prestamo.SocioTitular.Socio.NombreCompleto;Prestamo.SaldoPrestamo;Fecha;FechaCobro;NroCuota;MontoTotal;Prestamo.TNA",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "timeout_seconds": 300,
+  "retries": 3,
+  "backoff_seconds": 2,
+  "verify_tls": true,
+  "output_dir": "output",
+  "control_dir": "control",
+  "lineas_excluidas": [],
+  "lineas_prestamo_excluidas": [],
+  "cuits_excluidos": [],
+  "nro_cuentas_excluidas": [],
+  "lineas_situacion_01_hasta_66_dias": [
+    "HABERES DESCUENTO POLICIA CBA"
+  ],
+  "tipo_presentacion": "NORMAL",
+  "regimen_codigo_xml": "2",
+  "requerimiento_codigo_xml": "6",
+  "generar_zip": true,
+  "nombre_zip": "informacion.zip",
+  "tasa": {
+    "modo": "MANUAL",
+    "otorgadas_sin_garantia_real_mes": 1,
+    "tasa_promedio_manual": "112,00",
+    "api": {
+      "habilitada": false,
+      "cmd": "",
+      "tipo": "F.Module.Cuentas.Prestamos.CuotaPrestamo",
+      "campos": "",
+      "max": 1000000
+    },
+    "campos": {
+      "nro_cuenta": "Prestamo.NroCuenta",
+      "linea": "Prestamo.LineaPrestamo.Superior.Descripcion",
+      "cuit": "Prestamo.SocioTitular.Socio.CUIT",
+      "nombre": "Prestamo.SocioTitular.Socio.NombreCompleto",
+      "fecha_otorgamiento": "",
+      "monto_otorgado": "",
+      "tna": "Prestamo.TNA",
+      "garantia_real": ""
+    },
+    "lineas_sin_garantia_real": [],
+    "lineas_con_garantia_real": []
+  }
+}

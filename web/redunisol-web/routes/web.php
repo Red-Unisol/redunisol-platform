@@ -58,6 +58,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', function () {
         return Inertia::render('dashboard');
     })->name('dashboard');
+
+    Route::get('herramientas/bcra-central-deudores', function () {
+        return Inertia::render('bcra-central-deudores', [
+            'panelUrl' => config('bcra.panel_url'),
+        ]);
+    })->name('herramientas.bcra-central-deudores');
 });
 
 Route::get('/test', function () {
