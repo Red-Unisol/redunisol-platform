@@ -22,7 +22,7 @@ Formatos visibles: `.xlsx`, `.xls`, `.csv` y `.pdf`.
 
 Cada flow debe escribir primero un archivo temporal y renombrarlo al finalizar, para que management nunca descargue un archivo incompleto.
 
-El flow `form_management_report_daily` genera el informe de formulario a Bitrix todos los días a las 07:15 (hora de Buenos Aires). Consulta tanto el flow principal como las subejecuciones históricas de persistencia y reemplaza `ultimo.xlsx` de forma atómica.
+El flow `form_management_report_daily` genera el informe de formulario a Bitrix semanalmente, los sábados a las 12:00 (zona `America/Argentina/Buenos_Aires`, cron `0 12 * * 6`). Conserva los identificadores históricos del flow y del trigger. Consulta tanto el flow principal como las subejecuciones históricas de persistencia y reemplaza `ultimo.xlsx` de forma atómica.
 
 ## Preparación de la VPS
 
