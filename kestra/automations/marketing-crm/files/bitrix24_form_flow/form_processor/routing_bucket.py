@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from .config import AppConfig
 from .lead_service import build_routing_input_from_lead
+from .qualification import is_policia_federal_caba_commercial_period
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,22 @@ def resolve_routing_bucket(
             bucket=None,
             province="",
             reason="missing_routing_data",
+        )
+
+    # Only new leads enter this launch; never redistribute the initial cohort.
+    try:
+        created_at = datetime.fromisoformat(
+            str(lead.get("DATE_CREATE") or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        created_at = None
+    if created_at is not None and is_policia_federal_caba_commercial_period(
+        submission, evaluated_at=created_at,
+    ):
+        return RoutingResolution(
+            bucket=routing_bucket_by_key(config, "policia_federal_caba"),
+            province=submission.province.label,
+            reason="policia_federal_caba_commercial",
         )
 
     if submission.province.key == "catamarca":
@@ -87,6 +105,11 @@ def resolve_routing_bucket(
 
 def routing_bucket_by_key(config: AppConfig, key: str) -> RoutingBucket | None:
     definitions = {
+        "policia_federal_caba": RoutingBucket(
+            "policia_federal_caba",
+            "CABA - Policía Federal",
+            config.deal.policia_federal_caba_user_ids,
+        ),
         "catamarca_general": RoutingBucket(
             "catamarca_general",
             "Catamarca - General",

@@ -664,6 +664,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "catamarca_general": [29, 68579],
                 "cordoba_jubilados": [10451],
                 "cordoba_unc": [],
+            "policia_federal_caba": [8057],
                 "cordoba_general": [116561, 110059],
             }
         ).encode("utf-8")
@@ -681,6 +682,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(config.deal.round_robin_user_ids, (29, 68579))
         self.assertEqual(config.deal.cordoba_jubilados_user_ids, (10451,))
         self.assertEqual(config.deal.cordoba_unc_user_ids, ())
+        self.assertEqual(config.deal.policia_federal_caba_user_ids, (8057,))
         self.assertEqual(config.deal.cordoba_general_user_ids, (116561, 110059))
 
     def test_config_keeps_existing_pools_when_remote_config_is_unavailable(self) -> None:
@@ -1363,10 +1365,9 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertFalse(result["route_to_whatsapp"])
         self.assertEqual(result["reason"], "policia_federal_caba_initial_period")
 
-    def test_policia_federal_caba_is_regular_rejection_outside_initial_period(self) -> None:
+    def test_policia_federal_caba_is_rejected_before_launch(self) -> None:
         for evaluated_at in (
             datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc),
-            datetime(2026, 9, 14, 3, 0, tzinfo=timezone.utc),
         ):
             with self.subTest(evaluated_at=evaluated_at):
                 result = prequalify_commercial_fields(
@@ -1381,6 +1382,123 @@ class BusinessLogicTests(unittest.TestCase):
                 self.assertFalse(result["prequalified"])
                 self.assertFalse(result["route_to_whatsapp"])
                 self.assertEqual(result["reason"], "province_not_eligible")
+
+    def test_policia_federal_commercial_date_boundary_and_segment(self) -> None:
+        for province, employment, when, qualified, whatsapp in (
+            ("CABA", "Policía Federal", "2026-09-14T02:59:59+00:00", True, False),
+            ("CABA", "Policía Federal", "2026-09-14T03:00:00+00:00", True, True),
+            ("Ciudad Autónoma de Buenos Aires", "Policía Federal", "2026-10-01T12:00:00-03:00", True, True),
+            ("Buenos Aires", "Policía Federal", "2026-09-14T12:00:00-03:00", False, False),
+            ("CABA", "Policía", "2026-09-14T12:00:00-03:00", False, False),
+        ):
+            with self.subTest(province=province, employment=employment, when=when):
+                result = prequalify_commercial_fields(
+                    {"province": province, "employment_status": employment, "payment_bank": "Otros"},
+                    evaluated_at=datetime.fromisoformat(when),
+                )
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["prequalified"], qualified)
+                self.assertEqual(result["route_to_whatsapp"], whatsapp)
+
+    def _policia_federal_lead(self, lead_id: int) -> dict:
+        lead = self._cordoba_enriched_lead(lead_id, employment_id="4165", bcra_entities=[])
+        lead["UF_CRM_64E65D2B2136C"] = "4145"
+        lead["DATE_CREATE"] = "2026-09-14T09:00:00-03:00"
+        return lead
+
+    def test_new_policia_federal_lead_is_won_and_enters_pending_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[990] = self._policia_federal_lead(990)
+        client.leads[990]["STATUS_ID"] = "NEW"
+        result = classify_lead(990, env=self.env, bitrix_client=client, logger=SilentLogger())
+        self.assertTrue(result["qualified"])
+        self.assertEqual(client.leads[990]["STATUS_ID"], "QUALIFIED")
+        result = process_lead_update_event(
+            self.make_lead_update_event(990), env=self.env, bitrix_client=client,
+            expected_application_token="app-token", logger=SilentLogger(),
+        )
+        self.assertTrue(result["ok"])
+        deal = client.deals[int(result["deal_id"])]
+        self.assertEqual(deal["stageId"], "C1:KESTRA_PENDING")
+        self.assertEqual(deal["assignedById"], 57)
+
+    def test_policia_federal_routing_excludes_historical_or_undated_leads(self) -> None:
+        config = load_config(self.env)
+        for created in ("2026-09-13T23:59:59-03:00", "", "invalid"):
+            with self.subTest(created=created):
+                lead = self._policia_federal_lead(990)
+                lead["DATE_CREATE"] = created
+                self.assertIsNone(resolve_routing_bucket(config, lead).bucket)
+
+    def test_policia_federal_routes_review_to_stefania_and_transfers_chat(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids.add(8057)
+        client.leads[990] = self._policia_federal_lead(990)
+        client.deals[990] = self._pending_deal(990, 990)
+        client.open_line_chats[("deal", 990)] = [116990]
+        client.open_line_dialogs[116990] = {
+            "id": 116990,
+            "entity_id": "whatsappbyedna|1|contact|guest",
+            "entity_data_1": "Y|CONTACT|101|N|N|117990|0|0|0|DEFAULT",
+            "text_field_enabled": True,
+        }
+        result = qualify_catamarca_deal(
+            990, env=self.env, bitrix_client=client, logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-09-14T12:00:00-03:00"),
+        )
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["reason"], "policia_federal_caba_requires_commercial_review")
+        self.assertEqual(result["routing_bucket"], "policia_federal_caba")
+        self.assertEqual(result["assigned_by_id"], 8057)
+        self.assertEqual(client.leads[990]["ASSIGNED_BY_ID"], 8057)
+        self.assertEqual(result["transferred_chat_count"], 1)
+
+    def test_policia_federal_queue_retries_when_stefania_returns(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids.clear()
+        client.leads[990] = self._policia_federal_lead(990)
+        client.deals[990] = self._pending_deal(990, 990)
+        result = qualify_catamarca_deal(
+            990, env=self.env, bitrix_client=client, logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-09-14T12:00:00-03:00"),
+        )
+        self.assertEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
+        self.assertEqual(client.deals[990]["ufCrmRouteBucket"], "policia_federal_caba")
+        client.online_user_ids.add(8057)
+        result = process_distribution_queue(
+            env=self.env, bitrix_client=client, logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-09-14T12:01:00-03:00"),
+        )
+        self.assertEqual(result["distributed_count"], 1)
+        self.assertEqual(client.deals[990]["assignedById"], 8057)
+        self.assertEqual(client.deals[990]["stageId"], load_config(self.env).deal.manual_review_stage_id)
+
+    def test_policia_federal_respects_remote_pool_changes_and_pause(self) -> None:
+        for pool in ([53121], []):
+            with self.subTest(pool=pool):
+                response = MagicMock()
+                response.__enter__.return_value.read.return_value = json.dumps(
+                    {"policia_federal_caba": pool}
+                ).encode()
+                with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
+                    config = load_config({**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"})
+                routing = resolve_routing_bucket(config, self._policia_federal_lead(990))
+                self.assertEqual(routing.bucket.seller_ids, tuple(pool))
+
+    def test_policia_federal_outside_hours_keeps_manual_owner(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids.add(8057)
+        client.leads[990] = self._policia_federal_lead(990)
+        client.deals[990] = self._pending_deal(990, 990)
+        result = qualify_catamarca_deal(
+            990, env={**self.env, "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY": "true"},
+            bitrix_client=client, logger=SilentLogger(),
+            now=datetime.fromisoformat("2026-09-18T17:00:00-03:00"),
+        )
+        self.assertEqual(result["assigned_by_id"], 57)
+        self.assertEqual(result["distribution_reason"], "outside_business_hours")
+        self.assertEqual(client.chat_transfers, [])
+        self.assertNotEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
 
     def test_policia_federal_requires_caba(self) -> None:
         result = prequalify_commercial_fields(
@@ -4679,7 +4797,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-09-11-vimarx-refresh-v1",
+            "2026-09-14-policia-federal-caba-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [

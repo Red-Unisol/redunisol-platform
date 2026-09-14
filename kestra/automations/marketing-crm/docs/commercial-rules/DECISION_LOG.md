@@ -237,3 +237,14 @@ del árbol activo; Git conserva su historial.
 - **Sugerencia:** se registra únicamente en el resultado auditable.
 - **Vencimiento:** una revisión manual nunca se rechaza automáticamente por demora.
 - **Decisiones cerradas:** `GEN-PEND-002` y `GEN-PEND-003`.
+
+
+## `PFC-DEC-001` — Abrir gestión de Policía Federal + CABA
+
+- Fecha: 14/09/2026. Tarea Bitrix24 `22889`, confirmada por Santiago Acosta.
+- Nuevas presentaciones calificadas, con WhatsApp habitual y pool inicial de
+  Stefania Salguero (`8057`), administrable desde el panel.
+- CABA pasa a provincias principales; La Rioja a otras provincias.
+- La cohorte inicial no se reprocesa. La línea crediticia queda para revisión.
+- Estado: implementado, pendiente de deploy.
+- Reglas y casos: [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).

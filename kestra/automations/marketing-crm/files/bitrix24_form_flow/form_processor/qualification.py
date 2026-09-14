@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from .input_parser import NormalizedInput, PrequalificationInput
+from .input_parser import NormalizedInput, PrequalificationInput, RoutingInput
 
 
 @dataclass(frozen=True)
@@ -141,6 +141,14 @@ def evaluate_prequalification(
             route_to_whatsapp=False,
         )
 
+    if is_policia_federal_caba_commercial_period(submission, evaluated_at=evaluated_at):
+        return QualificationResult(
+            qualified=True,
+            reason="policia_federal_caba_commercial",
+            message="La persona califica para Policía Federal en CABA.",
+            outcome="qualified",
+        )
+
     rule = QUALIFICATION_RULES.get(submission.province.key)
     if not rule:
         return QualificationResult(
@@ -190,14 +198,32 @@ def evaluate_qualification(
     return evaluate_prequalification(submission, evaluated_at=evaluated_at)
 
 
+def is_policia_federal_caba(
+    submission: NormalizedInput | PrequalificationInput | RoutingInput,
+) -> bool:
+    return (
+        submission.province.key in {"caba", "ciudad_autonoma_de_buenos_aires"}
+        and submission.employment_status.key == "policia_federal"
+    )
+
+
+def is_policia_federal_caba_commercial_period(
+    submission: NormalizedInput | PrequalificationInput | RoutingInput,
+    *,
+    evaluated_at: datetime | None = None,
+) -> bool:
+    return (
+        is_policia_federal_caba(submission)
+        and _as_buenos_aires_date(evaluated_at) >= POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE
+    )
+
+
 def _is_policia_federal_caba_initial_period(
     submission: NormalizedInput | PrequalificationInput,
     *,
     evaluated_at: datetime | None,
 ) -> bool:
-    if submission.province.key not in {"caba", "ciudad_autonoma_de_buenos_aires"}:
-        return False
-    if submission.employment_status.key != "policia_federal":
+    if not is_policia_federal_caba(submission):
         return False
 
     local_date = _as_buenos_aires_date(evaluated_at)

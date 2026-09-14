@@ -51,20 +51,20 @@ const DEFAULT_CONFIG: FormSectionConfig = {
 const provinciasPrincipales = [
     'Córdoba',
     'Catamarca',
-    'La Rioja',
+    'Ciudad Autónoma de Buenos Aires',
     'Santa Fe',
     'Jujuy',
 ];
 
 const otrasProvincias = [
     'Buenos Aires',
-    'Ciudad Autónoma de Buenos Aires',
     'Chaco',
     'Chubut',
     'Corrientes',
     'Entre Ríos',
     'Formosa',
     'La Pampa',
+    'La Rioja',
     'Mendoza',
     'Misiones',
     'Neuquén',

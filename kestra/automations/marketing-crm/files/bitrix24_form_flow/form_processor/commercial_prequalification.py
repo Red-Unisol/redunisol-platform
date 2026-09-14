@@ -7,7 +7,7 @@ from .input_parser import normalize_prequalification_input
 from .qualification import evaluate_prequalification
 
 
-RULE_VERSION = "2026-08-31-policia-federal-caba-initial"
+RULE_VERSION = "2026-09-14-policia-federal-caba-commercial"
 
 
 def prequalify_commercial_fields(

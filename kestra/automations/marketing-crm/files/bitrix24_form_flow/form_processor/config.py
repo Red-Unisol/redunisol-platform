@@ -206,6 +206,7 @@ class DealConfig:
     cordoba_jubilados_user_ids: tuple[int, ...]
     cordoba_unc_user_ids: tuple[int, ...]
     cordoba_general_user_ids: tuple[int, ...]
+    policia_federal_caba_user_ids: tuple[int, ...]
     volume_compensation_url: str | None
     volume_compensation_token: str | None
     volume_compensation_scope: str
@@ -513,6 +514,9 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
                     default=DEFAULT_DEAL_CONFIG["cordoba_general_user_ids"],
                 ),
             ),
+            policia_federal_caba_user_ids=routing_pools.get(
+                "policia_federal_caba", (8057,)
+            ),
             volume_compensation_url=_optional_env(
                 source, "BITRIX24_VOLUME_COMPENSATION_URL"
             ),
@@ -544,6 +548,7 @@ def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
 
     pools: dict[str, tuple[int, ...]] = {}
     for key in (
+        "policia_federal_caba",
         "catamarca_general",
         "cordoba_jubilados",
         "cordoba_unc",

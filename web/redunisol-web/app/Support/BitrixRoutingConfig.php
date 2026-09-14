@@ -18,9 +18,15 @@ class BitrixRoutingConfig
         116561 => 'Julieta Aguilera',
         110059 => 'Agustín Villagra',
         53121 => 'Gloria Fernandez',
+        8057 => 'Stefania Salguero',
     ];
 
     public const BUCKETS = [
+        'policia_federal_caba' => [
+            'label' => 'CABA — Policía Federal',
+            'description' => 'Policía Federal residente en CABA, desde el 14/09/2026.',
+            'sellers' => [8057],
+        ],
         'catamarca_general' => [
             'label' => 'Catamarca — General',
             'description' => 'Negociaciones internas de Catamarca.',
