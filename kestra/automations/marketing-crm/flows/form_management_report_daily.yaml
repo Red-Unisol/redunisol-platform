@@ -1,7 +1,7 @@
 id: form_management_report_daily
 namespace: redunisol
 
-description: Genera y publica el informe privado diario de formularios enviados a Bitrix.
+description: Genera y publica el informe privado de formularios enviados a Bitrix los sabados a las 12:00 (hora de Buenos Aires).
 
 labels:
   env: prod
@@ -37,5 +37,5 @@ tasks:
 triggers:
   - id: todos_los_dias
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "15 7 * * *"
+    cron: "0 12 * * 6"
     timezone: America/Argentina/Buenos_Aires
