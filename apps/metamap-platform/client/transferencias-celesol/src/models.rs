@@ -1,7 +1,10 @@
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::cancellations::CancellationPayment;
+use crate::{
+    cancellations::CancellationPayment,
+    warnings::{ConfirmationPolicy, ValidationWarning},
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ValidationSearchResponse {
@@ -103,7 +106,7 @@ pub struct TransferAmountResolution {
 pub struct ValidationReport {
     pub disabled: bool,
     pub blockers: Vec<String>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<ValidationWarning>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -128,6 +131,21 @@ impl CoinagTransferGuard {
 }
 
 impl ValidationReport {
+    pub fn confirmation_policy(&self) -> ConfirmationPolicy {
+        ConfirmationPolicy::new(&self.warnings)
+    }
+
+    pub fn warning_messages(&self) -> Vec<&str> {
+        self.warnings
+            .iter()
+            .map(|warning| warning.message.as_str())
+            .collect()
+    }
+
+    pub fn can_transfer_automatically(&self) -> bool {
+        self.can_transfer() && self.warnings.is_empty()
+    }
+
     pub fn can_transfer(&self) -> bool {
         !self.disabled && self.blockers.is_empty()
     }

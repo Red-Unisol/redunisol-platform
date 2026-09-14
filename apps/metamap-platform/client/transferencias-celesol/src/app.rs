@@ -33,6 +33,7 @@ use crate::{
     receipt,
     server_client::ServerClient,
     trace, validation,
+    warnings::{ConfirmationPolicy, ConfirmationResponses, ValidationWarning, WarningKind},
 };
 
 pub struct TransferenciasApp {
@@ -142,7 +143,7 @@ impl TransferenciasApp {
         self.spawn_transfer_worker(
             request.request_oid,
             TransferKind::Manual,
-            request.third_party_approval,
+            Some(request.approval),
         );
     }
 
@@ -150,7 +151,7 @@ impl TransferenciasApp {
         &mut self,
         request_oid: String,
         transfer_kind: TransferKind,
-        third_party_approval: Option<TransferDestinationSnapshot>,
+        approval: Option<ManualTransferApproval>,
     ) {
         let Some(position) = self
             .items
@@ -176,7 +177,7 @@ impl TransferenciasApp {
         let services = Arc::clone(&self.services);
         let sender = self.event_tx.clone();
         thread::spawn(move || {
-            let result = services.execute_transfer(item, transfer_kind, third_party_approval);
+            let result = services.execute_transfer(item, transfer_kind, approval);
             let _ = sender.send(result);
         });
     }
@@ -240,9 +241,7 @@ impl TransferenciasApp {
             && self.automatic_processing_enabled
             && !item.busy
             && !item.validation.disabled
-            && item.validation.can_transfer()
-            && item.validation.warnings.is_empty()
-            && !validation::has_third_party_destination(&item.core)
+            && item.validation.can_transfer_automatically()
             && item.server_validation.has_completed_validation()
             && self
                 .services
@@ -305,14 +304,16 @@ impl TransferenciasApp {
                     ui.add_space(10.0);
                     ui.label(RichText::new(warning).color(Color32::from_rgb(176, 113, 0)));
                 }
-                if confirmation.third_party_snapshot.is_some() {
+                for word in confirmation.policy.required_words() {
                     ui.add_space(10.0);
-                    ui.strong("Vas a transferir a una cuenta que no pertenece al solicitante.");
-                    ui.label("Para autorizar esta transferencia manual, escribi TRANSFERIR:");
+                    ui.label(format!(
+                        "Para autorizar esta transferencia manual, escribi {word}:"
+                    ));
+                    let response = confirmation.responses.entry(word.to_owned()).or_default();
                     ui.add(
-                        TextEdit::singleline(&mut confirmation.confirmation_text)
-                            .hint_text("TRANSFERIR")
-                            .id_salt("third_party_confirmation_text"),
+                        TextEdit::singleline(response)
+                            .hint_text(word)
+                            .id_salt(("transfer_confirmation_word", word)),
                     );
                 }
                 ui.add_space(12.0);
@@ -1220,7 +1221,7 @@ impl eframe::App for TransferenciasApp {
                                     hover_lines.push(format!("Bloqueo: {blocker}"));
                                 }
                                 for warning in &item.validation.warnings {
-                                    hover_lines.push(format!("Advertencia: {warning}"));
+                                    hover_lines.push(format!("Advertencia: {}", warning.message));
                                 }
                                 let response = ui.label(RichText::new(summary).color(color));
                                 if !hover_lines.is_empty() {
@@ -1305,16 +1306,24 @@ struct TransferConfirmation {
     message: String,
     summary_fields: Vec<(String, String)>,
     warning_message: Option<String>,
-    third_party_snapshot: Option<TransferDestinationSnapshot>,
-    confirmation_text: String,
+    destination_snapshot: TransferDestinationSnapshot,
+    policy: ConfirmationPolicy,
+    responses: ConfirmationResponses,
 }
 
 struct ManualTransferRequest {
     request_oid: String,
-    third_party_approval: Option<TransferDestinationSnapshot>,
+    approval: ManualTransferApproval,
 }
 
-// Binds the typed consent to the payment displayed, not just to a request ID.
+#[derive(Clone)]
+struct ManualTransferApproval {
+    destination: TransferDestinationSnapshot,
+    policy: ConfirmationPolicy,
+    responses: ConfirmationResponses,
+}
+
+// Binds every manual confirmation to the payment displayed, not just to a request ID.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TransferDestinationSnapshot {
     request_oid: String,
@@ -1351,25 +1360,34 @@ impl TransferDestinationSnapshot {
     }
 }
 
-fn third_party_authorization_error(
+fn transfer_authorization_error(
     core: &CoreSnapshot,
+    report: &ValidationReport,
     kind: TransferKind,
-    approval: Option<&TransferDestinationSnapshot>,
+    approval: Option<&ManualTransferApproval>,
 ) -> Option<&'static str> {
-    if kind.is_automatic() && (validation::has_third_party_destination(core) || approval.is_some())
-    {
-        return Some("Una cuenta de terceros no admite transferencias automaticas.");
+    if !report.can_transfer() {
+        return Some("La transferencia tiene bloqueos pendientes de resolver.");
     }
-    if let Some(approved) = approval {
-        if approved != &TransferDestinationSnapshot::from_core(core) {
-            return Some(
-                "Los datos de la transferencia cambiaron. Revisa el destino y el importe y escribi TRANSFERIR nuevamente.",
-            );
-        }
-    } else if validation::has_third_party_destination(core) {
-        return Some(
-            "El CBU pertenece a un tercero. Revisa la advertencia y escribi TRANSFERIR para confirmar.",
+    if kind.is_automatic() {
+        return (!report.can_transfer_automatically() || approval.is_some()).then_some(
+            "Una transferencia automatica no admite advertencias ni autorizacion manual.",
         );
+    }
+    let Some(approved) = approval else {
+        return Some("Revisa el cartel y confirma la transferencia manual.");
+    };
+    if approved.destination != TransferDestinationSnapshot::from_core(core) {
+        return Some(
+            "Los datos de la transferencia cambiaron. Revisa el destino y el importe y confirma nuevamente.",
+        );
+    }
+    let policy = report.confirmation_policy();
+    if !policy.was_presented_in(&approved.policy) {
+        return Some("Las advertencias cambiaron. Revisa el cartel y confirma nuevamente.");
+    }
+    if !policy.accepts(&approved.responses) {
+        return Some("Falta completar la confirmacion requerida por las advertencias.");
     }
     None
 }
@@ -1584,18 +1602,27 @@ fn cancellation_failure(
 
 impl TransferConfirmation {
     fn can_confirm(&self) -> bool {
-        self.third_party_snapshot.is_none() || self.confirmation_text == "TRANSFERIR"
+        self.policy.accepts(&self.responses)
     }
 
     fn confirmed_request(&self) -> Option<ManualTransferRequest> {
         self.can_confirm().then(|| ManualTransferRequest {
             request_oid: self.request_oid.clone(),
-            third_party_approval: self.third_party_snapshot.clone(),
+            approval: ManualTransferApproval {
+                destination: self.destination_snapshot.clone(),
+                policy: self.policy.clone(),
+                responses: self.responses.clone(),
+            },
         })
     }
 
     fn for_case(item: &HydratedCase) -> Self {
-        let mut warning_lines = item.validation.warnings.clone();
+        let mut warning_lines = item
+            .validation
+            .warning_messages()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         deduplicate_warning_lines(&mut warning_lines);
 
         let mut summary_fields = vec![
@@ -1633,9 +1660,7 @@ impl TransferConfirmation {
             summary_fields.push(("CBU".to_owned(), item.cbu_display()));
         }
 
-        let third_party_snapshot = validation::has_third_party_destination(&item.core)
-            .then(|| TransferDestinationSnapshot::from_core(&item.core));
-        if third_party_snapshot.is_some() {
+        if item.core.coinag_cuil.is_some() {
             summary_fields.push((
                 "TITULAR DEL CBU".to_owned(),
                 item.core
@@ -1650,8 +1675,9 @@ impl TransferConfirmation {
         }
         Self {
             request_oid: item.request_oid().to_owned(),
-            third_party_snapshot,
-            confirmation_text: String::new(),
+            destination_snapshot: TransferDestinationSnapshot::from_core(&item.core),
+            policy: item.validation.confirmation_policy(),
+            responses: ConfirmationResponses::new(),
             message: "Desea transferir esta solicitud?".to_owned(),
             summary_fields,
             warning_message: if warning_lines.is_empty() {
@@ -2552,13 +2578,19 @@ impl AppServices {
                         };
                         let warning = match whitelist.status(cuit, cbu) {
                             TrustStatus::Trusted => None,
-                            TrustStatus::KnownEntityNewCbu => Some(format!(
-                                "Acreedor conocido con CBU nuevo: {} ({cuit}), CBU {cbu}.",
-                                payment.owner_name.as_deref().unwrap_or("sin nombre")
+                            TrustStatus::KnownEntityNewCbu => Some(ValidationWarning::new(
+                                WarningKind::KnownCreditorNewCbu,
+                                format!(
+                                    "Acreedor conocido con CBU nuevo: {} ({cuit}), CBU {cbu}.",
+                                    payment.owner_name.as_deref().unwrap_or("sin nombre")
+                                ),
                             )),
-                            TrustStatus::NewEntity => Some(format!(
-                                "Acreedor nuevo: {} ({cuit}), CBU {cbu}.",
-                                payment.owner_name.as_deref().unwrap_or("sin nombre")
+                            TrustStatus::NewEntity => Some(ValidationWarning::new(
+                                WarningKind::NewCreditor,
+                                format!(
+                                    "Acreedor nuevo: {} ({cuit}), CBU {cbu}.",
+                                    payment.owner_name.as_deref().unwrap_or("sin nombre")
+                                ),
                             )),
                         };
                         if let Some(warning) = warning {
@@ -2623,7 +2655,8 @@ impl AppServices {
             "credit_line_id": case.core.credit_line_id,
             "disabled": case.validation.disabled,
             "blockers": case.validation.blockers,
-            "warnings": case.validation.warnings,
+            "warnings": case.validation.warning_messages(),
+            "warning_details": case.validation.warnings,
             "source": "evaluation",
         });
         let Ok(mut observed) = self.observed_evaluations.write() else {
@@ -2651,7 +2684,7 @@ impl AppServices {
         &self,
         case: HydratedCase,
         transfer_kind: TransferKind,
-        third_party_approval: Option<TransferDestinationSnapshot>,
+        approval: Option<ManualTransferApproval>,
     ) -> WorkerEvent {
         log_transfer_audit(
             "transfer_started",
@@ -2670,7 +2703,8 @@ impl AppServices {
                 "credit_line_code": case.core.credit_line_code,
                 "verification_id": case.server_validation.verification_id,
                 "blockers": case.validation.blockers,
-                "warnings": case.validation.warnings,
+                "warnings": case.validation.warning_messages(),
+                "warning_details": case.validation.warnings,
             }),
         );
         let Some(coinag) = &self.coinag else {
@@ -2699,7 +2733,8 @@ impl AppServices {
             json!({
                 "can_transfer": refreshed.validation.can_transfer(),
                 "blockers": refreshed.validation.blockers,
-                "warnings": refreshed.validation.warnings,
+                "warnings": refreshed.validation.warning_messages(),
+                "warning_details": refreshed.validation.warnings,
                 "core_status": refreshed.core.request_status,
                 "core_snapshot": format!("{:?}", refreshed.core),
                 "metamap_snapshot": format!("{:?}", refreshed.metamap),
@@ -2709,7 +2744,7 @@ impl AppServices {
         );
         if !refreshed.validation.can_transfer()
             || (transfer_kind.is_automatic()
-                && (!refreshed.validation.warnings.is_empty()
+                && (!refreshed.validation.can_transfer_automatically()
                     || !refreshed.server_validation.has_completed_validation()
                     || !self
                         .credit_line_mode_for(&refreshed.core)
@@ -2733,13 +2768,14 @@ impl AppServices {
             };
         }
 
-        if let Some(reason) = third_party_authorization_error(
+        if let Some(reason) = transfer_authorization_error(
             &refreshed.core,
+            &refreshed.validation,
             transfer_kind,
-            third_party_approval.as_ref(),
+            approval.as_ref(),
         ) {
             log_transfer_audit(
-                "third_party_confirmation_required",
+                "transfer_confirmation_required",
                 case.request_oid(),
                 transfer_kind,
                 json!({"reason": reason}),
@@ -2756,20 +2792,21 @@ impl AppServices {
                 automatic_receipt_pending: false,
             };
         }
-        if let Some(approval) = third_party_approval.as_ref() {
+        if let Some(approval) = approval.as_ref() {
             log_transfer_audit(
-                "third_party_transfer_authorized",
+                "manual_transfer_authorized",
                 case.request_oid(),
                 transfer_kind,
                 json!({
                     "operator": self.operator_name,
-                    "confirmation": "TRANSFERIR",
-                    "request_cuil": approval.request_cuil,
-                    "destination_cbu": approval.cbu,
-                    "destination_cuit": approval.holder_cuil,
+                    "confirmation_responses": approval.responses,
+                    "warning_details": refreshed.validation.warnings,
+                    "request_cuil": approval.destination.request_cuil,
+                    "destination_cbu": approval.destination.cbu,
+                    "destination_cuit": approval.destination.holder_cuil,
                     "destination_holder": refreshed.core.coinag_holder_name,
-                    "transfer_amount": approval.transfer_amount,
-                    "cancellation_plan": format!("{:?}", approval.cancellation_plan),
+                    "transfer_amount": approval.destination.transfer_amount,
+                    "cancellation_plan": format!("{:?}", approval.destination.cancellation_plan),
                 }),
             );
         }
@@ -3519,20 +3556,47 @@ mod tests {
         assert_eq!(merged[0].message, None);
     }
 
+    fn revalidate(case: &mut HydratedCase) {
+        case.validation = validation::build_validation_report(
+            &case.server_validation,
+            &case.metamap,
+            &case.core,
+            &case.transfer_guard,
+        );
+    }
+
     fn third_party_case() -> HydratedCase {
         let mut case = build_case("123", false, None);
+        case.core.request_status = Some("A Transferir".to_owned());
         case.core.request_cuil = Some("20-30111222-3".to_owned());
         case.core.document_cuil = case.core.request_cuil.clone();
         case.core.coinag_cuil = Some("27-33444555-6".to_owned());
         case.core.coinag_holder_name = Some("Titular tercero".to_owned());
+        case.core.coinag_account_type_code = Some("10".to_owned());
         case.core.transfer_cbu = Some("2850590940090418135201".to_owned());
         case.core.request_amount = Some(rust_decimal::Decimal::new(1000, 0));
         case.core.bank_cmf_amount = case.core.request_amount;
+        revalidate(&mut case);
+        assert!(
+            case.validation.can_transfer(),
+            "{:?}",
+            case.validation.blockers
+        );
         case
     }
 
+    fn authorize(case: &HydratedCase) -> ManualTransferApproval {
+        let mut confirmation = TransferConfirmation::for_case(case);
+        for word in confirmation.policy.required_words() {
+            confirmation
+                .responses
+                .insert(word.to_owned(), word.to_owned());
+        }
+        confirmation.confirmed_request().unwrap().approval
+    }
+
     #[test]
-    fn third_party_confirmation_requires_exact_word_and_resets_for_new_dialog() {
+    fn third_party_uses_shared_policy_for_dialog_and_worker_and_resets() {
         let case = third_party_case();
         let mut confirmation = TransferConfirmation::for_case(&case);
         assert!(
@@ -3541,83 +3605,251 @@ mod tests {
                 .iter()
                 .any(|(_, value)| value == "Titular tercero")
         );
-        for word in [
-            "",
-            "transferir",
-            "TRANSFERIR ",
-            " TRANSFERIR",
-            "SI",
-            "TRANSFERI",
-        ] {
-            confirmation.confirmation_text = word.to_owned();
-            assert!(confirmation.confirmed_request().is_none(), "{word:?}");
-        }
-        confirmation.confirmation_text = "TRANSFERIR".to_owned();
-        let request = confirmation.confirmed_request().unwrap();
-        assert!(request.third_party_approval.is_some());
+        assert_eq!(confirmation.policy.required_words(), vec!["TRANSFERIR"]);
+        assert!(confirmation.confirmed_request().is_none());
+        confirmation
+            .responses
+            .insert("TRANSFERIR".to_owned(), "TRANSFERIR".to_owned());
+        let mut approval = confirmation.confirmed_request().unwrap().approval;
         assert!(
-            third_party_authorization_error(
+            transfer_authorization_error(
                 &case.core,
+                &case.validation,
                 TransferKind::Manual,
-                request.third_party_approval.as_ref()
+                Some(&approval)
             )
             .is_none()
+        );
+        // The worker checks the requirement itself, even if a request reaches it with wrong input.
+        approval
+            .responses
+            .insert("TRANSFERIR".to_owned(), "transferir".to_owned());
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&approval)
+            )
+            .is_some()
         );
         assert!(!TransferConfirmation::for_case(&case).can_confirm());
     }
 
     #[test]
-    fn worker_requires_specific_manual_consent_and_never_accepts_automatic_override() {
+    fn manual_approval_is_bound_to_the_payment_and_cannot_override_blockers() {
         let case = third_party_case();
-        let approved = TransferDestinationSnapshot::from_core(&case.core);
-        assert!(third_party_authorization_error(&case.core, TransferKind::Manual, None).is_some());
+        let approved = authorize(&case);
         assert!(
-            third_party_authorization_error(&case.core, TransferKind::Automatic, None).is_some()
-        );
-        assert!(
-            third_party_authorization_error(&case.core, TransferKind::Automatic, Some(&approved))
+            transfer_authorization_error(&case.core, &case.validation, TransferKind::Manual, None)
                 .is_some()
         );
+        let mut changes = Vec::new();
         let mut changed = case.core.clone();
         changed.bank_cmf_amount = Some(rust_decimal::Decimal::new(900, 0));
-        assert!(
-            third_party_authorization_error(&changed, TransferKind::Manual, Some(&approved))
-                .is_some()
-        );
-        changed = case.core.clone();
+        changes.push(changed);
+        let mut changed = case.core.clone();
         changed.transfer_cbu = Some("0970099413001097400111".to_owned());
-        assert!(
-            third_party_authorization_error(&changed, TransferKind::Manual, Some(&approved))
-                .is_some()
-        );
-        changed = case.core.clone();
+        changes.push(changed);
+        let mut changed = case.core.clone();
         changed.coinag_cuil = changed.request_cuil.clone();
-        assert!(
-            third_party_authorization_error(&changed, TransferKind::Manual, Some(&approved))
-                .is_some()
-        );
-        changed = case.core.clone();
+        changes.push(changed);
+        let mut changed = case.core.clone();
         changed.request_oid = "456".to_owned();
-        assert!(
-            third_party_authorization_error(&changed, TransferKind::Manual, Some(&approved))
+        changes.push(changed);
+        let mut changed = case.core.clone();
+        changed.credit_line_id = Some(99);
+        changes.push(changed);
+        for core in changes {
+            assert!(
+                transfer_authorization_error(
+                    &core,
+                    &case.validation,
+                    TransferKind::Manual,
+                    Some(&approved)
+                )
                 .is_some()
+            );
+        }
+        let mut blocked = case.validation.clone();
+        blocked.blockers.push("Cuenta incompatible".to_owned());
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &blocked,
+                TransferKind::Manual,
+                Some(&approved)
+            )
+            .is_some()
+        );
+        blocked.blockers.clear();
+        blocked.disabled = true;
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &blocked,
+                TransferKind::Manual,
+                Some(&approved)
+            )
+            .is_some()
         );
     }
 
     #[test]
-    fn own_account_keeps_existing_confirmation_and_late_third_party_change_is_blocked() {
-        let third_party = third_party_case();
-        let mut case = third_party.clone();
+    fn own_account_keeps_simple_confirmation_and_late_warning_requires_review() {
+        let mut case = third_party_case();
         case.core.coinag_cuil = case.core.request_cuil.clone();
+        revalidate(&mut case);
         let confirmation = TransferConfirmation::for_case(&case);
-        let request = confirmation.confirmed_request().unwrap();
-        assert!(request.third_party_approval.is_none());
-        assert!(third_party_authorization_error(&case.core, TransferKind::Manual, None).is_none());
+        assert!(confirmation.policy.required_words().is_empty());
+        let approval = confirmation.confirmed_request().unwrap().approval;
         assert!(
-            third_party_authorization_error(
-                &third_party.core,
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
                 TransferKind::Manual,
-                request.third_party_approval.as_ref()
+                Some(&approval)
+            )
+            .is_none()
+        );
+        case.validation.warnings.push(ValidationWarning::new(
+            WarningKind::NewCreditor,
+            "Acreedor nuevo",
+        ));
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&approval)
+            )
+            .is_some()
+        );
+        let new_approval = authorize(&case);
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&new_approval)
+            )
+            .is_none()
+        );
+        // A refreshed third-party destination also requires a new dialog and typed confirmation.
+        case.core.coinag_cuil = Some("27-33444555-6".to_owned());
+        revalidate(&mut case);
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&new_approval)
+            )
+            .is_some()
+        );
+        assert!(!TransferConfirmation::for_case(&case).can_confirm());
+    }
+
+    #[test]
+    fn cancellation_confirmation_covers_creditor_destination_and_amount_split() {
+        use rust_decimal::Decimal;
+        let mut case = third_party_case();
+        case.core.cancellation_amount = Some(Decimal::new(400, 0));
+        case.core.cash_in_hand_amount = Some(Decimal::new(-600, 0));
+        case.core.cancellation_payments = vec![cancellations::CancellationPayment {
+            id: 1,
+            amount: Some(Decimal::new(400, 0)),
+            cbu: Some("0970099413001097400111".to_owned()),
+            owner_cuit: Some("30-62556738-2".to_owned()),
+            owner_name: Some("Acreedor de prueba".to_owned()),
+            account_type_code: Some("10".to_owned()),
+            ..Default::default()
+        }];
+        revalidate(&mut case);
+        assert!(
+            case.validation.can_transfer(),
+            "{:?}",
+            case.validation.blockers
+        );
+        let approval = authorize(&case);
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&approval)
+            )
+            .is_none()
+        );
+        let mut changed = case.clone();
+        changed.core.cancellation_payments[0].cbu = Some("0000003100015780238648".to_owned());
+        revalidate(&mut changed);
+        assert!(changed.validation.can_transfer());
+        assert!(
+            transfer_authorization_error(
+                &changed.core,
+                &changed.validation,
+                TransferKind::Manual,
+                Some(&approval)
+            )
+            .is_some()
+        );
+        changed = case.clone();
+        changed.core.cancellation_amount = Some(Decimal::new(500, 0));
+        changed.core.cancellation_payments[0].amount = Some(Decimal::new(500, 0));
+        changed.core.cash_in_hand_amount = Some(Decimal::new(-500, 0));
+        revalidate(&mut changed);
+        assert!(changed.validation.can_transfer());
+        assert!(
+            transfer_authorization_error(
+                &changed.core,
+                &changed.validation,
+                TransferKind::Manual,
+                Some(&approval)
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn every_warning_blocks_automatic_transfers_and_manual_approval_cannot_bypass_it() {
+        let case = third_party_case();
+        for kind in [
+            WarningKind::MissingMetamap,
+            WarningKind::MultipleMetamapValidations,
+            WarningKind::Renewal,
+            WarningKind::ThirdPartyDestination,
+            WarningKind::KnownCreditorNewCbu,
+            WarningKind::NewCreditor,
+        ] {
+            let mut item = case.clone();
+            item.validation.warnings = vec![ValidationWarning::new(kind, "Aviso")];
+            let approval = authorize(&item);
+            assert!(!item.validation.can_transfer_automatically());
+            for supplied in [None, Some(&approval)] {
+                assert!(
+                    transfer_authorization_error(
+                        &item.core,
+                        &item.validation,
+                        TransferKind::Automatic,
+                        supplied
+                    )
+                    .is_some()
+                );
+            }
+        }
+        let report = ValidationReport::default();
+        assert!(report.can_transfer_automatically());
+        assert!(
+            transfer_authorization_error(&case.core, &report, TransferKind::Automatic, None)
+                .is_none()
+        );
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &report,
+                TransferKind::Automatic,
+                Some(&authorize(&case))
             )
             .is_some()
         );

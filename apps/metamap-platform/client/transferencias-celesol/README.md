@@ -19,9 +19,31 @@ Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/persona
   linea inhabilitada y controles contra reenvios siguen bloqueando la operacion.
 - En cancelaciones aplica al destino del Monto En Mano; las verificaciones y la
   whitelist de las entidades acreedoras conservan sus reglas.
-- `third_party_transfer_authorized` registra operador, confirmacion y destino
-  aprobado en la traza existente. `third_party_confirmation_required` registra
+- `manual_transfer_authorized` registra operador, respuestas de confirmacion y
+  destino aprobado en la traza existente. `transfer_confirmation_required` registra
   intentos detenidos por falta de autorizacion o cambios en los datos.
+
+### Modelo comun de advertencias y confirmacion
+
+`ValidationReport.warnings` contiene `ValidationWarning` con `WarningKind` y mensaje.
+`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante,
+validaciones multiples, renovaciones y acreedores nuevos o con CBU nuevo;
+`TypeWord("TRANSFERIR")` para una cuenta de terceros. El texto visible no determina
+la politica. Los productores asignan el tipo al detectar la condicion.
+
+El cartel y el worker obtienen la misma `ConfirmationPolicy` desde el informe de
+validacion. El cartel genera los campos requeridos y el worker verifica las respuestas
+contra el informe refrescado antes de enviar al banco. Todas las advertencias bloquean
+la via automatica mediante `can_transfer_automatically()`; ninguna autorizacion manual
+habilita una automatica ni elimina bloqueos.
+
+Cada confirmacion manual queda ligada al destino, importe y plan presentados, tambien
+para cuentas propias y advertencias simples. Una advertencia nueva o modificada exige
+volver a revisar el cartel; una advertencia resuelta o un cambio de orden no lo exige.
+Las trazas conservan `warnings` como lista de textos para sus consumidores existentes
+y agregan `warning_details` con los tipos. Para incorporar otra advertencia, agregar
+su `WarningKind`, definir su requisito y emitirla desde la validacion correspondiente;
+no agregar condiciones por tipo en el cartel o en el worker.
 
 ## Evaluaciones y recuperacion del comprobante (2.1.1)
 

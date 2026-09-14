@@ -1,9 +1,12 @@
 use rust_decimal::Decimal;
 
-use crate::cancellations;
 use crate::models::{
     CoinagTransferGuard, CoreSnapshot, MetamapSnapshot, TransferAmountOutcome, ValidationReport,
     ValidationSnapshot,
+};
+use crate::{
+    cancellations,
+    warnings::{ValidationWarning, WarningKind},
 };
 
 pub fn normalize_digits(value: impl AsRef<str>) -> Option<String> {
@@ -68,7 +71,7 @@ pub fn format_money(value: Decimal) -> String {
     format!("{prefix} {},{}", groups.join("."), &decimal_part[..2])
 }
 
-pub fn has_third_party_destination(core: &CoreSnapshot) -> bool {
+fn has_third_party_destination(core: &CoreSnapshot) -> bool {
     let needs_destination = !cancellations::is_candidate(core)
         || core
             .cash_in_hand_amount
@@ -103,14 +106,17 @@ pub fn build_validation_report(
     }
 
     if !has_metamap_validation {
-        warnings.push("No existe validacion MetaMap completed asociada en el server.".to_owned());
+        warnings.push(ValidationWarning::new(
+            WarningKind::MissingMetamap,
+            "No existe validacion MetaMap completed asociada en el server.",
+        ));
     }
 
     if has_metamap_validation && server_validation.match_count > 1 {
-        warnings.push(format!(
+        warnings.push(ValidationWarning::new(WarningKind::MultipleMetamapValidations, format!(
             "El server devolvio {} validaciones completed para esta solicitud; se usa la mas reciente.",
             server_validation.match_count
-        ));
+        )));
     }
 
     if has_metamap_validation {
@@ -153,7 +159,7 @@ pub fn build_validation_report(
             TransferAmountOutcome::Exact => {}
             TransferAmountOutcome::Renovacion => {
                 if let Some(detail) = transfer_amount_resolution.detail {
-                    warnings.push(detail);
+                    warnings.push(ValidationWarning::new(WarningKind::Renewal, detail));
                 }
             }
             TransferAmountOutcome::Error => {
@@ -250,14 +256,12 @@ pub fn build_validation_report(
         }
     }
 
-    if needs_member_destination
-        && let (Some(request_cuil), Some(coinag_cuil)) = (&request_cuil, &coinag_cuil)
-    {
-        if request_cuil != coinag_cuil {
-            warnings.push(format!(
-                "El CBU pertenece a un tercero: solicitante {request_cuil}, titular de la cuenta {coinag_cuil}. Transferencia automatica bloqueada; requiere confirmacion manual escribiendo TRANSFERIR."
-            ));
-        }
+    if has_third_party_destination(core) {
+        warnings.push(ValidationWarning::new(WarningKind::ThirdPartyDestination, format!(
+            "El CBU pertenece a un tercero: solicitante {}, titular de la cuenta {}. Transferencia automatica bloqueada; requiere confirmacion manual.",
+            request_cuil.as_deref().unwrap_or_default(),
+            coinag_cuil.as_deref().unwrap_or_default(),
+        )));
     }
 
     ValidationReport {
@@ -316,7 +320,8 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("tercero") && warning.contains("TRANSFERIR"))
+                .any(|warning| warning.message.contains("tercero")
+                    && warning.kind == crate::warnings::WarningKind::ThirdPartyDestination)
         );
         core.document_cuil = Some("20-99888777-1".to_owned());
         let blocked = build_validation_report(
@@ -387,7 +392,7 @@ mod tests {
         assert_eq!(report.warnings.len(), 1);
         assert!(report.can_transfer());
         assert_eq!(
-            report.warnings[0],
+            report.warnings[0].message,
             "No existe validacion MetaMap completed asociada en el server."
         );
     }
@@ -536,7 +541,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|value| value.contains("Se detecto renovacion"))
+                .any(|value| value.message.contains("Se detecto renovacion"))
         );
         assert!(report.can_transfer());
     }
