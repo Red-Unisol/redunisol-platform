@@ -75,6 +75,7 @@ from bitrix24_form_flow.form_processor.lead_prefill_service import (
     prefill_lead,
     resolve_prefill_identity,
     select_next_new_lead_for_prefill,
+    select_new_leads_for_prefill,
 )
 from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
 from bitrix24_form_flow.form_processor.qualification import evaluate_qualification
@@ -3528,6 +3529,43 @@ class BusinessLogicTests(unittest.TestCase):
             client.calls[0][1]["order"],
             {"UF_CRM_KSTRA_BF_ATTEMPTS": "ASC", "ID": "ASC"},
         )
+
+    def test_prefill_batch_skips_same_identity_and_shared_contact(self) -> None:
+        client = FakeBitrixClient()
+        identities = [
+            (801, "20123456786", "", "", "91"),
+            (802, "20123456786", "", "", "92"),
+            (803, "12345678", "12345678", "3729", "93"),
+            (804, "20987654321", "", "", "91"),
+            (805, "20222222223", "", "", "95"),
+        ]
+        for lead_id, cuil, dni, source, contact in identities:
+            client.leads[lead_id] = {
+                "ID": str(lead_id), "STATUS_ID": "UC_5N2OEO",
+                "UF_CRM_1693840106704": cuil,
+                "UF_CRM_LEAD_1711392404332": dni,
+                "SOURCE_ID": source, "CONTACT_ID": contact,
+            }
+        selected = select_new_leads_for_prefill(
+            env=self.env, bitrix_client=client, logger=SilentLogger(),
+        )
+        self.assertEqual([lead["lead_id"] for lead in selected], ["801", "805"])
+        # Selection never mutates a lead to claim it.
+        self.assertEqual([method for method, _ in client.calls], ["crm.lead.list"])
+
+    def test_prefill_batch_empty_single_and_missing_identity(self) -> None:
+        client = FakeBitrixClient()
+        def select():
+            return select_new_leads_for_prefill(
+                env=self.env, bitrix_client=client, logger=SilentLogger(),
+            )
+        self.assertEqual(select(), [])
+        for lead_id in (801, 802, 803):
+            client.leads[lead_id] = {"ID": str(lead_id), "STATUS_ID": "UC_5N2OEO"}
+            self.assertEqual(len(select()), min(2, lead_id - 800))
+        self.assertEqual([lead["lead_id"] for lead in select()], ["801", "802"])
+        with self.assertRaises(ValueError):
+            select_new_leads_for_prefill(limit=3, env=self.env)
 
     def test_prefill_missing_cuil_advances_immediately_without_retry(self) -> None:
         client = FakeBitrixClient()

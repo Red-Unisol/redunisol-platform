@@ -27,13 +27,16 @@ IDENTITY_SANITIZED = "sanitized"
 IDENTITY_UNRESOLVED = "unresolved"
 
 
-def select_next_new_lead_for_prefill(
+def select_new_leads_for_prefill(
     *,
+    limit: int = 2,
     date_from: str | None = None,
     env: dict[str, str] | None = None,
     bitrix_client: Any | None = None,
     logger: Logger | None = None,
-) -> dict[str, object]:
+) -> list[dict[str, object]]:
+    if not 1 <= limit <= 2:
+        raise ValueError("El lote de prefill admite uno o dos leads.")
     active_logger = logger or create_logger()
     config = load_config(env)
     client = bitrix_client or BitrixClient(config, active_logger)
@@ -64,6 +67,8 @@ def select_next_new_lead_for_prefill(
     if not isinstance(leads, list):
         raise RuntimeError("crm.lead.list devolvio un payload invalido.")
 
+    selected: list[dict[str, object]] = []
+    occupied: set[str] = set()
     for lead in leads:
         lead_id = _optional_int(lead.get("ID"))
         if lead_id is None:
@@ -76,7 +81,20 @@ def select_next_new_lead_for_prefill(
             cuil=cuil,
             dni=dni,
         )
-        return {
+        keys = {f"lead:{lead_id}"}
+        contact_id = _optional_int(lead.get("CONTACT_ID"))
+        if contact_id and contact_id > 0:
+            keys.add(f"contact:{contact_id}")
+        # CUIL and Finguru DNI must collide before identity resolution runs.
+        for identity in (cuil, dni):
+            if len(identity) == 11:
+                keys.add(f"dni:{int(identity[2:10])}")
+            elif identity:
+                keys.add(f"dni:{int(identity)}")
+        if occupied.intersection(keys):
+            continue
+        occupied.update(keys)
+        selected.append({
             "ok": True,
             "action": "selected",
             "has_pending": True,
@@ -90,7 +108,26 @@ def select_next_new_lead_for_prefill(
             ),
             "attempts": _optional_int(lead.get(config.fields.lead_backfill_attempts)) or 0,
             "message": f"Lead {lead_id} seleccionado para backfill.",
-        }
+        })
+        if len(selected) == limit:
+            break
+
+    return selected
+
+
+def select_next_new_lead_for_prefill(
+    *,
+    date_from: str | None = None,
+    env: dict[str, str] | None = None,
+    bitrix_client: Any | None = None,
+    logger: Logger | None = None,
+) -> dict[str, object]:
+    selected = select_new_leads_for_prefill(
+        limit=1, date_from=date_from, env=env,
+        bitrix_client=bitrix_client, logger=logger,
+    )
+    if selected:
+        return selected[0]
 
     return {
         "ok": True,
