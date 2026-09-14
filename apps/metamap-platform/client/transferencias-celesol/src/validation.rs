@@ -1,9 +1,12 @@
 use rust_decimal::Decimal;
 
-use crate::cancellations;
 use crate::models::{
     CoinagTransferGuard, CoreSnapshot, MetamapSnapshot, TransferAmountOutcome, ValidationReport,
     ValidationSnapshot,
+};
+use crate::{
+    cancellations,
+    warnings::{ValidationWarning, WarningKind},
 };
 
 pub fn normalize_digits(value: impl AsRef<str>) -> Option<String> {
@@ -68,6 +71,21 @@ pub fn format_money(value: Decimal) -> String {
     format!("{prefix} {},{}", groups.join("."), &decimal_part[..2])
 }
 
+fn has_third_party_destination(core: &CoreSnapshot) -> bool {
+    let needs_destination = !cancellations::is_candidate(core)
+        || core
+            .cash_in_hand_amount
+            .is_some_and(|amount| !amount.is_zero());
+    needs_destination
+        && matches!(
+            (
+                core.request_cuil.as_deref().and_then(normalize_digits),
+                core.coinag_cuil.as_deref().and_then(normalize_digits),
+            ),
+            (Some(request), Some(holder)) if request != holder
+        )
+}
+
 pub fn build_validation_report(
     server_validation: &ValidationSnapshot,
     metamap: &MetamapSnapshot,
@@ -88,14 +106,17 @@ pub fn build_validation_report(
     }
 
     if !has_metamap_validation {
-        warnings.push("No existe validacion MetaMap completed asociada en el server.".to_owned());
+        warnings.push(ValidationWarning::new(
+            WarningKind::MissingMetamap,
+            "No existe validacion MetaMap completed asociada en el server.",
+        ));
     }
 
     if has_metamap_validation && server_validation.match_count > 1 {
-        warnings.push(format!(
+        warnings.push(ValidationWarning::new(WarningKind::MultipleMetamapValidations, format!(
             "El server devolvio {} validaciones completed para esta solicitud; se usa la mas reciente.",
             server_validation.match_count
-        ));
+        )));
     }
 
     if has_metamap_validation {
@@ -138,7 +159,7 @@ pub fn build_validation_report(
             TransferAmountOutcome::Exact => {}
             TransferAmountOutcome::Renovacion => {
                 if let Some(detail) = transfer_amount_resolution.detail {
-                    warnings.push(detail);
+                    warnings.push(ValidationWarning::new(WarningKind::Renewal, detail));
                 }
             }
             TransferAmountOutcome::Error => {
@@ -208,7 +229,7 @@ pub fn build_validation_report(
         || core
             .cash_in_hand_amount
             .is_some_and(|amount| !amount.is_zero());
-    if needs_member_destination && coinag_cuil.is_none() {
+    if needs_member_destination && coinag_cuil.as_ref().is_none_or(|cuit| cuit.len() != 11) {
         blockers.push("No se pudo validar titularidad del CBU en Coinag via CUIL.".to_owned());
     }
     if needs_member_destination && core.transfer_cbu.is_some() {
@@ -235,14 +256,12 @@ pub fn build_validation_report(
         }
     }
 
-    if needs_member_destination
-        && let (Some(request_cuil), Some(coinag_cuil)) = (&request_cuil, &coinag_cuil)
-    {
-        if request_cuil != coinag_cuil {
-            blockers.push(format!(
-                "Titularidad Coinag inconsistente: solicitud {request_cuil}, Coinag {coinag_cuil}."
-            ));
-        }
+    if has_third_party_destination(core) {
+        warnings.push(ValidationWarning::new(WarningKind::ThirdPartyDestination, format!(
+            "El CBU pertenece a un tercero: solicitante {}, titular de la cuenta {}. Transferencia automatica bloqueada; requiere confirmacion manual.",
+            request_cuil.as_deref().unwrap_or_default(),
+            coinag_cuil.as_deref().unwrap_or_default(),
+        )));
     }
 
     ValidationReport {
@@ -286,6 +305,81 @@ mod tests {
     }
 
     #[test]
+    fn third_party_owner_warns_but_does_not_remove_other_blockers() {
+        let mut core = valid_core_snapshot();
+        core.coinag_cuil = Some("27-33444555-6".to_owned());
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(super::has_third_party_destination(&core));
+        assert!(report.can_transfer());
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("tercero")
+                    && warning.kind == crate::warnings::WarningKind::ThirdPartyDestination)
+        );
+        core.document_cuil = Some("20-99888777-1".to_owned());
+        let blocked = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(!blocked.can_transfer());
+        assert!(
+            blocked
+                .blockers
+                .iter()
+                .any(|reason| reason.contains("lookup por DNI"))
+        );
+    }
+
+    #[test]
+    fn unavailable_owner_still_blocks_and_names_do_not_override_cuit_identity() {
+        let mut core = valid_core_snapshot();
+        core.coinag_holder_name = Some("Nombre con otra ortografia".to_owned());
+        assert!(!super::has_third_party_destination(&core));
+        core.coinag_cuil = Some("0".to_owned());
+        let invalid_owner = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(!invalid_owner.can_transfer());
+        core.coinag_cuil = None;
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(!report.can_transfer());
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|reason| reason.contains("titularidad"))
+        );
+    }
+
+    #[test]
+    fn creditors_alone_do_not_trigger_member_third_party_override() {
+        let mut core = valid_core_snapshot();
+        core.cancellation_amount = Some(Decimal::new(1000, 0));
+        core.cash_in_hand_amount = Some(Decimal::ZERO);
+        core.coinag_cuil = Some("27-33444555-6".to_owned());
+        assert!(!super::has_third_party_destination(&core));
+        core.cash_in_hand_amount = Some(Decimal::new(-100, 0));
+        assert!(super::has_third_party_destination(&core));
+    }
+
+    #[test]
     fn missing_metamap_is_only_a_warning_when_other_checks_pass() {
         let report = build_validation_report(
             &ValidationSnapshot::default(),
@@ -298,7 +392,7 @@ mod tests {
         assert_eq!(report.warnings.len(), 1);
         assert!(report.can_transfer());
         assert_eq!(
-            report.warnings[0],
+            report.warnings[0].message,
             "No existe validacion MetaMap completed asociada en el server."
         );
     }
@@ -447,7 +541,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|value| value.contains("Se detecto renovacion"))
+                .any(|value| value.message.contains("Se detecto renovacion"))
         );
         assert!(report.can_transfer());
     }

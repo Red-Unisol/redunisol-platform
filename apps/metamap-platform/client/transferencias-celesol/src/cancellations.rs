@@ -158,9 +158,8 @@ pub fn build_plan(core: &CoreSnapshot) -> CancellationPlan {
     {
         let cbu = valid_cbu(core.transfer_cbu.as_deref());
         let cuit = core
-            .request_cuil
+            .coinag_cuil
             .as_deref()
-            .or(core.document_cuil.as_deref())
             .and_then(|value| valid_cuit(Some(value)));
         if cbu.is_none() {
             plan.blockers.push(
@@ -169,8 +168,10 @@ pub fn build_plan(core: &CoreSnapshot) -> CancellationPlan {
             );
         }
         if cuit.is_none() {
-            plan.blockers
-                .push("No se pudo resolver el CUIL/CUIT del socio.".to_owned());
+            plan.blockers.push(
+                "No se pudo validar el CUIT titular del CBU para acreditar Monto En Mano."
+                    .to_owned(),
+            );
         }
         if let (Some(cbu), Some(cuit)) = (cbu, cuit) {
             plan.legs.push(TransferLeg {
@@ -179,7 +180,7 @@ pub fn build_plan(core: &CoreSnapshot) -> CancellationPlan {
                 amount: member_amount,
                 cbu,
                 cuit,
-                holder_name: core.request_name.clone(),
+                holder_name: core.coinag_holder_name.clone(),
             });
         }
     }
@@ -276,6 +277,8 @@ mod tests {
             cash_in_hand_amount: Some(Decimal::new(-1_335_000, 0)),
             bank_cmf_amount: Some(Decimal::new(-1_900_000, 0)),
             request_cuil: Some("20-30111222-3".to_owned()),
+            coinag_cuil: Some("20-30111222-3".to_owned()),
+            coinag_holder_name: Some("Persona socia".to_owned()),
             transfer_cbu: Some("0000003100015780238648".to_owned()),
             cancellation_payments: vec![CancellationPayment {
                 id: 1296,
@@ -343,6 +346,24 @@ mod tests {
                 .iter()
                 .any(|item| item.contains("simultaneamente"))
         );
+    }
+
+    #[test]
+    fn member_leg_uses_bank_destination_holder_and_requires_lookup() {
+        let mut core = historical_case();
+        core.coinag_cuil = Some("27-33444555-6".to_owned());
+        core.coinag_holder_name = Some("Titular tercero".to_owned());
+        let plan = build_plan(&core);
+        assert!(plan.can_transfer());
+        let member = plan
+            .legs
+            .iter()
+            .find(|leg| leg.kind == TransferLegKind::Member)
+            .unwrap();
+        assert_eq!(member.cuit, "27334445556");
+        assert_eq!(member.holder_name.as_deref(), Some("Titular tercero"));
+        core.coinag_cuil = None;
+        assert!(!build_plan(&core).can_transfer());
     }
 
     #[test]

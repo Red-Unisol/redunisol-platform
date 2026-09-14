@@ -420,9 +420,8 @@ impl CoinagClient {
 
         let cuit_credito = case
             .core
-            .request_cuil
+            .coinag_cuil
             .as_deref()
-            .or(case.core.document_cuil.as_deref())
             .and_then(normalize_digits)
             .ok_or_else(|| anyhow!("No se pudo resolver CUIL/CUIT de destino."))?;
         let cbu_credito = case
@@ -1395,10 +1394,11 @@ mod tests {
             },
             token_cache: Arc::new(Mutex::new(TokenCache::default())),
         };
-        let case = HydratedCase {
+        let mut case = HydratedCase {
             server_validation: Default::default(),
             metamap: Default::default(),
             core: CoreSnapshot {
+                coinag_cuil: Some("20-30111222-3".to_owned()),
                 request_oid: "123".to_owned(),
                 request_amount: Some(Decimal::new(1000, 0)),
                 request_cuil: Some("20-30111222-3".to_owned()),
@@ -1421,6 +1421,14 @@ mod tests {
             payload.get("importe").and_then(|value| value.as_str()),
             Some("800")
         );
+        assert_eq!(payload["cuitCredito"], "20301112223");
+        case.core.coinag_cuil = Some("27-33444555-6".to_owned());
+        let third_party = client.build_transfer_payload(&case).unwrap();
+        assert_eq!(third_party["cuitCredito"], "27334445556");
+        assert_eq!(third_party["cbuCredito"], payload["cbuCredito"]);
+        assert_eq!(third_party["importe"], payload["importe"]);
+        case.core.coinag_cuil = None;
+        assert!(client.build_transfer_payload(&case).is_err());
     }
 
     #[test]

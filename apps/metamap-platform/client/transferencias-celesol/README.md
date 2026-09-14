@@ -1,5 +1,50 @@
 # Transferencias Celesol
 
+## Transferencias a terceros (2.2.0)
+
+Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/22097/).
+
+- Si el CUIT informado por Coinag para el CBU difiere del CUIT del solicitante,
+  la solicitud muestra una advertencia y queda excluida de transferencias automaticas.
+  La comparacion usa CUIT normalizado, no diferencias de escritura en el nombre.
+- El operador puede transferir manualmente: el cartel muestra solicitante, importe,
+  CBU y titular receptor (nombre si el banco lo informa y CUIT). Debe escribir
+  exactamente `TRANSFERIR` para habilitar la confirmacion. Cancelar o abrir otro
+  cartel borra esa autorizacion; no se guarda una excepcion permanente.
+- Antes del envio se vuelven a consultar los datos. Si cambian la solicitud, CUIT,
+  CBU, linea, importe o plan de cancelacion autorizado, se exige confirmar de nuevo.
+  El payload bancario usa el CUIT del titular del CBU consultado en Coinag.
+- La excepcion solo resuelve la diferencia de titularidad. Una consulta fallida,
+  titular desconocido, moneda incompatible, inconsistencia documental o de importes,
+  linea inhabilitada y controles contra reenvios siguen bloqueando la operacion.
+- En cancelaciones aplica al destino del Monto En Mano; las verificaciones y la
+  whitelist de las entidades acreedoras conservan sus reglas.
+- `manual_transfer_authorized` registra operador, respuestas de confirmacion y
+  destino aprobado en la traza existente. `transfer_confirmation_required` registra
+  intentos detenidos por falta de autorizacion o cambios en los datos.
+
+### Modelo comun de advertencias y confirmacion
+
+`ValidationReport.warnings` contiene `ValidationWarning` con `WarningKind` y mensaje.
+`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante,
+validaciones multiples, renovaciones y acreedores nuevos o con CBU nuevo;
+`TypeWord("TRANSFERIR")` para una cuenta de terceros. El texto visible no determina
+la politica. Los productores asignan el tipo al detectar la condicion.
+
+El cartel y el worker obtienen la misma `ConfirmationPolicy` desde el informe de
+validacion. El cartel genera los campos requeridos y el worker verifica las respuestas
+contra el informe refrescado antes de enviar al banco. Todas las advertencias bloquean
+la via automatica mediante `can_transfer_automatically()`; ninguna autorizacion manual
+habilita una automatica ni elimina bloqueos.
+
+Cada confirmacion manual queda ligada al destino, importe y plan presentados, tambien
+para cuentas propias y advertencias simples. Una advertencia nueva o modificada exige
+volver a revisar el cartel; una advertencia resuelta o un cambio de orden no lo exige.
+Las trazas conservan `warnings` como lista de textos para sus consumidores existentes
+y agregan `warning_details` con los tipos. Para incorporar otra advertencia, agregar
+su `WarningKind`, definir su requisito y emitirla desde la validacion correspondiente;
+no agregar condiciones por tipo en el cartel o en el worker.
+
 ## Evaluaciones y recuperacion del comprobante (2.1.1)
 
 - Cada solicitud evaluada emite `transfer_candidate_evaluated`, aun sin pulsar
@@ -131,7 +176,7 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - validaciones bloqueantes de:
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
-  - titularidad Coinag via CUIL/CUIT
+  - consulta de titularidad Coinag via CUIL/CUIT (terceros requieren confirmacion escrita)
 - configuracion unificada de lineas por ID estable, editable desde la aplicacion
 - cancelaciones detectadas por `MontoCancelaciones` o `DetalleFormaPago.Count()`, sin depender del nombre de la linea
 - cancelaciones ejecutadas como patas independientes al socio y a cada acreedor
@@ -205,7 +250,7 @@ Cancelaciones:
 
 - una solicitud es candidata si `MontoCancelaciones != 0` o `DetalleFormaPago.Count() > 0`
 - antes de transferir deben coincidir la suma de detalles, `MontoCancelaciones`, `abs(Monto En Mano)`, `MontoAFinanciar` y el unico campo bancario no nulo
-- cada CBU se consulta siempre en Coinag; CUIT juridico, nombre y cuenta en pesos son bloqueantes
+- cada CBU se consulta siempre en Coinag; para acreedores, CUIT juridico, nombre y cuenta en pesos son bloqueantes
 - una entidad o un CBU nuevos generan advertencia y requieren confirmacion manual; la accion `Confiar acreedor` los agrega a la whitelist atomica
 - cualquier advertencia impide el modo automatico
 - se hace preflight de todas las patas antes del primer envio y cada pata tiene un `idTrxCliente` estable

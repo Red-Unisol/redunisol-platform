@@ -21,3 +21,4 @@ pub mod ssh_transport;
 pub mod trace;
 pub mod update;
 pub mod validation;
+pub mod warnings;
