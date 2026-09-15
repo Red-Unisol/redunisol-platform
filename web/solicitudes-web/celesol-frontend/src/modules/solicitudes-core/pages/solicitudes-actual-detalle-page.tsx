@@ -3817,10 +3817,10 @@ export function SolicitudesActualDetallePage() {
       }`}
     >
       <header className="border-b border-border bg-surface px-3 py-2.5">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <div className="flex min-w-0 items-center gap-2.5 justify-self-start">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex min-w-0 max-w-full items-center gap-2.5">
             <Button
-              className="text-foreground-secondary"
+              className="shrink-0 text-foreground-secondary"
               onClick={() => navigate(originPath)}
               size="icon-sm"
               type="button"
@@ -3833,14 +3833,14 @@ export function SolicitudesActualDetallePage() {
               Detalle de Solicitud
             </h1>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 justify-self-center">
-            <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center gap-x-5 gap-y-2">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <span className="text-xs font-medium text-foreground-muted">
                 Solicitud ID
               </span>
               <IdChip value={resolvedSolicitud.id} />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <span className="text-xs font-medium text-foreground-muted">
                 Préstamo
               </span>
@@ -3854,7 +3854,7 @@ export function SolicitudesActualDetallePage() {
             </div>
           </div>
           <Badge
-            className="px-4 py-1.5 text-sm font-semibold justify-self-end"
+            className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
             dot
             variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}
           >
