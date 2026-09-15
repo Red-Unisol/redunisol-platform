@@ -8,6 +8,7 @@ siguen documentados junto a su aplicación.
 ## Cómo usar esta referencia
 
 - [Crear socios: campos, formatos y comportamiento real](socios.md).
+- [Modelo reconstruido desde el cliente: herencia, relaciones y miembros dinámicos](modelo-cliente.md).
 - [Hipótesis de escritura: propiedades, formatos, validaciones y cinco altas adicionales](hipotesis-escritura.md).
 - [EvaluateList / EvaluateObj: consultas y verificación](evaluate.md).
 - [Préstamos, solicitudes e identificadores](prestamos.md).

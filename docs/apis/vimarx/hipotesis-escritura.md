@@ -5,6 +5,11 @@ Verificado el **15/09/2026** en `https://celesol.dyndns.org:5002`, mediante
 para crear como máximo cinco socios: **10 intentos, 5 altas y 5 rechazos**.
 Los casos T14–T23 continúan la numeración de las campañas anteriores.
 
+La [inspección posterior del cliente](modelo-cliente.md) confirmó que SocAux y
+Caja40 se registran dinámicamente para Celesol, identificó los enums y encontró
+las reglas que explican varios resultados. El mecanismo interno del endpoint HTTP
+sigue pendiente; las hipótesis de este informe describen la evidencia de las altas.
+
 ## Método y alcance
 
 Cada caso cambia una sola propiedad respecto del payload físico aceptado en T04,

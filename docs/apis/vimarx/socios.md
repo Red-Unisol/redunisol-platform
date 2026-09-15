@@ -23,6 +23,10 @@ No es una lista exhaustiva de todas las propiedades de `SocioMutual`. No se
 determinó el conjunto mínimo obligatorio mediante eliminación de cada campo.
 `tipo` se omitió en todos los ensayos, como hace el gateway de la página.
 
+La [reconstrucción posterior del modelo del cliente](modelo-cliente.md) aporta
+tipos, enums y la definición dinámica de SocAux/Caja40. Distinguir ese snapshot
+del cliente del contrato HTTP medido en esta campaña.
+
 ## Campos y formatos
 
 | Campo de `campos` | Forma enviada por la página | Evidencia del core |
