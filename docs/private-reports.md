@@ -22,7 +22,24 @@ Formatos visibles: `.xlsx`, `.xls`, `.csv` y `.pdf`.
 
 Cada flow debe escribir primero un archivo temporal y renombrarlo al finalizar, para que management nunca descargue un archivo incompleto.
 
-El flow `form_management_report_daily` genera el informe de formulario a Bitrix semanalmente, los sábados a las 12:00 (zona `America/Argentina/Buenos_Aires`, cron `0 12 * * 6`). Conserva los identificadores históricos del flow y del trigger. Consulta tanto el flow principal como las subejecuciones históricas de persistencia y reemplaza `ultimo.xlsx` de forma atómica.
+El flow `form_management_report_daily` genera el informe de formulario a Bitrix semanalmente, los sábados a las 12:00 (zona `America/Argentina/Buenos_Aires`, cron `0 12 * * 6`). Conserva los identificadores históricos del flow y del trigger. Mantiene el acumulado completo disponible de `bitrix24_form_webhook`, sin recortarlo a siete dias. Recupera los resultados por ID de ejecucion mediante la API de outputs de Kestra 2.0 y usa exclusivamente la precalificacion incluida en el propio formulario. No consulta ni reconstruye persistencias o precalificaciones legacy. Reemplaza `ultimo.xlsx` de forma atomica.
+
+### Alcance y limites del informe de formularios
+
+- El periodo es el acumulado **disponible en Kestra**, con fecha de corte al iniciar la consulta, no una ventana semanal. Se explicita la fecha superior para desactivar el filtro reciente implicito de la API; no se aplica fecha inferior.
+- La programacion sigue siendo sabados a las 12:00 Buenos Aires. Las fechas de las filas se convierten a esa misma zona.
+- La consulta usa `filters[namespace][EQUALS]` y `filters[flowId][EQUALS]`. Cada pagina se valida contra ambos, su total y los IDs ya leidos. Una respuesta ajena, duplicada, truncada o cambiante aborta la publicacion.
+- Los resultados se leen en `/api/v1/{tenant}/outputs/executions/{executionId}`, con hasta cuatro consultas simultaneas y sin descargar logs. No se emparejan formularios por provincia, banco o cercania temporal.
+- Sin precalificacion incluida: **Sin precalificacion disponible**. Sin outputs en una ejecucion exitosa: **Sin trazabilidad disponible**. No se inventa un rechazo o un vinculo con otro formulario. Los errores de lectura de API abortan; no se confunden con outputs vacios validos.
+- Los resultados describen el envio del formulario, no el estado comercial actual del lead. La hoja **Sin lead confirmado** contiene casos sin un ID confirmado, que no necesariamente significan que nunca se haya creado el lead.
+- Los historicos publicados de fechas anteriores se conservan. No se reconstruyen datos que Kestra ya haya purgado ni se incorporan archivos Excel anteriores como fuente de nuevas cifras.
+- Maximo 50.000 formularios por corrida, plazo interno de 14 minutos y timeout de tarea de 15 minutos. Se cancela al excederlos, sin truncar el acumulado ni reemplazar el ultimo archivo valido.
+- Una sola corrida activa; solicitudes simultaneas se cancelan. Contenedor limitado a 0,5 CPU y 1 GB de memoria, sin swap adicional.
+- Los logs informan cantidades descargadas, avance de outputs y duracion final, sin documentos ni datos personales.
+
+Validacion operativa: contrastar cantidad de formularios y leads unicos con la API,
+verificar las cinco hojas y sus totales y comprobar publicacion atomica. Una corrida
+fallida deja intacto `ultimo.xlsx`; revisar el error antes de repetir.
 
 ## Preparación de la VPS
 
