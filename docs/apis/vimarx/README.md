@@ -12,6 +12,7 @@ siguen documentados junto a su aplicación.
 - [Préstamos, solicitudes e identificadores](prestamos.md).
 - [Evidencia de altas del 15/09/2026](evidence/2026-09-15/socios.json).
 - [Relectura final de los cinco socios](evidence/2026-09-15/final-verification.json).
+- [Pruebas de escritura de SocAux / Caja40](evidence/2026-09-15/socaux.json).
 - [Diagnósticos de consultas](evidence/2026-09-15/evaluate-diagnostics.json).
 - [Snapshot del Swagger publicado](evidence/2026-09-15/openapi.json).
 

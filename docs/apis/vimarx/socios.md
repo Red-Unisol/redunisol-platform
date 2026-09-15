@@ -2,7 +2,7 @@
 
 Verificado el **15/09/2026** contra `https://celesol.dyndns.org:5002`.
 Operación: `POST /api/Simulador/CrearSocioMutual`, `Content-Type: application/json`.
-Diez intentos de alta autorizados: cinco exitosos y cinco rechazados. Cada intento
+Trece intentos de alta autorizados: cinco exitosos y ocho rechazados. Cada intento
 tuvo una búsqueda previa y una consulta posterior con `EvaluateList`.
 
 ## Alcance del contrato
@@ -153,6 +153,41 @@ T06 combina varios cambios de representación: su éxito y lectura prueban que e
 combinación fue aceptada. No demuestra todas las conversiones posibles ni que cada
 variante funcione de manera independiente bajo otras condiciones.
 
+## Campos adicionales: SocAux.Caja40
+
+Se ensayaron tres formas de escritura sobre identidades sintéticas nuevas,
+con el payload físico previamente aceptado y sin contactos. Todas usaron
+`validar: false` y omitieron `tipo`, igual que la página:
+
+| Caso | Fragmento agregado dentro de `campos` | Respuesta de negocio |
+| --- | --- | --- |
+| T11 | `"SocAux": {"Caja40": 50}` | La propiedad 'SocAux' no existe en el tipo 'SocioMutual'. |
+| T12 | `"SocAux.Caja40": 50` | La propiedad 'SocAux.Caja40' no existe en el tipo 'SocioMutual'. |
+| T13 | `"Caja40": 50` | La propiedad 'Caja40' no existe en el tipo 'SocioMutual'. |
+
+Las tres llamadas devolvieron HTTP 200 con `Ok: false` e `ID: null`. Las búsquedas
+previas y posteriores por marcador, CUIT y documento devolvieron `[]`: no se
+observaron socios nuevos. Peticiones completas y respuestas en
+[socaux.json](evidence/2026-09-15/socaux.json).
+
+La lectura de `ID;SocAux.Caja40` con `tipo: "F.Module.SocioMutual"` y
+`cmd: "[ID] = 152761"` respondió HTTP 200, `[[152761,null]]`. El consumidor
+Bancor también utiliza `Prestamo.SocioTitular.Socio.SocAux.Caja40` desde cuotas.
+La accesibilidad mediante EvaluateList no demuestra escritura mediante el alta.
+
+**Conclusión comprobada:** anidar JSON no alcanza para escribir SocAux con el
+contrato de CrearSocioMutual usado por la página. El endpoint sí acepta otros
+objetos anidados como Domicilio, pero rechaza SocAux antes de poder comprobar el
+valor de Caja40. Esto no es un rechazo del número 50 ni demuestra que sea
+imposible escribirlo mediante otro contrato.
+
+**Hipótesis pendiente:** lectura y alta podrían resolver propiedades con mecanismos
+diferentes, y SocAux podría ser una extensión del modelo que el alta no contempla.
+No se inspeccionó la implementación del proveedor ni se confirmó esa causa.
+No se ensayaron otros valores de `tipo`, endpoints de modificación o escritura
+directa sobre SocAux. Para habilitarlo, confirmar con el proveedor la ruta de
+escritura soportada o ampliar el endpoint y verificar su persistencia.
+
 ## Persistencia, inventario y límites
 
 Quedaron **cinco socios sintéticos: 152760–152764**. Todos tienen el marcador
@@ -161,7 +196,7 @@ contactos reales. No se crearon préstamos ni se ejecutaron pagos, borrados o
 modificaciones de socios existentes. No se invocó sincronización a PostgreSQL.
 
 Las respuestas de error no se reenviaron. Tras cada intento se buscó por
-apellido/marcador, CUIT y documento. En los cinco rechazos no se observaron filas;
+apellido/marcador, CUIT y documento. En los ocho rechazos no se observaron filas;
 esto no prueba rollback atómico para todos los errores posibles del proveedor.
 El caso T03 tuvo un error en la primera consulta de verificación por `TipoDoc.ID`;
 se corrigió sólo la consulta y se leyó el ID retornado, sin repetir el alta.
