@@ -36,6 +36,7 @@ El flow `form_management_report_daily` genera el informe de formulario a Bitrix 
 - Maximo 50.000 formularios por corrida, plazo interno de 14 minutos y timeout de tarea de 15 minutos. Se cancela al excederlos, sin truncar el acumulado ni reemplazar el ultimo archivo valido.
 - Una sola corrida activa; solicitudes simultaneas se cancelan. Contenedor limitado a 0,5 CPU y 1 GB de memoria, sin swap adicional.
 - Los logs informan cantidades descargadas, avance de outputs y duracion final, sin documentos ni datos personales.
+- El formato del Excel recorre cada hoja una sola vez. Evitar `ws[numero]` dentro de bucles por fila: openpyxl recalcula el ancho inspeccionando todas las celdas y vuelve cuadratico el trabajo.
 
 Validacion operativa: contrastar cantidad de formularios y leads unicos con la API,
 verificar las cinco hojas y sus totales y comprobar publicacion atomica. Una corrida

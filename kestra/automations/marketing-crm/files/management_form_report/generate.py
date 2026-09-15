@@ -232,10 +232,13 @@ def compact(ws, widths: dict[int, int] | None = None) -> None:
         cell.font = Font(color=WHITE, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 30
-    for number in range(2, ws.max_row + 1):
+    # Integer row indexing recomputes max_column by scanning every populated
+    # cell. Iterating once keeps formatting linear in the size of the sheet.
+    body_alignment = Alignment(vertical="center", wrap_text=False)
+    for number, cells in enumerate(ws.iter_rows(min_row=2), 2):
         ws.row_dimensions[number].height = 18
-        for cell in ws[number]:
-            cell.alignment = Alignment(vertical="center", wrap_text=False)
+        for cell in cells:
+            cell.alignment = body_alignment
     widths = widths or {}
     for index, column in enumerate(ws.columns, 1):
         longest = max(len(str(cell.value or "")) for cell in column) + 2
@@ -279,6 +282,8 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
     for index, item in enumerate(categories, 2):
         summary.cell(index, 4, item[0])
         summary.cell(index, 5, item[1])
+    summary.column_dimensions["D"].width = 38
+    summary.column_dimensions["E"].width = 12
     pie = PieChart()
     pie.title = "Resultado de formularios"
     pie.add_data(Reference(summary, min_col=5, min_row=1, max_row=1 + len(category_names)), titles_from_data=True)
@@ -320,7 +325,7 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         daily_chart.set_categories(Reference(daily_ws, min_col=1, min_row=2, max_row=daily_ws.max_row))
         daily_chart.height = 9
         daily_chart.width = 20
-        daily_ws.add_chart(daily_chart, "L2")
+        daily_ws.add_chart(daily_chart, "O2")
 
     lead_ws = wb.create_sheet("Leads en Bitrix")
     lead_ws.append(["fecha", "lead_id", "contact_id", "nombre", "cuil", "email", "whatsapp", "provincia", "situación laboral", "banco de cobro", "origen", "utm_source", "utm_medium", "utm_campaign", "landing", "precalificación", "motivo", "detalle", "versión reglas", "ejecución Kestra", "subejecución", "revisión"])
