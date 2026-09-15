@@ -9,6 +9,10 @@ El resultado inicial cubre **30 tipos seleccionados, 763 propiedades declaradas
 y 12 registros dinámicos**. Es un mapa del cliente, no una lista de campos
 permitidos por CrearSocioMutual. Las versiones del servidor pueden ser distintas.
 
+La [inspección posterior de la API desplegada](implementacion-alta.md) confirmó
+la búsqueda CLR de propiedades en el alta, la causa del rechazo de SocAux y la
+sobrescritura de tipo. Este documento conserva el alcance del snapshot del cliente.
+
 ## Herencia y relaciones
 
 La herencia observada es:

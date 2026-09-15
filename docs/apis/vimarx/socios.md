@@ -11,6 +11,10 @@ diferenciados de propiedades calculadas, rutas con puntos y validación condicio
 Agregó cinco socios: 152768–152772. Las observaciones de esta página describen
 T01–T13 salvo indicación expresa.
 
+La [implementación del servidor inspeccionada después](implementacion-alta.md)
+confirma la causa de SocAux y que validar=true también puede persistir, tal como
+ocurrió en T09. Usar esa referencia para las hipótesis que esta campaña dejó abiertas.
+
 ## Alcance del contrato
 
 Swagger define `SocioMutualRequest` con `tipo` (string nullable), `validar`

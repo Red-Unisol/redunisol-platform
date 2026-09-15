@@ -7,8 +7,9 @@ Los casos T14–T23 continúan la numeración de las campañas anteriores.
 
 La [inspección posterior del cliente](modelo-cliente.md) confirmó que SocAux y
 Caja40 se registran dinámicamente para Celesol, identificó los enums y encontró
-las reglas que explican varios resultados. El mecanismo interno del endpoint HTTP
-sigue pendiente; las hipótesis de este informe describen la evidencia de las altas.
+las reglas que explican varios resultados. La [inspección de la API del servidor](implementacion-alta.md) confirmó después
+la causa del rechazo y el comportamiento de tipo/validar. Las hipótesis de este
+informe describen la evidencia original de las altas.
 
 ## Método y alcance
 
