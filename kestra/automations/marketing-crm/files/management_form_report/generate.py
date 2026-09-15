@@ -364,7 +364,7 @@ def publish(workbook: Workbook, root: Path, generated_at: datetime,
     temporary_paths = []
     try:
         for _ in range(2):
-            with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".xlsx", delete=False) as handle:
+            with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".tmp", delete=False) as handle:
                 temporary_paths.append(Path(handle.name))
         temporary, latest_temporary = temporary_paths
         workbook.save(temporary)

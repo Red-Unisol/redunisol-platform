@@ -139,6 +139,7 @@ class ManagementFormReportTest(unittest.TestCase):
             self.assertEqual(latest.read_bytes(), original)
             self.assertEqual(dated.read_bytes(), original)
             self.assertEqual([p.name for p in latest.parent.glob("*.xlsx")], ["ultimo.xlsx"])
+            self.assertEqual(list(latest.parent.glob("*.tmp")), [])
 
 
 if __name__ == "__main__":
