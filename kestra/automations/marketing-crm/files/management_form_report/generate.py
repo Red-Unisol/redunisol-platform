@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the private daily management report for form submissions to Bitrix."""
+"""Generate the private cumulative management report for form submissions to Bitrix."""
 
 from __future__ import annotations
 
@@ -9,7 +9,10 @@ import shutil
 import tempfile
 import time
 from collections import Counter
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from threading import local
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -24,37 +27,113 @@ NAVY, WHITE = "17365D", "FFFFFF"
 GREEN, YELLOW, ORANGE, RED = "C6EFCE", "FFEB9C", "FCE4D6", "FFC7CE"
 
 
-def api_get(session: requests.Session, url: str, **params: Any) -> Any:
-    error: Exception | None = None
-    for attempt in range(5):
+FLOW_ID = "bitrix24_form_webhook"
+ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
+MAX_RECORDS = 50_000
+MAX_SECONDS = 840
+
+
+def check_deadline(deadline: float | None) -> None:
+    if deadline is not None and time.monotonic() >= deadline:
+        raise RuntimeError("Se agoto el tiempo del informe; se conserva la ultima publicacion.")
+
+
+def api_get(session: requests.Session, url: str, *, deadline: float | None = None, **params: Any) -> Any:
+    for attempt in range(3):
+        check_deadline(deadline)
+        response = None
         try:
-            response = session.get(url, params=params, timeout=(10, 90))
+            response = session.get(url, params=params, timeout=(5, 30))
             response.raise_for_status()
             return response.json()
-        except (requests.RequestException, ValueError) as exc:
-            error = exc
-            if attempt < 4:
-                time.sleep(2**attempt)
-    raise RuntimeError(f"No se pudo consultar Kestra: {error}")
+        except (requests.RequestException, ValueError):
+            # Do not retry permanent errors or print authentication URLs/bodies.
+            status = getattr(response, "status_code", None)
+            if attempt == 2 or (status and 400 <= status < 500 and status != 429):
+                raise RuntimeError("Fallo la consulta del informe; no se publicaran datos incompletos.") from None
+            time.sleep(2**attempt)
+    raise AssertionError("unreachable")
 
 
-def executions(session: requests.Session, base: str, tenant: str, namespace: str, flow: str) -> list[dict[str, Any]]:
+def executions(session: requests.Session, base: str, tenant: str, namespace: str, flow: str,
+               *, max_records: int = MAX_RECORDS, deadline: float | None = None) -> list[dict[str, Any]]:
+    if max_records < 1:
+        raise ValueError("max_records debe ser positivo")
     result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    snapshot = datetime.now(timezone.utc).isoformat()
     page = 1
+    expected_total: int | None = None
     while True:
         payload = api_get(
-            session,
-            f"{base}/api/v1/{tenant}/executions/search",
-            namespace=namespace,
-            flowId=flow,
-            page=page,
-            size=100,
+            session, f"{base}/api/v1/{tenant}/executions/search", deadline=deadline,
+            **{"filters[namespace][EQUALS]": namespace,
+               "filters[flowId][EQUALS]": flow,
+               # An explicit date removes Kestra's implicit recent-history window.
+               # No lower date bound: preserve the full available accumulation.
+               "filters[startDate][LESS_THAN_OR_EQUAL_TO]": snapshot,
+               "sort": "state.startDate:asc", "page": page, "size": 500},
         )
-        batch = payload.get("results", [])
-        result.extend(batch)
-        if not batch or len(result) >= int(payload.get("total", len(result))):
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            raise RuntimeError("Respuesta de ejecuciones invalida")
+        total = int(payload["total"])
+        if total > max_records:
+            raise RuntimeError(f"El acumulado supera el limite de {max_records} registros; no se trunca ni publica.")
+        if expected_total is None:
+            expected_total = total
+        elif total != expected_total:
+            raise RuntimeError("El historial cambio durante la lectura; repetir para evitar un informe incompleto.")
+        batch = payload["results"]
+        for row in batch:
+            if row.get("namespace") != namespace or row.get("flowId") != flow:
+                raise RuntimeError("Kestra no respeto los filtros; se cancela el informe.")
+            execution_id = str(row.get("id") or "")
+            if not execution_id or execution_id in seen:
+                raise RuntimeError("Paginacion duplicada o sin identificador")
+            seen.add(execution_id)
+            result.append(row)
+            if len(result) > max_records or len(result) > expected_total:
+                raise RuntimeError("El numero de registros excede el total esperado")
+        if len(result) == expected_total:
+            print(json.dumps({"event": "forms_loaded", "count": len(result)}), flush=True)
             return result
+        if not batch:
+            raise RuntimeError("Paginacion incompleta; se conserva el ultimo informe.")
         page += 1
+
+
+def hydrate_outputs(rows: list[dict[str, Any]], session: requests.Session, base: str, tenant: str,
+                    *, deadline: float | None = None, workers: int = 4) -> list[dict[str, Any]]:
+    if not 1 <= workers <= 4:
+        raise ValueError("workers debe estar entre uno y cuatro")
+    context = local()
+    sessions: list[requests.Session] = []
+
+    def hydrate(row: dict[str, Any]) -> dict[str, Any]:
+        check_deadline(deadline)
+        if not hasattr(context, "session"):
+            context.session = requests.Session()
+            context.session.auth = session.auth
+            context.session.headers.update(session.headers)
+            sessions.append(context.session)
+        outputs = api_get(context.session, f"{base}/api/v1/{tenant}/outputs/executions/{row['id']}",
+                          deadline=deadline)
+        if not isinstance(outputs, dict):
+            raise RuntimeError("Respuesta de resultados invalida")
+        return {**row, "outputs": outputs}
+
+    result = []
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # Bound queued futures as well as active requests; fail within one batch.
+            for start in range(0, len(rows), 100):
+                check_deadline(deadline)
+                result.extend(pool.map(hydrate, rows[start:start + 100]))
+                print(json.dumps({"event": "outputs_loaded", "count": len(result), "total": len(rows)}), flush=True)
+    finally:
+        for client in sessions:
+            client.close()
+    return result
 
 
 def state(row: dict[str, Any]) -> str:
@@ -65,7 +144,10 @@ def iso(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(ARGENTINA).replace(tzinfo=None)
     except ValueError:
         return None
 
@@ -81,100 +163,40 @@ def body(row: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def child_id_from_parent(row: dict[str, Any]) -> str:
-    for task in row.get("taskRunList") or []:
-        if task.get("taskId") != "persistir_bitrix":
-            continue
-        outputs = task.get("outputs") or {}
-        for key in ("executionId", "execution_id", "id"):
-            if outputs.get(key):
-                return str(outputs[key])
-    return ""
-
-
-def cross_children(parents: list[dict[str, Any]], children: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    children_by_id = {str(row.get("id")): row for row in children}
-    result: dict[str, dict[str, Any]] = {}
-    for child in children:
-        parent_id = child.get("parentId") or child.get("parentExecutionId")
-        if parent_id:
-            result[str(parent_id)] = child
-    for parent in parents:
-        child_id = child_id_from_parent(parent)
-        if child_id and child_id in children_by_id:
-            result[str(parent.get("id"))] = children_by_id[child_id]
-    return result
-
-
-def prequalification_key(row: dict[str, Any]) -> tuple[str, str, str]:
+def normalized(row: dict[str, Any]) -> dict[str, Any]:
     request = body(row)
-    return tuple(str(request.get(key) or "").strip().casefold() for key in ("province", "employment_status", "payment_bank"))
-
-
-def cross_prequalifications(parents: list[dict[str, Any]], prequalifications: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    available: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for row in prequalifications:
-        available.setdefault(prequalification_key(row), []).append(row)
-    for rows in available.values():
-        rows.sort(key=lambda item: iso((item.get("state") or {}).get("startDate")) or datetime.min)
-    used: set[str] = set()
-    result: dict[str, dict[str, Any]] = {}
-    for parent in sorted(parents, key=lambda item: iso((item.get("state") or {}).get("startDate")) or datetime.min):
-        parent_date = iso((parent.get("state") or {}).get("startDate"))
-        if not parent_date:
-            continue
-        candidates = []
-        for row in available.get(prequalification_key(parent), []):
-            row_id = str(row.get("id") or "")
-            row_date = iso((row.get("state") or {}).get("startDate"))
-            if row_id in used or not row_date:
-                continue
-            delta = (parent_date - row_date).total_seconds()
-            if 0 <= delta <= 120:
-                candidates.append((delta, row))
-        if candidates:
-            matched = min(candidates, key=lambda item: item[0])[1]
-            used.add(str(matched.get("id") or ""))
-            result[str(parent.get("id") or "")] = matched
-    return result
-
-
-def normalized(row: dict[str, Any], child: dict[str, Any] | None, prequalification: dict[str, Any] | None = None) -> dict[str, Any]:
-    request = body(row)
-    parent_outputs = row.get("outputs") or {}
-    child_outputs = (child or {}).get("outputs") or {}
-    outputs = child_outputs if child_outputs.get("lead_id") else parent_outputs
-    action = str(outputs.get("action") or parent_outputs.get("action") or "").lower()
+    outputs = row.get("outputs") or {}
+    action = str(outputs.get("action") or "").lower()
     lead_id = str(outputs.get("lead_id") or "")
-    technical_error = state(row) in {"FAILED", "KILLED"} or (child is not None and state(child) in {"FAILED", "KILLED"})
-    reason = str(outputs.get("message") or outputs.get("reason") or parent_outputs.get("message") or parent_outputs.get("reason") or "")
-    prequalification_outputs = (prequalification or {}).get("outputs") or {}
-    embedded_available = request.get("prequalification_available")
-    prequalification_available = embedded_available is True or prequalification is not None
-    prequalified = request.get("prequalified") if embedded_available is not None else prequalification_outputs.get("prequalified")
-    prequalification_reason = str(request.get("prequalification_reason") or prequalification_outputs.get("reason") or "")
-    prequalification_message = str(request.get("prequalification_message") or prequalification_outputs.get("message") or "")
-    rule_version = str(request.get("prequalification_rule_version") or prequalification_outputs.get("rule_version") or "")
+    technical_error = state(row) in {"FAILED", "KILLED", "CANCELLED"}
+    reason = str(outputs.get("message") or outputs.get("reason") or "")
+    available = request.get("prequalification_available") is True
+    prequalified = request.get("prequalified") if available else None
+    prequalification_reason = str(request.get("prequalification_reason") or "") if available else ""
+    prequalification_message = str(request.get("prequalification_message") or "") if available else ""
+    rule_version = str(request.get("prequalification_rule_version") or "") if available else ""
     if not lead_id and technical_error:
         category = "Error técnico"
     elif not lead_id and action == "rejected":
         category = "Rechazo antes de Bitrix"
     elif not lead_id and action == "error":
         category = "Error de datos"
+    elif not lead_id and not outputs and state(row) == "SUCCESS":
+        category = "Sin trazabilidad disponible"
     elif not lead_id:
         category = "Pendiente de verificación"
-    elif prequalification_available and prequalified is True:
+    elif available and prequalified is True:
         category = "Precalificado"
-    elif prequalification_available and prequalification_reason == "external_referral":
+    elif available and prequalification_reason == "external_referral":
         category = "Derivación a vendedor externo"
-    elif prequalification_available:
+    elif available and prequalified is False:
         category = "Rechazado en precalificación"
     elif lead_id:
-        category = "Sin precalificación histórica"
+        category = "Sin precalificación disponible"
     return {
         "date": iso((row.get("state") or {}).get("startDate")),
         "execution_id": str(row.get("id") or ""),
-        "child_execution_id": str((child or {}).get("id") or ""),
+        "child_execution_id": "",
         "revision": row.get("flowRevision"),
         "technical_state": state(row),
         "action": action,
@@ -210,10 +232,13 @@ def compact(ws, widths: dict[int, int] | None = None) -> None:
         cell.font = Font(color=WHITE, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 30
-    for number in range(2, ws.max_row + 1):
+    # Integer row indexing recomputes max_column by scanning every populated
+    # cell. Iterating once keeps formatting linear in the size of the sheet.
+    body_alignment = Alignment(vertical="center", wrap_text=False)
+    for number, cells in enumerate(ws.iter_rows(min_row=2), 2):
         ws.row_dimensions[number].height = 18
-        for cell in ws[number]:
-            cell.alignment = Alignment(vertical="center", wrap_text=False)
+        for cell in cells:
+            cell.alignment = body_alignment
     widths = widths or {}
     for index, column in enumerate(ws.columns, 1):
         longest = max(len(str(cell.value or "")) for cell in column) + 2
@@ -235,11 +260,13 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         ("Formularios precalificados", counts["Precalificado"]),
         ("Derivaciones a vendedor externo", counts["Derivación a vendedor externo"]),
         ("Formularios rechazados", counts["Rechazado en precalificación"]),
-        ("Conversión formulario → lead", len(leads) / len(rows) if rows else 0),
+        ("Conversión formulario → lead", len({row["lead_id"] for row in leads}) / len(rows) if rows else 0),
         ("Rechazados antes de Bitrix", counts["Rechazo antes de Bitrix"]),
         ("Errores de datos", counts["Error de datos"]),
         ("Errores técnicos", counts["Error técnico"]),
         ("Pendientes de verificación", counts["Pendiente de verificación"]),
+        ("Sin trazabilidad disponible", counts["Sin trazabilidad disponible"]),
+        ("Sin precalificación disponible", counts["Sin precalificación disponible"]),
     ]
     for metric in metrics:
         summary.append(metric)
@@ -250,11 +277,13 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         if summary.cell(number, 1).value == "Conversión formulario → lead":
             summary.cell(number, 2).number_format = "0.00%"
     summary["D1"], summary["E1"] = "Resultado", "Cantidad"
-    category_names = ("Precalificado", "Derivación a vendedor externo", "Rechazado en precalificación", "Sin precalificación histórica", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación")
+    category_names = ("Precalificado", "Derivación a vendedor externo", "Rechazado en precalificación", "Sin precalificación disponible", "Rechazo antes de Bitrix", "Error de datos", "Error técnico", "Pendiente de verificación", "Sin trazabilidad disponible")
     categories = [(key, counts[key]) for key in category_names]
     for index, item in enumerate(categories, 2):
         summary.cell(index, 4, item[0])
         summary.cell(index, 5, item[1])
+    summary.column_dimensions["D"].width = 38
+    summary.column_dimensions["E"].width = 12
     pie = PieChart()
     pie.title = "Resultado de formularios"
     pie.add_data(Reference(summary, min_col=5, min_row=1, max_row=1 + len(category_names)), titles_from_data=True)
@@ -296,7 +325,7 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         daily_chart.set_categories(Reference(daily_ws, min_col=1, min_row=2, max_row=daily_ws.max_row))
         daily_chart.height = 9
         daily_chart.width = 20
-        daily_ws.add_chart(daily_chart, "L2")
+        daily_ws.add_chart(daily_chart, "O2")
 
     lead_ws = wb.create_sheet("Leads en Bitrix")
     lead_ws.append(["fecha", "lead_id", "contact_id", "nombre", "cuil", "email", "whatsapp", "provincia", "situación laboral", "banco de cobro", "origen", "utm_source", "utm_medium", "utm_campaign", "landing", "precalificación", "motivo", "detalle", "versión reglas", "ejecución Kestra", "subejecución", "revisión"])
@@ -304,9 +333,9 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
         lead_ws.append([row[key] for key in ("date", "lead_id", "contact_id", "name", "cuil", "email", "whatsapp", "province", "employment", "bank", "source", "utm_source", "utm_medium", "utm_campaign", "landing", "category", "prequalification_reason", "prequalification_message", "prequalification_rule_version", "execution_id", "child_execution_id", "revision")])
     compact(lead_ws, {4: 28, 6: 32, 10: 38, 14: 42, 17: 62, 18: 28, 19: 28})
 
-    rejected_ws = wb.create_sheet("No enviados")
+    rejected_ws = wb.create_sheet("Sin lead confirmado")
     rejected_ws.append(["fecha", "nombre", "cuil", "email", "whatsapp", "provincia", "origen", "resultado", "motivo", "acción recomendada", "estado Kestra", "ejecución Kestra", "revisión"])
-    recommendations = {"Rechazado en precalificación": "Sin acción técnica", "Rechazo antes de Bitrix": "Sin acción técnica", "Error de datos": "Corregir validación o catálogo", "Error técnico": "Reintentar y revisar logs", "Pendiente de verificación": "Revisar manualmente"}
+    recommendations = {"Rechazado en precalificación": "Sin acción técnica", "Rechazo antes de Bitrix": "Sin acción técnica", "Error de datos": "Corregir validación o catálogo", "Error técnico": "Reintentar y revisar logs", "Pendiente de verificación": "Revisar manualmente", "Sin trazabilidad disponible": "Consultar el archivo histórico"}
     for row in sorted((item for item in rows if not item["lead_id"]), key=lambda item: item["date"] or datetime.min):
         rejected_ws.append([row["date"], row["name"], row["cuil"], row["email"], row["whatsapp"], row["province"], row["source"], row["category"], row["reason"], recommendations[row["category"]], row["technical_state"], row["execution_id"], row["revision"]])
     compact(rejected_ws, {2: 28, 4: 32, 8: 28, 9: 62, 10: 44, 12: 28})
@@ -330,42 +359,52 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
     return wb
 
 
-def publish(workbook: Workbook, root: Path, generated_at: datetime) -> tuple[Path, Path]:
+def publish(workbook: Workbook, root: Path, generated_at: datetime,
+            *, deadline: float | None = None) -> tuple[Path, Path]:
     report_dir = root / "marketing" / "formulario-bitrix"
     history_dir = report_dir / "historico"
     history_dir.mkdir(parents=True, exist_ok=True)
     dated = history_dir / f"{generated_at:%Y-%m-%d}.xlsx"
     latest = report_dir / "ultimo.xlsx"
-    with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".xlsx", delete=False) as handle:
-        temporary = Path(handle.name)
+    temporary_paths = []
     try:
+        for _ in range(2):
+            with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".tmp", delete=False) as handle:
+                temporary_paths.append(Path(handle.name))
+        temporary, latest_temporary = temporary_paths
         workbook.save(temporary)
+        shutil.copy2(temporary, latest_temporary)
+        temporary.chmod(0o644)
+        latest_temporary.chmod(0o644)
+        check_deadline(deadline)
         os.replace(temporary, dated)
-        dated.chmod(0o644)
-        with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".xlsx", delete=False) as handle:
-            latest_temporary = Path(handle.name)
-        shutil.copy2(dated, latest_temporary)
         os.replace(latest_temporary, latest)
-        latest.chmod(0o644)
     finally:
-        temporary.unlink(missing_ok=True)
+        for path in temporary_paths:
+            path.unlink(missing_ok=True)
     return latest, dated
 
 
 def main() -> None:
+    started = time.monotonic()
+    deadline = started + MAX_SECONDS
     base = os.environ["REPORTS_KESTRA_URL"].rstrip("/")
     tenant = os.getenv("REPORTS_KESTRA_TENANT", "main")
     namespace = os.getenv("REPORTS_NAMESPACE", "redunisol.prod.marketing-crm")
-    session = requests.Session()
-    session.auth = (os.environ["REPORTS_KESTRA_USERNAME"], os.environ["REPORTS_KESTRA_PASSWORD"])
-    parents = executions(session, base, tenant, namespace, "bitrix24_form_webhook")
-    children = executions(session, base, tenant, namespace, "bitrix24_form_persistence")
-    prequalifications = executions(session, base, tenant, namespace, "commercial_prequalification_webhook")
-    crossed = cross_children(parents, children)
-    prequalification_cross = cross_prequalifications(parents, prequalifications)
-    rows = [normalized(row, crossed.get(str(row.get("id"))), prequalification_cross.get(str(row.get("id")))) for row in parents]
-    latest, dated = publish(build(rows), Path(os.getenv("REPORTS_ROOT", "/reports")), datetime.now())
-    print(json.dumps({"ok": True, "forms": len(rows), "leads": sum(bool(row["lead_id"]) for row in rows), "latest": str(latest), "history": str(dated)}))
+    with requests.Session() as session:
+        session.auth = (os.environ["REPORTS_KESTRA_USERNAME"], os.environ["REPORTS_KESTRA_PASSWORD"])
+        parents = executions(session, base, tenant, namespace, FLOW_ID, deadline=deadline)
+        parents = hydrate_outputs(parents, session, base, tenant, deadline=deadline)
+    rows = [normalized(row) for row in parents]
+    check_deadline(deadline)
+    workbook = build(rows)
+    check_deadline(deadline)
+    latest, dated = publish(workbook, Path(os.getenv("REPORTS_ROOT", "/reports")),
+                            datetime.now(ARGENTINA), deadline=deadline)
+    print(json.dumps({"ok": True, "forms": len(rows),
+                      "leads": len({row["lead_id"] for row in rows if row["lead_id"]}),
+                      "seconds": round(time.monotonic() - started, 2),
+                      "latest": str(latest), "history": str(dated)}), flush=True)
 
 
 if __name__ == "__main__":
