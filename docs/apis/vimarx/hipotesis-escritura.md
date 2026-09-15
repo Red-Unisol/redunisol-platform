@@ -115,6 +115,17 @@ schema, modelo y gateway: que el core lo admita no significa que el formulario o
 backend actual lo envíen. Para completar catálogos y campos condicionados, priorizar
 metadatos/código del proveedor antes de seguir creando registros de prueba.
 
+## Ampliación T24: nombre con espacio
+
+Con autorización separada para hasta una alta adicional, se probó dentro de
+`campos` exactamente `"Soc Aux": {"Caja40": 50}`, manteniendo el payload físico
+base. El endpoint devolvió HTTP 200 con `Ok: false`, `ID: null` y
+`La propiedad 'Soc Aux' no existe en el tipo 'SocioMutual'.`
+
+Las búsquedas previa y posterior por identidad sintética devolvieron `[]`.
+No se observó un socio adicional. La variante con espacio tampoco resuelve el
+rechazo. [Petición y verificación de T24](evidence/2026-09-15/soc-aux-espacio.json).
+
 ## Inventario y evidencia
 
 | Caso exitoso | ID de socio | Cambio confirmado |
