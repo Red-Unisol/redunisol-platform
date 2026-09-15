@@ -231,35 +231,11 @@ jobs:
           KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
           KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
 
-  deploy-dev-system:
-    runs-on: ubuntu-latest
-    environment: kestra-dev
-    needs:
-      - guard-manual-dev-dispatch
-      - detect-changes
-    if: >-
-      always() &&
-      (needs.guard-manual-dev-dispatch.result == 'success' || needs.guard-manual-dev-dispatch.result == 'skipped') &&
-      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.system == 'true')
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install tooling
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r kestra/tools/requirements.txt
-
-      - name: Deploy System to dev
-        run: |
-          python kestra/tools/deploy_kestra.py --environment dev --target system
-        env:
-          KESTRA_URL: ${{ secrets.KESTRA_URL }}
-          KESTRA_USERNAME: ${{ secrets.KESTRA_USERNAME }}
-          KESTRA_PASSWORD: ${{ secrets.KESTRA_PASSWORD }}
-          KESTRA_TENANT: ${{ secrets.KESTRA_TENANT }}
+  # El flow de alertas (kestra/platform/system/) NO se despliega a dev.
+  #
+  # Sus triggers filtran NAMESPACE STARTS_WITH redunisol.prod., asi que una copia
+  # en redunisol.dev.system vigila produccion igual que la de prod: duplica cada
+  # mensaje al chat de Bitrix y duplica la carga de ejecuciones sobre Postgres.
+  #
+  # Si en algun momento se quiere alertar sobre flows de dev, hay que darle al flow
+  # filtros propios por ambiente antes de volver a desplegarlo aca.
