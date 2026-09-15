@@ -1,0 +1,1426 @@
+{
+  "scope": "Additional authorized hypothesis campaign: at most five created socios. Historical payloads: do not resend.",
+  "date": "2026-09-15",
+  "base": "https://celesol.dyndns.org:5002",
+  "attempts": 10,
+  "successful_socios": 5,
+  "rejected_attempts": 5,
+  "created_ids": [
+    152768,
+    152769,
+    152770,
+    152771,
+    152772
+  ],
+  "records": [
+    {
+      "label": "H-discovery-EstadoCivil",
+      "at": "2026-09-15T13:48:20.371845+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;EstadoCivil",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152761,
+          0
+        ]
+      ]
+    },
+    {
+      "label": "H-discovery-DomicilioLaboral.Calle",
+      "at": "2026-09-15T13:48:20.498089+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;DomicilioLaboral.Calle",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 400,
+      "response": "El camino de la propiedad 'DomicilioLaboral.Calle' no es correcto para el tipo 'F.Module.SocioMutual'."
+    },
+    {
+      "label": "H-discovery-DomicilioLaboral.Localidad.ID",
+      "at": "2026-09-15T13:48:20.602212+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;DomicilioLaboral.Localidad.ID",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 400,
+      "response": "El camino de la propiedad 'DomicilioLaboral.Localidad.ID' no es correcto para el tipo 'F.Module.SocioMutual'."
+    },
+    {
+      "label": "H-discovery-NombreCompleto",
+      "at": "2026-09-15T13:48:20.695052+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;NombreCompleto",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152761,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T04 SOCIO FICTICIO"
+        ]
+      ]
+    },
+    {
+      "label": "H-discovery-Edad",
+      "at": "2026-09-15T13:48:20.783706+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;Edad",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152761,
+          36
+        ]
+      ]
+    },
+    {
+      "label": "H-discovery-SujetoObligado",
+      "at": "2026-09-15T13:48:20.884061+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;SujetoObligado",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152761,
+          false
+        ]
+      ]
+    },
+    {
+      "label": "H-discovery-SocAux.ID",
+      "at": "2026-09-15T13:48:20.978348+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[ID] = 152761",
+        "campos": "ID;SocAux.ID",
+        "max": 1
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152761,
+          228255
+        ]
+      ]
+    },
+    {
+      "label": "H-metadata-types",
+      "at": "2026-09-15T13:48:30.953373+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "DevExpress.Xpo.XPObjectType",
+        "cmd": "Contains([TypeName], 'SocAux') Or Contains([TypeName], 'SocioMutual')",
+        "campos": "TypeName",
+        "max": 10
+      },
+      "stage": "response",
+      "status": 400,
+      "response": "Unable to cast object of type 'DevExpress.Xpo.XPObjectType' to type 'DevExpress.Xpo.XPBaseObject'."
+    },
+    {
+      "label": "T14-preflight",
+      "at": "2026-09-15T13:49:09.069960+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T14' OR [CUIT] = '27990915143' OR [NroDoc] = 99091514",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T14-create",
+      "at": "2026-09-15T13:49:09.197842+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T14",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091514",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915143",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "Edad": 1
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": false,
+        "ID": null,
+        "Error": "La propiedad 'Edad' de 'SocioMutual' es de solo lectura."
+      }
+    },
+    {
+      "label": "T14-readback",
+      "at": "2026-09-15T13:49:09.269882+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T14' OR [CUIT] = '27990915143' OR [NroDoc] = 99091514",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();Edad",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T15-preflight",
+      "at": "2026-09-15T13:49:09.362411+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T15' OR [CUIT] = '27990915151' OR [NroDoc] = 99091515",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T15-create",
+      "at": "2026-09-15T13:49:09.443992+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T15",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091515",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915151",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "NombreCompleto": "ZZZ NOMBRE COMPLETO PRUEBA NO OPERAR"
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": false,
+        "ID": null,
+        "Error": "La propiedad 'NombreCompleto' de 'SocioMutual' es de solo lectura."
+      }
+    },
+    {
+      "label": "T15-readback",
+      "at": "2026-09-15T13:49:09.527774+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T15' OR [CUIT] = '27990915151' OR [NroDoc] = 99091515",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();Edad",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T16-preflight",
+      "at": "2026-09-15T13:49:09.648198+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T16' OR [CUIT] = '23990915164' OR [NroDoc] = 99091516",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T16-create",
+      "at": "2026-09-15T13:49:09.742005+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T16",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091516",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "23990915164",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "Domicilio.Calle": "CALLE CON PUNTO PRUEBA NO OPERAR"
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": false,
+        "ID": null,
+        "Error": "La propiedad 'Domicilio.Calle' no existe en el tipo 'SocioMutual'."
+      }
+    },
+    {
+      "label": "T16-readback",
+      "at": "2026-09-15T13:49:09.812794+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T16' OR [CUIT] = '23990915164' OR [NroDoc] = 99091516",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T17-preflight",
+      "at": "2026-09-15T13:49:18.693955+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T17' OR [CUIT] = '27990915178' OR [NroDoc] = 99091517",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T17-create",
+      "at": "2026-09-15T13:49:18.808922+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T17",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091517",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915178",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "SocAux": {
+            "Caja40": 50
+          }
+        },
+        "validar": false,
+        "tipo": "F.Module.SocioMutual"
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": false,
+        "ID": null,
+        "Error": "La propiedad 'SocAux' no existe en el tipo 'SocioMutual'."
+      }
+    },
+    {
+      "label": "T17-readback",
+      "at": "2026-09-15T13:49:18.911489+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T17' OR [CUIT] = '27990915178' OR [NroDoc] = 99091517",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();SocAux.ID;SocAux.Caja40",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T18-preflight",
+      "at": "2026-09-15T13:49:19.021599+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T18' OR [CUIT] = '27990915186' OR [NroDoc] = 99091518",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T18-create",
+      "at": "2026-09-15T13:49:19.389186+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T18",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091518",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915186",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "EstadoCivil": 1
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": true,
+        "ID": 152768,
+        "Error": null
+      }
+    },
+    {
+      "label": "T18-readback",
+      "at": "2026-09-15T13:49:19.493034+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T18' OR [CUIT] = '27990915186' OR [NroDoc] = 99091518",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152768,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T18",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T18 SOCIO FICTICIO",
+          99091518,
+          27990915186,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "label": "T19-preflight",
+      "at": "2026-09-15T13:49:19.614026+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T19' OR [CUIT] = '27990915194' OR [NroDoc] = 99091519",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T19-create",
+      "at": "2026-09-15T13:49:19.723245+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T19",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091519",
+          "Sexo": 1,
+          "TipoDoc": "96",
+          "CUIT": "27990915194",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ]
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": true,
+        "ID": 152769,
+        "Error": null
+      }
+    },
+    {
+      "label": "T19-readback",
+      "at": "2026-09-15T13:49:19.836363+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T19' OR [CUIT] = '27990915194' OR [NroDoc] = 99091519",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152769,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T19",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T19 SOCIO FICTICIO",
+          99091519,
+          27990915194,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1
+        ]
+      ]
+    },
+    {
+      "label": "T20-preflight",
+      "at": "2026-09-15T13:49:30.027070+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T20' OR [CUIT] = '27990915208' OR [NroDoc] = 99091520",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T20-create",
+      "at": "2026-09-15T13:49:30.136408+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T20",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091520",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915208",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "SujetoObligado": true
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": false,
+        "ID": null,
+        "Error": "Validación fallida para 'SocioMutual': \"Tipo Sujeto Obligado\" no puede estar vacia"
+      }
+    },
+    {
+      "label": "T20-readback",
+      "at": "2026-09-15T13:49:30.248744+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T20' OR [CUIT] = '27990915208' OR [NroDoc] = 99091520",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();SujetoObligado",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T21-preflight",
+      "at": "2026-09-15T13:49:30.347380+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T21' OR [CUIT] = '27990915216' OR [NroDoc] = 99091521",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T21-create",
+      "at": "2026-09-15T13:49:30.466928+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T21",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091521",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915216",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            },
+            {
+              "Categoria": 2,
+              "Fecha": "2021-01-01"
+            }
+          ]
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": true,
+        "ID": 152770,
+        "Error": null
+      }
+    },
+    {
+      "label": "T21-readback",
+      "at": "2026-09-15T13:49:30.625356+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T21' OR [CUIT] = '27990915216' OR [NroDoc] = 99091521",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152770,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T21",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T21 SOCIO FICTICIO",
+          99091521,
+          27990915216,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          2,
+          1,
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "label": "T22-preflight",
+      "at": "2026-09-15T13:49:30.733309+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T22' OR [CUIT] = '27990915224' OR [NroDoc] = 99091522",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T22-create",
+      "at": "2026-09-15T13:49:30.823091+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T22",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091522",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915224",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "Email": "NO POSEE",
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ]
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": true,
+        "ID": 152771,
+        "Error": null
+      }
+    },
+    {
+      "label": "T22-readback",
+      "at": "2026-09-15T13:49:30.925356+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T22' OR [CUIT] = '27990915224' OR [NroDoc] = 99091522",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152771,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T22",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T22 SOCIO FICTICIO",
+          99091522,
+          27990915224,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          "no posee",
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1
+        ]
+      ]
+    },
+    {
+      "label": "T23-preflight",
+      "at": "2026-09-15T13:49:49.937478+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T23' OR [CUIT] = '27990915232' OR [NroDoc] = 99091523",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T23-create",
+      "at": "2026-09-15T13:49:50.073574+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T23",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091523",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915232",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "Email": null,
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ]
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": true,
+        "ID": 152772,
+        "Error": null
+      }
+    },
+    {
+      "label": "T23-readback",
+      "at": "2026-09-15T13:49:50.241861+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T23' OR [CUIT] = '27990915232' OR [NroDoc] = 99091523",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152772,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T23",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T23 SOCIO FICTICIO",
+          99091523,
+          27990915232,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1
+        ]
+      ]
+    },
+    {
+      "label": "H-final-T14",
+      "at": "2026-09-15T13:50:17.899683+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T14' OR [CUIT] = '27990915143' OR [NroDoc] = 99091514",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "H-final-T15",
+      "at": "2026-09-15T13:50:18.512014+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T15' OR [CUIT] = '27990915151' OR [NroDoc] = 99091515",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "H-final-T16",
+      "at": "2026-09-15T13:50:18.611405+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T16' OR [CUIT] = '23990915164' OR [NroDoc] = 99091516",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "H-final-T17",
+      "at": "2026-09-15T13:50:18.716366+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T17' OR [CUIT] = '27990915178' OR [NroDoc] = 99091517",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "H-final-T18",
+      "at": "2026-09-15T13:50:18.796784+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T18' OR [CUIT] = '27990915186' OR [NroDoc] = 99091518",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152768,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T18",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T18 SOCIO FICTICIO",
+          99091518,
+          27990915186,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1,
+          1,
+          36,
+          false,
+          228270,
+          null,
+          1,
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "label": "H-final-T19",
+      "at": "2026-09-15T13:50:18.907481+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T19' OR [CUIT] = '27990915194' OR [NroDoc] = 99091519",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152769,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T19",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T19 SOCIO FICTICIO",
+          99091519,
+          27990915194,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1,
+          0,
+          36,
+          false,
+          228271,
+          null,
+          1,
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "label": "H-final-T20",
+      "at": "2026-09-15T13:50:19.018603+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T20' OR [CUIT] = '27990915208' OR [NroDoc] = 99091520",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "H-final-T21",
+      "at": "2026-09-15T13:50:19.114044+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T21' OR [CUIT] = '27990915216' OR [NroDoc] = 99091521",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152770,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T21",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T21 SOCIO FICTICIO",
+          99091521,
+          27990915216,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          2,
+          0,
+          36,
+          false,
+          228272,
+          null,
+          1,
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "label": "H-final-T22",
+      "at": "2026-09-15T13:50:19.235636+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T22' OR [CUIT] = '27990915224' OR [NroDoc] = 99091522",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152771,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T22",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T22 SOCIO FICTICIO",
+          99091522,
+          27990915224,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          "no posee",
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1,
+          0,
+          36,
+          false,
+          228273,
+          null,
+          1,
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "label": "H-final-T23",
+      "at": "2026-09-15T13:50:19.373705+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T23' OR [CUIT] = '27990915232' OR [NroDoc] = 99091523",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();EstadoCivil;Edad;SujetoObligado;SocAux.ID;SocAux.Caja40;HistoriaCategorias[Fecha = #2020-01-01#].Count();HistoriaCategorias[Fecha = #2021-01-01#].Count();HistoriaCategorias[Categoria.ID = 2].Count()",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": [
+        [
+          152772,
+          "ZZZ PRUEBA API NO OPERAR 20260915 T23",
+          "SOCIO FICTICIO",
+          "ZZZ PRUEBA API NO OPERAR 20260915 T23 SOCIO FICTICIO",
+          99091523,
+          27990915232,
+          "DNI",
+          1,
+          "1990-03-15",
+          null,
+          null,
+          "CALLE FICTICIA PRUEBA API NO OPERAR",
+          "0",
+          "215200",
+          12,
+          "GDRO.BAIGORRIA",
+          1,
+          0,
+          36,
+          false,
+          228274,
+          null,
+          1,
+          0,
+          1
+        ]
+      ]
+    }
+  ],
+  "final_verified_rows": [
+    {
+      "ID": 152768,
+      "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T18",
+      "Nombre": "SOCIO FICTICIO",
+      "NombreCompleto": "ZZZ PRUEBA API NO OPERAR 20260915 T18 SOCIO FICTICIO",
+      "NroDoc": 99091518,
+      "CUIT": 27990915186,
+      "TipoDoc.Descripcion": "DNI",
+      "Sexo": 1,
+      "FechaDeNacimiento": "1990-03-15",
+      "Celular": null,
+      "Email": null,
+      "Domicilio.Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+      "Domicilio.NroPuerta": "0",
+      "Domicilio.CodigoPostal": "215200",
+      "Domicilio.Localidad.ID": 12,
+      "Domicilio.Localidad.Nombre": "GDRO.BAIGORRIA",
+      "HistoriaCategorias.Count()": 1,
+      "EstadoCivil": 1,
+      "Edad": 36,
+      "SujetoObligado": false,
+      "SocAux.ID": 228270,
+      "SocAux.Caja40": null,
+      "HistoriaCategorias[Fecha = #2020-01-01#].Count()": 1,
+      "HistoriaCategorias[Fecha = #2021-01-01#].Count()": 0,
+      "HistoriaCategorias[Categoria.ID = 2].Count()": 1
+    },
+    {
+      "ID": 152769,
+      "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T19",
+      "Nombre": "SOCIO FICTICIO",
+      "NombreCompleto": "ZZZ PRUEBA API NO OPERAR 20260915 T19 SOCIO FICTICIO",
+      "NroDoc": 99091519,
+      "CUIT": 27990915194,
+      "TipoDoc.Descripcion": "DNI",
+      "Sexo": 1,
+      "FechaDeNacimiento": "1990-03-15",
+      "Celular": null,
+      "Email": null,
+      "Domicilio.Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+      "Domicilio.NroPuerta": "0",
+      "Domicilio.CodigoPostal": "215200",
+      "Domicilio.Localidad.ID": 12,
+      "Domicilio.Localidad.Nombre": "GDRO.BAIGORRIA",
+      "HistoriaCategorias.Count()": 1,
+      "EstadoCivil": 0,
+      "Edad": 36,
+      "SujetoObligado": false,
+      "SocAux.ID": 228271,
+      "SocAux.Caja40": null,
+      "HistoriaCategorias[Fecha = #2020-01-01#].Count()": 1,
+      "HistoriaCategorias[Fecha = #2021-01-01#].Count()": 0,
+      "HistoriaCategorias[Categoria.ID = 2].Count()": 1
+    },
+    {
+      "ID": 152770,
+      "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T21",
+      "Nombre": "SOCIO FICTICIO",
+      "NombreCompleto": "ZZZ PRUEBA API NO OPERAR 20260915 T21 SOCIO FICTICIO",
+      "NroDoc": 99091521,
+      "CUIT": 27990915216,
+      "TipoDoc.Descripcion": "DNI",
+      "Sexo": 1,
+      "FechaDeNacimiento": "1990-03-15",
+      "Celular": null,
+      "Email": null,
+      "Domicilio.Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+      "Domicilio.NroPuerta": "0",
+      "Domicilio.CodigoPostal": "215200",
+      "Domicilio.Localidad.ID": 12,
+      "Domicilio.Localidad.Nombre": "GDRO.BAIGORRIA",
+      "HistoriaCategorias.Count()": 2,
+      "EstadoCivil": 0,
+      "Edad": 36,
+      "SujetoObligado": false,
+      "SocAux.ID": 228272,
+      "SocAux.Caja40": null,
+      "HistoriaCategorias[Fecha = #2020-01-01#].Count()": 1,
+      "HistoriaCategorias[Fecha = #2021-01-01#].Count()": 1,
+      "HistoriaCategorias[Categoria.ID = 2].Count()": 2
+    },
+    {
+      "ID": 152771,
+      "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T22",
+      "Nombre": "SOCIO FICTICIO",
+      "NombreCompleto": "ZZZ PRUEBA API NO OPERAR 20260915 T22 SOCIO FICTICIO",
+      "NroDoc": 99091522,
+      "CUIT": 27990915224,
+      "TipoDoc.Descripcion": "DNI",
+      "Sexo": 1,
+      "FechaDeNacimiento": "1990-03-15",
+      "Celular": null,
+      "Email": "no posee",
+      "Domicilio.Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+      "Domicilio.NroPuerta": "0",
+      "Domicilio.CodigoPostal": "215200",
+      "Domicilio.Localidad.ID": 12,
+      "Domicilio.Localidad.Nombre": "GDRO.BAIGORRIA",
+      "HistoriaCategorias.Count()": 1,
+      "EstadoCivil": 0,
+      "Edad": 36,
+      "SujetoObligado": false,
+      "SocAux.ID": 228273,
+      "SocAux.Caja40": null,
+      "HistoriaCategorias[Fecha = #2020-01-01#].Count()": 1,
+      "HistoriaCategorias[Fecha = #2021-01-01#].Count()": 0,
+      "HistoriaCategorias[Categoria.ID = 2].Count()": 1
+    },
+    {
+      "ID": 152772,
+      "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T23",
+      "Nombre": "SOCIO FICTICIO",
+      "NombreCompleto": "ZZZ PRUEBA API NO OPERAR 20260915 T23 SOCIO FICTICIO",
+      "NroDoc": 99091523,
+      "CUIT": 27990915232,
+      "TipoDoc.Descripcion": "DNI",
+      "Sexo": 1,
+      "FechaDeNacimiento": "1990-03-15",
+      "Celular": null,
+      "Email": null,
+      "Domicilio.Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+      "Domicilio.NroPuerta": "0",
+      "Domicilio.CodigoPostal": "215200",
+      "Domicilio.Localidad.ID": 12,
+      "Domicilio.Localidad.Nombre": "GDRO.BAIGORRIA",
+      "HistoriaCategorias.Count()": 1,
+      "EstadoCivil": 0,
+      "Edad": 36,
+      "SujetoObligado": false,
+      "SocAux.ID": 228274,
+      "SocAux.Caja40": null,
+      "HistoriaCategorias[Fecha = #2020-01-01#].Count()": 1,
+      "HistoriaCategorias[Fecha = #2021-01-01#].Count()": 0,
+      "HistoriaCategorias[Categoria.ID = 2].Count()": 1
+    }
+  ]
+}

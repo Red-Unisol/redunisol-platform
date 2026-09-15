@@ -2,8 +2,14 @@
 
 Verificado el **15/09/2026** contra `https://celesol.dyndns.org:5002`.
 Operación: `POST /api/Simulador/CrearSocioMutual`, `Content-Type: application/json`.
-Trece intentos de alta autorizados: cinco exitosos y ocho rechazados. Cada intento
+Campaña inicial T01–T13: trece intentos de alta autorizados, cinco exitosos y ocho rechazados. Cada intento
 tuvo una búsqueda previa y una consulta posterior con `EvaluateList`.
+
+La [campaña adicional T14–T23](hipotesis-escritura.md) amplía este contrato con
+EstadoCivil, Sexo numérico, Email null/NO POSEE, colecciones múltiples y rechazos
+diferenciados de propiedades calculadas, rutas con puntos y validación condicional.
+Agregó cinco socios: 152768–152772. Las observaciones de esta página describen
+T01–T13 salvo indicación expresa.
 
 ## Alcance del contrato
 
@@ -190,7 +196,7 @@ escritura soportada o ampliar el endpoint y verificar su persistencia.
 
 ## Persistencia, inventario y límites
 
-Quedaron **cinco socios sintéticos: 152760–152764**. Todos tienen el marcador
+La campaña inicial dejó **cinco socios sintéticos: 152760–152764**. Todos tienen el marcador
 `ZZZ PRUEBA API NO OPERAR 20260915 Txx` en el apellido/razón social. No se asignaron
 contactos reales. No se crearon préstamos ni se ejecutaron pagos, borrados o
 modificaciones de socios existentes. No se invocó sincronización a PostgreSQL.

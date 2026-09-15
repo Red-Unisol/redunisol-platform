@@ -8,6 +8,7 @@ siguen documentados junto a su aplicación.
 ## Cómo usar esta referencia
 
 - [Crear socios: campos, formatos y comportamiento real](socios.md).
+- [Hipótesis de escritura: propiedades, formatos, validaciones y cinco altas adicionales](hipotesis-escritura.md).
 - [EvaluateList / EvaluateObj: consultas y verificación](evaluate.md).
 - [Préstamos, solicitudes e identificadores](prestamos.md).
 - [Evidencia de altas del 15/09/2026](evidence/2026-09-15/socios.json).
