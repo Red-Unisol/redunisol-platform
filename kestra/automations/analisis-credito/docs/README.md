@@ -306,6 +306,10 @@ Antes de navegar, calcula claves de cache por CUIL y por nombre normalizado. Si 
 - `credixsa.cuil.<cuil>`
 - `credixsa.name.<sha256_nombre_normalizado>`
 
+Si la consulta a CredixSA falla por un error tecnico (por ejemplo, el portal tarda mas de `CREDIX_TIMEOUT_SECONDS` en mostrar el informe), `kestra_webhook_entrypoint` reintenta una vez despues de 10 segundos. Si fallan los dos intentos, la task termina con exit code 1 y `status=technical_error`. Los pedidos invalidos y la configuracion faltante no se reintentan.
+
+El reintento vive en el script y no como `retry` de la task: en Kestra 2 un retry de task pasa la ejecucion por `FAILED` antes de reintentar, `alerta_flow_fallos` lo toma como un fallo aunque el segundo intento funcione, y ademas aparece un task run duplicado de `consultar_quiebra`. No volver a agregar `retry` en el YAML.
+
 ### Entrada
 
 Webhook `POST` con JSON:
