@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Redirection;
+use App\Services\ManagedRedirects;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -28,9 +29,8 @@ class HandleRedirections
         $path = '/'.ltrim($request->path(), '/');
 
         // These reviewed migration rules take precedence over editable CMS rules.
-        $managed = config('redirects', []);
-        if (isset($managed[$path])) {
-            $target = $managed[$path];
+        $target = app(ManagedRedirects::class)->targetFor($request->getHost(), $request->getPathInfo());
+        if ($target !== null) {
             if ($query = $request->getQueryString()) {
                 $target .= (str_contains($target, '?') ? '&' : '?').$query;
             }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Blog;
 use App\Models\Page;
+use App\Services\ManagedRedirects;
 use Illuminate\Http\Response;
 
 class SitemapController extends Controller
@@ -20,7 +21,7 @@ class SitemapController extends Controller
         $pages = Page::where('index', true)->get();
         foreach ($pages as $page) {
             // Skip finalizar.php
-            if ($page->slug === '/finalizar.php' || array_key_exists($page->slug, config('redirects', []))) {
+            if ($page->slug === '/finalizar.php' || app(ManagedRedirects::class)->targetFor(parse_url(config('app.url'), PHP_URL_HOST), $page->slug) !== null) {
                 continue;
             }
 

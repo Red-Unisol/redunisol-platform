@@ -89,3 +89,21 @@ it('excludes retired paths from the sitemap even if their CMS pages are still in
     Page::create(['title' => 'Variante retirada', 'slug' => '/jubilados-de-cordoba/form-abajo', 'index' => true, 'sections' => []]);
     $this->get('/sitemap.xml')->assertOk()->assertDontSee('/jubilados-de-cordoba/form-abajo');
 });
+
+it('excludes agency redirects from the canonical sitemap without hiding other hosts current pages', function () {
+    config()->set('app.url', 'https://redunisol.com.ar');
+    Page::create(['title' => 'Privacidad anterior', 'slug' => '/privacidad', 'index' => true, 'sections' => []]);
+    Page::create(['title' => 'Página actual', 'slug' => '/diferencia-entre-mutual-y-cooperativa', 'index' => true, 'sections' => []]);
+    $this->get('/sitemap.xml')->assertOk()
+        ->assertDontSee('https://redunisol.com.ar/privacidad', false)
+        ->assertSee('https://redunisol.com.ar/diferencia-entre-mutual-y-cooperativa', false);
+});
+
+it('redirects legacy requests through the Laravel HTTP stack', function (string $url, string $destination) {
+    $this->get($url)->assertStatus(301)->assertRedirect($destination);
+})->with([
+    ['https://www.redunisol.com.ar/privacidad/', 'https://redunisol.com.ar/politicas-de-privacidad'],
+    ['https://redunisol.com.ar/celesol/Terminos%20y%20condiciones%20Celesol.pdf', 'https://redunisol.com.ar/gestion-de-datos'],
+    ['https://prestamos.redunisol.com.ar/wp-content/themes/redunisol/css/old.css', 'https://redunisol.com.ar/'],
+    ['https://prestamos.redunisol.com.ar/diferencia-entre-mutual-y-cooperativa/', 'https://redunisol.com.ar/blog/diferencia-entre-mutual-y-cooperativa'],
+]);
