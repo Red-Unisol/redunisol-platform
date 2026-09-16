@@ -33,7 +33,6 @@ interface SharedProps {
 }
 
 const legalLinks = [
-    { label: 'Sobre Nosotros', href: '/sobre-nosotros' },
     { label: 'Contacto', href: '/contacto' },
     { label: 'Políticas de Privacidad', href: '/politicas-de-privacidad' },
     { label: 'Gestión de Datos', href: '/gestion-de-datos' },
@@ -41,7 +40,7 @@ const legalLinks = [
 
 const navLinks = [
     { label: 'Inicio', href: '/' },
-    { label: 'Conocénos', href: '/sobre-nosotros' },
+    { label: 'Conocenos', href: '/sobre-nosotros' },
     { label: 'Blog', href: '/blog' },
 ];
 

@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Author;
 use App\Models\Blog;
+use App\Models\Category;
 use App\Models\Page;
 use App\Models\Regulator;
 use App\Models\SiteSetting;
@@ -70,7 +72,8 @@ class HandleInertiaRequests extends Middleware
     {
         $appName = config('app.name', 'Red Unisol');
         $currentUrl = $request->url();
-        $defaultDescription = 'Soluciones de crédito personalizadas para jubilados y policías';
+        $defaultDescription = config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías');
+        $seoService = app(SeoService::class);
         $currentPath = $request->path();
         $pageSlug = $currentPath === '/' ? '/' : '/'.ltrim($currentPath, '/');
         $model = Page::where('slug', $pageSlug)->first();
@@ -80,24 +83,38 @@ class HandleInertiaRequests extends Middleware
         }
 
         if ($model) {
-            $seoService = app(SeoService::class);
-
             return [
-                'metaTitle' => $model->meta_title ?: $seoService->generateMetaTitle($model),
+                'metaTitle' => $seoService->formatTitle($model->meta_title ?: $seoService->generateMetaTitle($model)),
                 'metaDescription' => $model->meta_description ?: $seoService->generateMetaDescription($model),
                 'keyword' => $model->keyword,
                 'robots' => $seoService->getRobotsTag($model),
                 'canonical' => $seoService->getCanonicalUrl($model),
+                'ogImage' => $model instanceof Blog ? ($model->image_url ?: asset('logo.jpeg')) : asset('logo.jpeg'),
+                'ogType' => $model instanceof Blog ? 'article' : 'website',
                 'structuredData' => json_encode($seoService->getStructuredData($model)),
             ];
         }
 
+        $title = $appName;
+        if ($request->routeIs('blog.index')) {
+            $title = 'Blog';
+            $defaultDescription = 'Consejos, novedades y guías sobre préstamos personales para empleados públicos, jubilados y más.';
+        } elseif ($request->routeIs('blog.category')) {
+            $category = Category::where('slug', $request->route('slug'))->first();
+            $title = $category ? 'Artículos sobre '.$category->name : 'Blog';
+        } elseif ($request->routeIs('author.show')) {
+            $author = Author::active()->where('slug', $request->route('slug'))->first();
+            $title = $author ? 'Artículos de '.$author->name : 'Blog';
+        }
+
         return [
-            'metaTitle' => $appName,
+            'metaTitle' => $seoService->formatTitle($title),
             'metaDescription' => $defaultDescription,
             'keyword' => null,
             'robots' => 'index, follow',
             'canonical' => $currentUrl,
+            'ogImage' => asset('logo.jpeg'),
+            'ogType' => 'website',
         ];
     }
 }

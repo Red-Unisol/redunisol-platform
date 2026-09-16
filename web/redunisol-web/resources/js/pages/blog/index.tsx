@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import BlogCard, { type PaginatedPosts } from '@/components/blog/BlogCard';
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
+import SeoHead from '@/components/seo-head';
 
 interface BlogIndexProps {
     posts: PaginatedPosts;
@@ -15,25 +16,30 @@ export default function BlogIndex() {
 
     return (
         <>
-            <Navbar activeTab="unset" setActiveTab={() => {}} />
+            <SeoHead />
+            <Navbar />
 
             <div className="bg-gradient-custom w-full">
                 {/* Hero */}
-                <section className="px-6 pt-32 pb-20 text-center">
+                <section
+                    aria-labelledby="blog-heading"
+                    className="mx-auto max-w-6xl px-6 pt-32 pb-16 text-center md:pt-40 md:pb-20"
+                >
                     <motion.h1
-                        initial={{ opacity: 0, y: 30 }}
+                        id="blog-heading"
+                        initial={false}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6 }}
-                        className="text-4xl font-semibold tracking-tight text-[#1e2d3d] md:text-6xl"
+                        className="text-4xl font-semibold tracking-tight text-white md:text-6xl"
                     >
                         Blog
                     </motion.h1>
 
                     <motion.p
-                        initial={{ opacity: 0, y: 30 }}
+                        initial={false}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.15, duration: 0.6 }}
-                        className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-gray-700 md:text-lg"
+                        className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-white/90 md:text-lg"
                     >
                         Consejos, novedades y guías sobre préstamos personales
                         para empleados públicos, jubilados y más.

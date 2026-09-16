@@ -8,6 +8,14 @@ use Illuminate\Support\Str;
 
 class SeoService
 {
+    public function formatTitle(string $title): string
+    {
+        $name = config('app.name', 'Red Unisol');
+        $title = trim($title);
+
+        return $title === '' ? $name : (mb_stripos($title, $name) !== false ? $title : "{$title} | {$name}");
+    }
+
     /**
      * Generate meta title for a page
      */

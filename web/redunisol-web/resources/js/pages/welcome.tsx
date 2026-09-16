@@ -44,6 +44,8 @@ interface HomePageProps {
     keyword?: string;
     index?: boolean;
     seo?: {
+        metaTitle?: string;
+        metaDescription?: string;
         robots?: string;
         canonical?: string;
     };
@@ -111,11 +113,13 @@ export default function Page() {
 
     const formSectionData = useSection<FormSectionConfig>(sections, 'form');
 
-    const sectionDescriptors = sections.map((s, idx) => ({
-        id: `section-${idx}-${s.type}`,
-        type: s.type,
-        data: s.data,
-    }));
+    const sectionDescriptors = sections
+        .filter((s) => s.type === 'form' || s.type in SECTION_COMPONENTS)
+        .map((s, idx) => ({
+            id: `section-${idx}-${s.type}`,
+            type: s.type,
+            data: s.data,
+        }));
 
     const hasForm = !!formSectionData;
     const leftSections = /*hasForm
@@ -234,9 +238,11 @@ export default function Page() {
     }, [sections]);
 
     // ── SEO ──
-    const seoTitle = meta_title || title;
+    const seoTitle = seo?.metaTitle || meta_title || title;
     const seoDescription =
-        meta_description || `${title} - Soluciones de crédito personalizadas`;
+        seo?.metaDescription ||
+        meta_description ||
+        `${title} - Soluciones de crédito personalizadas`;
     const robots =
         seo?.robots ??
         (index === false ? 'noindex, nofollow' : 'index, follow');
@@ -391,18 +397,7 @@ export default function Page() {
                                         );
                                     }
 
-                                    return (
-                                        <section
-                                            id={id}
-                                            data-section-id={id}
-                                            key={key}
-                                            className={sectionClass}
-                                        >
-                                            <div className="p-6 text-gray-600">
-                                                Sección: {s.type}
-                                            </div>
-                                        </section>
-                                    );
+                                    return null;
                                 }
                             }
                         })}
