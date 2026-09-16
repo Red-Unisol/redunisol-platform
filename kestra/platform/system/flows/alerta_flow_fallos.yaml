@@ -25,22 +25,68 @@ tasks:
     key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
     errorOnMissing: false
 
+  - id: leer_racha_credixsa
+    type: io.kestra.plugin.core.kv.Get
+    runIf: "{{ trigger.namespace == 'redunisol.prod.analisis-credito' and trigger.flowId == 'consulta_quiebra_credix' }}"
+    key: "{{ 'alerta.flow_fallos.racha.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
+    errorOnMissing: false
+
+  - id: evaluar_racha_credixsa
+    type: io.kestra.plugin.scripts.python.Script
+    runIf: "{{ trigger.namespace == 'redunisol.prod.analisis-credito' and trigger.flowId == 'consulta_quiebra_credix' }}"
+    timeout: PT1M
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    env:
+      PREVIOUS_STREAK_JSON: "{{ (outputs.leer_racha_credixsa.value ?? null) | toJson }}"
+      SOURCE_EXECUTION_ID: "{{ trigger.executionId }}"
+      SOURCE_STATE: "{{ trigger.state }}"
+    script: |
+      import json
+      import os
+      from kestra import Kestra
+
+      threshold = 3
+      previous = json.loads(os.environ["PREVIOUS_STREAK_JSON"]) or {}
+      failed_ids = list(previous.get("failed_execution_ids", []))
+      execution_id = os.environ["SOURCE_EXECUTION_ID"]
+      state = os.environ["SOURCE_STATE"]
+      if state == "SUCCESS":
+          failed_ids = []
+      elif state == "FAILED" and execution_id not in failed_ids:
+          # Saturar en el umbral: no crece el KV durante una caida prolongada.
+          failed_ids = (failed_ids + [execution_id])[:threshold]
+      Kestra.outputs({
+          "notify_failure": state == "FAILED" and len(failed_ids) >= threshold,
+          "streak_json": json.dumps({"failed_execution_ids": failed_ids}),
+      })
+
+  - id: guardar_racha_credixsa
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ trigger.namespace == 'redunisol.prod.analisis-credito' and trigger.flowId == 'consulta_quiebra_credix' }}"
+    key: "{{ 'alerta.flow_fallos.racha.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
+    value: "{{ outputs.evaluar_racha_credixsa.vars.streak_json }}"
+    kvType: JSON
+    overwrite: true
+
   - id: enviar_alerta_fallo
     type: io.kestra.plugin.core.http.Request
     timeout: PT30S
-    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
+    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) and (trigger.namespace != 'redunisol.prod.analisis-credito' or trigger.flowId != 'consulta_quiebra_credix' or (outputs.evaluar_racha_credixsa.vars.notify_failure ?? false)) }}"
     uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
     method: POST
     contentType: application/json
     body: |
       {
         "DIALOG_ID": "chat119621",
-        "MESSAGE": "KESTRA - Flow fallido\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}"
+        "MESSAGE": "KESTRA - Flow fallido\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}{{ (trigger.namespace == 'redunisol.prod.analisis-credito' and trigger.flowId == 'consulta_quiebra_credix') ? '\nFallos consecutivos: 3 o mas ejecuciones' : '' }}"
       }
 
   - id: marcar_alerta_abierta
     type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
+    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) and (trigger.namespace != 'redunisol.prod.analisis-credito' or trigger.flowId != 'consulta_quiebra_credix' or (outputs.evaluar_racha_credixsa.vars.notify_failure ?? false)) }}"
     key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
     value: "open"
     overwrite: true

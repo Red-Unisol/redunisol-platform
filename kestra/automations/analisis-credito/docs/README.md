@@ -308,7 +308,9 @@ Antes de navegar, calcula claves de cache por CUIL y por nombre normalizado. Si 
 
 Si la consulta a CredixSA falla por un error tecnico (por ejemplo, el portal tarda mas de `CREDIX_TIMEOUT_SECONDS` en mostrar el informe), `kestra_webhook_entrypoint` reintenta una vez despues de 10 segundos. Si fallan los dos intentos, la task termina con exit code 1 y `status=technical_error`. Los pedidos invalidos y la configuracion faltante no se reintentan.
 
-El reintento vive en el script y no como `retry` de la task: en Kestra 2 un retry de task pasa la ejecucion por `FAILED` antes de reintentar, `alerta_flow_fallos` lo toma como un fallo aunque el segundo intento funcione, y ademas aparece un task run duplicado de `consultar_quiebra`. No volver a agregar `retry` en el YAML.
+El reintento vive en el script y no como `retry` de la task: en la instalacion actual de Kestra 2 se observaron estados `FAILED` intermedios y task runs duplicados de `consultar_quiebra` al usar el retry del YAML. No volver a agregar `retry` a esta task. Los dos intentos no establecen un limite global de duracion: cada consulta puede acumular varias esperas del navegador.
+
+En produccion, `alerta_flow_fallos` avisa a Bitrix24 despues de **3 ejecuciones distintas consecutivas en FAILED** de este flow. Un intento fallido dentro del script no suma al contador; una ejecucion agotada sigue terminando en `FAILED` aunque todavia no corresponda notificar. Cualquier `SUCCESS` reinicia la racha (incluye cache hit, sin resultados y pedidos invalidos que terminan normalmente). Solo se envia recuperacion si habia una alerta abierta. La politica y su estado KV viven en el target `system`, que tambien debe desplegarse con este cambio.
 
 ### Entrada
 

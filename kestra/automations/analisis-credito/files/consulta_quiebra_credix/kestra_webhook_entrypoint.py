@@ -29,11 +29,10 @@ from .sqlite_cache import write_cache_entries
 
 logger = logging.getLogger(__name__)
 
-# El reintento vive aca y no como `retry` de la task en el YAML: en Kestra 2 un
-# retry de task pasa la ejecucion por FAILED antes de reintentar, eso dispara
-# alerta_flow_fallos aunque el segundo intento funcione, y ademas duplica el
-# task run. Mismos numeros que tenia el retry del YAML (d784e78): quien llama
-# espera la respuesta, asi que el peor caso no debe pasar de ~2 minutos.
+# El reintento vive aca: en la instalacion actual de Kestra 2 se observaron
+# estados FAILED intermedios y task runs duplicados con el retry del YAML.
+# Se mantienen los 2 intentos y la pausa de d784e78; no es un timeout global,
+# porque cada consulta puede acumular varias esperas del navegador.
 CONSULTA_MAX_ATTEMPTS = 2
 CONSULTA_RETRY_PAUSE_SECONDS = 10
 
