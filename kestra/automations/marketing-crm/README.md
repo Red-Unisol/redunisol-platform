@@ -6,6 +6,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- `flows/edna_incoming_webhook.yaml` y `files/edna_incoming/`: interpreta entradas web y respuestas FLOW de Edna recibidas por el inbox Laravel. [Contrato y activación](docs/technical/EDNA_INCOMING_WEBHOOK.md).
 - `flows/bitrix24_form_webhook.yaml`: flow de intake del formulario y respuesta al frontend.
 - `flows/commercial_prequalification_webhook.yaml`: endpoint de pre-elegibilidad sin persistencia ni consultas externas.
 - `flows/bitrix24_lead_prefill.yaml`: backfill de leads en `INGRESO (UC_5N2OEO)` con CredixSA, ARCA, Vimarx y BCRA. Para Finguru sanea primero el DNI copiado como CUIL, vincula el contacto y luego ejecuta el enriquecimiento normal.
