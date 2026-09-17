@@ -2,6 +2,7 @@
 // may omit the situation on subsequent rows of a merged HTML cell.
 export function prepareCredixBcra(bcra = {}) {
     bcra = bcra || {};
+    if (bcra.fuente === 'BCRA') return bcra;
     let groupSituation = '';
     const debts = (Array.isArray(bcra.deudas_vigentes) ? bcra.deudas_vigentes : []).map((row) => {
         const raw = Array.isArray(row.raw) ? row.raw : [];
@@ -39,12 +40,4 @@ function formatCents(value) {
         minimumFractionDigits: value % 100 ? 2 : 0,
         maximumFractionDigits: 2,
     });
-}
-
-export function reportCuit(result, normalized) {
-    for (const value of [normalized?.persona?.cuit, result?.cuit]) {
-        const digits = String(value ?? '').replace(/\D/g, '');
-        if (/^\d{11}$/.test(digits)) return digits;
-    }
-    return '';
 }

@@ -26,6 +26,7 @@ from .service import (
     parse_search_request,
 )
 from .sqlite_cache import write_cache_entries
+from .bcra import enrich_bcra
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def main() -> int:
         result = build_error_result(request, str(exc), status="technical_error")
         exit_code = 1
 
-    output_payload = build_output_payload(result)
+    output_payload = build_output_payload(enrich_bcra(result))
     _write_sqlite_cache_if_configured(output_payload)
     _emit_outputs_if_available(output_payload)
     if Kestra is None:

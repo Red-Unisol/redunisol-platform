@@ -18,7 +18,7 @@ class ConsultaQuiebraCredixTest extends TestCase
                 $tool = $payload['tools']->firstWhere('id', 'consulta-quiebra-credix');
 
                 return $tool['endpoint'] === route('tools.consulta-quiebra-credix')
-                    && $tool['bcraEndpoint'] === route('tools.consulta-bcra');
+                    && ! array_key_exists('bcraEndpoint', $tool);
             });
     }
 
