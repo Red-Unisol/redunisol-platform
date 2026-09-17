@@ -33,69 +33,55 @@ function mount(fetch) {
     });
     dom.window.document.getElementById('app').dataset.payload = JSON.stringify({
         page: 'credixsa', branding: {}, tools: [{ id: 'consulta-quiebra-credix',
-            endpoint: '/credix', bcraEndpoint: '/bcra' }],
+            endpoint: '/credix' }],
     });
     dom.window.fetch = fetch;
     dom.window.eval(bundle);
     return { dom, document: dom.window.document, errors };
 }
 
-test('DOM: cache CredixSA aparece primero y BCRA reemplaza las tablas sin cambiar su formato', async () => {
-    let finish;
-    const app = mount(async (url, options) => {
-        if (url === '/credix') return response(credix());
-        assert.equal(url, '/bcra');
-        assert.deepEqual(JSON.parse(options.body), { cuit: '20123456786' });
-        return new Promise((resolve) => { finish = resolve; });
+for (const source of ['BCRA', 'CredixSA']) {
+    test(`DOM: informe precalentado ${source} muestra tablas finales sin otra consulta`, async () => {
+        const requests = [];
+        const report = credix();
+        const normalized = JSON.parse(report.normalized_json);
+        normalized.bcra = { ...bcra(source, '$ 2.000'),
+            consulta_directa_estado: source === 'BCRA' ? 'ok' : 'unavailable' };
+        report.normalized_json = JSON.stringify(normalized);
+        const app = mount(async (url) => {
+            requests.push(url);
+            assert.equal(url, '/credix');
+            return response(report);
+        });
+        try {
+            await until(() => app.document.querySelector('[aria-label="Deudas vigentes"]'));
+            const panel = app.document.querySelector('[aria-label="Deudas vigentes"]');
+            assert.ok(panel.textContent.includes(`Fuente: ${source}`));
+            assert.match(panel.textContent, /Total en situación ≥ 2\$ 2\.000/);
+            assert.deepEqual([...panel.querySelectorAll('th')].map((el) => el.textContent),
+                ['Entidad', 'Periodo', 'Monto', 'Situacion']);
+            assert.equal([...app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk')]
+                .filter((el) => el.textContent === `Fuente: ${source}`).length, 3);
+            assert.doesNotMatch(app.document.body.textContent, /Consultando BCRA/);
+            if (source === 'CredixSA') assert.match(panel.textContent, /BCRA no estuvo disponible al preparar/);
+            await pause();
+            assert.deepEqual(requests, ['/credix']);
+            assert.deepEqual(app.errors, []);
+        } finally { app.dom.window.close(); }
     });
-    try {
-        await until(() => finish && app.document.querySelector('[aria-label="Deudas vigentes"]'));
-        const panel = app.document.querySelector('[aria-label="Deudas vigentes"]');
-        assert.match(panel.textContent, /Fuente: CredixSA/);
-        assert.match(panel.textContent, /Consultando BCRA/);
-        const headers = [...panel.querySelectorAll('th')].map((el) => el.textContent);
-        finish(response({ ok: true, bcra: { ...bcra('BCRA', '$ 2.000'), consultado_en: '2026-09-17T13:00:00Z' } }));
-        await until(() => panel.textContent.includes('Fuente: BCRA'));
-        assert.deepEqual([...panel.querySelectorAll('th')].map((el) => el.textContent), headers);
-        assert.match(panel.textContent, /\$ 2\.000/);
-        assert.doesNotMatch(panel.textContent, /\$ 1\.000/);
-        assert.equal(app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk').length >= 3, true);
-        assert.equal([...app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk')]
-            .filter((el) => el.textContent === 'Fuente: BCRA').length, 3);
-        assert.deepEqual(app.errors, []);
-    } finally { app.dom.window.close(); }
-});
+}
 
-test('DOM: al fallar BCRA conserva las deudas, el subtotal y la fuente CredixSA', async () => {
-    const app = mount(async (url) => response(url === '/credix' ? credix() : { ok: false, bcra: null }));
+test('DOM: cache anterior sin fuente sigue siendo CredixSA y no dispara consultas', async () => {
+    const requests = [];
+    const report = credix();
+    const normalized = JSON.parse(report.normalized_json);
+    delete normalized.bcra.fuente;
+    report.normalized_json = JSON.stringify(normalized);
+    const app = mount(async (url) => { requests.push(url); return response(report); });
     try {
-        await until(() => app.document.body.textContent.includes('BCRA no disponible'));
-        const panel = app.document.querySelector('[aria-label="Deudas vigentes"]');
-        assert.match(panel.textContent, /Fuente: CredixSA/);
-        assert.match(panel.textContent, /Total en situación ≥ 2\$ 1\.000/);
-        assert.equal([...app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk')]
-            .filter((el) => el.textContent === 'Fuente: CredixSA').length, 3);
-        assert.deepEqual(app.errors, []);
-    } finally { app.dom.window.close(); }
-});
-
-test('DOM: limpiar y volver a consultar descarta una respuesta BCRA tardía de la consulta anterior', async () => {
-    const pending = [];
-    const app = mount(async (url) => {
-        if (url === '/credix') return response(credix());
-        return new Promise((resolve) => pending.push(resolve));
-    });
-    try {
-        await until(() => pending.length === 1);
-        app.document.querySelector('.button--ghost').click();
-        await until(() => !app.document.querySelector('[aria-label="Deudas vigentes"]'));
-        app.document.querySelector('form').dispatchEvent(new app.dom.window.Event('submit', { bubbles: true, cancelable: true }));
-        await until(() => pending.length === 2);
-        pending[0](response({ ok: true, bcra: bcra('BCRA', '$ 999.000') }));
+        await until(() => app.document.querySelector('[aria-label="Deudas vigentes"]'));
+        assert.match(app.document.querySelector('[aria-label="Deudas vigentes"]').textContent, /Fuente: CredixSA/);
         await pause();
-        assert.doesNotMatch(app.document.body.textContent, /999\.000/);
-        pending[1](response({ ok: true, bcra: bcra('BCRA', '$ 2.000') }));
-        await until(() => app.document.body.textContent.includes('$ 2.000'));
-        assert.deepEqual(app.errors, []);
+        assert.deepEqual(requests, ['/credix']);
     } finally { app.dom.window.close(); }
 });

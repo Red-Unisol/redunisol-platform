@@ -125,24 +125,28 @@ pruebas PHP cubren autenticacion, filtros, cache, reasignaciones y fallas de fue
 
 ## Consulta CredixSA: fuente BCRA y respaldo
 
-La pagina `/credixsa` conserva el informe CredixSA (incluido el cache) y consulta
-por separado `/api/tools/consulta-bcra` con el CUIL resuelto de la persona. La
-consulta directa no se hace con un DNI, un nombre o resultados ambiguos.
+La pagina `/credixsa` muestra el informe ya preparado en el cache, incluida su
+fuente. El worker de precalentamiento consulta BCRA antes de guardar cada socio:
+la espera y los reintentos ocurren antes de que el analista abra ese informe.
+La pantalla no dispara una segunda consulta a BCRA ni cambia de fuente despues
+de mostrar el resultado. Se mantienen las mismas tablas y columnas.
 
-El servidor obtiene `Deudas/{cuil}` y `Deudas/Historicas/{cuil}` de la API publica
-del BCRA en paralelo. Cada endpoint tiene hasta **3 intentos en total**, timeout
-de 8 segundos y **12 segundos entre intentos**; los endpoints que ya respondieron
-correctamente no se vuelven a pedir. Las pausas son internas al servicio, sin
-reintentar el scraping de CredixSA. No se guarda el resultado BCRA en el cache
-CredixSA ni se modifica su fecha. El endpoint responde con `Cache-Control: no-store`.
+Kestra obtiene `Deudas/{cuil}` y `Deudas/Historicas/{cuil}` de la API publica
+del BCRA en paralelo, usando el CUIL resuelto por CredixSA. Cada endpoint tiene
+hasta **3 intentos en total**, timeout de 8 segundos y **12 segundos entre
+intentos**; los endpoints que ya respondieron correctamente no se vuelven a pedir.
+La consulta directa no se hace con un DNI, un nombre o resultados ambiguos.
 
-Mientras se consulta BCRA se muestra el informe disponible con **Fuente: CredixSA**
-y un aviso de consulta en curso. Solo si ambas respuestas son validas se reemplaza
-el bloque financiero completo (vigentes, situaciones historicas y evolucion de
-montos) y se muestra **Fuente: BCRA**. Se mantienen las mismas tablas y columnas.
-Si fallan los tres intentos, una respuesta es invalida o falla la conexion del
-navegador, permanecen los datos CredixSA con su fuente y un aviso de indisponibilidad.
-Una respuesta tardia de otra busqueda nunca reemplaza el informe actual.
+Solo si ambas respuestas son validas se guarda el bloque financiero completo
+(vigentes, situaciones historicas, evolucion de montos y totales) con **Fuente:
+BCRA** y su fecha de consulta. Si se agotan los intentos, se guardan los datos
+CredixSA con **Fuente: CredixSA** y un estado de indisponibilidad que la pantalla
+explica. Leer ese respaldo tampoco vuelve a intentar BCRA.
+
+Si el socio aun no esta precalentado, la primera consulta prepara y guarda el
+mismo informe; en ese caso la espera inicial sigue siendo necesaria. Las entradas
+anteriores sin fuente se muestran como CredixSA hasta su renovacion normal.
+Se conserva la vigencia de 7 dias del cache; leerlo no renueva sus fechas.
 
 Los montos de la API oficial vienen en **miles de pesos** y se convierten a pesos
 antes de mostrarlos. El total vigente toma el ultimo registro de cada entidad,

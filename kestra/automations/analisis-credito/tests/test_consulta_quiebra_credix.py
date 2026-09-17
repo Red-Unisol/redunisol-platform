@@ -875,6 +875,7 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
                 ],
             ) as consultar,
             patch.object(entrypoint.time, "sleep") as sleep,
+            patch("consulta_quiebra_credix.bcra.consult_bcra", return_value=None),
             patch.object(entrypoint, "_write_sqlite_cache_if_configured"),
             patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
             patch("sys.stdout.write"),

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareCredixBcra, reportCuit } from '../../resources/js/credix-bcra.js';
+import { prepareCredixBcra } from '../../resources/js/credix-bcra.js';
 
 test('CredixSA: incluye todas las entidades de una situación agrupada y excluye situación 1', () => {
     const report = { deudas_vigentes: [
@@ -27,8 +27,8 @@ test('situación 2, decimales, cero real y datos desconocidos', () => {
     assert.equal(prepareCredixBcra(null).deuda_situacion_negativa_total, null);
 });
 
-test('la consulta directa usa el CUIL resuelto y no envía DNI ni un nombre', () => {
-    assert.equal(reportCuit({ cuit: '12345678' }, { persona: { cuit: '20-12345678-6' } }), '20123456786');
-    assert.equal(reportCuit({ cuit: '12345678' }, {}), '');
-    assert.equal(reportCuit({ cuit: '20123456786' }, {}), '20123456786');
+test('el informe precalentado conserva la fuente BCRA, los ceros y sus totales', () => {
+    const report = { fuente: 'BCRA', deudas_vigentes: [], deuda_vigente_total: '$ 0',
+        deuda_situacion_negativa_total: '$ 0', consultado_en: '2026-09-17T12:00:00Z' };
+    assert.deepEqual(prepareCredixBcra(report), report);
 });

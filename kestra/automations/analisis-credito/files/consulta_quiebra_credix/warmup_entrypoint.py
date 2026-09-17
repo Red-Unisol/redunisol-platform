@@ -31,6 +31,7 @@ from .service import (
     normalize_name,
 )
 from .sqlite_cache import write_cache_entries
+from .bcra import enrich_bcra
 
 DEFAULT_MAX_PER_RUN = 5
 DEFAULT_CORE_TIMEOUT_SECONDS = 60
@@ -132,39 +133,39 @@ def run_warmup() -> dict[str, Any]:
             )
             continue
 
-        output = build_output_payload(result)
+        output = build_output_payload(enrich_bcra(result))
         _log_event(
             "credixsa_warmup_candidate_done",
             oid=solicitud.oid,
             status=str(output.get("status") or ""),
             cache_should_persist=bool(output.get("cache_should_persist")),
         )
+        candidate_entries: list[dict[str, str]] = []
         if output.get("cache_should_persist"):
             register_cache_entry(
-                cache_entries,
+                candidate_entries,
                 str(output.get("cuil_cache_key") or ""),
                 str(output.get("cache_value_json") or ""),
             )
             register_cache_entry(
-                cache_entries,
+                candidate_entries,
                 str(output.get("name_cache_key") or ""),
                 str(output.get("cache_value_json") or ""),
             )
 
+        for entry in candidate_entries:
+            register_cache_entry(cache_entries, entry["key"], entry["value"])
+        # Publish each completed report before working on the next candidate.
+        sqlite_path = os.getenv("CREDIX_CACHE_SQLITE_PATH", "").strip()
+        if sqlite_path and candidate_entries:
+            try:
+                write_cache_entries(sqlite_path, candidate_entries)
+            except Exception as exc:
+                error_count += 1
+                errors.append(f"sqlite_cache:{type(exc).__name__}:{str(exc)[:160]}")
+                _log_event("credixsa_warmup_sqlite_cache_error", error_type=type(exc).__name__)
+                continue
         mark_daily_index(daily_index, solicitud, output)
-
-    sqlite_path = os.getenv("CREDIX_CACHE_SQLITE_PATH", "").strip()
-    if sqlite_path and cache_entries:
-        try:
-            write_cache_entries(sqlite_path, cache_entries)
-        except Exception as exc:
-            error_count += 1
-            errors.append(f"sqlite_cache:{type(exc).__name__}:{str(exc)[:160]}")
-            _log_event(
-                "credixsa_warmup_sqlite_cache_error",
-                error_type=type(exc).__name__,
-                error=str(exc)[:300],
-            )
 
     output_payload = build_success_output(
         daily_index=daily_index,
