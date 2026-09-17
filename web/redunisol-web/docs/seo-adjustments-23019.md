@@ -102,6 +102,48 @@ El rollback de la aplicacion se realiza con las imagenes previas del deploy.
 
 ## Validacion
 
+El 17/09/2026 el [deploy de produccion 35222460031](https://github.com/Red-Unisol/redunisol-platform/actions/runs/35222460031)
+termino correctamente. PHP-FPM, Nginx y el worker ejecutaban las imagenes
+`prod-d82c89f9adcb4822e7063f38ba096deb447e271b` del merge de #362.
+
+Verificacion publica posterior, incluyendo la correccion de dev descrita abajo:
+
+- 188/188 filas de la agencia: HEAD con redirecciones 301 y destino final 200,
+  normalizando HTTPS, www y barra final como se define en el mapa.
+- 84 paginas (82 destinos y dos landings adicionales), mas una categoria del
+  blog: HTML inicial con titulo, description, canonical, Open Graph y Twitter
+  unicos, sin marca repetida y consistentes con los datos de Inertia.
+- Ocho casos GET: las tres variantes de Cordoba, raiz de prestamos, articulo
+  antiguo, privacidad, PDF con espacios y recurso del comodin. Todos terminan
+  en 200 y conservan UTM y el identificador de clic codificado.
+- Sitemap 200, con 223 URLs y sin los origenes retirados del dominio principal.
+- 46 archivos JS/CSS y 78 imagenes sociales responden 200; el bundle publicado
+  contiene el encabezado corregido del blog y el enlace a Sobre Nosotros.
+- `/health`: base de datos, Redis y storage OK. Los tres contenedores nuevos
+  estaban activos, sin reinicios ni errores de servidor en sus logs revisados.
+
+No habia navegador conectado para inspeccion visual de escritorio/movil. Esa
+validacion queda separada de las comprobaciones HTTP, HTML y de assets.
+
+### URL historica del entorno dev
+
+El deploy de produccion desde `main` no actualiza el runtime dev, que se publica
+desde la rama `dev`. En la verificacion posterior al merge de #362 se detecto
+que la fila de empleados UNC en `dev.redunisol.com.ar` seguia devolviendo 404.
+
+Se agrego la misma redireccion exacta del mapa a su virtual host HTTPS, antes
+del proxy, en `deploy/apache/dev.redunisol.com.ar.conf`. Este archivo refleja
+`/opt/apache/conf.d/22-redunisol-web-dev.conf` de la VPS. Solo esa ruta, con o
+sin barra final, responde 301 hacia `https://redunisol.com.ar/`, conservando
+la query; las demas rutas siguen en `127.0.0.1:3020`.
+
+La intervencion SSH se realizo dentro de la autorizacion de los ajustes y del
+ingreso Apache. Se guardo la copia previa en
+`/opt/redunisol-web-prod/apache/dev-before-seo-rule.conf`, se valido la sintaxis
+y se recargo Apache. Se verificaron el 301 con UTM y el 200 de las portadas dev
+y principal. Para revertir solo esta intervencion, restaurar esa copia, validar
+con `/opt/apache/bin/httpd -D SSL -t` y recargar `httpd`.
+
 ```sh
 php artisan test tests/Unit/ManagedRedirectsTest.php tests/Feature/PageSeoMetadataTest.php tests/Feature/SiteSeoAdjustmentsTest.php
 npm run build:ssr
