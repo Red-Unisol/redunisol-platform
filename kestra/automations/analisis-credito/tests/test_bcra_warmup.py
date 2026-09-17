@@ -89,6 +89,71 @@ class BcraWarmupTests(unittest.TestCase):
         self.assertEqual(report["deuda_situacion_negativa_total"], "$ 1.356.125")
         self.assertEqual(len(report["deudas_vigentes"]), 4)
 
+    def test_zero_situation_preserves_history_amounts_and_is_cached_as_bcra_without_retries(self):
+        def fetch(path):
+            periods = [period("202607", [("Banco", 5, 199), ("Otra", 1, 41)])]
+            if path.startswith("Historicas/"):
+                periods += [period(month, [("Banco", 0, 123)]) for month in ["202606", "202605", "202412"]]
+            return 200, payload(periods)
+
+        with patch.object(bcra, "_fetch", side_effect=fetch) as request:
+            prepared = bcra.enrich_bcra(source_result())
+        self.assertEqual(request.call_count, 2)
+        self.sleep.assert_not_called()
+        financial = prepared["normalized"]["bcra"]
+        self.assertEqual(financial["fuente"], "BCRA")
+        self.assertEqual(financial["deuda_vigente_total"], "$ 240.000")
+        self.assertEqual(financial["deuda_situacion_negativa_total"], "$ 199.000")
+        self.assertEqual(financial["deudas_24_meses"]["filas"][0]["situaciones"].count("0"), 3)
+        cell = financial["evolucion_deuda_por_entidad"]["filas"][1]["celdas"][0]
+        self.assertEqual((cell["situacion"], cell["monto"]), ("0", "$ 123.000"))
+        self.assertEqual([item["result"] for item in financial["consulta_directa_intentos"]], ["ok", "ok"])
+        with tempfile.TemporaryDirectory() as directory:
+            db = str(Path(directory) / "cache.sqlite")
+            output = build_output_payload(prepared)
+            warmup.write_cache_entries(db, [{"key": output["cuil_cache_key"], "value": output["cache_value_json"]}])
+            cached = read_cache_api(db)
+            self.assertEqual(json.loads(cached["normalized_json"])["bcra"], financial)
+            gc.collect()
+
+    def test_current_zero_keeps_its_amount_and_only_two_or_more_counts_in_negative_total(self):
+        current = bcra._periods(200, payload([period("202607", [("Banco", 0, 123), ("Otra", 2, 41)])]), CUIT)
+        financial = bcra._normalize(current, {})
+        self.assertEqual(financial["deudas_vigentes"][0]["situacion"], "0")
+        self.assertEqual(financial["deuda_vigente_total"], "$ 164.000")
+        self.assertEqual(financial["deuda_situacion_negativa_total"], "$ 41.000")
+
+    def test_invalid_response_records_http_success_and_does_not_claim_transport_failure(self):
+        def fetch(path):
+            if path.startswith("Historicas/"):
+                return 200, payload([period("202607", [("Banco", 7, 123)])])
+            return success(path)
+
+        with patch.object(bcra, "_fetch", side_effect=fetch):
+            financial = bcra.enrich_bcra(source_result())["normalized"]["bcra"]
+        self.assertEqual(financial["fuente"], "CredixSA")
+        self.assertEqual(financial["consulta_directa_estado"], "invalid_response")
+        attempts = financial["consulta_directa_intentos"]
+        self.assertEqual(attempts[0], {"endpoint": "current", "attempt": 1, "http_status": 200, "result": "ok"})
+        self.assertEqual([i["attempt"] for i in attempts if i["result"] == "invalid_response"], [1, 2, 3])
+        self.assertTrue(all(i["http_status"] == 200 for i in attempts))
+
+    def test_recovered_invalid_response_does_not_mask_later_transport_failure(self):
+        calls = Counter()
+
+        def fetch(path):
+            calls[path] += 1
+            if path == CUIT:
+                return (200, {}) if calls[path] == 1 else success(path)
+            raise TimeoutError("must-not-log-request-or-financial-details")
+
+        with patch.object(bcra, "_fetch", side_effect=fetch), self.assertLogs(bcra.logger, level="INFO") as logs:
+            financial = bcra.enrich_bcra(source_result())["normalized"]["bcra"]
+        self.assertEqual(financial["consulta_directa_estado"], "unavailable")
+        self.assertEqual(financial["consulta_directa_intentos"][-1]["result"], "transport_error")
+        self.assertNotIn("must-not-log", " ".join(logs.output))
+        self.assertNotIn(CUIT, " ".join(logs.output))
+
     def test_failure_keeps_credix_and_no_partial_bcra_block(self):
         result = source_result()
         result["normalized"] = {"persona": {"cuit": CUIT}, "bcra": {
@@ -112,6 +177,7 @@ class BcraWarmupTests(unittest.TestCase):
         self.assertEqual(fetch.call_count, 6)
         self.assertEqual(self.sleep.call_args_list, [call(12), call(12)])
         self.assertEqual(prepared["normalized"]["bcra"]["fuente"], "CredixSA")
+        self.assertEqual(len(prepared["normalized"]["bcra"]["consulta_directa_intentos"]), 6)
         self.assertTrue(build_output_payload(prepared)["cache_should_persist"])
 
     def test_invalid_payloads_are_not_zero_debt(self):
@@ -122,6 +188,9 @@ class BcraWarmupTests(unittest.TestCase):
                 bcra._periods(200, data, CUIT)
         with self.assertRaises(ValueError):
             bcra._periods(404, {}, CUIT)
+        for situation in [None, -1, 7, 1.5, "", "unknown"]:
+            with self.subTest(situation=situation), self.assertRaises(ValueError):
+                bcra._periods(200, payload([period("202607", [("Banco", situation, 123)])]), CUIT)
 
     def test_documented_no_records_is_zero_not_a_fallback(self):
         missing = {"status": 404, "errorMessages": ["No se encontró datos para la identificación ingresada."]}

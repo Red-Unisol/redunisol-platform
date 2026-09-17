@@ -63,10 +63,48 @@ for (const source of ['BCRA', 'CredixSA']) {
             assert.equal([...app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk')]
                 .filter((el) => el.textContent === `Fuente: ${source}`).length, 3);
             assert.doesNotMatch(app.document.body.textContent, /Consultando BCRA/);
-            if (source === 'CredixSA') assert.match(panel.textContent, /BCRA no estuvo disponible al preparar/);
+            if (source === 'CredixSA') assert.match(panel.textContent, /No se pudo completar la consulta a BCRA/);
             await pause();
             assert.deepEqual(requests, ['/credix']);
             assert.deepEqual(app.errors, []);
+        } finally { app.dom.window.close(); }
+    });
+}
+
+test('DOM: situación cero de BCRA conserva el valor y el monto con color neutro', async () => {
+    const report = credix();
+    const normalized = JSON.parse(report.normalized_json);
+    normalized.bcra.deudas_24_meses.filas[0].situaciones = ['0'];
+    normalized.bcra.evolucion_deuda_por_entidad.filas[0].celdas[0].situacion = '0';
+    report.normalized_json = JSON.stringify(normalized);
+    const app = mount(async () => response(report));
+    try {
+        await until(() => app.document.querySelector('.credix-bcra-history__status'));
+        const cell = app.document.querySelector('.credix-bcra-history__status');
+        assert.equal(cell.textContent, '0');
+        assert.ok(cell.classList.contains('credix-bcra-history__status--na'));
+        const amount = app.document.querySelector('.credix-bcra-evolution__cell');
+        assert.match(amount.textContent, /1\.000/);
+        assert.ok(amount.classList.contains('credix-bcra-evolution__cell--na'));
+        assert.match(app.document.body.textContent, /Fuente: BCRA/);
+    } finally { app.dom.window.close(); }
+});
+
+for (const state of ['invalid_response', 'processing_error']) {
+    test(`DOM: ${state} explica el problema de procesamiento y conserva CredixSA`, async () => {
+        const report = credix();
+        const normalized = JSON.parse(report.normalized_json);
+        normalized.bcra.fuente = 'CredixSA';
+        normalized.bcra.consulta_directa_estado = state;
+        report.normalized_json = JSON.stringify(normalized);
+        const app = mount(async () => response(report));
+        try {
+            await until(() => app.document.querySelector('[aria-label="Deudas vigentes"]'));
+            const panel = app.document.querySelector('[aria-label="Deudas vigentes"]');
+            assert.match(panel.textContent, /No se pudo procesar la respuesta de BCRA/);
+            assert.doesNotMatch(panel.textContent, /no estuvo disponible/);
+            assert.match(panel.textContent, /Fuente: CredixSA/);
+            assert.match(panel.textContent, /1\.000/);
         } finally { app.dom.window.close(); }
     });
 }
