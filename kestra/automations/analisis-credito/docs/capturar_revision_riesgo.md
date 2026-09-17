@@ -114,6 +114,30 @@ la solicitud; el manifiesto inicial conserva sus errores. Para el dataset de
 entrada, revisar su propio `complete`, origen y ventana de lectura, nunca
 atribuirle la completitud de `latest.json`.
 
+## Cuándo la corrida se reporta como fallida
+
+Una observación parcial no implica que falte información por recuperar. Si una
+persona edita la solicitud mientras se la captura, el sondeo siguiente vuelve a
+fotografiarla completa. Por eso el manifiesto registra en `partial_reason` cuál
+de los dos casos ocurrió, y el resumen los cuenta separados:
+
+| `partial_reason` | Códigos | Resumen | Corrida |
+| --- | --- | --- | --- |
+| `changed_during_capture` | `changed_during_capture`, `attachment_size_changed`, `attachment_count_mismatch`, `event_count_mismatch` | `partial_changed` | `ok`; se reintenta |
+| `fetch_or_storage_error` | red, HTTP, base64, límites, almacenamiento, interrupción | `partial_error` | falla |
+
+`ok=false` exige `partial_error`, `retry_fetch_failures` o `stuck`, siendo
+`stuck` los pendientes con `STUCK_RETRY_ATTEMPTS` intentos o más: con la espera
+creciente, cerca de una hora sin poder archivar la misma solicitud. Un escaneo
+fallido, la falta de disco o de configuración siguen fallando de inmediato.
+
+Esto cambia únicamente qué se reporta como falla del flow y, con ello, las
+alertas de `alerta_flow_fallos`. **No cambia lo que se archiva:** las
+observaciones parciales se siguen marcando `complete=false`, con sus errores y
+su pendiente, y no se presentan como capturas completas. Una edición concurrente
+repetida que nunca se resuelve termina reportada por la vía de `stuck`, en vez
+de generar una alerta por minuto desde el primer intento.
+
 ## Límites operativos
 
 - Un proceso a la vez, también mediante lock local, y tres solicitudes en

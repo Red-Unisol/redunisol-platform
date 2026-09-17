@@ -91,7 +91,10 @@ class SnapshotTests(unittest.TestCase):
 
     def test_failed_download_is_partial_and_late_retry_does_not_backdate_bytes(self):
         self.client.fail_content = True
-        self.assertFalse(self.poll()['ok'])
+        failed = self.poll()
+        self.assertFalse(failed['ok'])
+        self.assertEqual((failed['partial_error'], failed['partial_changed']), (1, 0))
+        self.assertEqual(self.manifest(self.observations()[0])['partial_reason'], 'fetch_or_storage_error')
         first = self.observations()[0]
         first_bytes = (first / 'manifest.json').read_bytes()
         pending_path = self.archive.root / 'pending.json'
@@ -113,12 +116,28 @@ class SnapshotTests(unittest.TestCase):
 
     def test_state_change_during_capture_is_explicit_and_never_complete(self):
         self.client.change_during_capture = True
-        self.assertFalse(self.poll()['ok'])
+        result = self.poll()
+        # La edicion concurrente no es una falla: se reintenta en el sondeo
+        # siguiente y la observacion queda marcada como parcial igual.
+        self.assertTrue(result['ok'])
+        self.assertEqual((result['partial'], result['partial_changed'], result['partial_error']), (1, 1, 0))
         record = self.manifest(self.observations()[0])
+        self.assertFalse(record['complete'])
+        self.assertEqual(record['partial_reason'], 'changed_during_capture')
         self.assertEqual(record['state_before'], 114)
         self.assertEqual(record['state_after'], 123)
         self.assertFalse(record['metadata_stable'])
         self.assertTrue(record['downloads'][0]['object'])
+        self.assertIn('17', read_json(self.archive.root / 'pending.json', {}))
+
+    def test_repeated_concurrent_edits_are_reported_once_they_stop_resolving(self):
+        self.client.change_during_capture = True
+        for _ in range(4):
+            self.assertTrue(self.poll()['ok'])
+        result = self.poll()
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['stuck'], 1)
+        self.assertEqual(result['partial_error'], 0)
 
     def test_deleted_attachment_remains_in_archive(self):
         self.poll()
@@ -139,8 +158,11 @@ class SnapshotTests(unittest.TestCase):
 
     def test_size_mismatch_preserves_returned_bytes_but_marks_partial(self):
         self.client.data = b'changed size'
-        self.assertFalse(self.poll()['ok'])
+        result = self.poll()
+        self.assertTrue(result['ok'])
+        self.assertEqual((result['partial'], result['partial_changed']), (1, 1))
         manifest = self.manifest(self.observations()[0])
+        self.assertEqual(manifest['partial_reason'], 'changed_during_capture')
         self.assertEqual(manifest['downloads'][0]['error'], 'attachment_size_changed')
         self.assertEqual((self.archive.root / manifest['downloads'][0]['object']['path']).read_bytes(), b'changed size')
 

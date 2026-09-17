@@ -38,6 +38,16 @@ APPLICATION_FIELDS = [
 ]
 ATTACHMENT_FIELDS = ['Oid', 'Archivo.FileName', 'Archivo.Size', 'Descripcion']
 EVENT_FIELDS = ['ID', 'Fecha', 'Texto']
+# Una persona editando la solicitud durante la captura deja la observacion
+# parcial sin que falte nada por recuperar: el proximo sondeo la vuelve a
+# fotografiar. No es una falla del archivo y no justifica alertar.
+CONCURRENT_EDIT_CODES = frozenset({
+    'changed_during_capture', 'attachment_size_changed',
+    'attachment_count_mismatch', 'event_count_mismatch',
+})
+# Intentos sobre la misma solicitud antes de tratar el pendiente como atascado.
+# Con la espera creciente de pending, cinco intentos cubren cerca de una hora.
+STUCK_RETRY_ATTEMPTS = 5
 
 
 class CaptureError(Exception):
@@ -219,6 +229,15 @@ class Archive:
         return folder
 
 
+def partial_reason(errors):
+    """Distingue la edicion concurrente de lo que dejo datos sin archivar."""
+    if not errors:
+        return None
+    if all(error['code'] in CONCURRENT_EDIT_CODES for error in errors):
+        return 'changed_during_capture'
+    return 'fetch_or_storage_error'
+
+
 def capture_one(client, archive, application, folder, origin):
     """Never rewrite initial.json; partial and completed observations stay distinct."""
     oid = application['Oid']
@@ -278,7 +297,8 @@ def capture_one(client, archive, application, folder, origin):
                'attachments': [{'metadata': item['metadata'], 'object': item.get('object'), 'error': item.get('error')} for item in observations]}
     payload_object = archive.blob(encoded(payload))
     result = {'schema_version': SCHEMA_VERSION, 'finished_at': now(), 'origin': origin,
-              'complete': not errors, 'metadata_stable': metadata_stable,
+              'complete': not errors, 'partial_reason': partial_reason(errors),
+              'metadata_stable': metadata_stable,
               'state_before': application.get('Estado.ID'), 'state_after': after.get('Estado.ID') if after else None,
               'payload': payload_object, 'downloads': observations, 'errors': errors,
               'attachment_ids_absent_since_last_capture': missing_previous,
@@ -303,7 +323,9 @@ def poll(client, archive, *, workers=3, min_free_bytes=1024**3):
         pending = read_json(pending_path, {})
         active_ids = {row['Oid'] for row in active}
         jobs = []
-        summary = {'ok': True, 'active': len(active), 'captured': 0, 'partial': 0, 'changed': 0, 'attachments': 0, 'late_retries': 0, 'retry_fetch_failures': 0}
+        summary = {'ok': True, 'active': len(active), 'captured': 0, 'partial': 0,
+                   'partial_changed': 0, 'partial_error': 0, 'stuck': 0,
+                   'changed': 0, 'attachments': 0, 'late_retries': 0, 'retry_fetch_failures': 0}
         # Persist all first-observed application rows before any slow binary download.
         for application in active:
             oid = str(application['Oid'])
@@ -335,7 +357,8 @@ def poll(client, archive, *, workers=3, min_free_bytes=1024**3):
                 except Exception:
                     # Initial rows and per-file journals survive interruptions/unexpected failures.
                     atomic_json(folder / 'failure.json', {'at': now(), 'code': 'capture_interrupted_or_storage_error'})
-                    result = {'complete': False, 'changed_from_previous_capture': False, 'downloads': []}
+                    result = {'complete': False, 'partial_reason': 'fetch_or_storage_error',
+                              'changed_from_previous_capture': False, 'downloads': []}
                 summary['captured'] += 1
                 summary['changed'] += int(result['changed_from_previous_capture'])
                 summary['attachments'] += sum('object' in item for item in result['downloads'])
@@ -343,11 +366,18 @@ def poll(client, archive, *, workers=3, min_free_bytes=1024**3):
                     pending.pop(key, None)
                 else:
                     summary['partial'] += 1
+                    reason = result.get('partial_reason') or 'fetch_or_storage_error'
+                    summary['partial_changed' if reason == 'changed_during_capture' else 'partial_error'] += 1
                     state = pending[key]
                     state['attempts'] += 1
                     state['next_retry'] = time.time() + min(3600, 60 * 2 ** min(6, state['attempts']))
                 atomic_json(pending_path, pending)
-        summary.update(ok=not (summary['partial'] or summary['retry_fetch_failures']), pending=len(pending), started_at=started_at, finished_at=now())
+        # Una observacion parcial por edicion concurrente se reintenta sola en el
+        # sondeo siguiente. Solo se reporta como falla lo que dejo datos sin
+        # archivar o lo que no se resolvio despues de varios intentos.
+        summary['stuck'] = sum(1 for state in pending.values() if state.get('attempts', 0) >= STUCK_RETRY_ATTEMPTS)
+        summary.update(ok=not (summary['partial_error'] or summary['retry_fetch_failures'] or summary['stuck']),
+                       pending=len(pending), started_at=started_at, finished_at=now())
         atomic_json(archive.root / 'runs' / (run_id + '-summary.json'), summary)
         return summary
 
