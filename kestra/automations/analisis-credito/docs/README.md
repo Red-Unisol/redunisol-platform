@@ -4,6 +4,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 ## Flows
 
+- `capturar_revision_riesgo`: [archivo prospectivo de solicitudes y adjuntos](capturar_revision_riesgo.md), cada minuto.
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
 - `tope_descuento_caja_mensual`
