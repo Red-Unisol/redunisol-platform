@@ -69,6 +69,7 @@ import { useAssignSolicitudToSelfMutation } from "@/modules/solicitudes-core/hoo
 import { useAssignSolicitudToUserMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-user-mutation";
 import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-adjuntos-query";
 import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
+import { GenerarPrestamoDialog } from "@/modules/solicitudes-core/components/generar-prestamo-dialog";
 import { PrestamoDelSocioDialog } from "@/modules/solicitudes-core/components/prestamo-del-socio-dialog";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
@@ -2926,6 +2927,8 @@ export function SolicitudesActualDetallePage() {
   const [selectedWorkflowTransition, setSelectedWorkflowTransition] =
     useState<WorkflowTransition | null>(null);
   const [isCreateSocioModalOpen, setIsCreateSocioModalOpen] = useState(false);
+  const [isGenerarPrestamoModalOpen, setIsGenerarPrestamoModalOpen] =
+    useState(false);
 
   useEffect(() => prefetchWhenIdle(loadSimuladorPrestamoModal), []);
   useEffect(() => {
@@ -3520,6 +3523,7 @@ export function SolicitudesActualDetallePage() {
 
     try {
       await createPrestamoLegacyMutation.mutateAsync();
+      setIsGenerarPrestamoModalOpen(false);
       toast.success("Préstamo creado en el legado correctamente.", {
         duration: 3500,
         icon: <CircleCheckBig className="size-5" />,
@@ -3877,7 +3881,7 @@ export function SolicitudesActualDetallePage() {
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
         onCreatePrestamoLegacy={
           canCreateSocio(currentUser)
-            ? () => void handleCreatePrestamoLegacy()
+            ? () => setIsGenerarPrestamoModalOpen(true)
             : undefined
         }
         onCreateSocio={
@@ -4171,6 +4175,16 @@ export function SolicitudesActualDetallePage() {
         onSubmit={handleCreateSocio}
         open={isCreateSocioModalOpen}
         socio={null}
+      />
+      <GenerarPrestamoDialog
+        cuotas={resolvedSolicitud.cuotas}
+        isPending={createPrestamoLegacyMutation.isPending}
+        lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}
+        montoAFinanciar={resolvedSolicitud.montoAFinanciar}
+        onConfirm={() => void handleCreatePrestamoLegacy()}
+        onOpenChange={setIsGenerarPrestamoModalOpen}
+        open={isGenerarPrestamoModalOpen}
+        solicitudId={solicitudId}
       />
     </article>
   );

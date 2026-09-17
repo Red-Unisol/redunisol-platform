@@ -12,6 +12,7 @@ import {
 
 export type ConfirmDialogProps = {
   cancelLabel?: string;
+  children?: React.ReactNode;
   confirmLabel?: string;
   description: string;
   isConfirming?: boolean;
@@ -25,6 +26,7 @@ export type ConfirmDialogProps = {
 
 export function ConfirmDialog({
   cancelLabel = "Cancelar",
+  children,
   confirmLabel = "Confirmar",
   description,
   isConfirming = false,
@@ -74,6 +76,8 @@ export function ConfirmDialog({
             </DialogDescription>
           </div>
         </div>
+
+        {children ? <div className="mt-4">{children}</div> : null}
 
         {isConfirming && progress ? (
           <div className="mt-4">{progress}</div>
