@@ -165,8 +165,8 @@ El subtotal sigue sumando exclusivamente situaciones >=2. Valores ausentes o
 fuera de 0..6 siguen provocando respaldo para evitar una interpretacion inventada.
 
 El respaldo CredixSA calcula el mismo subtotal y contempla las situaciones
-compartidas entre filas de una misma tabla en los informes cacheados. La seccion
-de deudas vigentes se muestra directamente, antes del historial de 24 meses.
+compartidas entre filas de una misma tabla en los informes cacheados. Primero se
+muestra el historial de situaciones de 24 meses y luego las deudas vigentes y sus montos.
 
 Contrato oficial: [Manual de Central de Deudores BCRA](https://www.bcra.gob.ar/archivos/Catalogo/Content/files/pdf/central-deudores-v1.pdf).
 Relacion funcional: tarea Bitrix **22961**, extendida con consulta directa y respaldo.
