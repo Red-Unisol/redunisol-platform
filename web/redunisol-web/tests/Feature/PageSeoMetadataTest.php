@@ -8,16 +8,16 @@ beforeEach(function () {
     config()->set('inertia.ssr.enabled', false);
 });
 
-it('renders one stable noindex canonical for the Cordoba test variant', function () {
+it('renders one stable noindex canonical for a configured test page', function () {
     Page::create([
         'title' => 'Préstamos para jubilados de Córdoba',
-        'slug' => '/prestamos-para-jubilados/jubilados-cordoba/form-abajo',
+        'slug' => '/landing-prueba',
         'index' => false,
         'canonical_url' => '/prestamos-para-jubilados/jubilados-cordoba',
         'sections' => [],
     ]);
 
-    $response = $this->get('/prestamos-para-jubilados/jubilados-cordoba/form-abajo?utm_source=meta&utm_campaign=form-abajo');
+    $response = $this->get('/landing-prueba?utm_source=meta&utm_campaign=form-abajo');
 
     $response->assertOk();
     $html = $response->getContent();
@@ -26,7 +26,7 @@ it('renders one stable noindex canonical for the Cordoba test variant', function
         ->and($html)->toContain('inertia="robots" name="robots" content="noindex, nofollow"')
         ->and(substr_count($html, 'rel="canonical"'))->toBe(1)
         ->and($html)->toContain('href="https://redunisol.example.test/prestamos-para-jubilados/jubilados-cordoba"')
-        ->and($html)->not->toContain('canonical" href="https://redunisol.example.test/prestamos-para-jubilados/jubilados-cordoba/form-abajo')
+        ->and($html)->not->toContain('canonical" href="https://redunisol.example.test/landing-prueba')
         ->and($html)->not->toContain('canonical" href="https://redunisol.example.test/prestamos-para-jubilados/jubilados-cordoba?utm_');
 });
 

@@ -1,8 +1,20 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { ReactNode } from 'react';
 
+import { formatPageTitle } from '@/lib/seo';
+
+interface SeoData {
+    metaTitle?: string;
+    metaDescription?: string;
+    keyword?: string;
+    robots?: string;
+    canonical?: string;
+    ogImage?: string;
+    ogType?: string;
+}
+
 interface SeoHeadProps {
-    title: string;
+    title?: string;
     description?: string;
     keyword?: string;
     robots?: string;
@@ -19,58 +31,113 @@ export default function SeoHead({
     title,
     description,
     keyword,
-    robots = 'index, follow',
+    robots,
     canonical,
     ogTitle,
     ogDescription,
     ogImage,
-    ogType = 'website',
+    ogType,
     schemas = [],
     children,
 }: SeoHeadProps) {
-    const appName = 'Red Unisol';
-    const fullTitle = title.includes(appName) ? title : `${title} | ${appName}`;
+    const { seo = {}, name = 'Red Unisol' } = usePage<{
+        seo?: SeoData;
+        name?: string;
+        [key: string]: unknown;
+    }>().props;
+    const fullTitle = formatPageTitle(title || seo.metaTitle || name, name);
+    const metaDescription = description || seo.metaDescription || '';
+    const metaKeyword = keyword || seo.keyword;
+    const canonicalUrl = canonical || seo.canonical;
     const defaultOgImage =
         typeof window !== 'undefined'
             ? `${window.location.origin}/logo.jpeg`
             : 'https://redunisol.com.ar/logo.jpeg';
-    const socialImage = ogImage || defaultOgImage;
+    const socialImage = ogImage || seo.ogImage || defaultOgImage;
 
     return (
         <Head>
             <title>{fullTitle}</title>
-            <meta name="description" content={description || ''} />
-            {keyword && <meta name="keywords" content={keyword} />}
-            <meta head-key="robots" name="robots" content={robots} />
-            {canonical && (
-                <link head-key="canonical" rel="canonical" href={canonical} />
+            <meta
+                head-key="description"
+                name="description"
+                content={metaDescription}
+            />
+            {metaKeyword && (
+                <meta
+                    head-key="keywords"
+                    name="keywords"
+                    content={metaKeyword}
+                />
+            )}
+            <meta
+                head-key="robots"
+                name="robots"
+                content={robots || seo.robots || 'index, follow'}
+            />
+            {canonicalUrl && (
+                <link
+                    head-key="canonical"
+                    rel="canonical"
+                    href={canonicalUrl}
+                />
             )}
 
             {/* Open Graph / Facebook */}
-            <meta property="og:type" content={ogType} />
-            <meta property="og:title" content={ogTitle || title} />
-            {ogDescription && (
-                <meta property="og:description" content={ogDescription} />
+            <meta
+                head-key="og:site_name"
+                property="og:site_name"
+                content={name}
+            />
+            <meta
+                head-key="og:type"
+                property="og:type"
+                content={ogType || seo.ogType || 'website'}
+            />
+            <meta
+                head-key="og:title"
+                property="og:title"
+                content={ogTitle ? formatPageTitle(ogTitle, name) : fullTitle}
+            />
+            <meta
+                head-key="og:description"
+                property="og:description"
+                content={ogDescription || metaDescription}
+            />
+            <meta
+                head-key="og:image"
+                property="og:image"
+                content={socialImage}
+            />
+            {canonicalUrl && (
+                <meta
+                    head-key="og:url"
+                    property="og:url"
+                    content={canonicalUrl}
+                />
             )}
-            <meta property="og:image" content={socialImage} />
-            <meta property="og:image:width" content="400" />
-            <meta property="og:image:height" content="400" />
 
             {/* Twitter */}
-            <meta name="twitter:card" content="summary_large_image" />
-            <meta name="twitter:title" content={ogTitle || title} />
-            {ogDescription && (
-                <meta name="twitter:description" content={ogDescription} />
-            )}
-            <meta name="twitter:image" content={socialImage} />
-
-            {/* Additional meta tags */}
             <meta
-                name="viewport"
-                content="width=device-width, initial-scale=1"
+                head-key="twitter:card"
+                name="twitter:card"
+                content="summary_large_image"
             />
-            <meta charSet="utf-8" />
-            <meta httpEquiv="X-UA-Compatible" content="ie=edge" />
+            <meta
+                head-key="twitter:title"
+                name="twitter:title"
+                content={ogTitle ? formatPageTitle(ogTitle, name) : fullTitle}
+            />
+            <meta
+                head-key="twitter:description"
+                name="twitter:description"
+                content={ogDescription || metaDescription}
+            />
+            <meta
+                head-key="twitter:image"
+                name="twitter:image"
+                content={socialImage}
+            />
 
             {/* JSON-LD Structured Data */}
             {schemas.map((schema, i) => (

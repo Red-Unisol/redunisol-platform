@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Redirection;
+use App\Services\ManagedRedirects;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -15,6 +16,7 @@ class HandleRedirections
      * Se invalida automáticamente al guardar desde Filament.
      */
     private const CACHE_TTL = 300;
+
     private const CACHE_KEY = 'site_redirections';
 
     public function handle(Request $request, Closure $next): Response
@@ -24,7 +26,17 @@ class HandleRedirections
             return $next($request);
         }
 
-        $path = '/' . ltrim($request->path(), '/');
+        $path = '/'.ltrim($request->path(), '/');
+
+        // These reviewed migration rules take precedence over editable CMS rules.
+        $target = app(ManagedRedirects::class)->targetFor($request->getHost(), $request->getPathInfo());
+        if ($target !== null) {
+            if ($query = $request->getQueryString()) {
+                $target .= (str_contains($target, '?') ? '&' : '?').$query;
+            }
+
+            return redirect()->to($target, 301);
+        }
 
         $redirections = Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function () {
             return Redirection::where('is_active', true)

@@ -7,6 +7,7 @@ import BlogCard, {
 } from '@/components/blog/BlogCard';
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
+import SeoHead from '@/components/seo-head';
 
 interface BlogCategoryProps {
     category: BlogCategory;
@@ -19,7 +20,8 @@ export default function BlogCategoryPage() {
 
     return (
         <>
-            <Navbar activeTab="unset" setActiveTab={() => {}} />
+            <SeoHead />
+            <Navbar />
 
             <div className="bg-gradient-custom w-full">
                 {/* Hero */}
@@ -28,17 +30,17 @@ export default function BlogCategoryPage() {
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6 }}
-                        className="text-4xl font-semibold tracking-tight text-[#1e2d3d] md:text-6xl"
+                        className="text-4xl font-semibold tracking-tight text-white md:text-6xl"
                     >
                         Categoría:{' '}
-                        <span className="text-[#6BAF92]">{category.name}</span>
+                        <span className="text-white">{category.name}</span>
                     </motion.h1>
 
                     <motion.p
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.15, duration: 0.6 }}
-                        className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-gray-700 md:text-lg"
+                        className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-white/90 md:text-lg"
                     >
                         Artículos sobre {category.name}
                     </motion.p>
