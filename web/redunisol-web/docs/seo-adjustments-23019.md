@@ -61,25 +61,36 @@ Las reglas ignoran la query al identificar el origen y la conservan al redirigir
 Se soportan PDFs con espacios y tildes codificados y el comodin limitado a
 `/wp-content/themes/redunisol/*`; no se aplican comodines generales.
 
-### Requisito operativo del subdominio retirado
+### Configuracion del subdominio retirado
 
-`prestamos.redunisol.com.ar` no resolvia por DNS el 16/09/2026 (NXDOMAIN,
-confirmado tambien con el resolver 1.1.1.1). Sus 162 reglas estan implementadas,
-pero no podran responder hasta que el dominio llegue al runtime de esta app.
+El 17/09/2026 el usuario restauro en Cloudflare el CNAME `prestamos` hacia
+`redunisol.com.ar`, con proxy habilitado. Se configuro el ingreso por SSH con
+su autorizacion explicita, conservando el estado deseado en Git:
 
-Al desplegar, el operador debe:
+- `deploy/apache/prestamos.redunisol.com.ar.conf` se instala en
+  `/opt/apache/conf.d/30-prestamos-redunisol.conf`.
+- El virtual host HTTPS preserva Host y envia las solicitudes a `127.0.0.1:3021`.
+  Las reglas por dominio las resuelve Laravel; la raiz lleva al sitio principal.
+- Certbot usa HTTP-01 con webroot `/opt/apache/htdocs`, y certificado independiente
+  `prestamos.redunisol.com.ar`, emitido el 17/09/2026 y valido hasta el 16/12/2026.
+- `deploy/apache/renew-prestamos-cert.sh` se instala con permiso 755 en
+  `/opt/redunisol-web-prod/apache/renew-prestamos-cert.sh`. Es el deploy hook de
+  ese certificado: valida Apache y hace una recarga gradual de `httpd`.
+- La renovacion usa el cron de Certbot ya existente. No se reemplaza el certificado
+  del dominio principal ni se modifica la configuracion de correo.
 
-1. Restaurar el registro DNS de `prestamos.redunisol.com.ar` hacia el ingreso de
-   produccion, verificando el destino vigente; no usar direcciones de checkpoints.
-2. Cubrir ese nombre con TLS y con el virtual host/proxy de la web publica,
-   preservando el Host original (`ProxyPreserveHost On` si se usa Apache).
-   Evitar una redireccion general al dominio principal antes de llegar a Laravel,
-   porque perderia la distincion entre los paths de ambos sitios.
-3. Verificar HTTP y HTTPS de los origenes, el 301 al destino esperado y el 200
-   final, incluyendo query UTM. Los dominios principal/www y dev deben seguir
-   sirviendo sus sitios respectivos.
+Para reinstalar el ingreso en esta VPS, subir ambos archivos a
+`/opt/redunisol-web-prod/apache/`, emitir el certificado mediante `certbot certonly
+--webroot -w /opt/apache/htdocs --cert-name prestamos.redunisol.com.ar
+-d prestamos.redunisol.com.ar --deploy-hook
+/opt/redunisol-web-prod/apache/renew-prestamos-cert.sh`, instalar el virtual host
+en la ruta indicada, ejecutar `/opt/apache/bin/httpd -D SSL -t` y finalmente
+`systemctl reload httpd`. El certificado debe existir antes de activar el virtual
+host TLS. La cuenta ACME existente se reutiliza desde la configuracion operativa.
 
-No se modificaron DNS, certificados ni virtual hosts durante la implementacion.
+Rollback del ingreso: retirar solo `30-prestamos-redunisol.conf`, validar Apache
+y recargar `httpd`; conservar el certificado para facilitar la recuperacion.
+El rollback de la aplicacion se realiza con las imagenes previas del deploy.
 
 ## Validacion
 
