@@ -34,6 +34,7 @@ Nota importante para servicios compartidos de plataforma:
 
 - `platform/` guarda servicios de VPS que no pertenecen a Kestra ni a una aplicacion web
 - `platform/zipline/` define el hosting de archivos para Marketing
+- `apps/bcra-central-deudores/` guarda el motor y panel operativo para la presentacion BCRA PNFC
 
 Ambientes actuales:
 
@@ -46,6 +47,7 @@ Todo lo relacionado con Kestra vive dentro de `kestra/`.
 
 ```text
 apps/
+  bcra-central-deudores/
   exportador-bancor/
   metamap-platform/
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\RequireToolsAccess;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -14,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // The public host terminates TLS and forwards requests over HTTP.
         // Trust proxy headers so asset URLs and generated links keep https.
         $middleware->trustProxies(at: '*');
+        $middleware->alias([
+            'tools.access' => RequireToolsAccess::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

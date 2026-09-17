@@ -2,6 +2,11 @@
 
 return [
     'enabled' => filter_var(env('HERRAMIENTAS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+    'access' => [
+        'required' => filter_var(env('HERRAMIENTAS_ACCESS_REQUIRED', true), FILTER_VALIDATE_BOOLEAN),
+        'password_hash' => env('HERRAMIENTAS_ACCESS_PASSWORD_HASH'),
+        'session_key' => 'herramientas_access_granted',
+    ],
     'branding' => [
         'eyebrow' => 'Asociacion Mutual Celesol',
         'title' => 'Herramientas Red Unisol',
@@ -62,6 +67,20 @@ return [
             'actionLabel' => 'Consultar CUAD',
             'helper' => 'Ingresa el CUIL y el backend Laravel consulta el webhook protegido de Kestra.',
         ],
+        [
+            'id' => 'bcra-central-deudores',
+            'title' => 'BCRA Central de Deudores PNFC',
+            'description' => 'Abre el panel operativo para preparar la presentacion mensual BCRA, revisar reglas y descargar informacion.zip.',
+            'category' => 'Regulatorio',
+            'status' => 'active',
+            'icon' => 'file-archive',
+            'actionLabel' => 'Abrir panel',
+            'helper' => 'El motor BCRA corre como servicio Python y conserva la logica regulatoria validada.',
+            'openMode' => 'external',
+        ],
+    ],
+    'bcra' => [
+        'panel_url' => env('BCRA_PANEL_URL', 'http://127.0.0.1:8080'),
     ],
     'proxy' => [
         'consulta_renovacion_url' => env('ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL'),
