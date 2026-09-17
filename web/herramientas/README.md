@@ -123,6 +123,42 @@ php vendor/phpunit/phpunit/phpunit --filter AnalisisTest
 de React sobre DOM simulado (incluida la apertura automatica de Credixsa). Las
 pruebas PHP cubren autenticacion, filtros, cache, reasignaciones y fallas de fuente.
 
+## Consulta CredixSA: fuente BCRA y respaldo
+
+La pagina `/credixsa` conserva el informe CredixSA (incluido el cache) y consulta
+por separado `/api/tools/consulta-bcra` con el CUIL resuelto de la persona. La
+consulta directa no se hace con un DNI, un nombre o resultados ambiguos.
+
+El servidor obtiene `Deudas/{cuil}` y `Deudas/Historicas/{cuil}` de la API publica
+del BCRA en paralelo. Cada endpoint tiene hasta **3 intentos en total**, timeout
+de 8 segundos y **12 segundos entre intentos**; los endpoints que ya respondieron
+correctamente no se vuelven a pedir. Las pausas son internas al servicio, sin
+reintentar el scraping de CredixSA. No se guarda el resultado BCRA en el cache
+CredixSA ni se modifica su fecha. El endpoint responde con `Cache-Control: no-store`.
+
+Mientras se consulta BCRA se muestra el informe disponible con **Fuente: CredixSA**
+y un aviso de consulta en curso. Solo si ambas respuestas son validas se reemplaza
+el bloque financiero completo (vigentes, situaciones historicas y evolucion de
+montos) y se muestra **Fuente: BCRA**. Se mantienen las mismas tablas y columnas.
+Si fallan los tres intentos, una respuesta es invalida o falla la conexion del
+navegador, permanecen los datos CredixSA con su fuente y un aviso de indisponibilidad.
+Una respuesta tardia de otra busqueda nunca reemplaza el informe actual.
+
+Los montos de la API oficial vienen en **miles de pesos** y se convierten a pesos
+antes de mostrarlos. El total vigente toma el ultimo registro de cada entidad,
+respetando su periodo; el subtotal de situaciones negativas suma situaciones
+**mayores o iguales a 2**. Se diferencia un 404 documentado sin registros de un
+fallo tecnico: el primero permite mostrar que no hay deuda vigente informada,
+sin rescatar deudas viejas de CredixSA. Los datos incompletos no se convierten en cero.
+La fecha de consulta no implica que el periodo de informacion sea el mes actual.
+
+El respaldo CredixSA calcula el mismo subtotal y contempla las situaciones
+compartidas entre filas de una misma tabla en los informes cacheados. La seccion
+de deudas vigentes se muestra directamente, antes del historial de 24 meses.
+
+Contrato oficial: [Manual de Central de Deudores BCRA](https://www.bcra.gob.ar/archivos/Catalogo/Content/files/pdf/central-deudores-v1.pdf).
+Relacion funcional: tarea Bitrix **22961**, extendida con consulta directa y respaldo.
+
 ## Dashboard de objetivos
 
 La pantalla interna de objetivos vive en:

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\BcraReport;
+
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -40,6 +42,7 @@ class HerramientasController extends Controller
                 }
                 if (($tool['id'] ?? null) === 'consulta-quiebra-credix') {
                     $tool['endpoint'] = route('tools.consulta-quiebra-credix');
+                    $tool['bcraEndpoint'] = route('tools.consulta-bcra');
                     $tool['href'] = route('credixsa');
                 }
                 if (($tool['id'] ?? null) === 'consulta-empleador') {
@@ -178,6 +181,18 @@ class HerramientasController extends Controller
         }
 
         return response()->json($response->json());
+    }
+
+    public function consultaBcra(Request $request, BcraReport $report): JsonResponse
+    {
+        if (! $this->isEnabled()) {
+            return $this->disabledJsonResponse();
+        }
+        $validated = $request->validate(['cuit' => ['required', 'string', 'regex:/^\d{11}$/']]);
+        $bcra = $report->consult($validated['cuit']);
+
+        return response()->json(['ok' => $bcra !== null, 'bcra' => $bcra])
+            ->header('Cache-Control', 'no-store');
     }
 
     public function consultaQuiebraCredix(Request $request): JsonResponse

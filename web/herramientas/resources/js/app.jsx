@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AnalisisPage from './AnalisisPage.jsx';
 import { credixPrefill } from './analisis-state.js';
+import { prepareCredixBcra, reportCuit } from './credix-bcra.js';
 import '../css/app.css';
 
 const rootElement = document.getElementById('app');
@@ -536,8 +537,42 @@ function CredixsaPage({ branding, tool }) {
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
-    const normalized = parseJsonObject(result?.normalized_json);
+    const [bcraResult, setBcraResult] = React.useState(null);
+    const normalized = React.useMemo(() => {
+        const report = parseJsonObject(result?.normalized_json);
+        return report ? { ...report, bcra: prepareCredixBcra(report.bcra) } : null;
+    }, [result]);
+    const activeBcra = bcraResult?.report === result ? bcraResult : null;
+    const displayedReport = normalized && activeBcra?.data
+        ? { ...normalized, bcra: activeBcra.data } : normalized;
     const resultTone = getResultTone('consulta-quiebra-credix', result, error);
+
+    React.useEffect(() => {
+        if (result?.status !== 'single' || !normalized || !tool.bcraEndpoint) return;
+        const cuit = reportCuit(result, normalized);
+        if (!cuit) return;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        let cancelled = false;
+        setBcraResult({ report: result, status: 'loading' });
+        (async () => {
+            try {
+                const response = await fetch(tool.bcraEndpoint, {
+                    method: 'POST', signal: controller.signal,
+                    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cuit }),
+                });
+                const payload = await response.json();
+                if (!response.ok || !payload.ok || payload.bcra?.fuente !== 'BCRA') throw new Error('bcra_unavailable');
+                if (!cancelled) setBcraResult({ report: result, status: 'ready', data: payload.bcra });
+            } catch {
+                if (!cancelled) setBcraResult({ report: result, status: 'fallback' });
+            } finally {
+                clearTimeout(timeout);
+            }
+        })();
+        return () => { cancelled = true; clearTimeout(timeout); controller.abort(); };
+    }, [result, normalized, tool.bcraEndpoint]);
 
     const handleSubmit = async (event) => {
         event?.preventDefault();
@@ -702,7 +737,7 @@ function CredixsaPage({ branding, tool }) {
 
                         {result?.status === 'single' && (
                             normalized ? (
-                                <CredixDedicatedReport normalized={normalized} />
+                                <CredixDedicatedReport normalized={displayedReport} bcraStatus={activeBcra?.status} />
                             ) : (
                                 <p className="result__empty">No hay datos normalizados disponibles para esta consulta.</p>
                             )
@@ -714,11 +749,12 @@ function CredixsaPage({ branding, tool }) {
     );
 }
 
-function CredixDedicatedReport({ normalized }) {
+function CredixDedicatedReport({ normalized, bcraStatus }) {
     return (
         <div className="credix-report">
             <CredixAlertsPanel alerts={normalized?.alertas || []} />
             <CredixPersonPanel persona={normalized?.persona || {}} />
+            <CredixBcraPanel bcra={normalized?.bcra || {}} status={bcraStatus} />
             <CredixBcraHistoryPanel bcra={normalized?.bcra || {}} />
             <CredixBcraEntityEvolutionPanel bcra={normalized?.bcra || {}} />
             <CredixPrevisionalHistoryPanel previsional={normalized?.previsional || {}} />
@@ -762,7 +798,6 @@ function CredixSecondarySections({ normalized }) {
                 <span>Ver secciones adicionales</span>
             </summary>
             <div className="credix-report__detailsBody">
-                <CredixBcraPanel bcra={normalized?.bcra || {}} />
                 <CredixPrevisionalPanel previsional={normalized?.previsional || {}} />
                 <CredixAportesPanel aportes={normalized?.aportes || {}} />
             </div>
@@ -800,36 +835,37 @@ function CredixPersonPanel({ persona }) {
     );
 }
 
-function CredixBcraPanel({ bcra }) {
+function CredixBcraPanel({ bcra, status }) {
     const history = Array.isArray(bcra.historial_por_entidad) ? bcra.historial_por_entidad : [];
     const detailedHistoryRows = Array.isArray(bcra.evolucion_deuda_por_entidad?.filas)
         ? bcra.evolucion_deuda_por_entidad.filas
         : [];
-    const entities = Array.isArray(bcra.entidades) ? bcra.entidades : [];
     const activeDebts = Array.isArray(bcra.deudas_vigentes) ? bcra.deudas_vigentes : [];
 
     return (
-        <section className="credix-report__section">
+        <section className="credix-report__section credix-report__section--primary" aria-label="Deudas vigentes">
             <div className="credix-report__sectionHeader">
-                <h2>Situaciones BCRA</h2>
-                <span className={`credix-risk credix-risk--${String(bcra.resumen?.color || '').toLowerCase()}`}>
-                    {bcra.resumen?.color || 'Sin datos'}
-                </span>
+                <h2>Deudas vigentes sistema financiero</h2>
+                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
+            {status === 'loading' && <p className="credix-report__note" role="status">Consultando BCRA; se muestran datos de CredixSA.</p>}
+            {status === 'fallback' && <p className="credix-report__note" role="status">BCRA no disponible. Se conservan los datos de CredixSA.</p>}
+            {bcra.consultado_en && <p className="credix-report__note">Consultado: {formatDateTime(bcra.consultado_en)}</p>}
             <div className="credix-report__metricGrid">
-                <article className="credix-report__metric">
-                    <span>Detalle</span>
-                    <strong>{bcra.resumen?.detalle || 'Sin datos'}</strong>
-                </article>
                 <article className="credix-report__metric">
                     <span>Deuda vigente total</span>
                     <strong>{bcra.deuda_vigente_total || 'Sin datos'}</strong>
                 </article>
                 <article className="credix-report__metric">
+                    <span>Total en situación ≥ 2</span>
+                    <strong>{bcra.deuda_situacion_negativa_total ?? 'Sin datos'}</strong>
+                </article>
+                <article className="credix-report__metric">
                     <span>Entidades informadas</span>
-                    <strong>{entities.length || 'Sin datos'}</strong>
+                    <strong>{bcra.deuda_vigente_total ? activeDebts.length : 'Sin datos'}</strong>
                 </article>
             </div>
+            {bcra.mensaje && <p className="credix-report__note">{bcra.mensaje}</p>}
 
             {activeDebts.length > 0 && (
                 <CredixSimpleTable
@@ -838,7 +874,7 @@ function CredixBcraPanel({ bcra }) {
                         row.entidad || 'Sin dato',
                         row.periodo || 'Sin dato',
                         row.monto || 'Sin dato',
-                        row.situacion || row.porcentaje || 'Sin dato',
+                        row.situacion || 'Sin dato',
                     ])}
                 />
             )}
@@ -876,7 +912,7 @@ function CredixBcraHistoryPanel({ bcra }) {
         <section className="credix-report__section credix-report__section--primary">
             <div className="credix-report__sectionHeader">
                 <h2>Deudas en el sistema financiero</h2>
-                <span className="credix-risk">{matrix.fuente ? `Fuente: ${matrix.fuente}` : 'BCRA'}</span>
+                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
             <div className="credix-bcra-history">
                 <div className="credix-bcra-history__wrap">
@@ -938,7 +974,7 @@ function CredixBcraEntityEvolutionPanel({ bcra }) {
         <section className="credix-report__section credix-report__section--primary">
             <div className="credix-report__sectionHeader">
                 <h2>Evolucion deuda sistema financiero por entidad</h2>
-                <span className="credix-risk">{matrix.fuente ? `Fuente: ${matrix.fuente}` : 'BCRA'}</span>
+                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
             <div className="credix-bcra-evolution">
                 <div className="credix-bcra-evolution__wrap">

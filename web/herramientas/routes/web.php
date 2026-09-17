@@ -50,6 +50,10 @@ Route::post('/api/tools/consulta-quiebra-credix', [HerramientasController::class
     ->withoutMiddleware([PreventRequestForgery::class])
     ->name('tools.consulta-quiebra-credix');
 
+Route::post('/api/tools/consulta-bcra', [HerramientasController::class, 'consultaBcra'])
+    ->withoutMiddleware([PreventRequestForgery::class])
+    ->name('tools.consulta-bcra');
+
 Route::post('/api/tools/consulta-empleador', [HerramientasController::class, 'consultaEmpleador'])
     ->withoutMiddleware([PreventRequestForgery::class])
     ->name('tools.consulta-empleador');
