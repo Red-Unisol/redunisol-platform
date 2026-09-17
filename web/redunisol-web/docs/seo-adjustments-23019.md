@@ -76,10 +76,16 @@ su autorizacion explicita, conservando el estado deseado en Git:
 - `deploy/apache/renew-prestamos-cert.sh` se instala con permiso 755 en
   `/opt/redunisol-web-prod/apache/renew-prestamos-cert.sh`. Es el deploy hook de
   ese certificado: valida Apache y hace una recarga gradual de `httpd`.
+- `deploy/apache/letsencrypt.cron` conserva el horario del cron existente en
+  `/etc/cron.d/letsencrypt`, pero dirige su hook global a `renew-web-cert.sh`,
+  instalado en `/opt/redunisol-web-prod/apache/` con permiso 755. El hook global
+  del cron prevalece sobre el guardado por certificado: este dispatcher usa la
+  recarga gradual solo para `prestamos` y delega todos los demas certificados al
+  script original de Ferozo, sin cambiar su comportamiento.
 - La renovacion usa el cron de Certbot ya existente. No se reemplaza el certificado
   del dominio principal ni se modifica la configuracion de correo.
 
-Para reinstalar el ingreso en esta VPS, subir ambos archivos a
+Para reinstalar el ingreso en esta VPS, subir la configuracion y ambos hooks a
 `/opt/redunisol-web-prod/apache/`, emitir el certificado mediante `certbot certonly
 --webroot -w /opt/apache/htdocs --cert-name prestamos.redunisol.com.ar
 -d prestamos.redunisol.com.ar --deploy-hook
@@ -87,6 +93,8 @@ Para reinstalar el ingreso en esta VPS, subir ambos archivos a
 en la ruta indicada, ejecutar `/opt/apache/bin/httpd -D SSL -t` y finalmente
 `systemctl reload httpd`. El certificado debe existir antes de activar el virtual
 host TLS. La cuenta ACME existente se reutiliza desde la configuracion operativa.
+Instalar tambien `letsencrypt.cron` en `/etc/cron.d/letsencrypt` con permiso 644,
+conservando copia del archivo anterior, y ambos hooks con permiso 755.
 
 Rollback del ingreso: retirar solo `30-prestamos-redunisol.conf`, validar Apache
 y recargar `httpd`; conservar el certificado para facilitar la recuperacion.
