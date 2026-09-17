@@ -140,8 +140,10 @@ La consulta directa no se hace con un DNI, un nombre o resultados ambiguos.
 Solo si ambas respuestas son validas se guarda el bloque financiero completo
 (vigentes, situaciones historicas, evolucion de montos y totales) con **Fuente:
 BCRA** y su fecha de consulta. Si se agotan los intentos, se guardan los datos
-CredixSA con **Fuente: CredixSA** y un estado de indisponibilidad que la pantalla
-explica. Leer ese respaldo tampoco vuelve a intentar BCRA.
+CredixSA con **Fuente: CredixSA** y un estado que la pantalla explica. Se distingue
+una respuesta que no pudo procesarse de una consulta que no pudo completarse;
+el aviso de las entradas antiguas no atribuye el fallo a una caida de BCRA.
+Leer ese respaldo tampoco vuelve a intentar BCRA.
 
 Si el socio aun no esta precalentado, la primera consulta prepara y guarda el
 mismo informe; en ese caso la espera inicial sigue siendo necesaria. Las entradas
@@ -155,6 +157,12 @@ respetando su periodo; el subtotal de situaciones negativas suma situaciones
 fallo tecnico: el primero permite mostrar que no hay deuda vigente informada,
 sin rescatar deudas viejas de CredixSA. Los datos incompletos no se convierten en cero.
 La fecha de consulta no implica que el periodo de informacion sea el mes actual.
+
+La API tambien devuelve situacion `0`, observada en historiales reales aunque el
+manual no define su significado. Se conserva literalmente, junto con el monto,
+y se muestra con color neutro. No se transforma en situacion 1 ni en deuda cero.
+El subtotal sigue sumando exclusivamente situaciones >=2. Valores ausentes o
+fuera de 0..6 siguen provocando respaldo para evitar una interpretacion inventada.
 
 El respaldo CredixSA calcula el mismo subtotal y contempla las situaciones
 compartidas entre filas de una misma tabla en los informes cacheados. La seccion

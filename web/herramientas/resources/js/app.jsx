@@ -817,7 +817,8 @@ function CredixBcraPanel({ bcra }) {
                 <h2>Deudas vigentes sistema financiero</h2>
                 <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
-            {bcra.consulta_directa_estado === 'unavailable' && <p className="credix-report__note">BCRA no estuvo disponible al preparar el informe. Se muestran datos de CredixSA.</p>}
+            {bcra.consulta_directa_estado === 'unavailable' && <p className="credix-report__note">No se pudo completar la consulta a BCRA al preparar el informe. Se muestran datos de CredixSA.</p>}
+            {['invalid_response', 'processing_error'].includes(bcra.consulta_directa_estado) && <p className="credix-report__note">No se pudo procesar la respuesta de BCRA al preparar el informe. Se muestran datos de CredixSA.</p>}
             {bcra.consultado_en && <p className="credix-report__note">Consultado: {formatDateTime(bcra.consultado_en)}</p>}
             <div className="credix-report__metricGrid">
                 <article className="credix-report__metric">

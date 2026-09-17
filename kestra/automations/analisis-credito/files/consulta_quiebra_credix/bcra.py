@@ -42,7 +42,11 @@ def _fetch(path: str) -> tuple[int, object]:
             return response.status, json.load(response)
     except HTTPError as exc:
         with exc:
-            return exc.code, json.loads(exc.read())
+            try:
+                payload = json.loads(exc.read())
+            except (ValueError, UnicodeError):
+                payload = None
+            return exc.code, payload
 
 
 def _periods(status: int, payload: object, cuit: str) -> dict:
@@ -70,7 +74,8 @@ def _periods(status: int, payload: object, cuit: str) -> dict:
             name = str(entity.get("entidad") or "").strip()
             situation = str(entity.get("situacion", ""))
             amount = Decimal(str(entity.get("monto")))
-            if (not name or situation not in {"1", "2", "3", "4", "5", "6"}
+            # The live API also returns 0. Preserve it without assigning a risk meaning.
+            if (not name or situation not in {"0", "1", "2", "3", "4", "5", "6"}
                     or not amount.is_finite() or amount < 0 or name in entities):
                 raise ValueError("Invalid BCRA entity")
             entities[name] = {
@@ -86,26 +91,42 @@ def _periods(status: int, payload: object, cuit: str) -> dict:
     return dict(sorted(periods.items(), reverse=True))
 
 
-def consult_bcra(cuit: str) -> dict | None:
+def consult_bcra(cuit: str, *, attempts: list | None = None) -> dict | None:
     if not re.fullmatch(r"\d{11}", cuit):
         return None
     paths = {"current": cuit, "history": "Historicas/" + cuit}
     reports = {}
+    attempts = attempts if attempts is not None else []
     for attempt in range(MAX_ATTEMPTS):
         with ThreadPoolExecutor(max_workers=2) as pool:
             pending = {key: pool.submit(_fetch, path) for key, path in paths.items() if key not in reports}
             for key, future in pending.items():
+                outcome = {"endpoint": key, "attempt": attempt + 1}
                 try:
                     status, payload = future.result()
-                    reports[key] = _periods(status, payload, cuit)
+                except (ValueError, UnicodeError):
+                    outcome["result"] = "invalid_response"
                 except Exception:
-                    # Retain successful endpoints, retry only the failed ones.
-                    pass
+                    outcome["result"] = "transport_error"
+                else:
+                    outcome["http_status"] = status
+                    if status not in {200, 404}:
+                        outcome["result"] = "http_error"
+                    else:
+                        try:
+                            reports[key] = _periods(status, payload, cuit)
+                            outcome["result"] = "ok"
+                        except Exception:
+                            outcome["result"] = "invalid_response"
+                attempts.append(outcome)
+                # No identity, financial payload, URLs or exception text in diagnostics.
+                level = logging.INFO if outcome["result"] == "ok" else logging.WARNING
+                logger.log(level, "BCRA attempt: %s", json.dumps(outcome, sort_keys=True))
         if len(reports) == 2:
             return _normalize(reports["current"], reports["history"])
         if attempt + 1 < MAX_ATTEMPTS:
             time.sleep(RETRY_PAUSE_SECONDS)
-    logger.warning("BCRA unavailable after 3 attempts; caching CredixSA fallback.")
+    logger.warning("BCRA report incomplete after 3 attempts; caching CredixSA fallback.")
     return None
 
 
@@ -180,11 +201,18 @@ def enrich_bcra(result: dict) -> dict:
     fallback["fuente"] = "CredixSA"
     fallback["consulta_directa_estado"] = "unavailable" if len(cuit) == 11 else "invalid_identity"
     fallback["consulta_directa_fecha"] = _timestamp()
+    attempts = []
     try:
-        direct = consult_bcra(cuit)
+        direct = consult_bcra(cuit, attempts=attempts)
         if direct is not None:
             normalized["bcra"] = direct
+        else:
+            latest = {item["endpoint"]: item["result"] for item in attempts}
+            if "invalid_response" in latest.values():
+                fallback["consulta_directa_estado"] = "invalid_response"
     except Exception:
+        fallback["consulta_directa_estado"] = "processing_error"
         logger.warning("BCRA enrichment failed; caching CredixSA fallback.")
+    normalized["bcra"]["consulta_directa_intentos"] = attempts
     prepared["normalized"] = normalized
     return prepared
