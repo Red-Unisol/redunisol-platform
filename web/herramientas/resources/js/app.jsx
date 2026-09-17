@@ -723,8 +723,8 @@ function CredixDedicatedReport({ normalized }) {
         <div className="credix-report">
             <CredixAlertsPanel alerts={normalized?.alertas || []} />
             <CredixPersonPanel persona={normalized?.persona || {}} />
-            <CredixBcraPanel bcra={normalized?.bcra || {}} />
             <CredixBcraHistoryPanel bcra={normalized?.bcra || {}} />
+            <CredixBcraPanel bcra={normalized?.bcra || {}} />
             <CredixBcraEntityEvolutionPanel bcra={normalized?.bcra || {}} />
             <CredixPrevisionalHistoryPanel previsional={normalized?.previsional || {}} />
             <CredixQuiebrasPanel quiebras={normalized?.quiebras || {}} />
