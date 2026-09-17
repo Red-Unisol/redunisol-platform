@@ -1,0 +1,114 @@
+id: alerta_flow_fallos_confirmar
+namespace: redunisol
+
+description: Espera a que terminen los reintentos de una ejecucion fallida y solo entonces alerta a Bitrix24. Invocado por alerta_flow_fallos.
+
+sla:
+  - id: limitar_duracion
+    type: MAX_DURATION
+    duration: PT5M
+    behavior: CANCEL
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: system
+  scope: observability
+
+inputs:
+  - id: ejecucion
+    type: STRING
+  - id: namespace_origen
+    type: STRING
+  - id: flow_origen
+    type: STRING
+
+tasks:
+  # Kestra 2 publica FAILED a nivel ejecucion antes de reintentar. Esperar aqui,
+  # y no en el observador, mantiene su cola libre para registrar el SUCCESS del
+  # reintento mientras esta confirmacion duerme.
+  - id: esperar_reintentos
+    type: io.kestra.plugin.core.flow.Sleep
+    duration: "{{ envs.alerta_espera_reintentos ?? 'PT45S' }}"
+
+  - id: leer_ejecucion_resuelta
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ 'alerta.flow_fallos.resuelta.' ~ inputs.ejecucion }}"
+    errorOnMissing: false
+
+  - id: leer_alerta_abierta
+    type: io.kestra.plugin.core.kv.Get
+    runIf: "{{ (outputs.leer_ejecucion_resuelta.value ?? null) is null }}"
+    key: "{{ 'alerta.flow_fallos.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    errorOnMissing: false
+
+  - id: leer_racha_credixsa
+    type: io.kestra.plugin.core.kv.Get
+    runIf: "{{ ((outputs.leer_ejecucion_resuelta.value ?? null) is null) and inputs.namespace_origen == 'redunisol.prod.analisis-credito' and inputs.flow_origen == 'consulta_quiebra_credix' }}"
+    key: "{{ 'alerta.flow_fallos.racha.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    errorOnMissing: false
+
+  - id: evaluar_racha_credixsa
+    type: io.kestra.plugin.scripts.python.Script
+    runIf: "{{ ((outputs.leer_ejecucion_resuelta.value ?? null) is null) and inputs.namespace_origen == 'redunisol.prod.analisis-credito' and inputs.flow_origen == 'consulta_quiebra_credix' }}"
+    timeout: PT1M
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    env:
+      PREVIOUS_STREAK_JSON: "{{ (outputs.leer_racha_credixsa.value ?? null) | toJson }}"
+      SOURCE_EXECUTION_ID: "{{ inputs.ejecucion }}"
+      SOURCE_STATE: FAILED
+    script: |
+      import json
+      import os
+      from kestra import Kestra
+
+      threshold = 3
+      previous = json.loads(os.environ["PREVIOUS_STREAK_JSON"]) or {}
+      failed_ids = list(previous.get("failed_execution_ids", []))
+      execution_id = os.environ["SOURCE_EXECUTION_ID"]
+      state = os.environ["SOURCE_STATE"]
+      if state == "SUCCESS":
+          failed_ids = []
+      elif state == "FAILED" and execution_id not in failed_ids:
+          # Saturar en el umbral: no crece el KV durante una caida prolongada.
+          failed_ids = (failed_ids + [execution_id])[:threshold]
+      Kestra.outputs({
+          "notify_failure": state == "FAILED" and len(failed_ids) >= threshold,
+          "streak_json": json.dumps({"failed_execution_ids": failed_ids}),
+      })
+
+  - id: guardar_racha_credixsa
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ ((outputs.leer_ejecucion_resuelta.value ?? null) is null) and inputs.namespace_origen == 'redunisol.prod.analisis-credito' and inputs.flow_origen == 'consulta_quiebra_credix' }}"
+    key: "{{ 'alerta.flow_fallos.racha.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    value: "{{ outputs.evaluar_racha_credixsa.vars.streak_json }}"
+    kvType: JSON
+    overwrite: true
+
+  - id: enviar_alerta_fallo
+    type: io.kestra.plugin.core.http.Request
+    timeout: PT30S
+    runIf: "{{ ((outputs.leer_ejecucion_resuelta.value ?? null) is null) and ((outputs.leer_alerta_abierta.value ?? null) is null) and (inputs.namespace_origen != 'redunisol.prod.analisis-credito' or inputs.flow_origen != 'consulta_quiebra_credix' or (outputs.evaluar_racha_credixsa.vars.notify_failure ?? false)) }}"
+    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
+    method: POST
+    contentType: application/json
+    body: |
+      {
+        "DIALOG_ID": "chat119621",
+        "MESSAGE": "KESTRA - Flow fallido\n\nFlow: {{ inputs.flow_origen }}\nNamespace: {{ inputs.namespace_origen }}\nEstado: FAILED\nEjecucion: {{ inputs.ejecucion }}{{ (inputs.namespace_origen == 'redunisol.prod.analisis-credito' and inputs.flow_origen == 'consulta_quiebra_credix') ? '\nFallos consecutivos: 3 o mas ejecuciones' : '' }}"
+      }
+
+  - id: marcar_alerta_abierta
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ ((outputs.leer_ejecucion_resuelta.value ?? null) is null) and ((outputs.leer_alerta_abierta.value ?? null) is null) and (inputs.namespace_origen != 'redunisol.prod.analisis-credito' or inputs.flow_origen != 'consulta_quiebra_credix' or (outputs.evaluar_racha_credixsa.vars.notify_failure ?? false)) }}"
+    key: "{{ 'alerta.flow_fallos.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    value: open
+    overwrite: true
+    ttl: P30D
