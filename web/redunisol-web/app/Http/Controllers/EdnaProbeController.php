@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\EdnaProbeCapture;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,12 +20,27 @@ class EdnaProbeController extends Controller
             if ($request->isMethod('HEAD')) {
                 return response('', 200);
             }
-            if (! $request->isJson() || strlen($request->getContent()) > 1048576) {
+            if (! $request->isJson()) {
+                $this->capture($settings, $probe, $request, 'not_json');
+
                 return response('', 400);
             }
-            $body = json_decode($request->getContent(), true, 32, JSON_THROW_ON_ERROR);
+            if (strlen($request->getContent()) > 1048576) {
+                $this->capture($settings, $probe, $request, 'too_large');
+
+                return response('', 400);
+            }
+            try {
+                $body = json_decode($request->getContent(), true, 32, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                $this->capture($settings, $probe, $request, 'invalid_json');
+
+                return response('', 400);
+            }
             $events = is_array($body) && array_key_exists('id', $body) ? [$body] : $body;
             if (! is_array($events) || ! array_is_list($events) || count($events) > 100) {
+                $this->capture($settings, $probe, $request, 'unexpected_envelope');
+
                 return response('', 400);
             }
             $matched = false;
@@ -41,33 +57,25 @@ class EdnaProbeController extends Controller
                     break;
                 }
             }
+            $this->capture($settings, $probe, $request, $matched ? 'matched' : 'no_match');
             if ($matched) {
-                $headers = [];
-                foreach ($request->headers->all() as $name => $values) {
-                    if (strlen($name) > 80) {
-                        continue;
-                    }
-                    $value = $values[0] ?? '';
-                    $format = $value === '' ? 'empty' : 'raw';
-                    if (preg_match('/^(Bearer|Basic)\s+/i', $value, $match)) {
-                        $format = strtolower($match[1]);
-                    }
-                    // Only names and a fixed enumeration: no values, hashes, sizes or body.
-                    $headers[$name] = count($values) > 1 ? 'multiple' : $format;
-                }
-                ksort($headers);
                 Cache::put('edna-probe-result:'.$probe, [
                     'observed_at' => now()->toIso8601String(),
-                    'headers' => $headers,
+                    'headers' => EdnaProbeCapture::headers($request),
                 ], max(1, $settings['expires_at'] - now()->timestamp));
             }
 
             return response()->json(['code' => 'ok']);
-        } catch (\JsonException) {
-            return response('', 400);
         } catch (Throwable) {
             // Request contents and credentials must never reach exception reporting.
             return response('', 503);
+        }
+    }
+
+    private function capture(array $settings, string $probe, Request $request, string $outcome): void
+    {
+        if (($settings['capture_until'] ?? 0) > now()->timestamp) {
+            EdnaProbeCapture::record($probe, $request, $outcome);
         }
     }
 }
