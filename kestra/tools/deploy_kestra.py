@@ -196,6 +196,10 @@ def deploy_target(
     flow_files = list(iter_files(flows_root, "*.yaml")) + list(
         iter_files(flows_root, "*.yml")
     )
+    if target == SYSTEM_TARGET:
+        # Install the alert helpers before switching the live event observer
+        # to them. Otherwise incoming production events can call missing flows.
+        flow_files.sort(key=lambda path: path.stem == "alerta_flow_fallos")
     namespace_files = [
         path
         for path in iter_files(files_root, "*")

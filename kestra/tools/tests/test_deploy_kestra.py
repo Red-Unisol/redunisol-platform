@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import yaml
 
 
@@ -183,6 +184,14 @@ triggers:
 
         self.assertEqual(flows_root, deploy_kestra.SYSTEM_ROOT / "flows")
         self.assertEqual(files_root, deploy_kestra.SYSTEM_ROOT / "files")
+
+    def test_system_helpers_are_deployed_before_live_observer(self) -> None:
+        with patch.object(deploy_kestra, "deploy_flow") as deploy:
+            deploy_kestra.deploy_target(None, "main", "system", "prod", True)
+        deployed = [call.args[2].stem for call in deploy.call_args_list]
+        observer = deployed.index("alerta_flow_fallos")
+        for helper in ("alerta_flow_fallos_gestionar", "alerta_flow_fallos_confirmar"):
+            self.assertLess(deployed.index(helper), observer)
 
 
 if __name__ == "__main__":

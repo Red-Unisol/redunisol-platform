@@ -3,63 +3,99 @@
 Aqui viven los flows tecnicos u operativos que no pertenecen a un dominio de
 negocio especifico.
 
-## Estado actual
+## Alertas: observador, temporizador y gestor unico
 
-- `alerta_flow_fallos.yaml`: observa las ejecuciones de produccion. Ante un
-  `FAILED` delega en `alerta_flow_fallos_confirmar`; ante un `SUCCESS` registra
-  la ejecucion como resuelta, cierra la alerta abierta y avisa la recuperacion.
-- `alerta_flow_fallos_confirmar.yaml`: espera a que terminen los reintentos y
-  recien entonces notifica a Bitrix24. Deduplica por KV store con TTL de 30 dias
-  para no re-alertar el mismo flow en loop.
+- `alerta_flow_fallos.yaml` recibe los eventos `FAILED` y `SUCCESS` de prod,
+  excluyendo el propio namespace `system`. Conserva `concurrency: 1` y entrega
+  cada evento al gestor con `wait: true`, preservando el orden de procesamiento.
+  Si el gestor reserva una confirmacion, lanza el temporizador con `wait: false`.
+- `alerta_flow_fallos_confirmar.yaml` espera `envs.alerta_espera_reintentos`
+  (`PT45S` por defecto) y entrega `CONFIRM` al gestor con la generacion original.
+  **No tiene una cola de concurrencia 1**: las esperas corren en paralelo.
+  No lee ni escribe KV, ni envia mensajes.
+- `alerta_flow_fallos_gestionar.yaml` es el **unico escritor** del estado y el
+  unico que abre/cierra alertas en Bitrix24. Su `concurrency: 1` serializa los
+  tres tipos de evento, incluidos los HTTP y sus marcadores posteriores. No
+  contiene esperas ni llama a otros flows.
 
-## Por que la alerta se confirma en un segundo flow
+El grafo de subflows es aciclico: observador -> gestor; observador ->
+temporizador -> gestor. El gestor devuelve la decision de programar al
+observador en sus outputs, en vez de invocar el temporizador desde el gestor.
 
-Con `retry` en una task, Kestra 2 publica `FAILED` a nivel ejecucion **antes**
-de reintentar: el trigger no distingue ese estado transitorio del fallo
-definitivo. Alertar en el acto genera avisos de ejecuciones que terminan bien.
+## Estado por flow y confirmaciones obsoletas
 
-La confirmacion espera `envs.alerta_espera_reintentos` (`PT45S` por defecto) y
-luego busca la clave `alerta.flow_fallos.resuelta.<executionId>`, con TTL de una
-hora. El observador la escribe al recibir el `SUCCESS`, que llega con el mismo
-`executionId` de su `FAILED` transitorio. Si la clave existe, no hay alerta.
+La clave `alerta.flow_fallos.estado.<namespace>.<flowId>` contiene:
 
-La espera vive en la confirmacion, no en el observador: ambos usan
-`concurrency: 1`, y dormir dentro del observador bloquearia la misma cola que
-debe registrar ese `SUCCESS`. La confirmacion tampoco consulta la API de Kestra,
-que exige autenticacion y un secreto adicional en la infraestructura.
+- `generation`: version que aumenta con cada nuevo `SUCCESS` del flow.
+- `failed_execution_ids`: hasta tres ejecuciones fallidas confirmadas (una
+  para los flows que notifican desde el primer fallo).
 
-Un fallo definitivo de una ejecucion con reintentos publica un segundo `FAILED`
-al agotarlos; esa confirmacion no encuentra la clave y alerta. Alertar queda
-demorado por la espera, y un reintento que tarde mas que la ventana vuelve a
-producir un aviso seguido de su recuperacion. Si Kestra deja de publicar el
-`SUCCESS` con el mismo `executionId`, se pierde la supresion y se vuelve al
-comportamiento anterior: avisa de mas, no de menos.
+Esta clave **no tiene TTL**: la version no puede volver a cero mientras exista
+una confirmacion antigua. Se conserva un estado acotado por flow, no el historial.
 
-Para `redunisol.prod.analisis-credito/consulta_quiebra_credix`, la notificacion
-se abre al alcanzar 3 ejecuciones distintas consecutivas en `FAILED`. Los
-demas flows conservan la alerta desde el primer fallo confirmado. Se cuentan
-eventos en el orden en que los procesa la confirmacion serializada
-(`concurrency: 1`), no por el orden de inicio de las consultas concurrentes.
+Cada ejecucion tiene un recibo en
+`alerta.flow_fallos.evento.<namespace>.<flowId>.<executionId>` con su `generation`
+y estado `pending`, `confirmed` o `success`. Los recibos tienen TTL de 30 dias;
+la deduplicacion de eventos repetidos cubre esa ventana. No se refresca su TTL
+por un duplicado. Una confirmacion sin recibo se descarta.
 
-La clave `alerta.flow_fallos.racha.<namespace>.<flowId>` guarda hasta 3 IDs
-fallidos, sin TTL; eventos repetidos de esos IDs no incrementan la racha.
-Solo la incrementan los fallos confirmados: un `FAILED` transitorio cuyo
-reintento termina bien ya no cuenta. Un `SUCCESS` borra la clave, incluso si la consulta respondio desde cache,
-sin resultados o con un pedido invalido. Por eso mide fallos consecutivos
-del flow, no disponibilidad exclusiva del portal CredixSA. La racha se
-persiste antes de notificar: si falla el envio, el siguiente fallo vuelve
-a intentar abrir la alerta. El marcador de alerta abierta se escribe solo
-despues de enviar, y mantiene su deduplicacion y TTL de 30 dias.
+1. El primer `FAILED` reserva un recibo `pending` con la generacion actual.
+   Repetir ese evento no programa otro temporizador.
+2. Un `SUCCESS` nuevo incrementa la generacion, vacia la racha y cierra la
+   alerta si existia. Invalida todos los temporizadores anteriores de ese flow,
+   aunque pertenezcan a otras ejecuciones. Un `SUCCESS` duplicado no reinicia
+   una racha nueva ni cierra una alerta posterior.
+3. `CONFIRM` solo cuenta si su generacion coincide tanto con el estado actual
+   como con el recibo. Cambia el recibo a `confirmed` para no contar dos veces.
+   Un recibo `success` o una generacion vieja no puede abrir una alerta.
 
-Una recuperacion se envia solo cuando existe ese marcador; superar uno o
-dos fallos y luego tener exito no envia mensajes. El primer exito tambien
-cierra una alerta abierta con la politica anterior. Al instalar esta
-politica la racha comienza vacia; no se reconstruye del historial.
+Ejemplo: `FAILED(a), SUCCESS(b), FAILED(c), FAILED(d)` deja dos fallos
+consecutivos, incluso si todas las confirmaciones llegan despues de `SUCCESS(b)`.
+La confirmacion de `a` queda invalidada. Si una confirmacion y un exito llegan
+casi juntos, el gestor los procesa en orden: exito primero suprime la alerta;
+confirmacion primero puede abrirla y el exito siguiente la cierra. Una
+confirmacion vieja nunca la vuelve a abrir despues de esa recuperacion.
 
-Los filtros de triggers usan when (Kestra 2). Cada HTTP tiene timeout de
-30 segundos y el flow un SLA de cancelacion a los 5 minutos. Una cola historica
-atascada requiere recuperacion separada; no se vacia por actualizar el YAML.
-Ver [runbook CredixSA](../../../automations/analisis-credito/docs/credixsa-recovery.md).
+Se usa el orden de procesamiento de eventos del observador/gestor, no el orden
+de inicio de las ejecuciones concurrentes ni una reconstruccion del historial.
+
+## Politica de notificacion y limites
+
+Para `redunisol.prod.analisis-credito/consulta_quiebra_credix`, se alerta al
+tercer fallo confirmado de ejecuciones distintas desde el ultimo exito. Para
+los demas flows, al primero. Cualquier `SUCCESS` reinicia la racha, incluidos
+cache hits, respuestas sin resultados y pedidos invalidos que terminan bien.
+Esto mide resultados del flow, no exclusivamente disponibilidad de CredixSA.
+
+La clave de alerta abierta conserva el nombre anterior
+`alerta.flow_fallos.<namespace>.<flowId>` y su TTL de 30 dias. La racha y los
+recibos se guardan antes del HTTP; el marcador de alerta abierta solo se guarda
+tras el envio. Si falla el envio, una nueva ejecucion fallida o la repeticion
+de una confirmacion valida puede volver a notificar sin aumentar la racha.
+Si falla una recuperacion, otro exito nuevo vuelve a intentar cerrarla. No hay
+una transaccion entre el KV y Bitrix: un corte despues del HTTP y antes de
+persistir su marcador puede duplicar el mensaje al reintentar.
+
+Kestra 2 puede emitir `FAILED` antes de terminar los reintentos de una task.
+Los 45 segundos son una **ventana de tolerancia**, no una comprobacion del
+estado definitivo. Un reintento mas largo puede producir alerta y luego
+recuperacion. No se consulta la API ni se agregan credenciales. Cada HTTP tiene
+un timeout de 30 segundos; cada flow, SLA de cancelacion a los 5 minutos. La
+ventana configurada debe ser menor al SLA y dejar margen para entregar la
+confirmacion. La cola del gestor puede agregar latencia, pero ninguna espera
+de 45 segundos ocupa esa cola.
+
+## Despliegue y migracion
+
+Desplegar el target `system` completo, solo a prod. El tooling instala los
+helpers antes de actualizar el observador activo. No requiere nuevos secrets,
+variables, namespace files ni imagenes propias.
+
+La nueva racha comienza vacia. La antigua clave `alerta.flow_fallos.racha.*`
+no se consume; las alertas abiertas previas si se reconocen y el siguiente
+exito las cierra. El cambio no borra KV ni purga ejecuciones existentes. Una
+cola historica atascada requiere recuperacion separada; actualizar los YAML
+no la vacia. Ver el [runbook CredixSA](../../../automations/analisis-credito/docs/credixsa-recovery.md).
 
 ## Ambientes: este target se despliega solo a prod
 
