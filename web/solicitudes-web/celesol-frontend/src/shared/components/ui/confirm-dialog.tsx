@@ -9,12 +9,15 @@ import {
   DialogRoot,
   DialogTitle,
 } from "@/shared/components/ui/dialog";
+import { cn } from "@/shared/utils/cn";
 
 export type ConfirmDialogProps = {
   cancelLabel?: string;
   children?: React.ReactNode;
+  className?: string;
   confirmLabel?: string;
   description: string;
+  isConfirmDisabled?: boolean;
   isConfirming?: boolean;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
@@ -27,8 +30,10 @@ export type ConfirmDialogProps = {
 export function ConfirmDialog({
   cancelLabel = "Cancelar",
   children,
+  className,
   confirmLabel = "Confirmar",
   description,
+  isConfirmDisabled = false,
   isConfirming = false,
   onConfirm,
   onOpenChange,
@@ -49,7 +54,7 @@ export function ConfirmDialog({
       open={open}
     >
       <DialogContent
-        className="max-w-md p-6"
+        className={cn("max-w-md p-6", className)}
         onEscapeKeyDown={(event) => {
           if (isConfirming) {
             event.preventDefault();
@@ -93,7 +98,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <Button
-            disabled={isConfirming}
+            disabled={isConfirming || isConfirmDisabled}
             onClick={onConfirm}
             type="button"
             variant={variant === "destructive" ? "destructive" : "default"}

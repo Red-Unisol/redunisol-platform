@@ -15,10 +15,10 @@ type GenerarPrestamoDialogProps = {
   solicitudId: string;
 };
 
-// Confirmacion previa a crear el prestamo en Vimarx con los montos del panel
-// CREDITO que ya se conocen antes de que el prestamo exista. REFI y En mano
-// quedan afuera: Vimarx los calcula recien al refinanciar/liquidar. La suma de
-// cancelaciones es la misma que Solicitud.MontoCancelaciones del legado.
+// Confirmacion previa a crear el prestamo en Vimarx con el reparto del monto a
+// desembolsar: lo que cancela deudas con terceros y lo que recibe el socio. Es
+// la misma cuenta que el legado ([Monto En Mano] = Bco + MontoCancelaciones).
+// REFI queda afuera: hoy el prestamo creado desde aca no refinancia deuda propia.
 export function GenerarPrestamoDialog({
   cuotas,
   isPending,
@@ -38,11 +38,26 @@ export function GenerarPrestamoDialog({
     (total, cancelacion) => total + cancelacion.monto,
     0,
   );
+  const montoEnMano =
+    montoAFinanciar === null || isLoading || error
+      ? null
+      : montoAFinanciar - totalCancelaciones;
+  // Sin las cancelaciones no se puede mostrar el reparto, y un en mano negativo
+  // es un prestamo que no alcanza para pagar a los terceros.
+  const bloqueo = error
+    ? "No se pudieron consultar las cancelaciones. Reintentá antes de generar el préstamo."
+    : montoEnMano !== null && montoEnMano < 0
+      ? "Las cancelaciones superan el monto a desembolsar."
+      : null;
+  // Con una sola cancelacion su monto es el total: repetirlo confunde.
+  const detallarMontos = cancelaciones.length > 1;
 
   return (
     <ConfirmDialog
+      className="max-w-lg"
       confirmLabel="Generar préstamo"
       description="Revisá los datos antes de crear el préstamo en Vimarx."
+      isConfirmDisabled={isLoading || bloqueo !== null}
       isConfirming={isPending}
       onConfirm={onConfirm}
       onOpenChange={onOpenChange}
@@ -52,33 +67,48 @@ export function GenerarPrestamoDialog({
       <dl className="space-y-2 text-sm">
         <Dato label="Línea" value={lineaPrestamoDescripcion} />
         <Dato label="Cuotas" value={cuotas === null ? null : String(cuotas)} />
+      </dl>
+
+      <dl className="mt-4 space-y-2 rounded-md bg-background px-3 py-3 text-sm">
         <Dato
           label="Monto a desembolsar"
           value={formatMoneyAmount(montoAFinanciar)}
         />
-        <Dato
-          label="Cancelaciones"
-          value={
-            isLoading
-              ? "Consultando..."
-              : error
-                ? "No se pudieron consultar"
-                : formatMoneyAmount(totalCancelaciones)
-          }
-        />
+        <div>
+          <Dato
+            label="Cancelaciones"
+            value={
+              isLoading
+                ? "Consultando..."
+                : error
+                  ? null
+                  : formatMoneyAmount(totalCancelaciones)
+            }
+          />
+          {cancelaciones.length > 0 ? (
+            <ul className="mt-1 space-y-0.5 pl-3 text-xs text-foreground-secondary">
+              {cancelaciones.map((cancelacion) => (
+                <li className="flex justify-between gap-3" key={cancelacion.id}>
+                  <span className="truncate">{cancelacion.socio}</span>
+                  {detallarMontos ? (
+                    <span className="shrink-0">
+                      {formatMoneyAmount(cancelacion.monto)}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="border-t border-border pt-2 font-semibold">
+          <Dato
+            label="Monto en mano"
+            value={montoEnMano === null ? null : formatMoneyAmount(montoEnMano)}
+          />
+        </div>
       </dl>
-      {cancelaciones.length > 0 ? (
-        <ul className="mt-2 space-y-1 border-t border-border pt-2 text-xs text-foreground-secondary">
-          {cancelaciones.map((cancelacion) => (
-            <li className="flex justify-between gap-3" key={cancelacion.id}>
-              <span className="truncate">{cancelacion.socio}</span>
-              <span className="shrink-0">
-                {formatMoneyAmount(cancelacion.monto)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+
+      {bloqueo ? <p className="mt-3 text-sm text-danger">{bloqueo}</p> : null}
     </ConfirmDialog>
   );
 }
