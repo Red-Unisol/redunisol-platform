@@ -86,11 +86,12 @@ Orden de activación:
    evento sintético autorizado 200 y posterior estado `delivered`; repetir el ID
    y verificar `duplicates=1`. Probar también JSON FLOW y una indisponibilidad de
    Kestra seguida de recuperación. No imprimir credenciales en comandos de prueba.
-4. En Edna, agregar la URL web como **segundo webhook adicional entrante del
-   canal Ventas**. La captura del 17/09/2026 muestra un webhook adicional activo
-   de Bitrix para ese canal. Conservarlo y conservar los callbacks de estados.
-   Revalidar esta situación antes de operar; los adicionales tienen prioridad
-   sobre la URL maestra y Edna documenta hasta dos por evento/canal.
+4. En Edna, editar el webhook entrante existente del canal Ventas y completar
+   **Additional URL** con la URL web. Conservar la URL principal de Bitrix y los
+   callbacks de estados. No crear otro registro para el mismo canal y evento:
+   la UI devuelve `Webhook for this sender already exists`. Edna documenta dos
+   URLs, pero eso no confirma si la segunda recibe copia o funciona como respaldo;
+   verificar el comportamiento con un envío real en ambos destinos.
 5. En una prueba acordada, completar el Flow desde un teléfono de prueba y
    confirmar tanto la continuidad del mensaje en Bitrix como el evento normalizado
    en Kestra. Sólo esa prueba verifica la integración real con Edna. El identificador
@@ -116,16 +117,58 @@ php artisan edna:probe stop <UUID>
 `start` devuelve `id`, `path`, un texto de prueba `marker` y vencimiento UTC. Usar
 el path con el dominio HTTPS del mismo runtime. La duración máxima es cuatro horas.
 HEAD devuelve 200 sólo mientras la sonda está activa; GET no permite ver resultados.
-Configurar el callback adicional con autenticación desde Edna sin reemplazar Bitrix
-y enviar exactamente el marker desde el teléfono de prueba al canal autorizado.
+Configurar Additional URL en el webhook existente sin reemplazar Bitrix y enviar
+exactamente el marker desde el teléfono de prueba al canal autorizado. Conservar
+la autenticación actual del registro: cambiarla puede afectar también a Bitrix.
 
-Sólo un callback TEXT con ese marker y subjectId actualiza la observación. El resto
-se confirma sin guardar datos. El resultado contiene fecha, nombres de headers y
+Por defecto, sólo un callback TEXT con ese marker y subjectId actualiza la
+observación. Otros eventos con transporte válido se confirman sin guardar datos.
+El resultado contiene fecha, nombres de headers y
 formatos enumerados (`raw`, `bearer`, `basic`, `empty`, `multiple`). No guarda valores,
 hashes de credenciales, IP, identificadores de clientes ni cuerpo del mensaje; no
 encola trabajos ni llama a Kestra. La observación vence junto con la sonda. El cache
 puede conservar físicamente entradas expiradas hasta su limpieza habitual, pero
-éstas tampoco contienen valores de headers ni conversaciones.
+éstas tampoco contienen valores de headers ni conversaciones en el modo predeterminado.
+
+Si llegó un POST pero el filtro no lo reconoce, se puede habilitar explícitamente
+la captura ampliada sobre la **misma sonda y URL**, con autorización para conservar
+conversaciones:
+
+```sh
+php artisan edna:probe capture <UUID> --capture-minutes=15
+php artisan edna:probe show <UUID>
+php artisan edna:probe show <UUID> --payload
+php artisan edna:probe stop <UUID>
+```
+
+La captura dura 15 minutos por defecto (entre 1 y 30), sin extender el vencimiento
+original de la sonda. Guarda los primeros 20 POST recibidos durante esa ventana,
+incluidos eventos sin marker, otros subjectId, envelopes desconocidos, JSON inválido
+y cuerpos no JSON. Por eso se debe configurar exclusivamente en el canal bajo prueba.
+HEAD no genera capturas. No autentica el origen ni demuestra por sí sola que un
+evento venga de Edna.
+
+Conserva hasta 64 KiB del cuerpo de cada POST, cifrados con `APP_KEY`; informa
+`body_bytes` y `truncated` cuando excede el límite. No guarda valores de headers,
+cookies ni credenciales de autenticación transportadas en headers. El cuerpo sí
+puede contener conversaciones e identificadores personales. Registra fecha, nombres
+y formatos de headers, `is_json` y el resultado del filtro: `matched`, `no_match`,
+`unexpected_envelope`, `invalid_json`, `not_json` o `too_large`. Las respuestas HTTP
+del modo predeterminado se conservan (400 para transporte inválido, 200 para eventos
+válidos), sin encolar trabajos ni enviar mensajes.
+
+`show` devuelve sólo metadatos; `show --payload` descifra en consola y agrega
+`body_base64` para preservar exactamente los bytes, incluso JSON malformado. No hay
+endpoint HTTP de lectura. No copiar ese resultado a logs, Git ni comentarios públicos.
+`capture_limit_reached` indica que se alcanzaron 20 eventos; los siguientes no se
+almacenan. Repetir `capture` no vacía el historial ni amplía ese cupo.
+
+Las capturas quedan consultables hasta que vence la sonda. Al vencer dejan de ser
+accesibles por la aplicación; el cache puede conservar físicamente datos cifrados
+hasta su limpieza habitual. Ejecutar `stop` al terminar elimina explícitamente las
+entradas de configuración, observación y capturas. La ampliación no recupera cuerpos
+descartados antes de habilitarla y se mantiene apagada después del despliegue hasta
+ejecutar `capture` desde consola.
 
 La sonda no autentica al remitente: ayuda a identificar el header y prefijo durante
 una prueba controlada. La confirmación de la clave se hace después contra el receptor
