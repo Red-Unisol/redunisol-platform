@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\EdnaFlowRouter;
+use App\Services\EdnaRouterResult;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Crypt;
@@ -62,6 +63,7 @@ class ReceiveEdnaInKestra implements ShouldQueue
                         throw new RuntimeException('Kestra did not acknowledge verified Flow context.');
                     }
                     $router->complete($event, $context);
+                    (new EdnaRouterResult)->reserve($event, $context, $payload);
                 } elseif ($context) {
                     $router->record($event->id, 'invalid_response', $context['send_id']);
                 }

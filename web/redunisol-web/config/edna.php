@@ -7,6 +7,8 @@ return [
     'auth_header' => env('EDNA_INCOMING_AUTH_HEADER', 'Authorization'),
     'subject_id' => (string) env('EDNA_INCOMING_SUBJECT_ID', ''),
     'kestra_url' => env('KESTRA_EDNA_INCOMING_WEBHOOK_URL', ''),
+    'results_enabled' => (bool) env('EDNA_ROUTER_RESULTS_ENABLED', false),
+    'bitrix_url' => env('EDNA_BITRIX_WEBHOOK_URL', ''),
     'router_enabled' => (bool) env('EDNA_ROUTER_ENABLED', false),
     'router_start_at' => env('EDNA_ROUTER_START_AT', ''),
     'router_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_ROUTER_RECIPIENTS', ''))))),
