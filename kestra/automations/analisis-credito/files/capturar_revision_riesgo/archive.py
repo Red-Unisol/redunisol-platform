@@ -38,16 +38,9 @@ APPLICATION_FIELDS = [
 ]
 ATTACHMENT_FIELDS = ['Oid', 'Archivo.FileName', 'Archivo.Size', 'Descripcion']
 EVENT_FIELDS = ['ID', 'Fecha', 'Texto']
-# Una persona editando la solicitud durante la captura deja la observacion
-# parcial sin que falte nada por recuperar: el proximo sondeo la vuelve a
-# fotografiar. No es una falla del archivo y no justifica alertar.
-CONCURRENT_EDIT_CODES = frozenset({
-    'changed_during_capture', 'attachment_size_changed',
-    'attachment_count_mismatch', 'event_count_mismatch',
-})
-# Intentos sobre la misma solicitud antes de tratar el pendiente como atascado.
-# Con la espera creciente de pending, cinco intentos cubren cerca de una hora.
-STUCK_RETRY_ATTEMPTS = 5
+# Tiempo sin lograr una captura completa, independiente de la frecuencia de
+# sondeo y del backoff de solicitudes que ya salieron de Revision Riesgo.
+STUCK_PENDING_SECONDS = 3600
 
 
 class CaptureError(Exception):
@@ -229,13 +222,44 @@ class Archive:
         return folder
 
 
-def partial_reason(errors):
-    """Distingue la edicion concurrente de lo que dejo datos sin archivar."""
+def partial_reason(errors, *, application, after, attachment_index, index_after,
+                   events, events_after, observations):
+    """Solo tolerar discrepancias explicadas por cambios de las mismas lecturas."""
     if not errors:
         return None
-    if all(error['code'] in CONCURRENT_EDIT_CODES for error in errors):
-        return 'changed_during_capture'
-    return 'fetch_or_storage_error'
+
+    def count_changed(field, before_items, after_items):
+        if after is None or after_items is None:
+            return False
+        before_count, after_count = application.get(field), after.get(field)
+        # La segunda lectura debe ser consistente. La discrepancia inicial
+        # debe coincidir con uno de los conteos observados en la otra lectura.
+        return after_count == len(after_items) and (
+            (before_count != after_count and after_count == len(before_items))
+            or (len(before_items) != len(after_items) and before_count == len(after_items)))
+
+    sizes_after = {item['Oid']: item['Archivo.Size'] for item in (index_after or [])}
+    downloads = {item['metadata']['Oid']: item for item in observations}
+    for error in errors:
+        code = error['code']
+        if code == 'changed_during_capture':
+            continue  # Este codigo solo se emite tras comparar ambas lecturas.
+        if code == 'attachment_size_changed':
+            download = downloads[error['oid']]
+            new_size = sizes_after.get(error['oid'])
+            if (new_size is not None and new_size != download['metadata']['Archivo.Size']
+                    and new_size == download['object']['bytes']):
+                continue
+        elif code == 'attachment_count_mismatch':
+            if count_changed('Adjuntos.Count()', attachment_index, index_after):
+                continue
+        elif code == 'event_count_mismatch':
+            if count_changed('Novedades.Count()', events, events_after):
+                continue
+        # Un cambio de nombre/estado u otro adjunto no explica bytes faltantes.
+        # Errores tecnicos y discrepancias estables fallan desde esta corrida.
+        return 'fetch_or_storage_error'
+    return 'changed_during_capture'
 
 
 def capture_one(client, archive, application, folder, origin):
@@ -247,6 +271,7 @@ def capture_one(client, archive, application, folder, origin):
     attachment_index_ok = False
     events = []
     after = None
+    index_after = events_after = None
     metadata_stable = False
     missing_previous = []
     try:
@@ -297,7 +322,10 @@ def capture_one(client, archive, application, folder, origin):
                'attachments': [{'metadata': item['metadata'], 'object': item.get('object'), 'error': item.get('error')} for item in observations]}
     payload_object = archive.blob(encoded(payload))
     result = {'schema_version': SCHEMA_VERSION, 'finished_at': now(), 'origin': origin,
-              'complete': not errors, 'partial_reason': partial_reason(errors),
+              'complete': not errors, 'partial_reason': partial_reason(errors,
+                  application=application, after=after, attachment_index=attachment_index,
+                  index_after=index_after, events=events, events_after=events_after,
+                  observations=observations),
               'metadata_stable': metadata_stable,
               'state_before': application.get('Estado.ID'), 'state_after': after.get('Estado.ID') if after else None,
               'payload': payload_object, 'downloads': observations, 'errors': errors,
@@ -321,6 +349,11 @@ def poll(client, archive, *, workers=3, min_free_bytes=1024**3):
         atomic_json(archive.root / 'runs' / (run_id + '-scan.json'), {'started_at': started_at, 'finished_at': scan_finished_at, 'criteria': '[Estado.ID] = 114', 'fields': APPLICATION_FIELDS, 'rows': active})
         pending_path = archive.root / 'pending.json'
         pending = read_json(pending_path, {})
+        pending_at = time.time()
+        for state in pending.values():
+            # Migracion: los pendientes anteriores no tienen una fecha fiable.
+            # Iniciar su reloj una sola vez, sin inferir edad desde attempts.
+            state.setdefault('first_pending_at', pending_at)
         active_ids = {row['Oid'] for row in active}
         jobs = []
         summary = {'ok': True, 'active': len(active), 'captured': 0, 'partial': 0,
@@ -330,7 +363,9 @@ def poll(client, archive, *, workers=3, min_free_bytes=1024**3):
         for application in active:
             oid = str(application['Oid'])
             folder = archive.start(application, scan_finished_at, 'observed_in_risk', run_id)
-            pending.setdefault(oid, {'attempts': 0, 'next_retry': 0})
+            # Reservar antes de descargar tambien conserva la edad si se corta
+            # la captura. Solo una captura completa elimina este pendiente.
+            pending.setdefault(oid, {'attempts': 0, 'next_retry': 0, 'first_pending_at': pending_at})
             jobs.append((application, folder, 'observed_in_risk'))
         atomic_json(pending_path, pending)
         for key, state in list(pending.items()):
@@ -374,8 +409,10 @@ def poll(client, archive, *, workers=3, min_free_bytes=1024**3):
                 atomic_json(pending_path, pending)
         # Una observacion parcial por edicion concurrente se reintenta sola en el
         # sondeo siguiente. Solo se reporta como falla lo que dejo datos sin
-        # archivar o lo que no se resolvio despues de varios intentos.
-        summary['stuck'] = sum(1 for state in pending.values() if state.get('attempts', 0) >= STUCK_RETRY_ATTEMPTS)
+        # archivar o lo que sigue sin resolverse despues de una hora real.
+        checked_at = time.time()
+        summary['stuck'] = sum(1 for state in pending.values()
+                               if checked_at - state['first_pending_at'] >= STUCK_PENDING_SECONDS)
         summary.update(ok=not (summary['partial_error'] or summary['retry_fetch_failures'] or summary['stuck']),
                        pending=len(pending), started_at=started_at, finished_at=now())
         atomic_json(archive.root / 'runs' / (run_id + '-summary.json'), summary)
