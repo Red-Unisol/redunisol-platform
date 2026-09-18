@@ -102,6 +102,40 @@ producción a un namespace dev ni sustituir el callback de Bitrix por este recep
 
 ## Operación, datos y reversión
 
+### Diagnóstico de autenticación sin soporte externo
+
+Para observar el contrato real, el backend ofrece una sonda temporal independiente
+del receptor productivo. Se habilita solamente desde consola:
+
+```sh
+php artisan edna:probe start --subject=2423 --minutes=240
+php artisan edna:probe show <UUID>
+php artisan edna:probe stop <UUID>
+```
+
+`start` devuelve `id`, `path`, un texto de prueba `marker` y vencimiento UTC. Usar
+el path con el dominio HTTPS del mismo runtime. La duración máxima es cuatro horas.
+HEAD devuelve 200 sólo mientras la sonda está activa; GET no permite ver resultados.
+Configurar el callback adicional con autenticación desde Edna sin reemplazar Bitrix
+y enviar exactamente el marker desde el teléfono de prueba al canal autorizado.
+
+Sólo un callback TEXT con ese marker y subjectId actualiza la observación. El resto
+se confirma sin guardar datos. El resultado contiene fecha, nombres de headers y
+formatos enumerados (`raw`, `bearer`, `basic`, `empty`, `multiple`). No guarda valores,
+hashes de credenciales, IP, identificadores de clientes ni cuerpo del mensaje; no
+encola trabajos ni llama a Kestra. La observación vence junto con la sonda. El cache
+puede conservar físicamente entradas expiradas hasta su limpieza habitual, pero
+éstas tampoco contienen valores de headers ni conversaciones.
+
+La sonda no autentica al remitente: ayuda a identificar el header y prefijo durante
+una prueba controlada. La confirmación de la clave se hace después contra el receptor
+autenticado, con un envío real. Una petición sintética sólo valida la sonda, no Edna.
+Guardar la clave nueva por el circuito de credenciales, no en el chat ni en logs.
+Al finalizar, retirar el callback temporal en Edna y ejecutar `stop`; no sustituir
+el receptor definitivo por esta ruta. No dejar URLs vencidas configuradas en Edna.
+
+### Inbox definitivo
+
 Consultar contadores agrupados por `status`/`outcome` en el inbox y la cola fallida
 sin volcar payloads. Para recuperar un trabajo agotado, corregir la configuración
 y usar `php artisan queue:retry <uuid>` para el UUID específico de `queue:failed`
