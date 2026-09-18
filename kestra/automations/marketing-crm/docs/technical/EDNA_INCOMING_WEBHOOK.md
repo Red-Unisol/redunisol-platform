@@ -304,15 +304,20 @@ ante una incertidumbre persistente se prioriza no duplicar y se deja revisión o
 | `EDNA_API_KEY` | Credencial de salida de Edna; distinta de la autenticación entrante. |
 | `EDNA_ROUTER_CASCADE_ID` | Cascada del canal; Ventas verificada: `2557`. |
 
-El entorno prod cifrado de esta implementación habilita únicamente el número de
-prueba autorizado por el operador, con corte `2026-09-18T15:03:17+00:00` y cascada
-`2557`. Dev sigue apagado. Ni el número ni la clave de API se publican en esta guía.
-La recepción del resto de Ventas continúa, pero no dispara formularios.
+La configuración prod cifrada prepara la activación general con
+`EDNA_ROUTER_RECIPIENTS` vacío y corte `2026-09-18T16:17:14+00:00`.
+Los mensajes anteriores al corte no inician ciclos nuevos. Dev y los ejemplos
+siguen apagados. El Flow está fijado a `1850162769693486`, con canal Ventas
+`2423` y cascada `2557`. Publicar mediante Git; esta configuración requiere merge
+y despliegue antes de verificar su efecto en producción.
 
-El Flow está fijado a `1850162769693486`. Configurar los entornos cifrados y desplegar
-mediante Git. El ejemplo queda apagado. Para el piloto usar únicamente números
-internos y una fecha de corte reciente. Mantener esa restricción hasta incorporar
-la respuesta de landing, las UTMs y los campos WA en Bitrix.
+El alcance autorizado es **24 horas, todos los días**, para mensajes de Ventas
+que contengan `vengo del sitio web de Red Unisol` (frase del botón general de la
+web, normalizada sin distinguir mayúsculas y con sufijos permitidos). No hay un
+filtro de horario laboral. La disponibilidad automática no implica atención
+humana inmediata. Continúa la protección de un Flow por persona y canal/Flow
+cada 24 horas; ese plazo limita la frecuencia, no los horarios de atención.
+No se amplía el disparador a cualquier mensaje ni al canal de Cobranzas.
 
 Desplegar primero el parser/YAML de Kestra y luego la aplicación con su migración
 aditiva. La versión antigua del bridge funciona con el recibo ampliado. Habilitar
@@ -336,7 +341,13 @@ correcta marcada verificada, respuesta ajena rechazada para efectos comerciales,
 y continuidad en Bitrix. Las pruebas locales simulan además timeout posterior al
 POST, workers intercalados, caída antes de guardar el acuse, historial ambiguo,
 respuesta anterior al historial, reversión transaccional, credenciales/configuración
-incorrectas y expiración. El piloto del 2026-09-18 verificó entrada automática, respuesta CABA/PFA correlacionada y continuidad del mensaje en Bitrix. La validación real de landing y campos CRM requiere desplegar la siguiente etapa.
+incorrectas y expiración. El piloto del 2026-09-18 verificó la entrada automática
+CABA/PFA y cuatro casos adicionales mediante el procedimiento acotado del PR #380:
+Córdoba/Jubilado, Córdoba/Docente, Catamarca/Policía y Otra provincia. Los cinco
+completaron respuesta correlacionada, landing confirmada y sincronización de los
+siete campos WA; se comprobó la continuidad del mensaje en Bitrix y la conservación
+del origen/UTMs anteriores. Son evidencia histórica del piloto, no una
+verificación de la activación general.
 
 Referencias de contrato: [envío por cascada](https://docs-pulse.edna.io/docs/api/messages/sending/)
 y [historial de mensajes](https://docs-pulse.edna.io/docs/api/messages/history/).
@@ -345,16 +356,17 @@ y [historial de mensajes](https://docs-pulse.edna.io/docs/api/messages/history/)
 ## Landing y clasificación CRM (tarea 23055)
 
 `EDNA_ROUTER_RESULTS_ENABLED` habilita las dos acciones posteriores a la respuesta
-verificada. Prod conserva **sólo el teléfono del piloto**; dev y los ejemplos quedan
-apagados. `EDNA_BITRIX_WEBHOOK_URL` reutiliza el acceso CRM canónico, cifrado y
+verificada. Prod prepara su habilitación para todos los destinatarios elegibles
+por el disparador web, durante las 24 horas; dev y los ejemplos quedan apagados.
+`EDNA_BITRIX_WEBHOOK_URL` reutiliza el acceso CRM canónico, cifrado y
 expuesto por Compose a PHP y al worker. No se modifican los callbacks de Edna.
 
 La transacción que completa el Flow reserva un único `edna_router_results` por
 Flow/respuesta y encola dos trabajos independientes. No se procesan retroactivamente
 respuestas anteriores al despliegue:
 
-- `SendEdnaLanding` revalida piloto, canal, cascada y antigüedad de respuesta menor
-  de 23 horas. Envía TEXT y confirma `sending` antes del POST. Timeout, 5xx o acuse
+- `SendEdnaLanding` revalida destinatario elegible, canal, cascada y antigüedad
+  de respuesta menor de 23 horas. Envía TEXT y confirma `sending` antes del POST. Timeout, 5xx o acuse
   ambiguo quedan `unknown`; un reintento sólo consulta historial, nunca reenvía.
 - `ReconcileEdnaLanding` exige un único saliente con el mismo requestId, destinatario,
   canal, cascada y texto exacto, con estado SENT/DELIVERED/READ.
@@ -425,15 +437,23 @@ creados y verificados en contactos y leads, sin cambiar valores de registros.
   una respuesta de piloto ya completada, verificada, conservada y de menos de 23 h.
   Requiere una lista de destinatarios de prueba no vacía y pertenecer a ella.
   Reserva landing/CRM una sola vez; no reenvía el Flow ni modifica su cooldown.
-  El piloto anterior puede comprobarse así tras el despliegue sin esperar 24 h.
+  Con la lista vacía de la activación general, este comando y el procedimiento
+  excepcional de `tools/edna-pilot/` rechazan la ejecución.
 - No resetear `sending`/`unknown` a `pending`. La incertidumbre persistente requiere
   diagnóstico, no reenvío automático.
 - `edna:prune` conserva el destinatario cifrado mientras landing o CRM requieran
   recuperación. Conserva IDs/estados para deduplicar al limpiar payloads.
 - Para apagar nuevas acciones, cambiar `EDNA_ROUTER_RESULTS_ENABLED` por Git.
   Receptor y clasificación de respuestas pueden continuar.
-- Antes de ampliar a clientes: validar las cinco ramas de cierre de la tarea con
-  enlaces y campos reales, continuidad de Bitrix y resolución de casos `review`.
+- Tras el despliegue de la activación general: verificar flags, lista vacía y
+  corte en PHP/worker; revisar entradas nuevas, estado del Flow, landing y CRM
+  con los comandos de estado y comprobar continuidad en Bitrix.
+- Revisar casos `unknown`, `review` y `failed`, antigüedad de pendientes y jobs
+  fallidos. Son excepciones operativas para diagnóstico; no suponen rechazo
+  comercial automático ni reenvío del formulario.
+- Para pausar nuevos formularios, cambiar `EDNA_ROUTER_ENABLED=false` por Git.
+  Esta bandera también frena acciones de resultados aún pendientes. El receptor
+  entrante y el callback primario de Bitrix se mantienen separados del envío.
 
 Contratos consultados: [TEXT en Edna](https://docs-pulse.edna.io/docs/api/messages/message-example/),
 [búsqueda por teléfono](https://apidocs.bitrix24.com/api-reference/crm/duplicates/crm-duplicate-find-by-comm.html),
