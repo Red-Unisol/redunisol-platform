@@ -59,6 +59,27 @@ test('POST requires the webhook credential and supports a configured header name
         ->assertUnauthorized();
 });
 
+test('Authorization accepts the observed Token scheme with the exact configured key', function (string $scheme) {
+    config()->set('edna.auth_header', 'Authorization');
+    $this->postJson('/api/webhooks/edna/incoming', [ednaMessage()], ['Authorization' => $scheme.' inbound-test-key'])
+        ->assertOk()->assertJsonPath('accepted', 1);
+    expect(DB::table('edna_incoming_events')->count())->toBe(1)->and(DB::table('jobs')->count())->toBe(1);
+})->with(['Token', 'token', 'TOKEN']);
+
+test('invalid Token credentials cannot persist or enqueue callbacks', function (string $credential) {
+    config()->set('edna.auth_header', 'Authorization');
+    $this->postJson('/api/webhooks/edna/incoming', [ednaMessage()], ['Authorization' => $credential])
+        ->assertUnauthorized();
+    expect(DB::table('edna_incoming_events')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+})->with(['Token wrong', 'Token ', 'Token Token inbound-test-key', 'Token  inbound-test-key',
+    'Token inbound-test-key extra', 'Tokeninbound-test-key', 'Basic inbound-test-key', 'Bearer inbound-test-key']);
+
+test('Token scheme is not stripped from a custom credential header', function () {
+    $this->postJson('/api/webhooks/edna/incoming', [ednaMessage()], ['X-API-KEY' => 'Token inbound-test-key'])
+        ->assertUnauthorized();
+    expect(DB::table('edna_incoming_events')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+});
+
 test('callback deduplicates in the database and stores encrypted minimal data', function () {
     $message = ednaMessage(['userInfo' => ['userName' => 'Not stored']]);
     sendEdna([$message, $message])->assertOk()->assertJsonPath('accepted', 1)->assertJsonPath('duplicates', 1);

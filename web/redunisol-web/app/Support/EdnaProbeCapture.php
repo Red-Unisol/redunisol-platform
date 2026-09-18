@@ -21,7 +21,7 @@ class EdnaProbeCapture
             }
             $value = $values[0] ?? '';
             $format = $value === '' ? 'empty' : 'raw';
-            if (preg_match('/^(Bearer|Basic)\s+/i', $value, $match)) {
+            if (preg_match('/^(Bearer|Basic|Token)\s+/i', $value, $match)) {
                 $format = strtolower($match[1]);
             }
             $headers[$name] = count($values) > 1 ? 'multiple' : $format;
