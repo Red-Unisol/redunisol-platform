@@ -99,5 +99,46 @@ class EdnaReceiverTest(unittest.TestCase):
         self.assertEqual(receiver.classify(incoming, '2423')[0]['kind'], 'flow_response')
 
 
+class EdnaCorrelationTest(unittest.TestCase):
+    def correlated(self):
+        incoming = event(data={'provincia': 'catamarca', 'situacion_catamarca': 'policia'})
+        incoming.update(replyOutMessageId='9001', replyOutMessageExternalRequestId='request-uuid')
+        incoming['routerContext'] = {'verified': True, 'flow_id': '1850162769693486', 'send_id': 42,
+                                     'request_id': 'request-uuid', 'outgoing_message_id': '9001'}
+        return incoming
+
+    def test_trusted_ledger_context_marks_flow_identity_in_receipt_and_artifact(self):
+        receipt, parsed = receiver.classify(self.correlated(), '2423')
+        self.assertTrue(receipt['flow_id_verified'])
+        self.assertEqual(receipt['reason'], 'verified_router_response')
+        self.assertTrue(parsed['flow_id_verified'])
+        self.assertEqual(parsed['flow_send_id'], 42)
+        self.assertEqual(parsed['flow_id'], '1850162769693486')
+        self.assertEqual(parsed['flow_request_id'], 'request-uuid')
+
+    def test_mismatched_or_malformed_context_never_becomes_verified(self):
+        for context in [False, [], {}, {'verified': 'true'},
+                        {**self.correlated()['routerContext'], 'send_id': True},
+                        {**self.correlated()['routerContext'], 'send_id': 0},
+                        {**self.correlated()['routerContext'], 'request_id': 'another'},
+                        {**self.correlated()['routerContext'], 'outgoing_message_id': '9002'},
+                        {**self.correlated()['routerContext'], 'flow_id': 'other-flow'}]:
+            incoming = self.correlated()
+            incoming['routerContext'] = context
+            receipt, parsed = receiver.classify(incoming, '2423')
+            self.assertFalse(receipt['flow_id_verified'])
+            self.assertEqual(receipt['kind'], 'invalid')
+            self.assertIsNone(parsed)
+
+    def test_context_requires_reply_references_and_valid_answers(self):
+        for field in ['replyOutMessageId', 'replyOutMessageExternalRequestId']:
+            incoming = self.correlated()
+            del incoming[field]
+            self.assertFalse(receiver.classify(incoming, '2423')[0]['flow_id_verified'])
+        incoming = self.correlated()
+        incoming['messageContent']['text'] = '{}'
+        self.assertFalse(receiver.classify(incoming, '2423')[0]['flow_id_verified'])
+
+
 if __name__ == '__main__':
     unittest.main()
