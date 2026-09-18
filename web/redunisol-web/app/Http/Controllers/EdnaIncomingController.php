@@ -99,6 +99,23 @@ class EdnaIncomingController extends Controller
                         'receivedAt' => $event['receivedAt'],
                         'messageContent' => ['type' => $content['type'], 'text' => $content['text']],
                     ];
+                    // Edna links FLOW replies to the outgoing message and our requestId.
+                    // Keep these references for correlation; they are not proof of a Flow ID.
+                    $replyId = $event['replyOutMessageId'] ?? null;
+                    $replyRequest = $event['replyOutMessageExternalRequestId'] ?? null;
+                    if (($replyId !== null && ! $this->validId($replyId))
+                        || ($replyRequest !== null && (! is_string($replyRequest)
+                            || $replyRequest === '' || strlen($replyRequest) > 256))) {
+                        $counts['invalid']++;
+
+                        continue;
+                    }
+                    if ($replyId !== null) {
+                        $payload['replyOutMessageId'] = (string) $replyId;
+                    }
+                    if ($replyRequest !== null) {
+                        $payload['replyOutMessageExternalRequestId'] = $replyRequest;
+                    }
                     $inserted = DB::table('edna_incoming_events')->insertOrIgnore([
                         'subject_id' => $subjectId,
                         'message_id' => $payload['id'],
