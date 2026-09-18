@@ -52,6 +52,11 @@ test('POST requires the webhook credential and supports a configured header name
     config()->set('edna.auth_header', 'X-Edna-Webhook-Key');
     $this->postJson('/api/webhooks/edna/incoming', [ednaMessage()], ['X-Edna-Webhook-Key' => 'inbound-test-key'])
         ->assertOk()->assertJsonPath('accepted', 1);
+    config()->set('edna.auth_header', 'Authorization');
+    $this->postJson('/api/webhooks/edna/incoming', [ednaMessage(['id' => 102])], ['Authorization' => 'inbound-test-key'])
+        ->assertOk()->assertJsonPath('accepted', 1);
+    $this->postJson('/api/webhooks/edna/incoming', [ednaMessage(['id' => 103])], ['Authorization' => 'Bearer inbound-test-key'])
+        ->assertUnauthorized();
 });
 
 test('callback deduplicates in the database and stores encrypted minimal data', function () {
@@ -99,6 +104,33 @@ test('queue failure rolls back the inbox so Edna can retry the complete batch', 
     Queue::shouldReceive('connection')->with('edna')->once()->andThrow(new RuntimeException('private failure'));
     sendEdna([ednaMessage()])->assertStatus(503)->assertExactJson(['code' => 'temporarily_unavailable']);
     expect(DB::table('edna_incoming_events')->count())->toBe(0);
+});
+
+test('single FLOW callback preserves reply references through encrypted inbox and Kestra forwarding', function () {
+    $message = ednaMessage(['messageContent' => ['type' => 'FLOW', 'text' => json_encode([
+        'provincia' => 'cordoba', 'situacion_cordoba' => 'jubilado_pensionado', 'flow_token' => 'test-token',
+    ])], 'replyOutMessageId' => 98765, 'replyOutMessageExternalRequestId' => 'flow-test-request',
+        'userInfo' => ['displayName' => 'Private name']]);
+    sendEdna($message)->assertOk()->assertJsonPath('accepted', 1);
+    $event = DB::table('edna_incoming_events')->first();
+    expect($event->payload)->not->toContain('flow-test-request', 'Private name');
+    Http::fake(['kestra.example.test/*' => Http::response(['ok' => true, 'event_key' => '2423:101', 'kind' => 'flow_response'])]);
+    (new ReceiveEdnaInKestra($event->id))->handle();
+    Http::assertSent(fn ($request) => $request['replyOutMessageId'] === '98765'
+        && $request['replyOutMessageExternalRequestId'] === 'flow-test-request'
+        && ! isset($request['userInfo']));
+    expect(DB::table('edna_incoming_events')->first()->outcome)->toBe('flow_response');
+});
+
+test('malformed reply references are rejected while absent or null references stay compatible', function () {
+    sendEdna([
+        ednaMessage(['id' => 101, 'replyOutMessageId' => true]),
+        ednaMessage(['id' => 102, 'replyOutMessageExternalRequestId' => []]),
+        ednaMessage(['id' => 103, 'replyOutMessageExternalRequestId' => str_repeat('x', 257)]),
+        ednaMessage(['id' => 104, 'replyOutMessageId' => null, 'replyOutMessageExternalRequestId' => null]),
+        ednaMessage(['id' => 105]),
+    ])->assertOk()->assertJson(['accepted' => 2, 'invalid' => 3]);
+    expect(DB::table('jobs')->count())->toBe(2);
 });
 
 test('worker records matching Kestra acknowledgement and skips duplicate jobs', function () {

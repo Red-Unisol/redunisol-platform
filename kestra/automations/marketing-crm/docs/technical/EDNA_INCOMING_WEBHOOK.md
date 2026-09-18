@@ -1,7 +1,6 @@
 # Receptor entrante de Edna
 
-Implementación del receptor para la tarea Bitrix 23055, pendiente de despliegue y
-prueba con un callback real. La entrada pública es Laravel en
+Implementación del receptor para la tarea Bitrix 23055. La entrada pública es Laravel en
 `/api/webhooks/edna/incoming`. El worker envía el evento al flow
 `edna_incoming_webhook` de este dominio. No envía WhatsApp, no crea leads ni
 reasigna conversaciones.
@@ -21,7 +20,10 @@ reasigna conversaciones.
    cuentan como `invalid`. Estos elementos se descartan sin reintentar. La respuesta
    200 incluye `accepted`, `duplicates`, `ignored`, `invalid`; observar esos contadores
    durante la prueba real para detectar diferencias de contrato.
-5. Guarda el envelope mínimo cifrado con `APP_KEY` en `edna_incoming_events` y el
+5. Conserva también `replyOutMessageId` y `replyOutMessageExternalRequestId` cuando
+   vienen: ID numérico de hasta 64 dígitos y requestId de hasta 256 bytes. Son
+   referencias para correlacionar con el envío, no una validación del Flow por sí
+   solas. Guarda el envelope mínimo cifrado con `APP_KEY` en `edna_incoming_events` y el
    trabajo en `jobs`, en una misma transacción. La restricción única
    `(subject_id, message_id)` evita reenqueues al repetir el callback. Si falla
    base de datos o cola, revierte el lote y devuelve 503 para que Edna reintente.
@@ -48,8 +50,10 @@ acción de negocio deberá implementar idempotencia persistente propia.
   provincia/segmento y `flow_token` si vino. Los mensajes ajenos o inválidos
   producen `null`. El recibo HTTP sólo tiene `ok`, `event_key`, `kind`, `reason`.
 - El Flow previsto es `1850162769693486`. El formato de respuesta no acredita ese
-  ID: el artefacto marca `flow_id_verified=false`. Antes de enviar o escribir CRM
-  hace falta correlacionar `flow_token` con el Flow enviado al mismo destinatario.
+  ID: el artefacto marca `flow_id_verified=false`. Conserva `reply_out_message_id`
+  y `reply_out_message_external_request_id` si llegaron. Antes de escribir CRM o
+  responder automáticamente hay que validar esas referencias o `flow_token`
+  contra un envío persistido del mismo canal, destinatario y Flow.
 
 ## Configuración y activación posterior
 
@@ -61,18 +65,48 @@ saltos y mantenerlas en el circuito local/encriptado de credenciales del reposit
 |---|---|---|
 | Web | `EDNA_INCOMING_ENABLED` | `false` por defecto; habilitar después de preparar Kestra. |
 | Web | `EDNA_INCOMING_WEBHOOK_KEY` | Clave que Edna envía al autenticar callbacks. |
-| Web | `EDNA_INCOMING_AUTH_HEADER` | Nombre del header, provisionalmente `X-API-KEY`. |
+| Web | `EDNA_INCOMING_AUTH_HEADER` | `Authorization`, observado en la prueba real de Ventas; sin prefijo. |
 | Web | `EDNA_INCOMING_SUBJECT_ID` | Canal autorizado; Ventas observado: `2423`. |
 | Web | `KESTRA_EDNA_INCOMING_WEBHOOK_URL` | URL HTTPS completa del trigger interno, con su clave. |
 | Kestra | `ENV_EDNA_INCOMING_SUBJECT_ID` | Mismo canal autorizado que en web. |
 | Kestra | `SECRET_EDNA_INCOMING_WEBHOOK_KEY` | Clave independiente del trigger, en base64 según la convención Kestra. |
 
-La documentación pública consultada no identifica inequívocamente el header de
-autenticación entrante. **Confirmarlo con Edna mediante prueba controlada antes
-de activar**; el default es configurable, no una afirmación de compatibilidad
-ya verificada. La clave entrante corresponde a “Authenticate webhooks from edna
-Pulse”, no a “Your API key”. Si Edna envía un prefijo en el valor, configurar el
-valor completo esperado, sin exponerlo en logs.
+El callback real de Ventas del 18/09/2026 confirmó `Authorization` sin prefijo
+`Bearer` ni `Basic`; la observación sólo conserva nombre y formato del header.
+La clave entrante corresponde a “edna Pulse request authentication” del registro
+de webhook, no a “Your API key” usada para llamar a la API de Edna. Configurar el
+valor completo esperado sin decodificarlo ni exponerlo en logs. El receptor debe
+confirmar la coincidencia del valor en el primer callback real tras el corte.
+
+### Evidencia y corte a producción
+
+La prueba del 18/09/2026 verificó en la sonda temporal:
+
+- TEXT del canal Ventas y FLOW con `provincia=cordoba` y
+  `situacion_cordoba=jubilado_pensionado`; el parser local produjo `flow_response`.
+- La respuesta FLOW incluyó `replyOutMessageExternalRequestId` coincidente con el
+  requestId usado para enviar el Flow previsto al mismo destinatario.
+- Después de activar autenticación, el mismo marker llegó a Bitrix a las
+  10:54:15 ART y a la sonda con `Authorization` a las 10:54:16 ART. Se verificó por
+  REST en el chat abierto 104293, sesión 293957. No fue necesario modificar Bitrix.
+
+Estos resultados no demuestran todavía la entrega del inbox definitivo a Kestra.
+El cambio de activación configura los entornos cifrados de web prod y Kestra, con
+claves distintas para ambos saltos. Al mergear se despliegan web, infraestructura
+Kestra y los namespace files del dominio por sus workflows existentes; comprobar
+que los tres runtimes aplicaron sus cambios antes de sustituir la URL temporal.
+El receptor usa el namespace `redunisol.prod.marketing-crm` y canal `2423`.
+
+El corte consiste en reemplazar **sólo Additional URL** del webhook entrante Ventas
+por `https://redunisol.com.ar/api/webhooks/edna/incoming`, conservando URL principal
+de Bitrix, autenticación activada y su clave. Antes, probar HEAD 200, POST sin clave
+401 y una entrega sintética hasta Kestra con deduplicación. Después del corte,
+probar un TEXT y un FLOW reales hasta estado `delivered`, y verificar continuidad
+en Bitrix. Retirar y detener la sonda cuando se confirme el circuito definitivo.
+
+La activación sólo recibe y clasifica: todavía no envía formularios automáticamente,
+crea leads ni distribuye chats. Esa etapa necesita el registro persistente de envíos,
+su correlación y las reglas de destino antes de habilitar efectos comerciales.
 
 Orden de activación:
 

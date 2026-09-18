@@ -58,6 +58,17 @@ def classify(event, allowed_subject):
         "event_key": receipt["event_key"], "subject_id": subject, "message_id": message,
         "subscriber_identifier": phone, "received_at": received_at,
     }
+    reply_id = event.get("replyOutMessageId")
+    reply_request = event.get("replyOutMessageExternalRequestId")
+    if reply_id is not None:
+        reply_id = identifier(reply_id)
+        if reply_id is None:
+            return {**receipt, "reason": "invalid_reply_reference"}, None
+        normalized["reply_out_message_id"] = reply_id
+    if reply_request is not None:
+        if not isinstance(reply_request, str) or not reply_request or len(reply_request.encode("utf-8")) > 256:
+            return {**receipt, "reason": "invalid_reply_reference"}, None
+        normalized["reply_out_message_external_request_id"] = reply_request
     text = content.get("text")
     if not isinstance(text, str) or len(text.encode("utf-8")) > 32768:
         return {**receipt, "reason": "invalid_text"}, None

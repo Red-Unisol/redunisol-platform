@@ -75,6 +75,29 @@ class EdnaReceiverTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             receiver.classify(event(data={}), '')
 
+    def test_flow_preserves_reply_references_without_claiming_verified_identity(self):
+        incoming = event(data={'provincia': 'cordoba', 'situacion_cordoba': 'jubilado_pensionado'})
+        incoming.update(replyOutMessageId=98765, replyOutMessageExternalRequestId='flow-test-request')
+        receipt, parsed = receiver.classify(incoming, '2423')
+        self.assertEqual(receipt['kind'], 'flow_response')
+        self.assertEqual(parsed['reply_out_message_id'], '98765')
+        self.assertEqual(parsed['reply_out_message_external_request_id'], 'flow-test-request')
+        self.assertFalse(parsed['flow_id_verified'])
+        self.assertNotIn('reply_out_message_id', receipt)
+
+    def test_malformed_reply_references_are_invalid_but_null_remains_optional(self):
+        for field, value in [('replyOutMessageId', True), ('replyOutMessageId', {}),
+                             ('replyOutMessageExternalRequestId', []),
+                             ('replyOutMessageExternalRequestId', 'x' * 257)]:
+            incoming = event(data={'provincia': 'otra'})
+            incoming[field] = value
+            receipt, parsed = receiver.classify(incoming, '2423')
+            self.assertEqual(receipt['reason'], 'invalid_reply_reference')
+            self.assertIsNone(parsed)
+        incoming = event(data={'provincia': 'otra'})
+        incoming.update(replyOutMessageId=None, replyOutMessageExternalRequestId=None)
+        self.assertEqual(receiver.classify(incoming, '2423')[0]['kind'], 'flow_response')
+
 
 if __name__ == '__main__':
     unittest.main()
