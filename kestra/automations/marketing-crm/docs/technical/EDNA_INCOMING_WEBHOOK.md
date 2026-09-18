@@ -287,7 +287,7 @@ PostgreSQL/cola existentes para la atomicidad, sin añadir otro almacén.
   confirmarla como nueva respuesta válida. Las respuestas inválidas no consumen el ciclo.
 - El contexto verificado y la confirmación de Kestra se guardan antes de completar
   el registro. No se completa si una versión anterior de Kestra omite el acuse
-  `flow_id_verified`. Las acciones de landing/CRM futuras deberán usar esta compuerta.
+  `flow_id_verified`. Las acciones de landing/CRM usan esta compuerta antes de reservar sus trabajos.
 
 El estado `confirmed` acredita el mensaje saliente observado (SENT o posterior);
 `completed` acredita una respuesta correlacionada, **no** una solicitud de crédito
@@ -336,7 +336,106 @@ correcta marcada verificada, respuesta ajena rechazada para efectos comerciales,
 y continuidad en Bitrix. Las pruebas locales simulan además timeout posterior al
 POST, workers intercalados, caída antes de guardar el acuse, historial ambiguo,
 respuesta anterior al historial, reversión transaccional, credenciales/configuración
-incorrectas y expiración. La prueba real de envío automático queda pendiente del despliegue.
+incorrectas y expiración. El piloto del 2026-09-18 verificó entrada automática, respuesta CABA/PFA correlacionada y continuidad del mensaje en Bitrix. La validación real de landing y campos CRM requiere desplegar la siguiente etapa.
 
 Referencias de contrato: [envío por cascada](https://docs-pulse.edna.io/docs/api/messages/sending/)
 y [historial de mensajes](https://docs-pulse.edna.io/docs/api/messages/history/).
+
+
+## Landing y clasificación CRM (tarea 23055)
+
+`EDNA_ROUTER_RESULTS_ENABLED` habilita las dos acciones posteriores a la respuesta
+verificada. Prod conserva **sólo el teléfono del piloto**; dev y los ejemplos quedan
+apagados. `EDNA_BITRIX_WEBHOOK_URL` reutiliza el acceso CRM canónico, cifrado y
+expuesto por Compose a PHP y al worker. No se modifican los callbacks de Edna.
+
+La transacción que completa el Flow reserva un único `edna_router_results` por
+Flow/respuesta y encola dos trabajos independientes. No se procesan retroactivamente
+respuestas anteriores al despliegue:
+
+- `SendEdnaLanding` revalida piloto, canal, cascada y antigüedad de respuesta menor
+  de 23 horas. Envía TEXT y confirma `sending` antes del POST. Timeout, 5xx o acuse
+  ambiguo quedan `unknown`; un reintento sólo consulta historial, nunca reenvía.
+- `ReconcileEdnaLanding` exige un único saliente con el mismo requestId, destinatario,
+  canal, cascada y texto exacto, con estado SENT/DELIVERED/READ.
+- `SyncEdnaRouterCrm` prioriza un contacto único por teléfono; si no existe, admite
+  un lead único y activo. Nunca crea contactos, leads ni negocios. Coincidencias
+  múltiples o teléfono cambiado quedan `review`. Ausencia de registro se reintenta
+  para tolerar el retraso del callback primario de Bitrix; al agotarse queda `failed`.
+- El destino CRM se fija durablemente antes de actualizarlo. Los ciclos del mismo
+  número se serializan y un WA_TIMESTAMP posterior deja el resultado `superseded`.
+  La comparación previa y la relectura posterior permiten resolver un timeout de
+  actualización sin repetirla. Un fallo del CRM no bloquea ni reenvía la landing.
+
+### Destinos y tracking
+
+El mapa versionado está en `app/Services/EdnaLandingRoute.php` dentro de la app web.
+Contiene los 15 pares válidos de provincia/situación de la tarea:
+
+- Córdoba: Jubilados, Empleados Públicos, Policía, Docentes, Salud y UNC tienen sus
+  landings específicas; `otra` va a Home.
+- Catamarca: empleado público, policía, docente y salud comparten la landing
+  `/prestamos-para-empleados-publicos/empleados-publicos-catamarca`; `otra` va a Home.
+- CABA/PFA: `/prestamos-para-policias/policia-federal`; `otra` va a Home.
+- Otra provincia: Home.
+
+Las nueve URLs base se verificaron con HTTP 200 el 2026-09-18, conservando UTMs.
+Todos los enlaces llevan `utm_source=whatsapp`, `utm_medium=messaging`,
+`utm_campaign=web_whatsapp_router` y `utm_content=<segmento>`.
+Los segmentos coinciden con los ejemplos de Marketing (`cordoba_jubilado`,
+`cordoba_docente`, `cordoba_policia`, `catamarca_policia`, `caba_pfa`,
+`otra_provincia`). No se incluyen teléfono, Flow token, IDs del CRM ni secretos.
+Datos desconocidos se rechazan; no se convierten silenciosamente en “otra”.
+
+### Campos Bitrix
+
+El job escribe únicamente estos siete campos (prefijo API `UF_CRM_`):
+
+| Campo | Tipo / valor |
+|---|---|
+| WA_ASSISTED | string: SI |
+| WA_ENTRY | string: website |
+| WA_FLOW | string: web_whatsapp_router |
+| WA_PROVINCE | string: provincia del Flow |
+| WA_SEGMENT | string: segmento normalizado del mapa |
+| WA_FLOW_ID | string: 1850162769693486 |
+| WA_TIMESTAMP | datetime: recepción de la respuesta en UTC |
+
+No modifica SOURCE_ID, UTMs anteriores, nombre, teléfono, responsable o estado.
+El tránsito WhatsApp→landing queda separado del origen original. Si ese origen no
+está registrado, no se infiere ni se inventa. Esta etapa no cambia el procesamiento
+de una futura solicitud enviada desde el formulario web.
+
+`php artisan edna:crm-fields` comprueba el esquema; sale con error si faltan campos.
+`php artisan edna:crm-fields --apply` crea sólo faltantes y vuelve a comprobar;
+requiere administración CRM y rechaza tipos preexistentes incompatibles. Los jobs
+no crean campos al recibir respuestas. El 2026-09-18 se ejecutó el comando desde
+el entorno local con el acceso canónico en memoria: los siete campos quedaron
+creados y verificados en contactos y leads, sin cambiar valores de registros.
+
+### Operación
+
+- Migración aditiva `2026_09_18_180000_create_edna_router_results`, sin backfill.
+- `php artisan edna:results status [id]`: rutas, estados e IDs sin teléfonos ni claves.
+  `state=confirmed` acredita el enlace saliente observado; `crm_state=synced`
+  acredita la relectura de los siete campos.
+- `php artisan edna:results reconcile <id>`: consulta historial de un envío incierto.
+  `php artisan edna:results crm <id>`: reintenta sólo CRM. No reenvían WhatsApp.
+- `php artisan edna:results prepare <flow_send_id>`: acción explícita para retomar
+  una respuesta de piloto ya completada, verificada, conservada y de menos de 23 h.
+  Requiere una lista de destinatarios de prueba no vacía y pertenecer a ella.
+  Reserva landing/CRM una sola vez; no reenvía el Flow ni modifica su cooldown.
+  El piloto anterior puede comprobarse así tras el despliegue sin esperar 24 h.
+- No resetear `sending`/`unknown` a `pending`. La incertidumbre persistente requiere
+  diagnóstico, no reenvío automático.
+- `edna:prune` conserva el destinatario cifrado mientras landing o CRM requieran
+  recuperación. Conserva IDs/estados para deduplicar al limpiar payloads.
+- Para apagar nuevas acciones, cambiar `EDNA_ROUTER_RESULTS_ENABLED` por Git.
+  Receptor y clasificación de respuestas pueden continuar.
+- Antes de ampliar a clientes: validar las cinco ramas de cierre de la tarea con
+  enlaces y campos reales, continuidad de Bitrix y resolución de casos `review`.
+
+Contratos consultados: [TEXT en Edna](https://docs-pulse.edna.io/docs/api/messages/message-example/),
+[búsqueda por teléfono](https://apidocs.bitrix24.com/api-reference/crm/duplicates/crm-duplicate-find-by-comm.html),
+[campos de contactos](https://apidocs.bitrix24.com/api-reference/crm/contacts/userfield/crm-contact-userfield-add.html)
+y [actualización de contactos](https://apidocs.bitrix24.com/api-reference/crm/contacts/crm-contact-update.html).
