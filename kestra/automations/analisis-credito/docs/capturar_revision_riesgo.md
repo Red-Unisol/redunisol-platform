@@ -114,6 +114,62 @@ la solicitud; el manifiesto inicial conserva sus errores. Para el dataset de
 entrada, revisar su propio `complete`, origen y ventana de lectura, nunca
 atribuirle la completitud de `latest.json`.
 
+## Cuándo la corrida se reporta como fallida
+
+Una edición durante la captura puede dejar una observación parcial aunque no
+haya fallado la descarga. El sondeo siguiente vuelve a intentarlo, sin asumir
+que podrá reconstruir los bytes de la observación anterior. El manifiesto
+registra la clasificación en `partial_reason` y el resumen separa los casos:
+
+| `partial_reason` | Evidencia | Resumen | Corrida |
+| --- | --- | --- | --- |
+| `changed_during_capture` | cambios comprobados que explican todas las discrepancias; sin errores técnicos | `partial_changed` | `ok` mientras no esté atascada; se reintenta |
+| `fetch_or_storage_error` | red, HTTP, base64, límites, almacenamiento, interrupción o discrepancia sin explicación | `partial_error` | falla desde esa corrida |
+
+Los códigos de error originales se conservan, pero no bastan por sí solos para
+atribuir el problema a una edición:
+
+- `changed_during_capture` se emite al comprobar diferencias entre lecturas.
+- `attachment_size_changed` sólo se tolera si la segunda lectura del **mismo
+  adjunto** muestra un tamaño distinto que coincide con los bytes descargados.
+- Los desajustes de conteo de adjuntos o novedades sólo se toleran si cambia el
+  conteo relevante o la cantidad de elementos, las cantidades cruzadas explican
+  la discrepancia y la segunda lectura termina con conteo/lista coincidentes.
+- Metadatos estables con bytes o elementos faltantes se reportan como error.
+  Cambiar el nombre, el estado u otro adjunto no explica esa discrepancia. Un
+  error técnico siempre prevalece aunque también haya ediciones comprobadas.
+
+`ok=false` exige `partial_error`, `retry_fetch_failures` o `stuck`, siendo
+`stuck` los pendientes con **al menos 3.600 segundos sin una captura completa**
+(`STUCK_PENDING_SECONDS`). Se calcula al finalizar cada corrida, incluso si
+un pendiente ausente de Revisión Riesgo todavía espera su próximo reintento.
+Un escaneo fallido, la falta de disco o de configuración siguen fallando de
+inmediato, sin esperar esa hora.
+
+`pending.json` guarda `first_pending_at` como timestamp Unix en segundos. Se
+reserva al iniciar la primera captura pendiente para conservarlo también ante
+una interrupción. Los sondeos, los errores y la salida de Revisión Riesgo no lo
+reinician: sólo una captura completa elimina el pendiente. Una nueva captura
+parcial posterior inicia su propio reloj. La fecha persiste entre ejecuciones.
+
+Mientras la solicitud sigue en Revisión Riesgo se captura en cada sondeo,
+sin aplicar el backoff: cinco capturas parciales en cuatro minutos **no** son
+un atasco. Para solicitudes que salieron del estado, `attempts` sigue regulando
+la espera creciente de `next_retry`; ya no determina cuándo alertar por atasco.
+
+Al actualizar, los pendientes antiguos sin `first_pending_at` reciben la hora
+del primer sondeo con esta versión, una sola vez. No se inventa una antigüedad
+a partir de `attempts`. Por eso disponen de una nueva ventana de una hora para
+la clasificación de atasco; los errores técnicos nuevos siguen fallando de
+inmediato. No se requiere editar el volumen ni migrar los archivos históricos.
+
+Esto cambia únicamente qué se reporta como falla del flow y, con ello, las
+alertas de `alerta_flow_fallos`. **No cambia lo que se archiva:** las
+observaciones parciales se siguen marcando `complete=false`, con sus errores y
+su pendiente, y no se presentan como capturas completas. Una edición concurrente
+repetida que nunca se resuelve termina reportada por la vía de `stuck`, en vez
+de generar una alerta por minuto desde el primer intento.
+
 ## Límites operativos
 
 - Un proceso a la vez, también mediante lock local, y tres solicitudes en
