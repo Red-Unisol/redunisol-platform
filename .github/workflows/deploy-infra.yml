@@ -82,6 +82,8 @@ jobs:
             --env kestra/platform/infra/kestra-runtime.env.enc \
             --allow-missing KESTRA_CONFIG_SHA256 \
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing ENV_EDNA_INCOMING_SUBJECT_ID \
+            --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
             --allow-missing SECRET_SMTP_PASSWORD
           printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/kestra-runtime.key"
           python kestra/tools/manage_encrypted_env.py decrypt \
@@ -95,6 +97,8 @@ jobs:
             --env kestra/platform/infra/kestra-runtime.env \
             --allow-missing KESTRA_CONFIG_SHA256 \
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing ENV_EDNA_INCOMING_SUBJECT_ID \
+            --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
             --allow-missing SECRET_SMTP_PASSWORD \
             --validate-values
 

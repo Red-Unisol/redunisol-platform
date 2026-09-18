@@ -39,6 +39,8 @@ jobs:
             --env kestra/platform/infra/kestra-runtime.env.enc \
             --allow-missing KESTRA_CONFIG_SHA256 \
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing ENV_EDNA_INCOMING_SUBJECT_ID \
+            --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
             --allow-missing SECRET_SMTP_PASSWORD
 
       - name: Run deploy tooling tests
@@ -94,3 +96,26 @@ jobs:
 
       - name: Build CredixSA worker image
         run: docker build kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2 -t analisis-credito-credixsa:test
+
+  edna-receiver:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: http://localhost
+    defaults:
+      run:
+        working-directory: web/redunisol-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite3, pdo_sqlite, intl, zip, bcmath
+          coverage: none
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-scripts
+      - name: Discover packages
+        run: |
+          printf 'APP_URL=http://localhost\n' > .env
+          php artisan package:discover
+      - name: Test Edna HTTP inbox and delivery worker
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php
