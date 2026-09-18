@@ -65,18 +65,22 @@ saltos y mantenerlas en el circuito local/encriptado de credenciales del reposit
 |---|---|---|
 | Web | `EDNA_INCOMING_ENABLED` | `false` por defecto; habilitar después de preparar Kestra. |
 | Web | `EDNA_INCOMING_WEBHOOK_KEY` | Clave que Edna envía al autenticar callbacks. |
-| Web | `EDNA_INCOMING_AUTH_HEADER` | `Authorization`, observado en la prueba real de Ventas; sin prefijo. |
+| Web | `EDNA_INCOMING_AUTH_HEADER` | `Authorization`; Edna envía `Token <clave>`. |
 | Web | `EDNA_INCOMING_SUBJECT_ID` | Canal autorizado; Ventas observado: `2423`. |
 | Web | `KESTRA_EDNA_INCOMING_WEBHOOK_URL` | URL HTTPS completa del trigger interno, con su clave. |
 | Kestra | `ENV_EDNA_INCOMING_SUBJECT_ID` | Mismo canal autorizado que en web. |
 | Kestra | `SECRET_EDNA_INCOMING_WEBHOOK_KEY` | Clave independiente del trigger, en base64 según la convención Kestra. |
 
-El callback real de Ventas del 18/09/2026 confirmó `Authorization` sin prefijo
-`Bearer` ni `Basic`; la observación sólo conserva nombre y formato del header.
+El callback real de Ventas del 18/09/2026 confirmó `Authorization: Token <clave>`.
+La sonda original sólo distinguía `Bearer` y `Basic`: su etiqueta `raw` no probaba
+la ausencia de otros prefijos. La inspección posterior confirmó que el sufijo
+coincide exactamente con la clave configurada, sin guardar ni mostrar su valor.
+El receptor reconoce `Token` en Authorization y compara la clave en tiempo constante;
+conserva compatibilidad con claves sin prefijo y headers personalizados. La sonda
+ahora distingue también el formato `token` sin almacenar la credencial.
 La clave entrante corresponde a “edna Pulse request authentication” del registro
-de webhook, no a “Your API key” usada para llamar a la API de Edna. Configurar el
-valor completo esperado sin decodificarlo ni exponerlo en logs. El receptor debe
-confirmar la coincidencia del valor en el primer callback real tras el corte.
+de webhook, no a “Your API key” usada para llamar a la API de Edna. Configurar sólo
+la clave, sin anteponer `Token`, sin decodificarla ni exponerla en logs.
 
 ### Evidencia y corte a producción
 
@@ -158,7 +162,7 @@ la autenticación actual del registro: cambiarla puede afectar también a Bitrix
 Por defecto, sólo un callback TEXT con ese marker y subjectId actualiza la
 observación. Otros eventos con transporte válido se confirman sin guardar datos.
 El resultado contiene fecha, nombres de headers y
-formatos enumerados (`raw`, `bearer`, `basic`, `empty`, `multiple`). No guarda valores,
+formatos enumerados (`raw`, `bearer`, `basic`, `token`, `empty`, `multiple`). No guarda valores,
 hashes de credenciales, IP, identificadores de clientes ni cuerpo del mensaje; no
 encola trabajos ni llama a Kestra. La observación vence junto con la sonda. El cache
 puede conservar físicamente entradas expiradas hasta su limpieza habitual, pero

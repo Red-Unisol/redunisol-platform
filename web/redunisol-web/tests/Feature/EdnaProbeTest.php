@@ -198,3 +198,11 @@ test('database cache persists encrypted bodies and supports locked capture and e
     expect(DB::table('cache')->where('key', 'like', '%'.$probe['id'])->count())->toBe(0)
         ->and(DB::table('cache_locks')->where('key', 'like', '%'.$probe['id'])->count())->toBe(0);
 });
+
+test('probe identifies the Token scheme without saving the credential', function () {
+    $probe = startEdnaProbe();
+    $this->postJson($probe['path'], ednaProbeEvent($probe), ['Authorization' => 'Token sensitive-secret'])->assertOk();
+    $result = Cache::get('edna-probe-result:'.$probe['id']);
+    expect($result['headers']['authorization'])->toBe('token')
+        ->and(json_encode($result))->not->toContain('sensitive-secret');
+});

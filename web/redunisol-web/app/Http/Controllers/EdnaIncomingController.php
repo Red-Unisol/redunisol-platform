@@ -27,7 +27,14 @@ class EdnaIncomingController extends Controller
         if ($request->isMethod('HEAD')) {
             return response('', 200);
         }
-        if (! hash_equals($key, (string) $request->header((string) config('edna.auth_header')))) {
+        $header = (string) config('edna.auth_header');
+        $credential = (string) $request->header($header);
+        // Live Edna callbacks use Authorization: Token <key>.
+        // Keep raw credentials compatible, including custom header configurations.
+        if (strcasecmp($header, 'Authorization') === 0 && strncasecmp($credential, 'Token ', 6) === 0) {
+            $credential = substr($credential, 6);
+        }
+        if (! hash_equals($key, $credential)) {
             return response()->json(['code' => 'unauthorized'], 401);
         }
         if (! $request->isJson()) {
