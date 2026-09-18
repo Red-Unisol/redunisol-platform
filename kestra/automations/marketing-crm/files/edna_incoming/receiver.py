@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 
 ENTRY_PHRASE = "vengo del sitio web de red unisol"
+ROUTER_FLOW_ID = "1850162769693486"
 SEGMENTS = {
     "cordoba": {
         "jubilado_pensionado", "empleado_publico", "policia_cordoba",
@@ -25,10 +26,10 @@ def identifier(value):
 def classify(event, allowed_subject):
     """Return a receipt and, only for relevant messages, a normalized artifact.
 
-    FLOW payload shape is not proof of a specific Meta flow ID. Correlation with
-    a sent Flow must be added before any future CRM writes or replies.
+    FLOW shape alone is not proof of identity. The authenticated web bridge adds
+    routerContext only after validating its durable send ledger and Edna history.
     """
-    receipt = {"ok": True, "event_key": "", "kind": "invalid", "reason": "invalid_envelope"}
+    receipt = {"ok": True, "event_key": "", "kind": "invalid", "reason": "invalid_envelope", "flow_id_verified": False}
     if not isinstance(event, dict):
         return receipt, None
     subject = identifier(event.get("subjectId"))
@@ -95,7 +96,19 @@ def classify(event, allowed_subject):
     flow_token = data.get("flow_token")
     if flow_token is not None and (not isinstance(flow_token, str) or len(flow_token) > 512):
         return {**receipt, "reason": "invalid_flow_token"}, None
-    return {**receipt, "kind": "flow_response", "reason": "router_shape_matched"}, {
+    context = event.get("routerContext")
+    verified = False
+    if context is not None:
+        if (not isinstance(context, dict) or context.get("verified") is not True
+                or context.get("flow_id") != ROUTER_FLOW_ID
+                or not isinstance(context.get("send_id"), int) or isinstance(context["send_id"], bool)
+                or context["send_id"] <= 0 or not reply_request or not reply_id
+                or context.get("request_id") != reply_request
+                or context.get("outgoing_message_id") != reply_id):
+            return {**receipt, "reason": "invalid_router_context"}, None
+        verified = True
+        normalized.update(flow_id=ROUTER_FLOW_ID, flow_send_id=context["send_id"], flow_request_id=reply_request)
+    return {**receipt, "kind": "flow_response", "reason": "verified_router_response" if verified else "router_shape_matched", "flow_id_verified": verified}, {
         **normalized, "kind": "flow_response", "province": province, "segment": segment,
-        "flow_token": flow_token, "flow_id_verified": False,
+        "flow_token": flow_token, "flow_id_verified": verified,
     }

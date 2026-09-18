@@ -2,8 +2,9 @@
 
 Implementación del receptor para la tarea Bitrix 23055. La entrada pública es Laravel en
 `/api/webhooks/edna/incoming`. El worker envía el evento al flow
-`edna_incoming_webhook` de este dominio. No envía WhatsApp, no crea leads ni
-reasigna conversaciones.
+`edna_incoming_webhook` de este dominio. Kestra clasifica; el bridge Laravel
+registra y envía el Flow cuando se habilita el router. No crea leads, envía
+landings ni reasigna conversaciones en esta etapa.
 
 ## Recorrido y contrato
 
@@ -50,10 +51,12 @@ acción de negocio deberá implementar idempotencia persistente propia.
   provincia/segmento y `flow_token` si vino. Los mensajes ajenos o inválidos
   producen `null`. El recibo HTTP sólo tiene `ok`, `event_key`, `kind`, `reason`.
 - El Flow previsto es `1850162769693486`. El formato de respuesta no acredita ese
-  ID: el artefacto marca `flow_id_verified=false`. Conserva `reply_out_message_id`
-  y `reply_out_message_external_request_id` si llegaron. Antes de escribir CRM o
-  responder automáticamente hay que validar esas referencias o `flow_token`
-  contra un envío persistido del mismo canal, destinatario y Flow.
+  ID: sin correlación el artefacto marca `flow_id_verified=false`. El bridge valida
+  canal, destinatario, requestId, ID de mensaje saliente y Flow contra el registro
+  persistente y el historial de Edna. Sólo entonces agrega `routerContext`, y Kestra
+  confirma `flow_id_verified=true` en el recibo y el artefacto. El intake público
+  descarta cualquier contexto aportado por el cliente. Una respuesta no correlacionada
+  puede clasificarse, pero no habilita acciones comerciales.
 
 ## Configuración y activación posterior
 
@@ -94,7 +97,10 @@ La prueba del 18/09/2026 verificó en la sonda temporal:
   10:54:15 ART y a la sonda con `Authorization` a las 10:54:16 ART. Se verificó por
   REST en el chat abierto 104293, sesión 293957. No fue necesario modificar Bitrix.
 
-Estos resultados no demuestran todavía la entrega del inbox definitivo a Kestra.
+El 18/09/2026 a las 11:33:52 ART quedó confirmado un FLOW real de Catamarca /
+empleado público en el inbox definitivo y Kestra. A las 11:34 también se verificó
+un TEXT en ambos destinos, incluido Bitrix. Se retiró la sonda. Esos envíos fueron
+pruebas operadas por API, no prueba del nuevo disparador automático.
 El cambio de activación configura los entornos cifrados de web prod y Kestra, con
 claves distintas para ambos saltos. Al mergear se despliegan web, infraestructura
 Kestra y los namespace files del dominio por sus workflows existentes; comprobar
@@ -108,9 +114,9 @@ de Bitrix, autenticación activada y su clave. Antes, probar HEAD 200, POST sin 
 probar un TEXT y un FLOW reales hasta estado `delivered`, y verificar continuidad
 en Bitrix. Retirar y detener la sonda cuando se confirme el circuito definitivo.
 
-La activación sólo recibe y clasifica: todavía no envía formularios automáticamente,
-crea leads ni distribuye chats. Esa etapa necesita el registro persistente de envíos,
-su correlación y las reglas de destino antes de habilitar efectos comerciales.
+La recepción puede permanecer activa con `EDNA_ROUTER_ENABLED=false`. La nueva
+etapa de envío y correlación se activa por separado, como se describe abajo.
+El envío de la landing y la escritura de datos WA en Bitrix siguen pendientes.
 
 Orden de activación:
 
@@ -246,3 +252,91 @@ migración con mensajes pendientes. El callback original de Bitrix sigue indepen
 - [Edna: configuración webhook](https://docs-pulse.edna.io/docs/integrations/api/webhook-settings/)
 - [Kestra: webhook con wait/returnOutputs](https://kestra.io/plugins/core/trigger/io.kestra.plugin.core.trigger.webhook)
 - [Laravel: colas y trabajos fallidos](https://laravel.com/framework/docs/12.x/queues)
+
+
+## Envío automático y registro persistente
+
+La detección de la frase sigue en Kestra. Después de su confirmación `router_entry`,
+Laravel reserva el envío y encola `SendEdnaFlow` en la misma transacción que marca
+el inbox entregado. Esta división mantiene la clasificación en Kestra y aprovecha
+PostgreSQL/cola existentes para la atomicidad, sin añadir otro almacén.
+
+- `edna_router_contacts` serializa por canal, Flow y destinatario mediante un HMAC
+  de su identificador. El destinatario se guarda cifrado en `edna_flow_sends`.
+- Un solo envío por persona/canal/Flow en una ventana móvil de 24 horas. Repetir la
+  frase, incluso tras completar el formulario o un rechazo, no genera otro envío
+  dentro de esa ventana. Un mensaje nuevo después de 24 horas inicia otro ciclo.
+- Sólo se reservan entradas posteriores al corte configurado, con teléfono válido,
+  antigüedad menor de 23 horas y no más de cinco minutos en el futuro. La demora de
+  cola se vuelve a comprobar antes de enviar. Los identificadores BSUID no se
+  convierten en teléfonos ni disparan envíos en esta versión.
+- La cascada debe estar activa y contener únicamente el canal configurado, sin
+  etapas adicionales. Se verifica por API antes de cada envío.
+- El worker confirma `sending` en base **antes** del único POST a `cascade/schedule`.
+  Un segundo worker, un crash o un reintento nunca repite ese POST para el mismo
+  registro. Un timeout/5xx/acuse ambiguo queda `unknown`, no se presume un fracaso.
+- Se consulta `messages/history`, buscando el comentario igual al requestId y
+  comprobando destinatario, canal, cascada, dirección OUT, tipo FLOW y Flow ID.
+  Sólo un resultado único con estado SENT/DELIVERED/READ pasa a `confirmed`.
+  La consulta está acotada al intervalo del intento y 1000 registros; resultados
+  ambiguos, incompletos o todavía no visibles se reintentan sin enviar mensajes.
+- La respuesta debe traer ambos identificadores de reply, corresponder al mismo
+  destinatario/canal y llegar dentro de 24 horas del ciclo. Si el historial todavía
+  no está confirmado, se reintenta el inbox. La primera respuesta válida queda
+  asociada a `response_event_id`; otra respuesta del mismo ciclo se clasifica sin
+  confirmarla como nueva respuesta válida. Las respuestas inválidas no consumen el ciclo.
+- El contexto verificado y la confirmación de Kestra se guardan antes de completar
+  el registro. No se completa si una versión anterior de Kestra omite el acuse
+  `flow_id_verified`. Las acciones de landing/CRM futuras deberán usar esta compuerta.
+
+El estado `confirmed` acredita el mensaje saliente observado (SENT o posterior);
+`completed` acredita una respuesta correlacionada, **no** una solicitud de crédito
+completada ni una landing enviada. No se promete entrega exactamente una vez:
+ante una incertidumbre persistente se prioriza no duplicar y se deja revisión operativa.
+
+### Configuración del envío
+
+| Variable web | Uso |
+|---|---|
+| `EDNA_ROUTER_ENABLED` | `false` por defecto; independiente del receptor entrante. |
+| `EDNA_ROUTER_START_AT` | Fecha ISO 8601 con zona horaria del corte; requerida al habilitar. |
+| `EDNA_ROUTER_RECIPIENTS` | Teléfonos de prueba separados por coma; vacío permite todos los elegibles. |
+| `EDNA_API_KEY` | Credencial de salida de Edna; distinta de la autenticación entrante. |
+| `EDNA_ROUTER_CASCADE_ID` | Cascada del canal; Ventas verificada: `2557`. |
+
+El entorno prod cifrado de esta implementación habilita únicamente el número de
+prueba autorizado por el operador, con corte `2026-09-18T15:03:17+00:00` y cascada
+`2557`. Dev sigue apagado. Ni el número ni la clave de API se publican en esta guía.
+La recepción del resto de Ventas continúa, pero no dispara formularios.
+
+El Flow está fijado a `1850162769693486`. Configurar los entornos cifrados y desplegar
+mediante Git. El ejemplo queda apagado. Para el piloto usar únicamente números
+internos y una fecha de corte reciente. Mantener esa restricción hasta incorporar
+la respuesta de landing, las UTMs y los campos WA en Bitrix.
+
+Desplegar primero el parser/YAML de Kestra y luego la aplicación con su migración
+aditiva. La versión antigua del bridge funciona con el recibo ampliado. Habilitar
+los envíos después de ambas publicaciones; cualquier orden temporal contrario
+mantiene las respuestas correlacionadas pendientes de reintento, no las da por completas.
+
+### Operación y validación
+
+`php artisan edna:router status [id]` muestra IDs, estados y motivos, sin teléfonos,
+conversaciones ni credenciales. `php artisan edna:router reconcile <id>` vuelve a
+consultar el historial; nunca reenvía el Flow. Si una respuesta agotó los reintentos
+antes de confirmar el historial, reconciliar primero y luego reintentar su job
+fallido por el circuito normal de Laravel. No resetear `sending`/`unknown` a `pending`.
+
+`edna:prune` también limpia destinatarios cifrados de registros cerrados antiguos
+(30 días por defecto, mínimo dos para este registro). Conserva IDs/HMAC para
+trazabilidad y los casos pendientes/inciertos para diagnóstico.
+
+Validar en el piloto: frase con sufijos, envío único, frase repetida, respuesta
+correcta marcada verificada, respuesta ajena rechazada para efectos comerciales,
+y continuidad en Bitrix. Las pruebas locales simulan además timeout posterior al
+POST, workers intercalados, caída antes de guardar el acuse, historial ambiguo,
+respuesta anterior al historial, reversión transaccional, credenciales/configuración
+incorrectas y expiración. La prueba real de envío automático queda pendiente del despliegue.
+
+Referencias de contrato: [envío por cascada](https://docs-pulse.edna.io/docs/api/messages/sending/)
+y [historial de mensajes](https://docs-pulse.edna.io/docs/api/messages/history/).

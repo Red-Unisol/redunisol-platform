@@ -40,6 +40,9 @@ outputs:
   - id: reason
     type: STRING
     value: "{{ outputs.recibir.vars.reason }}"
+  - id: flow_id_verified
+    type: BOOL
+    value: "{{ outputs.recibir.vars.flow_id_verified }}"
 
 triggers:
   - id: webhook

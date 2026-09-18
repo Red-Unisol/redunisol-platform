@@ -19,6 +19,10 @@ Artisan::command('edna:prune {--days=30 : Retention of delivered payloads in day
         ->where('delivered_at', '<', now()->subDays($days))->whereNotNull('payload')
         ->update(['payload' => null, 'updated_at' => now()]);
     $this->info("Cleared {$count} delivered payloads; deduplication keys retained.");
+    $sends = DB::table('edna_flow_sends')->whereIn('state', ['confirmed', 'completed', 'rejected', 'cancelled', 'expired', 'failed'])
+        ->where('created_at', '<', now()->subDays(max(2, $days)))->whereNotNull('recipient')
+        ->update(['recipient' => null, 'updated_at' => now()]);
+    $this->info("Cleared {$sends} closed Flow recipients; uncertain sends retained for reconciliation.");
 
     return 0;
 })->purpose('Remove old delivered Edna payloads while preserving deduplication');
