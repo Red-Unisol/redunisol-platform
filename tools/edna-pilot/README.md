@@ -60,3 +60,33 @@ php -d extension=pdo_sqlite -d extension=sqlite3 vendor/bin/pest ../../tools/edn
 rollback de cola, restricciones de destinatario/canal/texto, antigüedad y bloqueo
 por un caso anterior incompleto. La aceptación real requiere participación del
 usuario en WhatsApp; no se sustituye por callbacks sintéticos.
+
+## Resultado de la aceptación real — 2026-09-18
+
+Las cuatro intervenciones de reserva por SSH fueron autorizadas explícitamente
+por el usuario antes de ejecutar el procedimiento. Se realizaron secuencialmente,
+con mensajes y respuestas reales del usuario desde el único teléfono permitido.
+
+| Caso | Landing | Entrega observada | CRM / origen anterior |
+|---|---|---|---|
+| Córdoba / jubilado o pensionado | Jubilados Córdoba | READ | sincronizado / conservado |
+| Córdoba / docente | Docentes Córdoba | DELIVERED | sincronizado / conservado |
+| Catamarca / policía | Empleados Públicos Catamarca | READ | sincronizado / conservado |
+| Otra provincia | Home | READ | sincronizado / conservado |
+
+En cada caso se verificaron: respuesta correlacionada, las cuatro UTMs correctas,
+un único mensaje saliente de landing, los siete campos WA releídos en el mismo
+contacto y el mensaje de entrada visible en el canal abierto de Bitrix. El caso
+CABA/PFA anterior tuvo landing DELIVERED y CRM sincronizado, completando las cinco
+ramas de cierre de Marketing.
+
+La última verificación confirmó los cinco ciclos completados, las cinco landings
+confirmadas y los cinco resultados CRM sincronizados. No quedaron jobs pendientes
+ni fallidos nuevos de Edna. El contacto de prueba conserva la última selección
+(`otra` / `otra_provincia`), como corresponde a WA_TIMESTAMP más reciente.
+
+Estas cuatro ramas validan formularios reales, correlación y acciones posteriores;
+su inicio fue habilitado explícitamente por el operador debido al cooldown.
+La detección y el envío automático general ya se habían probado con CABA/PFA.
+No se modificó la configuración ni se habilitó el router para otros destinatarios.
+Ampliar el alcance a clientes requiere una decisión posterior de activación.
