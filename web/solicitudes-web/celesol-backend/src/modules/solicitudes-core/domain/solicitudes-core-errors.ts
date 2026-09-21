@@ -209,6 +209,19 @@ export class SolicitudPrestamoDataIncompleteError extends SolicitudesError {
   }
 }
 
+export class SolicitudCancelacionesFueraDeRangoError extends SolicitudesError {
+  readonly maximo: number;
+
+  constructor(maximo: number) {
+    super(
+      `Las cancelaciones superan el máximo que acepta el legado (${maximo.toLocaleString("es-AR")}). Generá el préstamo desde el sistema anterior.`,
+      409,
+    );
+    this.name = "SolicitudCancelacionesFueraDeRangoError";
+    this.maximo = maximo;
+  }
+}
+
 export class SolicitudLineaPrestamoLegacyIdUnresolvedError extends SolicitudesError {
   readonly lineaDescripcion: string;
 
