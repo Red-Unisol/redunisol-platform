@@ -24,6 +24,13 @@ solamente la instancia de diagnostico `kestra-worker-probe-runtime`.
   de almacenamiento en esa muestra; el ensayo agrega carga y no permite
   atribuir estos valores al periodo previo ni al viernes. No aumentar workers
   sin medirlo, ni desactivar `fsync`/`synchronous_commit` para ocultarlo.
+- A las 13:47 UTC, con el runtime de prueba ya detenido, tres intervalos nuevos
+  seguian mostrando 96,1-100% de utilizacion del disco y 54,8-58,7% de iowait.
+  La presion no desaparecio al retirar el ensayo. En los ultimos 15 minutos se
+  contaron 324 ejecuciones de `redunisol.prod.system` frente a 212 de los demas
+  namespaces combinados: revisar el volumen del sistema de alertas y la latencia
+  del almacenamiento como linea separada, sin atribuir causalidad solo al conteo.
+  El prefill productivo habia completado otro lote a las 13:46:02 UTC.
 - Los logs conservados no llegan al atasco del viernes. No se puede demostrar
   retrospectivamente que el incidente del prefill tuvo exactamente esta causa.
 
