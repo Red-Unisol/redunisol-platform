@@ -33,6 +33,16 @@ export type CrearPrestamoInput = {
   lineaPrestamo: string;
   /** Numerico a proposito: como texto el legado lo descarta. Ver abajo. */
   montoDeseado: number;
+  /**
+   * Total de cancelaciones EN CENTAVOS, o undefined si la solicitud no tiene.
+   * El legado no expone un campo para las cancelaciones: las toma de la
+   * solicitud antigua, que un prestamo creado por API no tiene. NroLote es un
+   * entero que el legado solo escribe desde sus importadores, asi que sirve de
+   * portador y sobrevive a los recalculos del plan de cuotas. Con la novedad
+   * CAN3RO de la linea apuntando a el, el legado arma el movimiento "Cancela
+   * 3eros" y el asiento sale dividido. Por ser entero, va en centavos.
+   */
+  nroLote?: number;
   vendedor: string;
 };
 
@@ -85,6 +95,9 @@ export class CrearPrestamoGateway {
                 Socio: integrante.socio,
                 TipoRelacion: integrante.tipoRelacion,
               })),
+              // Antes de LineaPrestamo: el legado evalua la novedad CAN3RO al
+              // armar las cuotas, y eso puede dispararse al asignar la linea.
+              NroLote: input.nroLote,
               LineaPrestamo: input.lineaPrestamo,
               Cuotas: input.cuotas,
               MontoDeseado: input.montoDeseado,

@@ -245,6 +245,7 @@ export function createSolicitudesCoreRouter(
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     authRepository,
+    cancelacionesRepository: solicitudCancelacionRepository,
     gateway: crearPrestamoGateway,
     lineaPrestamoLegacyIdResolver,
     linkFirmaDigitalBaseUrl: env.FINALIZAR_FIRMA_DIGITAL_BASE_URL,
