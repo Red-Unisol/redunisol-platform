@@ -968,3 +968,19 @@ peso por mes. Si falta un mes, queda sin objetivo. Los colores reutilizan los tr
 de comisiones: hasta 100% verde, más de 100% hasta 110% amarillo, superiores rojo;
 referencia cero o datos ausentes quedan neutrales. Ya no admite un umbral independiente
 por variable de entorno. El flujo incluye ambos paquetes compartidos y holidays==0.104.
+
+## resolver_cuil_a13_por_dni
+
+Subflow interno, sin trigger, que recibe `dni` y reutiliza las credenciales y cache
+WSAA de `consulta_padron_a13`. Ejecuta `getIdPersonaListByDocumento` y `getPersona`
+para todas las claves distintas. Conserva CUIT/CUIL activos y descarta CDI e
+inactivos. Nunca compara nombres. Exige documento coincidente e identificador valido.
+
+Outputs: `ok`, `status` (`single`, `none`, `multiple`, `invalid_request`,
+`technical_error`), `cuil` (solo si hay una unica clave elegible) y `candidate_count`.
+Un error consultando cualquier candidato impide aceptar un resultado parcial como
+unico. Los errores tecnicos se devuelven para habilitar el respaldo CredixSA del
+prefill Finguru. El ticket renovado se conserva incluso si falla la busqueda.
+
+Desplegar este flow y sus namespace files antes del consumidor `marketing-crm`.
+Contrato oficial: https://www.afip.gob.ar/ws/ws-padron-a13/manual-ws-sr-padron-a13-v1.4.pdf
