@@ -149,6 +149,7 @@ def prefill_lead(
     *,
     arca_output: dict[str, Any],
     credixsa_output: dict[str, Any],
+    arca_identity_output: dict[str, Any] | None = None,
     max_attempts: int = 3,
     env: dict[str, str] | None = None,
     bitrix_client: Any | None = None,
@@ -245,13 +246,17 @@ def prefill_lead(
     if not counter_persisted:
         errors.append("attempt_counter_not_persisted")
 
-    use_credixsa = _uses_credixsa(lead.get(config.fields.lead_source))
-
     identity = resolve_prefill_identity(
         source_id=lead.get(config.fields.lead_source),
         cuil=lead.get(config.fields.lead_cuil),
         dni=lead.get(config.fields.lead_dni),
         credixsa_output=credixsa_output,
+        arca_identity_output=arca_identity_output,
+    )
+    use_credixsa = (
+        _uses_credixsa(lead.get(config.fields.lead_source))
+        and len(_digits(lead.get(config.fields.lead_cuil))) == 8
+        and identity["reason"] != "arca_single_match"
     )
     cuil = _optional_str(identity["effective_cuil"])
 
@@ -571,6 +576,7 @@ def resolve_prefill_identity(
     cuil: object,
     dni: object,
     credixsa_output: dict[str, Any],
+    arca_identity_output: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     normalized_cuil = _digits(cuil)
     normalized_dni = _digits(dni)
@@ -590,6 +596,15 @@ def resolve_prefill_identity(
     )
     if not identifier:
         return _unresolved_identity("dni_cuil_mismatch")
+
+    arca_identity = arca_identity_output or {}
+    arca_cuil = _digits(arca_identity.get("cuil"))
+    if (arca_identity.get("ok") is True and arca_identity.get("status") == "single"
+            and _is_valid_cuil(arca_cuil) and arca_cuil[2:10] == identifier):
+        return {
+            "status": IDENTITY_SANITIZED, "effective_cuil": arca_cuil,
+            "sanitized": True, "reason": "arca_single_match",
+        }
 
     returned_cuil = _digits(credixsa_output.get("cuit"))
     if not bool(credixsa_output.get("ok")):

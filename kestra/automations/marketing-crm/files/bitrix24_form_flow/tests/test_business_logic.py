@@ -3722,6 +3722,71 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.contacts[101]["BIRTHDATE"], "1990-05-10")
         self.assertEqual(bcra.calls, ["20123456786"])
 
+    def test_identity_falls_back_to_credixsa_for_unresolved_a13(self):
+        for output in ({"ok": False}, {"ok": True, "status": "none"}, {"ok": True, "status": "multiple"}):
+            result = resolve_prefill_identity(
+                source_id="3729", cuil="12345678", dni="12345678",
+                arca_identity_output=output,
+                credixsa_output={"ok": True, "status": "single", "cuit": "20123456786"},
+            )
+            self.assertEqual(result["effective_cuil"], "20123456786")
+            self.assertEqual(result["reason"], "credixsa_single_match")
+
+    def test_prefill_a13_resolves_finguru_without_credixsa(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[809] = {
+            "ID": "809",
+            "TITLE": "Maria Lopez",
+            "NAME": "Maria",
+            "LAST_NAME": "Lopez",
+            "EMAIL": [{"VALUE": "maria@example.com", "VALUE_TYPE": "WORK"}],
+            "PHONE": [{"VALUE": "+5493511234567", "VALUE_TYPE": "WORK"}],
+            "CONTACT_ID": "",
+            "STATUS_ID": "UC_5N2OEO",
+            "UF_CRM_1693840106704": "12345678",
+            "UF_CRM_LEAD_1711392404332": "12345678",
+            "UF_CRM_1722365051": "3729",
+            "UF_CRM_1714071903": "1239",
+            "UF_CRM_LEAD_1711458190312": ["437"],
+            "UF_CRM_64E65D2B2136C": "209",
+        }
+        bcra = FakeBcraClient(
+            {
+                "20123456786": self.make_bcra_result(
+                    identification="20123456786",
+                    status_field_value="OK",
+                    should_reject=False,
+                )
+            }
+        )
+
+        result = prefill_lead(
+            809,
+            arca_output={
+                "ok": True,
+                "nombre": "Maria",
+                "apellido": "Lopez",
+                "fecha_nacimiento": "1990-05-10",
+            },
+            arca_identity_output={"ok": True, "status": "single", "cuil": "20123456786"},
+            credixsa_output={"ok": False, "error": "not_executed"},
+            env=self.env,
+            bitrix_client=client,
+            bcra_client=bcra,
+            logger=SilentLogger(),
+        )
+
+        self.assertEqual(result["action"], "advanced")
+        self.assertEqual(client.leads[809]["UF_CRM_1693840106704"], "20123456786")
+        self.assertEqual(client.leads[809]["CONTACT_ID"], 101)
+        self.assertEqual(client.leads[809]["LAST_NAME"], "")
+        self.assertEqual(client.leads[809]["UF_CRM_PROCESSING_POLICY"], "4041")
+        self.assertEqual(client.contacts[101]["UF_CONTACT_CUIL"], "20123456786")
+        self.assertEqual(client.contacts[101]["BIRTHDATE"], "1990-05-10")
+        self.assertEqual(bcra.calls, ["20123456786"])
+        self.assertEqual(result["errors"], [])
+        self.assertNotIn("UF_CRM_CRDX_STATUS", client.leads[809])
+
     def test_prefill_links_finguru_contact_when_cuil_was_already_sanitized(self) -> None:
         client = FakeBitrixClient()
         client.leads[810] = {
@@ -3821,7 +3886,8 @@ class BusinessLogicTests(unittest.TestCase):
         client = FakeBitrixClient()
         client.leads[803] = {
             "ID": "803", "STATUS_ID": "UC_5N2OEO", "CONTACT_ID": "901",
-            "UF_CRM_1693840106704": "20123456786",
+            "UF_CRM_1693840106704": "12345678",
+            "UF_CRM_LEAD_1711392404332": "12345678",
             "UF_CRM_1722365051": "3729",
         }
         client.contacts[901] = {"ID": "901", "NAME": "Juan"}
@@ -3834,7 +3900,7 @@ class BusinessLogicTests(unittest.TestCase):
                 credixsa_output={"ok": False, "status": "error", "error": "timeout"},
                 env=self.env, bitrix_client=client, bcra_client=bcra, logger=SilentLogger(),
             )
-            self.assertEqual(result["errors"], ["credixsa"])
+            self.assertEqual(result["errors"], ["identity", "credixsa"])
             self.assertEqual(result["attempts"], attempt)
             self.assertEqual(result["action"], "retry_pending" if attempt < 3 else "advanced_partial")
         self.assertEqual(client.leads[803]["STATUS_ID"], "NEW")
@@ -4100,7 +4166,7 @@ class BusinessLogicTests(unittest.TestCase):
             )
 
         self.assertEqual(result["action"], "advanced_partial")
-        self.assertEqual(result["errors"], ["arca", "credixsa", "vimarx", "bcra"])
+        self.assertEqual(result["errors"], ["arca", "vimarx", "bcra"])
         self.assertEqual(client.leads[806]["STATUS_ID"], "NEW")
         self.assertEqual(client.leads[806]["UF_CRM_KSTRA_BF_ATTEMPTS"], 3)
 

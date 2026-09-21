@@ -1,0 +1,61 @@
+id: resolver_cuil_a13_por_dni
+namespace: redunisol
+description: 'Resuelve un DNI con A13: unica clave CUIT/CUIL activa, sin comparar
+  nombres. Uso interno.'
+labels:
+  env: prod
+  team: redunisol
+  kind: internal
+  domain: analisis-credito
+  integration: arca
+inputs:
+- id: dni
+  type: STRING
+  required: true
+tasks:
+- id: leer_ta_cache
+  type: io.kestra.plugin.core.kv.Get
+  key: arca.padron-a13.wsaa.{{ envs.arca_padron_a13_cuit_representada }}
+  errorOnMissing: false
+  allowFailure: true
+- id: consultar_padron
+  type: io.kestra.plugin.scripts.python.Commands
+  targetOS: LINUX
+  namespaceFiles:
+    enabled: true
+    include:
+    - arca_padron_a13/**
+  taskRunner:
+    type: io.kestra.plugin.scripts.runner.docker.Docker
+    pullPolicy: IF_NOT_PRESENT
+  containerImage: ghcr.io/red-unisol/analisis-credito-arca-padron-a13:latest
+  env:
+    ARCA_TA_CACHE_JSON: '{{ (outputs.leer_ta_cache.value ?? null) | toJson }}'
+    ARCA_CUIT_REPRESENTADA: '{{ envs.arca_padron_a13_cuit_representada }}'
+    ARCA_TIMEOUT_SECONDS: '{{ envs.arca_padron_a13_timeout_seconds }}'
+    ARCA_CERT_PEM_B64: '{{ secret(''ARCA_PADRON_A13_CERT_PEM_B64'') }}'
+    ARCA_KEY_PEM_B64: '{{ secret(''ARCA_PADRON_A13_KEY_PEM_B64'') }}'
+    ARCA_INPUT_DNI: '{{ inputs.dni }}'
+  commands:
+  - python -m arca_padron_a13.documento
+- id: guardar_ta_cache
+  type: io.kestra.plugin.core.kv.Set
+  runIf: '{{ outputs.consultar_padron.vars.ta_cache_should_persist }}'
+  key: arca.padron-a13.wsaa.{{ envs.arca_padron_a13_cuit_representada }}
+  value: '{{ outputs.consultar_padron.vars.ta_cache_json }}'
+  kvType: JSON
+  overwrite: true
+  ttl: '{{ outputs.consultar_padron.vars.ta_cache_ttl }}'
+outputs:
+- id: ok
+  type: BOOLEAN
+  value: '{{ outputs.consultar_padron.vars.ok }}'
+- id: status
+  type: STRING
+  value: '{{ outputs.consultar_padron.vars.status }}'
+- id: cuil
+  type: STRING
+  value: '{{ outputs.consultar_padron.vars.cuil }}'
+- id: candidate_count
+  type: INT
+  value: '{{ outputs.consultar_padron.vars.candidate_count }}'

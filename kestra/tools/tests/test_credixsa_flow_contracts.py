@@ -332,14 +332,23 @@ class CredixsaFlowContractsTests(unittest.TestCase):
                 self.assertIn("@sha256:", task["containerImage"])
                 self.assertEqual(task["taskRunner"]["pullPolicy"], "IF_NOT_PRESENT")
         tasks = {t["id"]: t for t in child["tasks"]}
+        self.assertLess(list(tasks).index("consultar_identidad_a13"), list(tasks).index("consultar_credixsa"))
+        self.assertEqual(tasks["consultar_identidad_a13"]["flowId"], "resolver_cuil_a13_por_dni")
+        self.assertFalse(tasks["consultar_identidad_a13"]["transmitFailed"])
+        self.assertEqual(
+            tasks["consultar_identidad_a13"]["runIf"],
+            "{{ (inputs.source_id ?? '') == '3729' and ((inputs.credix_identifier ?? '') | length) == 8 }}",
+        )
+        for task_id in ("resolver_identidad", "completar_backfill"):
+            self.assertIn("ARCA_IDENTITY_CUIL", tasks[task_id]["env"])
         self.assertEqual(
             tasks["consultar_credixsa"]["runIf"],
-            "{{ (inputs.source_id ?? '') == '3729' and (inputs.credix_identifier ?? '') != '' }}",
+            "{{ (inputs.source_id ?? '') == '3729' and ((inputs.credix_identifier ?? '') | length) == 8 and not (outputs.consultar_identidad_a13.outputs is defined and (outputs.consultar_identidad_a13.outputs.ok ?? false) and (outputs.consultar_identidad_a13.outputs.status ?? '') == 'single') }}",
         )
         self.assertEqual(tasks["consultar_arca"]["runIf"], "{{ (outputs.resolver_identidad.vars.effective_cuil ?? '') != '' }}")
         for task in child["tasks"]:
             for expression in task.get("env", {}).values():
-                for subflow in ("consultar_arca", "consultar_credixsa"):
+                for subflow in ("consultar_arca", "consultar_credixsa", "consultar_identidad_a13"):
                     if "outputs." + subflow in expression:
                         self.assertIn("outputs." + subflow + ".outputs is defined", expression)
 
