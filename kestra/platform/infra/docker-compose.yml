@@ -31,8 +31,8 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "500m"
+        max-file: "10"
     user: "root"
     command: server standalone --config /etc/kestra/application.yaml
     depends_on:

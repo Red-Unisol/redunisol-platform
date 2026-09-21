@@ -50,3 +50,16 @@ docker compose pull && docker compose up -d
 ## Publicacion
 
 El stack expone Kestra solo en `127.0.0.1:8080` y `127.0.0.1:8081`. Para publicarlo hacia Internet, conviene poner Apache delante con reverse proxy desde un subdominio.
+
+## Retencion local de logs
+
+El contenedor de Kestra usa `json-file` con 10 archivos de hasta 500 MB
+(`max-size: "500m"`, `max-file: "10"`): aproximadamente 5 GB de historial
+local por contenedor. La cantidad de dias depende del volumen generado.
+Este limite no reserva espacio por adelantado ni cambia el nivel de logging.
+PostgreSQL mantiene su politica independiente de 3 archivos de 10 MB.
+
+Cambiar estas opciones requiere recrear el contenedor de Kestra; `restart`
+no las aplica. Antes de recrearlo, exportar con `docker logs --timestamps`
+los registros necesarios para investigaciones, ya que pertenecen al contenedor
+anterior. La retencion local no sustituye la conservacion centralizada.
