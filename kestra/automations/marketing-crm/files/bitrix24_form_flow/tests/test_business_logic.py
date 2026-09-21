@@ -3519,7 +3519,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertTrue(result["has_pending"])
         self.assertEqual(result["lead_id"], "802")
         self.assertEqual(result["cuil"], "20222222223")
-        self.assertEqual(result["credix_identifier"], "20222222223")
+        self.assertEqual(result["credix_identifier"], "")
         self.assertFalse(result["needs_identity_sanitization"])
         self.assertEqual(
             client.calls[0][1]["filter"][">=DATE_CREATE"],
@@ -3662,7 +3662,7 @@ class BusinessLogicTests(unittest.TestCase):
                 cuil="20-12345678-3",
                 dni="",
             ),
-            "20123456783",
+            "",
         )
 
     def test_prefill_sanitizes_finguru_and_reuses_contact_upsert(self) -> None:
@@ -3763,6 +3763,82 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "advanced")
         self.assertEqual(client.leads[810]["CONTACT_ID"], 101)
         self.assertEqual(client.contacts[101]["UF_CONTACT_CUIL"], "20123456786")
+
+    def test_prefill_credixsa_identifier_is_exclusive_to_finguru(self) -> None:
+        for source, expected in [("3729", "20123456786"), (" 3729 ", "20123456786"),
+                                 ("web", ""), ("", ""), (None, "")]:
+            with self.subTest(source=source):
+                self.assertEqual(credix_identifier_for_prefill(
+                    source_id=source, cuil="20123456786", dni="12345678",
+                ), expected)
+
+    def test_non_finguru_prefill_skips_credixsa_without_retry_or_erasing_history(self) -> None:
+        for source in ("web", "", None):
+            for attempts in (0, 1, 2):
+                with self.subTest(source=source, attempts=attempts):
+                    client = FakeBitrixClient()
+                    history = {
+                        "UF_CRM_CRDX_STATUS": "ok",
+                        "UF_CRM_CRDX_CHK_AT": "2026-09-01T10:00:00-03:00",
+                        "UF_CRM_EMP_NOMBRE": "Empleador historico",
+                        "UF_CRM_EMP_CUIT": "30123456789",
+                        "UF_CRM_EMP_COUNT": 1,
+                        "UF_CRM_EMP_PERIODOS": "Resumen historico",
+                        "UF_CRM_CRDX_ALERTAS": "Alerta historica",
+                    }
+                    client.leads[803] = {
+                        "ID": "803", "STATUS_ID": "UC_5N2OEO",
+                        "UF_CRM_1693840106704": "20123456786",
+                        "UF_CRM_1722365051": source,
+                        "UF_CRM_KSTRA_BF_ATTEMPTS": attempts,
+                        **history,
+                    }
+                    bcra = FakeBcraClient({"20123456786": self.make_bcra_result(
+                        identification="20123456786", status_field_value="OK",
+                        should_reject=False,
+                    )})
+                    with patch(
+                        "bitrix24_form_flow.form_processor.lead_prefill_service.update_lead_with_credixsa_output"
+                    ) as credix_update:
+                        result = prefill_lead(
+                            803, arca_output={"ok": True, "nombre": "Juan"},
+                            credixsa_output={"ok": False, "error": "not_executed"},
+                            env=self.env, bitrix_client=client, bcra_client=bcra,
+                            logger=SilentLogger(),
+                        )
+                    credix_update.assert_not_called()
+                    self.assertEqual(result["action"], "advanced")
+                    self.assertEqual(result["errors"], [])
+                    self.assertEqual(client.leads[803]["STATUS_ID"], "NEW")
+                    self.assertEqual(client.leads[803]["TITLE"], "Juan")
+                    for field, value in history.items():
+                        self.assertEqual(client.leads[803][field], value)
+                    for method, payload in client.calls:
+                        if method == "crm.lead.update":
+                            self.assertFalse(set(history).intersection(payload["fields"]))
+
+    def test_finguru_still_retries_credixsa_errors_then_advances(self) -> None:
+        client = FakeBitrixClient()
+        client.leads[803] = {
+            "ID": "803", "STATUS_ID": "UC_5N2OEO", "CONTACT_ID": "901",
+            "UF_CRM_1693840106704": "20123456786",
+            "UF_CRM_1722365051": "3729",
+        }
+        client.contacts[901] = {"ID": "901", "NAME": "Juan"}
+        bcra = FakeBcraClient({"20123456786": self.make_bcra_result(
+            identification="20123456786", status_field_value="OK", should_reject=False,
+        )})
+        for attempt in range(1, 4):
+            result = prefill_lead(
+                803, arca_output={"ok": True},
+                credixsa_output={"ok": False, "status": "error", "error": "timeout"},
+                env=self.env, bitrix_client=client, bcra_client=bcra, logger=SilentLogger(),
+            )
+            self.assertEqual(result["errors"], ["credixsa"])
+            self.assertEqual(result["attempts"], attempt)
+            self.assertEqual(result["action"], "retry_pending" if attempt < 3 else "advanced_partial")
+        self.assertEqual(client.leads[803]["STATUS_ID"], "NEW")
+        self.assertEqual(client.leads[803]["UF_CRM_CRDX_STATUS"], "temporary_error")
 
     def test_prefill_advances_complete_lead_to_preclassification(self) -> None:
         client = FakeBitrixClient()
@@ -3918,6 +3994,7 @@ class BusinessLogicTests(unittest.TestCase):
             logger=SilentLogger(),
         )
 
+        self.assertNotIn("credixsa", retry_result["errors"])
         self.assertEqual(retry_result["action"], "retry_pending")
         self.assertEqual(client.leads[804]["STATUS_ID"], "UC_5N2OEO")
         self.assertEqual(client.leads[804]["UF_CRM_KSTRA_BF_ATTEMPTS"], 2)
@@ -3986,7 +4063,8 @@ class BusinessLogicTests(unittest.TestCase):
         client = FakeBitrixClient()
         client.leads[806] = {
             "ID": "806",
-            "CONTACT_ID": "",
+            "CONTACT_ID": "901",
+            "UF_CRM_1722365051": "3729",
             "STATUS_ID": "UC_5N2OEO",
             "UF_CRM_1693840106704": "20666666667",
             "UF_CRM_KSTRA_BF_ATTEMPTS": 2,

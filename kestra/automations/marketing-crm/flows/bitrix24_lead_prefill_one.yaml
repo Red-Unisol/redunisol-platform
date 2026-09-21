@@ -32,7 +32,7 @@ inputs:
 tasks:
 - id: consultar_credixsa
   type: io.kestra.plugin.core.flow.Subflow
-  runIf: '{{ (inputs.credix_identifier ?? '''') != '''' }}'
+  runIf: "{{ (inputs.source_id ?? '') == '3729' and (inputs.credix_identifier ?? '') != '' }}"
   namespace: '{{ flow.namespace | replace({''marketing-crm'': ''analisis-credito''}) }}'
   flowId: consulta_quiebra_credix
   inputs:
