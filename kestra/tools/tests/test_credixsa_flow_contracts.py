@@ -332,6 +332,10 @@ class CredixsaFlowContractsTests(unittest.TestCase):
                 self.assertIn("@sha256:", task["containerImage"])
                 self.assertEqual(task["taskRunner"]["pullPolicy"], "IF_NOT_PRESENT")
         tasks = {t["id"]: t for t in child["tasks"]}
+        self.assertEqual(
+            tasks["consultar_credixsa"]["runIf"],
+            "{{ (inputs.source_id ?? '') == '3729' and (inputs.credix_identifier ?? '') != '' }}",
+        )
         self.assertEqual(tasks["consultar_arca"]["runIf"], "{{ (outputs.resolver_identidad.vars.effective_cuil ?? '') != '' }}")
         for task in child["tasks"]:
             for expression in task.get("env", {}).values():

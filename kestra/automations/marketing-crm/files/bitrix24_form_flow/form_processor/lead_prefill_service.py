@@ -245,6 +245,8 @@ def prefill_lead(
     if not counter_persisted:
         errors.append("attempt_counter_not_persisted")
 
+    use_credixsa = _uses_credixsa(lead.get(config.fields.lead_source))
+
     identity = resolve_prefill_identity(
         source_id=lead.get(config.fields.lead_source),
         cuil=lead.get(config.fields.lead_cuil),
@@ -283,19 +285,20 @@ def prefill_lead(
         errors.append("identity")
 
     if cuil is None:
-        try:
-            credix_result = update_lead_with_credixsa_output(
-                lead_id=lead_id_int,
-                credixsa_output=credixsa_output,
-                env=env,
-                bitrix_client=client,
-                logger=active_logger,
-            )
-            if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+        if use_credixsa:
+            try:
+                credix_result = update_lead_with_credixsa_output(
+                    lead_id=lead_id_int,
+                    credixsa_output=credixsa_output,
+                    env=env,
+                    bitrix_client=client,
+                    logger=active_logger,
+                )
+                if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+                    errors.append("credixsa")
+            except Exception as exc:
+                active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
                 errors.append("credixsa")
-        except Exception as exc:
-            active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
-            errors.append("credixsa")
         if identity["status"] != IDENTITY_UNRESOLVED:
             errors.append("missing_cuil")
     else:
@@ -308,19 +311,20 @@ def prefill_lead(
             active_logger.error(f"Fallo ARCA para el lead {lead_id_int}: {exc}")
             errors.append("arca")
 
-        try:
-            credix_result = update_lead_with_credixsa_output(
-                lead_id=lead_id_int,
-                credixsa_output=credixsa_output,
-                env=env,
-                bitrix_client=client,
-                logger=active_logger,
-            )
-            if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+        if use_credixsa:
+            try:
+                credix_result = update_lead_with_credixsa_output(
+                    lead_id=lead_id_int,
+                    credixsa_output=credixsa_output,
+                    env=env,
+                    bitrix_client=client,
+                    logger=active_logger,
+                )
+                if not bool(credixsa_output.get("ok")) or not bool(credix_result.get("ok")):
+                    errors.append("credixsa")
+            except Exception as exc:
+                active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
                 errors.append("credixsa")
-        except Exception as exc:
-            active_logger.error(f"Fallo CredixSA para el lead {lead_id_int}: {exc}")
-            errors.append("credixsa")
 
         try:
             if not sync_lead_vimarx_enrichment(
@@ -540,15 +544,21 @@ def _optional_str(raw_value: object) -> str | None:
     return value or None
 
 
+def _uses_credixsa(source_id: object) -> bool:
+    return str(source_id or "").strip() == FINGURU_SOURCE_ID
+
+
 def credix_identifier_for_prefill(
     *,
     source_id: object,
     cuil: object,
     dni: object,
 ) -> str:
+    if not _uses_credixsa(source_id):
+        return ""
     normalized_cuil = _digits(cuil)
     normalized_dni = _digits(dni)
-    if str(source_id or "").strip() != FINGURU_SOURCE_ID or len(normalized_cuil) != 8:
+    if len(normalized_cuil) != 8:
         return normalized_cuil
     if len(normalized_dni) != 8 or normalized_dni != normalized_cuil:
         return ""

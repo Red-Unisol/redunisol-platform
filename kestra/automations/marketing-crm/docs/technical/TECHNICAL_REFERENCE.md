@@ -28,6 +28,16 @@ una operación se deben verificar los flows y el ambiente desplegado.
 | Cantidad de créditos activos Vimarx | `UF_CRM_VIMARX_CRED_ACT_CNT` |
 | Intentos de prefill | `UF_CRM_KSTRA_BF_ATTEMPTS` |
 
+## Alcance de CredixSA en el prefill
+
+CredixSA se consulta y persiste exclusivamente para leads de Finguru (`3729`),
+tanto con CUIL completo como con DNI pendiente de saneamiento. Los demas origenes
+continuan con ARCA, Vimarx y BCRA; omitir CredixSA no agrega errores ni reintentos,
+no borra campos historicos y no modifica la clasificacion ni la creacion de deals.
+El selector omite el identificador CredixSA para esos origenes y el subflow hijo
+verifica tambien el origen antes de consultar. El servicio verifica el origen
+actual del lead antes de persistir una respuesta.
+
 ## Saneamiento Finguru en el prefill
 
 Para `origenFormulario=3729`, el prefill detecta el caso conocido donde Finguru
