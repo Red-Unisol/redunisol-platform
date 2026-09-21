@@ -16,6 +16,11 @@ kestra:
     type: postgres
   queue:
     type: postgres
+  controller:
+    # Single standalone controller: periodic connection rotation adds no balancing.
+    # Mitigate jobs stranded in SUBMITTED across gRPC max_age reconnects on 2.0.0.
+    # Revisit when upgrading the engine or introducing multiple controllers.
+    max-connection-age: PT0S
   storage:
     type: local
     local:
