@@ -1,15 +1,56 @@
 """Enable the narrowly scoped Apache route only after install and shadow checks."""
 import datetime
+import http.client
 import json
 import re
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+import socket
+import ssl
+import time
 
 from operate import request
 from prepare_env import read_env
+
+
+class OriginHTTPSConnection(http.client.HTTPSConnection):
+    """Reach Apache locally, retaining certificate verification and domain SNI."""
+    def connect(self):
+        sock = socket.create_connection(('127.0.0.1', self.port), self.timeout)
+        try:
+            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        except BaseException:
+            sock.close()
+            raise
+
+
+def probe_ingress(base, path):
+    payload = json.dumps({'event':'ONCRMLEADUPDATE','data':{'FIELDS':{'ID':'1'}},
+                          'auth':{'application_token':'invalid-route-probe'}}).encode()
+    for attempt in range(10):
+        connection = (OriginHTTPSConnection('kestra.redunisol.com.ar', 443, timeout=5,
+                                            context=ssl.create_default_context())
+                      if base.startswith('https:') else http.client.HTTPConnection('127.0.0.1', 80, timeout=5))
+        try:
+            connection.request('POST', path, body=payload,
+                               headers={'Host':'kestra.redunisol.com.ar','Content-Type':'application/json'})
+            response = connection.getresponse()
+            raw = response.read()
+            try:
+                body = json.loads(raw)
+            except ValueError:
+                body = None
+            if response.status == 403 and body == {'error':'forbidden'}:
+                return
+        except (OSError, http.client.HTTPException):
+            pass  # A graceful reload can briefly retain the previous route.
+        finally:
+            connection.close()
+        if attempt < 9:
+            time.sleep(1)
+    # Never print the secret-bearing path or assume any arbitrary 403 is success.
+    raise RuntimeError('Origin ingress did not return the receiver authentication rejection')
 
 
 def prepare_vhost(source):
@@ -58,14 +99,7 @@ def main():
         subprocess.check_call(['/opt/apache/bin/httpd','-t'])
         subprocess.check_call(['/opt/apache/bin/httpd','-k','graceful'])
         path = '/api/v1/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/'+env['BITRIX_WEBHOOK_KEY']
-        req = Request(probe_base+path, data=json.dumps({'event':'ONCRMLEADUPDATE','data':{'FIELDS':{'ID':'1'}},'auth':{'application_token':'invalid-route-probe'}}).encode(),
-                      headers={'Host':'kestra.redunisol.com.ar','Content-Type':'application/json'})
-        try:
-            with urlopen(req,timeout=20):
-                raise RuntimeError('Ingress probe unexpectedly accepted invalid credentials')
-        except HTTPError as exc:
-            if exc.code != 403 or json.loads(exc.read()) != {'error':'forbidden'}:
-                raise RuntimeError('Ingress did not reach the receiver') from None
+        probe_ingress(probe_base, path)
     except BaseException:
         vhost.write_text(old)
         if previous is None:
