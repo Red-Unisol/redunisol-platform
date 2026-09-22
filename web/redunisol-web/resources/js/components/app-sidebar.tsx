@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Globe, LayoutGrid } from 'lucide-react';
+import { FileArchive, Globe, LayoutGrid } from 'lucide-react';
 
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -13,16 +13,22 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
 import { type NavItem } from '@/types';
 
 import AppLogo from './app-logo';
+
+import { dashboard } from '@/routes';
 
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'BCRA Central Deudores',
+        href: '/herramientas/bcra-central-deudores',
+        icon: FileArchive,
     },
 ];
 
