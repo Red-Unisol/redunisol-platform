@@ -57,6 +57,9 @@ al operador `Nasst` y al environment `vps-infra`.
    del webhook en Apache, valida configuracion y verifica rechazo de una peticion
    sin autenticacion valida. El receptor permanece pausado y guarda nuevos avisos.
    Si falla la prueba, restaura la configuracion anterior.
+   Selecciona el virtual host que efectivamente proxya Kestra; preserva el virtual
+   host de redireccion HTTP y las demas rutas. En HTTPS prueba el dominio publico
+   con validacion de certificado, sin depender de un POST redirigido desde HTTP.
 4. **cutover**: exige receptor pausado e ingreso habilitado; guarda un snapshot
    de ejecuciones e IDs de leads en `migrations/`, importa los leads de forma
    durable y despues cancela las ejecuciones QUEUED por la API de Kestra. Deja
@@ -104,3 +107,19 @@ Git. No hay rollback automatico que descarte el trabajo recibido.
 Desde este directorio: `python -m unittest -v` (Python 3.11+, PyYAML para contratos).
 El servicio usa solo la biblioteca estandar; los helpers de la VPS soportan
 Python 3.6. CI valida tambien Compose y las pruebas comerciales existentes.
+
+## Registro de instalacion: 2026-09-22
+
+- Revision instalada: `d9a3755f71d8f167971734958c97a8daf16dfa92`, mediante
+  [workflow install](https://github.com/Red-Unisol/redunisol-platform/actions/runs/35740427751).
+  Servicio healthy, modo paused; shadow completo 10 lecturas sin acciones comerciales.
+- Con autorizacion explicita se guardo el lead `386333` antes de solicitar por la
+  API la cancelacion de `2KLeU3lu3uHdTO7mLAothC`, RUNNING desde el 8/9 sin contenedor
+  asociado. La ejecucion termino en FAILED. Snapshot conservado en la VPS en
+  `migrations/authorized-orphan-20260922/executions.json`; no se borraron registros.
+- El primer [intento de ingreso](https://github.com/Red-Unisol/redunisol-platform/actions/runs/35741594372)
+  se detuvo antes de modificar Apache porque habia dos virtual hosts (HTTP con
+  redireccion y HTTPS). La correccion selecciona el vhost que sirve el proxy.
+  Al cerrar esta revision, el ingreso antiguo sigue activo y el receptor pausado.
+- Tras mergear la correccion, repetir install y luego enable-ingress/cutover con
+  la misma revision de main. El volumen conserva el lead importado y las muestras.
