@@ -63,8 +63,21 @@ jobs:
         env:
           PYTHONPATH: kestra/automations/marketing-crm/files
 
+      - name: Test durable Bitrix lead receiver
+        working-directory: platform/bitrix-lead-receiver
+        run: python -m unittest -v
+
+      - name: Validate Bitrix receiver Compose
+        run: |
+          cp platform/bitrix-lead-receiver/.env.example platform/bitrix-lead-receiver/.env
+          docker compose -f platform/bitrix-lead-receiver/docker-compose.yml config -q
+          rm platform/bitrix-lead-receiver/.env
+
       - name: Run Marketing CRM report tests
         run: python -m unittest discover -s kestra/automations/marketing-crm/tests -p "test_*.py"
+
+      - name: Build Bitrix lead receiver image
+        run: docker build platform/bitrix-lead-receiver -t bitrix-lead-receiver:test
 
       - name: Run Analisis Credito unit tests
         run: python -m unittest discover -s kestra/automations/analisis-credito/tests -p "test_*.py"
