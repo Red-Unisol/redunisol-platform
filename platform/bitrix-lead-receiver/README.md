@@ -58,8 +58,11 @@ al operador `Nasst` y al environment `vps-infra`.
    sin autenticacion valida. El receptor permanece pausado y guarda nuevos avisos.
    Si falla la prueba, restaura la configuracion anterior.
    Selecciona el virtual host que efectivamente proxya Kestra; preserva el virtual
-   host de redireccion HTTP y las demas rutas. En HTTPS prueba el dominio publico
-   con validacion de certificado, sin depender de un POST redirigido desde HTTP.
+   host de redireccion HTTP y las demas rutas. En HTTPS conecta a Apache por
+   loopback, conservando SNI, Host y validacion del certificado del dominio.
+   Reintenta brevemente durante la recarga; solo acepta el JSON de rechazo exacto
+   del receptor. La prueba local no valida Cloudflare: comprobar ademas que
+   ingresen avisos autenticos de Bitrix antes de migrar la cola.
 4. **cutover**: exige receptor pausado e ingreso habilitado; guarda un snapshot
    de ejecuciones e IDs de leads en `migrations/`, importa los leads de forma
    durable y despues cancela las ejecuciones QUEUED por la API de Kestra. Deja
@@ -123,3 +126,10 @@ Python 3.6. CI valida tambien Compose y las pruebas comerciales existentes.
   Al cerrar esta revision, el ingreso antiguo sigue activo y el receptor pausado.
 - Tras mergear la correccion, repetir install y luego enable-ingress/cutover con
   la misma revision de main. El volumen conserva el lead importado y las muestras.
+- La instalacion de `ee483403923c698249b624a2e27f831cbb7c835d` fue exitosa.
+  El [segundo intento de ingreso](https://github.com/Red-Unisol/redunisol-platform/actions/runs/35742761946)
+  paso la validacion de Apache pero revirtio la ruta: Cloudflare devolvio 403,
+  texto `error code: 1010`, a la consulta publica desde la VPS. La prueba corregida
+  conecta al origen local con TLS verificado. Una lectura GET con esa conexion
+  obtuvo HTTP 307 de Apache y valido el certificado, sin modificar el runtime.
+  No se migro la cola; receptor pausado y webhook antiguo restaurado.
