@@ -14,6 +14,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Contracts(unittest.TestCase):
+    def test_apache_and_probe_cover_actual_tenant_webhook(self):
+        root = ROOT/'platform/bitrix-lead-receiver'
+        route = '/api/v1/main/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/'
+        self.assertIn('ProxyPass "'+route+'" "http://127.0.0.1:8092'+route+'"', (root/'apache-route.conf').read_text())
+        self.assertIn(route, (root/'enable_ingress.py').read_text())
+
     def test_cancellation_accepts_empty_success_response(self):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b''
@@ -50,6 +56,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual(env['BITRIX_APPLICATION_TOKEN'],'application')
         self.assertEqual(env['BITRIX_REST_URL'],'https://example.test/rest/1/secret')
         self.assertEqual(env['ACTIONABLE_STATUSES'],'NEW,WON')
+        self.assertIn('/api/v1/main/executions/webhook/', env['KESTRA_DISPATCH_URL'])
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'env'
             path.write_text("KESTRA_PASSWORD='pa$word'\n")

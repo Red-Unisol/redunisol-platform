@@ -150,7 +150,7 @@ class QueueTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = 'http://127.0.0.1:'+str(server.server_port)
-        path = '/api/v1/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/hook-secret'
+        path = '/api/v1/main/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/hook-secret'
         def post(body, token=None, target=path):
             headers = {'Content-Type': 'application/json'}
             if token:
@@ -171,6 +171,8 @@ class QueueTests(unittest.TestCase):
             self.assertTrue(claimed['granted'])
             post({'receipt':r['id'], 'execution_id':'executionA', 'ok':True}, 'app-secret', '/internal/complete')
             self.assertEqual(self.store.stats()['jobs'], {'done':1})
+            self.assertTrue(post(body, target=path.replace('/api/v1/main/', '/api/v1/'))['queued'])
+            self.assertEqual(self.store.stats()['jobs'], {'pending':1})
         finally:
             server.shutdown()
             server.server_close()

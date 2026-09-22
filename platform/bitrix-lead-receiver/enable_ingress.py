@@ -98,7 +98,7 @@ def main():
         shutil.copyfile(str(root/'apache-route.conf'),str(enabled))
         subprocess.check_call(['/opt/apache/bin/httpd','-t'])
         subprocess.check_call(['/opt/apache/bin/httpd','-k','graceful'])
-        path = '/api/v1/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/'+env['BITRIX_WEBHOOK_KEY']
+        path = '/api/v1/main/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/'+env['BITRIX_WEBHOOK_KEY']
         probe_ingress(probe_base, path)
     except BaseException:
         vhost.write_text(old)

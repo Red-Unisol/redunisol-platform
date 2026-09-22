@@ -352,8 +352,10 @@ def make_handler(store, app_token, admin_token, webhook_key):
                         accepted = store.complete(str(body['receipt']), str(body['execution_id']), body['ok'])
                         return self.reply(200 if accepted else 409, {"accepted": accepted})
                     return self.reply(404, {"error": "not_found"})
-                prefix = '/api/v1/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/'
-                if not path.startswith(prefix) or not hmac.compare_digest(path[len(prefix):], webhook_key):
+                prefixes = ('/api/v1/main/executions/webhook/', '/api/v1/executions/webhook/')
+                suffix = 'redunisol.prod.marketing-crm/bitrix24_lead_won_deal_webhook/'
+                prefix = next((p+suffix for p in prefixes if path.startswith(p+suffix)), None)
+                if prefix is None or not hmac.compare_digest(path[len(prefix):], webhook_key):
                     return self.reply(404, {"error": "not_found"})
                 lead, token = normalize_payload(body)
                 if not hmac.compare_digest(token, app_token):
