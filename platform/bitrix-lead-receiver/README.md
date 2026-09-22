@@ -7,7 +7,7 @@ si solo no cambia el webhook publico. No demuestra una mejora de 2x en produccio
 
 La suscripcion real usa `/api/v1/main/executions/webhook/` (tenant `main`).
 Apache y el receptor cubren esa ruta y el alias historico sin tenant, solamente
-para `bitrix24_lead_won_deal_webhook`. La prueba de ingreso usa la ruta con tenant.
+  para `bitrix24_lead_won_deal_webhook`. La prueba de ingreso usa la ruta con tenant.
 
 El receptor autentica la URL y el application token, guarda el aviso antes de
 responder 200 y agrupa avisos pendientes por ID de lead. Dos consumidores leen
@@ -147,3 +147,13 @@ Python 3.6. CI valida tambien Compose y las pruebas comerciales existentes.
   recibo inexistente termino SUCCESS; claim rechazo el recibo y ambas tareas
   comerciales quedaron SKIPPED. No hubo escrituras comerciales. Falta verificar
   el procesamiento real despues de habilitar la ruta correcta y migrar.
+- Revision `dde1cc7ace3c7275abdf9169500e44d3b6ecac6e`: ingreso correcto habilitado
+  el 22/9 a las 15:04:35 UTC. Entraron avisos reales al receptor y cesaron nuevas
+  ejecuciones antiguas (ultima entrada observada 15:04:06 UTC). Sin cambios en
+  Bitrix ni Cloudflare. El primer cutover encontro 1.023 ejecuciones / 348 leads,
+  pero agoto el timeout de importacion antes de cancelar ninguna ejecucion.
+  El receptor guardaba cada lead en una transaccion separada. La importacion pasa
+  a una unica transaccion por lote, manteniendo synchronous FULL y confirmacion
+  antes de cancelar. Si falla, revierte todo el lote; un reintento agrupa los IDs.
+  El ingreso permanece habilitado y el consumidor pausado. Repetir install y
+  cutover despues del merge; el volumen y los snapshots se conservan.

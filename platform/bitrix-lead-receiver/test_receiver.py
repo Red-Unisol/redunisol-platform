@@ -37,6 +37,26 @@ class QueueTests(unittest.TestCase):
         with self.store.db() as db:
             return dict(db.execute('SELECT * FROM receipts ORDER BY created DESC LIMIT 1').fetchone())
 
+    def test_batch_import_survives_restart_and_retry_coalesces(self):
+        leads = [str(n) for n in range(1, 501)]
+        self.store.enqueue_many(leads)
+        restarted = Store(self.path, lambda: self.now)
+        self.assertEqual(restarted.stats()['jobs'], {'pending':500})
+        restarted.enqueue_many(leads)
+        self.assertEqual(restarted.stats()['jobs'], {'pending':500})
+        self.assertEqual(restarted.stats()['counters']['events_coalesced'], 500)
+
+    def test_batch_failure_rolls_back_all_rows_and_counters(self):
+        self.store.enqueue('10')
+        before = self.store.stats()
+        def interrupted():
+            yield '10'
+            yield '20'
+            raise RuntimeError('interrupted import')
+        with self.assertRaises(RuntimeError):
+            self.store.enqueue_many(interrupted())
+        self.assertEqual(Store(self.path, lambda: self.now).stats(), before)
+
     def test_concurrent_ingress_coalesces_without_losing_versions(self):
         with concurrent.futures.ThreadPoolExecutor(8) as pool:
             list(pool.map(lambda _: self.store.enqueue('12'), range(80)))

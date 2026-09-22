@@ -65,16 +65,21 @@ class Store:
         db.execute("INSERT INTO counters VALUES (?,?) ON CONFLICT(name) DO UPDATE SET value=value+excluded.value", (name, amount))
 
     def enqueue(self, lead):
+        self.enqueue_many([lead])
+
+    def enqueue_many(self, leads):
+        """Commit a migration batch atomically, rather than fsync once per lead."""
         now = self.clock()
         with self.db() as db:
-            old = db.execute("SELECT state FROM jobs WHERE lead=?", (lead,)).fetchone()
-            db.execute("""INSERT INTO jobs(lead,version,available,created,updated) VALUES (?,1,?,?,?)
-                ON CONFLICT(lead) DO UPDATE SET version=version+1, events=events+1, updated=excluded.updated,
-                state=CASE WHEN jobs.state IN ('done','shadow') THEN 'pending' ELSE jobs.state END,
-                available=CASE WHEN jobs.state IN ('done','shadow') THEN excluded.available ELSE jobs.available END""", (lead, now, now, now))
-            self.count(db, "events_received")
-            if old and old["state"] not in ("done", "shadow"):
-                self.count(db, "events_coalesced")
+            for lead in leads:
+                old = db.execute("SELECT state FROM jobs WHERE lead=?", (lead,)).fetchone()
+                db.execute("""INSERT INTO jobs(lead,version,available,created,updated) VALUES (?,1,?,?,?)
+                    ON CONFLICT(lead) DO UPDATE SET version=version+1, events=events+1, updated=excluded.updated,
+                    state=CASE WHEN jobs.state IN ('done','shadow') THEN 'pending' ELSE jobs.state END,
+                    available=CASE WHEN jobs.state IN ('done','shadow') THEN excluded.available ELSE jobs.available END""", (lead, now, now, now))
+                self.count(db, "events_received")
+                if old and old["state"] not in ("done", "shadow"):
+                    self.count(db, "events_coalesced")
 
     def mode(self, value=None):
         with self.db() as db:
@@ -340,8 +345,7 @@ def make_handler(store, app_token, admin_token, webhook_key):
                         leads = body['leads']
                         if not isinstance(leads, list) or len(leads) > 1000 or any(not str(x).isdigit() or int(x)<=0 for x in leads):
                             raise ValueError("Invalid leads")
-                        for lead in set(map(str, leads)):
-                            store.enqueue(lead)
+                        store.enqueue_many(set(map(str, leads)))
                         return self.reply(200, {"accepted": len(set(map(str, leads)))})
                     if path == '/internal/claim':
                         granted = store.claim(str(body['receipt']), str(body['lead_id']), str(body['execution_id']))
