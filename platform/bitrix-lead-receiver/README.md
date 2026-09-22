@@ -5,6 +5,10 @@ si solo no cambia el webhook publico. No demuestra una mejora de 2x en produccio
 
 `Bitrix ONCRMLEADUPDATE -> Apache -> receptor/SQLite -> crm.lead.get -> Kestra`
 
+La suscripcion real usa `/api/v1/main/executions/webhook/` (tenant `main`).
+Apache y el receptor cubren esa ruta y el alias historico sin tenant, solamente
+para `bitrix24_lead_won_deal_webhook`. La prueba de ingreso usa la ruta con tenant.
+
 El receptor autentica la URL y el application token, guarda el aviso antes de
 responder 200 y agrupa avisos pendientes por ID de lead. Dos consumidores leen
 el estado actual, con una separacion global minima de 750 ms entre consultas.
@@ -133,3 +137,13 @@ Python 3.6. CI valida tambien Compose y las pruebas comerciales existentes.
   conecta al origen local con TLS verificado. Una lectura GET con esa conexion
   obtuvo HTTP 307 de Apache y valido el certificado, sin modificar el runtime.
   No se migro la cola; receptor pausado y webhook antiguo restaurado.
+- La revision `acbb30bd95b3a42ecd951567b159bd0907351d9c` paso install y la prueba
+  local de ingreso. Los logs reales revelaron que Bitrix llama la ruta con
+  `/api/v1/main/`, ausente del proxy original. Las ejecuciones antiguas seguian
+  ingresando y el receptor permanecia pausado; no se ejecuto cutover.
+  Se agregan ambas variantes de ruta y se conserva la URL registrada en Bitrix.
+  La clave observada coincide con la configurada (valores no registrados aqui).
+- Prueba de integracion del nuevo flow: ejecucion `2s8r8n37jiqLzHTHt4VJ6F` con
+  recibo inexistente termino SUCCESS; claim rechazo el recibo y ambas tareas
+  comerciales quedaron SKIPPED. No hubo escrituras comerciales. Falta verificar
+  el procesamiento real despues de habilitar la ruta correcta y migrar.

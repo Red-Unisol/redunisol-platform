@@ -34,7 +34,7 @@ def build_env(source, existing, revision):
         'BITRIX_WEBHOOK_KEY': key,
         'RECEIVER_ADMIN_TOKEN': existing.get('RECEIVER_ADMIN_TOKEN') or secrets.token_urlsafe(32),
         'ACTIONABLE_STATUSES': source.get('ENV_BITRIX24_LEAD_STATUS_PRECLASSIFICATION', 'NEW')+','+source['ENV_BITRIX24_LEAD_STATUS_QUALIFIED'],
-        'KESTRA_DISPATCH_URL': 'http://kestra:8080/api/v1/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_event_process/'+key,
+        'KESTRA_DISPATCH_URL': 'http://kestra:8080/api/v1/main/executions/webhook/redunisol.prod.marketing-crm/bitrix24_lead_event_process/'+key,
         'KESTRA_API_URL': 'http://kestra:8080/api/v1/main',
         'KESTRA_USERNAME': source['KESTRA_ADMIN_EMAIL'],
         'KESTRA_PASSWORD': source['KESTRA_ADMIN_PASSWORD'],
