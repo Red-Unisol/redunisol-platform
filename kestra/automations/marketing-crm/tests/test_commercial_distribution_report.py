@@ -1,7 +1,10 @@
 import importlib.util
 import tempfile
 import unittest
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "files"))
 
 
 MODULE_PATH = (

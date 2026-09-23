@@ -5,11 +5,9 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import tempfile
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -19,6 +17,8 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+
+from reporting_kestra.client import OutputCache, check_deadline, executions, hydrate_outputs, publish as publish_report
 
 
 NAVY, WHITE = "17365D", "FFFFFF"
@@ -179,20 +179,6 @@ CHAT_SKIP_REASON_LABELS = {
 }
 
 
-def api_get(session: requests.Session, url: str, **params: Any) -> Any:
-    error: Exception | None = None
-    for attempt in range(5):
-        try:
-            response = session.get(url, params=params, timeout=(10, 90))
-            response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError) as exc:
-            error = exc
-            if attempt < 4:
-                time.sleep(2**attempt)
-    raise RuntimeError(f"No se pudo consultar Kestra: {error}")
-
-
 def bitrix_user_names(api_url: str, user_ids: set[str]) -> dict[str, str]:
     if not api_url or not user_ids:
         return {}
@@ -218,31 +204,6 @@ def bitrix_user_names(api_url: str, user_ids: set[str]) -> dict[str, str]:
         for user in result
         if user.get("ID") or user.get("id")
     }
-
-
-def executions(
-    session: requests.Session,
-    base: str,
-    tenant: str,
-    namespace: str,
-    flow: str,
-) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    page = 1
-    while True:
-        payload = api_get(
-            session,
-            f"{base}/api/v1/{tenant}/executions/search",
-            namespace=namespace,
-            flowId=flow,
-            page=page,
-            size=100,
-        )
-        batch = payload.get("results", [])
-        result.extend(batch)
-        if not batch or len(result) >= int(payload.get("total", len(result))):
-            return result
-        page += 1
 
 
 def execution_state(row: dict[str, Any]) -> str:
@@ -286,7 +247,7 @@ def distribution_status(
     message: str = "",
     distribution_action: str = "",
 ) -> str:
-    if technical_state in {"FAILED", "KILLED"} or action == "error":
+    if technical_state in {"FAILED", "KILLED", "CANCELLED"} or action == "error":
         if (
             technical_state == "SUCCESS"
             and "no hay vendedores online disponibles" in message.lower()
@@ -344,7 +305,7 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
     action = str(outputs.get("action") or "").strip().lower()
     technical_state = execution_state(row)
     deal_id = str(outputs.get("deal_id") or "").strip()
-    if action == "no_pending" or (not deal_id and technical_state not in {"FAILED", "KILLED"}):
+    if action == "no_pending" or (not deal_id and technical_state not in {"FAILED", "KILLED", "CANCELLED"} and action != "error"):
         return None
 
     strategy = str(outputs.get("assignment_strategy") or "").strip()
@@ -374,7 +335,7 @@ def normalized(row: dict[str, Any]) -> dict[str, Any] | None:
         message,
         distribution_action,
     )
-    if not strategy and not rule_version and technical_state == "SUCCESS":
+    if not strategy and not rule_version and technical_state == "SUCCESS" and status != "Error técnico":
         status = "Histórico incompleto"
     return {
         "processed_at": processed_at,
@@ -443,11 +404,13 @@ def normalized_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         queue_events = json.loads(raw_events)
     except (TypeError, ValueError):
-        return []
+        raise RuntimeError("Eventos de cola invalidos; no se publica un informe incompleto.") from None
+    if not isinstance(queue_events, list):
+        raise RuntimeError("La cola no devolvio una lista de eventos")
     result: list[dict[str, Any]] = []
     for index, event_outputs in enumerate(queue_events):
         if not isinstance(event_outputs, dict):
-            continue
+            raise RuntimeError("Evento de cola invalido")
         # El estado "waiting" se reintenta cada minuto; conservarlo inflaría el
         # informe sin agregar una nueva decisión comercial.
         if event_outputs.get("action") == "queue_waiting":
@@ -585,8 +548,8 @@ def latest_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in sorted(
         rows, key=lambda item: item["processed_at"] or datetime.min, reverse=True
     ):
-        key = row["deal_id"] or f"execution:{row['execution_id']}"
-        result.setdefault(key, row)
+        if row["deal_id"]:
+            result.setdefault(row["deal_id"], row)
     return list(result.values())
 
 
@@ -617,11 +580,12 @@ def mute_previous_version(
     row_number: int,
     item: dict[str, Any],
     current: dict[str, tuple[str, Any]],
+    column_count: int = 45,
 ) -> None:
     flow_version = current.get(item["flow_id"] or "Flow sin identificar")
     if flow_version is None or (item["rule_version"], item["revision"]) == flow_version:
         return
-    for cell in ws[row_number]:
+    for cell in next(ws.iter_rows(min_row=row_number, max_row=row_number, max_col=column_count)):
         cell.fill = PatternFill("solid", fgColor=MUTED_FILL)
         cell.font = Font(color=MUTED_FONT)
 
@@ -702,6 +666,7 @@ def build(
         ("Sin vendedor disponible", status_counts["Sin vendedor disponible"]),
         ("Sin bucket", status_counts["Sin bucket"]),
         ("Errores técnicos", status_counts["Error técnico"]),
+        ("Ejecuciones fallidas sin negociación", sum(not row["deal_id"] and row["distribution_status"] == "Error técnico" for row in rows)),
         ("Históricos sin trazabilidad completa", status_counts["Histórico incompleto"]),
         ("Chats transferidos", sum(row["transferred_chat_count"] for row in cases)),
         (
@@ -864,6 +829,7 @@ def build(
     legacy = wb.create_sheet("Histórico incompleto")
     legacy.append(technical_headers)
     base = portal_base(bitrix_base_url)
+    row_counts = {sheet.title: 1 for sheet in (cases_sheet, exceptions, technical, legacy)}
 
     for item in cases:
         values = [item[key] for key in business_keys]
@@ -872,16 +838,17 @@ def build(
             target_sheets.append(exceptions)
         for sheet in target_sheets:
             sheet.append(values)
-            row_number = sheet.max_row
+            row_counts[sheet.title] += 1
+            row_number = row_counts[sheet.title]
             sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
             sheet.cell(row_number, 13).number_format = "dd/mm/yyyy hh:mm:ss"
-            for cell in sheet[row_number]:
+            for cell in next(sheet.iter_rows(min_row=row_number, max_row=row_number, max_col=len(values))):
                 cell.alignment = Alignment(vertical="center")
             sheet.cell(row_number, 3).alignment = Alignment(
                 wrap_text=False, vertical="center"
             )
             sheet.row_dimensions[row_number].height = 20
-            mute_previous_version(sheet, row_number, item, versions)
+            mute_previous_version(sheet, row_number, item, versions, len(values))
             add_link(
                 sheet.cell(row_number, 4),
                 f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
@@ -896,9 +863,10 @@ def build(
             target_sheets.append(legacy)
         for sheet in target_sheets:
             sheet.append(values)
-            row_number = sheet.max_row
+            row_counts[sheet.title] += 1
+            row_number = row_counts[sheet.title]
             sheet.cell(row_number, 1).number_format = "dd/mm/yyyy hh:mm:ss"
-            mute_previous_version(sheet, row_number, item, versions)
+            mute_previous_version(sheet, row_number, item, versions, len(values))
             add_link(
                 sheet.cell(row_number, 13),
                 f"{base}/crm/deal/details/{item['deal_id']}/" if base else "",
@@ -920,33 +888,17 @@ def build(
     return wb
 
 
-def publish(
-    workbook: Workbook,
-    root: Path,
-    generated_at: datetime,
-) -> tuple[Path, Path]:
-    report_dir = root / "marketing" / "distribucion-negociaciones"
-    history_dir = report_dir / "historico"
-    history_dir.mkdir(parents=True, exist_ok=True)
-    dated = history_dir / f"{generated_at:%Y-%m-%d}.xlsx"
-    latest = report_dir / "ultimo.xlsx"
-    with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".xlsx", delete=False) as handle:
-        temporary = Path(handle.name)
-    try:
-        workbook.save(temporary)
-        os.replace(temporary, dated)
-        dated.chmod(0o644)
-        with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".xlsx", delete=False) as handle:
-            latest_temporary = Path(handle.name)
-        shutil.copy2(dated, latest_temporary)
-        os.replace(latest_temporary, latest)
-        latest.chmod(0o644)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return latest, dated
+def publish(workbook: Workbook, root: Path, generated_at: datetime,
+            *, deadline: float | None = None, metadata: dict[str, Any] | None = None) -> tuple[Path, Path]:
+    return publish_report(workbook, root, "distribucion-negociaciones", generated_at,
+                          deadline=deadline, metadata=metadata)
 
 
 def main() -> None:
+    started = time.monotonic()
+    deadline = started + 3300
+    generated_at = datetime.now(ARGENTINA_TIMEZONE)
+    as_of = generated_at.astimezone(timezone.utc).isoformat()
     base = os.environ["REPORTS_KESTRA_URL"].rstrip("/")
     tenant = os.getenv("REPORTS_KESTRA_TENANT", "main")
     namespace = os.getenv("REPORTS_NAMESPACE", "redunisol.prod.marketing-crm")
@@ -962,11 +914,26 @@ def main() -> None:
             "REPORTS_AUDIT_FROM debe ser una fecha ISO válida; "
             f"valor recibido: {audit_from_value!r}"
         )
-    raw = [
-        {**row, "flowId": row.get("flowId") or flow_id}
-        for flow_id in FLOW_IDS
-        for row in executions(session, base, tenant, namespace, flow_id)
-    ]
+    root = Path(os.getenv("REPORTS_ROOT", "/reports"))
+    cache = OutputCache(Path(os.getenv("REPORTS_CACHE_PATH", str(root / ".cache" / "distribucion.sqlite"))), base, tenant)
+    raw = []
+    counts = {}
+    in_progress = 0
+    try:
+        for flow_id in FLOW_IDS:
+            index = executions(session, base, tenant, namespace, flow_id, deadline=deadline, as_of=as_of)
+            counts[flow_id] = len(index)
+            # Completed executions before coverage cannot contain later business events.
+            # Keep older unfinished executions: their eventual results must be revisited.
+            selected = [row for row in index if not (row.get("state") or {}).get("endDate")
+                        or parse_datetime(row["state"]["endDate"]) >= audit_from]
+            in_progress += sum(execution_state(row) not in {"SUCCESS", "WARNING", "FAILED", "KILLED", "CANCELLED"} for row in selected)
+            raw.extend(hydrate_outputs(selected, session, base, tenant, deadline=deadline, cache=cache))
+        if not any(counts.values()):
+            raise RuntimeError("No se encontraron ejecuciones comerciales; verificar cobertura antes de publicar.")
+    finally:
+        cache.close()
+        session.close()
     normalized_rows = [
         event
         for row in raw
@@ -986,15 +953,33 @@ def main() -> None:
     except (requests.RequestException, RuntimeError, ValueError):
         names = {}
     rows = add_user_displays(rows, names)
-    latest, dated = publish(
-        build(rows, os.getenv("REPORTS_BITRIX_BASE_URL", ""), audit_from),
-        Path(os.getenv("REPORTS_ROOT", "/reports")),
-        datetime.now(ARGENTINA_TIMEZONE).replace(tzinfo=None),
-    )
+    check_deadline(deadline)
+    metadata = {"ok": True, "generated_at": generated_at.isoformat(), "as_of": as_of,
+                "audit_from": audit_from.isoformat(), "namespace": namespace, "source_executions": counts,
+                "events": len(rows), "cases": len(latest_cases(rows)), "in_progress": in_progress,
+                "failed_without_deal": sum(not row["deal_id"] and row["distribution_status"] == "Error técnico" for row in rows)}
+    workbook = build(rows, os.getenv("REPORTS_BITRIX_BASE_URL", ""), audit_from)
+    coverage = workbook.create_sheet("Cobertura")
+    for item in [("Origen", "Decisiones comerciales y eventos de cola registrados por Kestra."),
+                 ("Fecha de corte", generated_at.replace(tzinfo=None)),
+                 ("Eventos incluidos desde", audit_from),
+                 ("Ejecuciones en curso", in_progress),
+                 ("Criterio", "Ultimo evento por negociacion; los sondeos sin trabajo y las esperas repetidas no son negociaciones."),
+                 ("Errores sin negociacion", "Se informan por separado y permanecen en Trazabilidad tecnica.")]:
+        coverage.append(item)
+    compact(coverage, {1: 30, 2: 95})
+    coverage.column_dimensions["B"].width = 95
+    for cells in coverage.iter_rows(min_row=2):
+        cells[1].alignment = Alignment(wrap_text=True, vertical="center")
+        coverage.row_dimensions[cells[1].row].height = 32
+    coverage["B2"].number_format = coverage["B3"].number_format = "dd/mm/yyyy hh:mm:ss"
+    latest, dated = publish(workbook, root, generated_at, deadline=deadline, metadata=metadata)
     print(json.dumps({
         "ok": True,
         "audit_from": audit_from.isoformat(),
         "events": len(rows),
+        "cases": len(latest_cases(rows)),
+        "seconds": round(time.monotonic() - started, 2),
         "latest": str(latest),
         "history": str(dated),
     }))

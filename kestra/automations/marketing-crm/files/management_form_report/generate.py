@@ -5,12 +5,8 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import tempfile
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
-from threading import local
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -22,6 +18,8 @@ from openpyxl.chart import BarChart, PieChart, Reference
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from reporting_kestra.client import OutputCache, check_deadline, executions, hydrate_outputs, publish as publish_report
+
 
 NAVY, WHITE = "17365D", "FFFFFF"
 GREEN, YELLOW, ORANGE, RED = "C6EFCE", "FFEB9C", "FCE4D6", "FFC7CE"
@@ -31,109 +29,6 @@ FLOW_ID = "bitrix24_form_webhook"
 ARGENTINA = ZoneInfo("America/Argentina/Buenos_Aires")
 MAX_RECORDS = 50_000
 MAX_SECONDS = 840
-
-
-def check_deadline(deadline: float | None) -> None:
-    if deadline is not None and time.monotonic() >= deadline:
-        raise RuntimeError("Se agoto el tiempo del informe; se conserva la ultima publicacion.")
-
-
-def api_get(session: requests.Session, url: str, *, deadline: float | None = None, **params: Any) -> Any:
-    for attempt in range(3):
-        check_deadline(deadline)
-        response = None
-        try:
-            response = session.get(url, params=params, timeout=(5, 30))
-            response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError):
-            # Do not retry permanent errors or print authentication URLs/bodies.
-            status = getattr(response, "status_code", None)
-            if attempt == 2 or (status and 400 <= status < 500 and status != 429):
-                raise RuntimeError("Fallo la consulta del informe; no se publicaran datos incompletos.") from None
-            time.sleep(2**attempt)
-    raise AssertionError("unreachable")
-
-
-def executions(session: requests.Session, base: str, tenant: str, namespace: str, flow: str,
-               *, max_records: int = MAX_RECORDS, deadline: float | None = None) -> list[dict[str, Any]]:
-    if max_records < 1:
-        raise ValueError("max_records debe ser positivo")
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    snapshot = datetime.now(timezone.utc).isoformat()
-    page = 1
-    expected_total: int | None = None
-    while True:
-        payload = api_get(
-            session, f"{base}/api/v1/{tenant}/executions/search", deadline=deadline,
-            **{"filters[namespace][EQUALS]": namespace,
-               "filters[flowId][EQUALS]": flow,
-               # An explicit date removes Kestra's implicit recent-history window.
-               # No lower date bound: preserve the full available accumulation.
-               "filters[startDate][LESS_THAN_OR_EQUAL_TO]": snapshot,
-               "sort": "state.startDate:asc", "page": page, "size": 500},
-        )
-        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
-            raise RuntimeError("Respuesta de ejecuciones invalida")
-        total = int(payload["total"])
-        if total > max_records:
-            raise RuntimeError(f"El acumulado supera el limite de {max_records} registros; no se trunca ni publica.")
-        if expected_total is None:
-            expected_total = total
-        elif total != expected_total:
-            raise RuntimeError("El historial cambio durante la lectura; repetir para evitar un informe incompleto.")
-        batch = payload["results"]
-        for row in batch:
-            if row.get("namespace") != namespace or row.get("flowId") != flow:
-                raise RuntimeError("Kestra no respeto los filtros; se cancela el informe.")
-            execution_id = str(row.get("id") or "")
-            if not execution_id or execution_id in seen:
-                raise RuntimeError("Paginacion duplicada o sin identificador")
-            seen.add(execution_id)
-            result.append(row)
-            if len(result) > max_records or len(result) > expected_total:
-                raise RuntimeError("El numero de registros excede el total esperado")
-        if len(result) == expected_total:
-            print(json.dumps({"event": "forms_loaded", "count": len(result)}), flush=True)
-            return result
-        if not batch:
-            raise RuntimeError("Paginacion incompleta; se conserva el ultimo informe.")
-        page += 1
-
-
-def hydrate_outputs(rows: list[dict[str, Any]], session: requests.Session, base: str, tenant: str,
-                    *, deadline: float | None = None, workers: int = 4) -> list[dict[str, Any]]:
-    if not 1 <= workers <= 4:
-        raise ValueError("workers debe estar entre uno y cuatro")
-    context = local()
-    sessions: list[requests.Session] = []
-
-    def hydrate(row: dict[str, Any]) -> dict[str, Any]:
-        check_deadline(deadline)
-        if not hasattr(context, "session"):
-            context.session = requests.Session()
-            context.session.auth = session.auth
-            context.session.headers.update(session.headers)
-            sessions.append(context.session)
-        outputs = api_get(context.session, f"{base}/api/v1/{tenant}/outputs/executions/{row['id']}",
-                          deadline=deadline)
-        if not isinstance(outputs, dict):
-            raise RuntimeError("Respuesta de resultados invalida")
-        return {**row, "outputs": outputs}
-
-    result = []
-    try:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            # Bound queued futures as well as active requests; fail within one batch.
-            for start in range(0, len(rows), 100):
-                check_deadline(deadline)
-                result.extend(pool.map(hydrate, rows[start:start + 100]))
-                print(json.dumps({"event": "outputs_loaded", "count": len(result), "total": len(rows)}), flush=True)
-    finally:
-        for client in sessions:
-            client.close()
-    return result
 
 
 def state(row: dict[str, Any]) -> str:
@@ -360,29 +255,9 @@ def build(rows: list[dict[str, Any]]) -> Workbook:
 
 
 def publish(workbook: Workbook, root: Path, generated_at: datetime,
-            *, deadline: float | None = None) -> tuple[Path, Path]:
-    report_dir = root / "marketing" / "formulario-bitrix"
-    history_dir = report_dir / "historico"
-    history_dir.mkdir(parents=True, exist_ok=True)
-    dated = history_dir / f"{generated_at:%Y-%m-%d}.xlsx"
-    latest = report_dir / "ultimo.xlsx"
-    temporary_paths = []
-    try:
-        for _ in range(2):
-            with tempfile.NamedTemporaryFile(dir=report_dir, suffix=".tmp", delete=False) as handle:
-                temporary_paths.append(Path(handle.name))
-        temporary, latest_temporary = temporary_paths
-        workbook.save(temporary)
-        shutil.copy2(temporary, latest_temporary)
-        temporary.chmod(0o644)
-        latest_temporary.chmod(0o644)
-        check_deadline(deadline)
-        os.replace(temporary, dated)
-        os.replace(latest_temporary, latest)
-    finally:
-        for path in temporary_paths:
-            path.unlink(missing_ok=True)
-    return latest, dated
+            *, deadline: float | None = None, metadata: dict[str, Any] | None = None) -> tuple[Path, Path]:
+    return publish_report(workbook, root, "formulario-bitrix", generated_at,
+                          deadline=deadline, metadata=metadata)
 
 
 def main() -> None:
@@ -391,16 +266,44 @@ def main() -> None:
     base = os.environ["REPORTS_KESTRA_URL"].rstrip("/")
     tenant = os.getenv("REPORTS_KESTRA_TENANT", "main")
     namespace = os.getenv("REPORTS_NAMESPACE", "redunisol.prod.marketing-crm")
+    generated_at = datetime.now(ARGENTINA)
+    as_of = generated_at.astimezone(timezone.utc).isoformat()
+    root = Path(os.getenv("REPORTS_ROOT", "/reports"))
+    cache = OutputCache(Path(os.getenv("REPORTS_CACHE_PATH", str(root / ".cache" / "formulario-bitrix.sqlite"))), base, tenant)
     with requests.Session() as session:
         session.auth = (os.environ["REPORTS_KESTRA_USERNAME"], os.environ["REPORTS_KESTRA_PASSWORD"])
-        parents = executions(session, base, tenant, namespace, FLOW_ID, deadline=deadline)
-        parents = hydrate_outputs(parents, session, base, tenant, deadline=deadline)
+        try:
+            parents = executions(session, base, tenant, namespace, FLOW_ID, deadline=deadline,
+                                 max_records=MAX_RECORDS, as_of=as_of)
+            if not parents:
+                raise RuntimeError("No se encontraron formularios; verificar la cobertura antes de publicar.")
+            parents = hydrate_outputs(parents, session, base, tenant, deadline=deadline, cache=cache)
+        finally:
+            cache.close()
     rows = [normalized(row) for row in parents]
     check_deadline(deadline)
     workbook = build(rows)
     check_deadline(deadline)
-    latest, dated = publish(workbook, Path(os.getenv("REPORTS_ROOT", "/reports")),
-                            datetime.now(ARGENTINA), deadline=deadline)
+    metadata = {"ok": True, "generated_at": generated_at.isoformat(), "as_of": as_of,
+                "namespace": namespace, "flows": [FLOW_ID], "forms": len(rows),
+                "leads": len({row["lead_id"] for row in rows if row["lead_id"]}),
+                "first_form_at": min(row["date"] for row in rows if row["date"]).isoformat(),
+                "categories": dict(Counter(row["category"] for row in rows))}
+    methodology = workbook.create_sheet("Cobertura")
+    for label, value in [("Origen", "Formularios recibidos por Kestra; no representa el estado actual del CRM."),
+                         ("Fecha de corte", generated_at.replace(tzinfo=None)),
+                         ("Formularios incluidos", len(rows)),
+                         ("Criterio", "Acumulado disponible. Cada envio cuenta una vez; los leads se cuentan por ID unico."),
+                         ("Precalificacion", "Se usa la respuesta incluida en el formulario. Sin respuesta no se presume rechazo."),
+                         ("En curso", sum(row["technical_state"] not in {"SUCCESS", "WARNING", "FAILED", "KILLED", "CANCELLED"} for row in rows))]:
+        methodology.append([label, value])
+    compact(methodology, {1: 30, 2: 95})
+    methodology.column_dimensions["B"].width = 95
+    for cells in methodology.iter_rows(min_row=2):
+        cells[1].alignment = Alignment(wrap_text=True, vertical="center")
+        methodology.row_dimensions[cells[1].row].height = 32
+    methodology["B2"].number_format = "dd/mm/yyyy hh:mm:ss"
+    latest, dated = publish(workbook, root, generated_at, deadline=deadline, metadata=metadata)
     print(json.dumps({"ok": True, "forms": len(rows),
                       "leads": len({row["lead_id"] for row in rows if row["lead_id"]}),
                       "seconds": round(time.monotonic() - started, 2),

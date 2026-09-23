@@ -2,7 +2,10 @@ import importlib.util
 import tempfile
 import time
 import unittest
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "files"))
 from unittest.mock import Mock, patch
 
 MODULE_PATH = Path(__file__).parents[1] / "files" / "management_form_report" / "generate.py"
@@ -20,7 +23,7 @@ def execution(execution_id, *, outputs=None, body=None, state="SUCCESS", start="
 
 class ManagementFormReportTest(unittest.TestCase):
     def query(self, pages, **kwargs):
-        with patch.object(REPORT, "api_get", side_effect=pages) as get:
+        with patch("reporting_kestra.client.api_get", side_effect=pages) as get:
             result = REPORT.executions(Mock(), "https://kestra", "main", NS, REPORT.FLOW_ID, **kwargs)
         return result, get
 
@@ -65,7 +68,7 @@ class ManagementFormReportTest(unittest.TestCase):
         def get(client, url, **kwargs):
             self.assertIn("/outputs/executions/", url)
             return {"lead_id": "42" if url.endswith("old") else "43", "action": "ingested"}
-        with patch.object(REPORT, "api_get", side_effect=get) as mocked:
+        with patch("reporting_kestra.client.api_get", side_effect=get) as mocked:
             rows = REPORT.hydrate_outputs([execution("old"), execution("new")], session,
                                           "https://kestra", "main", workers=2)
         self.assertEqual([r["outputs"]["lead_id"] for r in rows], ["42", "43"])
@@ -73,7 +76,7 @@ class ManagementFormReportTest(unittest.TestCase):
 
     def test_output_fetch_failure_is_not_replaced_by_empty_result(self):
         session = Mock(auth=("user", "password"), headers={})
-        with patch.object(REPORT, "api_get", side_effect=RuntimeError("API failed")):
+        with patch("reporting_kestra.client.api_get", side_effect=RuntimeError("API failed")):
             with self.assertRaises(RuntimeError):
                 REPORT.hydrate_outputs([execution("one")], session, "https://kestra", "main")
 
