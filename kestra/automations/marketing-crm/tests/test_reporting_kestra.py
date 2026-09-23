@@ -87,11 +87,11 @@ class ReportingClientTest(unittest.TestCase):
     def test_index_minimizes_request_data_and_enforces_cutoff(self):
         original = row()
         original["trigger"] = {"variables": {"headers": {"Authorization": "must-not-persist"},
-            "body": {"province": "Cordoba", "unknown_secret": "must-not-persist"}}}
+            "body": {"province": "Cordoba", "submission_channel": "web", "utm_term": "test", "unknown_secret": "must-not-persist"}}}
         with patch.object(client, "api_get", return_value={"total": 1, "results": [original]}):
             data = client.executions(self.session, "https://kestra", "main", original["namespace"], original["flowId"], as_of="2026-09-02T00:00:00Z")
         self.assertNotIn("must-not-persist", json.dumps(data))
-        self.assertEqual(data[0]["trigger"]["variables"]["body"], {"province": "Cordoba"})
+        self.assertEqual(data[0]["trigger"]["variables"]["body"], {"province": "Cordoba", "submission_channel": "web", "utm_term": "test"})
         with patch.object(client, "api_get", return_value={"total": 1, "results": [original]}):
             with self.assertRaisesRegex(RuntimeError, "posterior"):
                 client.executions(self.session, "https://kestra", "main", original["namespace"], original["flowId"], as_of="2026-08-01T00:00:00Z")
@@ -126,6 +126,20 @@ class ReportingClientTest(unittest.TestCase):
 
 
 class ManualExportTest(unittest.TestCase):
+    def test_workbook_without_error_logs_and_cancelled_counts(self):
+        path = Path(__file__).parents[3] / "tools" / "export_kestra_form_executions.py"
+        spec = importlib.util.spec_from_file_location("manual_report_counts", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for state in ("SUCCESS", "CANCELLED"):
+            with self.subTest(state=state):
+                wb = module.build_workbook([row(state=state)], {}, "test", "bitrix24_form_webhook", module.datetime.now())
+                expected = int(state == "CANCELLED")
+                summary = {r[0]: r[1] for r in wb["Resumen"].iter_rows(values_only=True)}
+                self.assertEqual(summary["Fallidas/Killed/Canceladas"], expected)
+                self.assertEqual(wb["Análisis diario"].cell(2, 4).value, expected)
+                self.assertEqual(wb["Logs errores"].max_row, 1)
+
     def test_manual_export_uses_same_scope_and_hydrated_outputs(self):
         path = Path(__file__).parents[3] / "tools" / "export_kestra_form_executions.py"
         spec = importlib.util.spec_from_file_location("manual_report_test", path)

@@ -154,7 +154,7 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
         ("Namespace", namespace), ("Flow", flow_id), ("Generado", generated_at),
         ("Primera ejecución", min(starts) if starts else ""),
         ("Última ejecución", max(starts) if starts else ""),
-        ("Total", len(executions)), ("Exitosas", success), ("Fallidas/Killed", failed),
+        ("Total", len(executions)), ("Exitosas", success), ("Fallidas/Killed/Canceladas", failed),
         ("Tasa de éxito", success / len(executions) if executions else 0),
         ("Resultados exitosos/ingresados", outcomes.get("EXITOSO", 0)),
         ("Rechazados por reglas", outcomes.get("RECHAZADO", 0)),
@@ -227,7 +227,7 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
     style_table(detail, filter_range=f"A1:{get_column_letter(detail.max_column)}{detail.max_row}")
     detail.auto_filter.ref = f"A1:{get_column_letter(detail.max_column)}{detail.max_row}"
     detail.conditional_formatting.add(f"B2:B{detail.max_row}", FormulaRule(formula=["B2=\"SUCCESS\""], fill=PatternFill("solid", fgColor=COLORS["green"])))
-    detail.conditional_formatting.add(f"B2:B{detail.max_row}", FormulaRule(formula=["OR(B2=\"FAILED\",B2=\"KILLED\")"], fill=PatternFill("solid", fgColor=COLORS["red"])))
+    detail.conditional_formatting.add(f"B2:B{detail.max_row}", FormulaRule(formula=["OR(B2=\"FAILED\",B2=\"KILLED\",B2=\"CANCELLED\")"], fill=PatternFill("solid", fgColor=COLORS["red"])))
     detail.conditional_formatting.add(f"C2:C{detail.max_row}", FormulaRule(formula=["C2=\"EXITOSO\""], fill=PatternFill("solid", fgColor=COLORS["green"])))
     detail.conditional_formatting.add(f"C2:C{detail.max_row}", FormulaRule(formula=["OR(C2=\"ERROR TÉCNICO\",C2=\"ERROR LÓGICO\")"], fill=PatternFill("solid", fgColor=COLORS["red"])))
     detail.conditional_formatting.add(f"C2:C{detail.max_row}", FormulaRule(formula=["C2=\"RECHAZADO\""], fill=PatternFill("solid", fgColor=COLORS["yellow"])))
@@ -264,13 +264,14 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
             logs_ws.append([execution_id, iso_value(log.get("timestamp")), log.get("level"), log.get("taskId"),
                             log.get("taskRunId"), log.get("attemptNumber"), log.get("message")])
     style_table(logs_ws, filter_range=f"A1:G{logs_ws.max_row}")
-    logs_ws.conditional_formatting.add(f"C2:C{logs_ws.max_row}", FormulaRule(formula=["C2=\"ERROR\""], fill=PatternFill("solid", fgColor=COLORS["red"])))
+    if logs_ws.max_row > 1:
+        logs_ws.conditional_formatting.add(f"C2:C{logs_ws.max_row}", FormulaRule(formula=["C2=\"ERROR\""], fill=PatternFill("solid", fgColor=COLORS["red"])))
     autosize(logs_ws, {1: 28, 7: 120})
 
     daily_ws = wb.create_sheet("Análisis diario")
     daily_ws.append(["Fecha", "Total", "Exitosas técnicas", "Errores técnicos", "Errores lógicos", "Rechazados", "Tasa éxito técnica"])
     for day, counts in sorted(daily.items()):
-        total = sum(counts.values()); ok = counts.get("SUCCESS", 0); bad = counts.get("FAILED", 0) + counts.get("KILLED", 0)
+        total = sum(counts.values()); ok = counts.get("SUCCESS", 0); bad = sum(counts.get(state, 0) for state in ("FAILED", "KILLED", "CANCELLED"))
         day_items = [x for x in executions if (iso_value((x.get("state") or {}).get("startDate")).date().isoformat() if isinstance(iso_value((x.get("state") or {}).get("startDate")), datetime) else "Sin fecha") == day]
         day_outcomes = Counter(outcome_of(x) for x in day_items)
         daily_ws.append([day, total, ok, bad, day_outcomes.get("ERROR LÓGICO", 0), day_outcomes.get("RECHAZADO", 0), ok / total if total else 0])

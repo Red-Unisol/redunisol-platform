@@ -18,7 +18,7 @@ import requests
 TERMINAL_STATES = {"SUCCESS", "WARNING", "FAILED", "KILLED", "CANCELLED"}
 BODY_FIELDS = {
     "full_name", "cuil", "email", "whatsapp", "province", "employment_status",
-    "payment_bank", "lead_source", "utm_source", "utm_medium", "utm_campaign",
+    "payment_bank", "lead_source", "submission_channel", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "landing_slug", "landing_url", "prequalification_available", "prequalified",
     "prequalification_reason", "prequalification_message", "prequalification_rule_version",
 }
