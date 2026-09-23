@@ -6,11 +6,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { initializeTheme } from './hooks/use-appearance';
+import { formatPageTitle } from './lib/seo';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Red Unisol';
 
 createInertiaApp({
-    title: (title) => (title ? `${title} - ${appName}` : appName),
+    title: (title) => formatPageTitle(title, appName),
     resolve: (name) =>
         resolvePageComponent(
             `./pages/${name}.tsx`,

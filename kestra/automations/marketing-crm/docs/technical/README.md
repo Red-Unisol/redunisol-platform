@@ -4,6 +4,7 @@
 
 | Documento | Propósito |
 |---|---|
+| [`EDNA_INCOMING_WEBHOOK.md`](EDNA_INCOMING_WEBHOOK.md) | Inbox HTTP de Edna, autenticación, reintentos y activación del receptor del router WhatsApp. |
 | [`RUNTIME_ARCHITECTURE.md`](RUNTIME_ARCHITECTURE.md) | Flujo actual entre formulario, leads, negociaciones, Kestra y Bitrix24. |
 | [`TECHNICAL_REFERENCE.md`](TECHNICAL_REFERENCE.md) | Campos, etapas, usuarios y fronteras técnicas conocidas. |
 | [`FORM_WEBHOOK_API.md`](FORM_WEBHOOK_API.md) | Contrato del endpoint que crea contacto y lead. |

@@ -20,6 +20,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r kestra/tools/requirements.txt
+          pip install -r apps/credixsa-cache-api/requirements.txt
           pip install beautifulsoup4
 
       - name: Validate repository structure
@@ -38,6 +39,8 @@ jobs:
             --env kestra/platform/infra/kestra-runtime.env.enc \
             --allow-missing KESTRA_CONFIG_SHA256 \
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
+            --allow-missing ENV_EDNA_INCOMING_SUBJECT_ID \
+            --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
             --allow-missing SECRET_SMTP_PASSWORD
 
       - name: Run deploy tooling tests
@@ -60,8 +63,21 @@ jobs:
         env:
           PYTHONPATH: kestra/automations/marketing-crm/files
 
+      - name: Test durable Bitrix lead receiver
+        working-directory: platform/bitrix-lead-receiver
+        run: python -m unittest -v
+
+      - name: Validate Bitrix receiver Compose
+        run: |
+          cp platform/bitrix-lead-receiver/.env.example platform/bitrix-lead-receiver/.env
+          docker compose -f platform/bitrix-lead-receiver/docker-compose.yml config -q
+          rm platform/bitrix-lead-receiver/.env
+
       - name: Run Marketing CRM report tests
         run: python -m unittest discover -s kestra/automations/marketing-crm/tests -p "test_*.py"
+
+      - name: Build Bitrix lead receiver image
+        run: docker build platform/bitrix-lead-receiver -t bitrix-lead-receiver:test
 
       - name: Run Analisis Credito unit tests
         run: python -m unittest discover -s kestra/automations/analisis-credito/tests -p "test_*.py"
@@ -93,3 +109,26 @@ jobs:
 
       - name: Build CredixSA worker image
         run: docker build kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2 -t analisis-credito-credixsa:test
+
+  edna-receiver:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: http://localhost
+    defaults:
+      run:
+        working-directory: web/redunisol-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite3, pdo_sqlite, intl, zip, bcmath
+          coverage: none
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-scripts
+      - name: Discover packages
+        run: |
+          printf 'APP_URL=http://localhost\n' > .env
+          php artisan package:discover
+      - name: Test Edna HTTP inbox and delivery worker
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php

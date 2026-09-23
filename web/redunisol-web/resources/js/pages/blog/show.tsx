@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import BlogCard, { type BlogPost } from '@/components/blog/BlogCard';
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
+import SeoHead from '@/components/seo-head';
 
 interface BlogShowProps {
     post: BlogPost;
@@ -24,7 +25,8 @@ export default function BlogShow() {
 
     return (
         <>
-            <Navbar activeTab="unset" setActiveTab={() => {}} />
+            <SeoHead />
+            <Navbar />
 
             {/* Hero */}
             <div className="bg-gradient-custom relative flex min-h-115 items-end overflow-hidden">

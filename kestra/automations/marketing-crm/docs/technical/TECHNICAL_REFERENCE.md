@@ -28,13 +28,32 @@ una operación se deben verificar los flows y el ambiente desplegado.
 | Cantidad de créditos activos Vimarx | `UF_CRM_VIMARX_CRED_ACT_CNT` |
 | Intentos de prefill | `UF_CRM_KSTRA_BF_ATTEMPTS` |
 
+## Resolucion de identidad Finguru con A13
+
+Para Finguru (`3729`) con el mismo DNI de ocho digitos en DNI y CUIL, el prefill
+consulta primero `resolver_cuil_a13_por_dni`. El servicio oficial A13 busca las
+claves por documento y consulta cada persona. Conserva solo CUIT/CUIL activos;
+CDI y claves inactivas quedan excluidos. Si queda una unica clave, se acepta sin
+comparar nombre ni apellido con el lead. Se validan el documento y el identificador.
+
+Si no queda ninguna, quedan varias o falla A13 (incluyendo consultas parciales),
+se recurre a CredixSA con la politica de reintentos existente. Una respuesta unica
+de A13 permite sanear el CUIL, vincular el contacto y continuar con ARCA, Vimarx y
+BCRA sin llamar a CredixSA ni modificar campos historicos de ese proveedor.
+Con CUIL completo no se necesita busqueda por DNI ni consulta a CredixSA.
+Los otros origenes conservan el prefill sin CredixSA.
+
+Desplegar primero los namespace files y el flow de `analisis-credito`, y luego
+los cambios de `marketing-crm`. No requiere credenciales nuevas: reutiliza el
+certificado, clave y ticket WSAA de A13. El nuevo flow es interno, sin trigger.
+
 ## Saneamiento Finguru en el prefill
 
 Para `origenFormulario=3729`, el prefill detecta el caso conocido donde Finguru
-escribe el mismo DNI de ocho digitos en los campos DNI y CUIL. CredixSA se consulta
-primero con ese DNI. El CUIL devuelto solo reemplaza el campo CUIL cuando:
+escribe el mismo DNI de ocho digitos en los campos DNI y CUIL. A13 se consulta
+primero con ese DNI; CredixSA queda como respaldo. El CUIL devuelto solo reemplaza el campo CUIL cuando:
 
-- el resultado es unico (`single`);
+- el resultado es unico (`single`), luego del filtro de claves activas CUIT/CUIL para A13;
 - tiene once digitos y checksum valido;
 - sus ocho digitos centrales coinciden exactamente con el DNI consultado.
 

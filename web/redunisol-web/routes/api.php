@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\BitrixRoutingConfigController;
 use App\Http\Controllers\BitrixVolumeAllocationController;
+use App\Http\Controllers\EdnaIncomingController;
+use App\Http\Controllers\EdnaProbeController;
 use App\Http\Controllers\FormSubmissionController;
 use App\Http\Controllers\PdfSearchController;
 use Illuminate\Http\Request;
@@ -10,6 +12,10 @@ use Illuminate\Support\Facades\Storage;
 
 Route::post('/pdf/search', PdfSearchController::class)->name('api.pdf.search');
 Route::post('/form-submissions', FormSubmissionController::class)->name('api.form-submissions.store');
+Route::match(['HEAD', 'POST'], '/webhooks/edna/incoming', EdnaIncomingController::class)
+    ->name('api.edna.incoming');
+Route::match(['HEAD', 'POST'], '/webhooks/edna/probe/{probe}', EdnaProbeController::class)
+    ->whereUuid('probe')->name('api.edna.probe');
 Route::get('/internal/bitrix-routing', BitrixRoutingConfigController::class)->name('api.bitrix-routing.show');
 Route::post('/internal/bitrix-routing/allocate', BitrixVolumeAllocationController::class)->name('api.bitrix-routing.allocate');
 

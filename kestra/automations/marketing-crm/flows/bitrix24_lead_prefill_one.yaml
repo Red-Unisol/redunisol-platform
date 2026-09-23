@@ -30,9 +30,18 @@ inputs:
   required: true
   defaults: 3
 tasks:
+- id: consultar_identidad_a13
+  type: io.kestra.plugin.core.flow.Subflow
+  runIf: "{{ (inputs.source_id ?? '') == '3729' and ((inputs.credix_identifier ?? '') | length) == 8 }}"
+  namespace: "{{ flow.namespace | replace({'marketing-crm': 'analisis-credito'}) }}"
+  flowId: resolver_cuil_a13_por_dni
+  inputs:
+    dni: '{{ inputs.credix_identifier }}'
+  wait: true
+  transmitFailed: false
 - id: consultar_credixsa
   type: io.kestra.plugin.core.flow.Subflow
-  runIf: '{{ (inputs.credix_identifier ?? '''') != '''' }}'
+  runIf: "{{ (inputs.source_id ?? '') == '3729' and ((inputs.credix_identifier ?? '') | length) == 8 and not (outputs.consultar_identidad_a13.outputs is defined and (outputs.consultar_identidad_a13.outputs.ok ?? false) and (outputs.consultar_identidad_a13.outputs.status ?? '') == 'single') }}"
   namespace: '{{ flow.namespace | replace({''marketing-crm'': ''analisis-credito''}) }}'
   flowId: consulta_quiebra_credix
   inputs:
@@ -50,6 +59,9 @@ tasks:
     pullPolicy: IF_NOT_PRESENT
   containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
   env:
+    ARCA_IDENTITY_OK: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.ok ?? false) : false }}"
+    ARCA_IDENTITY_STATUS: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.status ?? '') : '' }}"
+    ARCA_IDENTITY_CUIL: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.cuil ?? '') : '' }}"
     PREFILL_SOURCE_ID: '{{ inputs.source_id ?? '''' }}'
     PREFILL_CUIL: '{{ inputs.cuil ?? '''' }}'
     PREFILL_DNI: '{{ inputs.dni ?? '''' }}'
@@ -79,6 +91,9 @@ tasks:
     pullPolicy: IF_NOT_PRESENT
   containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
   env:
+    ARCA_IDENTITY_OK: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.ok ?? false) : false }}"
+    ARCA_IDENTITY_STATUS: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.status ?? '') : '' }}"
+    ARCA_IDENTITY_CUIL: "{{ outputs.consultar_identidad_a13.outputs is defined ? (outputs.consultar_identidad_a13.outputs.cuil ?? '') : '' }}"
     LEAD_ID: '{{ inputs.lead_id }}'
     BACKFILL_MAX_ATTEMPTS: '{{ inputs.max_attempts }}'
     ARCA_OK: '{{ outputs.consultar_arca.outputs is defined ? (outputs.consultar_arca.outputs.ok ?? false) : false }}'

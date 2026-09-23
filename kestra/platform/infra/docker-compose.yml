@@ -31,8 +31,8 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "500m"
+        max-file: "10"
     user: "root"
     command: server standalone --config /etc/kestra/application.yaml
     depends_on:
@@ -114,6 +114,8 @@ services:
       ENV_EDNA_URL: ${ENV_EDNA_URL}
       ENV_EDNA_SENDER: ${ENV_EDNA_SENDER}
       ENV_EDNA_TIMEOUT_SECONDS: ${ENV_EDNA_TIMEOUT_SECONDS}
+      ENV_EDNA_INCOMING_SUBJECT_ID: ${ENV_EDNA_INCOMING_SUBJECT_ID:-}
+      SECRET_EDNA_INCOMING_WEBHOOK_KEY: ${SECRET_EDNA_INCOMING_WEBHOOK_KEY:-}
       ENV_CIDI_BASE_URL: ${ENV_CIDI_BASE_URL}
       ENV_CIDI_CLIENT_ID: ${ENV_CIDI_CLIENT_ID}
       ENV_CAJA_BASE_URL: ${ENV_CAJA_BASE_URL}

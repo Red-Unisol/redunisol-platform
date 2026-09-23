@@ -4,6 +4,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 ## Flows
 
+- `capturar_revision_riesgo`: [archivo prospectivo de solicitudes y adjuntos](capturar_revision_riesgo.md), cada minuto.
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
 - `tope_descuento_caja_mensual`
@@ -306,6 +307,19 @@ Antes de navegar, calcula claves de cache por CUIL y por nombre normalizado. Si 
 - `credixsa.cuil.<cuil>`
 - `credixsa.name.<sha256_nombre_normalizado>`
 
+Antes de guardar un informe nuevo, `consulta_quiebra_credix/bcra.py` prepara el
+bloque `normalized.bcra` desde la API oficial. Se usa tambien durante el
+precalentamiento (ver abajo). Un hit de cache devuelve la fuente ya guardada,
+sin consultar BCRA ni renovar fechas. Las entradas anteriores sin fuente siguen
+siendo CredixSA hasta renovarse; `data_json` conserva el informe original CredixSA
+y `normalized_json` contiene el bloque financiero de la fuente elegida.
+
+Si la consulta a CredixSA falla por un error tecnico (por ejemplo, el portal tarda mas de `CREDIX_TIMEOUT_SECONDS` en mostrar el informe), `kestra_webhook_entrypoint` reintenta una vez despues de 10 segundos. Si fallan los dos intentos, la task termina con exit code 1 y `status=technical_error`. Los pedidos invalidos y la configuracion faltante no se reintentan.
+
+El reintento vive en el script y no como `retry` de la task: en la instalacion actual de Kestra 2 se observaron estados `FAILED` intermedios y task runs duplicados de `consultar_quiebra` al usar el retry del YAML. No volver a agregar `retry` a esta task. Los dos intentos no establecen un limite global de duracion: cada consulta puede acumular varias esperas del navegador.
+
+En produccion, `alerta_flow_fallos` avisa a Bitrix24 despues de **3 ejecuciones distintas consecutivas en FAILED** de este flow. Un intento fallido dentro del script no suma al contador; una ejecucion agotada sigue terminando en `FAILED` aunque todavia no corresponda notificar. Cualquier `SUCCESS` reinicia la racha (incluye cache hit, sin resultados y pedidos invalidos que terminan normalmente). Solo se envia recuperacion si habia una alerta abierta. La politica y su estado KV viven en el target `system`, que tambien debe desplegarse con este cambio.
+
 ### Entrada
 
 Webhook `POST` con JSON:
@@ -377,10 +391,46 @@ Corre cada minuto en horario util con concurrencia `1`. En cada corrida:
 5. arma un preview acotado de candidatos
 6. solo si hay candidatos ejecuta el worker pesado de warmup
 7. el worker consulta CredixSA con retry por candidato
-8. guarda cache por CUIL y por nombre si el resultado es `single`
-9. actualiza el indice diario, incluidos los fallos acumulados por OID
+8. si el resultado es `single`, consulta BCRA por el CUIL resuelto y prepara el informe financiero
+9. guarda cada informe terminado en SQLite antes del siguiente candidato, y acumula las entradas KV por CUIL y nombre para persistirlas al finalizar el worker
+10. actualiza el indice diario, incluidos los fallos acumulados por OID
 
 Si CredixSA falla para un candidato dentro del worker, la siguiente corrida vuelve a intentarlo hasta alcanzar el limite diario configurado. Al llegar al limite, el OID queda descartado hasta el siguiente dia.
+
+BCRA se consulta en paralelo para deuda vigente e historica, con hasta **3
+intentos totales por endpoint**, timeout de 8 segundos y pausas de **12 segundos**.
+Se reintenta solo el endpoint fallido, sin repetir CredixSA. Ambas respuestas deben
+ser validas para reemplazar todo el bloque financiero; de lo contrario se guarda
+el respaldo CredixSA y el socio queda procesado por ese dia. El analista recibe
+ese resultado sin reintentos adicionales. Un fallo al escribir SQLite deja al
+candidato pendiente para otra corrida.
+
+El cache incluye `fuente`, estado de consulta directa, deudas vigentes, historial
+de 24 meses y evolucion. BCRA incluye sus totales y `consultado_en`; sus montos en
+miles de pesos se convierten a pesos y el subtotal negativo suma situaciones >=2.
+Un 404 documentado sin registros es una respuesta valida sin deuda; una respuesta
+invalida no se interpreta como cero. La API de cache y Herramientas leen el mismo
+contrato, con **Fuente: BCRA** o **Fuente: CredixSA** y las mismas tablas.
+
+La situacion `0` devuelta por la API se conserva sin interpretacion, con su monto
+original convertido a pesos y color neutro en la pantalla. No invalida el historial
+ni se transforma en situacion 1 o en monto cero. Se siguen rechazando situaciones
+ausentes o fuera de 0..6, importes invalidos e identidades que no coincidan.
+
+`consulta_directa_intentos` guarda por endpoint el numero de intento, HTTP cuando
+se recibio una respuesta y resultado (`ok`, `http_error`, `transport_error` o
+`invalid_response`). Los fallos se registran tambien en logs de advertencia y los
+exitos en nivel INFO, sin identidades, cuerpos de respuesta, URLs ni texto de
+excepciones. El estado final distingue
+`invalid_response` y `processing_error` de `unavailable`; se calcula con el ultimo
+resultado de cada endpoint para no confundir un fallo ya recuperado con la causa
+final. Las entradas anteriores sin este detalle no permiten reconstruir sus fallos.
+
+La vigencia sigue siendo de 7 dias. Si falta el precalentamiento, la primera
+consulta al webhook hace esta misma preparacion antes de persistir. Para validar
+el circuito completo localmente, instalar tambien
+`apps/credixsa-cache-api/requirements.txt`: `test_bcra_warmup.py` lee mediante la
+API real de cache el SQLite producido por el worker.
 
 ### Variables
 
@@ -918,3 +968,19 @@ peso por mes. Si falta un mes, queda sin objetivo. Los colores reutilizan los tr
 de comisiones: hasta 100% verde, más de 100% hasta 110% amarillo, superiores rojo;
 referencia cero o datos ausentes quedan neutrales. Ya no admite un umbral independiente
 por variable de entorno. El flujo incluye ambos paquetes compartidos y holidays==0.104.
+
+## resolver_cuil_a13_por_dni
+
+Subflow interno, sin trigger, que recibe `dni` y reutiliza las credenciales y cache
+WSAA de `consulta_padron_a13`. Ejecuta `getIdPersonaListByDocumento` y `getPersona`
+para todas las claves distintas. Conserva CUIT/CUIL activos y descarta CDI e
+inactivos. Nunca compara nombres. Exige documento coincidente e identificador valido.
+
+Outputs: `ok`, `status` (`single`, `none`, `multiple`, `invalid_request`,
+`technical_error`), `cuil` (solo si hay una unica clave elegible) y `candidate_count`.
+Un error consultando cualquier candidato impide aceptar un resultado parcial como
+unico. Los errores tecnicos se devuelven para habilitar el respaldo CredixSA del
+prefill Finguru. El ticket renovado se conserva incluso si falla la busqueda.
+
+Desplegar este flow y sus namespace files antes del consumidor `marketing-crm`.
+Contrato oficial: https://www.afip.gob.ar/ws/ws-padron-a13/manual-ws-sr-padron-a13-v1.4.pdf

@@ -22,6 +22,7 @@ def main() -> int:
             cuil=os.getenv("PREFILL_CUIL", ""),
             dni=os.getenv("PREFILL_DNI", ""),
             credixsa_output=_load_credixsa_output(),
+            arca_identity_output=_load_arca_identity_output(),
         )
         result["ok"] = result["status"] != "unresolved"
     except Exception as exc:
@@ -46,6 +47,14 @@ def _load_credixsa_output() -> dict[str, Any]:
         "status": os.getenv("CREDIX_STATUS", "").strip(),
         "cuit": os.getenv("CREDIX_CUIT", "").strip(),
         "error": os.getenv("CREDIX_ERROR", "").strip(),
+    }
+
+
+def _load_arca_identity_output() -> dict[str, Any]:
+    return {
+        "ok": _load_bool("ARCA_IDENTITY_OK"),
+        "status": os.getenv("ARCA_IDENTITY_STATUS", "").strip(),
+        "cuil": os.getenv("ARCA_IDENTITY_CUIL", "").strip(),
     }
 
 

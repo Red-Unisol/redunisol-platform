@@ -63,6 +63,18 @@ services:
       AWS_ENDPOINT: ${AWS_ENDPOINT}
       AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT}
       KESTRA_FORM_WEBHOOK_URL: ${KESTRA_FORM_WEBHOOK_URL}
+      EDNA_INCOMING_ENABLED: ${EDNA_INCOMING_ENABLED:-false}
+      EDNA_INCOMING_WEBHOOK_KEY: ${EDNA_INCOMING_WEBHOOK_KEY:-}
+      EDNA_INCOMING_AUTH_HEADER: ${EDNA_INCOMING_AUTH_HEADER:-Authorization}
+      EDNA_INCOMING_SUBJECT_ID: ${EDNA_INCOMING_SUBJECT_ID:-}
+      KESTRA_EDNA_INCOMING_WEBHOOK_URL: ${KESTRA_EDNA_INCOMING_WEBHOOK_URL:-}
+      EDNA_ROUTER_RESULTS_ENABLED: ${EDNA_ROUTER_RESULTS_ENABLED:-false}
+      EDNA_BITRIX_WEBHOOK_URL: ${EDNA_BITRIX_WEBHOOK_URL:-}
+      EDNA_ROUTER_ENABLED: ${EDNA_ROUTER_ENABLED:-false}
+      EDNA_ROUTER_START_AT: ${EDNA_ROUTER_START_AT:-}
+      EDNA_ROUTER_RECIPIENTS: ${EDNA_ROUTER_RECIPIENTS:-}
+      EDNA_API_KEY: ${EDNA_API_KEY:-}
+      EDNA_ROUTER_CASCADE_ID: ${EDNA_ROUTER_CASCADE_ID:-}
       KESTRA_PREQUALIFICATION_WEBHOOK_URL: ${KESTRA_PREQUALIFICATION_WEBHOOK_URL}
       GTM_ID: ${GTM_ID:-}
       GTM_AUTH: ${GTM_AUTH:-}
@@ -115,6 +127,20 @@ services:
       postgres:
         condition: service_started
       redis:
+        condition: service_started
+    restart: unless-stopped
+
+  edna-worker:
+    image: ${APP_IMAGE}
+    entrypoint: [php, artisan, queue:work]
+    command: [edna, --queue=edna, --sleep=1, --tries=8, --timeout=45, --max-time=3600]
+    environment: *app-environment
+    volumes:
+      - storage-data:/var/www/storage
+    depends_on:
+      php-fpm:
+        condition: service_started
+      postgres:
         condition: service_started
     restart: unless-stopped
 

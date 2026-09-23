@@ -14,7 +14,12 @@ class ConsultaQuiebraCredixTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('"page":"credixsa"', false)
-            ->assertSee('/api/tools/consulta-quiebra-credix', false);
+            ->assertViewHas('payload', function (array $payload): bool {
+                $tool = $payload['tools']->firstWhere('id', 'consulta-quiebra-credix');
+
+                return $tool['endpoint'] === route('tools.consulta-quiebra-credix')
+                    && ! array_key_exists('bcraEndpoint', $tool);
+            });
     }
 
     public function test_it_requires_at_least_one_search_criterion(): void

@@ -1,7 +1,7 @@
 id: alerta_flow_fallos
 namespace: redunisol
 
-description: Observa ejecuciones fallidas y recuperaciones de Kestra en prod y envia alertas deduplicadas a Bitrix24.
+description: Observa fallos y recuperaciones de prod y los entrega en orden al gestor unico de alertas.
 
 sla:
   - id: limitar_duracion
@@ -20,49 +20,33 @@ labels:
   scope: observability
 
 tasks:
-  - id: leer_alerta_abierta
-    type: io.kestra.plugin.core.kv.Get
-    key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
-    errorOnMissing: false
+  # Esperar al gestor conserva el orden de los eventos originales. El gestor
+  # nunca duerme ni llama al temporizador: no hay ciclos entre subflows.
+  - id: registrar_evento
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: "{{ flow.namespace }}"
+    flowId: alerta_flow_fallos_gestionar
+    wait: true
+    transmitFailed: true
+    inputs:
+      evento: "{{ trigger.state }}"
+      ejecucion: "{{ trigger.executionId }}"
+      namespace_origen: "{{ trigger.namespace }}"
+      flow_origen: "{{ trigger.flowId }}"
 
-  - id: enviar_alerta_fallo
-    type: io.kestra.plugin.core.http.Request
-    timeout: PT30S
-    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
-    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
-    method: POST
-    contentType: application/json
-    body: |
-      {
-        "DIALOG_ID": "chat119621",
-        "MESSAGE": "KESTRA - Flow fallido\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}"
-      }
-
-  - id: marcar_alerta_abierta
-    type: io.kestra.plugin.core.kv.Set
-    runIf: "{{ trigger.state == 'FAILED' and ((outputs.leer_alerta_abierta.value ?? null) is null) }}"
-    key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
-    value: "open"
-    overwrite: true
-    ttl: P30D
-
-  - id: enviar_alerta_clear
-    type: io.kestra.plugin.core.http.Request
-    timeout: PT30S
-    runIf: "{{ trigger.state == 'SUCCESS' and ((outputs.leer_alerta_abierta.value ?? null) is not null) }}"
-    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
-    method: POST
-    contentType: application/json
-    body: |
-      {
-        "DIALOG_ID": "chat119621",
-        "MESSAGE": "KESTRA - Flow recuperado\n\nFlow: {{ trigger.flowId }}\nNamespace: {{ trigger.namespace }}\nEstado: {{ trigger.state }}\nEjecucion: {{ trigger.executionId }}"
-      }
-
-  - id: limpiar_alerta_abierta
-    type: io.kestra.plugin.core.kv.Delete
-    runIf: "{{ trigger.state == 'SUCCESS' and ((outputs.leer_alerta_abierta.value ?? null) is not null) }}"
-    key: "{{ 'alerta.flow_fallos.' ~ trigger.namespace ~ '.' ~ trigger.flowId }}"
+  # Solo el primer FAILED programa una confirmacion. La espera ocurre fuera
+  # de las dos colas serializadas.
+  - id: programar_confirmacion
+    type: io.kestra.plugin.core.flow.Subflow
+    runIf: "{{ outputs.registrar_evento.outputs.programar_confirmacion }}"
+    namespace: "{{ flow.namespace }}"
+    flowId: alerta_flow_fallos_confirmar
+    wait: false
+    inputs:
+      ejecucion: "{{ trigger.executionId }}"
+      namespace_origen: "{{ trigger.namespace }}"
+      flow_origen: "{{ trigger.flowId }}"
+      generacion: "{{ outputs.registrar_evento.outputs.generacion }}"
 
 triggers:
   - id: detectar_fallos_prod

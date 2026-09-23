@@ -60,21 +60,34 @@
             }
         </style>
 
-        <title inertia>{{ config('app.name', 'Red Unisol') }}</title>
-        <meta name="description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
-        <meta inertia="robots" name="robots" content="{{ data_get($page, 'props.seo.robots', 'index, follow') }}">
-        <link inertia="canonical" rel="canonical" href="{{ data_get($page, 'props.seo.canonical', request()->url()) }}">
-        <meta property="og:site_name" content="{{ config('app.name', 'Red Unisol') }}">
-        <meta property="og:type" content="website">
-        <meta property="og:title" content="{{ config('app.name', 'Red Unisol') }}">
-        <meta property="og:description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
-        <meta property="og:image" content="{{ asset('logo.jpeg') }}">
-        <meta property="og:image:width" content="400">
-        <meta property="og:image:height" content="400">
-        <meta name="twitter:card" content="summary_large_image">
-        <meta name="twitter:title" content="{{ config('app.name', 'Red Unisol') }}">
-        <meta name="twitter:description" content="{{ config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías') }}">
-        <meta name="twitter:image" content="{{ asset('logo.jpeg') }}">
+        @inertiaHead
+        {{-- Inertia 2: use page-specific fallbacks only when SSR did not provide the head. --}}
+        @if (!($__inertiaSsrResponse ?? null))
+        @php
+            $seo = data_get($page, 'props.seo', []);
+            $seoTitle = data_get($seo, 'metaTitle', config('app.name', 'Red Unisol'));
+            $seoDescription = data_get($seo, 'metaDescription', config('seo.meta.default_description'));
+            $seoImage = data_get($seo, 'ogImage', asset('logo.jpeg'));
+            $seoCanonical = data_get($seo, 'canonical', request()->url());
+        @endphp
+        <title inertia>{{ $seoTitle }}</title>
+        <meta inertia="description" name="description" content="{{ $seoDescription }}">
+        @if (data_get($seo, 'keyword'))
+        <meta inertia="keywords" name="keywords" content="{{ $seo['keyword'] }}">
+        @endif
+        <meta inertia="robots" name="robots" content="{{ data_get($seo, 'robots', 'index, follow') }}">
+        <link inertia="canonical" rel="canonical" href="{{ $seoCanonical }}">
+        <meta inertia="og:site_name" property="og:site_name" content="{{ config('app.name', 'Red Unisol') }}">
+        <meta inertia="og:type" property="og:type" content="{{ data_get($seo, 'ogType', 'website') }}">
+        <meta inertia="og:title" property="og:title" content="{{ $seoTitle }}">
+        <meta inertia="og:description" property="og:description" content="{{ $seoDescription }}">
+        <meta inertia="og:image" property="og:image" content="{{ $seoImage }}">
+        <meta inertia="og:url" property="og:url" content="{{ $seoCanonical }}">
+        <meta inertia="twitter:card" name="twitter:card" content="summary_large_image">
+        <meta inertia="twitter:title" name="twitter:title" content="{{ $seoTitle }}">
+        <meta inertia="twitter:description" name="twitter:description" content="{{ $seoDescription }}">
+        <meta inertia="twitter:image" name="twitter:image" content="{{ $seoImage }}">
+        @endif
 
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -85,7 +98,6 @@
 
         @viteReactRefresh
         @vite(['resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
-        @inertiaHead
     </head>
     <body class="font-sans antialiased">
         @if(config('services.gtm.id'))

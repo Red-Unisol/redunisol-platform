@@ -6,13 +6,15 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- `flows/edna_incoming_webhook.yaml` y `files/edna_incoming/`: interpreta entradas web y respuestas FLOW de Edna; el inbox Laravel registra envíos automáticos y correlaciona respuestas con el historial de Edna al habilitar el router. [Contrato y activación](docs/technical/EDNA_INCOMING_WEBHOOK.md).
 - `flows/bitrix24_form_webhook.yaml`: flow de intake del formulario y respuesta al frontend.
 - `flows/commercial_prequalification_webhook.yaml`: endpoint de pre-elegibilidad sin persistencia ni consultas externas.
-- `flows/bitrix24_lead_prefill.yaml`: backfill de leads en `INGRESO (UC_5N2OEO)` con CredixSA, ARCA, Vimarx y BCRA. Para Finguru sanea primero el DNI copiado como CUIL, vincula el contacto y luego ejecuta el enriquecimiento normal.
+- `flows/bitrix24_lead_prefill.yaml`: backfill de leads en `INGRESO (UC_5N2OEO)` con ARCA, Vimarx y BCRA; A13 resuelve el DNI de Finguru y CredixSA queda como respaldo de identidad. Para Finguru sanea primero el DNI copiado como CUIL, vincula el contacto y luego ejecuta el enriquecimiento normal.
 - `flows/bitrix24_lead_prefill_one.yaml`: enriquecimiento interno de un lead seleccionado; el scheduler espera hasta dos subflows en paralelo.
 - `flows/bitrix24_lead_classification.yaml`: flow interno de clasificacion por `lead_id`.
 - `flows/bitrix24_prequalification_cutover.yaml`: cutover manual, con dry-run, del ownership activo hacia Kestra.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: receptor de `ONCRMLEADUPDATE`; clasifica `PRECLASIFICACION (NEW)` y crea negociaciones desde `RESULTADO GANADO`.
+- `flows/bitrix24_lead_event_process.yaml`: worker del nuevo receptor persistente de actualizaciones; activacion manual pendiente. [Arquitectura, despliegue y migracion de cola](../../../platform/bitrix-lead-receiver/README.md).
 - `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca y Cordoba; conserva el ID historico.
 - `flows/bitrix24_deal_assignment_queue.yaml`: reintenta por bucket las negociaciones sin vendedor y cierra el remanente semanal con Maru.
 - `flows/commercial_distribution_report_daily.yaml`: genera el Excel diario auditable de clasificacion y distribucion visible en Filament.
@@ -35,7 +37,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
 - Las fallas temporales de BCRA se persisten y reintentan con backoff durante 24 horas. Una negociación pendiente de BCRA no se rechaza ni se distribuye, y tampoco bloquea la clasificación de otras negociaciones. La política detallada vive en `docs/technical/bcra-retry-policy.md`.
 - Antes de clasificar negociaciones internas pendientes se consulta Vimarx con el CUIL actual, independientemente de la antigüedad o etapa del lead. El resultado se copia al lead y a la negociación. Las fallas se reintentan sin decidir ni distribuir; véase `docs/technical/vimarx-deal-refresh.md` (implementado, pendiente de deploy).
-- Finguru se identifica por `origenFormulario=3729`. Si DNI y CUIL contienen los mismos ocho digitos, CredixSA puede resolver el CUIL; solo se persiste cuando la respuesta es unica, contiene ese DNI y supera la validacion de checksum.
+- Los demas origenes omiten CredixSA sin registrar errores ni reintentos por esa omision y conservan sus campos CredixSA historicos.
+- Finguru se identifica por `origenFormulario=3729`. Si DNI y CUIL contienen los mismos ocho digitos, A13 resuelve el CUIL filtrando claves CUIT/CUIL activas sin comparar nombres; si no hay una unica clave o falla, consulta CredixSA; solo se persiste cuando la respuesta es unica, contiene ese DNI y supera la validacion de checksum.
 - Una identidad Finguru ambigua o no encontrada no produce un CUIL inventado ni un rechazo comercial. Queda como enriquecimiento parcial bajo la politica normal de reintentos.
 - `ONCRMLEADUPDATE` precalifica cualquier lead en `PRECLASIFICACION (NEW)` creado desde
   el corte operativo, sin usar el owner previo como compuerta; esta decision no
