@@ -121,6 +121,8 @@ export default function Page() {
             data: s.data,
         }));
 
+    const firstHeroId = sectionDescriptors.find((s) => s.type === 'hero')?.id;
+
     const hasForm = !!formSectionData;
     const leftSections = /*hasForm
         ? sectionDescriptors.filter((s) => s.type !== 'form')
@@ -296,7 +298,14 @@ export default function Page() {
                                             key={key}
                                             className={sectionClass}
                                         >
-                                            <Hero data={s.data as any} />
+                                            <Hero
+                                                data={s.data as any}
+                                                headingLevel={
+                                                    id === firstHeroId
+                                                        ? 'h1'
+                                                        : 'h2'
+                                                }
+                                            />
                                         </section>
                                     );
                                 case 'services':
