@@ -69,51 +69,77 @@ def executions(session: requests.Session, base: str, tenant: str, namespace: str
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
     expected_total = None
-    page = 1
-    while True:
-        payload = api_get(session, f"{base}/api/v1/{tenant}/executions/search", deadline=deadline,
+    context = local()
+    sessions: list[requests.Session] = []
+
+    def read_page(page_number: int) -> Any:
+        if page_number == 1:
+            client = session
+        else:
+            if not hasattr(context, "session"):
+                context.session = requests.Session()
+                context.session.auth = session.auth
+                context.session.headers.update(session.headers)
+                sessions.append(context.session)
+            client = context.session
+        return api_get(client, f"{base}/api/v1/{tenant}/executions/search", deadline=deadline,
             **{"filters[namespace][EQUALS]": namespace, "filters[flowId][EQUALS]": flow,
                "filters[startDate][LESS_THAN_OR_EQUAL_TO]": snapshot,
-               "sort": ["state.startDate:asc", "id:asc"], "page": page, "size": 1000})
-        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
-            raise RuntimeError("Respuesta de ejecuciones invalida")
-        total = payload.get("total")
-        if not isinstance(total, int) or total < 0 or total > max_records:
-            raise RuntimeError(f"Total invalido o superior al limite de {max_records}; no se trunca ni publica.")
-        if expected_total is None:
-            expected_total = total
-        elif total != expected_total:
-            raise RuntimeError("El historial cambio durante la lectura; repetir para evitar un informe incompleto.")
-        batch = payload["results"]
-        for row in batch:
-            if row.get("namespace") != namespace or row.get("flowId") != flow:
-                raise RuntimeError("Kestra no respeto los filtros; se cancela el informe.")
-            execution_id = row.get("id")
-            if not execution_id or execution_id in seen:
-                raise RuntimeError("Paginacion duplicada o sin identificador")
-            if parse_date((row.get("state") or {}).get("startDate", "")) > cutoff:
-                raise RuntimeError("Kestra devolvio una ejecucion posterior al corte")
-            seen.add(execution_id)
-            # No request headers, credentials or arbitrary webhook payload in memory/cache.
-            body = ((row.get("trigger") or {}).get("variables") or {}).get("body") or {}
-            if isinstance(body, str):
-                try:
-                    body = json.loads(body)
-                except ValueError:
-                    body = {}
-            clean = {k: row[k] for k in ("id", "namespace", "flowId", "flowRevision", "state", "originalId") if k in row}
-            clean["trigger"] = {"variables": {"body": {k: v for k, v in body.items() if k in BODY_FIELDS} if isinstance(body, dict) else {}}}
-            result.append(clean)
-            if len(result) > expected_total:
-                raise RuntimeError("El numero de registros excede el total esperado")
-        if len(result) == expected_total:
-            print(json.dumps({"event": "executions_loaded", "flow": flow, "count": len(result)}), flush=True)
-            return result
-        if not batch:
-            raise RuntimeError("Paginacion incompleta; se conserva el ultimo informe.")
-        if page % 10 == 0:
-            print(json.dumps({"event": "index_progress", "flow": flow, "count": len(result), "total": expected_total}), flush=True)
-        page += 1
+               "sort": ["state.startDate:asc", "id:asc"], "page": page_number, "size": 1000})
+
+    page, page_size = 1, 1000
+    pending = []
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            while True:
+                payload = pending.pop(0) if pending else read_page(page)
+                if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+                    raise RuntimeError("Respuesta de ejecuciones invalida")
+                total = payload.get("total")
+                if not isinstance(total, int) or total < 0 or total > max_records:
+                    raise RuntimeError(f"Total invalido o superior al limite de {max_records}; no se trunca ni publica.")
+                if expected_total is None:
+                    expected_total = total
+                elif total != expected_total:
+                    raise RuntimeError("El historial cambio durante la lectura; repetir para evitar un informe incompleto.")
+                batch = payload["results"]
+                if page == 1 and batch:
+                    page_size = len(batch)
+                for row in batch:
+                    if row.get("namespace") != namespace or row.get("flowId") != flow:
+                        raise RuntimeError("Kestra no respeto los filtros; se cancela el informe.")
+                    execution_id = row.get("id")
+                    if not execution_id or execution_id in seen:
+                        raise RuntimeError("Paginacion duplicada o sin identificador")
+                    if parse_date((row.get("state") or {}).get("startDate", "")) > cutoff:
+                        raise RuntimeError("Kestra devolvio una ejecucion posterior al corte")
+                    seen.add(execution_id)
+                    # Keep only report fields; never cache headers or arbitrary webhook payloads.
+                    body = ((row.get("trigger") or {}).get("variables") or {}).get("body") or {}
+                    if isinstance(body, str):
+                        try:
+                            body = json.loads(body)
+                        except ValueError:
+                            body = {}
+                    clean = {k: row[k] for k in ("id", "namespace", "flowId", "flowRevision", "state", "originalId") if k in row}
+                    clean["trigger"] = {"variables": {"body": {k: v for k, v in body.items() if k in BODY_FIELDS} if isinstance(body, dict) else {}}}
+                    result.append(clean)
+                    if len(result) > expected_total:
+                        raise RuntimeError("El numero de registros excede el total esperado")
+                if len(result) == expected_total:
+                    print(json.dumps({"event": "executions_loaded", "flow": flow, "count": len(result)}), flush=True)
+                    return result
+                if not batch:
+                    raise RuntimeError("Paginacion incompleta; se conserva el ultimo informe.")
+                if page % 10 == 0:
+                    print(json.dumps({"event": "index_progress", "flow": flow, "count": len(result), "total": expected_total}), flush=True)
+                if not pending:
+                    remaining_pages = (expected_total - len(result) + page_size - 1) // page_size
+                    pending = list(pool.map(read_page, range(page + 1, page + 1 + min(4, remaining_pages))))
+                page += 1
+    finally:
+        for client in sessions:
+            client.close()
 
 
 class OutputCache:

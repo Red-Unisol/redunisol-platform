@@ -24,7 +24,7 @@ def execution(execution_id, *, outputs=None, body=None, state="SUCCESS", start="
 class ManagementFormReportTest(unittest.TestCase):
     def query(self, pages, **kwargs):
         with patch("reporting_kestra.client.api_get", side_effect=pages) as get:
-            result = REPORT.executions(Mock(), "https://kestra", "main", NS, REPORT.FLOW_ID, **kwargs)
+            result = REPORT.executions(Mock(auth=None, headers={}), "https://kestra", "main", NS, REPORT.FLOW_ID, **kwargs)
         return result, get
 
     def test_accumulated_query_has_correct_filters_and_no_lower_date_bound(self):

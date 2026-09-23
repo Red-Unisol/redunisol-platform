@@ -46,7 +46,8 @@ fallida deja intacto `ultimo.xlsx`; revisar el error antes de repetir.
 
 Los dos informes de Marketing y `kestra/tools/export_kestra_form_executions.py`
 comparten `reporting_kestra/client.py`. Las consultas filtran por namespace y flow,
-fijan un corte superior explicito y ordenan por inicio e ID. Cada pagina debe
+fijan un corte superior explicito y ordenan por inicio e ID. Leen hasta cuatro
+paginas en paralelo y las reconcilian en orden. Cada pagina debe
 respetar el origen, corte, total e identificadores unicos. No se aceptan paginas
 incompletas ni se reemplaza un error por un resultado vacio.
 

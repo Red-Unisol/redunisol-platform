@@ -2,6 +2,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -56,11 +57,12 @@ class ReportingClientTest(unittest.TestCase):
         for field, value in [("namespace", "redunisol.dev.marketing-crm"), ("flowId", "other"), ("flowRevision", 2)]:
             changed = {**row(), field: value}
             self.assertIsNone(self.cache.get(changed))
-        other = client.OutputCache(self.path, "https://another-kestra", "main")
-        try:
-            self.assertIsNone(other.get(row()))
-        finally:
-            other.close()
+        for base, tenant in [("https://another-kestra", "main"), ("https://kestra", "other")]:
+            other = client.OutputCache(self.path, base, tenant)
+            try:
+                self.assertIsNone(other.get(row()))
+            finally:
+                other.close()
 
     def test_failure_keeps_progress_for_resume_but_never_returns_partial_data(self):
         with patch.object(client, "api_get", side_effect=[{"action": "ingested"}, RuntimeError("upstream")]):
@@ -101,6 +103,32 @@ class ReportingClientTest(unittest.TestCase):
         with patch.object(client, "api_get", return_value={"total": 1, "results": [wrong]}):
             with self.assertRaisesRegex(RuntimeError, "filtros"):
                 client.executions(self.session, "https://kestra", "main", wrong["namespace"], "bitrix24_form_webhook")
+
+    def test_parallel_pages_are_bounded_and_preserve_complete_order(self):
+        barrier = threading.Barrier(4, timeout=5)
+        lock = threading.Lock()
+        active = maximum = 0
+
+        def get(session, url, **params):
+            nonlocal active, maximum
+            page = params["page"]
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                if 2 <= page <= 5:
+                    barrier.wait()
+                first = (page - 1) * 2
+                return {"total": 15, "results": [row(str(n)) for n in range(first, min(first + 2, 15))]}
+            finally:
+                with lock:
+                    active -= 1
+
+        with patch.object(client, "api_get", side_effect=get) as api:
+            rows = client.executions(self.session, "https://kestra", "main", row()["namespace"], row()["flowId"])
+        self.assertEqual([item["id"] for item in rows], [str(n) for n in range(15)])
+        self.assertEqual(maximum, 4)
+        self.assertEqual(api.call_count, 8)
 
     def test_bad_queue_payload_cannot_silently_disappear(self):
         for payload in ['not json', '{}', '[null]']:
