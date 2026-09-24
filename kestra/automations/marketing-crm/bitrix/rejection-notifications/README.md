@@ -18,8 +18,10 @@ Relevamiento del 2026-09-24, tarea Bitrix **22751**:
   ya existían quedan excluidos, incluso si cambian de etapa posteriormente;
 - diseñador reabierto después de guardar y BPT persistido exportado y comparado:
   sin diferencias funcionales frente al generado; hashes en `deployment.json`;
-- entrega de comunicaciones pendiente de observar en un rechazo nuevo real;
-- la migración de prospectos históricos **no fue ejecutada**.
+- ejecución real observada en dos rechazos nuevos: marca `PROCESSED` y un correo
+  saliente de la plantilla 889 en cada caso; no acredita entrega al destinatario;
+- migración histórica: **piloto de 50 ejecutado y verificado sin avisos**, con
+  75.204 restantes programados para noches. Ver [registro y controles](historical-migration.md).
 
 Los `.bpt` originales están en el directorio local de artefactos del trabajo.
 Los JSON de `sources/` contienen los árboles originales, sus IDs y el SHA-256 de
