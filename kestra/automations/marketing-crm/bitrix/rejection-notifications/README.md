@@ -67,6 +67,25 @@ SIN RESPUESTA, NO SON SOCIOS NI QUIEREN PRESTAMO, POLICÍA FEDERAL CABA - PERÍO
 INICIAL y motivos vacíos/desconocidos no generan avisos en este proceso. No se
 inventaron mensajes para motivos sin plantilla de rechazo verificada.
 
+## Motivo obligatorio al pasar manualmente a perdido
+
+El 2026-09-24 se configuró en Bitrix el campo de prospectos
+`UF_CRM_REJECTION_REASON` (Motivo Rechazo) como **Requerido en la etapa:
+RESULTADO PERDIDO (`UC_1P8I07`)**. Ninguna otra etapa quedó seleccionada.
+La configuración aplica a los formularios de prospectos; no modifica negociaciones.
+
+Si el campo está vacío, Bitrix solicita completarlo antes de guardar el cambio
+manual a esa etapa. Si ya tiene valor, la obligatoriedad no exige volver a elegirlo.
+Kestra y la migración histórica ya incluyen motivo y etapa en la misma actualización.
+Esta validación no modifica los filtros de envío ni habilita avisos para históricos.
+
+Se guardó desde la configuración del campo y se verificó el valor persistido tras
+recargar el formulario y reabrir Configurar. No se cambiaron datos ni etapas de
+clientes para probar el diálogo. Para reproducir o revertir el ajuste: formulario
+de prospecto → Motivo Rechazo → Configurar → Requerido en la etapa → seleccionar
+únicamente RESULTADO PERDIDO, o desmarcar la obligatoriedad → Guardar.
+Referencia: [campos obligatorios por etapa de Bitrix24](https://helpdesk.bitrix24.com/open/25902803/).
+
 ## Generar y validar
 
 Desde la raíz del repositorio:
