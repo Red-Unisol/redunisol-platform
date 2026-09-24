@@ -1,7 +1,7 @@
 id: form_management_report_daily
 namespace: redunisol
 
-description: Genera y publica el informe privado de formularios enviados a Bitrix los sabados a las 12:00 (hora de Buenos Aires).
+description: Publica el informe privado acumulado de formularios los sabados a las 12:00 (hora de Buenos Aires).
 
 labels:
   env: prod
@@ -17,10 +17,16 @@ tasks:
       enabled: true
       include:
         - management_form_report/**
+        - reporting_kestra/**
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       volumes:
         - "/srv/redunisol-reports:/reports"
+      cpu:
+        cpus: "0.5"
+      memory:
+        memory: 1GB
+        memorySwap: 1GB
     containerImage: python:3.12-slim
     beforeCommands:
       - pip install kestra openpyxl requests > /dev/null
@@ -32,10 +38,15 @@ tasks:
       REPORTS_NAMESPACE: "{{ flow.namespace }}"
       REPORTS_ROOT: /reports
     commands:
-      - python management_form_report/generate.py
+      - python -m management_form_report.generate
+    timeout: PT15M
 
 triggers:
   - id: todos_los_dias
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "0 12 * * 6"
     timezone: America/Argentina/Buenos_Aires
+
+concurrency:
+  limit: 1
+  behavior: CANCEL

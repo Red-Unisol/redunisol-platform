@@ -7,10 +7,15 @@ import argparse
 import json
 import os
 import time
+import sys
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "automations" / "marketing-crm" / "files"))
+from reporting_kestra.client import OutputCache, api_get, check_deadline, executions as read_executions, hydrate_outputs
 
 import requests
 from openpyxl import Workbook
@@ -38,39 +43,21 @@ SENSITIVE_HEADERS = {
 }
 
 
-def api_get(session: requests.Session, url: str, *, params: dict[str, Any] | None = None) -> Any:
-    last_error: Exception | None = None
-    for attempt in range(5):
-        try:
-            response = session.get(url, params=params, timeout=(10, 90))
-            response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError) as exc:
-            last_error = exc
-            if attempt == 4:
-                break
-            time.sleep(2 ** attempt)
-    raise RuntimeError(f"No se pudo consultar {url}: {last_error}")
-
-
 def fetch_executions(session: requests.Session, base_url: str, tenant: str,
-                     namespace: str, flow_id: str) -> list[dict[str, Any]]:
-    endpoint = f"{base_url}/api/v1/{tenant}/executions/search"
-    page, size, rows = 1, 100, []
-    while True:
-        payload = api_get(session, endpoint, params={
-            "namespace": namespace, "flowId": flow_id, "page": page, "size": size,
-        })
-        batch = payload.get("results", [])
-        rows.extend(batch)
-        if not batch or len(rows) >= int(payload.get("total", len(rows))):
-            return rows
-        page += 1
+                     namespace: str, flow_id: str, *, as_of: str | None = None,
+                     deadline: float | None = None, cache_path: Path | None = None) -> list[dict[str, Any]]:
+    rows = read_executions(session, base_url, tenant, namespace, flow_id,
+                           max_records=50_000, as_of=as_of, deadline=deadline)
+    cache = OutputCache(cache_path, base_url, tenant)
+    try:
+        return hydrate_outputs(rows, session, base_url, tenant, cache=cache, deadline=deadline)
+    finally:
+        cache.close()
 
 
 def fetch_logs(session: requests.Session, base_url: str, tenant: str,
-               execution_id: str) -> list[dict[str, Any]]:
-    payload = api_get(session, f"{base_url}/api/v1/{tenant}/logs/{execution_id}")
+               execution_id: str, *, deadline: float | None = None) -> list[dict[str, Any]]:
+    payload = api_get(session, f"{base_url}/api/v1/{tenant}/logs/{execution_id}", deadline=deadline)
     return payload if isinstance(payload, list) else payload.get("results", [])
 
 
@@ -83,7 +70,9 @@ def iso_value(value: Any) -> Any:
         return value
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.replace(tzinfo=None)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(ZoneInfo("America/Argentina/Buenos_Aires")).replace(tzinfo=None)
     except ValueError:
         return value
 
@@ -104,14 +93,14 @@ def error_summary(logs: list[dict[str, Any]], execution: dict[str, Any]) -> str:
     if error_messages:
         return error_messages[-1]
     failed_tasks = [x.get("taskId", "") for x in execution.get("taskRunList", [])
-                    if state_of(x) in {"FAILED", "KILLED"}]
+                    if state_of(x) in {"FAILED", "KILLED", "CANCELLED"}]
     return "Tarea fallida: " + ", ".join(failed_tasks) if failed_tasks else state_of(execution)
 
 
 def outcome_of(execution: dict[str, Any]) -> str:
     status = state_of(execution)
     action = str((execution.get("outputs") or {}).get("action") or "").lower()
-    if status in {"FAILED", "KILLED"}:
+    if status in {"FAILED", "KILLED", "CANCELLED"}:
         return "ERROR TÉCNICO"
     if action == "error":
         return "ERROR LÓGICO"
@@ -159,13 +148,13 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
     starts = [iso_value((x.get("state") or {}).get("startDate")) for x in executions]
     starts = [x for x in starts if isinstance(x, datetime)]
     success = states.get("SUCCESS", 0)
-    failed = sum(states.get(x, 0) for x in ("FAILED", "KILLED"))
+    failed = sum(states.get(x, 0) for x in ("FAILED", "KILLED", "CANCELLED"))
     ws.append(["AUDITORÍA DE FORMULARIO KESTRA", "Valor"])
     summary = [
         ("Namespace", namespace), ("Flow", flow_id), ("Generado", generated_at),
         ("Primera ejecución", min(starts) if starts else ""),
         ("Última ejecución", max(starts) if starts else ""),
-        ("Total", len(executions)), ("Exitosas", success), ("Fallidas/Killed", failed),
+        ("Total", len(executions)), ("Exitosas", success), ("Fallidas/Killed/Canceladas", failed),
         ("Tasa de éxito", success / len(executions) if executions else 0),
         ("Resultados exitosos/ingresados", outcomes.get("EXITOSO", 0)),
         ("Rechazados por reglas", outcomes.get("RECHAZADO", 0)),
@@ -209,9 +198,9 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
         outputs = item.get("outputs") or {}
         state = item.get("state") or {}
         status = state_of(item)
-        failed_tasks = [x.get("taskId", "") for x in item.get("taskRunList", []) if state_of(x) in {"FAILED", "KILLED"}]
+        failed_tasks = [x.get("taskId", "") for x in item.get("taskRunList", []) if state_of(x) in {"FAILED", "KILLED", "CANCELLED"}]
         logs = logs_by_execution.get(item["id"], [])
-        if status in {"FAILED", "KILLED"}:
+        if status in {"FAILED", "KILLED", "CANCELLED"}:
             reason_error = error_summary(logs, item)
         elif str(outputs.get("action") or "").lower() == "error":
             reason_error = str(outputs.get("message") or outputs.get("reason") or "Error lógico sin detalle")
@@ -238,7 +227,7 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
     style_table(detail, filter_range=f"A1:{get_column_letter(detail.max_column)}{detail.max_row}")
     detail.auto_filter.ref = f"A1:{get_column_letter(detail.max_column)}{detail.max_row}"
     detail.conditional_formatting.add(f"B2:B{detail.max_row}", FormulaRule(formula=["B2=\"SUCCESS\""], fill=PatternFill("solid", fgColor=COLORS["green"])))
-    detail.conditional_formatting.add(f"B2:B{detail.max_row}", FormulaRule(formula=["OR(B2=\"FAILED\",B2=\"KILLED\")"], fill=PatternFill("solid", fgColor=COLORS["red"])))
+    detail.conditional_formatting.add(f"B2:B{detail.max_row}", FormulaRule(formula=["OR(B2=\"FAILED\",B2=\"KILLED\",B2=\"CANCELLED\")"], fill=PatternFill("solid", fgColor=COLORS["red"])))
     detail.conditional_formatting.add(f"C2:C{detail.max_row}", FormulaRule(formula=["C2=\"EXITOSO\""], fill=PatternFill("solid", fgColor=COLORS["green"])))
     detail.conditional_formatting.add(f"C2:C{detail.max_row}", FormulaRule(formula=["OR(C2=\"ERROR TÉCNICO\",C2=\"ERROR LÓGICO\")"], fill=PatternFill("solid", fgColor=COLORS["red"])))
     detail.conditional_formatting.add(f"C2:C{detail.max_row}", FormulaRule(formula=["C2=\"RECHAZADO\""], fill=PatternFill("solid", fgColor=COLORS["yellow"])))
@@ -275,13 +264,14 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
             logs_ws.append([execution_id, iso_value(log.get("timestamp")), log.get("level"), log.get("taskId"),
                             log.get("taskRunId"), log.get("attemptNumber"), log.get("message")])
     style_table(logs_ws, filter_range=f"A1:G{logs_ws.max_row}")
-    logs_ws.conditional_formatting.add(f"C2:C{logs_ws.max_row}", FormulaRule(formula=["C2=\"ERROR\""], fill=PatternFill("solid", fgColor=COLORS["red"])))
+    if logs_ws.max_row > 1:
+        logs_ws.conditional_formatting.add(f"C2:C{logs_ws.max_row}", FormulaRule(formula=["C2=\"ERROR\""], fill=PatternFill("solid", fgColor=COLORS["red"])))
     autosize(logs_ws, {1: 28, 7: 120})
 
     daily_ws = wb.create_sheet("Análisis diario")
     daily_ws.append(["Fecha", "Total", "Exitosas técnicas", "Errores técnicos", "Errores lógicos", "Rechazados", "Tasa éxito técnica"])
     for day, counts in sorted(daily.items()):
-        total = sum(counts.values()); ok = counts.get("SUCCESS", 0); bad = counts.get("FAILED", 0) + counts.get("KILLED", 0)
+        total = sum(counts.values()); ok = counts.get("SUCCESS", 0); bad = sum(counts.get(state, 0) for state in ("FAILED", "KILLED", "CANCELLED"))
         day_items = [x for x in executions if (iso_value((x.get("state") or {}).get("startDate")).date().isoformat() if isinstance(iso_value((x.get("state") or {}).get("startDate")), datetime) else "Sin fecha") == day]
         day_outcomes = Counter(outcome_of(x) for x in day_items)
         daily_ws.append([day, total, ok, bad, day_outcomes.get("ERROR LÓGICO", 0), day_outcomes.get("RECHAZADO", 0), ok / total if total else 0])
@@ -307,10 +297,10 @@ def build_workbook(executions: list[dict[str, Any]], logs_by_execution: dict[str
     notes.append(["Campo", "Descripción"])
     notes_rows = [
         ("Alcance", "Todas las ejecuciones devueltas por la API para namespace y flow indicados."),
-        ("Inputs", "Campos del trigger.body aplanados y body_json completo."),
-        ("Headers", "Se excluyen Authorization, Cookie, Set-Cookie, X-API-Key y Proxy-Authorization."),
+        ("Inputs", "Campos necesarios del formulario; no se exportan headers ni payloads ajenos al informe."),
+        ("Resultados", "API de outputs de Kestra 2.0; los datos ausentes en ejecuciones exitosas abortan la exportacion."),
         ("Errores", "Razón tomada del último log ERROR/WARN; en su defecto, de la tarea fallida."),
-        ("Logs", "Se descargan íntegramente únicamente para ejecuciones FAILED/KILLED."),
+        ("Logs", "Se descargan íntegramente únicamente para ejecuciones FAILED/KILLED/CANCELLED."),
         ("Privacidad", "El archivo contiene datos personales y debe manejarse con acceso restringido."),
     ]
     for row in notes_rows: notes.append(row)
@@ -325,16 +315,33 @@ def main() -> None:
     parser.add_argument("--flow-id", default="bitrix24_form_webhook")
     parser.add_argument("--tenant", default=os.getenv("KESTRA_TENANT", "main"))
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--as-of", help="Corte de inicios de ejecucion ISO 8601 con zona horaria; default ahora.")
+    parser.add_argument("--cache-path", type=Path, default=Path(".local/artifacts/kestra-report-cache/forms.sqlite"))
     args = parser.parse_args()
+    deadline = time.monotonic() + 840
     base_url = os.environ["KESTRA_URL"].rstrip("/")
     session = requests.Session()
     session.auth = (os.environ["KESTRA_USERNAME"], os.environ["KESTRA_PASSWORD"])
-    executions = fetch_executions(session, base_url, args.tenant, args.namespace, args.flow_id)
-    failed = [x for x in executions if state_of(x) in {"FAILED", "KILLED"}]
-    logs = {x["id"]: fetch_logs(session, base_url, args.tenant, x["id"]) for x in failed}
+    executions = fetch_executions(session, base_url, args.tenant, args.namespace, args.flow_id,
+                                  as_of=args.as_of, deadline=deadline, cache_path=args.cache_path)
+    if not executions:
+        raise RuntimeError("No hay ejecuciones; verificar cobertura antes de exportar.")
+    failed = [x for x in executions if state_of(x) in {"FAILED", "KILLED", "CANCELLED"}]
+    logs = {}
+    for row in failed:
+        detail = api_get(session, f"{base_url}/api/v1/{args.tenant}/executions/{row['id']}", deadline=deadline)
+        row["taskRunList"] = detail.get("taskRunList") or []
+        logs[row["id"]] = fetch_logs(session, base_url, args.tenant, row["id"], deadline=deadline)
+    check_deadline(deadline)
     workbook = build_workbook(executions, logs, args.namespace, args.flow_id, datetime.now())
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    workbook.save(args.output)
+    temporary = args.output.with_suffix(".tmp")
+    try:
+        workbook.save(temporary)
+        check_deadline(deadline)
+        os.replace(temporary, args.output)
+    finally:
+        temporary.unlink(missing_ok=True)
     print(json.dumps({"output": str(args.output), "total": len(executions), "failed": len(failed)}, ensure_ascii=False))
 
 
