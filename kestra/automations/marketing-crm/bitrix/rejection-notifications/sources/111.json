@@ -1,0 +1,80 @@
+{
+    "template_id": 111,
+    "source_stage": "JUNK",
+    "reason_label": "OTRA PROVINCIA",
+    "source_bpt_sha256": "229543b0fe56abc605ed73b7d9a0d26848ba578cdca89b198123abad284613d1",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A83655_11548_33373_68363",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A43572_91322_66952_90082",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendWhatsAppMessageActivity",
+                                "Name": "A56360_66101_52923_95093",
+                                "Activated": "N",
+                                "Node": null,
+                                "Properties": {
+                                    "TemplateId": "52431",
+                                    "Placeholders": [],
+                                    "Title": "Enviar mensaje de Whatsapp"
+                                },
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A56196_85677_69753_25991",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Name": "A49271_14881_88804_71800",
+                                "Activated": "Y",
+                                "Node": null,
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+SG9sYSE8YnI+Cjwvc3Bhbj48YnI+CiBMYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGFjdHVhbG1lbnRlIG5vIGNvbnRhbW9zIGNvbiBjb252ZW5pb3MgdmlnZW50ZXMgZW4gdHUgcHJvdmluY2lhIHksIHBvciBsbyB0YW50bywgbm8gcG9kZW1vcyBvdG9yZ2FydGUgdW4gcHLDqXN0YW1vLjxicj4KPGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPgpTZWd1aW5vcyBlbiByZWRlcyBzb2NpYWxlcyA8YSBocmVmPSJodHRwczovL3d3dy5mYWNlYm9vay5jb20vcmVkdW5pc29sLyI+RmFjZWJvb2s8L2E+IGUgPGEgaHJlZj0iaHR0cHM6Ly93d3cuaW5zdGFncmFtLmNvbS9yZWR1bmlzb2wvIj5JbnN0YWdyYW08L2E+IHBhcmEgbm8gcGVyZGVydGUgbGFzIG5vdmVkYWRlcyB5IGZvcm1hciBwYXJ0ZSBkZSBudWVzdHJhIGNvbXVuaWRhZCE8L3NwYW4+PGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPgpQb2TDqXMgY29ub2NlciBtw6FzIHNvYnJlIG5vc290cm9zIGVuIG51ZXN0cm8gPGEgaHJlZj0iaHR0cHM6Ly9yZWR1bmlzb2wuY29tLmFyLyI+U2l0aW8gV2ViPC9hPjwvc3Bhbj4uPGJyPgogPGJyPgpHcmFjaWFzIQ==",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": "1",
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente"
+                                },
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

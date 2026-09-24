@@ -1,0 +1,80 @@
+{
+    "template_id": 389,
+    "source_stage": "4",
+    "reason_label": "AUH (asignaciones)",
+    "source_bpt_sha256": "e70c0e160f9e98691b49460eaaf3394c6b845f14b26c1d8b0de8aadf8d390b40",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A57906_45173_79709_58581",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A71438_58033_94884_60767",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "Por el momento no tomamos asignaciones familiares. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al chat"
+                                },
+                                "Name": "A97879_83281_45661_65894",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A40411_42770_14512_69425",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiBIb2xhITxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij5MYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGFjdHVhbG1lbnRlIG5vIHRvbWFtb3MgYXNpZ25hY2lvbmVzIGZhbWlsaWFyZXMgeSwgcG9yIGxvIHRhbnRvLCBubyBwb2RlbW9zIG90b3JnYXJ0ZSB1biBwcsOpc3RhbW8uPGJyPgogPC9zcGFuPjxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4KU2VndWlub3MgZW4gcmVkZXMgc29jaWFsZXMgPGEgaHJlZj0iaHR0cHM6Ly93d3cuZmFjZWJvb2suY29tL3JlZHVuaXNvbC8iPkZhY2Vib29rPC9hPiBlIDxhIGhyZWY9Imh0dHBzOi8vd3d3Lmluc3RhZ3JhbS5jb20vcmVkdW5pc29sLyI+SW5zdGFncmFtPC9hPiBwYXJhIG5vIHBlcmRlcnRlIGxhcyBub3ZlZGFkZXMgeSBmb3JtYXIgcGFydGUgZGUgbnVlc3RyYSBjb211bmlkYWQhPC9zcGFuPjxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4KUG9kw6lzIGNvbm9jZXIgbcOhcyBzb2JyZSBub3NvdHJvcyBlbiBudWVzdHJvIDxhIGhyZWY9Imh0dHBzOi8vcmVkdW5pc29sLmNvbS5hci8iPlNpdGlvIFdlYjwvYT48L3NwYW4+Ljxicj4KIDxicj4KR3JhY2lhcyE=",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)  (copia)  (copia)"
+                                },
+                                "Activated": "Y",
+                                "Name": "A23451_2538_21627_61671",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

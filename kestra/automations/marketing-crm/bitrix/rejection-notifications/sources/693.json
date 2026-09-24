@@ -1,0 +1,80 @@
+{
+    "template_id": 693,
+    "source_stage": "UC_PO398Z",
+    "reason_label": "PUBLICO NACIONAL",
+    "source_bpt_sha256": "288ae95df0d89ba578e91111806b800fb029b17e253834588b8db3e634ca3f46",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A89330_30697_91231_34063",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A23897_49189_61701_68625",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "Por el momento no tomamos Empleados Públicos Nacionales en tu provincia. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "file",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al chat"
+                                },
+                                "Name": "A82726_1691_57007_20486",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A45100_59174_24695_33865",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PGltZyB3aWR0aD0iNTQwIiBzcmM9Imh0dHBzOi8vcmVkdW5pc29sLmNvbS5hci9pbWFnZXMvR3JhY2lhcyUyMHBvciUyMHR1JTIwY29uc3VsdGElMjAyLnBuZyIgaGVpZ2h0PSIyNzAiPjxicj4KSG9sYSE8YnI+CiBMYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGFjdHVhbG1lbnRlIG5vIHRvbWFtb3MgRW1wbGVhZG9zIFDDumJsaWNvcyBOYWNpb25hbGVzIGVuIHR1IHByb3ZpbmNpYSB5LCBwb3IgbG8gdGFudG8sIG5vIHBvZGVtb3Mgb3RvcmdhcnRlIHVuIHByw6lzdGFtby48YnI+CiA8YnI+CiBTZWd1aW5vcyBlbiByZWRlcyBzb2NpYWxlcyBGYWNlYm9vayBlIEluc3RhZ3JhbSBwYXJhIG5vIHBlcmRlcnRlIGxhcyBub3ZlZGFkZXMgeSBmb3JtYXIgcGFydGUgZGUgbnVlc3RyYSBjb211bmlkYWQhPGJyPgogUG9kw6lzIGNvbm9jZXIgbcOhcyBzb2JyZSBub3NvdHJvcyBlbiBudWVzdHJvIFNpdGlvIFdlYi48YnI+CiA8YnI+CkdyYWNpYXMhJm5ic3A7",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente"
+                                },
+                                "Name": "A3279_46804_36115_44444",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}
