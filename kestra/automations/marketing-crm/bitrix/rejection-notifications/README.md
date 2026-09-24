@@ -13,16 +13,20 @@ Relevamiento del 2026-09-24, tarea Bitrix **22751**:
 - fuente adicional **709 / SIN RESPUESTA**, revisada pero excluida: su correo invita
   a retomar una consulta y no comunica un rechazo por falta de calificación;
 - campo string `UF_CRM_REJ_NOTICE` creado y releído en Bitrix, ID **1853**;
-- **automatización nueva todavía no publicada**: la extensión de Chrome bloqueó
-  la carga local del BPT; el diseñador no recibió el archivo ni se guardó;
+- automatización **publicada en la plantilla 889 el 2026-09-24 a las 11:55 ART**;
+- corte `ID > 396841`, obtenido de Bitrix a las 11:55:08 ART: los prospectos que
+  ya existían quedan excluidos, incluso si cambian de etapa posteriormente;
+- diseñador reabierto después de guardar y BPT persistido exportado y comparado:
+  sin diferencias funcionales frente al generado; hashes en `deployment.json`;
+- entrega de comunicaciones pendiente de observar en un rechazo nuevo real;
 - la migración de prospectos históricos **no fue ejecutada**.
 
 Los `.bpt` originales están en el directorio local de artefactos del trabajo.
 Los JSON de `sources/` contienen los árboles originales, sus IDs y el SHA-256 de
-cada BPT. Son fuentes de generación, no configuración ya desplegada. Los
+cada BPT. Son las fuentes usadas para generar la configuración desplegada. Los
 catálogos necesarios para la importación están en `document-fields.json`.
 
-## Comportamiento preparado
+## Comportamiento publicado
 
 El proceso destino exige simultáneamente:
 
@@ -86,9 +90,18 @@ fecha, hora y hash exactos del artefacto.
 
 En el diseñador de la plantilla 889 importar primero la variante de inspección.
 Comprobar las condiciones del filtro y el mapeo de motivos tras la importación.
-Después importar la variante con el corte real, guardar y volver a exportar para
-comparar el resultado persistido. La configuración REST usa IDs numéricos de enum;
+Después importar la variante con el corte real, o editar únicamente ese límite
+en la condición y generar el artefacto equivalente. Guardar, reabrir el diseñador
+y volver a exportar para comparar el resultado persistido. La configuración REST usa IDs numéricos de enum;
 los BPT usan sus `XML_ID`. No intercambiarlos.
+
+En la activación del 2026-09-24 se verificaron la etapa, el campo de control y el
+motivo OTRO BANCO en los selectores del diseñador. El árbol importado de inspección
+coincidió exactamente con el generado. Tras editar el corte, guardar y reabrir,
+la comparación completa detectó únicamente normalizaciones del editor:
+`joiner` y `MessageTextEncoded` numéricos convertidos a texto, adjuntos nulos
+convertidos a texto vacío, metadatos `Node` nulos agregados y un comentario vacío.
+Las condiciones, los 16 motivos, los textos, los canales y las marcas se conservaron.
 
 Verificar un rechazo nuevo real posterior al corte mediante historial del proceso
 y actividades del CRM; la presencia de la plantilla no prueba entrega. No mover
