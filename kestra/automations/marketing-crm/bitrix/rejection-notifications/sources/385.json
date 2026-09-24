@@ -1,0 +1,80 @@
+{
+    "template_id": 385,
+    "source_stage": "2",
+    "reason_label": "NO TIENE ANTIGUEDAD",
+    "source_bpt_sha256": "4c3b6a12ed211cb7f651472e95d6c9f9cdf3304de4ecd12b3be36c14539e8711",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A37429_35303_41419_10106",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A45551_74336_23432_13979",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "Te comentamos que como requisito al menos debes tener 12 meses de antigüedad en tu empleo actual. \nAgradecemos tu contacto y te invitamos a que vuelvas a consultar despues de ese tiempo; este es nuestro número de contacto. ¡Que tengas un buen día! 😊",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al chat"
+                                },
+                                "Name": "A64231_97090_73972_95677",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A74667_94604_11752_23778",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiBIb2xhITxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij5MYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGNvbW8gcmVxdWlzaXRvIGFsIG1lbm9zIGRlYmVzIHRlbmVyIDEyIG1lc2VzIGRlIGFudGlnw7xlZGFkIGVuIHR1IGVtcGxlbyBhY3R1YWwgeSwgcG9yIGxvIHRhbnRvLCBubyBwb2RlbW9zIG90b3JnYXJ0ZSB1biBwcsOpc3RhbW8uPC9zcGFuPjxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4KU2VndWlub3MgZW4gcmVkZXMgc29jaWFsZXMgPGEgaHJlZj0iaHR0cHM6Ly93d3cuZmFjZWJvb2suY29tL3JlZHVuaXNvbC8iPkZhY2Vib29rPC9hPiBlIDxhIGhyZWY9Imh0dHBzOi8vd3d3Lmluc3RhZ3JhbS5jb20vcmVkdW5pc29sLyI+SW5zdGFncmFtPC9hPiBwYXJhIG5vIHBlcmRlcnRlIGxhcyBub3ZlZGFkZXMgeSBmb3JtYXIgcGFydGUgZGUgbnVlc3RyYSBjb211bmlkYWQhPC9zcGFuPjxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4KUG9kw6lzIGNvbm9jZXIgbcOhcyBzb2JyZSBub3NvdHJvcyBlbiBudWVzdHJvIDxhIGhyZWY9Imh0dHBzOi8vcmVkdW5pc29sLmNvbS5hci8iPlNpdGlvIFdlYjwvYT48L3NwYW4+Ljxicj4KIDxicj4KR3JhY2lhcyE=",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)"
+                                },
+                                "Activated": "Y",
+                                "Name": "A12326_51103_9843_84841",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

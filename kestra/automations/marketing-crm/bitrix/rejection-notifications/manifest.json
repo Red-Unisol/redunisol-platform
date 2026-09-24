@@ -1,0 +1,109 @@
+{
+    "observed_at": "2026-09-24",
+    "target_stage": "UC_1P8I07",
+    "target_template_id": 889,
+    "notice_state_field": "UF_CRM_REJ_NOTICE",
+    "sources": [
+        {
+            "source_stage": "JUNK",
+            "template_id": 111,
+            "reason_label": "OTRA PROVINCIA",
+            "reason_xml_id": "612586299c011401bedf6a2c42c0fa47"
+        },
+        {
+            "source_stage": "UC_2B72LN",
+            "template_id": 707,
+            "reason_label": "SIT NEG BCRA",
+            "reason_xml_id": "84562bb62db80276f6e9492f3782ddb9"
+        },
+        {
+            "source_stage": "1",
+            "template_id": 383,
+            "reason_label": "OTRO BANCO",
+            "reason_xml_id": "7ded9cbe66473414cd183e419a855522"
+        },
+        {
+            "source_stage": "2",
+            "template_id": 385,
+            "reason_label": "NO TIENE ANTIGUEDAD",
+            "reason_xml_id": "b76c1a715aacc6360cf10f8462429c41"
+        },
+        {
+            "source_stage": "3",
+            "template_id": 387,
+            "reason_label": "AUTONOMO",
+            "reason_xml_id": "7f4c305bf2677cfa7a06057c43997283"
+        },
+        {
+            "source_stage": "4",
+            "template_id": 389,
+            "reason_label": "AUH (asignaciones)",
+            "reason_xml_id": "16d764f8513a78bf88524f9020e14767"
+        },
+        {
+            "source_stage": "UC_LG4IKC",
+            "template_id": 695,
+            "reason_label": "JUBILADO PROVINCIAL",
+            "reason_xml_id": "36ca930e5fc03f8f0673c29af2d50e42"
+        },
+        {
+            "source_stage": "UC_3L8S0S",
+            "template_id": 689,
+            "reason_label": "PENSIONADO",
+            "reason_xml_id": "f5b0a7f36f17bcab5b93b82acd56d87b"
+        },
+        {
+            "source_stage": "UC_TJVEF4",
+            "template_id": 691,
+            "reason_label": "JUBILADO NACIONAL",
+            "reason_xml_id": "6589157043d74de1839cfeed4f4f1dfc"
+        },
+        {
+            "source_stage": "UC_PO398Z",
+            "template_id": 693,
+            "reason_label": "PUBLICO NACIONAL",
+            "reason_xml_id": "84aa965f8971a83f6b8cef85a929b3c0"
+        },
+        {
+            "source_stage": "5",
+            "template_id": 391,
+            "reason_label": "NO TIENE RECIBO (en negro)",
+            "reason_xml_id": "c1684829e2b7df5049b9fa47366b6dca"
+        },
+        {
+            "source_stage": "6",
+            "template_id": 393,
+            "reason_label": "CONTRATADO",
+            "reason_xml_id": "fce12843ae619af1627cbff68918cb90"
+        },
+        {
+            "source_stage": "7",
+            "template_id": 395,
+            "reason_label": "NUMERO INCORRECTO",
+            "reason_xml_id": "1fe970edc392f637a06bcc245e4bf66e"
+        },
+        {
+            "source_stage": "8",
+            "template_id": 397,
+            "reason_label": "PRIVADOS",
+            "reason_xml_id": "5fcb89221d0fce47636f4e68ef47b6d7"
+        },
+        {
+            "source_stage": "9",
+            "template_id": 399,
+            "reason_label": "MUNICIPAL",
+            "reason_xml_id": "49c554534575fc4d777162363f0ff1f3"
+        },
+        {
+            "source_stage": "10",
+            "template_id": 407,
+            "reason_label": "NO CUMPLE REQUISITOS PARA CONVENIO",
+            "reason_xml_id": "f3eecc979177ec6b1c6e2d47457ab547"
+        }
+    ],
+    "no_automatic_notice": [
+        "SIN RESPUESTA",
+        "NO SON SOCIOS NI QUIEREN PRESTAMO",
+        "POLICÍA FEDERAL CABA - PERÍODO INICIAL"
+    ]
+}
