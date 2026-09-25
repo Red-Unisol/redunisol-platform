@@ -214,14 +214,22 @@ def construir_api(url, tenant, usuario, clave):
     autorizacion = b64encode((usuario + ":" + clave).encode()).decode()
     base = url.rstrip("/")
 
-    def api(metodo, ruta, cuerpo=None):
-        datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
+    def api(metodo, ruta, cuerpo=None, tipo="application/json"):
+        # El KV de Kestra recibe el valor como texto plano, no como JSON: su
+        # OpenAPI declara requestBody content text/plain. Mandarlo como
+        # application/json devuelve 415. La doc publica dice lo contrario.
+        if cuerpo is None:
+            datos = None
+        elif tipo == "text/plain":
+            datos = cuerpo.encode() if isinstance(cuerpo, str) else json.dumps(cuerpo).encode()
+        else:
+            datos = json.dumps(cuerpo).encode()
         pedido = urllib.request.Request(base + ruta, data=datos, method=metodo)
         pedido.add_header("Authorization", "Basic " + autorizacion)
         pedido.add_header("Accept", "application/json")
         pedido.add_header("User-Agent", AGENTE)
         if datos is not None:
-            pedido.add_header("Content-Type", "application/json")
+            pedido.add_header("Content-Type", tipo)
         try:
             with urllib.request.urlopen(pedido, timeout=30) as respuesta:
                 crudo = respuesta.read().decode()
@@ -295,7 +303,7 @@ def main():
     )
 
     resultado = barrido.correr(api("GET", ruta_kv), namespace)
-    api("PUT", ruta_kv, resultado["estado"])
+    api("PUT", ruta_kv, json.dumps(resultado["estado"]), tipo="text/plain")
 
     print(
         "barrido ok | fallas en ventana: " + str(resultado["fallidas"])
