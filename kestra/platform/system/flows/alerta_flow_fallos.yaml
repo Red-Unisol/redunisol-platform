@@ -1,6 +1,14 @@
 id: alerta_flow_fallos
 namespace: redunisol
 
+# Reemplazado por alerta_flows_barrido. Deshabilitar el padre alcanza para
+# apagar el esquema completo: sus disparadores se ignoran, deja de ejecutarse
+# y por lo tanto nunca invoca a alerta_flow_fallos_gestionar ni a
+# alerta_flow_fallos_confirmar. No se deshabilitan los hijos a proposito:
+# deploy_kestra.py publica este flow ultimo, asi que deshabilitarlos antes
+# dejaria una ventana en la que el padre seguiria llamando a subflows caidos.
+disabled: true
+
 description: Observa fallos y recuperaciones de prod y los entrega en orden al gestor unico de alertas.
 
 sla:
