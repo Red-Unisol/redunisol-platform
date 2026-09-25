@@ -21,7 +21,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r kestra/tools/requirements.txt
           pip install -r apps/credixsa-cache-api/requirements.txt
-          pip install beautifulsoup4
+          pip install beautifulsoup4 pytest
 
       - name: Validate repository structure
         run: python kestra/tools/validate_kestra.py
@@ -45,6 +45,9 @@ jobs:
 
       - name: Run deploy tooling tests
         run: python -m unittest kestra.tools.tests.test_deploy_kestra
+
+      - name: Run alert sweep tests
+        run: python -m pytest kestra/tools/tests/test_alerta_barrido.py -q
 
       - name: Verify infrastructure config-driven recreation
         run: python -m unittest kestra.tools.tests.test_infra_config_recreation
