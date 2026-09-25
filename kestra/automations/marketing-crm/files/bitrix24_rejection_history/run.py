@@ -92,7 +92,8 @@ def progress(root, candidates, journal, status, **extra):
     result = {'at': core.utcnow(), 'status': status, 'total_candidates': len(candidates),
               'handled': len(states), 'remaining': len(candidates) - len(states),
               'outcomes': dict(Counter(states.values())),
-              'uncertain': len(attempted - set(states)), **extra}
+              'uncertain': len(attempted - set(states)),
+              'paused': (root / 'execution/paused.json').exists(), **extra}
     core.write_json(root / 'execution/progress.json', result)
     return result
 

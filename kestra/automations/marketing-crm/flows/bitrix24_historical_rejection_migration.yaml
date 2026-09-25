@@ -53,3 +53,22 @@ triggers:
   timezone: America/Argentina/Buenos_Aires
   inputs:
     mode: run
+outputs:
+- id: status
+  type: STRING
+  value: '{{ outputs.migrar.vars.status }}'
+- id: handled
+  type: INT
+  value: '{{ outputs.migrar.vars.handled ?? 0 }}'
+- id: remaining
+  type: INT
+  value: '{{ outputs.migrar.vars.remaining ?? 0 }}'
+- id: uncertain
+  type: INT
+  value: '{{ outputs.migrar.vars.uncertain ?? 0 }}'
+- id: live_verified
+  type: INT
+  value: '{{ outputs.migrar.vars.live_verified ?? 0 }}'
+- id: paused
+  type: BOOLEAN
+  value: '{{ outputs.migrar.vars.paused ?? false }}'
