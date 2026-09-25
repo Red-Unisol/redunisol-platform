@@ -1,0 +1,15 @@
+{
+  "cutoff": 396841,
+  "count": 75254,
+  "imported_handled": 75,
+  "sha256": {
+    "candidates.json": "3be805e892af5682ad8fcbc9ec496fb097b7d21802e6280b091fde7bf21c757a",
+    "initial-counts.json": "ae6ffea83bb7a04c8c7d9b6e069a796153c794451ac429fafd9bf0602d08af75",
+    "guard-before-migration.json": "cbf6e51cb51509f7c8cc49c1a54cbc855094855607749286ef41da982897e26a",
+    "summary.json": "bce482587697c3682b3e57416f2701dda461588b56abaade2aee3e2be54d857c",
+    "pilot-50.json": "9f32ef33a1e33cf55f05dda0f92a80ea2aadcf64bcbe5207a0a2657f20e9dc15",
+    "execution/pilot-validation.json": "a9a3b31e8711f8ce774d00bc735332564bb3093f6f1dd8abb0099e8c15f6efc4",
+    "execution/journal.jsonl": "e73f46de73bb7fbd6739f5891d2cf791b5fa6a4444084bc7cb200d004ff4fa43",
+    "manifest.json": "4c3daf86b90adfa9aed44888291602d4f95a786ff2649faf3f4d7026d9e2d501"
+  }
+}

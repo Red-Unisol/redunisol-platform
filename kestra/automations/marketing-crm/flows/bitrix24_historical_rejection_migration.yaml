@@ -1,0 +1,55 @@
+id: bitrix24_historical_rejection_migration
+namespace: redunisol
+description: Migra el inventario historico aprobado en lotes nocturnos reanudables,
+  sin avisos ni dependencia de la PC.
+labels:
+  env: prod
+  team: redunisol
+  domain: marketing-crm
+  kind: schedule
+  schedule_scope: prod_only
+concurrency:
+  limit: 1
+  behavior: QUEUE
+inputs:
+- id: mode
+  type: SELECT
+  values:
+  - inspect
+  - bootstrap
+  - run
+  defaults: inspect
+- id: seed
+  type: FILE
+  required: false
+tasks:
+- id: migrar
+  type: io.kestra.plugin.scripts.python.Commands
+  timeout: PT12M
+  namespaceFiles:
+    enabled: true
+    include:
+    - bitrix24_rejection_history/**
+  inputFiles:
+    seed.zip: '{{ inputs.seed ?? '''' }}'
+  taskRunner:
+    type: io.kestra.plugin.scripts.runner.docker.Docker
+    networkMode: kestra_net
+    volumes:
+    - /srv/redunisol-migrations/bitrix-rejections-20260924:/migration
+    - /opt/bitrix-lead-receiver/.env:/receiver.env:ro
+  containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
+  env:
+    FLOW_NAMESPACE: '{{ flow.namespace }}'
+    MIGRATION_MODE: '{{ inputs.mode }}'
+    BITRIX24_BASE_URL: '{{ envs.bitrix24_base_url }}'
+    BITRIX24_WEBHOOK_PATH: '{{ secret(''BITRIX24_WEBHOOK_PATH'') }}'
+  commands:
+  - python -m bitrix24_rejection_history.run
+triggers:
+- id: lotes_nocturnos
+  type: io.kestra.plugin.core.trigger.Schedule
+  cron: '*/10 0-5,22-23 * * *'
+  timezone: America/Argentina/Buenos_Aires
+  inputs:
+    mode: run
