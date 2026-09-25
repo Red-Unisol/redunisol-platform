@@ -6,6 +6,8 @@ description: |
   Reemplaza el esquema disparado por evento: en lugar de una ejecucion por cada exito o fallo
   de cualquier flow de produccion, corre una sola vez cada 8 minutos.
 
+  La logica vive en files/alerta_barrido/barrido.py para poder cubrirla con tests.
+
 sla:
   - id: limitar_duracion
     type: MAX_DURATION
@@ -25,7 +27,11 @@ labels:
 
 tasks:
   - id: barrer
-    type: io.kestra.plugin.scripts.python.Script
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - alerta_barrido/**
     taskRunner:
       type: io.kestra.plugin.core.runner.Process
     env:
@@ -48,233 +54,8 @@ tasks:
       # Un incidente sin novedades por mas de estos dias se descarta.
       # Reemplaza al TTL del esquema anterior: la API REST de KV no expone TTL.
       INCIDENTE_MAX_DIAS: "30"
-    script: |
-      import json
-      import os
-      import urllib.error
-      import urllib.parse
-      import urllib.request
-      from base64 import b64encode
-      from datetime import datetime, timedelta, timezone
-
-      KESTRA = os.environ["KESTRA_URL"].rstrip("/")
-      TENANT = os.environ.get("KESTRA_TENANT") or "main"
-      AUTH = b64encode(
-          (os.environ["KESTRA_USERNAME"] + ":" + os.environ["KESTRA_PASSWORD"]).encode()
-      ).decode()
-      VENTANA = int(os.environ.get("VENTANA_MINUTOS") or "20")
-      MAX_DIAS = int(os.environ.get("INCIDENTE_MAX_DIAS") or "30")
-
-      # Namespaces vigilados. Se incluye el propio system a proposito: el esquema
-      # anterior se excluia a si mismo y por eso estuvo roto sin que nadie lo viera.
-      PREFIJO = "redunisol.prod."
-      FLOW_PROPIO = "alerta_flows_barrido"
-
-      # Una sola clave guarda todo el estado, como JSON.
-      KV_NS = os.environ["KV_NAMESPACE"]
-      RUTA_KV = "/api/v1/" + TENANT + "/namespaces/" + KV_NS + "/kv/alerta.barrido.incidentes"
-
-      ahora = datetime.now(timezone.utc)
-      problemas = []
-
-      # El proxy que publica Kestra responde 403 al User-Agent por defecto de
-      # urllib. Hay que declarar uno propio o todas las llamadas fallan.
-      AGENTE = "kestra-alerta-barrido/1.0"
-
-
-      def api(metodo, ruta, cuerpo=None):
-          url = KESTRA + ruta
-          datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
-          pedido = urllib.request.Request(url, data=datos, method=metodo)
-          pedido.add_header("Authorization", "Basic " + AUTH)
-          pedido.add_header("Accept", "application/json")
-          pedido.add_header("User-Agent", AGENTE)
-          if datos is not None:
-              pedido.add_header("Content-Type", "application/json")
-          try:
-              with urllib.request.urlopen(pedido, timeout=30) as resp:
-                  crudo = resp.read().decode()
-                  return json.loads(crudo) if crudo else None
-          except urllib.error.HTTPError as err:
-              if err.code == 404:
-                  return None
-              raise
-
-
-      def buscar(filtros, paginas_max=10):
-          filtros = dict(filtros)
-          filtros["size"] = 200
-          salida, pagina = [], 1
-          while pagina <= paginas_max:
-              filtros["page"] = pagina
-              consulta = urllib.parse.urlencode(filtros)
-              datos = api("GET", "/api/v1/" + TENANT + "/executions/search?" + consulta) or {}
-              lote = datos.get("results") or []
-              salida.extend(lote)
-              if not lote or len(salida) >= int(datos.get("total") or 0):
-                  break
-              pagina += 1
-          return salida
-
-
-      def cuando(ejecucion):
-          crudo = (ejecucion.get("state") or {}).get("startDate") or ""
-          try:
-              momento = datetime.fromisoformat(crudo.replace("Z", "+00:00"))
-          except ValueError:
-              return None
-          # Kestra puede devolver la fecha sin zona: se asume UTC para que todas
-          # las comparaciones sean entre fechas del mismo tipo.
-          if momento.tzinfo is None:
-              momento = momento.replace(tzinfo=timezone.utc)
-          return momento.astimezone(timezone.utc)
-
-
-      def avisar(titulo, namespace, flow, referencia):
-          """Devuelve True si el mensaje salio. Un fallo no corta el barrido."""
-          texto = (
-              "KESTRA - " + titulo + "\n\n"
-              "Flow: " + flow + "\n"
-              "Namespace: " + namespace + "\n"
-              "Ejecucion: " + str(referencia)
-          )
-          url = (
-              os.environ["BITRIX_BASE_URL"].rstrip("/") + "/"
-              + os.environ["BITRIX_ALERTAS_PATH"].strip("/") + "/im.message.add"
-          )
-          cuerpo = json.dumps(
-              {"DIALOG_ID": os.environ["BITRIX_DIALOG_ID"], "MESSAGE": texto}
-          ).encode()
-          pedido = urllib.request.Request(url, data=cuerpo, method="POST")
-          pedido.add_header("Content-Type", "application/json")
-          pedido.add_header("User-Agent", AGENTE)
-          try:
-              with urllib.request.urlopen(pedido, timeout=30) as resp:
-                  resp.read()
-              return True
-          except Exception as err:
-              problemas.append("no se pudo avisar " + namespace + "/" + flow + ": " + str(err))
-              return False
-
-
-      # --- 1. estado previo ---------------------------------------------------
-      guardado = api("GET", RUTA_KV)
-      if isinstance(guardado, dict) and "value" in guardado:
-          guardado = guardado["value"]
-      if isinstance(guardado, str):
-          try:
-              guardado = json.loads(guardado or "{}")
-          except ValueError:
-              guardado = {}
-      estado = guardado if isinstance(guardado, dict) else {}
-      incidentes = estado.get("incidentes")
-      if not isinstance(incidentes, dict):
-          incidentes = {}
-      corrida_previa = estado.get("ultima_corrida")
-
-      # --- 2. fallas dentro de la ventana -------------------------------------
-      fallidas = buscar({
-          "filters[state][EQUALS]": "FAILED",
-          "filters[timeRange][EQUALS]": "PT" + str(VENTANA) + "M",
-          "filters[namespace][STARTS_WITH]": PREFIJO,
-      })
-
-      nuevas = {}
-      for ejecucion in fallidas:
-          namespace = ejecucion.get("namespace") or ""
-          flow = ejecucion.get("flowId") or ""
-          if flow == FLOW_PROPIO:
-              continue
-          momento = cuando(ejecucion)
-          if momento is None:
-              continue
-          clave = namespace + "/" + flow
-          previa = nuevas.get(clave)
-          if previa is None or momento > previa["momento"]:
-              nuevas[clave] = {
-                  "momento": momento,
-                  "ejecucion": ejecucion.get("id"),
-                  "namespace": namespace,
-                  "flow": flow,
-              }
-
-      # --- 3. incidentes nuevos -> avisar -------------------------------------
-      for clave, dato in nuevas.items():
-          abierto = incidentes.get(clave)
-          if abierto is not None:
-              abierto["ultima_falla"] = dato["momento"].isoformat()
-              abierto["fallas"] = int(abierto.get("fallas") or 1) + 1
-              # Si el aviso anterior no salio, se reintenta en este ciclo.
-              if not abierto.get("avisado"):
-                  abierto["avisado"] = avisar(
-                      "Flow fallido", dato["namespace"], dato["flow"], dato["ejecucion"]
-                  )
-              continue
-          incidentes[clave] = {
-              "namespace": dato["namespace"],
-              "flow": dato["flow"],
-              "desde": dato["momento"].isoformat(),
-              "ultima_falla": dato["momento"].isoformat(),
-              "ejecucion": dato["ejecucion"],
-              "fallas": 1,
-              "avisado": avisar(
-                  "Flow fallido", dato["namespace"], dato["flow"], dato["ejecucion"]
-              ),
-          }
-
-      # --- 4. recuperaciones ---------------------------------------------------
-      for clave in list(incidentes):
-          dato = incidentes[clave]
-          if clave in nuevas:
-              continue
-          try:
-              desde = datetime.fromisoformat(dato["ultima_falla"])
-          except (KeyError, ValueError):
-              desde = ahora - timedelta(days=1)
-          if desde.tzinfo is None:
-              desde = desde.replace(tzinfo=timezone.utc)
-          # Una sola consulta acotada: alcanza con saber si existe UN exito posterior.
-          exitos = buscar({
-              "filters[state][EQUALS]": "SUCCESS",
-              "filters[namespace][EQUALS]": dato["namespace"],
-              "filters[flowId][EQUALS]": dato["flow"],
-              "filters[startDate][GREATER_THAN]": desde.strftime("%Y-%m-%dT%H:%M:%SZ"),
-          }, paginas_max=1)
-          if exitos:
-              if avisar("Flow recuperado", dato["namespace"], dato["flow"], exitos[0].get("id")):
-                  del incidentes[clave]
-              continue
-          # Sin novedades por demasiado tiempo: se descarta para que el estado no crezca.
-          if (ahora - desde).days >= MAX_DIAS:
-              del incidentes[clave]
-
-      # --- 5. aviso si el barrido estuvo detenido ------------------------------
-      if corrida_previa:
-          try:
-              previa_corrida = datetime.fromisoformat(corrida_previa)
-              if previa_corrida.tzinfo is None:
-                  previa_corrida = previa_corrida.replace(tzinfo=timezone.utc)
-              hueco = int((ahora - previa_corrida).total_seconds() // 60)
-              if hueco >= VENTANA:
-                  avisar(
-                      "Barrido de alertas reanudado",
-                      KV_NS,
-                      FLOW_PROPIO,
-                      "sin corridas durante " + str(hueco) + " minutos",
-                  )
-          except ValueError:
-              pass
-
-      # --- 6. persistir --------------------------------------------------------
-      api("PUT", RUTA_KV, {"ultima_corrida": ahora.isoformat(), "incidentes": incidentes})
-
-      print(
-          "barrido ok | fallas en ventana: " + str(len(fallidas))
-          + " | flows con falla: " + str(len(nuevas))
-          + " | incidentes abiertos: " + str(len(incidentes))
-      )
-      if problemas:
-          print("problemas: " + "; ".join(problemas))
+    commands:
+      - python alerta_barrido/barrido.py
 
 triggers:
   - id: barrido_cada_8_minutos
