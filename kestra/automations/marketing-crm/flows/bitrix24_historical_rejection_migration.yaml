@@ -70,5 +70,5 @@ outputs:
   type: INT
   value: '{{ outputs.migrar.vars.live_verified ?? 0 }}'
 - id: paused
-  type: BOOLEAN
+  type: BOOL
   value: '{{ outputs.migrar.vars.paused ?? false }}'
