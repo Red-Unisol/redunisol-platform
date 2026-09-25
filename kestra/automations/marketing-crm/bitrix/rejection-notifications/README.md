@@ -114,6 +114,9 @@ requiere revisar comunicaciones previas para no duplicarlas.
 
 ## Migración histórica posterior
 
+La ejecución aprobada se administra mediante el flow Git-managed de Kestra.
+Ver [inventario, controles y reanudación](historical-migration.md).
+
 `manifest.json` ofrece el mapa etapa original → motivo. Antes de ejecutar una
 migración, generar un inventario de candidatos con ID, etapa, motivo actual y marca,
 excluyendo ganados, convertidos, derivaciones a vendedor y cualquier ambigüedad.
