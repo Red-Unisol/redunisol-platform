@@ -97,3 +97,20 @@ Cualquier intervención sobre archivos de la VPS requiere autorización explíci
 
 Referencia de configuración del runner:
 [Docker task runner de Kestra](https://kestra.io/plugins/core/docker-task-runner/io.kestra.plugin.scripts.runner.docker.docker).
+
+## Verificación del cambio, 25/09/2026
+
+- Tarea local releída en estado `Disabled`; sin procesos locales de migración.
+- Código de runtime publicado desde el commit `045d23f`, flow revisión 2, con
+  trigger habilitado y cron nocturno releído mediante la API.
+- Importación `2byRtjcz7Z2qHk56inixpC`: `SUCCESS`, sin escribir leads.
+- Prueba diurna `5PUT5T5GbbXjWYYqy7XwhJ`: `outside_night_window`, 75 procesados,
+  75.179 pendientes, cero inciertos, corroborado en el volumen de la VPS.
+- Inspección final `3VMQ6eVIkOzPlpXnTTGJWl`: `SUCCESS`; outputs `live_verified=75`,
+  `handled=75`, `remaining=75179`, `uncertain=0`, `paused=false`.
+- El [PR #395](https://github.com/Red-Unisol/redunisol-platform/pull/395) contiene
+  la implementación. El PR #394 de ejecución local quedó cerrado como reemplazado;
+  sus artefactos y rama se conservaron. Los checks remotos no se monitorearon.
+
+Esta verificación acredita la importación, las lecturas reales y la guarda diurna;
+no acredita todavía el primer lote nocturno ejecutado por Kestra.
