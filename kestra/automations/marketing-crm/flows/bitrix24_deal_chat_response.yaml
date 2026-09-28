@@ -1,0 +1,48 @@
+id: bitrix24_deal_chat_response
+namespace: redunisol
+description: Mueve Presentación y Revisión Manual a Respuesta cuando existe una sesión WhatsApp de Ventas activa y una decisión comercial no rechazada.
+
+concurrency:
+  limit: 1
+  behavior: CANCEL
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  integration: bitrix24
+
+tasks:
+  - id: revisar_chats
+    type: io.kestra.plugin.scripts.python.Commands
+    timeout: PT12M
+    namespaceFiles:
+      enabled: true
+      include:
+        - bitrix24_form_flow/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
+    env:
+      BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
+      BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
+      BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
+      BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
+      BITRIX24_TIMEOUT_SECONDS: "20"
+    commands:
+      - python -m bitrix24_form_flow.kestra_deal_chat_response_entrypoint
+
+outputs:
+  - id: ok
+    type: BOOL
+    value: "{{ outputs.revisar_chats.vars.ok }}"
+  - id: result_json
+    type: STRING
+    value: "{{ outputs.revisar_chats.vars.result_json }}"
+
+triggers:
+  - id: cada_dos_minutos
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/2 * * * *"
