@@ -44,6 +44,10 @@ verificados y 75.179 pendientes**, sin intentos inciertos. No confundir `recover
   en Bitrix hasta que un operador revise la causa. No hay retry automático de
   mutaciones. Al completar el inventario, los siguientes ticks no escriben;
   retirar el trigger mediante Git al cerrar la migración.
+- Las lecturas transitorias admiten hasta tres intentos, con esperas de dos y
+  cuatro segundos (HTTP 408/429/500/502/503/504, transporte o límites de Bitrix).
+  Los batches, que pueden escribir, tienen un solo intento. Los errores de
+  permisos, respuestas inválidas y demás errores funcionales no se reintentan.
 
 `skip_*` significa omitido, no migrado. El resumen separa los resultados para no
 dar esos casos por resueltos.
@@ -59,6 +63,11 @@ Bind mount gestionado por el YAML:
 - `execution/progress.json`: cantidades y estado actual.
 - `execution/receiver-latest.json`: último estado observado del receptor.
 - `execution/paused.json`: bloqueo de seguridad ante un error.
+- `execution/last-error.json` y `execution/errors.jsonl`: último error e historial,
+  con fase, servicio, operación, estado HTTP/código de API y cantidad de intentos
+  cuando corresponda. Nunca contienen URLs, cuerpos HTTP ni mensajes originales
+  de excepciones, que podrían incluir secretos.
+- `execution/resumes/`: incidente original y evidencia de cada reanudación.
 
 El directorio no está servido por la web de informes. No borrar ni reemplazar
 sus datos durante un deploy. Respaldarlo junto con el almacenamiento de Kestra;
@@ -94,6 +103,43 @@ Ante un `paused.json`, revisar primero ejecución, diario y estado real de los
 leads con intención incierta. No quitar el bloqueo para reintentar a ciegas ni
 restaurar etapas originales: sus automatizaciones antiguas siguen activas.
 Cualquier intervención sobre archivos de la VPS requiere autorización explícita.
+
+## Reanudación después de una revisión
+
+Con autorización del operador, ejecutar el mismo flow con `mode=resume`,
+`resume_pause_sha256` igual al SHA-256 exacto del `execution/paused.json`
+revisado y `resume_expected_handled` igual a la cantidad procesada revisada.
+Estos parámetros nunca se agregan al trigger automático.
+
+La operación conserva el bloqueo exclusivo y verifica el inventario y los
+catálogos. Rechaza una pausa diferente, una cantidad inesperada o cualquier
+escritura incierta. Relee **todos** los registros migrados para comprobar etapa,
+motivo y marca histórica, inspecciona los 25 siguientes y exige un receptor
+activo, sin envíos inciertos/recibos vencidos y con capacidad para el próximo lote.
+Solo entonces archiva la pausa y guarda evidencia de la revisión. No modifica
+leads ni continúa el lote durante esa ejecución; devuelve
+`resumed_waiting_for_schedule` y el cron conserva la ventana nocturna.
+
+Si la revisión falla, la pausa original permanece intacta. El nuevo diagnóstico
+se guarda por separado, de modo que no se pierde la identidad del incidente
+revisado. Un `SUCCESS` de Kestra no significa avance de la migración: consultar
+`status`, `handled`, `remaining` y `paused`, también registrados explícitamente
+en los logs. `paused_requires_review` indica que ese disparo no procesó el lote.
+
+### Incidente revisado el 28/09/2026
+
+La primera noche avanzó hasta 2.200 registros (2.175 `verified` y 25 `recovered`),
+con 73.054 pendientes y cero escrituras inciertas. La ejecución
+`1ysVa5GZWCnx6MwGpU4pf9` falló el 26/09 a las 00:30 ART y dejó la pausa activa.
+El código anterior solo conservó `ApiFailure`: no hay evidencia suficiente para
+atribuir retrospectivamente el error a Bitrix, al receptor o a una falla de red.
+
+La revisión de solo lectura del 28/09 confirmó los tres campos esperados en una
+muestra de 100 migrados, los 25 siguientes sin cambios respecto del inventario y
+el último lote de 25 sin actividades nuevas desde la migración ni chats asociados.
+Estos controles son una muestra; no acreditan una auditoría completa de entrega
+de comunicaciones. La reanudación exige además la relectura completa indicada
+arriba y debe documentarse con su ejecución real.
 
 Referencia de configuración del runner:
 [Docker task runner de Kestra](https://kestra.io/plugins/core/docker-task-runner/io.kestra.plugin.scripts.runner.docker.docker).
