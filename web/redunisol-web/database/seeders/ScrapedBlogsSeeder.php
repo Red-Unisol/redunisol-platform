@@ -3,12 +3,14 @@
 namespace Database\Seeders;
 
 use App\Models\Blog;
+use App\Models\Category;
 use App\Models\User;
+use App\Support\BlogExcerpt;
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon;
+use Illuminate\Support\Str;
 
 class ScrapedBlogsSeeder extends Seeder
 {
@@ -18,12 +20,14 @@ class ScrapedBlogsSeeder extends Seeder
 
         if (! file_exists($path)) {
             $this->command->warn("No scraped seed file found at {$path}. Run the scraper first to generate it.");
+
             return;
         }
 
         $json = json_decode(file_get_contents($path), true);
         if (! $json || ! isset($json['items'])) {
             $this->command->error('Invalid JSON structure in scraped_seed.json');
+
             return;
         }
 
@@ -43,12 +47,14 @@ class ScrapedBlogsSeeder extends Seeder
         foreach ($json['items'] as $item) {
             if (isset($item['error'])) {
                 $this->command->warn("Skipping {$item['slug']}: error in scraping ({$item['error']})");
+
                 continue;
             }
 
             $slug = $item['slug'] ?? null;
             if (! $slug) {
                 $this->command->warn('Skipping entry with missing slug');
+
                 continue;
             }
 
@@ -56,12 +62,7 @@ class ScrapedBlogsSeeder extends Seeder
             $title = $item['title'] ?? $slug;
 
             $content = $item['content_html'] ?? ($item['content_text'] ?? '');
-            $excerpt = null;
-            if (! empty($item['content_text'])) {
-                $excerpt = Str::limit(trim(preg_replace('/\s+/', ' ', $item['content_text'])), 160);
-            } elseif (! empty($content)) {
-                $excerpt = Str::limit(trim(preg_replace('/\s+/', ' ', strip_tags($content))), 160);
-            }
+            $excerpt = BlogExcerpt::fromHtml($content);
 
             $published_at = null;
             if (! empty($item['published_at'])) {
@@ -92,20 +93,28 @@ class ScrapedBlogsSeeder extends Seeder
             // Handle images: try to download first reachable image and store in public disk
             // Prefer thumbnail field from scraper
             $imgCandidates = [];
-            if (! empty($item['thumbnail'])) $imgCandidates[] = $item['thumbnail'];
-            if (! empty($item['images']) && is_array($item['images'])) $imgCandidates = array_merge($imgCandidates, $item['images']);
+            if (! empty($item['thumbnail'])) {
+                $imgCandidates[] = $item['thumbnail'];
+            }
+            if (! empty($item['images']) && is_array($item['images'])) {
+                $imgCandidates = array_merge($imgCandidates, $item['images']);
+            }
 
             if (! empty($imgCandidates)) {
                 $downloaded = false;
                 foreach ($imgCandidates as $imgUrl) {
-                    if (! $imgUrl) continue;
+                    if (! $imgUrl) {
+                        continue;
+                    }
                     try {
                         $contents = @file_get_contents($imgUrl);
-                        if ($contents === false) continue;
+                        if ($contents === false) {
+                            continue;
+                        }
 
                         $ext = pathinfo(parse_url($imgUrl, PHP_URL_PATH), PATHINFO_EXTENSION);
                         $ext = $ext ? preg_replace('/[^a-zA-Z0-9]/', '', $ext) : 'jpg';
-                        $filename = 'blogs/' . $slug . '-' . time() . '.' . $ext;
+                        $filename = 'blogs/'.$slug.'-'.time().'.'.$ext;
 
                         // store in public disk
                         Storage::disk('public')->put($filename, $contents);
@@ -126,14 +135,16 @@ class ScrapedBlogsSeeder extends Seeder
             }
 
             // Match tags to categories and attach (fuzzy matching)
-            $allCategories = \App\Models\Category::all();
+            $allCategories = Category::all();
             $attachedCats = [];
 
             // try matching provided tags first
             $providedTags = ! empty($item['tags']) && is_array($item['tags']) ? $item['tags'] : [];
             foreach ($providedTags as $t) {
                 $tNorm = trim((string) $t);
-                if ($tNorm === '') continue;
+                if ($tNorm === '') {
+                    continue;
+                }
                 $tLower = mb_strtolower($tNorm);
                 // exact name or slug
                 $cat = $allCategories->first(function ($c) use ($tLower, $tNorm) {
@@ -143,6 +154,7 @@ class ScrapedBlogsSeeder extends Seeder
                     // substring matches
                     $cat = $allCategories->first(function ($c) use ($tLower) {
                         $nameLower = mb_strtolower($c->name);
+
                         return mb_strpos($tLower, $nameLower) !== false || mb_strpos($nameLower, $tLower) !== false;
                     });
                 }
@@ -157,7 +169,9 @@ class ScrapedBlogsSeeder extends Seeder
                 $contentTextLower = mb_strtolower(strip_tags($content));
                 foreach ($allCategories as $c) {
                     $nameLower = mb_strtolower($c->name);
-                    if ($nameLower === '') continue;
+                    if ($nameLower === '') {
+                        continue;
+                    }
                     if (mb_strpos($contentTextLower, $nameLower) !== false) {
                         $blog->categories()->syncWithoutDetaching([$c->id]);
                         $attachedCats[$c->id] = $c->name;
@@ -166,7 +180,7 @@ class ScrapedBlogsSeeder extends Seeder
             }
 
             if (! empty($attachedCats)) {
-                $this->command->info("Attached categories to {$slug}: " . implode(', ', $attachedCats));
+                $this->command->info("Attached categories to {$slug}: ".implode(', ', $attachedCats));
             }
 
             $this->command->info("Imported blog: {$slug}");

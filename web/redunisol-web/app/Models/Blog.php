@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\BlogExcerpt;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -33,11 +34,29 @@ class Blog extends Model
 
     protected $appends = ['image_url', 'author_slug'];
 
+    protected static function booted(): void
+    {
+        static::saving(function (Blog $blog): void {
+            $blog->attributes['excerpt'] = BlogExcerpt::resolve(
+                $blog->attributes['excerpt'] ?? null,
+                $blog->attributes['content'] ?? null,
+            );
+        });
+    }
+
     // ── Accessors ────────────────────────────────────────────────────────────
+
+    public function getExcerptAttribute(?string $value): string
+    {
+        return BlogExcerpt::resolve($value, $this->attributes['content'] ?? null);
+    }
 
     public function getImageUrlAttribute(): ?string
     {
-        if (! $this->image) return null;
+        if (! $this->image) {
+            return null;
+        }
+
         return Storage::disk('public')->url($this->image);
     }
 
@@ -58,7 +77,7 @@ class Blog extends Model
     public function scopePublished($query)
     {
         return $query->whereNotNull('published_at')
-                     ->where('published_at', '<=', now());
+            ->where('published_at', '<=', now());
     }
 
     // ── Relations ────────────────────────────────────────────────────────────
