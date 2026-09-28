@@ -141,6 +141,21 @@ Estos controles son una muestra; no acreditan una auditoría completa de entrega
 de comunicaciones. La reanudación exige además la relectura completa indicada
 arriba y debe documentarse con su ejecución real.
 
+Reanudación autorizada y verificada el 28/09 a las 11:02 ART:
+
+- Código publicado desde `5c9ff6f`, solo `core.py`, `run.py` y este flow;
+  revisión de flow 3. Cron nocturno habilitado sin cambios de horario.
+- Inspección `27FyaQA3iW8wyNfMt1s70e`: `SUCCESS`, 100 verificados, pausa activa.
+- Reanudación `5iOA3X5aEcBPqCsPRwmLcE`: `SUCCESS`, `live_verified=2200`,
+  `handled=2200`, `remaining=73054`, `uncertain=0`, `paused=false`, 25 siguientes
+  elegibles y cero mutaciones externas durante la revisión.
+- Guarda diurna `5jXpaXdq36xtYR16ddKReB`: `SUCCESS`, `outside_night_window`,
+  mismas cantidades. Relectura de la VPS: pausa archivada, auditoría persistida
+  y SHA-256 del diario sin cambios respecto de la inspección previa.
+- La continuación queda habilitada para el 28/09 a las 22:00 ART. El primer lote
+  posterior a esta reanudación queda pendiente de observar; próximo control
+  previsto para el 29/09 a las 10:00 ART, sin promesa de terminar todo el inventario.
+
 Referencia de configuración del runner:
 [Docker task runner de Kestra](https://kestra.io/plugins/core/docker-task-runner/io.kestra.plugin.scripts.runner.docker.docker).
 
