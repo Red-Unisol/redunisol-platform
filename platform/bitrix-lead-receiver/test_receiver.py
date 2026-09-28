@@ -1,10 +1,12 @@
 import concurrent.futures
+import io
 import json
 from pathlib import Path
 import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -100,6 +102,76 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(self.store.stats()['jobs'], {'done': 1})
         self.assertEqual(self.store.stats()['counters']['business_requested'], 2)
 
+    def test_missing_data_waits_durably_without_polling_and_releases_capacity(self):
+        self.store.enqueue('12')
+        self.engine.step()
+        r = self.receipt()
+        self.store.claim(r['id'], '12', 'executionA')
+        self.assertTrue(self.store.complete(r['id'], 'executionA', False, 'waiting_for_update'))
+        before = self.store.stats()['counters']
+
+        self.now += 86400
+        restarted = Store(self.path, lambda: self.now)
+        engine = Engine(restarted, self.client)
+        with patch.object(self.client, 'status') as read:
+            self.assertFalse(engine.step())
+            read.assert_not_called()
+        self.assertEqual(restarted.stats()['jobs'], {'waiting_for_update': 1})
+        self.assertEqual(restarted.stats()['oldest_pending_seconds'], 0)
+        self.assertEqual(restarted.submissions(), [])
+        self.assertEqual(restarted.reconcilable(), [])
+        self.assertFalse(restarted.claim(r['id'], '12', 'executionB'))
+        self.assertTrue(restarted.complete(r['id'], 'executionA', False, 'waiting_for_update'))
+        self.assertEqual(restarted.stats()['counters'], before)
+        self.assertNotIn('business_failed', before)
+
+        for lead in ('13', '14'):
+            restarted.enqueue(lead)
+            self.assertTrue(engine.step())
+        self.assertEqual(restarted.stats()['jobs'], {'waiting_for_update': 1, 'waiting': 2})
+
+    def test_event_during_processing_rechecks_same_status_then_waits_for_another_event(self):
+        self.store.enqueue('12')
+        self.engine.step()
+        first = self.receipt()
+        self.store.claim(first['id'], '12', 'executionA')
+        self.store.enqueue('12')  # Data can arrive before the completion callback.
+        self.store.complete(first['id'], 'executionA', False, 'waiting_for_update')
+        self.assertEqual(self.store.stats()['jobs'], {'pending': 1})
+
+        self.now += 1
+        self.assertTrue(self.engine.step())  # The status remains NEW.
+        second = self.receipt()
+        self.assertNotEqual(first['id'], second['id'])
+        self.store.claim(second['id'], '12', 'executionB')
+        # A delayed duplicate callback must not release the new receipt.
+        self.store.complete(first['id'], 'executionA', False, 'waiting_for_update')
+        self.assertEqual(self.store.stats()['jobs'], {'waiting': 1})
+        self.store.complete(second['id'], 'executionB', False, 'waiting_for_update')
+        self.now += 3600
+        self.assertFalse(self.engine.step())
+        self.assertEqual(self.store.stats()['jobs'], {'waiting_for_update': 1})
+
+    def test_wait_clears_old_completed_status_when_lead_changes_during_processing(self):
+        self.store.enqueue('12')
+        self.engine.step()
+        r = self.receipt()
+        self.store.claim(r['id'], '12', 'executionA')
+        self.store.complete(r['id'], 'executionA', True)  # NEW completed previously.
+        self.now += 1
+        self.client.current = 'WON'
+        self.store.enqueue('12')
+        self.engine.step()
+        r = self.receipt()
+        self.store.claim(r['id'], '12', 'executionB')
+        self.client.current = 'NEW'  # Business execution sees incomplete NEW again.
+        self.store.complete(r['id'], 'executionB', False, 'waiting_for_update')
+        self.store.enqueue('12')
+        self.now += 1
+        self.engine.step()
+        self.assertEqual(self.store.stats()['jobs'], {'waiting': 1})
+        self.assertEqual(self.store.stats()['counters']['business_requested'], 3)
+
     def test_ambiguous_submit_cannot_grant_two_executions(self):
         self.store.enqueue('12')
         self.engine.step()
@@ -134,9 +206,38 @@ class QueueTests(unittest.TestCase):
         self.client.result = lambda _: None
         self.engine.reconcile()
         self.assertEqual(self.store.stats()['jobs'], {'waiting': 1})
-        self.client.result = lambda _: True
+        self.client.result = lambda _: {'ok': True, 'action': ''}
         self.engine.reconcile()
         self.assertEqual(self.store.stats()['jobs'], {'done': 1})
+
+    def test_reconciliation_reads_persisted_wait_result_after_lost_callback(self):
+        for concurrent_update in (False, True):
+            with self.subTest(concurrent_update=concurrent_update):
+                lead = '13' if concurrent_update else '12'
+                self.now += 1
+                self.store.enqueue(lead)
+                self.engine.step()
+                r = self.receipt()
+                self.store.claim(r['id'], lead, 'executionA')
+                if concurrent_update:
+                    self.store.enqueue(lead)
+                self.now += 61
+                client = Client('unused', 'unused', 'token', ['NEW'],
+                                'http://kestra/api/v1/main', ('test', 'test'))
+                responses = [
+                    {'state': {'current': 'FAILED'}, 'taskRunList': [
+                        {'taskId': 'procesar_actualizacion_lead', 'id': 'taskA',
+                         'state': {'current': 'SUCCESS'}}]},
+                    {'vars': {'ok': False, 'action': 'waiting_for_update'}},
+                ]
+                with patch('receiver.urlopen', side_effect=[
+                    io.BytesIO(json.dumps(value).encode()) for value in responses
+                ]):
+                    Engine(self.store, client).reconcile()
+                with self.store.db() as db:
+                    job = db.execute('SELECT state FROM jobs WHERE lead=?', (lead,)).fetchone()
+                self.assertEqual(job['state'], 'pending' if concurrent_update else 'waiting_for_update')
+                self.assertEqual(self.receipt()['state'], 'waiting_for_update')
 
     def test_pause_and_shadow_never_dispatch_and_activation_replays_shadow(self):
         self.store.mode('paused')
@@ -189,10 +290,25 @@ class QueueTests(unittest.TestCase):
             r = self.receipt()
             claimed = post({'receipt':r['id'], 'lead_id':'12', 'execution_id':'executionA'}, 'app-secret', '/internal/claim')
             self.assertTrue(claimed['granted'])
-            post({'receipt':r['id'], 'execution_id':'executionA', 'ok':True}, 'app-secret', '/internal/complete')
-            self.assertEqual(self.store.stats()['jobs'], {'done':1})
+            completion = {'receipt':r['id'], 'execution_id':'executionA',
+                          'ok':False, 'action':'waiting_for_update'}
+            for invalid in ({'ok':True}, {'action':[]}):
+                with self.assertRaises(HTTPError) as caught:
+                    post({**completion, **invalid}, 'app-secret', '/internal/complete')
+                self.assertEqual(caught.exception.code, 400)
+                self.assertEqual(self.store.stats()['jobs'], {'waiting':1})
+            post(completion, 'app-secret', '/internal/complete')
+            self.assertEqual(self.store.stats()['jobs'], {'waiting_for_update':1})
             self.assertTrue(post(body, target=path.replace('/api/v1/main/', '/api/v1/'))['queued'])
             self.assertEqual(self.store.stats()['jobs'], {'pending':1})
+            self.now += 1
+            self.engine.step()  # A new event wakes the job even though it is still NEW.
+            r = self.receipt()
+            claimed = post({'receipt':r['id'], 'lead_id':'12', 'execution_id':'executionB'}, 'app-secret', '/internal/claim')
+            self.assertTrue(claimed['granted'])
+            # Older flow revisions only send ok; keep that completion contract valid.
+            post({'receipt':r['id'], 'execution_id':'executionB', 'ok':True}, 'app-secret', '/internal/complete')
+            self.assertEqual(self.store.stats()['jobs'], {'done':1})
         finally:
             server.shutdown()
             server.server_close()
@@ -200,6 +316,31 @@ class QueueTests(unittest.TestCase):
 
     def test_urlencoded_bitrix_contract(self):
         self.assertEqual(normalize_payload('event=ONCRMLEADUPDATE&data%5BFIELDS%5D%5BID%5D=12&auth%5Bapplication_token%5D=secret'), ('12','secret'))
+
+
+class PersistedResultTests(unittest.TestCase):
+    def test_reconciliation_preserves_legacy_results_and_leaves_ambiguous_outputs_pending(self):
+        client = Client('unused', 'unused', 'token', ['NEW'],
+                        'http://kestra/api/v1/main', ('test', 'test'))
+        for vars_, expected in [
+            ({'ok': True}, {'ok': True, 'action': ''}),
+            ({'ok': False}, {'ok': False, 'action': ''}),
+            ({'ok': False, 'action': 'error'}, {'ok': False, 'action': 'error'}),
+            ({'action': 'waiting_for_update'}, None),
+            ({'ok': 'false', 'action': 'waiting_for_update'}, None),
+            ({'ok': False, 'action': None}, None),
+        ]:
+            with self.subTest(vars=vars_):
+                responses = [
+                    {'state': {'current': 'SUCCESS'}, 'taskRunList': [
+                        {'taskId': 'procesar_actualizacion_lead', 'id': 'taskA',
+                         'state': {'current': 'SUCCESS'}}]},
+                    {'vars': vars_},
+                ]
+                with patch('receiver.urlopen', side_effect=[
+                    io.BytesIO(json.dumps(value).encode()) for value in responses
+                ]):
+                    self.assertEqual(client.result('executionA'), expected)
 
 
 if __name__ == '__main__':

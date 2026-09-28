@@ -21,6 +21,7 @@ from .config import load_config
 from .contact_service import upsert_contact
 from .input_parser import normalize_business_input, parse_body
 from .lead_service import (
+    MissingLeadFieldError,
     build_lead_contact_birthdate_field,
     build_prequalification_input_from_lead,
     create_lead,
@@ -394,6 +395,16 @@ def classify_lead(
             message=qualification.message,
             reason=qualification.reason,
             action=qualification.outcome,
+        )
+    except MissingLeadFieldError as exc:
+        active_logger.info(f"Lead {lead_id_int} esperando una actualizacion: {exc}")
+        return failure_result(
+            message=str(exc),
+            contact_id=contact_id,
+            lead_id=lead_id_int,
+            lead_status=lead_status,
+            action="waiting_for_update",
+            reason="missing_required_field",
         )
     except Exception as exc:
         active_logger.error(str(exc))

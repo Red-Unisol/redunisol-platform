@@ -43,6 +43,8 @@ class Contracts(unittest.TestCase):
         self.assertEqual(new['tasks'][2]['id'],'confirmar_resultado')
         self.assertIn('vars.ok', new['tasks'][2]['body'])
         self.assertIn('vars.ok', new['errors'][0]['body'])
+        self.assertIn('vars.action', new['tasks'][2]['body'])
+        self.assertIn('vars.action', new['errors'][0]['body'])
         self.assertFalse(new['triggers'][0]['wait'])
 
     def test_env_decodes_kestra_secrets_and_preserves_administrator_key(self):

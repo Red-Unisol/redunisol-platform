@@ -115,7 +115,8 @@ tasks:
   runIf: '{{ fromJson(outputs.reclamar_evento.body).granted }}'
   body: '{"receipt": {{ trigger.body.receipt | toJson }}, "execution_id": {{ execution.id
     | toJson }}, "ok": {{ (outputs.procesar_actualizacion_lead.vars.ok ?? false) |
-    toJson }}}'
+    toJson }}, "action": {{ (outputs.procesar_actualizacion_lead.vars.action ?? '''')
+    | toJson }}}'
 outputs:
 - id: ok
   type: BOOL
@@ -158,4 +159,5 @@ errors:
   uri: http://bitrix-lead-receiver:8092/internal/complete
   body: '{"receipt": {{ trigger.body.receipt | toJson }}, "execution_id": {{ execution.id
     | toJson }}, "ok": {{ (outputs.procesar_actualizacion_lead.vars.ok ?? false) |
-    toJson }}}'
+    toJson }}, "action": {{ (outputs.procesar_actualizacion_lead.vars.action ?? '''')
+    | toJson }}}'

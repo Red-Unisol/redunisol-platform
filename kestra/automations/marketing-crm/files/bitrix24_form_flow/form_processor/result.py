@@ -51,6 +51,7 @@ def failure_result(
     lead_id: int | None = None,
     lead_status: str | None = None,
     reason: str = "error",
+    action: str = "error",
 ) -> dict[str, object]:
     return {
         "ok": False,
@@ -58,7 +59,7 @@ def failure_result(
         "contact_id": contact_id,
         "lead_id": lead_id,
         "lead_status": lead_status,
-        "action": "error",
+        "action": action,
         "reason": reason,
         "message": message,
     }
