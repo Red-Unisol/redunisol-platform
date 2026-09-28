@@ -18,10 +18,19 @@ inputs:
   - inspect
   - bootstrap
   - run
+  - resume
   defaults: inspect
 - id: seed
   type: FILE
   required: false
+- id: resume_pause_sha256
+  type: STRING
+  required: false
+  description: SHA-256 del paused.json revisado; requerido para mode=resume.
+- id: resume_expected_handled
+  type: INT
+  required: false
+  description: Cantidad procesada revisada; requerido para mode=resume.
 tasks:
 - id: migrar
   type: io.kestra.plugin.scripts.python.Commands
@@ -42,6 +51,8 @@ tasks:
   env:
     FLOW_NAMESPACE: '{{ flow.namespace }}'
     MIGRATION_MODE: '{{ inputs.mode }}'
+    RESUME_PAUSE_SHA256: '{{ inputs.resume_pause_sha256 ?? '''' }}'
+    RESUME_EXPECTED_HANDLED: '{{ inputs.resume_expected_handled ?? -1 }}'
     BITRIX24_BASE_URL: '{{ envs.bitrix24_base_url }}'
     BITRIX24_WEBHOOK_PATH: '{{ secret(''BITRIX24_WEBHOOK_PATH'') }}'
   commands:
@@ -56,7 +67,7 @@ triggers:
 outputs:
 - id: status
   type: STRING
-  value: '{{ outputs.migrar.vars.status }}'
+  value: '{{ outputs.migrar.vars.status ?? ''failed_requires_review'' }}'
 - id: handled
   type: INT
   value: '{{ outputs.migrar.vars.handled ?? 0 }}'

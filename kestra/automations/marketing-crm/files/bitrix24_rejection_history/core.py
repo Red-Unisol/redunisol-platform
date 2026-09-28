@@ -78,7 +78,48 @@ def encode(params, prefix=''):
 
 
 class ApiFailure(RuntimeError):
-    pass
+    def __init__(self, message, **details):
+        super().__init__(message)
+        self.details = details
+
+
+def error_details(exc):
+    # Never serialize exception messages, URLs, request bodies or response bodies.
+    return {'error_type': type(exc).__name__,
+            **(exc.details if isinstance(exc, ApiFailure) else {})}
+
+
+def request_json(request, *, service, operation, read_only, timeout):
+    """Retry transient reads only. A batch may mutate and always gets one attempt."""
+    attempts = 3 if read_only else 1
+    for attempt in range(1, attempts + 1):
+        details = {'service': service, 'operation': operation, 'attempts': attempt}
+        retryable = False
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                data = json.load(response)
+            if not isinstance(data, dict):
+                details['code'] = 'invalid_response'
+            elif data.get('error'):
+                code = str(data['error'])
+                details['code'] = code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', code) else 'unknown_api_error'
+                retryable = code in {'QUERY_LIMIT_EXCEEDED', 'OPERATION_TIME_LIMIT'}
+            else:
+                return data
+        except urllib.error.HTTPError as exc:
+            details.update(http_status=exc.code, exception_type='HTTPError')
+            retryable = exc.code in {408, 429, 500, 502, 503, 504}
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            details['exception_type'] = type(exc).__name__
+            retryable = True
+        except Exception as exc:
+            details['exception_type'] = type(exc).__name__
+        details['retryable_read'] = read_only and retryable
+        failure = ApiFailure('API request failed', **details)
+        if not read_only or not retryable or attempt == attempts:
+            raise failure from None
+        print('Migration read retry: ' + json.dumps(error_details(failure)), flush=True)
+        time.sleep(2 ** attempt)
 
 
 class NightWindowClosed(Exception):
@@ -96,15 +137,8 @@ class Client:
         if method not in allowed:
             raise ValueError('Method not allowed')
         request = urllib.request.Request(self.base + method + '.json', data=json.dumps(params).encode(), headers={'Content-Type': 'application/json'})
-        try:
-            with urllib.request.urlopen(request, timeout=55) as response:
-                data = json.load(response)
-        except Exception as exc:
-            # urllib exceptions can contain the webhook URL. Never expose them.
-            raise ApiFailure(type(exc).__name__) from None
-        if data.get('error'):
-            raise ApiFailure(str(data['error']))
-        return data
+        return request_json(request, service='bitrix', operation=method,
+                            read_only=method != 'batch', timeout=55)
 
     def batch(self, calls):
         if not 1 <= len(calls) <= 50:
@@ -133,9 +167,11 @@ class Client:
         result = self.call('crm.lead.list', {'filter': {'@ID': ids}, 'select': FIELDS, 'order': {'ID': 'ASC'}, 'start': -1})
         rows = result['result']
         if any(row['ID'] not in ids for row in rows):
-            raise ApiFailure('Unexpected lead returned')
+            raise ApiFailure('Unexpected lead returned', service='bitrix',
+                             operation='crm.lead.list', code='unexpected_lead')
         if any(REASON not in row or NOTICE not in row for row in rows):
-            raise ApiFailure('Expected custom fields missing')
+            raise ApiFailure('Expected custom fields missing', service='bitrix',
+                             operation='crm.lead.list', code='missing_custom_fields')
         return {row['ID']: row for row in rows}
 
 
@@ -189,7 +225,8 @@ def disposition(before, current, expected, attempted=False):
     if all(norm(current.get(key)) == norm(value) for key, value in expected.items()):
         return 'recovered' if attempted else 'skip_already_target'
     if attempted:
-        raise ApiFailure('Unresolved previous write; manual review required')
+        raise ApiFailure('Unresolved previous write; manual review required',
+                         code='unresolved_previous_write')
     if any(norm(before.get(key)) != norm(current.get(key)) for key in SNAPSHOT_FIELDS):
         return 'skip_changed'
     if current.get('STATUS_SEMANTIC_ID') != 'F':
@@ -260,7 +297,8 @@ def apply_chunk(client, journal, chunk, allow_write=None):
     journal.append({'type': 'verification', 'rows': list(after.values()), 'failures': failures})
     journal.append({'type': 'outcomes', 'states': states})
     if failures or result.get('result_error'):
-        raise ApiFailure('Batch requires review; no automatic mutation retry')
+        raise ApiFailure('Batch requires review; no automatic mutation retry',
+                         service='bitrix', operation='batch', code='batch_requires_review')
     return states
 
 

@@ -105,11 +105,8 @@ def receiver_stats():
                  for line in text.splitlines() if line.startswith('RECEIVER_ADMIN_TOKEN='))
     request = urllib.request.Request('http://bitrix-lead-receiver:8092/internal/stats',
                                      headers={'Authorization': 'Bearer ' + token})
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            stats = json.load(response)
-    except Exception as exc:
-        raise core.ApiFailure('Receiver read failed: ' + type(exc).__name__) from None
+    stats = core.request_json(request, service='receiver', operation='internal.stats',
+                              read_only=True, timeout=20)
     # Require the full safety contract rather than treating missing fields as zero.
     for key in ('mode', 'jobs', 'unconfirmed_submissions', 'stale_business_receipts'):
         if key not in stats:
@@ -130,13 +127,13 @@ def validate_live(client, approved):
             raise ValueError('Live source stage catalog changed')
 
 
-def inspect(client, candidates, journal):
+def inspect(client, candidates, journal, *, all_migrated=False):
     states, attempted = journal.states()
     migrated = [r for r in candidates if states.get(r['ID']) in ('verified', 'recovered')]
     # Inspect the imported 75 in full; cap later diagnostics to the last 100.
-    checked = migrated[-100:]
-    for offset in range(0, len(checked), 25):
-        chunk = checked[offset:offset + 25]
+    checked = migrated if all_migrated else migrated[-100:]
+    for offset in range(0, len(checked), 50):
+        chunk = checked[offset:offset + 50]
         live = client.leads([r['ID'] for r in chunk])
         if any(not all(core.norm(live.get(r['ID'], {}).get(k)) == core.norm(v)
                        for k, v in r['proposed'].items()) for r in chunk):
@@ -145,6 +142,50 @@ def inspect(client, candidates, journal):
     current = client.leads([r['ID'] for r in pending])
     outcomes = Counter(core.disposition(r, current.get(r['ID']), r['proposed'], r['ID'] in attempted) for r in pending)
     return {'live_verified': len(checked), 'next_batch': dict(outcomes), 'external_mutations': 0}
+
+
+def resume(root, client, candidates, journal, pause_sha256, expected_handled):
+    """Explicit acknowledgement of one pause; verify by reading, never migrate here."""
+    pause = root / 'execution/paused.json'
+    raw = pause.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != pause_sha256:
+        raise ValueError('Pause differs from the reviewed incident')
+    states, attempted = journal.states()
+    if len(states) != expected_handled or attempted - set(states):
+        raise ValueError('Unexpected progress or unresolved writes; refusing resume')
+    verified = {key for key, value in states.items() if value in ('verified', 'recovered')}
+    if verified - attempted:
+        raise ValueError('Verified outcomes lack write intents')
+    check = inspect(client, candidates, journal, all_migrated=True)
+    stats = receiver_stats()
+    if core.queue_capacity(stats, 125) < min(25, len(candidates) - len(states)) or \
+            stats['mode'] != 'active' or stats['unconfirmed_submissions'] or stats['stale_business_receipts']:
+        raise ValueError('Receiver is not ready for resume')
+    # Keep the original pause and a durable audit before removing the active block.
+    archive = root / 'execution/resumes'
+    archive.mkdir(exist_ok=True)
+    core.write_json(archive / (digest + '.json'),
+                    {'at': core.utcnow(), 'pause_sha256': digest,
+                     'previous_pause': json.loads(raw), 'handled': len(states),
+                     **check, 'receiver': stats})
+    pause.rename(archive / (digest + '.paused.json'))
+    return progress(root, candidates, journal, 'resumed_waiting_for_schedule', **check)
+
+
+def record_failure(root, exc, phase):
+    detail = {'at': core.utcnow(), 'phase': phase, **core.error_details(exc)}
+    directory = root / 'execution'
+    directory.mkdir(parents=True, exist_ok=True)
+    core.write_json(directory / 'last-error.json', detail)
+    # An unsuccessful inspection/resume must not replace the incident being reviewed.
+    if not (directory / 'paused.json').exists():
+        core.write_json(directory / 'paused.json', detail)
+    with (directory / 'errors.jsonl').open('a', encoding='utf-8') as stream:
+        stream.write(json.dumps(detail) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    print('Migration failure: ' + json.dumps(detail), flush=True)
 
 
 def process(root, client, candidates, journal, *, seconds=480):
@@ -181,7 +222,7 @@ def main():
     if os.environ.get('FLOW_NAMESPACE') != PROD:
         raise ValueError('Migration is restricted to the production namespace')
     mode = os.environ.get('MIGRATION_MODE', 'inspect')
-    if mode not in ('bootstrap', 'inspect', 'run'):
+    if mode not in ('bootstrap', 'inspect', 'run', 'resume'):
         raise ValueError('Unknown mode')
     with exclusive(ROOT):
         if mode == 'bootstrap':
@@ -189,25 +230,33 @@ def main():
         elif not (ROOT / 'approved').exists():
             result = {'status': 'not_initialized', 'external_mutations': 0}
         else:
+            phase = 'validate_inventory'
             try:
                 candidates = validate_seed(ROOT / 'approved')
+                phase = 'validate_journal'
                 journal = core.Journal(ROOT / 'execution')
                 # Validate progress before selecting any rows to write.
                 progress(ROOT, candidates, journal, 'checking')
                 client = core.Client(os.environ['BITRIX24_BASE_URL'], os.environ['BITRIX24_WEBHOOK_PATH'])
+                phase = 'validate_live_catalogs'
                 validate_live(client, ROOT / 'approved')
+                phase = mode
                 if mode == 'inspect':
                     result = progress(ROOT, candidates, journal, 'inspected',
                                       **inspect(client, candidates, journal),
                                       receiver=receiver_stats(),
                                       paused=(ROOT / 'execution/paused.json').exists())
+                elif mode == 'resume':
+                    result = resume(ROOT, client, candidates, journal,
+                                    os.environ.get('RESUME_PAUSE_SHA256', ''),
+                                    int(os.environ.get('RESUME_EXPECTED_HANDLED', '-1')))
                 else:
                     result = process(ROOT, client, candidates, journal)
             except Exception as exc:
-                core.write_json(ROOT / 'execution/paused.json',
-                                {'at': core.utcnow(), 'error_type': type(exc).__name__})
+                record_failure(ROOT, exc, phase)
                 raise
     # Emit aggregate data only. Private records remain on the persistent volume.
+    print('Migration status: ' + json.dumps(result), flush=True)
     from kestra import Kestra
     Kestra.outputs(result)
 
@@ -216,5 +265,5 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
-        print('Migration stopped: ' + type(exc).__name__, flush=True)
+        print('Migration stopped: ' + json.dumps(core.error_details(exc)), flush=True)
         raise SystemExit(1) from None
