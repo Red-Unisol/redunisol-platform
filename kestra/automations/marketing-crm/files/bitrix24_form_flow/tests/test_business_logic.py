@@ -1755,6 +1755,71 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["reason"], "lead_not_won")
         self.assertEqual(client.deals, {})
 
+    def test_lead_update_waits_for_missing_data_and_classifies_after_it_is_filled(self) -> None:
+        required = {
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1714071903": "1269",
+            "UF_CRM_LEAD_1711458190312": ["459"],
+        }
+        for field in required:
+            for empty in (None, "", "  ", []):
+                with self.subTest(field=field, empty=empty):
+                    client = FakeBitrixClient()
+                    client.leads[303] = {
+                        "ID": "303",
+                        "STATUS_ID": "NEW",
+                        "DATE_CREATE": "2026-09-23T10:00:00-03:00",
+                        "TITLE": "Lead incompleto",
+                        "ASSIGNED_BY_ID": "57",
+                        **required,
+                    }
+                    if empty is None:
+                        client.leads[303].pop(field)
+                    else:
+                        client.leads[303][field] = empty
+                    original = dict(client.leads[303])
+                    args = dict(env=self.env, bitrix_client=client,
+                                expected_application_token="app-token", logger=SilentLogger())
+                    result = process_lead_update_event(self.make_lead_update_event(303), **args)
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["action"], "waiting_for_update")
+                    self.assertEqual(result["reason"], "missing_required_field")
+                    self.assertEqual(result["lead_id"], 303)
+                    self.assertEqual(result["lead_status"], "NEW")
+                    self.assertIn(field, result["message"])
+                    self.assertEqual(client.leads[303], original)
+                    self.assertEqual(client.deals, {})
+                    self.assertNotIn("crm.lead.update", [method for method, _ in client.calls])
+
+                    client.leads[303][field] = required[field]
+                    result = process_lead_update_event(self.make_lead_update_event(303), **args)
+                    self.assertTrue(result["ok"])
+                    self.assertEqual(result["action"], "qualified")
+                    self.assertEqual(client.leads[303]["STATUS_ID"], "QUALIFIED")
+
+    def test_lead_update_does_not_treat_other_exceptions_as_missing_data(self) -> None:
+        for error in (
+            TimeoutError("Bitrix timeout"),
+            ValueError('El lead no contiene el campo requerido "UF_CRM_64E65D2B2136C".'),
+        ):
+            with self.subTest(error=type(error).__name__):
+                client = FakeBitrixClient()
+                client.leads[303] = {
+                    "ID": "303", "STATUS_ID": "NEW", "ASSIGNED_BY_ID": "57",
+                    "DATE_CREATE": "2026-09-23T10:00:00-03:00",
+                }
+                with patch(
+                    "bitrix24_form_flow.form_processor.business_logic.build_prequalification_input_from_lead",
+                    side_effect=error,
+                ):
+                    result = process_lead_update_event(
+                        self.make_lead_update_event(303), env=self.env, bitrix_client=client,
+                        expected_application_token="app-token", logger=SilentLogger(),
+                    )
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["action"], "error")
+                self.assertNotEqual(result["reason"], "missing_required_field")
+
     def test_lead_update_event_creates_deal_for_any_won_lead(self) -> None:
         client = FakeBitrixClient()
         client.leads[303] = {

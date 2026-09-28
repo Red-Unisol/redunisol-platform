@@ -1,7 +1,7 @@
 # Receptor persistente de actualizaciones de leads
 
-Estado: implementacion preparada para despliegue manual desde Git. El merge por
-si solo no cambia el webhook publico. No demuestra una mejora de 2x en produccion.
+El servicio se despliega manualmente desde Git. El merge por si solo no actualiza
+el receptor ni cambia el webhook publico. No demuestra una mejora de 2x en produccion.
 
 `Bitrix ONCRMLEADUPDATE -> Apache -> receptor/SQLite -> crm.lead.get -> Kestra`
 
@@ -34,12 +34,29 @@ por evento. Como maximo hay dos recibos comerciales pendientes en el receptor.
   los campos cambiados. Una transicion intermedia que se revierte antes de la
   lectura no se detecta. Cambios de otros campos dentro de un estado ya completado
   no vuelven a disparar la logica comercial.
-- Lecturas fallidas se reintentan a los 30 segundos; fallos comerciales a los 60.
+- Lecturas fallidas se reintentan a los 30 segundos; fallos comerciales a los 60,
+  excepto la falta de datos obligatorios descrita a continuacion.
   Leads borrados o sin permiso siguen pendientes para revision. Tras tres envios
   sin claim, el recibo queda visible como no confirmado y requiere investigacion.
   No liberar automaticamente esos recibos: podria existir una ejecucion demorada.
 - El servicio reduce trabajo innecesario; no corrige el incidente de despacho
   interno de workers de Kestra ni prueba su causa.
+
+## Espera por datos obligatorios
+
+Si falta un campo obligatorio para precalificar (provincia, situacion laboral o
+banco), la logica comercial devuelve `ok=false`, `action=waiting_for_update` y
+`reason=missing_required_field`. Se detecta por una excepcion tipada, no por el
+texto del mensaje. El callback y la reconciliacion transmiten `ok` y `action`.
+
+El receptor cierra ese recibo y deja el lead en `waiting_for_update`, sin ocupar
+un cupo comercial ni programar lecturas o reintentos. El siguiente aviso del lead
+lo devuelve a `pending`, incluso si sigue en `NEW`. Si el aviso llego durante la
+ejecucion, la comparacion atomica de versiones lo deja pendiente inmediatamente.
+La espera persiste tras reiniciar y no memoriza el estado comercial como completado.
+
+La consulta existente de estadisticas incluye el nuevo estado y el contador
+`business_waiting_for_update`; no se agregan sondeos ni reportes.
 
 ## Despliegue y activacion
 
@@ -80,6 +97,20 @@ internas usan la red `kestra_net`; el puerto 8092 solo se publica en loopback.
 El administrador usa un token aleatorio diferente; los callbacks usan el token
 existente de Bitrix. La reconciliacion usa el acceso administrativo de Kestra ya
 disponible en el runtime. Apache no publica endpoints `/internal/*` del receptor.
+
+### Actualizar un receptor que ya esta activo
+
+Para habilitar la espera por datos, desplegar los namespace files y el flow de
+`marketing-crm` (workflow **Deploy Prod**, automatico al mergear sus cambios), y
+ejecutar **Deploy Bitrix Lead Receiver**, fase **install**, con la misma revision.
+No repetir enable-ingress ni cutover. Se conserva el modo activo y la cola; los
+leads que estaban reintentandose pasan a espera en su siguiente evaluacion.
+
+El contrato es aditivo: el receptor nuevo acepta callbacks antiguos con solo
+`ok`; el receptor anterior ignora `action` y sigue reintentando hasta actualizarlo.
+Una vez persistidas esperas, conservar una version del receptor que reconozca
+`waiting_for_update`: una version anterior no reactivaria esos leads al recibir
+un webhook. No se requiere migrar el esquema SQLite ni modificar leads en Bitrix.
 
 ## Verificacion posterior
 

@@ -20,6 +20,8 @@ from urllib.request import Request, urlopen
 
 LOG = logging.getLogger("receiver")
 TERMINAL = {"SUCCESS", "FAILED", "KILLED", "CANCELLED", "WARNING"}
+WAITING_FOR_UPDATE = "waiting_for_update"
+RECEIPT_TERMINAL = {"done", "failed", WAITING_FOR_UPDATE}
 
 
 class Store:
@@ -75,10 +77,10 @@ class Store:
                 old = db.execute("SELECT state FROM jobs WHERE lead=?", (lead,)).fetchone()
                 db.execute("""INSERT INTO jobs(lead,version,available,created,updated) VALUES (?,1,?,?,?)
                     ON CONFLICT(lead) DO UPDATE SET version=version+1, events=events+1, updated=excluded.updated,
-                    state=CASE WHEN jobs.state IN ('done','shadow') THEN 'pending' ELSE jobs.state END,
-                    available=CASE WHEN jobs.state IN ('done','shadow') THEN excluded.available ELSE jobs.available END""", (lead, now, now, now))
+                    state=CASE WHEN jobs.state IN ('done','shadow','waiting_for_update') THEN 'pending' ELSE jobs.state END,
+                    available=CASE WHEN jobs.state IN ('done','shadow','waiting_for_update') THEN excluded.available ELSE jobs.available END""", (lead, now, now, now))
                 self.count(db, "events_received")
-                if old and old["state"] not in ("done", "shadow"):
+                if old and old["state"] not in ("done", "shadow", WAITING_FOR_UPDATE):
                     self.count(db, "events_coalesced")
 
     def mode(self, value=None):
@@ -128,29 +130,41 @@ class Store:
     def claim(self, token, lead, execution):
         with self.db() as db:
             r = db.execute("SELECT * FROM receipts WHERE id=? AND lead=?", (token, lead)).fetchone()
-            if not r or r["state"] in ("done", "failed"):
+            if not r or r["state"] in RECEIPT_TERMINAL:
                 return False
             if r["execution"] and r["execution"] != execution:
                 return False
             db.execute("UPDATE receipts SET execution=?,state='running',updated=? WHERE id=?", (execution, self.clock(), token))
             return True
 
-    def complete(self, token, execution, ok):
+    def complete(self, token, execution, ok, action=""):
+        if not isinstance(ok, bool) or not isinstance(action, str):
+            raise ValueError("Boolean result and string action required")
+        if ok and action == WAITING_FOR_UPDATE:
+            raise ValueError("Waiting for an update is not a completed business result")
         with self.db() as db:
             r = db.execute("SELECT * FROM receipts WHERE id=?", (token,)).fetchone()
             if not r or r["execution"] != execution:
                 return False
-            if r["state"] in ("done", "failed"):
+            if r["state"] in RECEIPT_TERMINAL:
                 return True
             now = self.clock()
-            db.execute("UPDATE receipts SET state=?,updated=? WHERE id=?", ("done" if ok else "failed", now, token))
-            if ok:
+            waiting = action == WAITING_FOR_UPDATE
+            state = WAITING_FOR_UPDATE if waiting else ("done" if ok else "failed")
+            db.execute("UPDATE receipts SET state=?,updated=? WHERE id=?", (state, now, token))
+            if waiting:
+                # Consume only this version. An event received while the flow ran
+                # must be checked even when it leaves the commercial status unchanged.
+                db.execute("""UPDATE jobs SET finished=?,last_status=NULL,receipt=NULL,error=NULL,
+                    state=CASE WHEN version>? THEN 'pending' ELSE 'waiting_for_update' END,available=?
+                    WHERE lead=? AND receipt=?""", (r["version"], r["version"], now, r["lead"], token))
+            elif ok:
                 db.execute("""UPDATE jobs SET finished=?,last_status=?,receipt=NULL,error=NULL,
                     state=CASE WHEN version>? THEN 'pending' ELSE 'done' END,available=?
                     WHERE lead=? AND receipt=?""", (r["version"], r["status"], r["version"], now, r["lead"], token))
             else:
                 db.execute("UPDATE jobs SET state='pending',receipt=NULL,available=?,error='business_failed' WHERE lead=? AND receipt=?", (now+60, r["lead"], token))
-            self.count(db, "business_ok" if ok else "business_failed")
+            self.count(db, "business_waiting_for_update" if waiting else ("business_ok" if ok else "business_failed"))
             return True
 
     def submissions(self):
@@ -240,13 +254,16 @@ class Client:
             return None
         tasks = [t for t in state.get('taskRunList', []) if t.get('taskId') == 'procesar_actualizacion_lead']
         if not tasks:
-            return False
+            return {"ok": False, "action": ""}
         task = tasks[-1]
         if task.get('state', {}).get('current') != 'SUCCESS':
-            return False
+            return {"ok": False, "action": ""}
         output = get('/outputs/tasks/'+execution+'/'+task['id'])
         ok = output.get('vars', {}).get('ok')
-        return ok if isinstance(ok, bool) else None
+        action = output.get('vars', {}).get('action', '')
+        if not isinstance(ok, bool) or not isinstance(action, str):
+            return None
+        return {"ok": ok, "action": action}
 
 
 class Engine:
@@ -287,7 +304,7 @@ class Engine:
             try:
                 result = self.client.result(r['execution'])
                 if result is not None:
-                    self.store.complete(r['id'], r['execution'], result)
+                    self.store.complete(r['id'], r['execution'], **result)
             except Exception as exc:
                 LOG.warning('reconciliation_failed receipt=%s type=%s', r['id'], type(exc).__name__)
 
@@ -353,7 +370,8 @@ def make_handler(store, app_token, admin_token, webhook_key):
                     if path == '/internal/complete':
                         if not isinstance(body.get('ok'), bool):
                             raise ValueError("Boolean result required")
-                        accepted = store.complete(str(body['receipt']), str(body['execution_id']), body['ok'])
+                        accepted = store.complete(str(body['receipt']), str(body['execution_id']),
+                                                  body['ok'], body.get('action', ''))
                         return self.reply(200 if accepted else 409, {"accepted": accepted})
                     return self.reply(404, {"error": "not_found"})
                 prefixes = ('/api/v1/main/executions/webhook/', '/api/v1/executions/webhook/')

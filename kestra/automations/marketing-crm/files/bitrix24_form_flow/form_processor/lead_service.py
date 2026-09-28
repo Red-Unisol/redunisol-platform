@@ -19,6 +19,14 @@ from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
 
 
+class MissingLeadFieldError(ValueError):
+    """A required lead value is absent; a later CRM update may supply it."""
+
+    def __init__(self, field_name: str) -> None:
+        self.field_name = field_name
+        super().__init__(f'El lead no contiene el campo requerido "{field_name}".')
+
+
 def create_lead(
     client: BitrixClient,
     config: AppConfig,
@@ -512,7 +520,7 @@ def _first_multifield_value(raw_value: Any, field_name: str) -> str:
 def _required_lead_value(lead: dict[str, Any], field_name: str) -> Any:
     value = _optional_lead_value(lead, field_name)
     if value is None:
-        raise ValueError(f'El lead no contiene el campo requerido "{field_name}".')
+        raise MissingLeadFieldError(field_name)
     return value
 
 
