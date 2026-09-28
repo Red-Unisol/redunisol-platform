@@ -35,6 +35,7 @@ from .deal_service import (
     user_display_name,
 )
 from .deal_vimarx_refresh import refresh_deal_vimarx, vimarx_retry_waiting
+from .deal_commercial_decision import persist_commercial_decision
 from .lead_service import (
     build_submission_from_lead,
     get_lead,
@@ -324,6 +325,9 @@ def qualify_catamarca_deal(
         _manual(config, vimarx_resolution.reason) if vimarx_resolution.reason
         else bcra_resolution.decision_override or _evaluate_deal(client, config, lead)
     )
+    # Persist before leaving PENDING: stage alone cannot distinguish a rejection
+    # from manual review. A failed write keeps this deal out of the chat sweep.
+    persist_commercial_decision(client, deal_id_int, decision.action)
     routing = resolve_routing_bucket(config, lead)
     province = routing.province or province
     bucket = routing.bucket

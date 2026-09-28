@@ -595,15 +595,20 @@ def _open_line_session_transferability(
         )
         return False, "non_distributable_open_line"
 
-    entity_data = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "")
-    parts = entity_data.split("|")
-    session_id = parts[5] if len(parts) > 5 else ""
-    text_enabled = dialog.get("text_field_enabled", dialog.get("TEXT_FIELD_ENABLED", False))
-    has_session = _is_positive_int(session_id) and text_enabled in (True, "Y", "y", 1)
-    if not has_session:
+    if active_open_line_session_id(dialog) is None:
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
         return False, "no_current_transferable_session"
     return True, "transferable"
+
+
+def active_open_line_session_id(dialog: dict[str, Any]) -> int | None:
+    """Inspect an existing session without starting, accepting or transferring it."""
+    parts = str(dialog.get("entity_data_1") or dialog.get("ENTITY_DATA_1") or "").split("|")
+    session_id = parts[5] if len(parts) > 5 else ""
+    enabled = dialog.get("text_field_enabled", dialog.get("TEXT_FIELD_ENABLED", False))
+    if _is_positive_int(session_id) and enabled in (True, "Y", "y", 1):
+        return int(session_id)
+    return None
 
 
 def _open_line_id(dialog: dict[str, Any]) -> int | None:

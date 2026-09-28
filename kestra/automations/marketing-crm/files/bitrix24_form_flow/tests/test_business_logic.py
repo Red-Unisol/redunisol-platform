@@ -247,7 +247,10 @@ class FakeBitrixClient:
             raise AssertionError("crm.item.get recibio una entidad inesperada.")
         if method == "crm.item.update":
             self.assert_deal_entity(payload)
-            self.deals[int(payload["id"])].update(payload["fields"])
+            fields = dict(payload["fields"])
+            if payload.get("useOriginalUfNames") == "Y" and "UF_CRM_K_COMM_DECISION" in fields:
+                fields["ufCrmKCommDecision"] = fields.pop("UF_CRM_K_COMM_DECISION")
+            self.deals[int(payload["id"])].update(fields)
             return {"item": dict(self.deals[int(payload["id"])])}
         if method == "crm.lead.fields":
             return {
@@ -4502,6 +4505,7 @@ class BusinessLogicTests(unittest.TestCase):
         )
         self.assertEqual(result["source"], "Google")
         self.assertEqual(client.deals[930]["stageId"], "C1:NEW")
+        self.assertEqual(client.deals[930]["ufCrmKCommDecision"], "approved")
         self.assertEqual(client.deals[930]["assignedById"], 68579)
         self.assertEqual(client.leads[920]["ASSIGNED_BY_ID"], 68579)
         self.assertEqual(client.deals[930]["ufCrmRouteBucket"], "catamarca_general")
@@ -5856,6 +5860,7 @@ class BusinessLogicTests(unittest.TestCase):
 
         self.assertEqual(result["action"], "commercial_rejected")
         self.assertEqual(result["reason"], "caja_age_80_or_more")
+        self.assertEqual(client.deals[942]["ufCrmKCommDecision"], "commercial_rejected")
         self.assertEqual(result["commercial_action"], "commercial_rejected")
         self.assertEqual(result["commercial_reason"], "caja_age_80_or_more")
         self.assertEqual(result["commercial_stage_id"], "C1:KESTRA_REVIEW")
