@@ -125,7 +125,9 @@ def reconcile_sales_chats(client, *, clock=time.monotonic, max_seconds=600):
             "entityTypeId": 2,
             "useOriginalUfNames": "Y",
             "filter": {"=categoryId": CATEGORY_ID, "@stageId": list(SOURCE_STAGES), ">id": cursor},
-            "select": [DECISION_FIELD_REST if field == DECISION_FIELD else field for field in SELECT],
+            # This portal drops standard fields from explicit projections when
+            # original UF names are enabled. Wildcard preserves both namespaces.
+            "select": ["*"],
             "order": {"id": "ASC"},
         })
         items = response.get("items") if isinstance(response, dict) else None

@@ -171,6 +171,12 @@ class ChatResponseTests(unittest.TestCase):
                     for row in result.get("items", [result.get("item")]):
                         if row and DECISION_FIELD in row:
                             row["UF_CRM_K_COMM_DECISION"] = row.pop(DECISION_FIELD)
+                        # Real portal response: explicit projections with
+                        # original UF names silently omit standard fields.
+                        if method == "crm.item.list" and "*" not in payload.get("select", []):
+                            for key in list(row):
+                                if not key.startswith("UF_"):
+                                    del row[key]
                 return result
         self.assertEqual(reconcile_sales_chats(OriginalNames())["counts"], {"moved": 1})
 
