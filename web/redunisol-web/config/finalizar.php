@@ -29,6 +29,11 @@ return [
     'default_line' => 'caja',
 
     'lines' => [
+        'federal' => [
+            'flow_id' => '6abbbd5f4bd9f2a3b505c6db',
+            'doc_id' => 'c4578953-da3a-4d17-b8ff-ae31c6787b5e',
+            'extra_html' => '',
+        ],
         'amejuca' => [
             'flow_id' => '6453eb1ed9e6ce001d5b3858',
             'doc_id' => '4f4a8d2a-f361-49b5-9532-0528a83516e2',
