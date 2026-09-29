@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AnalisisPage from './AnalisisPage.jsx';
+import PadronesPage, { PadronesResults } from './PadronesPage.jsx';
 import { credixPrefill } from './analisis-state.js';
 import { prepareCredixBcra } from './credix-bcra.js';
 import '../css/app.css';
@@ -68,6 +69,10 @@ function App({ branding, tools }) {
             return;
         }
 
+        if (tool.id === 'padrones') {
+            window.location.assign('/padrones');
+            return;
+        }
         if (tool.id === 'analisis') {
             window.location.assign('/analisis');
             return;
@@ -531,6 +536,7 @@ function CredixReportSections({ sections }) {
 }
 
 function CredixsaPage({ branding, tool }) {
+    const [padronQuery, setPadronQuery] = React.useState({ document: '', key: 0 });
     const prefill = React.useRef(credixPrefill(window.location.hash));
     const autoStarted = React.useRef(false);
     const [formValues, setFormValues] = React.useState(prefill.current);
@@ -546,6 +552,7 @@ function CredixsaPage({ branding, tool }) {
     const handleSubmit = async (event) => {
         event?.preventDefault();
 
+        setPadronQuery((q) => ({ document: formValues.cuit || '', key: q.key + 1 }));
         if (!tool?.endpoint) {
             setError('La herramienta todavia no tiene un endpoint configurado.');
             return;
@@ -572,6 +579,9 @@ function CredixsaPage({ branding, tool }) {
             }
 
             setResult(payload);
+            if (!formValues.cuit && payload.status === 'single' && payload.cuit) {
+                setPadronQuery((q) => ({ document: payload.cuit, key: q.key + 1 }));
+            }
         } catch (submitError) {
             setError(submitError.message);
         } finally {
@@ -588,6 +598,7 @@ function CredixsaPage({ branding, tool }) {
     }, []);
 
     const clearToolState = () => {
+        setPadronQuery((q) => ({ document: '', key: q.key + 1 }));
         setFormValues({ cuit: '', nombre: '' });
         setError('');
         setResult(null);
@@ -597,6 +608,7 @@ function CredixsaPage({ branding, tool }) {
         <div className="shell shell--wide">
             <section className="credix-page__topbar">
                 <a className="credix-page__back" href="/">Herramientas</a>
+                <a href="/padrones">Administrar padrones</a>
                 <img className="credix-page__logo" src={brandLogoUrl} alt="Red Unisol" />
             </section>
 
@@ -674,6 +686,7 @@ function CredixsaPage({ branding, tool }) {
                     </section>
                 )}
 
+                <PadronesResults document={padronQuery.document} requestKey={padronQuery.key} />
                 {(error || result) && (
                     <section className={`result result--${resultTone} credix-page__result`}>
                         <div className="credix-page__resultHeader">
@@ -2115,7 +2128,9 @@ function formatDateTime(value) {
 if (rootElement) {
     let component = <App branding={initialPayload.branding || {}} tools={initialPayload.tools || []} />;
 
-    if (initialPayload.page === 'analisis') {
+    if (initialPayload.page === 'padrones') {
+        component = <PadronesPage config={initialPayload.padrones || {}} />;
+    } else if (initialPayload.page === 'analisis') {
         component = <AnalisisPage config={initialPayload.analisis || {}} />;
     } else if (initialPayload.mode === 'contabilidad-transfer') {
         component = (

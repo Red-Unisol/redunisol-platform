@@ -1,0 +1,32 @@
+name: Validate Herramientas
+
+on:
+  pull_request:
+    paths:
+      - 'web/herramientas/**'
+      - '.github/workflows/validate-herramientas.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  padrones:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/herramientas
+    env:
+      APP_KEY: 'base64:cHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHA='
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, fileinfo, zip, dom, xmlreader
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-scripts
+      - run: php artisan package:discover
+      - name: Test padrones, access and CredixSA integration
+        run: php vendor/bin/phpunit --filter='PadronesTest|AnalisisTest|ConsultaQuiebraCredixTest'
+      - name: Build production image
+        run: docker build . -t herramientas:test

@@ -19,4 +19,9 @@ services:
       ANALISIS_CREDITO_WEBHOOK_URL: ${ANALISIS_CREDITO_WEBHOOK_URL}
       ANALISIS_CREDITO_TIMEOUT_SECONDS: ${ANALISIS_CREDITO_TIMEOUT_SECONDS:-30}
       LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+    volumes:
+      - padrones:/var/www/html/storage/app/private/padrones
     restart: unless-stopped
+
+volumes:
+  padrones:

@@ -32,6 +32,7 @@ services:
       OBJECTIVES_DASHBOARD_REFRESH_SECONDS: ${OBJECTIVES_DASHBOARD_REFRESH_SECONDS:-60}
       LOG_CHANNEL: ${LOG_CHANNEL}
     volumes:
+      - padrones:/var/www/html/storage/app/private/padrones
       - /opt/kestra/data/contabilidad-transfer:/data/contabilidad-transfer:ro
       - /opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion:ro
     restart: unless-stopped
@@ -45,3 +46,6 @@ services:
     volumes:
       - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
     restart: unless-stopped
+
+volumes:
+  padrones:

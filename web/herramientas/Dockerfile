@@ -24,8 +24,8 @@ RUN npm run build
 FROM php:8.4-apache
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git unzip libzip-dev libonig-dev \
-    && docker-php-ext-install fileinfo mbstring opcache \
+    && apt-get install -y --no-install-recommends git unzip libzip-dev libonig-dev libsqlite3-dev \
+    && docker-php-ext-install fileinfo mbstring opcache zip pdo_sqlite \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,7 +36,9 @@ COPY --from=vendor /app /var/www/html
 COPY --from=frontend /app/public/build /var/www/html/public/build
 
 RUN cp .env.example .env \
-    && mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
+    && mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views storage/app/private/padrones bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 80
+
+COPY docker/php-padrones.ini /usr/local/etc/php/conf.d/padrones.ini

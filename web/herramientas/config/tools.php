@@ -13,6 +13,16 @@ return [
     ],
     'catalog' => [
         [
+            'id' => 'padrones',
+            'title' => 'Administrar padrones',
+            'description' => 'Cargá y publicá versiones de los padrones complementarios de Consulta CredixSA.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Administrar padrones',
+            'helper' => 'Acceso con la contraseña del equipo de Análisis.',
+        ],
+        [
             'id' => 'analisis',
             'title' => 'Bandeja de análisis',
             'description' => 'Seguí las solicitudes asignadas a tu usuario de Vimarx y recibí avisos de nuevas asignaciones.',
