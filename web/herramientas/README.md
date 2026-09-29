@@ -2,9 +2,11 @@
 
 Aplicacion interna para concentrar herramientas operativas de Red Unisol en un solo punto de acceso.
 
-La primera herramienta implementada es Consulta Renovacion Cruz del Eje. El frontend esta hecho con React y la capa servidor con Laravel. No usa base de datos por ahora: el catalogo de herramientas y la configuracion viven en archivos de configuracion para mantener el despliegue simple.
+La primera herramienta implementada es Consulta Renovacion Cruz del Eje. El frontend esta hecho con React y la capa servidor con Laravel. El catalogo de herramientas y la configuracion viven en archivos de configuracion. Los padrones usan una base SQLite privada y archivos originales en almacenamiento persistente.
 
 ## Objetivo
+
+Para cargar y mantener fuentes complementarias de CredixSA, ver [Padrones](docs/padrones.md).
 
 - centralizar accesos internos en una sola interfaz
 - ocultar endpoints sensibles de Kestra detras de un proxy backend
