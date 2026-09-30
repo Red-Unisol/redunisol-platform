@@ -83,6 +83,7 @@ class FormSubmissionRequest extends FormRequest
             'landing_title' => ['nullable', 'string', 'max:255'],
             'landing_url' => ['nullable', 'url', 'max:2048'],
             'recibo_url' => ['nullable', 'url', 'max:4096'],
+            'ref' => ['nullable', 'string', 'max:128'],
             'meta_event_id' => ['nullable', 'string', 'max:128'],
             'utm_source' => ['nullable', 'string', 'max:120'],
             'utm_medium' => ['nullable', 'string', 'max:120'],

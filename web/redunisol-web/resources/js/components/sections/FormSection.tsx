@@ -1121,6 +1121,9 @@ export default function FormSection({
             terminos: formData.terminos,
         };
 
+        const ref = params.get('ref');
+        if (ref) payload.ref = ref;
+
         if (formData.email) payload.email = formData.email;
         if (formData.celular) payload.celular = formData.celular;
         if (formData.cuil) payload.cuil = formData.cuil;
@@ -1240,6 +1243,7 @@ export default function FormSection({
             setLastSubmittedFingerprint(formFingerprint);
 
             const responseData = data as {
+                tracking?: Record<string, string> | null;
                 ok?: boolean;
                 message?: string;
                 qualified?: boolean;
@@ -1253,6 +1257,12 @@ export default function FormSection({
             }
 
             setErrorMessage(null);
+            if (responseData.tracking) {
+                for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+                    delete trackingPayload[key];
+                    if (responseData.tracking[key]) trackingPayload[key] = responseData.tracking[key];
+                }
+            }
             trackEvent('generate_lead', trackingPayload);
             trackMetaLead(String(payload.meta_event_id), {
                 content_name: 'lead_form',

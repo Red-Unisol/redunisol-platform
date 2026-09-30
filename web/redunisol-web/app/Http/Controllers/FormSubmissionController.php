@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\PrequalifyFormWithKestra;
 use App\Http\Requests\FormSubmissionRequest;
 use App\Jobs\PersistFormSubmission;
+use App\Services\AttributionJourney;
 use Illuminate\Http\JsonResponse;
 use Throwable;
 
@@ -16,7 +17,7 @@ class FormSubmissionController extends Controller
 
     public function __invoke(FormSubmissionRequest $request): JsonResponse
     {
-        $input = $request->validated();
+        $input = (new AttributionJourney)->resolveForm($request, $request->validated());
         $prequalificationResponse = null;
 
         try {
@@ -75,6 +76,7 @@ class FormSubmissionController extends Controller
 
         return response()->json([
             'ok' => true,
+            'tracking' => isset($input['attribution']) ? array_intersect_key($input, array_flip(AttributionJourney::UTMS)) : null,
             'qualified' => $qualified,
             'prequalified' => $qualified,
             'route_to_whatsapp' => $routeToWhatsapp,

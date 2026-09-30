@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .attribution import copy_to_deal as copy_attribution_to_deal
+
 from dataclasses import dataclass
 import unicodedata
 from typing import Any
@@ -885,6 +887,7 @@ def _build_deal_fields(
         if value:
             fields[deal_field] = value
 
+    copy_attribution_to_deal(client, lead, fields)
     _copy_custom_lead_fields_to_deal(client, config, lead, fields)
     _copy_receipt_file_to_deal(client, config, lead, fields, lead_id=lead_id, logger=logger)
     return fields

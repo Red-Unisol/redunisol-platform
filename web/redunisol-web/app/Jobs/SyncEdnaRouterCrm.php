@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaRouterResult;
@@ -83,7 +84,17 @@ class SyncEdnaRouterCrm implements ShouldQueue
                     'UF_CRM_WA_SEGMENT' => $result->segment, 'UF_CRM_WA_FLOW_ID' => EdnaFlowRouter::FLOW_ID,
                     'UF_CRM_WA_TIMESTAMP' => $received->toIso8601String(),
                 ];
-                // Only these seven fields: no SOURCE_ID, UTMs, owner, status, name or phone.
+                if (config('attribution.enabled')) {
+                    $journeys = new AttributionJourney;
+                    $journey = $journeys->find($send->journey_id ?? null);
+                    if ($api->attributionSchema($entity)) {
+                        throw new RuntimeException('CRM attribution fields require provisioning.');
+                    }
+                    $attributionFields = array_fill_keys(array_map(fn ($name) => 'UF_CRM_'.$name, AttributionJourney::CRM_FIELDS), '');
+                    $attributionFields['UF_CRM_ATTR_STATUS'] = 'unknown';
+                    $fields += $journey ? $journeys->crmFields($journey) : $attributionFields;
+                }
+                // Acquisition snapshots are separate: never rewrite historic UTMs or commercial fields.
                 // Read before writing also resolves an update whose HTTP response was lost.
                 if (! $this->matches($record, $fields)) {
                     if ($api->call('crm.'.$entity.'.update', ['id' => $target['id'], 'fields' => $fields]) !== true) {
@@ -135,10 +146,15 @@ class SyncEdnaRouterCrm implements ShouldQueue
     private function matches(array $record, array $fields): bool
     {
         foreach ($fields as $key => $value) {
-            if ($key === 'UF_CRM_WA_TIMESTAMP') {
+            if (in_array($key, ['UF_CRM_WA_TIMESTAMP', 'UF_CRM_FECHA_ORIGEN'], true)) {
+                if ($value === '' && empty($record[$key])) {
+                    continue;
+                }
                 if (empty($record[$key]) || ! CarbonImmutable::parse($record[$key])->eq(CarbonImmutable::parse($value))) {
                     return false;
                 }
+            } elseif ($value === '' && empty($record[$key])) {
+                continue;
             } elseif (($record[$key] ?? null) !== $value) {
                 return false;
             }

@@ -66,6 +66,40 @@ class EdnaBitrix
         return $missing;
     }
 
+    public function attributionSchema(string $entity, bool $apply = false): array
+    {
+        if (! in_array($entity, ['contact', 'lead', 'deal'], true)) {
+            throw new RuntimeException('Unsupported attribution entity.');
+        }
+        $fields = $this->call('crm.'.$entity.'.fields');
+        $expected = array_fill_keys(AttributionJourney::CRM_FIELDS, 'string');
+        $expected['FECHA_ORIGEN'] = 'datetime';
+        if ($entity === 'deal') {
+            $expected += self::FIELDS;
+        }
+        $missing = [];
+        foreach ($expected as $name => $type) {
+            $key = 'UF_CRM_'.$name;
+            if (isset($fields[$key])) {
+                if ($fields[$key]['type'] !== $type || ($fields[$key]['isMultiple'] ?? false)) {
+                    throw new RuntimeException('Incompatible attribution schema.');
+                }
+
+                continue;
+            }
+            $missing[] = $key;
+            if ($apply) {
+                $this->call('crm.'.$entity.'.userfield.add', ['fields' => [
+                    'FIELD_NAME' => $name, 'USER_TYPE_ID' => $type, 'XML_ID' => 'redunisol_attribution_'.$name,
+                    'MULTIPLE' => 'N', 'MANDATORY' => 'N', 'EDIT_FORM_LABEL' => ['es' => $name],
+                    'SETTINGS' => ['ROWS' => $name === 'ATTR_JSON' ? 8 : 1],
+                ]]);
+            }
+        }
+
+        return $missing;
+    }
+
     public function find(string $phone): array
     {
         // Contacts are the stable person record; never pick one arbitrary lead among duplicates.

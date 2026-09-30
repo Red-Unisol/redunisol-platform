@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .attribution import lead_fields as attribution_lead_fields, source_from_lead
 from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .catalogs import ORIGENES_LEAD
@@ -35,6 +36,11 @@ def create_lead(
     logger: Logger,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
+    source_id = (
+        _resolve_enum_id(client, config.fields.lead_source, "Sin origen")
+        if submission.lead_source.key == "sin_origen"
+        else submission.lead_source.bitrix_id
+    )
     fields = {
         "TITLE": prequalification_title(submission),
         "NAME": submission.full_name,
@@ -56,10 +62,14 @@ def create_lead(
         config.fields.lead_employment_status: submission.employment_status.bitrix_id,
         config.fields.lead_payment_bank: [submission.payment_bank.bitrix_id],
         config.fields.lead_province: submission.province.bitrix_id,
-        config.fields.lead_source: submission.lead_source.bitrix_id,
+        config.fields.lead_source: source_id,
     }
 
     fields.update(_build_optional_tracking_fields(config, submission))
+    fields.update(attribution_lead_fields(
+        client, submission.attribution,
+        source_label=submission.lead_source.label, source_id=source_id,
+    ))
     if config.fields.lead_recibo_file and submission.recibo_url:
         logger.info("Adjuntando recibo al lead.")
         fields[config.fields.lead_recibo_file] = build_bitrix_file_data(
@@ -171,6 +181,7 @@ def build_submission_from_lead(
     lead: dict[str, Any],
     config: AppConfig,
 ) -> NormalizedInput:
+    _required_lead_value(lead, config.fields.lead_source)
     payload = {
         "full_name": _lead_full_name(lead),
         "email": _first_multifield_value(lead.get("EMAIL"), "EMAIL"),
@@ -179,7 +190,7 @@ def build_submission_from_lead(
         "province": _required_lead_value(lead, config.fields.lead_province),
         "employment_status": _required_lead_value(lead, config.fields.lead_employment_status),
         "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
-        "lead_source": _required_lead_value(lead, config.fields.lead_source),
+        "lead_source": source_from_lead(lead, config.fields.lead_source),
     }
     return normalize_business_input(payload)
 

@@ -4,11 +4,13 @@ use App\Jobs\ReceiveEdnaInKestra;
 use App\Jobs\ReconcileEdnaLanding;
 use App\Jobs\SendEdnaLanding;
 use App\Jobs\SyncEdnaRouterCrm;
+use App\Services\AttributionJourney;
 use App\Services\EdnaBitrix;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaLandingRoute;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -417,4 +419,28 @@ test('answer timestamp offsets are stored in UTC for CRM ordering', function () 
     DB::table('edna_incoming_events')->where('id', $f->event)->update(['payload' => Crypt::encryptString(json_encode($payload))]);
     (new ReceiveEdnaInKestra($f->event))->handle();
     expect(DB::table('edna_router_results')->first()->response_received_at)->toBe(now()->format('Y-m-d H:i:s'));
+});
+
+test('verified response propagates acquisition to return link and CRM without replacing historic UTMs', function () {
+    config()->set('attribution.enabled', true);
+    $service = new AttributionJourney;
+    $journey = $service->create(['version' => 1, 'first' => ['utm_source' => 'meta'], 'last' => ['utm_source' => 'meta']]);
+    $service->bind('(ref: '.$journey->id.')', '5493510000000', '2423');
+    $f = resultFixture('cordoba', 'jubilado_pensionado', false);
+    DB::table('edna_flow_sends')->where('id', $f->flow)->update(['journey_id' => $journey->id]);
+    (new ReceiveEdnaInKestra($f->event))->handle();
+    $r = DB::table('edna_router_results')->first();
+    expect($r->landing_url)->toContain('&ref='.$journey->id);
+    expect($r->message_text)->toContain($r->landing_url);
+    $schema = resultSchema();
+    foreach (AttributionJourney::CRM_FIELDS as $name) {
+        $schema['UF_CRM_'.$name] = ['type' => $name === 'FECHA_ORIGEN' ? 'datetime' : 'string', 'isMultiple' => false];
+    }
+    resultHttp(['redunisol.bitrix24.es/*/crm.contact.fields.json' => Http::response(['result' => $schema])]);
+    (new SyncEdnaRouterCrm($r->id))->handle();
+    expect($this->crmRecord['UF_CRM_JOURNEY_ID'])->toBe($journey->id);
+    expect($this->crmRecord['UTM_SOURCE'])->toBe('google');
+    expect(json_decode($this->crmRecord['UF_CRM_ATTR_JSON'], true)['last']['utm_source'])->toBe('meta');
+    $input = $service->resolveForm(Request::create('/'), ['ref' => $journey->id, 'celular' => '3510000000']);
+    expect($input['attribution']['wa']['WA_SEGMENT'])->toBe('cordoba_jubilado');
 });
