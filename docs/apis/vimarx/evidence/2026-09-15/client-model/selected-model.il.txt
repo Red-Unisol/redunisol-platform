@@ -1,0 +1,229 @@
+METHOD System.Void F.Module.FModule::CustomizeTypesInfo(DevExpress.ExpressApp.DC.ITypesInfo)
+IL_0ed3: ldloca.s V_10
+IL_0ed5: call System.Boolean System.Nullable`1<ClasesBase.EnumEmpresas>::get_HasValue()
+IL_0eda: brtrue.s IL_0ee8
+IL_0edc: ldloca.s V_16
+IL_0ede: initobj System.Nullable`1<System.Int32>
+IL_0ee4: ldloc.s V_16
+IL_0ee6: br.s IL_0ef4
+IL_0ee8: ldloca.s V_10
+IL_0eea: call !0 System.Nullable`1<ClasesBase.EnumEmpresas>::GetValueOrDefault()
+IL_0eef: newobj System.Void System.Nullable`1<System.Int32>::.ctor(!0)
+IL_0ef4: stloc.s V_15
+IL_0ef6: ldloca.s V_15
+IL_0ef8: call System.Boolean System.Nullable`1<System.Int32>::get_HasValue()
+IL_0efd: brtrue.s IL_0f0b
+IL_0eff: ldloca.s V_17
+IL_0f01: initobj System.Nullable`1<System.Boolean>
+IL_0f07: ldloc.s V_17
+IL_0f09: br.s IL_0f1e
+IL_0f0b: ldloca.s V_15
+IL_0f0d: call !0 System.Nullable`1<System.Int32>::GetValueOrDefault()
+IL_0f12: ldc.i4 1707
+IL_0f17: ceq
+IL_0f19: newobj System.Void System.Nullable`1<System.Boolean>::.ctor(!0)
+IL_0f1e: stloc.s V_17
+IL_0f20: ldloca.s V_17
+IL_0f22: call !0 System.Nullable`1<System.Boolean>::GetValueOrDefault()
+IL_0f27: brfalse IL_1131
+IL_0f2c: ldarg.1
+IL_0f2d: ldtoken F.Module.SocAux
+IL_0f32: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0f37: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_0f3c: ldstr "ConvNro"
+IL_0f41: newobj System.Void System.ComponentModel.DefaultPropertyAttribute::.ctor(System.String)
+IL_0f46: callvirt System.Void DevExpress.ExpressApp.DC.IBaseInfo::AddAttribute(System.Attribute)
+IL_0f4b: ldarg.1
+IL_0f4c: ldtoken F.Module.SocioMutual
+IL_0f51: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0f56: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_0f5b: ldstr "SocAux"
+IL_0f60: ldtoken F.Module.SocAux
+IL_0f65: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0f6a: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_0f6f: ldstr "ObjectProperty"
+IL_0f74: newobj System.Void DevExpress.Persistent.Base.EditorAliasAttribute::.ctor(System.String)
+IL_0f79: callvirt System.Void DevExpress.ExpressApp.DC.IBaseInfo::AddAttribute(System.Attribute)
+IL_0f7e: ldarg.1
+IL_0f7f: ldtoken PreSolicitud.Module.SolicitudBase
+IL_0f84: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0f89: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_0f8e: ldstr "SocAux"
+IL_0f93: ldtoken F.Module.SocAux
+IL_0f98: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0f9d: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_0fa2: ldstr "ObjectProperty"
+IL_0fa7: newobj System.Void DevExpress.Persistent.Base.EditorAliasAttribute::.ctor(System.String)
+IL_0fac: callvirt System.Void DevExpress.ExpressApp.DC.IBaseInfo::AddAttribute(System.Attribute)
+IL_0fb1: ldarg.1
+IL_0fb2: ldtoken F.Module.SocAux
+IL_0fb7: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0fbc: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_0fc1: ldstr "ConvNro"
+IL_0fc6: ldtoken System.Int32
+IL_0fcb: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0fd0: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_0fd5: ldstr "Convenio"
+IL_0fda: newobj System.Void DevExpress.ExpressApp.DC.XafDisplayNameAttribute::.ctor(System.String)
+IL_0fdf: callvirt System.Void DevExpress.ExpressApp.DC.IBaseInfo::AddAttribute(System.Attribute)
+IL_0fe4: ldarg.1
+IL_0fe5: ldtoken F.Module.SocAux
+IL_0fea: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_0fef: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_0ff4: ldstr "ConvAux"
+IL_0ff9: ldtoken System.Int32
+IL_0ffe: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1003: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_1008: pop
+IL_1009: ldarg.1
+IL_100a: ldtoken F.Module.SocAux
+IL_100f: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1014: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_1019: ldstr "ConvSoc"
+IL_101e: ldtoken System.Int32
+IL_1023: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1028: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_102d: pop
+IL_102e: ldarg.1
+IL_102f: ldtoken F.Module.SocAux
+IL_1034: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1039: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_103e: ldstr "ConvSuc"
+IL_1043: ldtoken System.Int32
+IL_1048: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_104d: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_1052: pop
+IL_1053: ldarg.1
+IL_1054: ldtoken F.Module.SocAux
+IL_1059: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_105e: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_1063: ldstr "ConvCta"
+IL_1068: ldtoken System.String
+IL_106d: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1072: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_1077: pop
+IL_1078: ldarg.1
+IL_1079: ldtoken F.Module.SocAux
+IL_107e: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1083: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_1088: ldstr "Beneficio"
+IL_108d: ldtoken System.String
+IL_1092: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1097: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_109c: pop
+IL_109d: ldarg.1
+IL_109e: ldtoken F.Module.SocAux
+IL_10a3: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_10a8: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_10ad: ldstr "Caja40"
+IL_10b2: ldtoken System.Int32
+IL_10b7: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_10bc: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_10c1: pop
+IL_10c2: ldarg.1
+IL_10c3: ldtoken F.Module.SocAux
+IL_10c8: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_10cd: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_10d2: ldstr "TeleAux"
+IL_10d7: ldtoken System.String
+IL_10dc: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_10e1: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_10e6: pop
+IL_10e7: ldarg.1
+IL_10e8: ldtoken F.Module.SocAux
+IL_10ed: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_10f2: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_10f7: ldstr "Debito"
+IL_10fc: ldtoken System.String
+IL_1101: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1106: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_110b: pop
+IL_110c: ldarg.1
+IL_110d: ldtoken F.Module.SocAux
+IL_1112: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_1117: callvirt DevExpress.ExpressApp.DC.ITypeInfo DevExpress.ExpressApp.DC.ITypesInfo::FindTypeInfo(System.Type)
+IL_111c: ldstr "Sicon"
+IL_1121: ldtoken System.Int32
+IL_1126: call System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)
+IL_112b: callvirt DevExpress.ExpressApp.DC.IMemberInfo DevExpress.ExpressApp.DC.ITypeInfo::CreateMember(System.String,System.Type)
+IL_1130: pop
+METHOD System.Void F.Module.SocioMutual::AfterConstruction()
+IL_0000: ldarg.0
+IL_0001: call System.Void Socios.Module.PersonasSocios::AfterConstruction()
+IL_0006: call ClasesBase.ConfigEmpresa ClasesBase.Inicial::get_ConfigHelper()
+IL_000b: callvirt ClasesBase.EnumEmpresas ClasesBase.ConfigEmpresa::ObtenerIDClienteVx()
+IL_0010: stloc.0
+IL_0011: ldloc.0
+IL_0012: ldc.i4 156
+IL_0017: beq.s IL_003b
+IL_0019: ldloc.0
+IL_001a: ldc.i4 1707
+IL_001f: bne.un.s IL_0042
+IL_0021: ldarg.0
+IL_0022: call DevExpress.Xpo.Session DevExpress.Xpo.PersistentBase::get_Session()
+IL_0027: newobj System.Void F.Module.SocAux::.ctor(DevExpress.Xpo.Session)
+IL_002c: stloc.1
+IL_002d: ldarg.0
+IL_002e: ldstr "SocAux"
+IL_0033: ldloc.1
+IL_0034: call System.Void DevExpress.Xpo.XPBaseObject::SetMemberValue(System.String,System.Object)
+IL_0039: br.s IL_0042
+IL_003b: ldarg.0
+IL_003c: ldc.i4.5
+IL_003d: call System.Void Socios.Module.PersonasSocios::set_FormaPago(Socios.Module.PersonasSocios/EFormaPago)
+METHOD System.Void F.Module.SocioIoHelper::ImportarCaja40(DevExpress.ExpressApp.Xpo.XPObjectSpace)
+IL_0164: ldloc.s V_11
+IL_0166: ldstr "SocAux"
+IL_016b: callvirt System.Object DevExpress.Xpo.XPBaseObject::GetMemberValue(System.String)
+IL_0170: castclass F.Module.SocAux
+IL_0175: stloc.s V_13
+IL_0177: ldloc.s V_13
+IL_0179: brtrue.s IL_0191
+IL_017b: ldloc.0
+IL_017c: newobj System.Void F.Module.SocAux::.ctor(DevExpress.Xpo.Session)
+IL_0181: stloc.s V_13
+IL_0183: ldloc.s V_11
+IL_0185: ldstr "SocAux"
+IL_018a: ldloc.s V_13
+IL_018c: callvirt System.Void DevExpress.Xpo.XPBaseObject::SetMemberValue(System.String,System.Object)
+IL_0191: call DevExpress.Persistent.Base.Tracing DevExpress.Persistent.Base.Tracing::get_Tracer()
+IL_0196: ldstr "Soc {0} Caja40 {1}"
+IL_019b: ldloc.s V_10
+IL_019d: box System.Int32
+IL_01a2: ldloc.s V_12
+IL_01a4: box System.Double
+IL_01a9: call System.String System.String::Format(System.String,System.Object,System.Object)
+IL_01ae: callvirt System.Void DevExpress.Persistent.Base.Tracing::LogText(System.String)
+IL_01b3: ldloc.s V_13
+IL_01b5: ldstr "Caja40"
+IL_01ba: ldloc.s V_12
+IL_01bc: box System.Double
+IL_01c1: callvirt System.Void DevExpress.Xpo.XPBaseObject::SetMemberValue(System.String,System.Object)
+IL_01c6: ldloc.0
+IL_01c7: callvirt System.Void DevExpress.Xpo.Session::FlushChanges()
+METHOD System.Void ClasesBase.Domicilio::set_Localidad(ClasesBase.Localidad)
+IL_0000: ldarg.0
+IL_0001: ldstr "Localidad"
+IL_0006: ldarg.0
+IL_0007: ldflda ClasesBase.Localidad ClasesBase.Domicilio::_Localidad
+IL_000c: ldarg.1
+IL_000d: call System.Boolean DevExpress.Xpo.PersistentBase::SetPropertyValue<ClasesBase.Localidad>(System.String,!!0&,!!0)
+IL_0012: brfalse.s IL_0043
+IL_0014: ldarg.0
+IL_0015: call System.Boolean DevExpress.Xpo.PersistentBase::get_IsLoading()
+IL_001a: brtrue.s IL_0043
+IL_001c: ldarg.0
+IL_001d: ldnull
+IL_001e: stfld System.Collections.Generic.List`1<System.String> ClasesBase.Domicilio::_ListaCalles
+IL_0023: ldarg.1
+IL_0024: brfalse.s IL_0032
+IL_0026: ldarg.0
+IL_0027: ldarg.1
+IL_0028: callvirt System.String ClasesBase.Localidad::get_CodigoPostal()
+IL_002d: call System.Void ClasesBase.Domicilio::set_CodigoPostal(System.String)
+IL_0032: ldarg.0
+IL_0033: call System.Void ClasesBase.Domicilio::ResetCoordinates()
+IL_0038: ldarg.0
+IL_0039: ldstr "Barrio"
+IL_003e: call System.Void DevExpress.Xpo.XPBaseObject::OnChanged(System.String)
+IL_0043: ret
