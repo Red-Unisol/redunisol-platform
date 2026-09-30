@@ -32,10 +32,22 @@
 .padrones-version small { display: block; margin-top: 6px; }
 .padrones-feedback { position: sticky; bottom: 18px; padding: 18px; background: #e3f4e9; border: 1px solid #91b8a0; border-radius: 8px; }
 .padrones-feedback--error { background: #fff0ed; border-color: #dca597; }
-.padrones-results { margin-top: 24px; padding: 26px; }
-.padrones-results h2 { margin: 4px 0; }
-.padron-match { padding: 16px 0; border-top: 1px solid #dce6e7; margin-top: 20px; }
-.padron-match--bajas { border-left: 4px solid #b35331; padding-left: 18px; background: #fff6f0; }
+.panel.padrones-results { margin-top: 16px; padding: 16px 20px; }
+.padrones-results .padrones-heading { gap: 8px 16px; }
+.padrones-results .section__eyebrow { margin: 0 0 2px; }
+.padrones-results h2 { margin: 0; font-size: 22px; }
+.padrones-results p { margin: 6px 0; }
+.padrones-results .padrones-query { font-size: 14px; margin: 6px 0 10px; }
+.padron-match { padding: 10px 0; border-top: 1px solid #dce6e7; }
+.padron-match__heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.padron-match__heading h3 { margin: 0; font-size: 15px; }
+.padron-match__heading span { font-size: 13px; }
+.padron-match__heading small { margin-left: auto; color: #52676e; font-size: 12px; }
+.padrones-results .padrones-table { margin: 8px 0 0; }
+.padrones-results .padrones-table th, .padrones-results .padrones-table td { padding: 7px 10px; font-size: 13px; }
+.padrones-results .padrones-note { margin: 8px 0 0; line-height: 1.4; }
+.padron-match--bajas { border-left: 4px solid #b35331; padding-left: 12px; background: #fff6f0; }
 .padrones-note { font-size: 13px; color: #52676e; line-height: 1.6; }
 .padrones-login { display: grid; gap: 14px; max-width: 430px; }
 @media (max-width: 600px) { .padrones-page { padding: 20px 12px; } .padrones-version { align-items: flex-start; flex-direction: column; } .padrones-page .panel { padding: 18px; } }
+@media (max-width: 600px) { .panel.padrones-results { padding: 14px; } .padron-match__heading small { flex-basis: 100%; margin-left: 0; } }

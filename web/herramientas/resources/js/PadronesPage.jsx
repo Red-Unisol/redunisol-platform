@@ -55,18 +55,21 @@ export function PadronesResults({ document, requestKey }) {
     if (!document) return null;
     return <section className="panel padrones-results">
         <div className="padrones-heading"><div><p className="section__eyebrow">Información complementaria</p><h2>Padrones</h2></div><a href="/padrones">Administrar padrones</a></div>
-        <p>Consulta por documento: <strong>{document}</strong>. Cada fuente conserva su período y sus datos originales.</p>
+        <p className="padrones-query">Documento: <strong>{document}</strong></p>
         {busy && <p role="status">Buscando coincidencias…</p>}
         {login && <><p>Ingresá con el acceso de Análisis para consultar los padrones.</p><PadronesLogin onLogin={() => setRetry((n) => n + 1)} /></>}
         {error && <p role="alert">{error} <button onClick={() => setRetry((n) => n + 1)}>Reintentar</button></p>}
         {data?.sources?.length === 0 && <p>Todavía no hay padrones publicados.</p>}
         {data?.sources?.map((source) => <article className={`padron-match ${source.kind === 'bajas' && source.matches.length ? 'padron-match--bajas' : ''}`} key={source.id}>
-            <h3>{source.name} · {source.period}</h3><small>Cargado el {date(source.loaded_at)}</small>
-            {source.matches.length ? <>
+            <div className="padron-match__heading">
+                <h3>{source.name} · {source.period}</h3>
+                <span>{source.matches.length ? `${source.matches.length} coincidencia${source.matches.length !== 1 ? 's' : ''}` : 'Sin coincidencias'}</span>
+                <small>Cargado el {date(source.loaded_at)}</small>
+            </div>
+            {source.matches.length > 0 && <>
                 {source.kind === 'bajas' && <p><strong>Figura en el archivo de bajas.</strong> Revisá la fecha y la causa junto con los demás padrones.</p>}
-                <p>{source.matches.length} coincidencia{source.matches.length !== 1 ? 's' : ''}</p>
                 <DataTable rows={source.matches.map((m) => m.data)} />
-            </> : <p>No encontrado en este padrón.</p>}
+            </>}
         </article>)}
         <p className="padrones-note">No aparecer en un padrón no demuestra ausencia de empleo. Estas fuentes no modifican el informe de CredixSA ni determinan una decisión crediticia.</p>
     </section>;

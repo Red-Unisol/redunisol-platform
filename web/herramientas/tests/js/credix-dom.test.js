@@ -35,7 +35,8 @@ function mount(fetch) {
         page: 'credixsa', branding: {}, tools: [{ id: 'consulta-quiebra-credix',
             endpoint: '/credix' }],
     });
-    dom.window.fetch = fetch;
+    dom.window.fetch = (url, options) => url === '/api/padrones/lookup'
+        ? Promise.resolve(response({ sources: [] })) : fetch(url, options);
     dom.window.eval(bundle);
     return { dom, document: dom.window.document, errors };
 }
@@ -63,6 +64,8 @@ for (const source of ['BCRA', 'CredixSA']) {
             assert.equal([...app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk')]
                 .filter((el) => el.textContent === `Fuente: ${source}`).length, 3);
             assert.doesNotMatch(app.document.body.textContent, /Consultando BCRA/);
+            const result = app.document.querySelector('.credix-page__result');
+            assert.ok(result.nextElementSibling.classList.contains('padrones-results'));
             if (source === 'CredixSA') assert.match(panel.textContent, /No se pudo completar la consulta a BCRA/);
             await pause();
             assert.deepEqual(requests, ['/credix']);
