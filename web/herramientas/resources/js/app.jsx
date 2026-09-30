@@ -686,7 +686,6 @@ function CredixsaPage({ branding, tool }) {
                     </section>
                 )}
 
-                <PadronesResults document={padronQuery.document} requestKey={padronQuery.key} />
                 {(error || result) && (
                     <section className={`result result--${resultTone} credix-page__result`}>
                         <div className="credix-page__resultHeader">
@@ -726,6 +725,7 @@ function CredixsaPage({ branding, tool }) {
                         )}
                     </section>
                 )}
+                <PadronesResults document={padronQuery.document} requestKey={padronQuery.key} />
             </main>
         </div>
     );

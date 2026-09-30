@@ -106,7 +106,11 @@ test('DOM: Credixsa deep link preloads fields and submits once without user typi
     const requests = [];
     const app = mount({ page: 'credixsa', branding: {}, tools: [{ id: 'consulta-quiebra-credix', endpoint: '/api/tools/consulta-quiebra-credix' }] }, {
         url: 'https://herramientas.test/credixsa#cuit=20123456786&nombre=PERSONA+DE+PRUEBA',
-        fetch: async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return response({ status: 'none', message: 'Sin coincidencias' }); },
+        fetch: async (url, options) => {
+            if (url === '/api/padrones/lookup') return response({ sources: [] });
+            requests.push({ url, body: JSON.parse(options.body) });
+            return response({ status: 'none', message: 'Sin coincidencias' });
+        },
     });
     try {
         await until(() => requests.length > 0);
