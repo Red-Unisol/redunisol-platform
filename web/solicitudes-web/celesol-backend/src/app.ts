@@ -21,6 +21,7 @@ import {
   createSolicitudesCoreRouter,
 } from "./modules/solicitudes-core/solicitudes-core-module";
 import { createSolicitudesLegacyRouter } from "./modules/solicitudes/solicitudes-module";
+import { createTransferenciasIntegrationRouter } from "./modules/transferencias-integration/transferencias-module";
 
 export const app = express();
 
@@ -32,6 +33,7 @@ app.use(
 );
 app.use(cookieParser());
 app.use(express.json());
+app.use("/integrations/transferencias/v1", createTransferenciasIntegrationRouter());
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/auth", authRouter);
 app.use("/auth/users", usersRouter);

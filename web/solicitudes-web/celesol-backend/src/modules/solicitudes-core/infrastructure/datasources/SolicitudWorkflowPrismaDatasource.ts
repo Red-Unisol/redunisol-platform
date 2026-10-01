@@ -1,4 +1,4 @@
-﻿import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import type { DbClient } from "../../../../db/prisma";
 import { ESTADOS_QUE_BORRAN_INFORME_CREDIXSA } from "../../domain/repositories/SolicitudCredixsaInformeRepository";
@@ -91,15 +91,30 @@ type SolicitudHistoryRecord = Prisma.SolicitudEstadoHistorialGetPayload<{
 export class SolicitudWorkflowPrismaDatasource {
   private readonly prisma: DbClient;
 
-  constructor(prisma: DbClient) {
+  constructor(
+    prisma: DbClient,
+    private readonly transaction?: Prisma.TransactionClient,
+  ) {
     this.prisma = prisma;
+  }
+
+  private get db() {
+    return this.transaction ?? this.prisma;
+  }
+
+  private inTransaction<T>(
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.transaction
+      ? work(this.transaction)
+      : this.prisma.$transaction(work);
   }
 
   async getTransitionValidationContext(input: {
     actionCode: string;
     solicitudId: string;
   }) {
-    const solicitud = await this.prisma.solicitud.findUnique({
+    const solicitud = await this.db.solicitud.findUnique({
       where: {
         id: input.solicitudId,
       },
@@ -113,7 +128,7 @@ export class SolicitudWorkflowPrismaDatasource {
       };
     }
 
-    const transition = await this.prisma.workflowTransition.findFirst({
+    const transition = await this.db.workflowTransition.findFirst({
       where: {
         actionCode: input.actionCode,
         fromStateId: solicitud.estadoActualId,
@@ -163,7 +178,7 @@ export class SolicitudWorkflowPrismaDatasource {
     let currentStepActionCode: string | null = null;
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      const result = await this.inTransaction(async (tx) => {
         const executor = tx as WorkflowExecutor;
         const domainSteps = input.plan.steps.filter(
           (step) => step.kind === "domain-transition",
@@ -593,7 +608,7 @@ export class SolicitudWorkflowPrismaDatasource {
     >[0],
   ) {
     const solicitud = await this.loadSolicitudForWorkflow(
-      this.prisma,
+      this.db,
       input.solicitudId,
     );
 
@@ -608,21 +623,21 @@ export class SolicitudWorkflowPrismaDatasource {
       this.validateWorkflowOwner(input.workflowOwnerId, solicitud);
     }
 
-    return this.loadActiveTransitions(this.prisma, solicitud.estadoActualId);
+    return this.loadActiveTransitions(this.db, solicitud.estadoActualId);
   }
 
   async listHistory(
     input: Parameters<SolicitudWorkflowRepository["listHistory"]>[0],
   ) {
     const solicitud = await this.loadSolicitudForWorkflow(
-      this.prisma,
+      this.db,
       input.solicitudId,
     );
     if (!canEditSolicitud(input.currentUser, solicitud, "VIEW_HISTORY")) {
       throw new ForbiddenSolicitudAccessError();
     }
 
-    const history = await this.prisma.solicitudEstadoHistorial.findMany({
+    const history = await this.db.solicitudEstadoHistorial.findMany({
       where: {
         solicitudId: input.solicitudId,
       },
