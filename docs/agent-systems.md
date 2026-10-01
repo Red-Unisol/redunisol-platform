@@ -10,7 +10,8 @@ Este documento sirve para ubicar rapidamente el sistema correcto, su fuente de v
 | Kestra | Ejecucion de automatizaciones | YAML y namespace files en Git | API, UI y credenciales locales |
 | Bitrix24 | CRM, tareas, chats y actividad comercial | Bitrix24 | MCP o webhook, segun la operacion |
 | VPS | Docker, Apache y servicios publicados | Compose/configuracion Git mas estado runtime | SSH |
-| Core, CredixSA y servicios financieros | Datos transaccionales | API propietaria correspondiente | endpoint y credencial local |
+| Vimarx (Core) | Socios, solicitudes, prestamos y cuotas | Vimarx | API DevExpress Evaluate; ver `docs/vimarx.md` |
+| CredixSA y servicios financieros | Datos transaccionales | API propietaria correspondiente | endpoint y credencial local |
 | Google Sheets | Planillas compartidas | Google Drive/Sheets | service account u OAuth |
 | Informes y Excels | Resultados de analisis | proceso y datos fuente que los generaron | `.local/artifacts/` |
 | Material retirado | Recuperacion cautelar | no canonico | `.local/quarantine/` |

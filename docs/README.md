@@ -7,6 +7,7 @@ Documentacion tecnica transversal de la repo.
 - `architecture.md`: arquitectura general, capas, carpetas y modelo dominio/namespace
 - `agent-systems.md`: mapa operativo para agentes, fuentes de verdad, accesos y limites entre sistemas
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
+- `vimarx.md`: como consultar Vimarx (Core): puertas de entrada, lenguaje de consultas, entidades, consumidores en el repo y trampas conocidas
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
 - `kestra-worker-delivery-20260921.md`: diagnostico reproducible de tareas SUBMITTED, mitigacion de reconexiones y limites de recuperacion en Kestra 2.0.0
 - `reportes-operativos.md`: patrón recurrente para generar, publicar y reejecutar informes diarios
