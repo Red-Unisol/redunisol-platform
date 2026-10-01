@@ -69,7 +69,7 @@ class SyncEdnaFormLink implements ShouldQueue
                     return;
                 }
                 $url = $links->url($context);
-                $status = config('edna.form_link_send_enabled') ? 'Listo para solicitar envío.'
+                $status = $links->canSendTo(Crypt::decryptString($context->recipient)) ? 'Listo para solicitar envío.'
                     : 'Envío no habilitado; podés copiar el enlace.';
                 // Every new context requires a new operator action; never inherit a checked box.
                 if (($record[EdnaFormLink::CRM_FIELD] ?? '') !== $url

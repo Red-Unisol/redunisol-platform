@@ -63,9 +63,13 @@ El código, la definición de la plantilla, los campos y el scheduler están
 versionados. El estado de aprobación de Meta/Edna y la disposición visual de los
 campos en Bitrix pertenecen a esos sistemas.
 
-La configuración de producción incluida en este cambio activa la captura y
-proyección de enlaces, pero mantiene `EDNA_FORM_LINK_SEND_ENABLED=false`.
-Por lo tanto, el merge/deploy por sí solo no habilita mensajes a clientes.
+La configuración de producción versionada activa la captura y proyección de
+enlaces para todos y habilita `EDNA_FORM_LINK_SEND_ENABLED=true` con un único
+destinatario autorizado en `EDNA_FORM_LINK_RECIPIENTS`, dentro del env cifrado.
+El envío requiere además la solicitud explícita desde la ficha de ese contacto.
+La lista limita sólo los envíos: los demás clientes conservan la actualización
+de su enlace y ven el estado «Envío no habilitado; podés copiar el enlace».
+Sus solicitudes se desmarcan sin reservar ni consumir un envío.
 
 1. Ejecutar `php artisan edna:form-links schema` para verificar los campos y
    `php artisan edna:form-links schema --apply` para crear sólo los faltantes.
@@ -78,6 +82,8 @@ Por lo tanto, el merge/deploy por sí solo no habilita mensajes a clientes.
 4. Versionar `EDNA_FORM_LINKS_ENABLED=true` para capturar y publicar enlaces.
 5. Para el piloto, configurar `EDNA_FORM_LINK_RECIPIENTS` con el teléfono autorizado
    y habilitar `EDNA_FORM_LINK_SEND_ENABLED=true` en configuración versionada.
+   Usar el número internacional de WhatsApp, sólo dígitos. Una lista vacía permite
+   cualquier destinatario: no vaciarla mientras el envío esté habilitado durante el piloto.
    Esta lista es independiente de la del Router. Fuera de una ventana de piloto, mantener
    los envíos deshabilitados hasta la prueba real y decisión de activación.
 6. Probar con y sin referencia: solicitar el envío desde la ficha, comprobar el
@@ -112,8 +118,9 @@ conteos sin modificar datos; `--apply` aplica esa retención.
 
 Verificación del 2026-10-01: los tres campos existen en contactos y prospectos;
 la sección está agregada a ambas vistas compartidas; la plantilla Edna 61838,
-`boton_home_atribucion`, figura `APPROVED`. Todavía se requiere desplegar este
-código y ejecutar el piloto antes de habilitar envíos generales.
+`boton_home_atribucion`, figura `APPROVED`. El código inicial quedó desplegado
+en producción con el envío deshabilitado. La activación del piloto requiere
+desplegar su configuración y ejecutar la prueba antes de habilitar envíos generales.
 
 - [Edna: registro de plantillas](https://docs-pulse.edna.io/docs/api/templates/add-operator-template/)
 - [Edna: envío con URL dinámica](https://docs-pulse.edna.io/docs/api/messages/sending/)
