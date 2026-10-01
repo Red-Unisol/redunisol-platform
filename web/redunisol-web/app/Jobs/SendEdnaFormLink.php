@@ -51,7 +51,7 @@ class SendEdnaFormLink implements ShouldQueue
                 return;
             }
             $phone = Crypt::decryptString($send->recipient);
-            if (config('edna.form_link_recipients', []) && ! in_array($phone, config('edna.form_link_recipients'), true)) {
+            if (! (new EdnaFormLink)->canSendTo($phone)) {
                 $this->cancel();
 
                 return;

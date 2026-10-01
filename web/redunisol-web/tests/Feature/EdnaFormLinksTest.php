@@ -172,19 +172,46 @@ test('an expired or mismatched reference falls back without inventing acquisitio
     expect((new EdnaFormLink)->url($context))->toBe(EdnaFormLink::HOME);
 })->with(['expired', 'other_phone']);
 
-test('disabled, historical, future and pilot-excluded captures do nothing', function (string $case) {
+test('disabled, historical and future captures do nothing', function (string $case) {
     $overrides = [];
     match ($case) {
         'disabled' => config()->set('edna.form_links_enabled', false),
         'historic' => $overrides = ['receivedAt' => now()->subHours(2)->toIso8601String()],
         'future' => $overrides = ['receivedAt' => now()->addMinutes(6)->toIso8601String()],
-        'pilot' => config()->set('edna.form_link_recipients', ['5493519999999']),
     };
     formLinkCapture('Hola', 'router_entry', $overrides);
     expect(DB::table('edna_form_links')->count())->toBe(0);
-})->with(['disabled', 'historic', 'future', 'pilot']);
+})->with(['disabled', 'historic', 'future']);
+
+test('the pilot preserves other customer links but rejects their send requests without consuming a send', function () {
+    config()->set('edna.form_link_recipients', ['5493519999999']);
+    $journey = formLinkJourney();
+    $context = formLinkCapture('(ref: '.$journey->id.')');
+    $record = formLinkRecord();
+    formLinkHttp($record);
+    (new SyncEdnaFormLink($context->scope, $context->entry_event_id))->handle();
+    expect($record[EdnaFormLink::CRM_FIELD])->toBe(EdnaFormLink::HOME.'?ref='.$journey->id)
+        ->and($record[EdnaFormLink::STATUS_FIELD])->toBe('Envío no habilitado; podés copiar el enlace.');
+    $record[EdnaFormLink::SEND_FIELD] = 1;
+    (new EdnaFormRequest)->poll();
+    expect(DB::table('edna_form_link_sends')->count())->toBe(0)
+        ->and($record[EdnaFormLink::SEND_FIELD])->toBe(0);
+    expect(DB::table('jobs')->pluck('payload')->implode(''))->not->toContain('SendEdnaFormLink');
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'cascade/schedule'));
+
+    $current = formLinkCapture('Hola, vengo del sitio web de Red Unisol.');
+    (new SyncEdnaFormLink($current->scope, $current->entry_event_id))->handle();
+    expect($record[EdnaFormLink::CRM_FIELD])->toBe(EdnaFormLink::HOME)
+        ->and(DB::table('edna_form_links')->first()->journey_id)->toBeNull();
+
+    config()->set('edna.form_link_recipients', ['5493511234567']);
+    $record[EdnaFormLink::SEND_FIELD] = 1;
+    (new EdnaFormRequest)->poll();
+    expect(DB::table('edna_form_link_sends')->count())->toBe(1);
+});
 
 test('explicit CRM action sends one dynamic button and repeated polling never duplicates it', function () {
+    config()->set('edna.form_link_recipients', ['5493511234567']);
     $record = formLinkRecord();
     $send = formLinkReady($record);
     (new EdnaFormRequest)->poll();
@@ -222,12 +249,13 @@ test('a queued action is cancelled if its recipient, intent, context or activati
         'intent' => $record[EdnaFormLink::SEND_FIELD] = 0,
         'context' => formLinkCapture('Nueva consulta'),
         'disabled' => config()->set('edna.form_link_send_enabled', false),
+        'pilot' => config()->set('edna.form_link_recipients', ['5493519999999']),
         'expired' => $this->travel(24)->hours(),
     };
     (new SendEdnaFormLink($send->id))->handle();
     expect(DB::table('edna_form_link_sends')->first()->state)->toBe('cancelled');
     Http::assertNotSent(fn ($r) => str_contains($r->url(), 'cascade/schedule'));
-})->with(['phone', 'intent', 'context', 'disabled', 'expired']);
+})->with(['phone', 'intent', 'context', 'disabled', 'pilot', 'expired']);
 
 test('a request without a current identified context does not use CRM historical journey', function () {
     $record = formLinkRecord();

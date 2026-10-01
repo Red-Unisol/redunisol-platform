@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\SendEdnaFormLink;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -75,6 +76,9 @@ class EdnaFormRequest
         }
         if (! config('edna.form_link_send_enabled') || ! config('edna.form_links_enabled')) {
             return null;
+        }
+        if (! (new EdnaFormLink)->canSendTo(Crypt::decryptString($context->recipient))) {
+            return 'Envío no habilitado; podés copiar el enlace.';
         }
         $sendId = DB::table('edna_form_link_sends')->insertGetId([
             'entry_event_id' => $context->entry_event_id, 'scope' => $context->scope,

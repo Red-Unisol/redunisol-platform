@@ -38,8 +38,7 @@ class EdnaFormLink
         $start = config('edna.router_start_at');
         if (! $hash || ! preg_match('/^[0-9]{10,15}$/D', $phone) || ! $start
             || $received->lt(CarbonImmutable::parse($start))
-            || $received->lt(now()->subHours(23)) || $received->gt(now()->addMinutes(5))
-            || (config('edna.form_link_recipients', []) && ! in_array($phone, config('edna.form_link_recipients'), true))) {
+            || $received->lt(now()->subHours(23)) || $received->gt(now()->addMinutes(5))) {
             return;
         }
         $scope = hash('sha256', $event->subject_id.':'.$hash);
@@ -70,6 +69,14 @@ class EdnaFormLink
         if ($newContext) {
             Queue::connection('edna')->push(new SyncEdnaFormLink($scope, (int) $event->id), '', 'edna');
         }
+    }
+
+    public function canSendTo(string $phone): bool
+    {
+        $recipients = config('edna.form_link_recipients', []);
+
+        return config('edna.enabled') && config('edna.form_links_enabled') && config('edna.form_link_send_enabled')
+            && (! $recipients || in_array($phone, $recipients, true));
     }
 
     public function reference(object $context): ?string
