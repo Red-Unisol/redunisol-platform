@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\EdnaFlowRouter;
+use App\Services\EdnaFormLink;
 use App\Services\EdnaRouterResult;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -56,6 +57,7 @@ class ReceiveEdnaInKestra implements ShouldQueue
                     || ! in_array($result['kind'] ?? null, ['router_entry', 'flow_response', 'ignored', 'invalid'], true)) {
                     throw new RuntimeException('Kestra did not acknowledge the Edna event.');
                 }
+                (new EdnaFormLink)->capture($event, $payload, $result['kind']);
                 if ($result['kind'] === 'router_entry') {
                     $router->start($event, $payload);
                 } elseif ($context && $result['kind'] === 'flow_response') {
