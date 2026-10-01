@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     config()->set('app.key', 'base64:'.base64_encode(str_repeat('a', 32)));
@@ -107,8 +108,8 @@ test('redirect appends an opaque reference and allows only WhatsApp destinations
     $location = $response->headers->get('Location');
     expect(parse_url($location, PHP_URL_HOST))->toBe('wa.me');
     parse_str(parse_url($location, PHP_URL_QUERY), $query);
-    expect($query['text'])->toMatch('/\\(ref: [a-f0-9]{24}\\)/');
-    preg_match('/ref: ([a-f0-9]{24})/', $query['text'], $m);
+    expect($query['text'])->toMatch('/\\(ref: [A-Za-z0-9]{10}\\)/');
+    preg_match('/ref: ([A-Za-z0-9]{10})/', $query['text'], $m);
     $handoff = (new AttributionJourney)->find($m[1]);
     expect($handoff->id)->not->toBe($j->id);
     expect((new AttributionJourney)->snapshot($handoff)['last']['utm_source'])->toBe('meta');
@@ -209,4 +210,54 @@ test('handoff rate limiting skips recording without blocking contact', function 
     }
     $this->get('/whatsapp/start?phone=5493511234567&text=Hola')->assertRedirect('https://wa.me/5493511234567?text=Hola');
     expect(DB::table('attribution_journeys')->count())->toBe(0);
+});
+
+test('short and legacy references survive binding and form submission', function (string $id) {
+    $s = new AttributionJourney;
+    $j = attributionVisit('?utm_source=meta&utm_campaign=original');
+    DB::table('attribution_journeys')->where('id', $j->id)->update(['id' => $id]);
+    expect($s->find($id)->id)->toBe($id);
+    $incoming = strlen($id) === 24 ? strtoupper($id) : $id;
+    expect($s->bind('(REF: '.$incoming.')', '5493511234567', '2423'))->toBe($id);
+    $resolved = $s->resolveForm(Request::create('/'), ['ref' => $id, 'celular' => '3511234567']);
+    expect($resolved['attribution']['journey_id'])->toBe($id);
+    expect($resolved['utm_campaign'])->toBe('original');
+    if (strlen($id) === 10) {
+        expect($s->find(strtolower($id)))->toBeNull();
+        expect($s->bind('(ref: '.strtolower($id).')', '5493511234567', '2423'))->toBeNull();
+    }
+})->with(['a7Kp3mR9xB', 'abcdef0123456789abcdef01']);
+
+test('handoff replaces previous short and legacy references without changing the message', function (string $old) {
+    $response = $this->get('/whatsapp/start?'.http_build_query([
+        'phone' => '5493511234567', 'text' => 'Hola, acepto los terminos. (ref: '.$old.')',
+    ]));
+    $response->assertRedirect();
+    parse_str(parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
+    expect($query['text'])->toMatch('/^Hola, acepto los terminos\. \(ref: [A-Za-z0-9]{10}\)$/D');
+    expect($query['text'])->not->toContain($old);
+})->with(['a7Kp3mR9xB', 'abcdef0123456789abcdef01']);
+
+test('colliding references retry without changing the existing journey', function () {
+    Str::createRandomStringsUsingSequence(['a7Kp3mR9xB', 'a7Kp3mR9xB', 'B9xR7mK3pA']);
+    try {
+        $old = attributionVisit('?utm_source=meta');
+        $new = attributionVisit('?utm_source=google');
+        expect($new->id)->toBe('B9xR7mK3pA');
+        expect((new AttributionJourney)->snapshot((new AttributionJourney)->find($old->id))['last']['utm_source'])->toBe('meta');
+        expect(DB::table('attribution_journeys')->count())->toBe(2);
+    } finally {
+        Str::createRandomStringsNormally();
+    }
+});
+
+test('exhausted collisions still allow WhatsApp without reusing another journey', function () {
+    Str::createRandomStringsUsing(fn () => 'a7Kp3mR9xB');
+    try {
+        attributionVisit('?utm_source=meta');
+        $this->get('/whatsapp/start?phone=5493511234567&text=Hola')->assertRedirect('https://wa.me/5493511234567?text=Hola');
+        expect(DB::table('attribution_journeys')->count())->toBe(1);
+    } finally {
+        Str::createRandomStringsNormally();
+    }
 });

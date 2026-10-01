@@ -32,7 +32,7 @@ class WhatsAppJourneyController
                     }, 60);
                 // Rate limiting affects recording only; contact always remains available.
                 if ($journey) {
-                    $text = preg_replace('/\s*\(ref:\s*[a-f0-9]{24}\)/i', '', $text).' (ref: '.$journey->id.')';
+                    $text = preg_replace('/\s*\(ref:\s*'.AttributionJourney::REFERENCE_PATTERN.'\)/i', '', $text).' (ref: '.$journey->id.')';
                 }
             } catch (Throwable) {
                 logger()->warning('WhatsApp attribution unavailable; continuing without reference.');
