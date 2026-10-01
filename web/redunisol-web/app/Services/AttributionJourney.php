@@ -10,6 +10,8 @@ use Illuminate\Support\Str;
 
 class AttributionJourney
 {
+    public const REFERENCE_PATTERN = '(?:[A-Za-z0-9]{10}|[a-f0-9]{24})';
+
     public const COOKIE = 'ru_attribution';
 
     public const UTMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
@@ -20,7 +22,7 @@ class AttributionJourney
 
     public function find(mixed $id): ?object
     {
-        if (! is_string($id) || ! preg_match('/^[a-f0-9]{24}$/D', $id)) {
+        if (! is_string($id) || ! preg_match('/^'.self::REFERENCE_PATTERN.'$/D', $id)) {
             return null;
         }
 
@@ -34,14 +36,20 @@ class AttributionJourney
 
     public function create(array $snapshot): object
     {
-        $id = bin2hex(random_bytes(12));
-        DB::table('attribution_journeys')->insert([
-            'id' => $id, 'snapshot' => Crypt::encryptString(json_encode($snapshot, JSON_THROW_ON_ERROR)),
-            'expires_at' => now()->addDays(config('attribution.days', 30)),
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $id = Str::random(10);
+            // The primary key arbitrates collisions atomically, including concurrent requests.
+            $inserted = DB::table('attribution_journeys')->insertOrIgnore([
+                'id' => $id, 'snapshot' => Crypt::encryptString(json_encode($snapshot, JSON_THROW_ON_ERROR)),
+                'expires_at' => now()->addDays(config('attribution.days', 30)),
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+            if ($inserted) {
+                return $this->find($id);
+            }
+        }
 
-        return $this->find($id);
+        throw new \RuntimeException('Unable to allocate an attribution reference.');
     }
 
     public function touch(Request $request): ?object
@@ -82,12 +90,15 @@ class AttributionJourney
 
     public function bind(string $text, string $phone, string $subject): ?string
     {
-        if (! config('attribution.enabled') || ! preg_match('/\(ref:\s*([a-f0-9]{24})\)/i', $text, $match)) {
+        if (! config('attribution.enabled') || ! preg_match('/\(ref:\s*('.self::REFERENCE_PATTERN.')\)/i', $text, $match)) {
             return null;
         }
 
-        return DB::transaction(function () use ($match, $phone, $subject) {
-            $journey = DB::table('attribution_journeys')->where('id', strtolower($match[1]))
+        // Legacy hex references were case-insensitive; new base62 references are not.
+        $id = strlen($match[1]) === 24 ? strtolower($match[1]) : $match[1];
+
+        return DB::transaction(function () use ($id, $phone, $subject) {
+            $journey = DB::table('attribution_journeys')->where('id', $id)
                 ->where('expires_at', '>', now())->lockForUpdate()->first();
             if (! $journey) {
                 return null;

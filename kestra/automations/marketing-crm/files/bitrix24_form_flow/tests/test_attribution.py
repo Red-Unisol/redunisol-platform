@@ -63,6 +63,25 @@ class AttributionTests(unittest.TestCase):
         self.assertEqual(fields["actualAlias1"], added["UF_CRM_ATTR_JSON"])
         self.assertFalse(any(c.args[0] == "crm.lead.update" for c in self.client.call.call_args_list))
 
+    def test_short_reference_survives_lead_and_deal_without_case_conversion(self):
+        self.payload["attribution"]["journey_id"] = "a7Kp3mR9xB"
+        submission = normalize_business_input(self.payload)
+        self.assertEqual(submission_payload_with_original_tracking(self.payload, submission)["attribution"]["journey_id"], "a7Kp3mR9xB")
+        create_lead(self.client, self.config, submission, 42, MagicMock())
+        added = next(c.args[1]["fields"] for c in self.client.call.call_args_list if c.args[0] == "crm.lead.add")
+        self.assertEqual(added["UF_CRM_JOURNEY_ID"], "a7Kp3mR9xB")
+        self.client.call.side_effect = None
+        self.client.call.return_value = {"fields": {name: {"upperName": name} for name in (*CRM_FIELDS, *WA_FIELDS)}}
+        fields = {}
+        copy_to_deal(self.client, added, fields)
+        self.assertEqual(fields["UF_CRM_JOURNEY_ID"], "a7Kp3mR9xB")
+
+    def test_invalid_reference_lengths_and_characters_are_rejected(self):
+        for reference in ["a" * 9, "a" * 11, "a" * 23, "a" * 25, "a7Kp3mR9x_", "a7Kp3mR9xB\n", 123]:
+            with self.subTest(reference=reference), self.assertRaises(ValueError):
+                payload = dict(self.payload, attribution=dict(self.payload["attribution"], journey_id=reference))
+                normalize_business_input(payload)
+
     def test_unknown_source_uses_provisioned_enum_and_can_be_read_by_prefill(self):
         self.payload.update(lead_source="Sin origen", utm_source=None)
         self.payload["attribution"].update(status="unresolved_ref", first={}, last={}, wa_assisted=False, wa={})

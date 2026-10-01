@@ -43,9 +43,11 @@ Para medir cobertura, exigir también una fuente de adquisición identificada.
    `api.whatsapp.com/send` a `/whatsapp/start`, manteniendo número y texto.
    Cubre enlaces React y CMS; clic, clic central y menú contextual.
 3. El backend copia el snapshot a un recorrido independiente con referencia
-   aleatoria de 96 bits (24 caracteres hex). Agrega `(ref: ...)` al texto actual y
+   aleatoria de 10 caracteres alfanumericos (base62, sensible a mayusculas). Agrega `(ref: ...)` al texto actual y
    redirige a WhatsApp. No quita el consentimiento ni la frase del Router.
-   Si falla el registro abre WhatsApp con el mensaje original.
+   Conserva compatibilidad con referencias anteriores de 24 caracteres hex.
+   La clave primaria evita duplicados y la generacion reintenta hasta cinco veces
+   ante una colision. Si falla el registro abre WhatsApp con el mensaje original.
 4. Tras recibir el mensaje autenticado y clasificarlo como entrada del Router,
    se vincula una sola vez la referencia al teléfono normalizado (HMAC, sin guardar
    teléfono en esta tabla) y al canal. Otra identidad/canal no puede reasignarla.

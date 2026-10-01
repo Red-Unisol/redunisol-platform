@@ -32,7 +32,7 @@ def normalize_attribution(value: Any) -> dict[str, Any] | None:
     if not isinstance(value.get("wa", {}), dict):
         raise ValueError("Invalid WhatsApp attribution context.")
     journey_id = value.get("journey_id")
-    if journey_id is not None and (not isinstance(journey_id, str) or not re.fullmatch(r"[a-f0-9]{24}", journey_id)):
+    if journey_id is not None and (not isinstance(journey_id, str) or not re.fullmatch(r"(?:[A-Za-z0-9]{10}|[a-f0-9]{24})", journey_id)):
         raise ValueError("Invalid journey reference.")
     if len(json.dumps(value)) > 16000:
         raise ValueError("Attribution snapshot is too large.")
