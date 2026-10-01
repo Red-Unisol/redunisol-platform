@@ -69,7 +69,8 @@ class EdnaFormTemplate
 
         return ['contentType' => 'TEXT', 'text' => self::TEXT,
             'keyboard' => ['rows' => [['buttons' => [[
-                'text' => self::BUTTON, 'type' => 'URL', 'url' => EdnaFormLink::HOME,
+                // url is the actual click destination; urlPostfix alone did not reach the client.
+                'text' => self::BUTTON, 'type' => 'URL', 'url' => EdnaFormLink::HOME.$postfix,
                 'urlPostfix' => $postfix,
             ]]]]]];
     }

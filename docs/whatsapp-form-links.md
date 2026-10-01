@@ -53,6 +53,13 @@ El enlace ya copiado es una instantánea de esa consulta, sujeto a la vigencia
 normal de la referencia (30 días). La acción de envío vuelve a validar el contexto
 en el momento de enviar. Un enlace copiado no cambia cuando cambia la ficha.
 
+El botón enviado debe incluir la URL completa con `?ref=...` en `buttons.url`,
+además de la parte dinámica en `buttons.urlPostfix`. En el piloto del 2026-10-01,
+enviar la home en `url` y la referencia sólo en `urlPostfix` dejó el botón de
+WhatsApp apuntando a la home, aunque el historial de Edna conservaba el sufijo.
+El estado de entrega no valida el destino: la prueba real debe comprobar la URL
+que abre WhatsApp y la atribución al presentar el formulario desde otro navegador.
+
 Esta funcionalidad no reemplaza `boton_home`, no modifica sus usos existentes,
 no altera el envío automático de la landing del Router y no vuelve a incorporar
 la referencia al mensaje posterior al formulario web.

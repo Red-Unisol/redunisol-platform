@@ -241,6 +241,19 @@ test('timeouts preserve uncertainty and are reconciled without a second send', f
     expect($attempts)->toBe(1);
 });
 
+test('the actual WhatsApp button destination restores attribution in a fresh browser', function () {
+    $record = formLinkRecord();
+    $send = formLinkReady($record);
+    (new SendEdnaFormLink($send->id))->handle();
+    $request = Http::recorded(fn ($r) => str_contains($r->url(), 'cascade/schedule'))->sole()[0];
+    $button = $request['content']['whatsappContent']['keyboard']['rows'][0]['buttons'][0];
+    expect($button['url'])->toBe($record[EdnaFormLink::CRM_FIELD]);
+    parse_str((string) parse_url($button['url'], PHP_URL_QUERY), $query);
+    $input = (new AttributionJourney)->resolveForm(Request::create('/'), $query + ['celular' => '3511234567']);
+    expect($input['utm_source'])->toBe('meta')->and($input['utm_campaign'])->toBe('cordoba')
+        ->and($input['attribution']['wa_assisted'])->toBeTrue();
+});
+
 test('a queued action is cancelled if its recipient, intent, context or activation changes', function (string $case) {
     $record = formLinkRecord();
     $send = formLinkReady($record);
@@ -321,7 +334,8 @@ test('a generic conversation sends an untagged home and never resurrects histori
     (new EdnaFormRequest)->poll();
     (new SendEdnaFormLink(DB::table('edna_form_link_sends')->first()->id))->handle();
     Http::assertSent(fn ($r) => str_contains($r->url(), 'cascade/schedule')
-        && $r['content']['whatsappContent']['keyboard']['rows'][0]['buttons'][0]['urlPostfix'] === '?');
+        && $r['content']['whatsappContent']['keyboard']['rows'][0]['buttons'][0]['urlPostfix'] === '?'
+        && $r['content']['whatsappContent']['keyboard']['rows'][0]['buttons'][0]['url'] === EdnaFormLink::HOME.'?');
     expect(DB::table('edna_form_link_sends')->first()->journey_id)->toBeNull();
 });
 
