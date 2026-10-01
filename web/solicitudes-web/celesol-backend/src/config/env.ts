@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { integrationConfigSchema } from "../modules/transferencias-integration/config";
 
 const normalizeCommaSeparatedList = (value: string) =>
   value
@@ -169,6 +170,9 @@ const envSchema = z.object({
     .default(587),
   SMTP_USER: z.string().min(1, "SMTP_USER is required"),
   APP_NAME: z.string().min(1, "APP_NAME is required").default("Celesol"),
+  TRANSFERENCIAS_API_TOKEN_SHA256: z.string().default(""),
+  TRANSFERENCIAS_API_USER_ID: z.string().default(""),
+  TRANSFERENCIAS_API_CLIENT_ID: z.string().default("transferencias"),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -182,3 +186,8 @@ if (!parsedEnv.success) {
 }
 
 export const env = parsedEnv.data;
+integrationConfigSchema.parse({
+  tokenSha256: env.TRANSFERENCIAS_API_TOKEN_SHA256,
+  userId: env.TRANSFERENCIAS_API_USER_ID,
+  clientId: env.TRANSFERENCIAS_API_CLIENT_ID,
+});

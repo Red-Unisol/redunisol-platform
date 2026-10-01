@@ -488,6 +488,7 @@ describe("SolicitudAdjuntosController", () => {
       { label: "Recibo de Sueldo", value: "Recibo de Sueldo" },
       { label: "Constancia de CBU", value: "Constancia de CBU" },
       { label: "Documentación Adicional", value: "Documentación Adicional" },
+      { label: "Comprobante de transferencia", value: "Comprobante de transferencia" },
     ]);
   });
 });
