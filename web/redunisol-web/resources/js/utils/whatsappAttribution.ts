@@ -4,6 +4,8 @@ export function initializeWhatsAppAttribution() {
         const target =
             event.target instanceof Element ? event.target.closest('a') : null;
         if (!(target instanceof HTMLAnchorElement)) return;
+        // The successful form submission has already captured its attribution.
+        if (target.dataset.whatsappAttribution === 'skip') return;
         let url: URL;
         try {
             url = new URL(target.href);

@@ -906,6 +906,7 @@ function ResultModal({
                         successCta?.enabled && successCta.link ? (
                             <a
                                 href={successCta.link}
+                                data-whatsapp-attribution="skip"
                                 className="block w-full rounded-full bg-[#1e2d3d] px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#2d3f54]"
                             >
                                 {successCta.text || 'Listo'}
