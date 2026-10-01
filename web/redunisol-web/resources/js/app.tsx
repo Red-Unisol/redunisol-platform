@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client';
 
 import { initializeTheme } from './hooks/use-appearance';
 import { formatPageTitle } from './lib/seo';
+import { initializeWhatsAppAttribution } from './utils/whatsappAttribution';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Red Unisol';
 
@@ -18,6 +19,8 @@ createInertiaApp({
             import.meta.glob('./pages/**/*.tsx'),
         ),
     setup({ el, App, props }) {
+        if (props.initialPage.props.attributionEnabled)
+            initializeWhatsAppAttribution();
         const root = createRoot(el);
 
         root.render(

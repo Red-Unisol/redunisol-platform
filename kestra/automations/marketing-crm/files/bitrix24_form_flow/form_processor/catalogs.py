@@ -107,6 +107,7 @@ SITUACIONES_LABORALES = Catalog(
 
 ORIGENES_LEAD = Catalog(
     [
+        ("Sin origen", "sin_origen"),
         ("Google", "2423"),
         ("Facebook", "2425"),
         ("Instagram", "2427"),

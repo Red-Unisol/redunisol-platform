@@ -5,6 +5,7 @@ import json
 from typing import Any
 from urllib.parse import parse_qs
 
+from .attribution import normalize_attribution
 from .catalogs import BANCOS, ORIGENES_LEAD, PROVINCIAS, SITUACIONES_LABORALES, CatalogItem
 from .normalization import normalize_cuil, normalize_email, normalize_full_name, normalize_whatsapp
 
@@ -26,6 +27,7 @@ class NormalizedInput:
     utm_campaign: str | None = None
     utm_term: str | None = None
     utm_content: str | None = None
+    attribution: dict[str, Any] | None = None
     recibo_url: str | None = None
 
 
@@ -88,6 +90,7 @@ def normalize_business_input(payload: dict[str, Any]) -> NormalizedInput:
             _first(payload, ["lead_source", "origen_lead", "origen_formulario", "origenFormulario"]),
             "lead_source",
         ),
+        attribution=normalize_attribution(payload.get("attribution")),
         utm_source=_optional_string(payload.get("utm_source")),
         utm_medium=_optional_string(payload.get("utm_medium")),
         utm_campaign=_optional_string(payload.get("utm_campaign")),

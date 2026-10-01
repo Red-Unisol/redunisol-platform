@@ -25,7 +25,7 @@ class SubmitFormToKestra
 
     private function buildPayload(array $input, array $prequalification): array
     {
-        $leadSource = $this->resolveLeadSource($input['utm_source'] ?? null);
+        $leadSource = $this->resolveLeadSource($input['utm_source'] ?? null, isset($input['attribution']));
 
         return array_filter([
             'full_name' => $this->inferFullName($input),
@@ -37,6 +37,7 @@ class SubmitFormToKestra
             'employment_status' => $this->normalizeString($input['situacion_laboral'] ?? null),
             'payment_bank' => $this->normalizeString($input['banco'] ?? null),
             'lead_source' => $leadSource,
+            'attribution' => $input['attribution'] ?? null,
             'landing_slug' => $this->normalizeString($input['landing_slug'] ?? null),
             'landing_title' => $this->normalizeString($input['landing_title'] ?? null),
             'landing_url' => $this->normalizeString($input['landing_url'] ?? null),
@@ -79,7 +80,7 @@ class SubmitFormToKestra
         return 'Lead Web Redunisol';
     }
 
-    private function resolveLeadSource(?string $utmSource): string
+    private function resolveLeadSource(?string $utmSource, bool $attributed = false): string
     {
         $source = Str::of((string) $utmSource)->trim()->lower()->toString();
 
@@ -93,7 +94,7 @@ class SubmitFormToKestra
             default => null,
         };
 
-        return $mapped ?? (string) config('services.kestra.default_lead_source', 'Google');
+        return $mapped ?? ($attributed ? 'Sin origen' : (string) config('services.kestra.default_lead_source', 'Google'));
     }
 
     private function normalizeString(mixed $value): ?string

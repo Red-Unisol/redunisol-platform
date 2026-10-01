@@ -546,6 +546,9 @@ def submission_payload_with_original_tracking(
         if value is not None and str(value).strip():
             normalized_payload[key] = str(value).strip()
 
+    if submission.attribution is not None:
+        normalized_payload["attribution"] = submission.attribution
+
     return normalized_payload
 
 

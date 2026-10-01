@@ -23,6 +23,11 @@ class EdnaRouterResult
             return;
         }
         $route = (new EdnaLandingRoute)->resolve($payload);
+        if (config('attribution.enabled') && ($send->journey_id ?? null)
+            && (new AttributionJourney)->find($send->journey_id)) {
+            $route['landing_url'] .= '&ref='.$send->journey_id;
+            $route['message_text'] = "Gracias por completar tus datos. Podés continuar tu consulta acá:\n".$route['landing_url'];
+        }
         if (DB::table('edna_router_results')->where('flow_send_id', $send->id)->exists()) {
             return;
         }

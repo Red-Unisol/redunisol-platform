@@ -27,6 +27,8 @@ class EdnaFlowRouter
 
             return;
         }
+        $journeyId = (new AttributionJourney)->bind((string) ($payload['messageContent']['text'] ?? ''),
+            (string) $payload['subscriber']['identifier'], (string) $event->subject_id);
         $received = CarbonImmutable::parse($payload['receivedAt']);
         $start = config('edna.router_start_at');
         if (! $start || ! config('edna.api_key') || ! preg_match('/^[0-9]+$/D', (string) config('edna.cascade_id'))) {
@@ -65,6 +67,7 @@ class EdnaFlowRouter
         }
         $id = DB::table('edna_flow_sends')->insertGetId([
             'request_id' => (string) Str::uuid(), 'entry_event_id' => $event->id,
+            'journey_id' => $journeyId,
             'scope' => $scope, 'subject_id' => $event->subject_id,
             'cascade_id' => (string) config('edna.cascade_id'), 'flow_id' => self::FLOW_ID,
             'recipient' => Crypt::encryptString($phone), 'state' => 'pending',

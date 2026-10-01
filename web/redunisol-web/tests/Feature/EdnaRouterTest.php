@@ -3,6 +3,7 @@
 use App\Jobs\ReceiveEdnaInKestra;
 use App\Jobs\ReconcileEdnaFlow;
 use App\Jobs\SendEdnaFlow;
+use App\Services\AttributionJourney;
 use App\Services\EdnaFlowRouter;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
@@ -338,3 +339,22 @@ test('incomplete enabled configuration leaves the entry pending without sending'
         ->and(DB::table('edna_incoming_events')->find($e->id)->status)->toBe('pending');
     Http::assertNotSent(fn ($r) => str_contains($r->url(), 'app.edna.io'));
 })->with(['api_key', 'cascade_id', 'router_start_at']);
+
+test('web reference is bound and retained once through inbox retries and router cooldown', function () {
+    config()->set('attribution.enabled', true);
+    $service = new AttributionJourney;
+    $journey = $service->create(['version' => 1, 'first' => ['utm_source' => 'meta'], 'last' => ['utm_source' => 'meta']]);
+    $event = routerInbound(['messageContent' => ['type' => 'TEXT',
+        'text' => 'Hola, vengo del sitio web de Red Unisol. (ref: '.$journey->id.')']]);
+    (new ReceiveEdnaInKestra($event->id))->handle();
+    (new ReceiveEdnaInKestra($event->id))->handle();
+    expect(DB::table('edna_flow_sends')->count())->toBe(1);
+    expect(DB::table('edna_flow_sends')->first()->journey_id)->toBe($journey->id);
+    expect($service->find($journey->id)->recipient_hash)->toBe($service->phoneHash('5493510000000'));
+    $second = $service->create(['version' => 1, 'first' => ['utm_source' => 'google'], 'last' => ['utm_source' => 'google']]);
+    $event2 = routerInbound(['messageContent' => ['type' => 'TEXT',
+        'text' => 'Hola, vengo del sitio web de Red Unisol. (ref: '.$second->id.')']]);
+    (new ReceiveEdnaInKestra($event2->id))->handle();
+    expect(DB::table('edna_flow_sends')->count())->toBe(1);
+    expect(DB::table('edna_flow_sends')->first()->journey_id)->toBe($journey->id);
+});

@@ -6,6 +6,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- [Atribución web–WhatsApp (23229)](docs/technical/WEB_WHATSAPP_ATTRIBUTION.md): snapshots de origen, referencia en conversación/formulario y herencia al deal. Primera entrega apagada por defecto.
+
 - `flows/bitrix24_historical_rejection_migration.yaml`: migración nocturna reanudable de rechazos históricos; inventario privado y avance persistente en la VPS. Ver [operación e importación](bitrix/rejection-notifications/historical-migration.md).
 
 - `flows/edna_incoming_webhook.yaml` y `files/edna_incoming/`: interpreta entradas web y respuestas FLOW de Edna; el inbox Laravel registra envíos automáticos y correlaciona respuestas con el historial de Edna al habilitar el router. [Contrato y activación](docs/technical/EDNA_INCOMING_WEBHOOK.md).
