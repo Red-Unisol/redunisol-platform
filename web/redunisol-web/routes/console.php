@@ -3,6 +3,10 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('edna:form-links poll')->everyMinute()->withoutOverlapping(5);
+Schedule::command('edna:form-links prune --apply')->dailyAt('04:20')->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

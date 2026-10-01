@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'form_links_enabled' => (bool) env('EDNA_FORM_LINKS_ENABLED', false),
+    'form_link_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_FORM_LINK_RECIPIENTS', ''))))),
+    'form_link_send_enabled' => (bool) env('EDNA_FORM_LINK_SEND_ENABLED', false),
     'enabled' => (bool) env('EDNA_INCOMING_ENABLED', false),
     // This is the inbound webhook key, NOT the key used to call the Edna API.
     'webhook_key' => env('EDNA_INCOMING_WEBHOOK_KEY', ''),
