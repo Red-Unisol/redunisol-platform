@@ -114,14 +114,20 @@ def receiver_stats():
     return stats
 
 
-def validate_live(client, approved):
+def validate_live(client, approved, *, require_sources=True):
     initial = core.read_json(approved / 'initial-counts.json')
     reasons = client.call('crm.lead.userfield.list', {'filter': {'FIELD_NAME': core.REASON}})['result']
     flatten = lambda fields: {(str(e['ID']), e['XML_ID'], e['VALUE']) for f in fields for e in f['LIST']}
     if flatten(reasons) != flatten(initial['reason_fields']):
         raise ValueError('Live reason catalog changed')
     stages = {s['STATUS_ID']: s for s in client.call('crm.status.list', {'filter': {'ENTITY_ID': 'STATUS'}})['result']}
+    if stages.get(core.TARGET, {}).get('SEMANTICS') != 'F':
+        raise ValueError('Live target stage catalog changed')
     for source in core.read_json(approved / 'manifest.json')['sources']:
+        # Read-only inspection survives retirement of the empty legacy stages.
+        # Run/resume keep the original strict catalog contract.
+        if not require_sources and source['source_stage'] not in stages:
+            continue
         current = stages.get(source['source_stage'], {})
         if current.get('SEMANTICS') != 'F' or current.get('NAME') != source['reason_label']:
             raise ValueError('Live source stage catalog changed')
@@ -239,7 +245,7 @@ def main():
                 progress(ROOT, candidates, journal, 'checking')
                 client = core.Client(os.environ['BITRIX24_BASE_URL'], os.environ['BITRIX24_WEBHOOK_PATH'])
                 phase = 'validate_live_catalogs'
-                validate_live(client, ROOT / 'approved')
+                validate_live(client, ROOT / 'approved', require_sources=mode != 'inspect')
                 phase = mode
                 if mode == 'inspect':
                     result = progress(ROOT, candidates, journal, 'inspected',

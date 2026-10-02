@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 from contextlib import nullcontext
 
@@ -127,7 +127,24 @@ class RuntimeTests(unittest.TestCase):
         manifest = Path(__file__).parents[1] / 'bitrix/rejection-notifications/manifest.json'
         self.assertEqual(hashlib.sha256(manifest.read_text(encoding="utf-8").encode()).hexdigest(), run.APPROVAL['sha256']['manifest.json'])
 
-    def test_flow_runs_only_at_night_and_dev_drops_schedule(self):
+    def test_retired_sources_allow_inspection_but_not_mutating_modes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'initial-counts.json').write_text(json.dumps({'reason_fields': []}))
+            (root / 'manifest.json').write_text(json.dumps({'sources': [
+                {'source_stage': '3', 'reason_label': 'AUTONOMO'}]}))
+            client = Mock()
+            client.call.side_effect = lambda method, _: {'result': (
+                [] if method == 'crm.lead.userfield.list' else
+                [{'STATUS_ID': core.TARGET, 'SEMANTICS': 'F'}])}
+            run.validate_live(client, root, require_sources=False)
+            with self.assertRaisesRegex(ValueError, 'source stage'):
+                run.validate_live(client, root)
+            client.call.side_effect = lambda *_: {'result': []}
+            with self.assertRaisesRegex(ValueError, 'target stage'):
+                run.validate_live(client, root, require_sources=False)
+
+    def test_closed_inventory_has_no_schedule_in_any_environment(self):
         import importlib.util
         import yaml
         spec = importlib.util.spec_from_file_location('deployment', Path(__file__).parents[3] / 'tools/deploy_kestra.py')
@@ -136,11 +153,13 @@ class RuntimeTests(unittest.TestCase):
         path = Path(__file__).parents[1] / 'flows/bitrix24_historical_rejection_migration.yaml'
         source = yaml.safe_load(path.read_text())
         self.assertEqual(source['inputs'][0]['defaults'], 'inspect')
-        self.assertEqual(source['triggers'][0]['cron'], '*/10 0-5,22-23 * * *')
-        self.assertEqual(source['triggers'][0]['inputs'], {'mode':'run'})
+        self.assertNotIn('triggers', source)
         self.assertEqual(source['concurrency']['limit'], 1)
         self.assertNotIn('retry', source['tasks'][0])
-        self.assertNotIn('triggers', yaml.safe_load(deploy.normalize_flow_source(path, 'redunisol.dev.marketing-crm', 'dev')))
+        for environment in ('dev', 'prod'):
+            deployed = yaml.safe_load(deploy.normalize_flow_source(
+                path, f'redunisol.{environment}.marketing-crm', environment))
+            self.assertNotIn('triggers', deployed)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,153 @@
 # Migración histórica de rechazos en Kestra
 
+## Estado al 02/10/2026: migración y retiro de etapas completados
+
+El cron se retira del YAML. El flow permanece disponible para inspección manual;
+se conservan código, inventario aprobado y diario. No reactivar la programación
+para intentar vaciar las etapas: el inventario es cerrado y no incluye todos los
+prospectos que hoy ocupan esos estados.
+
+Publicado únicamente este flow desde `8d31522` mediante el deploy del repositorio.
+La relectura de producción confirmó **revisión 4, sin triggers**, conservando
+tareas, inputs y outputs de la revisión 3. El cambio debe incorporarse a `main`
+para que los siguientes despliegues del dominio mantengan retirado el cron.
+
+La última escritura nocturna terminó a las **05:08 ART**. El diario registra
+75.254 candidatos procesados: **75.242 migrados y verificados**, **12 omitidos por
+cambios**, cero pendientes, cero escrituras inciertas y ninguna pausa. El último
+tick `2qq1dL8F2CUkzbeoFJ0I4g` terminó correctamente a las 05:50 ART y conservó esas
+cantidades. SHA-256 del diario nocturno:
+`cd8ca8425ac6db9ff00cbbd74c824f280242da6bb31c0b258e2e2ea5daa786af`.
+
+La revisión de cierre releyó los últimos 100 migrados y confirmó los tres campos
+esperados. No es una revalidación completa del estado actual de los 75.242 casos.
+La plantilla 889 conserva el filtro conjunto: RESULTADO PERDIDO, ID > 396841 y
+marca de aviso vacía, verificado en el diseñador sin guardar cambios.
+
+Se revisaron individualmente los 12 omitidos:
+
+- Nueve conservaban etapa, fecha de creación, motivo y marca del inventario;
+  solamente había cambiado la fecha de modificación. Se completaron con el motivo
+  original y `HISTORICAL`, releyendo antes y después y conservando un diario separado.
+- Dos ya estaban convertidos: se excluyen definitivamente de esta migración.
+- Uno pasó de AUH a PRIVADOS: se conserva su clasificación actual y queda excluido
+  del inventario original. No se le aplica el motivo AUH ni se infiere uno nuevo.
+
+El balance del inventario tras esas correcciones es **75.251 migrados** y **tres
+exclusiones revisadas**. El diario nocturno permanece inalterado y sigue mostrando
+12 omisiones; la evidencia de las nueve correcciones se guarda separadamente.
+Una segunda lectura confirmó los nueve resultados y el control de comunicaciones
+no encontró actividades nuevas, cambios de chats ni nuevos IDs de mensajes entre
+las dos observaciones. Esto no acredita entrega ni ausencia de envíos futuros.
+Las copias privadas de la revisión están en
+`.local/artifacts/rejection-close-20261002/` del checkout operativo; no versionar
+los datos individuales ni reemplazar el inventario aprobado.
+
+### Diagnóstico previo a la normalización final
+
+La consulta completa de las 16 etapas encontró 115 prospectos antes de las nueve
+correcciones: 37 posteriores al corte, 26 con marca `PROCESSED` y tres con marca
+`HISTORICAL`. Esto acredita ocupación actual, no atribuye los cambios a un robot o
+persona determinados. No ampliar la migración automáticamente ni sobrescribir
+motivos contradictorios.
+
+| Etapa | Prospectos antes de las correcciones |
+| --- | ---: |
+| OTRA PROVINCIA | 10 |
+| SIT NEG BCRA | 11 |
+| OTRO BANCO | 13 |
+| NO TIENE ANTIGUEDAD | 0 |
+| AUTONOMO | 19 |
+| AUH (asignaciones) | 2 |
+| JUBILADO PROVINCIAL | 7 |
+| PENSIONADO | 4 |
+| JUBILADO NACIONAL | 12 |
+| PUBLICO NACIONAL | 1 |
+| NO TIENE RECIBO (en negro) | 1 |
+| CONTRATADO | 0 |
+| NUMERO INCORRECTO | 0 |
+| PRIVADOS | 18 |
+| MUNICIPAL | 15 |
+| NO CUMPLE REQUISITOS PARA CONVENIO | 2 |
+
+Tras las nueve correcciones se recontaron las 16 etapas: **106 prospectos**.
+El historial confirma que los tres casos con `HISTORICAL` habían llegado a
+RESULTADO PERDIDO y después volvieron a otras etapas antiguas. Las seis muestras
+de historial consultadas (esos tres, dos nuevos y el omitido con cambio de etapa)
+registran la última modificación bajo el usuario 57; ese dato no identifica por
+sí solo si la acción fue manual o ejecutada por una integración con ese usuario.
+
+El panel de automatizaciones todavía muestra robots de comunicación en las etapas
+originales, incluidas las vacías. Además, `JUNK` es un estado de sistema
+(`SYSTEM=Y`). La búsqueda en el código vigente de marketing y web no encontró los
+IDs históricos alfanuméricos, pero no reemplaza una auditoría de procesos Bitrix,
+integraciones externas y asignaciones numéricas.
+
+Ese diagnóstico motivó una autorización adicional para los 106 restantes. El
+resultado posterior se registra a continuación y reemplaza el pendiente de limpieza.
+
+### Normalización final autorizada y verificada
+
+Santiago aprobó el criterio **la etapa de rechazo actual prevalece sobre el motivo
+anterior**, aplicado exclusivamente a los 106 IDs revisados (69 anteriores al corte
+y 37 posteriores). No cambia las reglas comerciales ni recalifica casos activos.
+Ver decisión `LEAD-DEC-REJ-20261002` en
+[el registro funcional](../../docs/commercial-rules/DECISION_LOG.md).
+
+- **106/106 verificados** en RESULTADO PERDIDO, con el motivo correspondiente a su
+  etapa de origen. Relectura antes de cada lote; cero cambios concurrentes omitidos
+  y cero escrituras inciertas.
+- **26 PROCESSED conservados; 80 HISTORICAL** (tres ya tenían la marca, 77 estaban
+  vacíos). Se conservaron responsables, contactos y demás datos comerciales.
+- El control de los 106 no detectó actividades nuevas, cambios de chats ni nuevos
+  IDs de mensajes entre las observaciones. Es una comprobación temporal, no una
+  auditoría de entrega de todos los proveedores.
+- Recuento de las 16 etapas: **cero prospectos**. Se respaldaron sus 16 plantillas,
+  la plantilla central 889 y el catálogo antes de intervenir.
+- **31 robots antiguos desactivados y guardados** mediante acciones grupales.
+  No se borraron plantillas de procesos arbitrariamente.
+- Se eliminaron por REST **15 estados no sistémicos**, tras releer individualmente
+  que seguían vacíos. La relectura del catálogo confirmó su ausencia. Se conservaron
+  los motivos de rechazo del campo personalizado y el manifiesto histórico original.
+- **JUNK se conserva**, por ser de sistema, con sus dos robots desactivados. No usar
+  esa etapa para rechazos nuevos; utilizar RESULTADO PERDIDO y su motivo. No se
+  activó una redirección ni se forzó la eliminación del estado del sistema.
+- Los procesos vigentes NEW (1), GANADO (159), SIN RESPUESTA (709) y general (1019)
+  revisados no contienen actividades que asignen esas etapas. Esta revisión no
+  acredita una auditoría de toda integración externa o acción manual.
+
+El caso excluido del inventario original por pasar de AUH a PRIVADOS quedó incluido
+en esta normalización separada con motivo PRIVADOS. Tres de los 106 ya figuraban
+migrados en el diario original y habían regresado a etapas antiguas: no sumar los
+106 al balance original como si todos fueran prospectos únicos adicionales.
+
+La evidencia privada está en
+`.local/artifacts/rejection-close-20261002/remaining-migration/`: plan y valores
+previos, diario por lote, lectura final, controles de comunicaciones, catálogos y
+diario de eliminación de etapas, exportaciones BPT. No contiene una nueva lista
+abierta de candidatos ni debe utilizarse para reejecutar automáticamente.
+
+La inspección manual admite fuentes ya retiradas y sigue verificando motivos,
+etapa destino y resultados migrados. Los modos de escritura conservan la validación
+estricta de todas las fuentes; después del retiro no deben ejecutarse. El cron sigue
+ausente. No restaurar las etapas o robots desde los respaldos como rollback rutinario.
+
+Se publicó únicamente `bitrix24_rejection_history/run.py` desde `fe2f802`, mediante
+el deploy del repositorio; el archivo descargado coincide byte a byte. La ejecución
+manual `3sLRUOGKQ5TTC9s73ZWrYE` terminó SUCCESS con `status=inspected`,
+`live_verified=100`, `remaining=0`, `uncertain=0`, `paused=false` y cero mutaciones
+externas. El flow permanece en revisión 4 sin triggers. La exportación final de la
+plantilla central 889 conserva exactamente el mismo árbol de actividades que el
+respaldo previo; JUNK exporta ambas actividades de comunicación con `Activated=N`.
+
+La checklist de cierre de la tarea 22751 quedó completa. La tarea permanece abierta
+hasta incorporar el PR #415 a `main`; no se publicaron mensajes en chats. Validación
+local: estructura Kestra correcta; 106 tests, 105 correctos y uno omitido en Windows
+por requerir locks Linux. Los checks remotos del PR quedan pendientes de revisión.
+
+
+## Operación anterior y recuperación
+
 El flow `bitrix24_historical_rejection_migration`, en
 `redunisol.prod.marketing-crm`, sustituye la tarea de Windows
 `RedUnisol-HistoricalRejections-20260924`. El YAML y su código Python viven en
@@ -22,7 +170,7 @@ verificados y 75.179 pendientes**, sin intentos inciertos. No confundir `recover
 
 ## Ejecución y garantías
 
-- Cada diez minutos entre las 22:00 y las 06:00 de Argentina, solo en producción.
+- Antes del cierre: cada diez minutos entre las 22:00 y las 06:00 de Argentina, solo en producción.
   Cada ejecución trabaja como máximo ocho minutos; timeout de tarea: doce minutos.
   El horario se vuelve a comprobar inmediatamente antes de escribir.
 - Una ejecución simultánea en Kestra y un bloqueo de sistema operativo en el
