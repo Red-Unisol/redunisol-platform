@@ -1,5 +1,91 @@
 # Migración histórica de rechazos en Kestra
 
+## Estado al 02/10/2026: inventario procesado, limpieza pendiente
+
+El cron se retira del YAML. El flow permanece disponible para inspección manual;
+se conservan código, inventario aprobado y diario. No reactivar la programación
+para intentar vaciar las etapas: el inventario es cerrado y no incluye todos los
+prospectos que hoy ocupan esos estados.
+
+La última escritura nocturna terminó a las **05:08 ART**. El diario registra
+75.254 candidatos procesados: **75.242 migrados y verificados**, **12 omitidos por
+cambios**, cero pendientes, cero escrituras inciertas y ninguna pausa. El último
+tick `2qq1dL8F2CUkzbeoFJ0I4g` terminó correctamente a las 05:50 ART y conservó esas
+cantidades. SHA-256 del diario nocturno:
+`cd8ca8425ac6db9ff00cbbd74c824f280242da6bb31c0b258e2e2ea5daa786af`.
+
+La revisión de cierre releyó los últimos 100 migrados y confirmó los tres campos
+esperados. No es una revalidación completa del estado actual de los 75.242 casos.
+La plantilla 889 conserva el filtro conjunto: RESULTADO PERDIDO, ID > 396841 y
+marca de aviso vacía, verificado en el diseñador sin guardar cambios.
+
+Se revisaron individualmente los 12 omitidos:
+
+- Nueve conservaban etapa, fecha de creación, motivo y marca del inventario;
+  solamente había cambiado la fecha de modificación. Se completaron con el motivo
+  original y `HISTORICAL`, releyendo antes y después y conservando un diario separado.
+- Dos ya estaban convertidos: se excluyen definitivamente de esta migración.
+- Uno pasó de AUH a PRIVADOS: se conserva su clasificación actual y queda excluido
+  del inventario original. No se le aplica el motivo AUH ni se infiere uno nuevo.
+
+El balance del inventario tras esas correcciones es **75.251 migrados** y **tres
+exclusiones revisadas**. El diario nocturno permanece inalterado y sigue mostrando
+12 omisiones; la evidencia de las nueve correcciones se guarda separadamente.
+Una segunda lectura confirmó los nueve resultados y el control de comunicaciones
+no encontró actividades nuevas, cambios de chats ni nuevos IDs de mensajes entre
+las dos observaciones. Esto no acredita entrega ni ausencia de envíos futuros.
+Las copias privadas de la revisión están en
+`.local/artifacts/rejection-close-20261002/` del checkout operativo; no versionar
+los datos individuales ni reemplazar el inventario aprobado.
+
+### Condiciones que impiden retirar las etapas
+
+La consulta completa de las 16 etapas encontró 115 prospectos antes de las nueve
+correcciones: 37 posteriores al corte, 26 con marca `PROCESSED` y tres con marca
+`HISTORICAL`. Esto acredita ocupación actual, no atribuye los cambios a un robot o
+persona determinados. No ampliar la migración automáticamente ni sobrescribir
+motivos contradictorios.
+
+| Etapa | Prospectos antes de las correcciones |
+| --- | ---: |
+| OTRA PROVINCIA | 10 |
+| SIT NEG BCRA | 11 |
+| OTRO BANCO | 13 |
+| NO TIENE ANTIGUEDAD | 0 |
+| AUTONOMO | 19 |
+| AUH (asignaciones) | 2 |
+| JUBILADO PROVINCIAL | 7 |
+| PENSIONADO | 4 |
+| JUBILADO NACIONAL | 12 |
+| PUBLICO NACIONAL | 1 |
+| NO TIENE RECIBO (en negro) | 1 |
+| CONTRATADO | 0 |
+| NUMERO INCORRECTO | 0 |
+| PRIVADOS | 18 |
+| MUNICIPAL | 15 |
+| NO CUMPLE REQUISITOS PARA CONVENIO | 2 |
+
+Tras las nueve correcciones se recontaron las 16 etapas: **106 prospectos**.
+El historial confirma que los tres casos con `HISTORICAL` habían llegado a
+RESULTADO PERDIDO y después volvieron a otras etapas antiguas. Las seis muestras
+de historial consultadas (esos tres, dos nuevos y el omitido con cambio de etapa)
+registran la última modificación bajo el usuario 57; ese dato no identifica por
+sí solo si la acción fue manual o ejecutada por una integración con ese usuario.
+
+El panel de automatizaciones todavía muestra robots de comunicación en las etapas
+originales, incluidas las vacías. Además, `JUNK` es un estado de sistema
+(`SYSTEM=Y`). La búsqueda en el código vigente de marketing y web no encontró los
+IDs históricos alfanuméricos, pero no reemplaza una auditoría de procesos Bitrix,
+integraciones externas y asignaciones numéricas.
+
+No se eliminan estados ni plantillas en este cierre. Antes de hacerlo, investigar
+las entradas posteriores al corte y los cambios de etapa después de migrar;
+revisar los motivos contradictorios; retirar las referencias verificadas con
+respaldo actual y comprobar otra vez cero prospectos. La tarea 22751 debe seguir
+abierta por esta limpieza, aunque el inventario original ya esté procesado.
+
+## Operación anterior y recuperación
+
 El flow `bitrix24_historical_rejection_migration`, en
 `redunisol.prod.marketing-crm`, sustituye la tarea de Windows
 `RedUnisol-HistoricalRejections-20260924`. El YAML y su código Python viven en
@@ -22,7 +108,7 @@ verificados y 75.179 pendientes**, sin intentos inciertos. No confundir `recover
 
 ## Ejecución y garantías
 
-- Cada diez minutos entre las 22:00 y las 06:00 de Argentina, solo en producción.
+- Antes del cierre: cada diez minutos entre las 22:00 y las 06:00 de Argentina, solo en producción.
   Cada ejecución trabaja como máximo ocho minutos; timeout de tarea: doce minutos.
   El horario se vuelve a comprobar inmediatamente antes de escribir.
 - Una ejecución simultánea en Kestra y un bloqueo de sistema operativo en el

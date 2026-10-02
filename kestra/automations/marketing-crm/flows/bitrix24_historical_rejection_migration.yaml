@@ -1,13 +1,12 @@
 id: bitrix24_historical_rejection_migration
 namespace: redunisol
-description: Migra el inventario historico aprobado en lotes nocturnos reanudables,
-  sin avisos ni dependencia de la PC.
+description: Conserva la inspeccion manual del inventario historico procesado.
+  Cron retirado tras el cierre del inventario el 02/10/2026.
 labels:
   env: prod
   team: redunisol
   domain: marketing-crm
-  kind: schedule
-  schedule_scope: prod_only
+  kind: manual
 concurrency:
   limit: 1
   behavior: QUEUE
@@ -57,13 +56,6 @@ tasks:
     BITRIX24_WEBHOOK_PATH: '{{ secret(''BITRIX24_WEBHOOK_PATH'') }}'
   commands:
   - python -m bitrix24_rejection_history.run
-triggers:
-- id: lotes_nocturnos
-  type: io.kestra.plugin.core.trigger.Schedule
-  cron: '*/10 0-5,22-23 * * *'
-  timezone: America/Argentina/Buenos_Aires
-  inputs:
-    mode: run
 outputs:
 - id: status
   type: STRING
