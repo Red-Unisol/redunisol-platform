@@ -105,6 +105,15 @@ preclasificación. Por lo tanto, la respuesta no confirma que el lead ya exista 
 Bitrix; confirma que el trabajo de persistencia fue encolado.
 
 
-Desde el 14/09/2026, Policía Federal + CABA devuelve `prequalified: true` y
+Del 14/09/2026 al 01/10/2026 inclusive, Policía Federal + CABA devuelve `prequalified: true` y
 `route_to_whatsapp: true`, con motivo `policia_federal_caba_commercial`.
-Versión de regla: `2026-09-14-policia-federal-caba-commercial`.
+
+Desde el 02/10/2026 (fecha de Buenos Aires), y hasta nuevo aviso, devuelve
+`prequalified: true`, `route_to_whatsapp: false` y `reason: province_not_eligible`.
+La conversión de lead calificado se mantiene. La persistencia en Bitrix continúa
+y el lead termina perdido con motivo `OTRA PROVINCIA` (`3933`), sin negociación.
+La clasificación del CRM evalúa la fecha `DATE_CREATE`; no se reprocesan cohortes
+anteriores. Regla funcional: `PFC-PRE-040` de
+[`POLICIA_FEDERAL_CABA.md`](../commercial-rules/POLICIA_FEDERAL_CABA.md).
+
+Versión de regla: `2026-10-02-policia-federal-caba-paused`.
