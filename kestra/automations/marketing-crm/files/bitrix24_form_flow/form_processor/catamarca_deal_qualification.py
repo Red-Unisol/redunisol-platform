@@ -532,9 +532,10 @@ def qualify_catamarca_deal(
             not _business_hours_gate_enabled(source)
             or (within_business_hours and created_within_distribution_window)
         )
+        waiting_reason = "routing_pool_paused" if not exc.configured_pool else "assignment_queued"
         distribution = DistributionDecision(
             "queued" if can_enqueue else "manual_owner",
-            "assignment_queued" if can_enqueue else "no_online_sellers",
+            waiting_reason if can_enqueue else "no_online_sellers",
             "assignment_queue" if can_enqueue else "no_online_sellers_manual",
         )
         update_fields: dict[str, Any] = {
@@ -582,7 +583,7 @@ def qualify_catamarca_deal(
             deal_id=deal_id_int,
             lead_id=lead_id,
             stage_id=queue_stage,
-            reason="assignment_queued" if can_enqueue else "no_online_sellers",
+            reason=waiting_reason if can_enqueue else "no_online_sellers",
             assigned_by_id=config.deal.provisional_user_id,
             assigned_by_name="Maru Lopez",
             routing_bucket=bucket.key,
@@ -881,7 +882,7 @@ def _retry_queued_deal(
         return _queue_context_result(
             client, config, deal, logger,
             action="queue_waiting",
-            reason="assignment_queue_waiting",
+            reason="routing_pool_paused" if not exc.configured_pool else "assignment_queue_waiting",
             processed_at=processed_at,
             assignment_strategy="assignment_queue_waiting",
             configured_pool=exc.configured_pool,

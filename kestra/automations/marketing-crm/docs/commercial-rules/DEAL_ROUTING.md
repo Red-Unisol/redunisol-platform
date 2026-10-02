@@ -123,6 +123,14 @@ vendedores online, queda con Maru en `COLA DE DISTRIBUCION KESTRA`.
 - el remanente no vuelve a entrar automaticamente el lunes.
 
 Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola.
+Un pool explícitamente vacío significa **grupo pausado**, incluso si un vendedor
+anterior sigue conectado. Sus casos distribuibles salen de Pendiente de calificación
+y entran a la cola temporal con motivo `routing_pool_paused`; conservan la decisión
+comercial, línea y etapa destino. No se usa un vendedor de fallback ni otro bucket,
+y no se transfiere el chat durante la pausa. La cola registra espera normal, permite
+avanzar a otros grupos y retoma el caso cuando haya vendedores habilitados y online.
+Se conserva el cierre semanal y el tratamiento fuera de horario ya definidos.
+
 Los rechazos se aplican directamente, sin buscar vendedor, asignar, transferir chat
 ni ingresar a la cola. Los casos de revision comercial o de enrutamiento mantienen
 sus circuitos propios.
