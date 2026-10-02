@@ -65,6 +65,7 @@ REASON_LABELS = {
     "no_matching_bucket": "No existe un grupo de distribución configurado para esos datos.",
     "outside_business_hours": "La negociación ingresó fuera del horario de distribución automática.",
     "no_online_sellers": "No había vendedores del grupo conectados en Bitrix.",
+    "routing_pool_paused": "El grupo está pausado porque no tiene vendedores habilitados; la negociación espera en cola.",
     "assignment_queued": "No había vendedores disponibles; la negociación quedó en cola temporal.",
     "assignment_queue_waiting": "La negociación continúa en cola porque su grupo no tiene vendedores disponibles.",
     "assignment_queue_distributed": "Apareció un vendedor disponible y la negociación salió de la cola.",

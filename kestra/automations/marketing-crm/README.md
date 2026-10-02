@@ -6,6 +6,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- [Incidente 23271: grupos pausados](docs/technical/INCIDENT_23271_PAUSED_ROUTING_POOL.md): evita que un pool vacío bloquee la calificación y conserva sus casos en cola.
+
 - [Atribución web–WhatsApp (23229)](docs/technical/WEB_WHATSAPP_ATTRIBUTION.md): snapshots de origen, referencia en conversación/formulario y herencia al deal. Primera entrega apagada por defecto.
 
 - `flows/bitrix24_historical_rejection_migration.yaml`: inspección manual de la migración histórica, cuyo inventario terminó el 02/10/2026; cron retirado, inventario y diario conservados en la VPS. Los 106 restantes se normalizaron; se retiraron 15 etapas y se conservaron los robots de JUNK desactivados. Ver [cierre y operación](bitrix/rejection-notifications/historical-migration.md).

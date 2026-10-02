@@ -20,7 +20,7 @@ OPEN_LINE_ACTIVITY_PROVIDER_ID = "IMOPENLINES_SESSION"
 
 
 class NoOnlineSellersError(RuntimeError):
-    """Raised when a configured routing pool has no currently available seller."""
+    """No eligible seller, including an explicitly paused (empty) pool."""
 
     def __init__(self, configured_pool: tuple[int, ...]) -> None:
         super().__init__("No hay vendedores online disponibles para asignar la negociacion.")
@@ -229,7 +229,9 @@ def resolve_round_robin_assignee(
     logger: Logger,
 ) -> AssignmentResolution:
     if not pool:
-        raise RuntimeError("No hay vendedores configurados para round-robin de negociaciones.")
+        # An explicit empty pool is an operator pause, not a technical failure.
+        # Use the existing waiting path without falling back to other sellers.
+        raise NoOnlineSellersError(pool)
 
     online_pool = _online_pool_users(client, pool=pool, logger=logger)
     if not online_pool:

@@ -270,3 +270,20 @@ del árbol activo; Git conserva su historial.
   nuevos deben utilizar RESULTADO PERDIDO y el motivo correspondiente.
 - **Evidencia técnica:**
   [cierre de migración](../../bitrix/rejection-notifications/historical-migration.md).
+
+
+## `ROUTE-DEC-23271` — Un grupo pausado no bloquea la calificación global
+
+- **Fecha y aprobación:** 02/10/2026, Santiago, en la revisión de la tarea 23271.
+- **Problema:** el primer caso pendiente pertenece a un pool vacío; la excepción
+  técnica lo deja primero en cada selección y bloquea los casos posteriores.
+- **Decisión:** un pool vacío explícito representa una pausa de distribución. Los
+  casos que requieren vendedor usan la cola temporal existente, sin asignar ni
+  transferir chat; otros buckets siguen avanzando.
+- **Prioridad:** conservar clasificación y rechazos; la pausa no habilita vendedores
+  de respaldo ni modifica las reglas comerciales de Policía Federal CABA.
+- **Ejemplos:** PFA vacío queda en cola aunque Stefania esté online; Córdoba sigue
+  distribuyendo. Al reactivar el pool, se conserva la decisión y se transfiere el
+  chat al vendedor elegido. Fuera de la ventana semanal se conserva gestión manual.
+- **Estado:** implementado y probado; verificación productiva en la documentación
+  técnica del incidente 23271.

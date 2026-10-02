@@ -1539,6 +1539,66 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.chat_transfers, [])
         self.assertNotEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
 
+    def test_empty_pool_moves_oldest_pending_to_queue_and_releases_next_deal(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids.add(8057)  # Online does not override the operator pause.
+        client.leads[990] = self._policia_federal_lead(990)
+        client.leads[991] = self._cordoba_enriched_lead(991, employment_id="1239", bcra_entities=[])
+        client.deals[990] = self._pending_deal(990, 990)
+        client.deals[991] = self._pending_deal(991, 991)
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"policia_federal_caba": []}'
+        env = {**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"}
+        now = datetime.fromisoformat("2026-09-14T12:00:00-03:00")
+        with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
+            result = qualify_catamarca_deal(990, env=env, bitrix_client=client, logger=SilentLogger(), now=now)
+            selected = select_next_pending_catamarca_deal(env=env, bitrix_client=client, logger=SilentLogger(), now=now)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["distribution_reason"], "routing_pool_paused")
+        self.assertEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
+        self.assertEqual(client.deals[990]["assignedById"], 57)
+        self.assertEqual(client.deals[990]["ufCrmKqAction"], "manual_review")
+        self.assertEqual(client.deals[990]["ufCrmKqReason"], "policia_federal_caba_requires_commercial_review")
+        self.assertEqual(client.deals[990]["ufCrmKqStage"], load_config(self.env).deal.manual_review_stage_id)
+        self.assertEqual(selected["deal_id"], 991)
+        self.assertEqual(client.chat_transfers, [])
+        self.assertEqual(client.notifications, [])
+
+    def test_paused_queue_keeps_other_buckets_moving_and_resumes_when_enabled(self) -> None:
+        client = FakeBitrixClient()
+        client.online_user_ids = {8057, 10451}
+        client.leads[990] = self._policia_federal_lead(990)
+        client.leads[991] = self._cordoba_enriched_lead(991, employment_id="1239", bcra_entities=[])
+        for deal_id, bucket in ((990, "policia_federal_caba"), (991, "cordoba_general")):
+            client.deals[deal_id] = self._queued_deal(deal_id, deal_id, bucket, "2026-09-14T10:00:00-03:00")
+            client.open_line_chats[("deal", deal_id)] = [116000 + deal_id]
+        client.deals[990].update(ufCrmKqAction="manual_review",
+                                 ufCrmKqReason="policia_federal_caba_requires_commercial_review",
+                                 ufCrmKqStage=load_config(self.env).deal.manual_review_stage_id)
+        before = dict(client.deals[990])
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"policia_federal_caba": []}'
+        env = {**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/routing"}
+        with patch("bitrix24_form_flow.form_processor.config.urlopen", return_value=response):
+            result = process_distribution_queue(env=env, bitrix_client=client, logger=SilentLogger(),
+                                                now=datetime.fromisoformat("2026-09-14T12:00:00-03:00"))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["waiting_count"], 1)
+        self.assertEqual(result["distributed_count"], 1)
+        self.assertEqual(client.deals[990], before)
+        self.assertEqual(client.deals[991]["assignedById"], 10451)
+        self.assertEqual(len(client.chat_transfers), 1)
+        waiting = next(e for e in result["events"] if e["deal_id"] == 990)
+        self.assertEqual(waiting["distribution_reason"], "routing_pool_paused")
+        self.assertEqual(waiting["transferred_chat_count"], 0)
+        # A later configuration enables the original pool, retaining its decision.
+        result = process_distribution_queue(env=self.env, bitrix_client=client, logger=SilentLogger(),
+                                            now=datetime.fromisoformat("2026-09-14T12:01:00-03:00"))
+        self.assertEqual(result["distributed_count"], 1)
+        self.assertEqual(client.deals[990]["assignedById"], 8057)
+        self.assertEqual(client.deals[990]["stageId"], before["ufCrmKqStage"])
+        self.assertEqual(len(client.chat_transfers), 2)
+
     def test_policia_federal_requires_caba(self) -> None:
         result = prequalify_commercial_fields(
             {
