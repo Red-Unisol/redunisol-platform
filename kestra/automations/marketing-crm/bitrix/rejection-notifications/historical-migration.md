@@ -132,6 +132,20 @@ etapa destino y resultados migrados. Los modos de escritura conservan la validac
 estricta de todas las fuentes; después del retiro no deben ejecutarse. El cron sigue
 ausente. No restaurar las etapas o robots desde los respaldos como rollback rutinario.
 
+Se publicó únicamente `bitrix24_rejection_history/run.py` desde `fe2f802`, mediante
+el deploy del repositorio; el archivo descargado coincide byte a byte. La ejecución
+manual `3sLRUOGKQ5TTC9s73ZWrYE` terminó SUCCESS con `status=inspected`,
+`live_verified=100`, `remaining=0`, `uncertain=0`, `paused=false` y cero mutaciones
+externas. El flow permanece en revisión 4 sin triggers. La exportación final de la
+plantilla central 889 conserva exactamente el mismo árbol de actividades que el
+respaldo previo; JUNK exporta ambas actividades de comunicación con `Activated=N`.
+
+La checklist de cierre de la tarea 22751 quedó completa. La tarea permanece abierta
+hasta incorporar el PR #415 a `main`; no se publicaron mensajes en chats. Validación
+local: estructura Kestra correcta; 106 tests, 105 correctos y uno omitido en Windows
+por requerir locks Linux. Los checks remotos del PR quedan pendientes de revisión.
+
+
 ## Operación anterior y recuperación
 
 El flow `bitrix24_historical_rejection_migration`, en
