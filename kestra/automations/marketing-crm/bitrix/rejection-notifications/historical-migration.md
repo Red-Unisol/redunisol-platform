@@ -7,6 +7,11 @@ se conservan código, inventario aprobado y diario. No reactivar la programació
 para intentar vaciar las etapas: el inventario es cerrado y no incluye todos los
 prospectos que hoy ocupan esos estados.
 
+Publicado únicamente este flow desde `8d31522` mediante el deploy del repositorio.
+La relectura de producción confirmó **revisión 4, sin triggers**, conservando
+tareas, inputs y outputs de la revisión 3. El cambio debe incorporarse a `main`
+para que los siguientes despliegues del dominio mantengan retirado el cron.
+
 La última escritura nocturna terminó a las **05:08 ART**. El diario registra
 75.254 candidatos procesados: **75.242 migrados y verificados**, **12 omitidos por
 cambios**, cero pendientes, cero escrituras inciertas y ninguna pausa. El último
