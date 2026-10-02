@@ -49,3 +49,29 @@ seguir mirando `ok`, resultado comercial, distribución y estado real en Bitrix.
 
 El deploy ya está aplicado; el PR debe incorporarse a main para conservarlo en los
 siguientes despliegues. Los checks remotos no se monitorean desde esta intervención.
+
+
+## Verificación posterior, 02/10 a las 12:36 ART
+
+La relectura completa de los 71 IDs previos confirmó **nueve fuera de PENDIENTE**:
+dos en cola por pool pausado y siete en etapas posteriores de su circuito comercial.
+Quedan **62 de esos casos pendientes**, que continúan automáticamente por el cron de
+una negociación por minuto. La cola de distribución tiene cinco casos (tres previos
+y los dos incorporados). No se afirma que todo el acumulado haya terminado.
+
+La ejecución `14Shoj7h2WTCPPk2XMAR7v` procesó 1237773 con `ok=true`, vendedor 110059,
+`transferred_chat_count=1`, `chat_transfer_status=transferred`, chat 137167.
+La lectura directa confirmó el mismo responsable en negociación 1237773, lead
+401695 y chat 137167 (owner y manager). Esto verifica una transferencia real;
+no acredita todavía la transferencia de todos los chats del acumulado.
+
+La consulta de vínculos de negociación, lead y contacto encontró chats en ocho
+negociaciones del inventario. Se conservaron las lecturas para el control posterior;
+las demás conversaciones se resolverán cuando su caso alcance el procesamiento,
+según clasificación, disponibilidad y pausa vigentes. No se transfirieron chats
+manualmente ni se reactivó el pool de Policía Federal CABA.
+
+PR de incorporación a main: [#416](https://github.com/Red-Unisol/redunisol-platform/pull/416).
+El incidente puede revisarse para cierre cuando el acumulado termine o quede
+explicado por esperas/revisiones legítimas. No se cerró la tarea ni se enviaron
+mensajes al chat de Bitrix durante esta intervención.
