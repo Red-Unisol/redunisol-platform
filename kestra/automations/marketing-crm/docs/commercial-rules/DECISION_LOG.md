@@ -248,3 +248,25 @@ del árbol activo; Git conserva su historial.
 - La cohorte inicial no se reprocesa. La línea crediticia queda para revisión.
 - Estado: implementado, pendiente de deploy.
 - Reglas y casos: [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).
+
+
+## `LEAD-DEC-REJ-20261002` — Cerrar el remanente de rechazos históricos
+
+- **Fecha y aprobación:** 02/10/2026, Santiago, autorización explícita en la sesión
+  de cierre de la tarea Bitrix 22751.
+- **Alcance:** únicamente los 106 prospectos identificados en etapas antiguas de
+  rechazo; incluye anteriores y posteriores al corte de la migración original.
+- **Decisión:** tomar la etapa de rechazo actual como fuente del motivo y mover a
+  RESULTADO PERDIDO, incluso si el motivo anterior contradice esa etapa.
+- **Avisos:** conservar PROCESSED o HISTORICAL; completar vacíos con HISTORICAL.
+- **Concurrencia:** releer antes de cada lote; omitir cambios concurrentes, activos
+  o convertidos. No reabrir casos ni recalcular elegibilidad con datos personales.
+- **Ejemplo:** un caso actualmente PRIVADOS con motivo anterior AUH se normaliza
+  como RESULTADO PERDIDO / PRIVADOS. Un convertido no se modifica.
+- **Estado:** ejecutado y verificado en los 106 casos. Es una normalización única,
+  no una nueva regla de precalificación, clasificación o distribución.
+- **Retiro:** desactivar robots antiguos y retirar las 15 etapas vacías eliminables;
+  conservar JUNK como estado del sistema con sus robots desactivados. Los rechazos
+  nuevos deben utilizar RESULTADO PERDIDO y el motivo correspondiente.
+- **Evidencia técnica:**
+  [cierre de migración](../../bitrix/rejection-notifications/historical-migration.md).

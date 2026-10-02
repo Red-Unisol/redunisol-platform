@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 from contextlib import nullcontext
 
@@ -126,6 +126,23 @@ class RuntimeTests(unittest.TestCase):
     def test_approval_uses_canonical_manifest(self):
         manifest = Path(__file__).parents[1] / 'bitrix/rejection-notifications/manifest.json'
         self.assertEqual(hashlib.sha256(manifest.read_text(encoding="utf-8").encode()).hexdigest(), run.APPROVAL['sha256']['manifest.json'])
+
+    def test_retired_sources_allow_inspection_but_not_mutating_modes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'initial-counts.json').write_text(json.dumps({'reason_fields': []}))
+            (root / 'manifest.json').write_text(json.dumps({'sources': [
+                {'source_stage': '3', 'reason_label': 'AUTONOMO'}]}))
+            client = Mock()
+            client.call.side_effect = lambda method, _: {'result': (
+                [] if method == 'crm.lead.userfield.list' else
+                [{'STATUS_ID': core.TARGET, 'SEMANTICS': 'F'}])}
+            run.validate_live(client, root, require_sources=False)
+            with self.assertRaisesRegex(ValueError, 'source stage'):
+                run.validate_live(client, root)
+            client.call.side_effect = lambda *_: {'result': []}
+            with self.assertRaisesRegex(ValueError, 'target stage'):
+                run.validate_live(client, root, require_sources=False)
 
     def test_closed_inventory_has_no_schedule_in_any_environment(self):
         import importlib.util

@@ -1,6 +1,6 @@
 # Migración histórica de rechazos en Kestra
 
-## Estado al 02/10/2026: inventario procesado, limpieza pendiente
+## Estado al 02/10/2026: migración y retiro de etapas completados
 
 El cron se retira del YAML. El flow permanece disponible para inspección manual;
 se conservan código, inventario aprobado y diario. No reactivar la programación
@@ -43,7 +43,7 @@ Las copias privadas de la revisión están en
 `.local/artifacts/rejection-close-20261002/` del checkout operativo; no versionar
 los datos individuales ni reemplazar el inventario aprobado.
 
-### Condiciones que impiden retirar las etapas
+### Diagnóstico previo a la normalización final
 
 La consulta completa de las 16 etapas encontró 115 prospectos antes de las nueve
 correcciones: 37 posteriores al corte, 26 con marca `PROCESSED` y tres con marca
@@ -83,11 +83,54 @@ originales, incluidas las vacías. Además, `JUNK` es un estado de sistema
 IDs históricos alfanuméricos, pero no reemplaza una auditoría de procesos Bitrix,
 integraciones externas y asignaciones numéricas.
 
-No se eliminan estados ni plantillas en este cierre. Antes de hacerlo, investigar
-las entradas posteriores al corte y los cambios de etapa después de migrar;
-revisar los motivos contradictorios; retirar las referencias verificadas con
-respaldo actual y comprobar otra vez cero prospectos. La tarea 22751 debe seguir
-abierta por esta limpieza, aunque el inventario original ya esté procesado.
+Ese diagnóstico motivó una autorización adicional para los 106 restantes. El
+resultado posterior se registra a continuación y reemplaza el pendiente de limpieza.
+
+### Normalización final autorizada y verificada
+
+Santiago aprobó el criterio **la etapa de rechazo actual prevalece sobre el motivo
+anterior**, aplicado exclusivamente a los 106 IDs revisados (69 anteriores al corte
+y 37 posteriores). No cambia las reglas comerciales ni recalifica casos activos.
+Ver decisión `LEAD-DEC-REJ-20261002` en
+[el registro funcional](../../docs/commercial-rules/DECISION_LOG.md).
+
+- **106/106 verificados** en RESULTADO PERDIDO, con el motivo correspondiente a su
+  etapa de origen. Relectura antes de cada lote; cero cambios concurrentes omitidos
+  y cero escrituras inciertas.
+- **26 PROCESSED conservados; 80 HISTORICAL** (tres ya tenían la marca, 77 estaban
+  vacíos). Se conservaron responsables, contactos y demás datos comerciales.
+- El control de los 106 no detectó actividades nuevas, cambios de chats ni nuevos
+  IDs de mensajes entre las observaciones. Es una comprobación temporal, no una
+  auditoría de entrega de todos los proveedores.
+- Recuento de las 16 etapas: **cero prospectos**. Se respaldaron sus 16 plantillas,
+  la plantilla central 889 y el catálogo antes de intervenir.
+- **31 robots antiguos desactivados y guardados** mediante acciones grupales.
+  No se borraron plantillas de procesos arbitrariamente.
+- Se eliminaron por REST **15 estados no sistémicos**, tras releer individualmente
+  que seguían vacíos. La relectura del catálogo confirmó su ausencia. Se conservaron
+  los motivos de rechazo del campo personalizado y el manifiesto histórico original.
+- **JUNK se conserva**, por ser de sistema, con sus dos robots desactivados. No usar
+  esa etapa para rechazos nuevos; utilizar RESULTADO PERDIDO y su motivo. No se
+  activó una redirección ni se forzó la eliminación del estado del sistema.
+- Los procesos vigentes NEW (1), GANADO (159), SIN RESPUESTA (709) y general (1019)
+  revisados no contienen actividades que asignen esas etapas. Esta revisión no
+  acredita una auditoría de toda integración externa o acción manual.
+
+El caso excluido del inventario original por pasar de AUH a PRIVADOS quedó incluido
+en esta normalización separada con motivo PRIVADOS. Tres de los 106 ya figuraban
+migrados en el diario original y habían regresado a etapas antiguas: no sumar los
+106 al balance original como si todos fueran prospectos únicos adicionales.
+
+La evidencia privada está en
+`.local/artifacts/rejection-close-20261002/remaining-migration/`: plan y valores
+previos, diario por lote, lectura final, controles de comunicaciones, catálogos y
+diario de eliminación de etapas, exportaciones BPT. No contiene una nueva lista
+abierta de candidatos ni debe utilizarse para reejecutar automáticamente.
+
+La inspección manual admite fuentes ya retiradas y sigue verificando motivos,
+etapa destino y resultados migrados. Los modos de escritura conservan la validación
+estricta de todas las fuentes; después del retiro no deben ejecutarse. El cron sigue
+ausente. No restaurar las etapas o robots desde los respaldos como rollback rutinario.
 
 ## Operación anterior y recuperación
 
