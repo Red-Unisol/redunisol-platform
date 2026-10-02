@@ -34,6 +34,7 @@ EXTERNAL_REFERRAL_OUTCOME = "external_referral"
 BUENOS_AIRES_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 POLICIA_FEDERAL_INITIAL_START = date(2026, 8, 31)
 POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE = date(2026, 9, 14)
+POLICIA_FEDERAL_COMMERCIAL_PAUSE_START = date(2026, 10, 2)
 POLICIA_FEDERAL_INITIAL_REASON = "policia_federal_caba_initial_period"
 POLICIA_FEDERAL_INITIAL_REJECTION_LABEL = "POLICÍA FEDERAL CABA - PERÍODO INICIAL"
 
@@ -130,6 +131,20 @@ def evaluate_prequalification(
     *,
     evaluated_at: datetime | None = None,
 ) -> QualificationResult:
+    if (
+        is_policia_federal_caba(submission)
+        and _as_buenos_aires_date(evaluated_at) >= POLICIA_FEDERAL_COMMERCIAL_PAUSE_START
+    ):
+        return QualificationResult(
+            qualified=False,
+            reason="province_not_eligible",
+            message="Tu situación no califica para esta solicitud.",
+            rejection_label="OTRA PROVINCIA",
+            outcome="rejected",
+            measurement_qualified=True,
+            route_to_whatsapp=False,
+        )
+
     if _is_policia_federal_caba_initial_period(submission, evaluated_at=evaluated_at):
         return QualificationResult(
             qualified=False,
@@ -214,7 +229,9 @@ def is_policia_federal_caba_commercial_period(
 ) -> bool:
     return (
         is_policia_federal_caba(submission)
-        and _as_buenos_aires_date(evaluated_at) >= POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE
+        and POLICIA_FEDERAL_INITIAL_END_EXCLUSIVE
+        <= _as_buenos_aires_date(evaluated_at)
+        < POLICIA_FEDERAL_COMMERCIAL_PAUSE_START
     )
 
 

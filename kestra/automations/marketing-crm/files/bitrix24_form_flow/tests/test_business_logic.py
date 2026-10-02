@@ -1392,6 +1392,12 @@ class BusinessLogicTests(unittest.TestCase):
             ("CABA", "Policía Federal", "2026-09-14T02:59:59+00:00", True, False),
             ("CABA", "Policía Federal", "2026-09-14T03:00:00+00:00", True, True),
             ("Ciudad Autónoma de Buenos Aires", "Policía Federal", "2026-10-01T12:00:00-03:00", True, True),
+            ("CABA", "Policía Federal", "2026-10-02T02:59:59+00:00", True, True),
+            ("CABA", "Policía Federal", "2026-10-02T03:00:00+00:00", True, False),
+            ("Ciudad Autónoma de Buenos Aires", "Policía Federal", "2026-10-02T12:00:00-03:00", True, False),
+            ("CABA", "Policía Federal", "2027-01-01T12:00:00-03:00", True, False),
+            ("Buenos Aires", "Policía Federal", "2026-10-02T12:00:00-03:00", False, False),
+            ("CABA", "Policía", "2026-10-02T12:00:00-03:00", False, False),
             ("Buenos Aires", "Policía Federal", "2026-09-14T12:00:00-03:00", False, False),
             ("CABA", "Policía", "2026-09-14T12:00:00-03:00", False, False),
         ):
@@ -1426,13 +1432,42 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(deal["stageId"], "C1:KESTRA_PENDING")
         self.assertEqual(deal["assignedById"], 57)
 
-    def test_policia_federal_routing_excludes_historical_or_undated_leads(self) -> None:
+    def test_policia_federal_routing_excludes_initial_paused_or_undated_leads(self) -> None:
         config = load_config(self.env)
-        for created in ("2026-09-13T23:59:59-03:00", "", "invalid"):
+        for created in (
+            "2026-09-13T23:59:59-03:00",
+            "2026-10-02T00:00:00-03:00",
+            "2027-01-01T00:00:00-03:00",
+            "",
+            "invalid",
+        ):
             with self.subTest(created=created):
                 lead = self._policia_federal_lead(990)
                 lead["DATE_CREATE"] = created
                 self.assertIsNone(resolve_routing_bucket(config, lead).bucket)
+
+    def test_paused_policia_federal_lead_is_lost_without_creating_deal(self) -> None:
+        client = FakeBitrixClient()
+        lead = self._policia_federal_lead(990)
+        lead["DATE_CREATE"] = "2026-10-02T00:00:00-03:00"
+        lead["STATUS_ID"] = "NEW"
+        client.leads[990] = lead
+
+        result = classify_lead(990, env=self.env, bitrix_client=client, logger=SilentLogger())
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "province_not_eligible")
+        self.assertEqual(client.leads[990]["STATUS_ID"], "UC_1P8I07")
+        self.assertEqual(client.leads[990]["UF_CRM_REJECTION_REASON"], "3933")
+
+        result = process_lead_update_event(
+            self.make_lead_update_event(990), env=self.env, bitrix_client=client,
+            expected_application_token="app-token", logger=SilentLogger(),
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(client.deals, {})
 
     def test_policia_federal_routes_review_to_stefania_and_transfers_chat(self) -> None:
         client = FakeBitrixClient()
