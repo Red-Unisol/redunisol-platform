@@ -9,13 +9,26 @@ use Illuminate\Support\Str;
 
 class FinalizarSolicitudService
 {
-    public function resolve(?string $sol, ?string $ntrans, ?string $linea): array
+    /**
+     * @param  bool  $desdeSolicitudesWeb  true cuando el link viene del sistema
+     *                                     nuevo de solicitudes, que guarda el
+     *                                     prestamo en su propia base y no en
+     *                                     Vimarx. Lo unico que cambia es a que
+     *                                     API se le piden los datos.
+     */
+    public function resolve(?string $sol, ?string $ntrans, ?string $linea, bool $desdeSolicitudesWeb = false): array
     {
         $requestedLinea = $linea;
         $linea = $this->normalizeLine($requestedLinea);
         $lineConfig = $this->requestedLineConfig($requestedLinea) ?? $this->defaultMetamapConfig();
 
         $result = [
+            // Codigo de mutual tal cual viene con el prestamo, sin normalizar.
+            // Solo lo trae el sistema nuevo; el legado no lo devuelve. Se
+            // expone aparte de 'linea' porque esa es la clave del config, y hay
+            // codigos que no estan ahi (Celesol y otros caen en el default)
+            // pero si tienen entidad de convenio cargada.
+            'codigo_mutual' => null,
             'linea' => $linea,
             'line_label' => $this->lineLabel($linea),
             'loan' => null,
@@ -31,7 +44,7 @@ class FinalizarSolicitudService
             return $this->resolveIts($result, $sol);
         }
 
-        return $this->resolveLegacy($result, $sol, $ntrans ?: '0', $linea);
+        return $this->resolveLegacy($result, $sol, $ntrans ?: '0', $linea, $desdeSolicitudesWeb);
     }
 
     public function fallbackLoanFromQuery(?string $monto, ?string $cuotas, ?string $nro): ?array
@@ -62,9 +75,13 @@ class FinalizarSolicitudService
         ];
     }
 
-    private function resolveLegacy(array $result, string $sol, string $ntrans, string $linea): array
+    private function resolveLegacy(array $result, string $sol, string $ntrans, string $linea, bool $desdeSolicitudesWeb = false): array
     {
-        $client = $linea === 'fiat' ? 'fiat' : 'caja';
+        $client = match (true) {
+            $desdeSolicitudesWeb => 'solicitudes',
+            $linea === 'fiat' => 'fiat',
+            default => 'caja',
+        };
         $baseUrl = (string) config("finalizar.legacy_clients.{$client}.base_url", '');
 
         if ($baseUrl === '') {
@@ -102,10 +119,55 @@ class FinalizarSolicitudService
             return $result;
         }
 
+        // El sistema nuevo devuelve la linea junto con el prestamo, asi que se
+        // usa esa y se descarta la de la URL. Vimarx no la devuelve y por eso
+        // el circuito de siempre sigue dependiendo del parametro.
+        //
+        // Importa porque la linea decide que documento de Metamap firma el
+        // socio: mientras salga de la query, cualquiera que edite el link
+        // elige que contrato firma, y nada lo delata.
+        if ($desdeSolicitudesWeb) {
+            $lineaDelPrestamo = $this->matchedLineKey(Arr::get($payload, 'linea'));
+
+            $codigoMutual = $this->codigoMutualDelPayload($payload);
+            $result['codigo_mutual'] = $codigoMutual;
+
+            // Alcanza con que el prestamo traiga codigo: no hace falta que ese
+            // codigo tenga entrada en el config. Cuando no la tiene va el
+            // documento por defecto, que es lo mismo que hace el legado.
+            //
+            // Volver al parametro de la URL en ese caso dejaria el agujero
+            // abierto justo para el grupo mas grande que no esta en el config:
+            // Celesol, 699 prestamos en seis meses.
+            if ($codigoMutual !== null) {
+                $esLineaDelConfig =
+                    $lineaDelPrestamo !== null && $lineaDelPrestamo !== 'its';
+
+                $linea = $esLineaDelConfig
+                    ? $lineaDelPrestamo
+                    : (string) config('finalizar.default_line', 'caja');
+
+                $result['linea'] = $linea;
+                $result['line_label'] = $this->lineLabel($linea);
+                $result['metamap'] = $this->metamapConfig(
+                    $esLineaDelConfig
+                        ? $this->lineConfig($lineaDelPrestamo)
+                        : $this->defaultMetamapConfig(),
+                );
+            }
+        }
+
         $result['loan'] = $this->mapLegacyLoan($payload, $sol, $ntrans, $linea);
         $result['metamap']['metadata'] = $this->buildMetamapMetadata($result['loan'], $result['metamap']['doc_id']);
 
         return $result;
+    }
+
+    private function codigoMutualDelPayload(array $payload): ?string
+    {
+        $codigoMutual = trim((string) Arr::get($payload, 'linea', ''));
+
+        return $codigoMutual === '' ? null : $codigoMutual;
     }
 
     private function resolveIts(array $result, string $sol): array

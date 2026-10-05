@@ -24,6 +24,11 @@ const UUID_REGEX =
 // capitalizacion heterogenea son intencionales, es lo que espera el
 // consumidor externo.
 export type FinSolicitudDatosResponse = {
+  // Extension al contrato de Vimarx, que no devuelve nada que identifique la
+  // linea. Sin esto el finalizar tiene que confiar en el parametro "linea" de
+  // la URL para saber que documento de Metamap firma el socio, y ese parametro
+  // se puede editar a mano. Vimarx no puede darlo; este sistema si.
+  linea: string | null;
   nombreSocio: string;
   cuotas: string;
   prestamoCFT: string | null;
@@ -120,6 +125,7 @@ export class GetFinSolicitudDatosUseCase {
       FechaNacimiento: formatMidnightIsoDate(
         solicitud.titular.fechaNacimiento ?? null,
       ),
+      linea: solicitud.lineaPrestamoCodigoMutual ?? null,
       Localidad: solicitud.titular.localidad,
       montoAfinanciar: formatArsCurrency(solicitud.montoAFinanciar),
       MontoPrestamo: formatArsCurrency(prestamo.montoPrestamo),

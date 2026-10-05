@@ -83,6 +83,7 @@ describe("SolicitudCoreMapper", () => {
       fechaPrimerVencimiento: new Date("2026-06-01T00:00:00.000Z"),
       id: "sol-1",
       legacyOid: null,
+      lineaPrestamoCodigoMutual: null,
       lineaPrestamoDescripcion: "Linea 1",
       lineaPrestamoLegacyOid: "LP-1",
       montoAFinanciar: new Prisma.Decimal("200000.00"),
@@ -93,6 +94,7 @@ describe("SolicitudCoreMapper", () => {
       titular: {
         apellidoDenominacion: "Perez",
         cbu: null,
+        cbuNoHabitual: null,
         celular: "1199999999",
         cuit: null,
         domicilioCalle: null,
@@ -169,6 +171,7 @@ describe("SolicitudCoreMapper", () => {
         garantias: [],
         id: "sol-2",
         legacyOid: null,
+        lineaPrestamoCodigoMutual: null,
         lineaPrestamoDescripcion: "Linea 2",
         lineaPrestamoLegacyOid: "LP-2",
         montoAFinanciar: null,

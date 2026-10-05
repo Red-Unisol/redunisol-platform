@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { cbuSchema } from "./cbu.schema";
+
 const MIN_TITULAR_AGE_YEARS = 18;
 const MAX_TITULAR_AGE_YEARS = 85;
 
@@ -165,7 +167,8 @@ export const createSolicitudBodySchema = z.object({
   }).strict(),
   titular: z.object({
     apellidoDenominacion: z.string().trim().min(1),
-    cbu: z.string().trim().min(1).optional(),
+    cbu: cbuSchema.optional(),
+    cbuNoHabitual: cbuSchema.optional(),
     celular: z.string().trim().min(1).optional(),
     cuit: z.string().trim().min(1).optional(),
     domicilioCalle: z.string().trim().min(1).optional(),
@@ -199,6 +202,12 @@ export const listSolicitudesQuerySchema = z.object({
 
 export const solicitudByIdParamsSchema = z.object({
   id: z.string().uuid("id must be a valid uuid"),
+});
+
+// "prestamoId" es el ID del prestamo en Vimarx. Solo digitos: se interpola en
+// la expresion de criterios del legado.
+export const prestamoDelSocioParamsSchema = solicitudByIdParamsSchema.extend({
+  prestamoId: z.string().regex(/^\d+$/, "prestamoId must be numeric"),
 });
 
 // Replica la forma de POST /api/redunisol/finSolicitud/:ntrans/:sol (ver
@@ -291,7 +300,8 @@ export const patchSolicitudBodySchema = z.object({
   titular: z
     .object({
       apellidoDenominacion: z.string().trim().min(1).optional(),
-      cbu: nullableTrimmedStringSchema.optional(),
+      cbu: z.union([cbuSchema, z.null()]).optional(),
+      cbuNoHabitual: z.union([cbuSchema, z.null()]).optional(),
       celular: nullableTrimmedStringSchema.optional(),
       cuit: nullableTrimmedStringSchema.optional(),
       domicilioCalle: nullableTrimmedStringSchema.optional(),
@@ -346,6 +356,7 @@ export type GetAnalistaStatsQuery = z.infer<typeof getAnalistaStatsQuerySchema>;
 export type ListSolicitudesQuery = z.infer<typeof listSolicitudesQuerySchema>;
 export type PatchSolicitudBody = z.infer<typeof patchSolicitudBodySchema>;
 export type SolicitudByIdParams = z.infer<typeof solicitudByIdParamsSchema>;
+export type PrestamoDelSocioParams = z.infer<typeof prestamoDelSocioParamsSchema>;
 export type FinSolicitudParams = z.infer<typeof finSolicitudParamsSchema>;
 export type AssignSolicitudToSelfBody = z.infer<typeof assignSolicitudToSelfBodySchema>;
 export type AssignSolicitudToUserBody = z.infer<typeof assignSolicitudToUserBodySchema>;

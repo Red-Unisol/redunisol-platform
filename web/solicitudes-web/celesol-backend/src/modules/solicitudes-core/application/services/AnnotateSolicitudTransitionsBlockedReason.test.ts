@@ -306,7 +306,8 @@ function solicitudWithTitularOverrides(
     },
     titular: {
       apellidoDenominacion: "Perez",
-      cbu: null,
+      cbu: "2850590940090418135201",
+      cbuNoHabitual: null,
       celular: null,
       cuit: "20-33344455-9",
       domicilioCalle: null,

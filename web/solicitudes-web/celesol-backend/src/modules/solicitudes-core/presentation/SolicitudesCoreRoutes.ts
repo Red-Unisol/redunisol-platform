@@ -26,6 +26,12 @@ export class SolicitudesCoreRoutes {
     router.get("/:id/transitions", controller.listTransitions);
     router.post("/:id/transitions", controller.changeState);
     router.post("/:id/prestamo-legacy", controller.createPrestamoLegacy);
+    router.get("/:id/prestamos-socio", controller.listPrestamosDelSocio);
+    router.get(
+      "/:id/prestamos-socio/:prestamoId",
+      controller.getPrestamoDelSocio,
+    );
+    router.get("/:id/credixsa", controller.getCredixsa);
     router.get("/:id/assignment/agents", controller.listAssignableAgents);
     router.post("/:id/assignment/self", controller.assignToSelf);
     router.post("/:id/assignment", controller.assignToUser);

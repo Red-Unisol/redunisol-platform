@@ -960,6 +960,7 @@ function solicitudCore(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
     titular: {
       apellidoDenominacion: "Perez",
       cbu: null,
+      cbuNoHabitual: null,
       celular: null,
       cuit: null,
       domicilioCalle: null,

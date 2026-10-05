@@ -15,6 +15,9 @@ describe("SolicitudesCoreController", () => {
   it("passes solicitud id and current workflow owner when listing transitions", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -53,6 +56,9 @@ describe("SolicitudesCoreController", () => {
   it("passes action, comment, motivo and current user identity when changing state", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -104,6 +110,9 @@ describe("SolicitudesCoreController", () => {
   it("passes solicitud id and current user when listing history", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -144,6 +153,9 @@ describe("SolicitudesCoreController", () => {
 
   it("rejects destination state fields in change state payloads", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -179,6 +191,9 @@ describe("SolicitudesCoreController", () => {
   it("bypasses the workflow owner requirement on workflow endpoints for system admins", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -221,6 +236,9 @@ describe("SolicitudesCoreController", () => {
   it("bypasses workflow owner assignment for system admins when changing state", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -272,6 +290,9 @@ describe("SolicitudesCoreController", () => {
   it("omits the work-scope workflow owner requirement and forwards isSystemAdmin when listing", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -323,6 +344,9 @@ describe("SolicitudesCoreController", () => {
   it("forwards isSystemAdmin without requiring a workflow owner when getting detail", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -368,6 +392,9 @@ describe("SolicitudesCoreController", () => {
   it("bypasses the workflow owner requirement and forwards isSystemAdmin when updating", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -431,6 +458,9 @@ describe("SolicitudesCoreController", () => {
       },
     };
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase:
         createSolicitudUseCase as never,
       getCurrentUserUseCase: {
@@ -526,6 +556,9 @@ describe("SolicitudesCoreController", () => {
 
   it("rejects forbidden canonical lookalike fields in patch payloads", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -590,6 +623,9 @@ describe("SolicitudesCoreController", () => {
   it("delegates assign to self using authenticated user", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -634,6 +670,9 @@ describe("SolicitudesCoreController", () => {
   it("delegates create prestamo legacy using authenticated user and returns the updated solicitud", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       createPrestamoLegacyUseCase: {
         execute: async (input: unknown) => {
@@ -677,6 +716,9 @@ describe("SolicitudesCoreController", () => {
   it("lists assignable agents for the solicitud using authenticated current user", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       listAssignableSolicitudAgentsUseCase: {
         execute: async (input: unknown) => {
@@ -721,6 +763,9 @@ describe("SolicitudesCoreController", () => {
 
   it("rejects assign-to-self when client tries to send actor override in body.user", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -759,6 +804,9 @@ describe("SolicitudesCoreController", () => {
   it("delegates assign to self when body is empty object", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -803,6 +851,9 @@ describe("SolicitudesCoreController", () => {
   it("delegates assign to user with targetUserId using authenticated user", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async (input: unknown) => {
@@ -848,6 +899,9 @@ describe("SolicitudesCoreController", () => {
 
   it("rejects assignment body with invalid targetUserId", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -880,6 +934,9 @@ describe("SolicitudesCoreController", () => {
 
   it("rejects assign-to-user when client tries to send actor override in body.user", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -921,6 +978,9 @@ describe("SolicitudesCoreController", () => {
     const forbiddenError = new ForbiddenSolicitudAccessError();
     const conflictError = new SolicitudAlreadyAssignedError();
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -975,6 +1035,9 @@ describe("SolicitudesCoreController", () => {
 
   it("returns controlled 403 error when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1027,6 +1090,9 @@ describe("SolicitudesCoreController", () => {
   it("does not require workflow owner when listing tracking scope", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1086,6 +1152,9 @@ describe("SolicitudesCoreController", () => {
   it("accepts recientes scope and delegates it to list use case", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1133,6 +1202,9 @@ describe("SolicitudesCoreController", () => {
   it("passes current user without requiring workflow owner when getting detail", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1225,6 +1297,9 @@ describe("SolicitudesCoreController", () => {
 
   it("returns controlled 403 on create when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -1282,6 +1357,9 @@ describe("SolicitudesCoreController", () => {
 
   it("returns controlled 403 on update when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1337,6 +1415,9 @@ describe("SolicitudesCoreController", () => {
 
   it("returns forbidden when a non-admin user requests solicitud stats", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1367,6 +1448,9 @@ describe("SolicitudesCoreController", () => {
 
   it("returns stats for a system admin", async () => {
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({ ...authenticatedUser(), isSystemAdmin: true }),
@@ -1397,6 +1481,9 @@ describe("SolicitudesCoreController", () => {
   it("scopes vendedor stats to the authenticated user's own id", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1434,6 +1521,9 @@ describe("SolicitudesCoreController", () => {
   it("scopes analista stats to the authenticated user's own id and owner", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsUseCase: {
         execute: async (input: unknown) => {
@@ -1472,6 +1562,9 @@ describe("SolicitudesCoreController", () => {
   it("scopes analista v2 stats to the authenticated user's own id and owner", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
+      listPrestamosDelSocioUseCase: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsV2UseCase: {
         execute: async (input: unknown) => {
@@ -1507,6 +1600,104 @@ describe("SolicitudesCoreController", () => {
     });
   });
 });
+
+describe("SolicitudesCoreController.listPrestamosDelSocio", () => {
+  it("rejects a VENDEDORES user", async () => {
+    // Ocultar la pestaña en el frontend no alcanza: sin este chequeo, un
+    // vendedor llega igual pegandole al endpoint.
+    let llamado = false;
+    const controller = buildPrestamosController("VENDEDORES", () => {
+      llamado = true;
+    });
+    let nextError: unknown;
+
+    await controller.listPrestamosDelSocio(
+      request({ params: { id: solicitudId() } }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(
+      (nextError as Error)?.name,
+      "ForbiddenSolicitudAccessError",
+    );
+    assert.equal(llamado, false);
+  });
+
+  it("allows RIESGO", async () => {
+    const controller = buildPrestamosController("RIESGO");
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.listPrestamosDelSocio(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { prestamos: [{ nroCuenta: "998451" }] });
+  });
+
+  it("allows TESORERIA", async () => {
+    const controller = buildPrestamosController("TESORERIA");
+    const response = createResponse();
+
+    await controller.listPrestamosDelSocio(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError(() => {}),
+    );
+
+    assert.equal(response.statusCode, 200);
+  });
+
+  it("allows a system admin even from VENDEDORES", async () => {
+    const controller = buildPrestamosController("VENDEDORES", undefined, true);
+    const response = createResponse();
+
+    await controller.listPrestamosDelSocio(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError(() => {}),
+    );
+
+    assert.equal(response.statusCode, 200);
+  });
+});
+
+function buildPrestamosController(
+  ownerCode: string,
+  onExecute?: () => void,
+  isSystemAdmin = false,
+) {
+  return new SolicitudesCoreController({
+    createSolicitudUseCase: {} as never,
+    getCurrentUserUseCase: {
+      execute: async () => ({
+        ...authenticatedUser(),
+        isSystemAdmin,
+        workflowOwner: { code: ownerCode },
+      }),
+    } as never,
+    listPrestamosDelSocioUseCase: {
+      execute: async () => {
+        onExecute?.();
+
+        return [{ nroCuenta: "998451" }];
+      },
+    } as never,
+    ...workflowUseCases(),
+    getSolicitudByIdUseCase: {} as never,
+    listSolicitudesUseCase: {} as never,
+    updateSolicitudUseCase: {} as never,
+  } as never);
+}
 
 function authenticatedUser() {
   return {
@@ -1597,3 +1788,81 @@ function request(input: {
 function solicitudId() {
   return "11111111-1111-4111-8111-111111111111";
 }
+
+describe("SolicitudesCoreController.getCredixsa", () => {
+  it("rejects a VENDEDORES user", async () => {
+    let llamado = false;
+    const controller = buildCredixsaController("VENDEDORES", () => {
+      llamado = true;
+    });
+    let nextError: unknown;
+
+    await controller.getCredixsa(
+      request({ params: { id: solicitudId() } }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal((nextError as Error)?.name, "ForbiddenSolicitudAccessError");
+    assert.equal(llamado, false);
+  });
+
+  it("allows RIESGO and returns the informe", async () => {
+    const controller = buildCredixsaController("RIESGO");
+    const response = createResponse();
+
+    await controller.getCredixsa(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError(() => {}),
+    );
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { credixsa: { ok: true } });
+  });
+
+  it("allows a system admin even from VENDEDORES", async () => {
+    const controller = buildCredixsaController("VENDEDORES", undefined, true);
+    const response = createResponse();
+
+    await controller.getCredixsa(
+      request({ params: { id: solicitudId() } }),
+      response,
+      captureNextError(() => {}),
+    );
+
+    assert.equal(response.statusCode, 200);
+  });
+});
+
+function buildCredixsaController(
+  ownerCode: string,
+  onExecute?: () => void,
+  isSystemAdmin = false,
+) {
+  return new SolicitudesCoreController({
+    createSolicitudUseCase: {} as never,
+    getCurrentUserUseCase: {
+      execute: async () => ({
+        ...authenticatedUser(),
+        isSystemAdmin,
+        workflowOwner: { code: ownerCode },
+      }),
+    } as never,
+    getCredixsaSolicitudUseCase: {
+      execute: async () => {
+        onExecute?.();
+
+        return { ok: true };
+      },
+    } as never,
+    listPrestamosDelSocioUseCase: {} as never,
+    ...workflowUseCases(),
+    getSolicitudByIdUseCase: {} as never,
+    listSolicitudesUseCase: {} as never,
+    updateSolicitudUseCase: {} as never,
+  } as never);
+}
+

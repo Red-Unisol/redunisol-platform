@@ -420,6 +420,85 @@ describe("EvaluateListSolicitudesGateway", () => {
     assert.equal(requests[1]?.tipo, "F.Module.Cuentas.Prestamos.Prestamo");
   });
 
+  it("asks for the socio's prestamo filtered by the socio and maps the detail", async () => {
+    const { gateway, requests } = createGateway([
+      [
+        423331,
+        1004051,
+        "90536",
+        "Haberes",
+        "Consumo",
+        1584,
+        "CRUZ DEL EJE -premium-",
+        0.1135,
+      ],
+    ]);
+
+    const prestamo = await gateway.getPrestamoDelSocio("146871", "423331");
+
+    assert.deepEqual(prestamo, {
+      asiento: "1584",
+      cobrador: "Haberes",
+      destino: "Consumo",
+      legacyId: "423331",
+      lineaPrestamoDescripcion: "CRUZ DEL EJE -premium-",
+      nroCuenta: "1004051",
+      ordenCompra: "90536",
+      tasaInicial: 0.1135,
+    });
+    const body = requests[0]?.body as { cmd: string; tipo: string };
+    // El filtro por socio es lo que impide ver el prestamo de otra persona.
+    assert.equal(
+      body.cmd,
+      "[ID] = 423331 And Integrantes[Socio.ID = 146871].Count() > 0",
+    );
+    assert.equal(body.tipo, "F.Module.Cuentas.Prestamos.Prestamo");
+  });
+
+  it("returns null when the prestamo does not belong to the socio", async () => {
+    const { gateway } = createGateway([]);
+
+    assert.equal(await gateway.getPrestamoDelSocio("1", "423331"), null);
+  });
+
+  it("keeps only the plan installments, in order, leaving out the disbursement and payments", async () => {
+    // Filas reales del prestamo 423331, desordenadas como las devuelve la API.
+    const { gateway, requests } = createGateway([
+      [1, "2025-08-31", 419988.31, 0, 0, 58770.31, "1004051/1", 1004051],
+      [0, "2025-07-24", 2600000, 0, 0, 0, "Desembolso 17640860", 1004051],
+      [0, "2025-07-31", 468000, 0, 0, 0, "1004051/0", 1004051],
+      [
+        19,
+        "2025-08-31",
+        -419988.31,
+        -419988.31,
+        -419988.31,
+        -58770.31,
+        "PG 17776618 31/8/2025",
+        1004051,
+      ],
+    ]);
+
+    const cuotas = await gateway.listCuotasDelPrestamo("423331");
+
+    assert.deepEqual(
+      cuotas.map((cuota) => cuota.nroCuota),
+      [0, 1],
+    );
+    assert.deepEqual(cuotas[1], {
+      capital: 58770.31,
+      fecha: "2025-08-31",
+      montoTotal: 419988.31,
+      nroCuota: 1,
+      saldoCuota: 0,
+      saldoCuotaConPunitorios: 0,
+    });
+    assert.equal(
+      (requests[0]?.body as { cmd: string }).cmd,
+      "[Prestamo.ID] = 423331",
+    );
+  });
+
   it("resolves the numeric legacy user id by username", async () => {
     const { gateway, requests } = createGateway([["347"]]);
 

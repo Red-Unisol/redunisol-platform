@@ -11,5 +11,10 @@ dist
 *.log
 npm-debug.log*
 
+# La carpeta docs/ es documentacion y no va a la imagen, con una excepcion:
+# docs/calculadora-riesgo/ tiene el .xlsx que el backend lee en caliente para
+# servir /api/riesgo/calculadora. Ese archivo no es documentacion, es un
+# insumo de la aplicacion.
 docs
+!docs/calculadora-riesgo
 README.md

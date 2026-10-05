@@ -91,6 +91,7 @@ describe("GetSolicitudByIdUseCase", () => {
         titular: {
           apellidoDenominacion: "Perez",
           cbu: null,
+          cbuNoHabitual: null,
           celular: null,
           cuit: null,
           domicilioCalle: null,
@@ -251,6 +252,7 @@ describe("GetSolicitudByIdUseCase", () => {
         titular: {
           apellidoDenominacion: "Perez",
           cbu: null,
+          cbuNoHabitual: null,
           celular: null,
           cuit: null,
           domicilioCalle: null,
@@ -444,6 +446,7 @@ describe("GetSolicitudByIdUseCase", () => {
         titular: {
           apellidoDenominacion: null,
           cbu: null,
+          cbuNoHabitual: null,
           celular: null,
           cuit: null,
           domicilioCalle: null,
@@ -606,6 +609,7 @@ function repositoryReturning(
       titular: {
         apellidoDenominacion: null,
         cbu: null,
+        cbuNoHabitual: null,
         celular: null,
         cuit: null,
         domicilioCalle: null,

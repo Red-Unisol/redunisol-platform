@@ -221,6 +221,79 @@ export function patchSolicitudCoreAdjunto(
   );
 }
 
+export type CredixsaInformeResponse = {
+  cachedAt: string;
+  cacheHit: boolean;
+  cuit: string;
+  error: string;
+  /** El informe normalizado: persona, bcra, previsional, aportes, quiebras, alertas. */
+  informe: unknown;
+  nombre: string;
+  ok: boolean;
+  status: string;
+};
+
+// El timeout por defecto del cliente son 15 segundos y esta consulta no entra
+// ahi: Kestra levanta un contenedor por tarea, asi que tarda entre 15 y 120
+// segundos incluso con el informe cacheado. Con el default, el navegador
+// cortaba antes de que respondiera y la pestaña mostraba "no se pudo
+// consultar" mientras la ejecucion terminaba bien en Kestra.
+const CREDIXSA_TIMEOUT_MS = 180000;
+
+export function getCredixsaSolicitud(solicitudId: string) {
+  return apiClient.get<{ credixsa: CredixsaInformeResponse | null }>(
+    `/solicitudes/${solicitudId}/credixsa`,
+    CREDIXSA_TIMEOUT_MS,
+  );
+}
+
+export type PrestamoDelSocioResponse = {
+  capital: number | null;
+  fechaEmision: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  montoPrestamo: number | null;
+  nroCuenta: string | null;
+  primerVencimiento: string | null;
+  saldo: number | null;
+  vencimiento: string | null;
+  vigente: boolean | null;
+};
+
+export function listPrestamosDelSocio(solicitudId: string) {
+  return apiClient.get<{ prestamos: PrestamoDelSocioResponse[] }>(
+    `/solicitudes/${solicitudId}/prestamos-socio`,
+  );
+}
+
+export type PrestamoDelSocioDetalleResponse = {
+  asiento: string | null;
+  cobrador: string | null;
+  destino: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  nroCuenta: string | null;
+  ordenCompra: string | null;
+  /** Fraccion (0.1135), no porcentaje. */
+  tasaInicial: number | null;
+};
+
+export type CuotaPrestamoResponse = {
+  capital: number | null;
+  fecha: string | null;
+  montoTotal: number | null;
+  nroCuota: number | null;
+  saldoCuota: number | null;
+  saldoCuotaConPunitorios: number | null;
+};
+
+export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
+  return apiClient.get<{
+    cuotas: CuotaPrestamoResponse[];
+    prestamo: PrestamoDelSocioDetalleResponse;
+  }>(`/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}`);
+}
+
 export function listSolicitudCoreCancelaciones(solicitudId: string) {
   return apiClient.get<SolicitudCoreCancelacionResponse[]>(
     `/solicitudes/${solicitudId}/cancelaciones`,
