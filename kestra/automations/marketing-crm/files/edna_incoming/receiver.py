@@ -29,7 +29,7 @@ def classify(event, allowed_subject):
     FLOW shape alone is not proof of identity. The authenticated web bridge adds
     routerContext only after validating its durable send ledger and Edna history.
     """
-    receipt = {"ok": True, "event_key": "", "kind": "invalid", "reason": "invalid_envelope", "flow_id_verified": False}
+    receipt = {"ok": True, "event_key": "", "kind": "invalid", "reason": "invalid_envelope", "flow_id_verified": False, "out_of_hours_candidate": False}
     if not isinstance(event, dict):
         return receipt, None
     subject = identifier(event.get("subjectId"))
@@ -75,12 +75,14 @@ def classify(event, allowed_subject):
         return {**receipt, "reason": "invalid_text"}, None
     if content.get("type") == "TEXT":
         if ENTRY_PHRASE not in " ".join(text.casefold().split()):
-            return {**receipt, "kind": "ignored", "reason": "unrelated_text"}, None
+            return {**receipt, "kind": "ignored", "reason": "unrelated_text",
+                    "out_of_hours_candidate": not bool(content.get("payload"))}, None
         return {**receipt, "kind": "router_entry", "reason": "entry_phrase"}, {
             **normalized, "kind": "router_entry", "wa_entry": "website",
         }
     if content.get("type") != "FLOW":
-        return {**receipt, "kind": "ignored", "reason": "unsupported_type"}, None
+        return {**receipt, "kind": "ignored", "reason": "unsupported_type",
+                "out_of_hours_candidate": content.get("type") in {"IMAGE", "AUDIO", "DOCUMENT", "VIDEO"}}, None
     try:
         data = json.loads(text)
     except (ValueError, RecursionError):

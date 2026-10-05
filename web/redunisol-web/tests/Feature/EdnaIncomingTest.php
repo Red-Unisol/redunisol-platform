@@ -208,3 +208,18 @@ test('pruning removes only old delivered payloads and retains duplicate protecti
     expect(DB::table('edna_incoming_events')->count())->toBe(3)->and(DB::table('jobs')->count())->toBe(3);
     $this->artisan('edna:prune --days=0')->assertFailed();
 });
+
+test('out of hours media capture retains minimal authenticated metadata without attachment URLs', function () {
+    config()->set('edna.out_of_hours_enabled', true);
+    $message = ednaMessage(['messageContent' => ['type' => 'AUDIO', 'text' => null,
+        'attachment' => ['url' => 'https://private.example.test/audio']]]);
+    sendEdna($message)->assertOk()->assertJsonPath('accepted', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    expect($payload['messageContent'])->toBe(['type' => 'AUDIO', 'text' => '']);
+});
+
+test('interactive button codes are retained for Kestra suppression without expanding the envelope', function () {
+    sendEdna(ednaMessage(['messageContent' => ['payload' => 'loan-button']]))->assertOk();
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    expect($payload['messageContent']['payload'])->toBe('loan-button');
+});

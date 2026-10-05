@@ -28,6 +28,9 @@ tasks:
       - python -m edna_incoming.entrypoint
 
 outputs:
+  - id: out_of_hours_candidate
+    type: BOOL
+    value: "{{ outputs.recibir.vars.out_of_hours_candidate ?? false }}"
   - id: ok
     type: BOOL
     value: "{{ outputs.recibir.vars.ok }}"
