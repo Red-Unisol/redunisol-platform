@@ -138,6 +138,7 @@ export class AuthPrismaDatasource {
     isSystemAdmin?: boolean;
     lastName?: string;
     legacyUser?: string;
+    recibeAsignacionAutomatica?: boolean;
     state?: number;
   }): Promise<AuthUser> {
     try {
@@ -153,6 +154,9 @@ export class AuthPrismaDatasource {
             : {}),
           ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
           ...(input.legacyUser !== undefined ? { legacyUser: input.legacyUser } : {}),
+          ...(input.recibeAsignacionAutomatica !== undefined
+            ? { recibeAsignacionAutomatica: input.recibeAsignacionAutomatica }
+            : {}),
           ...(input.state !== undefined ? { state: input.state } : {}),
         },
         where: {

@@ -25,7 +25,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
-import {
+import { canViewPrestamosDelSocio,
   canAccessRiesgoTools,
   canCreateSocio,
 } from "@/modules/auth/utils/auth-user";
@@ -68,6 +68,11 @@ import { usePatchSolicitudCoreMutation } from "@/modules/solicitudes-core/hooks/
 import { useAssignSolicitudToSelfMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-self-mutation";
 import { useAssignSolicitudToUserMutation } from "@/modules/solicitudes-core/hooks/use-assign-solicitud-to-user-mutation";
 import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-adjuntos-query";
+import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
+import { GenerarPrestamoDialog } from "@/modules/solicitudes-core/components/generar-prestamo-dialog";
+import { PrestamoDelSocioDialog } from "@/modules/solicitudes-core/components/prestamo-del-socio-dialog";
+import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
+import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
 import { useCreateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-create-solicitud-core-cancelacion-mutation";
 import { useUpdateSolicitudCoreCancelacionMutation } from "@/modules/solicitudes-core/hooks/use-update-solicitud-core-cancelacion-mutation";
@@ -86,6 +91,7 @@ import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/so
 import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
 import { getEstadoBadgeVariant } from "@/modules/solicitudes-shared/utils/estado-badge-variant";
 import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
+import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
 import type {
   CreateSolicitudCoreGarantiaRequest,
@@ -126,7 +132,7 @@ import type {
 } from "@/modules/socios/types";
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
-  formatMoneyValue,
+  formatMoneyAmount,
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
@@ -148,6 +154,10 @@ import { ApiError } from "@/shared/services/http/api-error";
 
 const EDIT_SOLICITUD_ERROR_TOAST_ID = "edit-solicitud-core-error";
 const EDIT_SOLICITUD_SUCCESS_TOAST_ID = "edit-solicitud-core-success";
+// Id propio a proposito: sonner publica el dismiss en el frame siguiente, y
+// handleSaveChanges hace dismiss de EDIT_SOLICITUD_ERROR_TOAST_ID justo antes
+// de validar. Con ese id, el aviso se mostraba y se borraba en el acto.
+const EDIT_SOLICITUD_CUOTAS_ERROR_TOAST_ID = "edit-solicitud-core-cuotas-error";
 const DELETE_ADJUNTO_ERROR_TOAST_ID = "delete-solicitud-core-adjunto-error";
 const DELETE_ADJUNTO_SUCCESS_TOAST_ID = "delete-solicitud-core-adjunto-success";
 const DOWNLOAD_ADJUNTO_ERROR_TOAST_ID = "download-solicitud-core-adjunto-error";
@@ -180,6 +190,7 @@ const CONFIRMAR_ACTION_CODE = "confirmar";
 
 type TitularConfirmarRequiredFieldKey =
   | "apellidoDenominacion"
+  | "cbu"
   | "celular"
   | "cuit"
   | "email"
@@ -204,6 +215,7 @@ const TITULAR_CONFIRMAR_REQUIRED_FIELDS: TitularConfirmarRequiredField[] = [
   { key: "cuit", label: "CUIT" },
   { key: "email", label: "Email" },
   { key: "celular", label: "Celular" },
+  { key: "cbu", label: "CBU" },
 ];
 
 function validateTitularRequiredForConfirmar(
@@ -221,8 +233,16 @@ function validateTitularRequiredForConfirmar(
   };
 }
 
-type SolicitanteTab = "adjuntos" | "cancelaciones" | "solicitante";
-type SolicitanteContentTab = DatosPersonalesTab | "adjuntos" | "cancelaciones";
+type SolicitanteTab =
+  | "adjuntos"
+  | "cancelaciones"
+  | "prestamos"
+  | "solicitante";
+type SolicitanteContentTab =
+  | DatosPersonalesTab
+  | "adjuntos"
+  | "cancelaciones"
+  | "prestamos";
 
 const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Datos Personales", value: "datosPersonales" },
@@ -233,6 +253,14 @@ const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Adjuntos", value: "adjuntos" },
 ];
 
+// Vendedores no ve esta pestaña: es informacion para analizar, no para cargar.
+// El backend hace el mismo chequeo -- esto solo evita mostrar algo que daria
+// 403 al abrirlo.
+const PRESTAMOS_TAB: TabItem<SolicitanteContentTab> = {
+  label: "Préstamos",
+  value: "prestamos",
+};
+
 const CANCELACIONES_TABLE_COLUMNS = [
   "Cuenta a debitar",
   "CBU",
@@ -241,6 +269,141 @@ const CANCELACIONES_TABLE_COLUMNS = [
   "Socio",
   "Cuenta bancaria",
 ] as const;
+
+const PRESTAMOS_TABLE_COLUMNS = [
+  "Nº de préstamo",
+  "Línea",
+  "Fecha",
+  "Monto",
+  "Saldo",
+  "Vencimiento",
+] as const;
+
+type PrestamosDelSocioSectionProps = {
+  isActive: boolean;
+  solicitudId: string;
+};
+
+// Los prestamos que el socio ya tiene con la mutual. Salen de Vimarx en vivo,
+// no de nuestra base, y solo se piden cuando la pestaña esta abierta.
+function PrestamosDelSocioSection({
+  isActive,
+  solicitudId,
+}: PrestamosDelSocioSectionProps) {
+  const { data, error, isLoading } = usePrestamosDelSocioQuery(
+    solicitudId,
+    isActive,
+  );
+  const prestamos = data?.prestamos ?? [];
+  // Id en Vimarx del prestamo abierto en el modal; null con el modal cerrado.
+  const [prestamoAbiertoId, setPrestamoAbiertoId] = useState<string | null>(
+    null,
+  );
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] border-collapse text-sm">
+        <thead className="bg-background text-left text-xs text-foreground-secondary">
+          <tr>
+            {PRESTAMOS_TABLE_COLUMNS.map((column) => (
+              <th
+                className="border-r border-border px-3 py-2 font-medium"
+                key={column}
+              >
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+              >
+                Consultando préstamos...
+              </td>
+            </tr>
+          ) : error ? (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+              >
+                No se pudieron consultar los préstamos del socio.
+              </td>
+            </tr>
+          ) : prestamos.length > 0 ? (
+            prestamos.map((prestamo) => (
+              <tr
+                // Los no vigentes van atenuados: siguen siendo utiles como
+                // historial, pero no son la informacion principal.
+                className={[
+                  "border-t border-border",
+                  prestamo.vigente ? "" : "text-foreground-secondary",
+                  prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                key={prestamo.legacyId ?? prestamo.nroCuenta}
+                onClick={() => {
+                  if (prestamo.legacyId) {
+                    setPrestamoAbiertoId(prestamo.legacyId);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && prestamo.legacyId) {
+                    setPrestamoAbiertoId(prestamo.legacyId);
+                  }
+                }}
+                tabIndex={prestamo.legacyId ? 0 : undefined}
+                title={prestamo.legacyId ? "Ver detalle del préstamo" : undefined}
+              >
+                <td className="border-r border-border px-3 py-2">
+                  {prestamo.nroCuenta || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {prestamo.lineaPrestamoDescripcion || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatLegacyDate(prestamo.fechaEmision)}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(prestamo.montoPrestamo) || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
+                </td>
+                <td className="px-3 py-2">
+                  {formatLegacyDate(prestamo.vencimiento)}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+              >
+                El socio no tiene préstamos registrados.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <PrestamoDelSocioDialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setPrestamoAbiertoId(null);
+          }
+        }}
+        prestamoId={prestamoAbiertoId}
+        solicitudId={solicitudId}
+      />
+    </div>
+  );
+}
 
 type CancelacionesSectionProps = {
   canManageCancelaciones: boolean;
@@ -329,7 +492,7 @@ function CancelacionesSection({
           cbu: editingCancelacion.cbu,
           cuentaADebitar: editingCancelacion.cuentaADebitar,
           cuentaBancaria: editingCancelacion.cuentaBancaria,
-          monto: formatMoneyValue(String(editingCancelacion.monto)),
+          monto: formatMoneyAmount(editingCancelacion.monto),
           notas: editingCancelacion.notas ?? "",
           socio: editingCancelacion.socio,
           socioLegacyId: editingCancelacion.socioLegacyId ?? "",
@@ -442,11 +605,12 @@ function CancelacionesSection({
   );
 }
 
-type SolicitudDetailVistaTab = "evaluacion" | "solicitud";
+type SolicitudDetailVistaTab = "credixsa" | "evaluacion" | "solicitud";
 
 const SOLICITUD_DETAIL_VISTA_TABS: TabItem<SolicitudDetailVistaTab>[] = [
   { label: "Solicitud", value: "solicitud" },
   { label: "Evaluación", value: "evaluacion" },
+  { label: "CredixSA", value: "credixsa" },
 ];
 
 const SimuladorPrestamoModal = lazy(() =>
@@ -1500,6 +1664,15 @@ function TitularFields({
         readOnlyValue={formatText(titular.cbu)}
         value={values.cbu}
       />
+      <EditableTextInput
+        {...getReadonlyProps("titular.cbuNoHabitual")}
+        disabled={!isFieldEditableByKey("titular.cbuNoHabitual")}
+        isEditing={isEditing}
+        label="CBU Transferencias Cuenta No Habitual"
+        onChange={(value) => onChange("cbuNoHabitual", value)}
+        readOnlyValue={formatText(titular.cbuNoHabitual)}
+        value={values.cbuNoHabitual}
+      />
     </div>
   );
 }
@@ -2283,8 +2456,12 @@ function SolicitanteSection({
   >;
   titularValues: EditableSolicitudCoreValues["titular"];
 }) {
+  const { data: currentUserPrestamos } = useAuthSessionQuery();
+  const canViewPrestamos = canViewPrestamosDelSocio(currentUserPrestamos);
   const activeContentTab: SolicitanteContentTab =
-    activeTab === "adjuntos" || activeTab === "cancelaciones"
+    activeTab === "adjuntos" ||
+    activeTab === "cancelaciones" ||
+    activeTab === "prestamos"
       ? activeTab
       : datosPersonalesTab;
   const [selectedGarantiaIndexes, setSelectedGarantiaIndexes] = useState<
@@ -2355,7 +2532,11 @@ function SolicitanteSection({
       <SectionTabs<SolicitanteContentTab>
         activeTab={activeContentTab}
         onTabChange={(tab) => {
-          if (tab === "adjuntos" || tab === "cancelaciones") {
+          if (
+            tab === "adjuntos" ||
+            tab === "cancelaciones" ||
+            tab === "prestamos"
+          ) {
             onTabChange(tab);
             return;
           }
@@ -2363,9 +2544,18 @@ function SolicitanteSection({
           onTabChange("solicitante");
           onDatosPersonalesTabChange(tab);
         }}
-        tabs={SOLICITANTE_CONTENT_TABS}
+        tabs={
+          canViewPrestamos
+            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB]
+            : SOLICITANTE_CONTENT_TABS
+        }
       />
-      {activeContentTab === "cancelaciones" ? (
+      {activeContentTab === "prestamos" ? (
+        <PrestamosDelSocioSection
+          isActive={activeContentTab === "prestamos"}
+          solicitudId={solicitudId}
+        />
+      ) : activeContentTab === "cancelaciones" ? (
         <CancelacionesSection
           canManageCancelaciones={canManageCancelaciones}
           isEditing={isEditing}
@@ -2737,6 +2927,8 @@ export function SolicitudesActualDetallePage() {
   const [selectedWorkflowTransition, setSelectedWorkflowTransition] =
     useState<WorkflowTransition | null>(null);
   const [isCreateSocioModalOpen, setIsCreateSocioModalOpen] = useState(false);
+  const [isGenerarPrestamoModalOpen, setIsGenerarPrestamoModalOpen] =
+    useState(false);
 
   useEffect(() => prefetchWhenIdle(loadSimuladorPrestamoModal), []);
   useEffect(() => {
@@ -3108,6 +3300,30 @@ export function SolicitudesActualDetallePage() {
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
 
+    // Solo si se cambiaron las cuotas: una solicitud que ya venia fuera de
+    // rango no tiene que bloquear otras ediciones. Si la linea no esta entre
+    // las del usuario no hay limites contra que comparar y no se valida.
+    const cuotasCambiaron =
+      currentValues.solicitud.cuotas.trim() !==
+      String(resolvedSolicitud.cuotas ?? "");
+    const cuotasError = cuotasCambiaron
+      ? getCuotasFueraDeLineaError(
+          currentValues.solicitud.cuotas,
+          lineasSimulador.find(
+            (linea) => linea.oid === resolvedSolicitud.lineaPrestamoLegacyOid,
+          ),
+        )
+      : null;
+
+    if (cuotasError) {
+      toast.error(cuotasError, {
+        duration: 3500,
+        icon: <CircleAlert className="size-5" />,
+        id: EDIT_SOLICITUD_CUOTAS_ERROR_TOAST_ID,
+      });
+      return;
+    }
+
     const payload = mapEditableValuesToPatchSolicitudCoreRequest(
       currentValues,
       resolvedSolicitud,
@@ -3307,6 +3523,7 @@ export function SolicitudesActualDetallePage() {
 
     try {
       await createPrestamoLegacyMutation.mutateAsync();
+      setIsGenerarPrestamoModalOpen(false);
       toast.success("Préstamo creado en el legado correctamente.", {
         duration: 3500,
         icon: <CircleCheckBig className="size-5" />,
@@ -3604,10 +3821,10 @@ export function SolicitudesActualDetallePage() {
       }`}
     >
       <header className="border-b border-border bg-surface px-3 py-2.5">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <div className="flex min-w-0 items-center gap-2.5 justify-self-start">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex min-w-0 max-w-full items-center gap-2.5">
             <Button
-              className="text-foreground-secondary"
+              className="shrink-0 text-foreground-secondary"
               onClick={() => navigate(originPath)}
               size="icon-sm"
               type="button"
@@ -3620,14 +3837,14 @@ export function SolicitudesActualDetallePage() {
               Detalle de Solicitud
             </h1>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 justify-self-center">
-            <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center gap-x-5 gap-y-2">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <span className="text-xs font-medium text-foreground-muted">
                 Solicitud ID
               </span>
               <IdChip value={resolvedSolicitud.id} />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <span className="text-xs font-medium text-foreground-muted">
                 Préstamo
               </span>
@@ -3641,7 +3858,7 @@ export function SolicitudesActualDetallePage() {
             </div>
           </div>
           <Badge
-            className="px-4 py-1.5 text-sm font-semibold justify-self-end"
+            className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
             dot
             variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}
           >
@@ -3664,7 +3881,7 @@ export function SolicitudesActualDetallePage() {
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
         onCreatePrestamoLegacy={
           canCreateSocio(currentUser)
-            ? () => void handleCreatePrestamoLegacy()
+            ? () => setIsGenerarPrestamoModalOpen(true)
             : undefined
         }
         onCreateSocio={
@@ -3832,6 +4049,15 @@ export function SolicitudesActualDetallePage() {
         </div>
       ) : null}
 
+      {canViewCalculadora && vistaTab === "credixsa" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <CredixsaInformeSection
+            isActive={vistaTab === "credixsa"}
+            solicitudId={solicitudId}
+          />
+        </div>
+      ) : null}
+
       {canViewCalculadora && vistaTab === "evaluacion" ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <Suspense
@@ -3877,23 +4103,38 @@ export function SolicitudesActualDetallePage() {
               resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
             }
             lineas={lineasSimulador}
-            onApply={(valores) => {
-              setEditableValues((current) =>
-                current
-                  ? {
-                      ...current,
-                      solicitud: {
-                        ...current.solicitud,
-                        cuotaResultante: valores.cuotaResultante,
-                        cuotas: valores.cuotas,
-                        fechaPrimerVencimiento: valores.fechaPrimerVencimiento,
-                        montoAFinanciar: valores.montoAFinanciar,
-                      },
+            onApply={
+              canEnterEditMode
+                ? (valores) => {
+                    // El simulador se abre desde la barra aunque la solicitud
+                    // no este en edicion. Antes, aplicar en ese caso descartaba
+                    // los valores sin avisar; ahora entra en edicion con los
+                    // valores cargados, para revisarlos y guardar.
+                    if (!isEditing) {
+                      handleStartEditing();
                     }
-                  : current,
-              );
-              setIsSimuladorOpen(false);
-            }}
+
+                    setEditableValues((current) => {
+                      const base =
+                        current ??
+                        mapSolicitudCoreToEditableValues(resolvedSolicitud);
+
+                      return {
+                        ...base,
+                        solicitud: {
+                          ...base.solicitud,
+                          cuotaResultante: valores.cuotaResultante,
+                          cuotas: valores.cuotas,
+                          fechaPrimerVencimiento:
+                            valores.fechaPrimerVencimiento,
+                          montoAFinanciar: valores.montoAFinanciar,
+                        },
+                      };
+                    });
+                    setIsSimuladorOpen(false);
+                  }
+                : undefined
+            }
             onOpenChange={setIsSimuladorOpen}
             open={isSimuladorOpen}
           />
@@ -3934,6 +4175,16 @@ export function SolicitudesActualDetallePage() {
         onSubmit={handleCreateSocio}
         open={isCreateSocioModalOpen}
         socio={null}
+      />
+      <GenerarPrestamoDialog
+        cuotas={resolvedSolicitud.cuotas}
+        isPending={createPrestamoLegacyMutation.isPending}
+        lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}
+        montoAFinanciar={resolvedSolicitud.montoAFinanciar}
+        onConfirm={() => void handleCreatePrestamoLegacy()}
+        onOpenChange={setIsGenerarPrestamoModalOpen}
+        open={isGenerarPrestamoModalOpen}
+        solicitudId={solicitudId}
       />
     </article>
   );

@@ -32,6 +32,7 @@ export const SOLICITUD_EDITABLE_FIELDS = [
 export const TITULAR_EDITABLE_FIELDS = [
   "titular.apellidoDenominacion",
   "titular.cbu",
+  "titular.cbuNoHabitual",
   "titular.celular",
   "titular.cuit",
   "titular.domicilioCalle",

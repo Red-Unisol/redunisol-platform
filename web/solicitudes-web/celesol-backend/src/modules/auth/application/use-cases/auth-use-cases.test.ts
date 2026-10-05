@@ -54,6 +54,7 @@ const activeUser: PersistedAuthUser = {
   isSystemAdmin: false,
   lastName: "User",
   legacyUser: "legacy.user",
+  recibeAsignacionAutomatica: false,
   passwordHash: "hashed-password",
   state: USER_STATE.ACTIVE,
   workflowOwnerId: "owner-1",
@@ -74,6 +75,7 @@ function toAuthUserView(
     | "isSystemAdmin"
     | "lastName"
     | "legacyUser"
+    | "recibeAsignacionAutomatica"
     | "state"
     | "workflowOwnerId"
     | "workflowOwner"
@@ -87,6 +89,7 @@ function toAuthUserView(
     isSystemAdmin: user.isSystemAdmin,
     lastName: user.lastName,
     legacyUser: user.legacyUser,
+    recibeAsignacionAutomatica: user.recibeAsignacionAutomatica,
     state: user.state,
     workflowOwnerId: user.workflowOwnerId,
     workflowOwner: user.workflowOwner ?? null,
@@ -179,6 +182,7 @@ class FakeUserRepository implements AuthRepository {
       isSystemAdmin: false,
       lastName: input.lastName,
       legacyUser: input.legacyUser,
+      recibeAsignacionAutomatica: false,
       passwordHash: input.passwordHash,
       state: input.state ?? USER_STATE.PENDING_AREA_ASSIGNMENT,
       workflowOwnerId:
@@ -629,6 +633,7 @@ describe("auth use cases", () => {
       isSystemAdmin: false,
       lastName: "User",
       legacyUser: "new.user",
+      recibeAsignacionAutomatica: false,
       state: USER_STATE.PENDING_AREA_ASSIGNMENT,
       workflowOwnerId: null,
       workflowOwner: null,
@@ -1069,6 +1074,7 @@ describe("auth use cases", () => {
       isSystemAdmin: activeUser.isSystemAdmin,
       lastName: activeUser.lastName,
       legacyUser: activeUser.legacyUser,
+      recibeAsignacionAutomatica: false,
       state: activeUser.state,
       workflowOwnerId: activeUser.workflowOwnerId,
       workflowOwner: activeUser.workflowOwner,

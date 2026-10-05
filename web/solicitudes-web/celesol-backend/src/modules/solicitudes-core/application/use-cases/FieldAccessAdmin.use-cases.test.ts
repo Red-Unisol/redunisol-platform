@@ -425,6 +425,7 @@ describe("FieldAccess admin use cases", () => {
     });
 
     const updateSolicitudUseCase = new UpdateSolicitudUseCase({
+      simularCuotaSolicitud: { execute: async () => null },
       fieldAccessRulesRepository: repository.asRuntimeRepository(),
       lineasPrestamoCatalog: {
         findByLegacyUserAndOid: async () => null,
@@ -706,6 +707,7 @@ function createSolicitudRepository(): SolicitudesCoreRepository {
       titular: {
         apellidoDenominacion: "Perez",
         cbu: "2850590940090418135201",
+        cbuNoHabitual: null,
         celular: "1122334455",
         cuit: "20333444559",
         domicilioCalle: "Siempre Viva",

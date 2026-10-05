@@ -84,9 +84,10 @@ describe("SolicitudWorkflowPlanBuilder", () => {
 
     const plan = builder.build(command, context);
 
-    assert.equal(plan.steps.length, 2);
+    assert.equal(plan.steps.length, 3);
     assert.equal(plan.steps[0]?.kind, "domain-transition");
     assert.equal(plan.steps[1]?.kind, "technical-transition");
+    assert.equal(plan.steps[2]?.kind, "auto-assignment");
     if (plan.steps[1]?.kind !== "technical-transition") {
       assert.fail("Expected a technical-transition step.");
     }
@@ -100,6 +101,67 @@ describe("SolicitudWorkflowPlanBuilder", () => {
     assert.equal(plan.steps[1].toStateId, null);
     assert.equal(plan.steps[1].transitionId, null);
     assert.equal(plan.steps[1].technical, true);
+    if (plan.steps[2]?.kind !== "auto-assignment") {
+      assert.fail("Expected an auto-assignment step.");
+    }
+    assert.equal(plan.steps[2].actionCode, "auto_assign");
+    assert.equal(plan.steps[2].technical, true);
+  });
+
+  it("adds an auto-assignment step when the target state belongs to RIESGO", () => {
+    const builder = new SolicitudWorkflowPlanBuilder();
+    const command = workflowCommand();
+    const context = validationContext({
+      transitionValidation: {
+        solicitud: {
+          estadoActualId: "state-revisar",
+          ownerId: "owner-vendedor",
+        },
+        transition: {
+          isActive: true,
+          requiresComment: true,
+          transitionId: "tr-reenviar",
+          toStateCode: "RevisionRiesgo",
+          toStateOwnerCode: "RIESGO",
+          toStateId: "state-revision-riesgo",
+          toStateIsActive: true,
+        },
+      },
+    });
+
+    const plan = builder.build(command, context);
+
+    // Reenvio directo a RIESGO: no pasa por Motor, pero igual debe repartir.
+    assert.equal(plan.steps.length, 2);
+    assert.equal(plan.steps[0]?.kind, "domain-transition");
+    assert.equal(plan.steps[1]?.kind, "auto-assignment");
+  });
+
+  it("does not add an auto-assignment step for owners that do not share out", () => {
+    const builder = new SolicitudWorkflowPlanBuilder();
+    const command = workflowCommand();
+    const context = validationContext({
+      transitionValidation: {
+        solicitud: {
+          estadoActualId: "state-revision-riesgo",
+          ownerId: "owner-riesgo",
+        },
+        transition: {
+          isActive: true,
+          requiresComment: true,
+          transitionId: "tr-rechazar",
+          toStateCode: "Rechazada",
+          toStateOwnerCode: "HISTORIAL",
+          toStateId: "state-rechazada",
+          toStateIsActive: true,
+        },
+      },
+    });
+
+    const plan = builder.build(command, context);
+
+    assert.equal(plan.steps.length, 1);
+    assert.equal(plan.steps[0]?.kind, "domain-transition");
   });
 
   it("does not add technical step when Motor context is missing", () => {

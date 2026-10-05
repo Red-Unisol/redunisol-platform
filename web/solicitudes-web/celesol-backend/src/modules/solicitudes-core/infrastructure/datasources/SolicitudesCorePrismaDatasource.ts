@@ -218,6 +218,7 @@ export class SolicitudesCorePrismaDatasource {
         create: {
           apellidoDenominacion: input.titular.apellidoDenominacion,
           cbu: input.titular.cbu,
+          cbuNoHabitual: input.titular.cbuNoHabitual,
           celular: input.titular.celular,
           cuit: input.titular.cuit,
           domicilioCalle: input.titular.domicilioCalle,
@@ -790,6 +791,7 @@ export class SolicitudesCorePrismaDatasource {
         legacyOid: patch.solicitud?.legacyOid,
         linkFirmaDigital: patch.solicitud?.linkFirmaDigital,
         firmaDigitalmente: patch.solicitud?.firmaDigitalmente,
+        lineaPrestamoCodigoMutual: patch.solicitud?.lineaPrestamoCodigoMutual,
         lineaPrestamoDescripcion: patch.solicitud?.lineaPrestamoDescripcion,
         lineaPrestamoLegacyOid: patch.solicitud?.lineaPrestamoLegacyOid,
         montoAFinanciar: patch.solicitud?.montoAFinanciar,
@@ -802,6 +804,7 @@ export class SolicitudesCorePrismaDatasource {
               update: {
                 apellidoDenominacion: patch.titular.apellidoDenominacion,
                 cbu: patch.titular.cbu,
+                cbuNoHabitual: patch.titular.cbuNoHabitual,
                 celular: patch.titular.celular,
                 cuit: patch.titular.cuit,
                 domicilioCalle: patch.titular.domicilioCalle,

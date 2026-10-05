@@ -23,7 +23,7 @@ Cubre los tres repos:
 - Node.js 22+ (misma versión mayor que usa el equipo en desarrollo) y npm.
 - PostgreSQL 18.x accesible desde el backend.
 - Un servidor S3-compatible (MinIO ) accesible desde el backend, para los adjuntos de solicitudes. **Nota:** la imagen `minio/minio` fue archivada en abril de 2026; `celesol-deploy` usa la última release pública antes del archivo (`RELEASE.2025-09-07T16-13-09Z`). Ver `celesol-deploy/MINIO_ALTERNATIVES.md` antes de comprometerse a esa imagen en producción.
-- **Conectividad de red saliente desde el backend hacia el sistema legado Vimax** (`https://celesol.dyndns.org:5050` por defecto). Usa un certificado TLS válido emitido por una CA pública (Sectigo, vence el 17/12/2026) — no requiere confiar en ningún certificado ni configuración adicional de TLS. Sin esta conectividad no funcionan: el seed inicial, la sincronización de socios, la simulación de préstamos, ni ninguna de las rutas `/solicitudes-legacy/*`.
+- **Conectividad de red saliente desde el backend hacia el sistema legado Vimax** (`https://celesol.dyndns.org:5002` por defecto). Usa un certificado TLS válido emitido por una CA pública (Sectigo, vence el 17/12/2026) — no requiere confiar en ningún certificado ni configuración adicional de TLS. Sin esta conectividad no funcionan: el seed inicial, la sincronización de socios, la simulación de préstamos, ni ninguna de las rutas `/solicitudes-legacy/*`.
 - Un proveedor SMTP (para verificación de email / recuperación de contraseña), salvo que se deje `MAIL_ENABLED=false` — igual hay que completar las variables `SMTP_*` con algún valor, son obligatorias en el schema de validación.
 - Docker + Docker Compose si se va a usar `celesol-deploy` tal cual para la infraestructura de base de datos/storage.
 

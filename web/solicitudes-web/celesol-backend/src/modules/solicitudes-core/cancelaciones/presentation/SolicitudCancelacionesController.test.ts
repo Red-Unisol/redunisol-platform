@@ -117,7 +117,7 @@ describe("SolicitudCancelacionesController", () => {
     await controller.create(
       {
         body: {
-          cbu: "0000003100012345678901",
+          cbu: "0000003100012345678907",
           cuentaADebitar: "1234567890",
           cuentaBancaria: "Caja de Ahorro",
           monto: "15000",
@@ -134,7 +134,7 @@ describe("SolicitudCancelacionesController", () => {
     assert.equal(getStatus(), 201);
     assert.deepEqual(getBody(), { id: "canc-1" });
     assert.deepEqual(receivedInput, {
-      cbu: "0000003100012345678901",
+      cbu: "0000003100012345678907",
       createdBy: "admin-1",
       cuentaADebitar: "1234567890",
       cuentaBancaria: "Caja de Ahorro",
@@ -352,7 +352,7 @@ describe("SolicitudCancelacionesController", () => {
     await controller.create(
       {
         body: {
-          cbu: "0000003100012345678901",
+          cbu: "0000003100012345678907",
           cuentaADebitar: "1234567890",
           cuentaBancaria: "Caja de Ahorro",
           monto: "15000",

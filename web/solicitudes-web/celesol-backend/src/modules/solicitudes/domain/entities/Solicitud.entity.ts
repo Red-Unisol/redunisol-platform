@@ -208,6 +208,52 @@ export type PrestamoOtorgadoLegacy = {
   vencimiento: string | null;
 };
 
+// Prestamo que el socio ya tiene con la mutual, para mostrarlo al analizar una
+// solicitud nueva. Sale de F.Module.Cuentas.Prestamos.Prestamo, vinculado por
+// la coleccion Integrantes.
+//
+// "vigente" lo calcula el legado, no lo deducimos nosotros. OJO: no significa
+// "tiene deuda" -- hay prestamos no vigentes con saldo pendiente.
+export type PrestamoDelSocioLegacy = {
+  capital: number | null;
+  fechaEmision: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  montoPrestamo: number | null;
+  nroCuenta: string | null;
+  primerVencimiento: string | null;
+  saldo: number | null;
+  vencimiento: string | null;
+  vigente: boolean | null;
+};
+
+// Detalle de un prestamo del socio, para el modal de la pestaña Préstamos. Son
+// los datos que los analistas miraban en la ficha del prestamo en Vimarx.
+//
+// "tasaInicial" llega como fraccion (0.1135), no como porcentaje: Vimarx la
+// muestra multiplicada por 100 (11,350 %).
+export type PrestamoDelSocioDetalleLegacy = {
+  asiento: string | null;
+  cobrador: string | null;
+  destino: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  nroCuenta: string | null;
+  ordenCompra: string | null;
+  tasaInicial: number | null;
+};
+
+// Una cuota del plan de un prestamo. Solo las del plan: el desembolso y los
+// pagos tambien son filas de CuotaPrestamo en Vimarx, pero no son cuotas.
+export type CuotaPrestamoLegacy = {
+  capital: number | null;
+  fecha: string | null;
+  montoTotal: number | null;
+  nroCuota: number | null;
+  saldoCuota: number | null;
+  saldoCuotaConPunitorios: number | null;
+};
+
 export type LineaPrestamoPresolicitud = {
   cantidadMaximaCuotas: number | null;
   cantidadMinimaCuotas: number | null;

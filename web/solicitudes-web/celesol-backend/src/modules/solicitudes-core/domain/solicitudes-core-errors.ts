@@ -42,6 +42,13 @@ export class SolicitudCoreNotFoundError extends SolicitudesError {
   }
 }
 
+export class PrestamoDelSocioNotFoundError extends SolicitudesError {
+  constructor() {
+    super("Prestamo del socio not found.", 404);
+    this.name = "PrestamoDelSocioNotFoundError";
+  }
+}
+
 export class SolicitudPrestamoNoGeneradoError extends SolicitudesError {
   constructor() {
     super("El préstamo de esta solicitud todavía no fue generado.", 400);
@@ -101,6 +108,16 @@ export class SolicitudReciboSueldoAdjuntoRequiredForWorkflowError extends Solici
       409,
     );
     this.name = "SolicitudReciboSueldoAdjuntoRequiredForWorkflowError";
+  }
+}
+
+export class SolicitudMontoReciboRequiredForWorkflowError extends SolicitudesError {
+  constructor() {
+    super(
+      "Debe cargar el monto del recibo antes de enviar la solicitud a Riesgo.",
+      409,
+    );
+    this.name = "SolicitudMontoReciboRequiredForWorkflowError";
   }
 }
 
@@ -189,6 +206,32 @@ export class SolicitudPrestamoDataIncompleteError extends SolicitudesError {
     );
     this.name = "SolicitudPrestamoDataIncompleteError";
     this.missingFieldLabels = missingFieldLabels;
+  }
+}
+
+export class SolicitudCancelacionesFueraDeRangoError extends SolicitudesError {
+  readonly maximo: number;
+
+  constructor(maximo: number) {
+    super(
+      `Las cancelaciones superan el máximo que acepta el legado (${maximo.toLocaleString("es-AR")}). Generá el préstamo desde el sistema anterior.`,
+      409,
+    );
+    this.name = "SolicitudCancelacionesFueraDeRangoError";
+    this.maximo = maximo;
+  }
+}
+
+export class SolicitudLineaPrestamoLegacyIdUnresolvedError extends SolicitudesError {
+  readonly lineaDescripcion: string;
+
+  constructor(lineaDescripcion: string) {
+    super(
+      `No se pudo determinar la línea "${lineaDescripcion}" en el sistema legado. No se creó el préstamo: crearlo sin resolverla lo daría de alta con otra línea y otra tasa.`,
+      409,
+    );
+    this.name = "SolicitudLineaPrestamoLegacyIdUnresolvedError";
+    this.lineaDescripcion = lineaDescripcion;
   }
 }
 

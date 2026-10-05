@@ -15,22 +15,26 @@ import {
   buildSolicitudFieldAccess,
 } from "../services/SolicitudFieldAccess";
 import { canEditSolicitud } from "../services/SolicitudPermissions";
+import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 
 type Dependencies = {
   fieldAccessRulesRepository: SolicitudFieldAccessRulesRepository;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
   repository: SolicitudesCoreRepository;
+  simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
 };
 
 export class UpdateSolicitudUseCase {
   private readonly fieldAccessRulesRepository: SolicitudFieldAccessRulesRepository;
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly repository: SolicitudesCoreRepository;
+  private readonly simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
 
   constructor(dependencies: Dependencies) {
     this.fieldAccessRulesRepository = dependencies.fieldAccessRulesRepository;
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.repository = dependencies.repository;
+    this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
   }
 
   async execute(input: UpdateSolicitudInput) {
@@ -125,6 +129,56 @@ export class UpdateSolicitudUseCase {
       }));
     }
 
+    await this.recalcularCuotaResultante(patch, solicitud);
+
     return this.repository.update(input.id, patch);
+  }
+
+  /**
+   * Si la edicion toca alguno de los datos que determinan la cuota, se vuelve
+   * a pedir al legado. Sin esto, cambiar el monto o las cuotas dejaria una
+   * cuota resultante vieja -- peor que no tenerla, porque parece correcta.
+   *
+   * Solo se recalcula cuando alguno de esos campos viene en el patch: editar
+   * un telefono no tiene por que golpear al legado.
+   */
+  private async recalcularCuotaResultante(
+    patch: UpdateSolicitudCorePatch,
+    solicitud: { cuotas: number | null; fechaPrimerVencimiento?: string | null; lineaPrestamoLegacyOid: string; montoAFinanciar: number | null },
+  ) {
+    const cambios = patch.solicitud;
+
+    if (
+      !cambios ||
+      (cambios.cuotas === undefined &&
+        cambios.montoAFinanciar === undefined &&
+        cambios.lineaPrestamoLegacyOid === undefined &&
+        cambios.fechaPrimerVencimiento === undefined)
+    ) {
+      return;
+    }
+
+    const simulacion = await this.simularCuotaSolicitud.execute({
+      cuotas: cambios.cuotas !== undefined ? cambios.cuotas : solicitud.cuotas,
+      fechaPrimerVencimiento:
+        cambios.fechaPrimerVencimiento !== undefined
+          ? cambios.fechaPrimerVencimiento
+          : (solicitud.fechaPrimerVencimiento ?? null),
+      lineaPrestamoLegacyOid:
+        cambios.lineaPrestamoLegacyOid !== undefined
+          ? cambios.lineaPrestamoLegacyOid
+          : solicitud.lineaPrestamoLegacyOid,
+      montoAFinanciar:
+        cambios.montoAFinanciar !== undefined
+          ? cambios.montoAFinanciar
+          : solicitud.montoAFinanciar,
+    });
+
+    if (!simulacion) {
+      return;
+    }
+
+    cambios.cuotaResultante = simulacion.cuotaResultante;
+    cambios.fechaPrimerVencimiento = simulacion.fechaPrimerVencimiento;
   }
 }

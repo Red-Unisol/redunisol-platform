@@ -6,13 +6,21 @@ import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { CrearPrestamoGateway } from "../../infrastructure/services/CrearPrestamoGateway";
 import type { Socio } from "../../../socios/domain/entities/Socio.entity";
 import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
+import type { SolicitudCancelacion } from "../../cancelaciones/domain/entities/SolicitudCancelacion.entity";
+import type { SolicitudCancelacionRepository } from "../../cancelaciones/domain/repositories/SolicitudCancelacionRepository";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
+import type {
+  LineaPrestamoLegacy,
+  LineaPrestamoLegacyIdResolver,
+} from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import {
   ForbiddenSolicitudAccessError,
+  SolicitudCancelacionesFueraDeRangoError,
   SolicitudCoreNotFoundError,
   SolicitudLegacyOidAlreadyExistsError,
+  SolicitudLineaPrestamoLegacyIdUnresolvedError,
   SolicitudPrestamoDataIncompleteError,
   SolicitudTitularSocioLegacyRequiredError,
   SolicitudTitularSocioRequiredForWorkflowError,
@@ -20,6 +28,7 @@ import {
 } from "../../domain/solicitudes-core-errors";
 import { CreatePrestamoLegacyUseCase } from "./CreatePrestamoLegacy.use-case";
 
+const LINK_FIRMA_BASE_URL = "https://redunisol.com.ar/finalizar.php";
 const TODAY = "2026-07-22";
 
 describe("CreatePrestamoLegacyUseCase", () => {
@@ -39,7 +48,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
       },
     });
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway,
       repository,
       sociosRepository: socioRepository(),
@@ -57,8 +69,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
       cuotas: 6,
       fechaEmision: TODAY,
       integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
-      lineaPrestamo: "LP-1",
-      montoDeseado: "10000",
+      lineaPrestamo: "LP-REAL-1",
+      montoDeseado: 10000,
       vendedor: "347",
     });
     assert.deepEqual(receivedUpdate, {
@@ -66,16 +78,117 @@ describe("CreatePrestamoLegacyUseCase", () => {
       patch: {
         solicitud: {
           legacyOid: "555000",
+          // Se persiste ademas de viajar en el link: es lo que despues usa el
+          // finalizar para elegir el documento sin mirar la URL.
+          lineaPrestamoCodigoMutual: "amejuca",
           linkFirmaDigital:
-            "https://redunisol.com.ar/finalizar.php?linea=Personal&ntrans=0&sol=555000",
+            "https://redunisol.com.ar/finalizar.php?linea=amejuca&ntrans=0&sol=555000",
         },
       },
     });
   });
 
+  it("sends the live cancelaciones total as NroLote in cents and skips the deleted ones", async () => {
+    let receivedInput: { nroLote?: number } | undefined;
+    const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository([
+        cancelacion({ id: "canc-1", monto: 30000 }),
+        cancelacion({ id: "canc-2", monto: 630378.35 }),
+        cancelacion({
+          id: "canc-3",
+          monto: 1000,
+          deletedAt: new Date("2026-07-22T11:00:00.000Z"),
+        }),
+      ]),
+      gateway: fakeGateway({
+        crear: async (input: unknown) => {
+          receivedInput = input as { nroLote?: number };
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await useCase.execute({
+      currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(receivedInput?.nroLote, 66037835);
+  });
+
+  it("omits NroLote when the solicitud has no cancelaciones", async () => {
+    let receivedInput: { nroLote?: number } | undefined;
+    const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
+      gateway: fakeGateway({
+        crear: async (input: unknown) => {
+          receivedInput = input as { nroLote?: number };
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await useCase.execute({
+      currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+      solicitudId: "sol-1",
+    });
+
+    assert.ok(receivedInput);
+    assert.ok(!("nroLote" in receivedInput));
+  });
+
+  it("rejects cancelaciones above what the legacy integer field holds, without creating the prestamo", async () => {
+    let called = false;
+    const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository([
+        cancelacion({ monto: 21474836.48 }),
+      ]),
+      gateway: fakeGateway({
+        crear: async () => {
+          called = true;
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      SolicitudCancelacionesFueraDeRangoError,
+    );
+    assert.equal(called, false);
+  });
+
   it("allows a system admin regardless of ownerId", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository(),
@@ -97,7 +210,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudCoreNotFoundError when the solicitud does not exist", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository({ findById: async () => null }),
       sociosRepository: socioRepository(),
@@ -117,7 +233,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudLegacyOidAlreadyExistsError when legacyOid is already set", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository({
         findById: async () => solicitud({ legacyOid: "111" }),
@@ -139,7 +258,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws ForbiddenSolicitudAccessError when the current user is not the solicitud owner", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository(),
@@ -159,7 +281,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudPrestamoDataIncompleteError listing missing fields when montoAFinanciar and cuotas are null", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository({
         findById: async () => solicitud({ cuotas: null, montoAFinanciar: null }),
@@ -186,9 +311,58 @@ describe("CreatePrestamoLegacyUseCase", () => {
     );
   });
 
+  it("does not create the prestamo when the titular is missing data required to confirm", async () => {
+    // El boton depende del dueño del estado actual, no del estado, asi que
+    // Riesgo puede generar el prestamo apenas le llega la solicitud -- antes de
+    // que se haya exigido nada del titular. Sin esta validacion quedaban
+    // prestamos reales en Vimarx para solicitudes que despues no se podian
+    // confirmar.
+    let crearCalled = false;
+    const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
+      gateway: fakeGateway({
+        crear: async () => {
+          crearCalled = true;
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository({
+        findById: async () =>
+          solicitud({
+            titular: { ...solicitud().titular, cbu: null },
+          }),
+      }),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      (error: unknown) => {
+        assert.equal(
+          (error as { name?: string }).name,
+          "SolicitudTitularDataIncompleteForConfirmarError",
+        );
+        return true;
+      },
+    );
+    assert.equal(crearCalled, false);
+  });
+
   it("throws SolicitudTitularSocioRequiredForWorkflowError when no socio matches the titular", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository({ lookupByDocumento: async () => [] }),
@@ -208,7 +382,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioLegacyRequiredError when the socio has no nroSocioLegacy", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository({
@@ -231,7 +408,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("does not persist anything when the gateway rejects the creation", async () => {
     let updateCalled = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway({
         crear: async () => {
           throw new Error("legacy rejected");
@@ -261,7 +441,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator user is not found", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository({ findById: async () => null }),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository(),
@@ -281,7 +464,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator has no legacy user id", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
       gateway: fakeGateway(),
       repository: solicitudesRepository(),
       sociosRepository: socioRepository(),
@@ -300,6 +486,39 @@ describe("CreatePrestamoLegacyUseCase", () => {
       SolicitudVendedorLegacyRequiredError,
     );
   });
+
+  it("does not call the gateway when the linea cannot be resolved in the legacy system", async () => {
+    let crearCalled = false;
+    const gateway = fakeGateway({
+      crear: async () => {
+        crearCalled = true;
+        return { id: "555000" };
+      },
+    });
+    const useCase = new CreatePrestamoLegacyUseCase({
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
+      gateway,
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(null),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      SolicitudLineaPrestamoLegacyIdUnresolvedError,
+    );
+    // Lo importante no es solo que falle, sino que NO llegue a crear nada: un
+    // prestamo con la linea equivocada no da error y queda mal en silencio.
+    assert.equal(crearCalled, false);
+  });
 });
 
 function fakeGateway(
@@ -309,6 +528,49 @@ function fakeGateway(
     crear: async () => ({ id: "999" }),
     ...impl,
   } as unknown as CrearPrestamoGateway;
+}
+
+// Devuelve un id distinto del que guarda la solicitud ("LP-1") a proposito: asi
+// las aserciones sobre el payload prueban que se manda el id TRADUCIDO y no el
+// Oid de presolicitud que quedo guardado. El codigo de mutual tambien difiere
+// de la descripcion de la solicitud ("Personal") por la misma razon.
+function cancelacionesRepository(
+  cancelaciones: SolicitudCancelacion[] = [],
+): Pick<SolicitudCancelacionRepository, "listBySolicitudId"> {
+  return { listBySolicitudId: async () => cancelaciones };
+}
+
+function cancelacion(
+  overrides: Partial<SolicitudCancelacion> = {},
+): SolicitudCancelacion {
+  return {
+    id: "canc-1",
+    solicitudId: "sol-1",
+    cuentaADebitar: "5250 - CENTRO COMERCIAL",
+    cbu: "3300500115000142500022",
+    cuentaBancaria: "Cuenta habitual",
+    socio: "5250 - CENTRO COMERCIAL",
+    socioLegacyId: "142758",
+    monto: 30000,
+    notas: null,
+    createdBy: null,
+    createdAt: new Date("2026-07-22T10:00:00.000Z"),
+    updatedAt: new Date("2026-07-22T10:00:00.000Z"),
+    deletedAt: null,
+    deletedBy: null,
+    ...overrides,
+  };
+}
+
+function lineaPrestamoResolver(
+  resolved: LineaPrestamoLegacy | null = {
+    codigoMutual: "amejuca",
+    id: "LP-REAL-1",
+  },
+): LineaPrestamoLegacyIdResolver {
+  return {
+    resolveByPresolicitudOid: async () => resolved,
+  };
 }
 
 function authRepository(
@@ -329,6 +591,7 @@ function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
     isSystemAdmin: false,
     lastName: "Uno",
     legacyUser: "VUSER",
+    recibeAsignacionAutomatica: false,
     state: 1,
     workflowOwnerId: null,
     ...overrides,
@@ -433,19 +696,23 @@ function solicitud(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
       vehiculo: null,
       vivienda: null,
     },
+    // Titular completo: generar el prestamo exige los mismos datos que
+    // confirmar la solicitud.
     titular: {
       apellidoDenominacion: "Perez",
-      cbu: null,
-      celular: null,
+      cbu: "2850590940090418135201",
+      cbuNoHabitual: null,
+      celular: "1122334455",
       cuit: "20-33344455-9",
       domicilioCalle: null,
-      email: null,
+      email: "juan@example.com",
+      fechaNacimiento: "1990-05-20",
       localidad: null,
       nombre: "Juan",
       nroDocumento: "33.344.455",
       nroPuerta: null,
       nroSocio: null,
-      sexo: null,
+      sexo: "M",
       tipoDocumento: "DNI",
     },
     updatedAt: new Date("2026-05-18T10:00:00.000Z"),

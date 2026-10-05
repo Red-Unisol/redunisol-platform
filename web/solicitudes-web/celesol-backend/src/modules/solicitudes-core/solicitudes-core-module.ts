@@ -26,9 +26,14 @@ import { SolicitudCancelacionRepositoryImpl } from "./cancelaciones/infrastructu
 import { SolicitudCancelacionesController } from "./cancelaciones/presentation/SolicitudCancelacionesController";
 import { ChangeSolicitudStateUseCase } from "./application/use-cases/ChangeSolicitudState.use-case";
 import { CreatePrestamoLegacyUseCase } from "./application/use-cases/CreatePrestamoLegacy.use-case";
+import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
+import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
+import { GetCredixsaSolicitudUseCase } from "./application/use-cases/GetCredixsaSolicitud.use-case";
+import { ConsultarCredixsaGateway } from "./infrastructure/services/ConsultarCredixsaGateway";
+import { ConsultarCredixsaAlCrearSolicitud } from "./application/services/ConsultarCredixsaAlCrearSolicitud";
 import { CreateSolicitudUseCase } from "./application/use-cases/CreateSolicitud.use-case";
 import { GetFieldAccessFieldCatalogUseCase } from "./application/use-cases/GetFieldAccessFieldCatalog.use-case";
 import { GetFieldAccessRuleByStateUseCase } from "./application/use-cases/GetFieldAccessRuleByState.use-case";
@@ -49,19 +54,23 @@ import { SimularPrestamoUseCase } from "./application/use-cases/SimularPrestamo.
 import { UpdateSolicitudUseCase } from "./application/use-cases/UpdateSolicitud.use-case";
 import { UpdateFieldAccessRuleUseCase } from "./application/use-cases/UpdateFieldAccessRule.use-case";
 import { UpdateWorkflowTransitionMetadataUseCase } from "./application/use-cases/UpdateWorkflowTransitionMetadata.use-case";
+import { SolicitudCredixsaInformesPrismaDatasource } from "./infrastructure/datasources/SolicitudCredixsaInformesPrismaDatasource";
 import { SolicitudFieldAccessAdminPrismaDatasource } from "./infrastructure/datasources/SolicitudFieldAccessAdminPrismaDatasource";
 import { SolicitudesCorePrismaDatasource } from "./infrastructure/datasources/SolicitudesCorePrismaDatasource";
 import { SolicitudWorkflowPrismaDatasource } from "./infrastructure/datasources/SolicitudWorkflowPrismaDatasource";
 import { SolicitudFieldAccessRulesPrismaDatasource } from "./infrastructure/datasources/SolicitudFieldAccessRulesPrismaDatasource";
 import { WorkflowTransitionAdminPrismaDatasource } from "./infrastructure/datasources/WorkflowTransitionAdminPrismaDatasource";
 import { WorkflowStatePrismaDatasource } from "./infrastructure/datasources/WorkflowStatePrismaDatasource";
+import { SolicitudCredixsaInformeRepositoryImpl } from "./infrastructure/repositories/SolicitudCredixsaInformeRepositoryImpl";
 import { SolicitudFieldAccessAdminRepositoryImpl } from "./infrastructure/repositories/SolicitudFieldAccessAdminRepositoryImpl";
 import { SolicitudFieldAccessRulesRepositoryImpl } from "./infrastructure/repositories/SolicitudFieldAccessRulesRepositoryImpl";
 import { SolicitudesCoreRepositoryImpl } from "./infrastructure/repositories/SolicitudesCoreRepositoryImpl";
 import { SolicitudWorkflowRepositoryImpl } from "./infrastructure/repositories/SolicitudWorkflowRepositoryImpl";
 import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/repositories/WorkflowTransitionAdminRepositoryImpl";
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
+import { SimularCuotaSolicitud } from "./application/services/SimularCuotaSolicitud";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
+import { EvaluateListLineaPrestamoLegacyIdResolver } from "./infrastructure/services/EvaluateListLineaPrestamoLegacyIdResolver";
 import { PrismaWorkflowStateCatalog } from "./infrastructure/services/PrismaWorkflowStateCatalog";
 import { SolicitudWorkflowEngine } from "./domain/workflow/SolicitudWorkflowEngine";
 import { SolicitudTransitionPolicy } from "./domain/workflow/SolicitudTransitionPolicy";
@@ -137,6 +146,11 @@ export function createSolicitudesCoreRouter(
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
+  const lineaPrestamoLegacyIdResolver =
+    new EvaluateListLineaPrestamoLegacyIdResolver({
+      baseUrl: env.LEGACY_API_BASE_URL,
+      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    });
   const authRepository = new AuthRepositoryImpl(
     new AuthPrismaDatasource(prisma),
   );
@@ -148,8 +162,7 @@ export function createSolicitudesCoreRouter(
   const workflowPlanExecutor = new SolicitudWorkflowPlanExecutor({
     repository: solicitudWorkflowRepository,
   });
-  const workflowCapabilitiesService =
-    new SolicitudWorkflowCapabilitiesService();
+  const workflowCapabilitiesService = new SolicitudWorkflowCapabilitiesService();
   const workflowEngine = new SolicitudWorkflowEngine({
     capabilitiesService: workflowCapabilitiesService,
     planBuilder: workflowPlanBuilder,
@@ -157,9 +170,41 @@ export function createSolicitudesCoreRouter(
     repository: solicitudWorkflowRepository,
     transitionPolicy: workflowTransitionPolicy,
   });
+  const simularCuotaSolicitud = new SimularCuotaSolicitud({
+    gateway: prestamosSimulacionGateway,
+  });
+  // Donde quedan los informes de CredixSA. Lo escriben las dos vias de abajo
+  // y la pestaña lee de aca antes de ir a Kestra.
+  const solicitudCredixsaInformeRepository =
+    new SolicitudCredixsaInformeRepositoryImpl(
+      new SolicitudCredixsaInformesPrismaDatasource(prisma),
+    );
+  const getCredixsaSolicitudUseCase = new GetCredixsaSolicitudUseCase({
+    // La pestaña va directo al flow de los analistas, sin la cola del
+    // envoltorio. Ver el comentario de la variable en config/env.
+    gateway: new ConsultarCredixsaGateway({
+      webhookUrl: env.CREDIXSA_INFORME_WEBHOOK_URL,
+    }),
+    informes: solicitudCredixsaInformeRepository,
+    repository: solicitudesCoreRepository,
+    // Aca hay alguien esperando el informe, y si la cache esta fria hay que
+    // bancarse el scraping de CredixSA.
+    timeoutMs: env.CREDIXSA_INFORME_TIMEOUT_MS,
+  });
+  const consultarCredixsaAlCrearSolicitud = new ConsultarCredixsaAlCrearSolicitud({
+    // El alta pasa por el envoltorio, que encola los disparos automaticos
+    // para que no le compitan a un analista esperando en la pestaña.
+    gateway: new ConsultarCredixsaGateway({
+      webhookUrl: env.CREDIXSA_CONSULTA_WEBHOOK_URL,
+    }),
+    informes: solicitudCredixsaInformeRepository,
+    timeoutMs: env.CREDIXSA_CONSULTA_TIMEOUT_MS,
+  });
   const createSolicitudUseCase = new CreateSolicitudUseCase({
+    consultarCredixsaAlCrearSolicitud,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
+    simularCuotaSolicitud,
     workflowStateCatalog,
   });
   const getSolicitudByIdUseCase = new GetSolicitudByIdUseCase({
@@ -180,6 +225,7 @@ export function createSolicitudesCoreRouter(
     fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
+    simularCuotaSolicitud,
   });
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
     adjuntoRepository: solicitudAdjuntoRepository,
@@ -188,9 +234,22 @@ export function createSolicitudesCoreRouter(
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
   });
+  const listPrestamosDelSocioUseCase = new ListPrestamosDelSocioUseCase({
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+    sociosRepository,
+  });
+  const getPrestamoDelSocioUseCase = new GetPrestamoDelSocioUseCase({
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+    sociosRepository,
+  });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     authRepository,
+    cancelacionesRepository: solicitudCancelacionRepository,
     gateway: crearPrestamoGateway,
+    lineaPrestamoLegacyIdResolver,
+    linkFirmaDigitalBaseUrl: env.FINALIZAR_FIRMA_DIGITAL_BASE_URL,
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,
@@ -211,20 +270,15 @@ export function createSolicitudesCoreRouter(
   const getSolicitudesStatsUseCase = new GetSolicitudesStatsUseCase({
     repository: solicitudesCoreRepository,
   });
-  const getVendedorDashboardStatsUseCase = new GetVendedorDashboardStatsUseCase(
-    {
-      repository: solicitudesCoreRepository,
-    },
-  );
-  const getAnalistaDashboardStatsUseCase = new GetAnalistaDashboardStatsUseCase(
-    {
-      repository: solicitudesCoreRepository,
-    },
-  );
-  const getAnalistaDashboardStatsV2UseCase =
-    new GetAnalistaDashboardStatsV2UseCase({
-      repository: solicitudesCoreRepository,
-    });
+  const getVendedorDashboardStatsUseCase = new GetVendedorDashboardStatsUseCase({
+    repository: solicitudesCoreRepository,
+  });
+  const getAnalistaDashboardStatsUseCase = new GetAnalistaDashboardStatsUseCase({
+    repository: solicitudesCoreRepository,
+  });
+  const getAnalistaDashboardStatsV2UseCase = new GetAnalistaDashboardStatsV2UseCase({
+    repository: solicitudesCoreRepository,
+  });
   const simularPrestamoUseCase = new SimularPrestamoUseCase({
     gateway: prestamosSimulacionGateway,
     lineasPrestamoCatalog,
@@ -239,17 +293,16 @@ export function createSolicitudesCoreRouter(
     solicitudesRepository: solicitudesCoreRepository,
     storageBucket: env.MINIO_BUCKET_SOLICITUDES,
   });
-  const uploadSolicitudAdjuntosBatchUseCase =
-    new UploadSolicitudAdjuntosBatchUseCase({
-      allowedExtensions: env.ADJUNTOS_ALLOWED_EXTENSIONS,
-      allowedMimeTypes: env.ADJUNTOS_ALLOWED_MIME_TYPES,
-      fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
-      maxFileSizeBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
-      objectStorage: adjuntosObjectStorage,
-      repository: solicitudAdjuntoRepository,
-      solicitudesRepository: solicitudesCoreRepository,
-      storageBucket: env.MINIO_BUCKET_SOLICITUDES,
-    });
+  const uploadSolicitudAdjuntosBatchUseCase = new UploadSolicitudAdjuntosBatchUseCase({
+    allowedExtensions: env.ADJUNTOS_ALLOWED_EXTENSIONS,
+    allowedMimeTypes: env.ADJUNTOS_ALLOWED_MIME_TYPES,
+    fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
+    maxFileSizeBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
+    objectStorage: adjuntosObjectStorage,
+    repository: solicitudAdjuntoRepository,
+    solicitudesRepository: solicitudesCoreRepository,
+    storageBucket: env.MINIO_BUCKET_SOLICITUDES,
+  });
   const listSolicitudAdjuntosUseCase = new ListSolicitudAdjuntosUseCase({
     repository: solicitudAdjuntoRepository,
     solicitudesRepository: solicitudesCoreRepository,
@@ -295,6 +348,9 @@ export function createSolicitudesCoreRouter(
       solicitudesRepository: solicitudesCoreRepository,
     });
   const solicitudesCoreController = new SolicitudesCoreController({
+    getCredixsaSolicitudUseCase,
+    getPrestamoDelSocioUseCase,
+    listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,
     changeSolicitudStateUseCase,
@@ -322,15 +378,13 @@ export function createSolicitudesCoreRouter(
     uploadSolicitudAdjuntoUseCase,
     uploadSolicitudAdjuntosBatchUseCase,
   });
-  const solicitudCancelacionesController = new SolicitudCancelacionesController(
-    {
-      createSolicitudCancelacionUseCase,
-      deleteSolicitudCancelacionUseCase,
-      getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
-      listSolicitudCancelacionesUseCase,
-      updateSolicitudCancelacionUseCase,
-    },
-  );
+  const solicitudCancelacionesController = new SolicitudCancelacionesController({
+    createSolicitudCancelacionUseCase,
+    deleteSolicitudCancelacionUseCase,
+    getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+    listSolicitudCancelacionesUseCase,
+    updateSolicitudCancelacionUseCase,
+  });
 
   return SolicitudesCoreRoutes.create(
     solicitudesCoreController,
@@ -351,9 +405,7 @@ export function createSolicitudesCoreAdminRouter(
       solicitudFieldAccessAdminDatasource,
     );
   const workflowTransitionAdminRepository =
-    new WorkflowTransitionAdminRepositoryImpl(
-      workflowTransitionAdminDatasource,
-    );
+    new WorkflowTransitionAdminRepositoryImpl(workflowTransitionAdminDatasource);
 
   const fieldAccessAdminController = new FieldAccessAdminController({
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,

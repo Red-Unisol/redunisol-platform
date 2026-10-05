@@ -156,6 +156,16 @@ COPY --from=builder --chown=node:node /app/dist         ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node prisma ./prisma
 
+# La calculadora de riesgo es un .xlsx que el backend lee del disco en cada
+# GET /api/riesgo/calculadora (RiesgoController: process.cwd() + docs/...).
+# WORKDIR es /app, asi que el archivo tiene que quedar en /app/docs/.
+#
+# Sin esta linea el endpoint responde 404 "No se encontro el archivo de la
+# calculadora de riesgo": anda en local, donde el proyecto esta completo, y
+# falla en la imagen, que solo lleva lo que se copia explicitamente.
+# La excepcion correspondiente esta en .dockerignore.
+COPY --chown=node:node docs/calculadora-riesgo ./docs/calculadora-riesgo
+
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # sed elimina los retornos de carro de Windows (\r). Si el script se guarda en

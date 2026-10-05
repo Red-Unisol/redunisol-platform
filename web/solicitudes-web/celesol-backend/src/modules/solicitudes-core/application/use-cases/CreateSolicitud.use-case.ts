@@ -8,21 +8,33 @@ import {
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type { WorkflowStateCatalog } from "../../domain/services/WorkflowStateCatalog";
+import type { ConsultarCredixsaAlCrearSolicitud } from "../services/ConsultarCredixsaAlCrearSolicitud";
+import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 
 type Dependencies = {
   lineasPrestamoCatalog: LineasPrestamoCatalog;
+  consultarCredixsaAlCrearSolicitud: Pick<ConsultarCredixsaAlCrearSolicitud, "execute">;
   repository: SolicitudesCoreRepository;
+  simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
 };
 
 export class CreateSolicitudUseCase {
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
+  private readonly consultarCredixsaAlCrearSolicitud: Pick<
+    ConsultarCredixsaAlCrearSolicitud,
+    "execute"
+  >;
   private readonly repository: SolicitudesCoreRepository;
+  private readonly simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   private readonly workflowStateCatalog: WorkflowStateCatalog;
 
   constructor(dependencies: Dependencies) {
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
+    this.consultarCredixsaAlCrearSolicitud =
+      dependencies.consultarCredixsaAlCrearSolicitud;
     this.repository = dependencies.repository;
+    this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.workflowStateCatalog = dependencies.workflowStateCatalog;
   }
 
@@ -55,7 +67,17 @@ export class CreateSolicitudUseCase {
       throw new WorkflowInitialStateNotConfiguredError();
     }
 
-    return this.repository.create({
+    // La cuota y la fecha del primer vencimiento las calcula el legado, igual
+    // que hace Vimarx al guardar. Si no se pueden obtener se guarda lo que
+    // haya mandado el formulario (que puede venir del simulador) o null.
+    const simulacion = await this.simularCuotaSolicitud.execute({
+      cuotas: input.cuotas ?? null,
+      fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
+      lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
+      montoAFinanciar: input.montoAFinanciar ?? null,
+    });
+
+    const solicitud = await this.repository.create({
       createdBy: input.createdBy,
       conyuge: input.conyuge
         ? {
@@ -99,9 +121,13 @@ export class CreateSolicitudUseCase {
         tipoGarantia: garantia.tipoGarantia ?? null,
         tipoRelacion: garantia.tipoRelacion ?? null,
       })),
-      cuotaResultante: input.cuotaResultante ?? null,
+      cuotaResultante:
+        simulacion?.cuotaResultante ?? input.cuotaResultante ?? null,
       cuotas: input.cuotas ?? null,
-      fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
+      fechaPrimerVencimiento:
+        simulacion?.fechaPrimerVencimiento ??
+        input.fechaPrimerVencimiento ??
+        null,
       datosLaborales: {
         actividadLaboral: input.datosLaborales.actividadLaboral ?? null,
         antiguedadLaboralMeses:
@@ -136,6 +162,7 @@ export class CreateSolicitudUseCase {
       titular: {
         apellidoDenominacion: input.titular.apellidoDenominacion,
         cbu: input.titular.cbu ?? null,
+        cbuNoHabitual: input.titular.cbuNoHabitual ?? null,
         celular: input.titular.celular ?? null,
         cuit: input.titular.cuit ?? null,
         domicilioCalle: input.titular.domicilioCalle ?? null,
@@ -156,6 +183,22 @@ export class CreateSolicitudUseCase {
       },
       vendedorSolicitud: authenticatedSellerName,
     });
+
+    // Sin await a proposito: la consulta a CredixSA puede tardar minutos entre
+    // la cola de Kestra y el scraping, y el vendedor esta esperando que la
+    // solicitud se guarde. El catch no es opcional -- una promesa rechazada
+    // sin manejar tumba el proceso en Node. Si falla, la pestaña consulta en
+    // el momento.
+    void this.consultarCredixsaAlCrearSolicitud
+      .execute(solicitud.id, input.titular)
+      .catch((error: unknown) => {
+        console.error("credixsa_consulta_al_crear_failed", {
+          message: error instanceof Error ? error.message : String(error),
+          solicitudId: solicitud.id,
+        });
+      });
+
+    return solicitud;
   }
 }
 

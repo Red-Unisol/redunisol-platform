@@ -20,7 +20,12 @@ import {
 import { Input } from "@/shared/components/ui/input";
 import { StyledSelect } from "@/shared/components/ui/styled-select";
 import { TableLoader } from "@/shared/components/ui/table-loader";
-import { formatMoneyValue, parseMoneyValue } from "@/shared/utils/money-format";
+import {
+  formatDecimalMoneyValue,
+  formatMoneyAmount,
+  parseMoneyValue,
+} from "@/shared/utils/money-format";
+import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 
 type SimuladorPrestamoFormValues = {
   capitalFinanciado: string;
@@ -40,7 +45,7 @@ export type SimulacionAplicada = {
   cuotaResultante: string;
   cuotas: string;
   fechaPrimerVencimiento: string;
-  linea: string;
+  lineaOid: string;
   montoAFinanciar: string;
 };
 
@@ -67,7 +72,7 @@ function getLineaDefaults(linea?: LineaPrestamoPresolicitud | null) {
         : "",
     montoAFinanciar:
       linea?.montoMaximo !== null && linea?.montoMaximo !== undefined
-        ? formatMoneyValue(String(linea.montoMaximo))
+        ? formatMoneyAmount(linea.montoMaximo)
         : "",
     tasa:
       linea?.tasa !== null && linea?.tasa !== undefined
@@ -118,6 +123,7 @@ export function SimuladorPrestamoModal({
     eligibleLineas[0] ??
     null;
   const selectedLinea = eligibleLineas.find((linea) => linea.oid === lineaOid);
+  const cuotasError = getCuotasFueraDeLineaError(cuotas, selectedLinea);
   const simularPrestamoMutation = useSimularPrestamoMutation();
   const resetSimulacion = simularPrestamoMutation.reset;
   const simulacion: SimulacionPrestamoResponse | undefined =
@@ -174,6 +180,19 @@ export function SimuladorPrestamoModal({
       return;
     }
 
+    if (cuotasError) {
+      // Vimarx calcularia igual, con el maximo de la linea, y el resultado no
+      // corresponderia a lo que dice el campo. Se descarta el calculo anterior
+      // (y cualquiera en curso) para que no quede nada que aplicar.
+      requestSeqRef.current += 1;
+      resetSimulacion();
+      setValue("capitalFinanciado", "0,00");
+      setValue("cuotaResultante", "0,00");
+      setValue("gastosAdministrativos", "0,00");
+      setValue("total", "0,00");
+      return;
+    }
+
     const parsedLineaId = Number(selectedLinea.oid);
     const parsedMontoAFinanciar = parseMoneyValue(montoAFinanciar);
     const parsedCuotas = Number(cuotas);
@@ -211,14 +230,14 @@ export function SimuladorPrestamoModal({
       return;
     }
 
-    setValue("capitalFinanciado", formatMoneyValue(String(result.capital)));
+    setValue("capitalFinanciado", formatMoneyAmount(result.capital));
     setValue(
       "cuotaResultante",
-      formatMoneyValue(String(result.cuotaResultante)),
+      formatDecimalMoneyValue(result.cuotaResultante),
     );
-    setValue("gastosAdministrativos", formatMoneyValue(String(result.gastos)));
+    setValue("gastosAdministrativos", formatMoneyAmount(result.gastos));
     setValue("tasa", String(result.tasa));
-    setValue("total", formatMoneyValue(String(result.total)));
+    setValue("total", formatMoneyAmount(result.total));
 
     const nextFechaPrimerVencimiento = result.fechaPrimerVencimiento
       ? result.fechaPrimerVencimiento.slice(0, 10)
@@ -267,19 +286,19 @@ export function SimuladorPrestamoModal({
   }, [open, lineaOid, montoAFinanciar, cuotas, fechaPrimerVencimiento]);
 
   function handleAplicar() {
-    if (!simulacion || !selectedLinea?.descripcion) {
+    if (!simulacion || !selectedLinea?.oid || cuotasError) {
       return;
     }
 
     onApply?.({
-      cuotaResultante: formatMoneyValue(String(simulacion.cuotaResultante)),
+      cuotaResultante: formatDecimalMoneyValue(simulacion.cuotaResultante),
       cuotas: String(simulacion.cuotas),
       fechaPrimerVencimiento:
         fechaPrimerVencimiento ||
         simulacion.fechaPrimerVencimiento?.slice(0, 10) ||
         "",
-      linea: selectedLinea.descripcion,
-      montoAFinanciar: formatMoneyValue(String(simulacion.montoAFinanciar)),
+      lineaOid: selectedLinea.oid,
+      montoAFinanciar: formatMoneyAmount(simulacion.montoAFinanciar),
     });
   }
 
@@ -403,7 +422,16 @@ export function SimuladorPrestamoModal({
                 <span className="text-[0.68rem] font-medium text-foreground-secondary">
                   Cuotas<span className="text-destructive"> *</span>
                 </span>
-                <Input className="h-8 text-xs" {...register("cuotas")} />
+                <Input
+                  aria-invalid={cuotasError ? true : undefined}
+                  className="h-8 text-xs"
+                  {...register("cuotas")}
+                />
+                {cuotasError ? (
+                  <span className="text-[0.68rem] text-destructive">
+                    {cuotasError}
+                  </span>
+                ) : null}
               </label>
               <label className="grid gap-1">
                 <span className="text-[0.68rem] font-medium text-foreground-secondary">
@@ -493,16 +521,16 @@ export function SimuladorPrestamoModal({
                           {cuota.fechaVencimiento.slice(0, 10)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.capital))}
+                          {formatMoneyAmount(cuota.capital)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.interes))}
+                          {formatMoneyAmount(cuota.interes)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.gastos))}
+                          {formatMoneyAmount(cuota.gastos)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.total))}
+                          {formatMoneyAmount(cuota.total)}
                         </td>
                       </tr>
                     ))}
@@ -540,14 +568,19 @@ export function SimuladorPrestamoModal({
           >
             {simularPrestamoMutation.isPending ? "Calculando..." : "Calcular"}
           </Button>
-          <Button
-            disabled={!simulacion}
-            onClick={handleAplicar}
-            size="sm"
-            type="button"
-          >
-            Aplicar a Solicitud
-          </Button>
+          {/* Sin onApply no hay a donde aplicar (por ejemplo, alguien que no
+              puede editar la solicitud): mejor no mostrar un boton que no
+              hace nada. */}
+          {onApply ? (
+            <Button
+              disabled={!simulacion || cuotasError !== null}
+              onClick={handleAplicar}
+              size="sm"
+              type="button"
+            >
+              Aplicar a Solicitud
+            </Button>
+          ) : null}
         </footer>
       </DialogContent>
     </DialogRoot>

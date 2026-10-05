@@ -24,6 +24,7 @@ const REQUIRED_TITULAR_FIELDS: RequiredTitularField[] = [
   { key: "cuit", label: "CUIT" },
   { key: "email", label: "Email" },
   { key: "celular", label: "Celular" },
+  { key: "cbu", label: "CBU" },
 ];
 
 export type SolicitudTitularRequiredDataCheck = {
