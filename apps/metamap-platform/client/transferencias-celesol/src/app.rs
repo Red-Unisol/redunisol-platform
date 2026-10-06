@@ -17,7 +17,10 @@ use egui_extras::{Column, TableBuilder};
 use serde_json::{Value, json};
 
 use crate::{
-    APP_NAME_WITH_TAG, cancellations,
+    APP_NAME_WITH_TAG,
+    beex_client::BeexClient,
+    beex_recovery::Store as BeexStore,
+    cancellations,
     coinag_client::{CoelsaTransferStatus, CoinagClient, TransferLookupResponse},
     config::AppConfig,
     core_client::CoreClient,
@@ -35,6 +38,9 @@ use crate::{
     trace, validation,
     warnings::{ConfirmationPolicy, ConfirmationResponses, ValidationWarning, WarningKind},
 };
+
+#[path = "beex_app.rs"]
+mod beex_app;
 
 pub struct TransferenciasApp {
     services: Arc<AppServices>,
@@ -352,11 +358,11 @@ impl TransferenciasApp {
             .default_height(420.0)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label("Numero de solicitud");
+                ui.label("Solicitud Vimarx o beex:UUID");
                 let response = ui.add(
                     TextEdit::singleline(&mut self.transfer_lookup.request_number)
                         .desired_width(240.0)
-                        .hint_text("Ej: 234567"),
+                        .hint_text("234567 o beex:UUID"),
                 );
                 let can_lookup = self.services.transfer_enabled()
                     && !self.transfer_lookup.loading
@@ -955,6 +961,11 @@ impl eframe::App for TransferenciasApp {
                     }
                 ));
                 ui.separator();
+                if let Ok(statuses) = self.services.origin_status.read() {
+                    for status in statuses.iter() {
+                        ui.label(status);
+                    }
+                }
                 let balance_color = if self.balance_loading {
                     Color32::GRAY
                 } else {
@@ -1153,7 +1164,7 @@ impl eframe::App for TransferenciasApp {
                                 ui.label(item.document_display());
                             });
                             row.col(|ui| {
-                                ui.label(item.request_oid());
+                                ui.label(item.core.request_display());
                             });
                             row.col(|ui| {
                                 ui.label(item.core.transfer_cbu.as_deref().unwrap_or("N/D"));
@@ -1703,6 +1714,9 @@ fn deduplicate_warning_lines(warnings: &mut Vec<String>) {
 
 #[derive(Clone)]
 struct AppServices {
+    beex: Option<BeexClient>,
+    beex_store: Option<Arc<BeexStore>>,
+    origin_status: Arc<RwLock<Vec<String>>>,
     server: ServerClient,
     core: CoreClient,
     mark_paid: Option<MarkPaidClient>,
@@ -1811,7 +1825,20 @@ impl AppServices {
             }
             initial
         };
+        let beex = if config.beex.enabled() {
+            Some(BeexClient::new(&config.beex, config.request_timeout)?)
+        } else {
+            None
+        };
+        let beex_store = if beex.is_some() {
+            Some(Arc::new(BeexStore::new(config.beex.state_dir)?))
+        } else {
+            None
+        };
         let services = Self {
+            origin_status: Arc::new(RwLock::new(vec!["Origenes: consultando...".to_owned()])),
+            beex,
+            beex_store,
             server,
             core,
             mark_paid,
@@ -2131,6 +2158,76 @@ impl AppServices {
             .coinag
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Coinag no esta configurado en este runtime."))?;
+        if let Some(id) = request_number.strip_prefix("beex:") {
+            uuid::Uuid::parse_str(id)?;
+            let client = self
+                .beex
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Beex no configurado."))?;
+            let reference = client
+                .candidates()?
+                .into_iter()
+                .find(|p| p.solicitud_id == id)
+                .and_then(|p| p.desembolso);
+            let local = self
+                .beex_store
+                .as_ref()
+                .map(|store| store.lock(id).and_then(|l| l.read()))
+                .transpose()?
+                .flatten();
+            let order = if let Some(journal) = &local {
+                if let Some(order_id) = &journal.order_id {
+                    Some(client.order(order_id)?)
+                } else {
+                    client.by_key(&journal.reservation.idempotency_key)?
+                }
+            } else if let Some(reference) = reference {
+                Some(client.order(&reference.id)?)
+            } else {
+                None
+            };
+            let plan = order
+                .as_ref()
+                .map(|o| o.plan.clone())
+                .map(Ok)
+                .unwrap_or_else(|| client.plan(id))?;
+            let mut fields = vec![
+                ("Origen".to_owned(), "Beex".to_owned()),
+                ("Solicitud".to_owned(), id.to_owned()),
+            ];
+            let mut responses = Vec::new();
+            for p in &plan.payments {
+                let bank_id = if let Some(reserved) = order
+                    .as_ref()
+                    .and_then(|o| o.payments.iter().find(|r| r.payment_key == p.payment_key))
+                {
+                    reserved.bank_transaction_id.clone()
+                } else {
+                    coinag.beex_bank_id(
+                        p.bank_number
+                            .as_deref()
+                            .ok_or_else(|| anyhow::anyhow!("Falta bankNumber."))?,
+                    )?
+                };
+                let response = coinag.lookup_transfer_by_id_trx_cliente(&bank_id)?;
+                fields.push((
+                    p.payment_key.clone(),
+                    format!(
+                        "{bank_id}: {}",
+                        response
+                            .as_ref()
+                            .map(|r| format!("{:?}", CoinagClient::transfer_guard_from_lookup(r)))
+                            .unwrap_or_else(|| "SIN REGISTROS".to_owned())
+                    ),
+                ));
+                responses.push(json!({"payment_key": p.payment_key, "bank_transaction_id": bank_id, "response": response.map(|r| r.body)}));
+            }
+            return Ok(TransferLookupResult {
+                request_number: request_number.to_owned(),
+                summary_fields: fields,
+                raw_json: serde_json::to_string_pretty(&responses)?,
+            });
+        }
         let response = coinag.lookup_transfer_by_request_number(request_number)?;
         Ok(TransferLookupResult {
             request_number: response.request_number.clone(),
@@ -2274,7 +2371,67 @@ impl AppServices {
     }
 
     fn load_candidates(&self, existing_items: Vec<HydratedCase>) -> Result<Vec<HydratedCase>> {
-        let candidates = self.core.fetch_transfer_candidates()?;
+        let candidates_result = self.core.fetch_transfer_candidates();
+        let core_failure = candidates_result.as_ref().err().map(ToString::to_string);
+        let beex_result = self.load_beex_candidates();
+        if let Ok(mut status) = self.origin_status.write() {
+            *status = vec![
+                format!(
+                    "Vimarx: {}",
+                    if candidates_result.is_ok() {
+                        "disponible"
+                    } else {
+                        "no disponible"
+                    }
+                ),
+                format!(
+                    "Beex: {}",
+                    if self.beex.is_none() {
+                        "sin configurar"
+                    } else if beex_result.is_ok() {
+                        "disponible"
+                    } else {
+                        "no disponible"
+                    }
+                ),
+            ];
+        }
+        // An unavailable origin remains visible with blockers; another origin
+        // can continue. Never reuse the stale cases as actionable candidates.
+        let mut candidates = match candidates_result {
+            Ok(items) => items,
+            Err(error) => existing_items
+                .iter()
+                .filter(|c| c.core.beex.is_none())
+                .map(|c| {
+                    let mut core = c.core.clone();
+                    core.request_status = Some(format!("Vimarx no disponible: {error}"));
+                    core
+                })
+                .collect(),
+        };
+        let beex_failure = beex_result.as_ref().err().map(ToString::to_string);
+        match beex_result {
+            Ok(items) => candidates.extend(items),
+            Err(ref error) => {
+                log::warn!("No se pudo cargar Beex: {error:#}");
+                candidates.extend(existing_items.iter().filter(|c| c.core.beex.is_some()).map(
+                    |c| {
+                        let mut core = c.core.clone();
+                        core.request_status = Some(format!("Beex no disponible: {error}"));
+                        core
+                    },
+                ));
+            }
+        }
+        if candidates.is_empty() {
+            if let Some(error) = beex_failure {
+                return Err(anyhow::anyhow!("Beex no disponible: {error}"));
+            }
+            if let Some(error) = core_failure {
+                return Err(anyhow::anyhow!("Vimarx no disponible: {error}"));
+            }
+        }
         log::debug!(
             "Hidratando {} solicitudes del core con {} items previos.",
             candidates.len(),
@@ -2292,10 +2449,18 @@ impl AppServices {
                 .get(core_snapshot.request_oid.as_str())
                 .cloned();
             if !self.credit_line_mode_for(&core_snapshot).allows_manual() {
-                hydrated.push(self.build_disabled_candidate(core_snapshot, existing));
+                let mut item = self.build_disabled_candidate(core_snapshot, existing);
+                if item.core.beex.is_some() {
+                    self.recover_beex_case(&mut item);
+                }
+                hydrated.push(item);
                 continue;
             }
-            hydrated.push(self.hydrate_candidate(core_snapshot, existing));
+            let mut item = self.hydrate_candidate(core_snapshot, existing);
+            if item.core.beex.is_some() {
+                self.recover_beex_case(&mut item);
+            }
+            hydrated.push(item);
         }
         hydrated
             .sort_by(|left, right| compare_request_oids(left.request_oid(), right.request_oid()));
@@ -2396,10 +2561,17 @@ impl AppServices {
 
         let mut runtime_errors = Vec::new();
 
-        match self
-            .core
-            .fetch_core_snapshot(case.request_oid(), case.metamap.document.as_deref())
-        {
+        let snapshot = if let Some(plan) = &case.core.beex {
+            self.beex
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Beex no configurado."))
+                .and_then(|client| client.plan(&plan.solicitud_id))
+                .and_then(|p| p.core())
+        } else {
+            self.core
+                .fetch_core_snapshot(case.request_oid(), case.metamap.document.as_deref())
+        };
+        match snapshot {
             Ok(core_snapshot) => refreshed.core = core_snapshot,
             Err(error) => runtime_errors.push(format!(
                 "No se pudo consultar la solicitud en el core financiero: {error}"
@@ -2423,7 +2595,7 @@ impl AppServices {
 
         match self
             .server
-            .find_validation_by_request_number(case.request_oid())
+            .find_validation_by_request_number(case.core.verification_request_number())
         {
             Ok(Some(server_validation)) => {
                 let mut metamap = server_validation.to_metamap_snapshot();
@@ -2432,7 +2604,8 @@ impl AppServices {
                 }
                 if metamap.request_number.is_none() && server_validation.has_completed_validation()
                 {
-                    metamap.request_number = Some(case.request_oid().to_owned());
+                    metamap.request_number =
+                        Some(case.core.verification_request_number().to_owned());
                 }
                 case.server_validation = server_validation;
                 case.metamap = metamap;
@@ -2552,7 +2725,10 @@ impl AppServices {
             }
         }
 
-        case.transfer_guard = if let Some(coinag) = &self.coinag {
+        case.transfer_guard = if case.core.beex.is_some() {
+            // Per-payment guards and recovery use the IDs in the durable reserve.
+            CoinagTransferGuard::NotFound
+        } else if let Some(coinag) = &self.coinag {
             coinag.fetch_transfer_guard_status(case.request_oid())
         } else {
             CoinagTransferGuard::Unknown
@@ -2567,6 +2743,30 @@ impl AppServices {
             &case.transfer_guard,
         );
         case.validation.blockers.extend(runtime_errors.clone());
+        if let Some(plan) = &case.core.beex {
+            if plan.verification.required && !case.server_validation.has_completed_validation() {
+                case.validation
+                    .blockers
+                    .push("Beex requiere validacion digital completed.".to_owned());
+            }
+            for leg in &plan.payments {
+                let actual = if leg.kind == "member" {
+                    case.core.coinag_cuil.as_deref()
+                } else {
+                    case.core
+                        .cancellation_payments
+                        .iter()
+                        .find(|p| p.payment_key.as_deref() == Some(&leg.payment_key))
+                        .and_then(|p| p.owner_cuit.as_deref())
+                };
+                if actual.and_then(validation::normalize_digits).as_deref() != Some(&leg.cuit) {
+                    case.validation.blockers.push(format!(
+                        "Titular bancario distinto del plan Beex para {}.",
+                        leg.payment_key
+                    ));
+                }
+            }
+        }
         if cancellations::is_candidate(&case.core) {
             match self.creditor_whitelist.read() {
                 Ok(whitelist) => {
@@ -2686,6 +2886,9 @@ impl AppServices {
         transfer_kind: TransferKind,
         approval: Option<ManualTransferApproval>,
     ) -> WorkerEvent {
+        if case.core.beex.is_some() {
+            return self.execute_beex_transfer(case, transfer_kind, approval);
+        }
         log_transfer_audit(
             "transfer_started",
             case.request_oid(),

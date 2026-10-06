@@ -172,7 +172,7 @@ pub fn build_validation_report(
 
     if has_metamap_validation {
         if let Some(validation_request_number) = server_validation.request_number.as_deref() {
-            if validation_request_number.trim() != core.request_oid.trim() {
+            if validation_request_number.trim() != core.verification_request_number().trim() {
                 blockers.push(format!(
                     "La validacion del server corresponde a la solicitud {}, no a {}.",
                     validation_request_number.trim(),
@@ -182,7 +182,7 @@ pub fn build_validation_report(
         }
 
         if let Some(metamap_request_number) = metamap.request_number.as_deref() {
-            if metamap_request_number.trim() != core.request_oid.trim() {
+            if metamap_request_number.trim() != core.verification_request_number().trim() {
                 blockers.push(format!(
                     "Numero de solicitud inconsistente entre MetaMap ({}) y core ({}).",
                     metamap_request_number.trim(),

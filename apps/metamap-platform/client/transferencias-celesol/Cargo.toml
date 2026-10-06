@@ -1,6 +1,6 @@
 [package]
 name = "transferencias-celesol"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2024"
 
 [dependencies]
@@ -21,7 +21,7 @@ log = "0.4.28"
 pbkdf2 = "0.12.2"
 printpdf = { version = "0.7.0", features = ["embedded_images"] }
 rand = "0.8.5"
-reqwest = { version = "0.12.23", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 russh = { version = "0.60.0", default-features = false, features = ["ring"] }
 rust_decimal = { version = "1.39.0", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
