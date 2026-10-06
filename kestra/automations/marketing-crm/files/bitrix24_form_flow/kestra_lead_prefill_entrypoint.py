@@ -24,6 +24,7 @@ def main() -> int:
             lead_id,
             arca_output=_load_arca_output(),
             credixsa_output=_load_credixsa_output(),
+            arca_identity_output=_load_arca_identity_output(),
             max_attempts=int(os.getenv("BACKFILL_MAX_ATTEMPTS", "3")),
         )
     except Exception as exc:
@@ -66,6 +67,14 @@ def _load_credixsa_output() -> dict[str, Any]:
         "error": os.getenv("CREDIX_ERROR", "").strip(),
         "cache_hit": _load_bool("CREDIX_CACHE_HIT"),
         "cached_at": os.getenv("CREDIX_CACHED_AT", "").strip(),
+    }
+
+
+def _load_arca_identity_output() -> dict[str, Any]:
+    return {
+        "ok": _load_bool("ARCA_IDENTITY_OK"),
+        "status": os.getenv("ARCA_IDENTITY_STATUS", "").strip(),
+        "cuil": os.getenv("ARCA_IDENTITY_CUIL", "").strip(),
     }
 
 

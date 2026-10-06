@@ -1,0 +1,53 @@
+id: edna_incoming_webhook
+namespace: redunisol
+
+description: Recibe eventos desde el inbox web de Edna y clasifica entradas al router y respuestas FLOW sin enviar mensajes ni escribir en Bitrix.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: webhook
+  integration: edna
+
+tasks:
+  - id: recibir
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - edna_incoming/**
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    inputFiles:
+      request.json: "{{ trigger.body | toJson }}"
+    outputFiles:
+      - event.json
+    env:
+      EDNA_INCOMING_SUBJECT_ID: "{{ envs.edna_incoming_subject_id ?? '' }}"
+    commands:
+      - python -m edna_incoming.entrypoint
+
+outputs:
+  - id: ok
+    type: BOOL
+    value: "{{ outputs.recibir.vars.ok }}"
+  - id: event_key
+    type: STRING
+    value: "{{ outputs.recibir.vars.event_key }}"
+  - id: kind
+    type: STRING
+    value: "{{ outputs.recibir.vars.kind }}"
+  - id: reason
+    type: STRING
+    value: "{{ outputs.recibir.vars.reason }}"
+  - id: flow_id_verified
+    type: BOOL
+    value: "{{ outputs.recibir.vars.flow_id_verified }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('EDNA_INCOMING_WEBHOOK_KEY') }}"
+    wait: true
+    returnOutputs: true
+    responseContentType: application/json

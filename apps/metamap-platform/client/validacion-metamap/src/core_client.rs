@@ -13,6 +13,7 @@ use crate::{
 pub struct CoreClient {
     http: Client,
     base_url: String,
+    evaluate_api_bearer_token: Option<String>,
 }
 
 impl CoreClient {
@@ -26,6 +27,7 @@ impl CoreClient {
         Ok(Self {
             http,
             base_url: config.base_url.trim_end_matches('/').to_owned(),
+            evaluate_api_bearer_token: config.evaluate_api_bearer_token.clone(),
         })
     }
 
@@ -104,9 +106,17 @@ impl CoreClient {
     }
 
     fn evaluate_list(&self, payload: Value) -> Result<Value> {
-        self.http
+        let request = self
+            .http
             .post(format!("{}/api/Empresa/EvaluateList", self.base_url))
-            .json(&payload)
+            .json(&payload);
+        let request = if let Some(token) = &self.evaluate_api_bearer_token {
+            request.bearer_auth(token)
+        } else {
+            request
+        };
+
+        request
             .send()
             .context("No se pudo consultar EvaluateList en el core financiero.")?
             .error_for_status()

@@ -4,6 +4,7 @@ USER root
 
 RUN python -m pip install --no-cache-dir \
     kestra \
+    openpyxl==3.1.5 \
     requests \
     urllib3 \
     playwright==1.58.0

@@ -148,6 +148,44 @@ it('returns not qualified while persistence continues asynchronously', function 
     );
 });
 
+it('counts the initial federal police segment without routing it to whatsapp', function () {
+    config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
+    config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');
+
+    Queue::fake();
+    Http::fake([
+        'https://kestra.example.test/prequalification' => Http::response([
+            'ok' => true,
+            'prequalified' => true,
+            'route_to_whatsapp' => false,
+            'reason' => 'policia_federal_caba_initial_period',
+            'message' => 'Tu situación no califica para esta solicitud.',
+            'rule_version' => '2026-08-31-policia-federal-caba-initial',
+        ]),
+    ]);
+
+    $response = $this->postJson('/api/form-submissions', [
+        ...validFormPayload(),
+        'provincia' => 'Ciudad Autónoma de Buenos Aires',
+        'situacion_laboral' => 'Policía Federal',
+    ]);
+
+    $response->assertOk()->assertJson([
+        'ok' => true,
+        'qualified' => true,
+        'prequalified' => true,
+        'route_to_whatsapp' => false,
+        'action' => 'rejected',
+        'reason' => 'policia_federal_caba_initial_period',
+    ]);
+
+    Queue::assertPushed(PersistFormSubmission::class, function ($job) {
+        return $job->qualified
+            && $job->prequalification['prequalified'] === true
+            && $job->prequalification['route_to_whatsapp'] === false;
+    });
+});
+
 it('shows a neutral result and still queues persistence when prequalification fails', function () {
     config()->set('services.kestra.form_webhook_url', 'https://kestra.example.test/webhook');
     config()->set('services.kestra.prequalification_webhook_url', 'https://kestra.example.test/prequalification');

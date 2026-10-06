@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import BlogCard, { type PaginatedPosts } from '@/components/blog/BlogCard';
 import Footer from '@/components/footer';
 import Navbar from '@/components/navbar';
+import SeoHead from '@/components/seo-head';
 
 interface Author {
     id: number;
@@ -35,7 +36,8 @@ export default function AuthorPage() {
 
     return (
         <>
-            <Navbar activeTab="unset" setActiveTab={() => {}} />
+            <SeoHead />
+            <Navbar />
 
             <div className="bg-gradient-custom w-full">
                 {/* ── Hero ── */}
@@ -67,7 +69,7 @@ export default function AuthorPage() {
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1, duration: 0.6 }}
-                        className="text-4xl font-semibold tracking-tight text-[#1e2d3d] md:text-6xl"
+                        className="text-4xl font-semibold tracking-tight text-white md:text-6xl"
                     >
                         {author.name}
                     </motion.h1>
@@ -90,7 +92,7 @@ export default function AuthorPage() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.3, duration: 0.5 }}
-                            className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-gray-700 md:text-lg [&_a]:text-[#6BAF92] [&_a]:underline [&_ol]:mt-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:pl-5"
+                            className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-white/90 md:text-lg [&_a]:text-[#6BAF92] [&_a]:underline [&_ol]:mt-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:pl-5"
                             dangerouslySetInnerHTML={{ __html: author.bio }}
                         />
                     )}
@@ -107,9 +109,7 @@ export default function AuthorPage() {
                             className="mb-8 text-2xl font-bold text-[#1e2d3d]"
                         >
                             Artículos de{' '}
-                            <span className="text-[#6BAF92]">
-                                {author.name}
-                            </span>
+                            <span className="text-white">{author.name}</span>
                         </motion.h2>
 
                         {posts.data.length === 0 ? (

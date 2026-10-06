@@ -1,0 +1,264 @@
+name: Deploy Solicitudes Web Prod
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "web/solicitudes-web/**"
+      - ".github/workflows/deploy-solicitudes-web-prod.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+# Evita que dos deploys corran a la vez sobre la misma carpeta de la VPS.
+concurrency:
+  group: deploy-solicitudes-web-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      BACKEND_IMAGE_NAME: ghcr.io/red-unisol/solicitudes-web-backend
+      FRONTEND_IMAGE_NAME: ghcr.io/red-unisol/solicitudes-web-frontend
+      IMAGE_TAG: prod-${{ github.sha }}
+      # URL publica del backend en prod. Se HORNEA en el bundle del frontend
+      # durante el build: si cambia, hay que reconstruir la imagen.
+      VITE_API_BASE_URL: https://api-solicitudes.redunisol.com.ar
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+    steps:
+      - name: Allow manual prod deploy only from main by Nasst
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_ACTOR}" = "Nasst" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ]
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r kestra/tools/requirements.txt
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: web/solicitudes-web/celesol-backend
+          file: web/solicitudes-web/celesol-backend/Dockerfile
+          target: production
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.BACKEND_IMAGE_NAME }}:prod-latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: web/solicitudes-web/celesol-frontend
+          file: web/solicitudes-web/celesol-frontend/Dockerfile
+          target: production
+          push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
+          tags: |
+            ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.FRONTEND_IMAGE_NAME }}:prod-latest
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Trust target host
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Decrypt runtime env
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
+          python kestra/tools/manage_encrypted_env.py decrypt \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --input web/solicitudes-web/deploy/solicitudes-web.prod.env.enc \
+            --output web/solicitudes-web/deploy/solicitudes-web.prod.env \
+            --force
+
+      - name: Prepare deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp web/solicitudes-web/deploy/solicitudes-web.prod.env "$RUNNER_TEMP/solicitudes-web.env"
+
+          # Finales de linea de Windows: el \r quedaria pegado al valor de cada
+          # variable y Docker lo tomaria como parte del contenido.
+          sed -i 's/\r$//' "$RUNNER_TEMP/solicitudes-web.env"
+
+          # Si el archivo no termina en salto de linea, las variables que
+          # agregamos abajo se pegarian a la ultima linea.
+          if [ -n "$(tail -c 1 "$RUNNER_TEMP/solicitudes-web.env")" ]; then
+            printf '\n' >> "$RUNNER_TEMP/solicitudes-web.env"
+          fi
+
+          printf 'BACKEND_IMAGE=%s\n' "${BACKEND_IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/solicitudes-web.env"
+          printf 'FRONTEND_IMAGE=%s\n' "${FRONTEND_IMAGE_NAME}:${IMAGE_TAG}" >> "$RUNNER_TEMP/solicitudes-web.env"
+
+          set -a
+          . "$RUNNER_TEMP/solicitudes-web.env"
+          set +a
+          printf 'TARGET_DIR=%s\n' "$TARGET_DIR" >> "$GITHUB_ENV"
+
+      - name: Upload deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_STAGING_DIR="/tmp/solicitudes-web-prod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "REMOTE_STAGING_DIR=$REMOTE_STAGING_DIR" >> "$GITHUB_ENV"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_STAGING_DIR'"
+          scp -P "$SSH_PORT" web/solicitudes-web/deploy/docker-compose.vps.yml "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/docker-compose.yml"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/solicitudes-web.env" "$SSH_USER@$SSH_HOST:$REMOTE_STAGING_DIR/.env"
+
+      - name: Deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" "${{ github.actor }}" "${{ secrets.GITHUB_TOKEN }}" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+          ghcr_username="$3"
+          ghcr_token="$4"
+
+          install -d -m 755 "$target_dir"
+
+          set -a
+          . "$staging_dir/.env"
+          set +a
+
+          backend_host="$(printf '%s' "$BACKEND_BIND" | cut -d: -f1)"
+          backend_port="$(printf '%s' "$BACKEND_BIND" | cut -d: -f2)"
+          frontend_host="$(printf '%s' "$FRONTEND_BIND" | cut -d: -f1)"
+          frontend_port="$(printf '%s' "$FRONTEND_BIND" | cut -d: -f2)"
+          project="$(basename "$target_dir")"
+
+          echo "$ghcr_token" | docker login ghcr.io -u "$ghcr_username" --password-stdin
+
+          compose=(docker compose -p "$project" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml")
+
+          "${compose[@]}" config -q
+          "${compose[@]}" pull backend frontend
+          "${compose[@]}" up -d --remove-orphans
+          "${compose[@]}" ps
+
+          echo "Esperando /health del backend en $backend_host:$backend_port"
+          status=""
+          for attempt in $(seq 1 24); do
+            status="$(curl -sS -o /dev/null -w '%{http_code}' "http://$backend_host:$backend_port/health" || true)"
+            [ "$status" = "200" ] && break
+            sleep 5
+          done
+          if [ "$status" != "200" ]; then
+            "${compose[@]}" logs --tail=160 backend postgres
+            exit 1
+          fi
+
+          echo "Verificando /health/db (conexion real a Postgres)"
+          db_status="$(curl -sS -o /dev/null -w '%{http_code}' "http://$backend_host:$backend_port/health/db" || true)"
+          if [ "$db_status" != "200" ]; then
+            "${compose[@]}" logs --tail=160 backend postgres
+            exit 1
+          fi
+
+          echo "Verificando frontend en $frontend_host:$frontend_port"
+          fe_status=""
+          for attempt in $(seq 1 12); do
+            fe_status="$(curl -sS -o /dev/null -w '%{http_code}' "http://$frontend_host:$frontend_port/" || true)"
+            [ "$fe_status" = "200" ] && break
+            sleep 5
+          done
+          if [ "$fe_status" != "200" ]; then
+            "${compose[@]}" logs --tail=120 frontend
+            exit 1
+          fi
+
+          echo "Deploy verificado correctamente"
+          EOF
+
+      - name: Finalize deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$TARGET_DIR" "$REMOTE_STAGING_DIR" <<'EOF'
+          set -euo pipefail
+          target_dir="$1"
+          staging_dir="$2"
+
+          # Recien ahora, con el deploy verificado, se persiste la configuracion
+          # en la carpeta definitiva. Si algo hubiera fallado antes, el
+          # directorio de la aplicacion queda con la version anterior intacta.
+          install -m 600 "$staging_dir/.env" "$target_dir/.env"
+          install -m 644 "$staging_dir/docker-compose.yml" "$target_dir/docker-compose.yml"
+
+          # Limpieza de imagenes viejas: sin esto se acumulan ~1 GB por deploy.
+          docker image prune -f >/dev/null
+          active_images="$(docker ps --format '{{.Image}}' | sort -u)"
+          mapfile -t stale_images < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^ghcr.io/red-unisol/solicitudes-web-(backend|frontend):' || true)
+          removable=()
+          for ref in "${stale_images[@]}"; do
+            [ -n "$ref" ] || continue
+            printf '%s\n' "$active_images" | grep -Fxq "$ref" && continue
+            removable+=("$ref")
+          done
+          if [ "${#removable[@]}" -gt 0 ]; then
+            printf 'Borrando imagenes sin uso:\n%s\n' "${removable[@]}"
+            docker image rm "${removable[@]}" || true
+          fi
+          EOF
+
+      - name: Clean remote staging files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${REMOTE_STAGING_DIR:-}" ]; then
+            ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf '$REMOTE_STAGING_DIR'"
+          fi
+
+      - name: Clean local decrypted files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f web/solicitudes-web/deploy/solicitudes-web.prod.env

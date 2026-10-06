@@ -1,0 +1,26 @@
+{
+  "template_id": 889,
+  "stage_id": "UC_1P8I07",
+  "saved_at_minute": "2026-09-24T11:55-03:00",
+  "cutoff_captured_at": "2026-09-24T14:55:08.276163+00:00",
+  "last_existing_lead_id": 396841,
+  "notice_state_field": "UF_CRM_REJ_NOTICE",
+  "notice_state_field_id": 1853,
+  "generated_bpt_sha256": "44a79aa1276ac390c310ef65a7acfdf67e75b2e2a072e5a2eb4531d2b16a8c63",
+  "persisted_export_sha256": "3e459118a94509e7d2f012cb042a1d7efd07b5b79c221917c690427e4d5b44bf",
+  "verification": {
+    "designer_reopened_after_save": true,
+    "persisted_template_compared": true,
+    "functional_differences": 0,
+    "editor_normalizations": {
+      "added_null_Node": 131,
+      "joiner_integer_zero_to_string_zero": 19,
+      "MessageTextEncoded_integer_one_to_string_one": 15,
+      "Attachment_null_to_empty_string": 14,
+      "added_empty_EditorComment": 1
+    },
+    "real_delivery": "pending_observation_of_new_rejection",
+    "historical_migration_executed": false,
+    "test_customer_messages_sent": false
+  }
+}

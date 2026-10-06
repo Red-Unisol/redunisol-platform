@@ -4,12 +4,13 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 ## Flows
 
+- `capturar_revision_riesgo`: [archivo prospectivo de solicitudes y adjuntos](capturar_revision_riesgo.md), cada minuto.
 - `renovacion_cruz_del_eje`
 - `tope_descuento_caja`
+- `tope_descuento_caja_mensual`
 - `afip_contacto_por_dni`
 - `incoming_metamap_bridge`
 - `consulta_quiebra_credix`
-- `consulta_credixsa_por_solicitud`
 - `precalentar_cache_credixsa_v2_sondeo`
 - `consulta_padron_a13`
 - `consulta_empleador`
@@ -113,6 +114,76 @@ Notas:
 
 - `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
 
+## tope_descuento_caja_mensual
+
+Genera el reporte privado mensual de topes de Caja y lo publica para management.
+
+### Universo
+
+El flow une y deduplica CUILs de dos fuentes:
+
+- Core/Vimarx: todos los prestamos vigentes o historicos cuyo padre de linea es
+  `LINEAS CAJA JUBILADOS_FIAT` (`LineaPrestamo.Superior.ID = 2756`). Este filtro
+  excluye las lineas de Caja Santa Fe, que pertenecen a otro padre.
+- Bitrix: jubilados provinciales de Cordoba, y pensionados de Cordoba cuyo banco
+  de cobro es Banco de la Provincia de Cordoba. Si el lead no contiene un CUIL
+  de 11 digitos, busca el CUIL en el contacto asociado.
+
+El reporte incorpora email y telefono desde Core, leads y contactos Bitrix. Las
+columnas visibles `mail` y `telefono` contienen el dato mas probable. La
+seleccion prioriza, en este orden: coincidencia Core/lead, repeticion en varios
+leads, lead mas reciente, Core y contacto Bitrix. Los valores con forma de
+CUIL/CUIT no se eligen como telefono probable.
+
+Las columnas con todos los valores de origen y el criterio aplicado se conservan
+en el Excel para auditoria, agrupadas y ocultas por defecto para desenfatizar el
+ruido. Se pueden mostrar manualmente desde Excel.
+
+Los enums Bitrix se validan contra la metadata live antes de iniciar la tanda.
+Si no coinciden con los IDs esperados, el flow falla sin consultar Caja ni
+publicar archivos.
+
+### Ejecucion
+
+- corre el dia 1 de cada mes a las 05:00, hora de Buenos Aires
+- el schedule solo se despliega en produccion
+- reutiliza una sesion CIDI/Caja y la renueva cada 40 minutos o ante `401/403`
+- espera 3 segundos entre consultas
+- reintenta fallos tecnicos y frena ante `429` u 8 fallos consecutivos
+- guarda cada resultado en un checkpoint mensual append-only
+- conserva los CUILs con digito verificador invalido como `invalid_cuil` en el
+  checkpoint y en el Excel, sin enviarlos a Caja
+- una corrida limitada o incompleta nunca reemplaza `ultimo.xlsx`
+
+Inputs manuales opcionales:
+
+- `run_month`: mes de checkpoint e historico, `YYYY-MM`
+- `limit`: cantidad maxima para una prueba; impide la publicacion
+- `pause_seconds`: pausa entre consultas Caja
+- `rebuild_only`: reconstruye y publica el Excel de un checkpoint mensual ya
+  completo, refrescando datos de contacto sin abrir una sesion ni consultar Caja.
+  No admite `limit`, ignora CUILs nuevos y falla si falta en las fuentes algun
+  CUIL presente en el checkpoint.
+
+### Salidas
+
+```text
+/reports/analisis-credito/tope-descuento-caja/
+  ultimo.xlsx
+  historico/
+    YYYY-MM.xlsx
+  .state/
+    YYYY-MM.jsonl
+```
+
+El `.jsonl` no es visible en Filament. Los Excel se publican mediante reemplazo
+atomico solamente cuando no quedan CUILs pendientes.
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/tope_descuento_caja/**`
+- `kestra/automations/analisis-credito/files/tope_descuento_caja_mensual/**`
+
 ## afip_contacto_por_dni
 
 Consulta AFIP/ARCA por tipo y numero de documento y devuelve nombre mas CUIL normalizados.
@@ -184,13 +255,13 @@ Ejemplo:
 
 ```json
 {
-	"_bridge_forward_url": "http://host.docker.internal:8787/metamap",
-	"_bridge_timeout_seconds": 5,
-	"event": "verification.finished",
-	"lead_id": "abc123",
-	"result": {
-		"status": "approved"
-	}
+  "_bridge_forward_url": "http://host.docker.internal:8787/metamap",
+  "_bridge_timeout_seconds": 5,
+  "event": "verification.finished",
+  "lead_id": "abc123",
+  "result": {
+    "status": "approved"
+  }
 }
 ```
 
@@ -222,49 +293,6 @@ Secrets:
 
 - `kestra/automations/analisis-credito/files/incoming_metamap_bridge/**`
 
-## consulta_credixsa_por_solicitud
-
-Dispara la consulta a CredixSA cuando se crea una solicitud en solicitudes-web,
-para que el informe ya este cacheado cuando lo pida el analista.
-
-No repite la logica: llama a `consulta_quiebra_credix` como subflow, asi que
-devuelve exactamente las mismas salidas y hereda cualquier mejora que se le
-haga a aquel.
-
-Existe como flow aparte por el carril de ejecucion. Con `concurrency: 1` los
-disparos automaticos se encolan entre si y no le compiten a un analista que
-esta esperando una respuesta. Ademas deja las ejecuciones distinguibles en la
-UI: las que vienen de una solicitud llevan la label `origin: solicitudes-web`.
-
-El orden de preferencia del dato lo resuelve quien llama (solicitudes-web):
-primero el CUIL, si no el documento, y como ultimo recurso el nombre. Conviene
-mandar CUIL siempre que se pueda: la cache por CUIL exige 11 digitos, asi que
-consultar con un documento de 8 guarda el informe solo bajo la clave por
-nombre, y una consulta posterior por CUIL no lo encuentra.
-
-Si CredixSA falla, la ejecucion no se marca como fallida (`transmitFailed:
-false`): es un precalentamiento best effort y el analista puede consultar en el
-momento como hasta ahora.
-
-### Entrada
-
-Webhook `POST` con JSON:
-
-```json
-{ "cuit": "20123456783", "nombre": "Juan Perez", "solicitud_id": "8ad74d71-..." }
-```
-
-`solicitud_id` no se usa en la consulta: sirve para saber que solicitud origino
-cada ejecucion cuando hay que revisar un caso.
-
-### Salida
-
-Las mismas que `consulta_quiebra_credix`, mas `solicitud_id`.
-
-### Secrets
-
-- `ANALISIS_CREDITO_CREDIXSA_SOLICITUD_WEBHOOK_KEY`
-
 ## consulta_quiebra_credix
 
 Arquitectura, diferencias RPA/HTTP/cache y verificacion de despliegue:
@@ -278,6 +306,19 @@ Antes de navegar, calcula claves de cache por CUIL y por nombre normalizado. Si 
 
 - `credixsa.cuil.<cuil>`
 - `credixsa.name.<sha256_nombre_normalizado>`
+
+Antes de guardar un informe nuevo, `consulta_quiebra_credix/bcra.py` prepara el
+bloque `normalized.bcra` desde la API oficial. Se usa tambien durante el
+precalentamiento (ver abajo). Un hit de cache devuelve la fuente ya guardada,
+sin consultar BCRA ni renovar fechas. Las entradas anteriores sin fuente siguen
+siendo CredixSA hasta renovarse; `data_json` conserva el informe original CredixSA
+y `normalized_json` contiene el bloque financiero de la fuente elegida.
+
+Si la consulta a CredixSA falla por un error tecnico (por ejemplo, el portal tarda mas de `CREDIX_TIMEOUT_SECONDS` en mostrar el informe), `kestra_webhook_entrypoint` reintenta una vez despues de 10 segundos. Si fallan los dos intentos, la task termina con exit code 1 y `status=technical_error`. Los pedidos invalidos y la configuracion faltante no se reintentan.
+
+El reintento vive en el script y no como `retry` de la task: en la instalacion actual de Kestra 2 se observaron estados `FAILED` intermedios y task runs duplicados de `consultar_quiebra` al usar el retry del YAML. No volver a agregar `retry` a esta task. Los dos intentos no establecen un limite global de duracion: cada consulta puede acumular varias esperas del navegador.
+
+En produccion, `alerta_flow_fallos` avisa a Bitrix24 despues de **3 ejecuciones distintas consecutivas en FAILED** de este flow. Un intento fallido dentro del script no suma al contador; una ejecucion agotada sigue terminando en `FAILED` aunque todavia no corresponda notificar. Cualquier `SUCCESS` reinicia la racha (incluye cache hit, sin resultados y pedidos invalidos que terminan normalmente). Solo se envia recuperacion si habia una alerta abierta. La politica y su estado KV viven en el target `system`, que tambien debe desplegarse con este cambio.
 
 ### Entrada
 
@@ -320,7 +361,6 @@ Contrato serializado en `response_json`:
 Secrets:
 
 - `ANALISIS_CREDITO_QUIEBRA_WEBHOOK_KEY`
-- `ANALISIS_CREDITO_CREDIXSA_SOLICITUD_WEBHOOK_KEY`
 - `CREDIX_CLIENTE`
 - `CREDIX_USER`
 - `CREDIX_PASS`
@@ -351,10 +391,46 @@ Corre cada minuto en horario util con concurrencia `1`. En cada corrida:
 5. arma un preview acotado de candidatos
 6. solo si hay candidatos ejecuta el worker pesado de warmup
 7. el worker consulta CredixSA con retry por candidato
-8. guarda cache por CUIL y por nombre si el resultado es `single`
-9. actualiza el indice diario, incluidos los fallos acumulados por OID
+8. si el resultado es `single`, consulta BCRA por el CUIL resuelto y prepara el informe financiero
+9. guarda cada informe terminado en SQLite antes del siguiente candidato, y acumula las entradas KV por CUIL y nombre para persistirlas al finalizar el worker
+10. actualiza el indice diario, incluidos los fallos acumulados por OID
 
 Si CredixSA falla para un candidato dentro del worker, la siguiente corrida vuelve a intentarlo hasta alcanzar el limite diario configurado. Al llegar al limite, el OID queda descartado hasta el siguiente dia.
+
+BCRA se consulta en paralelo para deuda vigente e historica, con hasta **3
+intentos totales por endpoint**, timeout de 8 segundos y pausas de **12 segundos**.
+Se reintenta solo el endpoint fallido, sin repetir CredixSA. Ambas respuestas deben
+ser validas para reemplazar todo el bloque financiero; de lo contrario se guarda
+el respaldo CredixSA y el socio queda procesado por ese dia. El analista recibe
+ese resultado sin reintentos adicionales. Un fallo al escribir SQLite deja al
+candidato pendiente para otra corrida.
+
+El cache incluye `fuente`, estado de consulta directa, deudas vigentes, historial
+de 24 meses y evolucion. BCRA incluye sus totales y `consultado_en`; sus montos en
+miles de pesos se convierten a pesos y el subtotal negativo suma situaciones >=2.
+Un 404 documentado sin registros es una respuesta valida sin deuda; una respuesta
+invalida no se interpreta como cero. La API de cache y Herramientas leen el mismo
+contrato, con **Fuente: BCRA** o **Fuente: CredixSA** y las mismas tablas.
+
+La situacion `0` devuelta por la API se conserva sin interpretacion, con su monto
+original convertido a pesos y color neutro en la pantalla. No invalida el historial
+ni se transforma en situacion 1 o en monto cero. Se siguen rechazando situaciones
+ausentes o fuera de 0..6, importes invalidos e identidades que no coincidan.
+
+`consulta_directa_intentos` guarda por endpoint el numero de intento, HTTP cuando
+se recibio una respuesta y resultado (`ok`, `http_error`, `transport_error` o
+`invalid_response`). Los fallos se registran tambien en logs de advertencia y los
+exitos en nivel INFO, sin identidades, cuerpos de respuesta, URLs ni texto de
+excepciones. El estado final distingue
+`invalid_response` y `processing_error` de `unavailable`; se calcula con el ultimo
+resultado de cada endpoint para no confundir un fallo ya recuperado con la causa
+final. Las entradas anteriores sin este detalle no permiten reconstruir sus fallos.
+
+La vigencia sigue siendo de 7 dias. Si falta el precalentamiento, la primera
+consulta al webhook hace esta misma preparacion antes de persistir. Para validar
+el circuito completo localmente, instalar tambien
+`apps/credixsa-cache-api/requirements.txt`: `test_bcra_warmup.py` lee mediante la
+API real de cache el SQLite producido por el worker.
 
 ### Variables
 
@@ -370,7 +446,7 @@ Config en `envs`:
 - `vimarx_timeout_seconds`
 - `vimarx_verify_tls`
 - `local_tz` opcional, default `America/Argentina/Buenos_Aires`
-- `credix_debug` opcional, default `true` en los tasks del flow
+- `credix_debug` opcional, default `false` en los tasks del flow
 - `credixsa_warmup_max_per_run` opcional, default `5`
 - `credixsa_warmup_max_oid_failures` opcional, default `3`
 - `credixsa_warmup_core_max_rows` opcional, default `1000`
@@ -575,3 +651,336 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_cuad/**`
+
+## reporte_evaluacion_management
+
+Genera el Excel evaluatorio acumulado, lo publica en la carpeta privada consumida por Filament y conserva una copia historica diaria.
+
+### Ejecucion automatica
+
+- corre el dia 1 de cada mes a las 07:15, hora de Buenos Aires
+- toma desde `2025-10` hasta el ultimo mes cerrado
+- el trigger programado solo se despliega en produccion
+
+### Ejecucion manual
+
+Puede ejecutarse desde la UI de Kestra, informando opcionalmente `from_month` y `to_month`, o con un `POST` al webhook:
+
+```json
+{
+  "from_month": "2026-01",
+  "to_month": "2026-07"
+}
+```
+
+El body es opcional y los meses deben estar cerrados. El webhook usa `ANALISIS_CREDITO_WEBHOOK_KEY`, responde de forma asincrona y el resultado se consulta en la ejecucion de Kestra.
+
+### Salidas
+
+- `/reports/analisis-credito/reporte-evaluacion/ultimo.xlsx`
+- `/reports/analisis-credito/reporte-evaluacion/historico/YYYY-MM-DD.xlsx`
+
+Ambos archivos se reemplazan de forma atomica para evitar descargas incompletas.
+
+### Configuracion
+
+- secret `DEVEXPRESS_EVALUATE_API_BASE_URL`
+- secret `ANALISIS_CREDITO_WEBHOOK_KEY`
+- env opcional `reporte_evaluacion_timeout_seconds`
+- env opcional `reporte_evaluacion_per_day_max`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/reporte_evaluacion_report/**`
+
+## reporte_evaluacion_comisiones_management
+
+Segundo reporte independiente: conserva el evaluatorio anterior y agrega una tarjeta
+**Evaluación y comisiones** en Gestión > Reportes. Usa los mismos inputs, secretos,
+semilla de muestreo y período acumulado; su horario mensual es 08:15 Buenos Aires,
+solo en producción. No modifica las salidas del flow evaluatorio anterior. El dashboard usa el mismo calendario y cálculo de referencias que v2.
+
+### Reglas confirmadas
+
+- Referencia: media simple de las métricas de los tres meses anteriores. Extrae
+  esos tres meses adicionales aunque queden fuera del período solicitado.
+- Tiempos laborales de lunes a viernes, 08:00–17:00, descontando únicamente
+  feriados nacionales obligatorios argentinos. Días turísticos no laborables y
+  Jueves Santo cuentan como hábiles, salvo coincidencia con un feriado obligatorio.
+- Resultado <= referencia: 0,5%; > referencia y <= 110%: 0,3%; > 110%: 0,1%.
+  Se clasifica sin redondear la métrica y se redondea cada comisión a centavos.
+- Pesos: mediana/promedio de respuesta 20% cada uno; mediana/promedio de
+  transferencia 15% cada uno. Comisión = colocación × peso × tasa.
+- Legajos: 30 solicitudes pagadas al azar del mes final (`to_month`), con la
+  misma semilla reproducible. En Muestreo legajos se elige Correcto (verde),
+  Incorrecto (rojo) o A revisar (amarillo), con observaciones opcionales.
+  Comisiones cuenta cada estado mediante referencias a la tabla, incluso al ordenar.
+- Legajos correctos: 28–30 = tasa 0,5%; 26–27 = 0,3%; 0–25 = 0,1%.
+  Comisión = colocación × 30% × tasa. Solo se liquida cuando los 30 casos
+  están resueltos. Casos vacíos/no reconocidos y muestras distintas de 30
+  mantienen pendiente la comisión, sin normalizar ni extrapolar el puntaje.
+- El total definitivo suma el subtotal automático y la comisión de legajos
+  únicamente cuando ambos están completos. La revisión se guarda en la copia
+  del operador; una nueva generación inicia todos los casos como A revisar.
+- Si faltan métricas de alguno de los tres meses o la referencia es cero,
+  la comisión queda pendiente; no se reemplaza por cero.
+
+### Base del Core y trazabilidad
+
+Consulta `Evaluate` y `EvaluateList` sobre `F.Module.Cuentas.Prestamos.Prestamo`.
+Filtra por `FechaEmision` del mes, `Solicitud.Estado.Descripcion = 'Pagada'` y
+excluye vendedores Alvaro Pajon, Gabriela Acosta, Jorgelina Marin,
+Karina Altamirano y Martin Rodriguez, reproduciendo el procedimiento del operador.
+La base monetaria es `MontoADesembolsar` (Monto Deseado), no `Capital`.
+Las métricas conservan el universo y las exclusiones de líneas del evaluatorio;
+los filtros de colocación se aplican por separado.
+
+Comprueba cantidad antes/después, filas únicas y filtros. Si se alcanza el límite
+de extracción o hay inconsistencias, falla sin reemplazar `ultimo.xlsx`.
+El control de cantidades no equivale a una transacción consistente del Core:
+un importe podría cambiar sin cambiar el número de préstamos.
+Los meses cerrados pueden variar por actualizaciones posteriores del Core;
+cada ejecución conserva su propia evidencia, sin reemplazar la anterior.
+
+Publica en `/reports/analisis-credito/reporte-evaluacion-comisiones/`:
+
+- `ultimo.xlsx`: reemplazo atómico, visible después de guardar la evidencia.
+- `historico/<fecha-hora-microsegundos-id>.xlsx`: una copia por ejecución.
+- `datos/<mismo-id>.sqlite`: eventos extraídos, incluyendo meses de referencia.
+- `datos/<mismo-id>.json`: préstamos, filtros, reglas, calendario y resultados.
+
+SQLite y JSON son evidencia operativa privada; no aparecen en el catálogo de
+reportes descargables. La primera hoja, Comisiones, analiza exclusivamente
+el mes final del período (`to_month`), que por defecto es el último mes cerrado.
+No repite las liquidaciones anteriores. Unifica objetivos e importes por métrica: referencia, resultado,
+intervalos de los tres rangos, tasa y marca del tramo alcanzado. Al pie de cada
+mes a liquidar están el conteo de legajos, sus rangos, la comisión y el total definitivo.
+Muestreo legajos es la segunda hoja y permite ingresar las 30 revisiones individuales
+del mes final. No incluye muestras de los meses históricos del comparativo.
+Comparativo mensual es la tercera hoja: una tabla horizontal con una fila por mes
+y siete columnas: mes, mediana y promedio de primera respuesta, transferencias
+y punta a punta. Punta a punta es informativo y no interviene en las comisiones. Conserva todos los meses del período solicitado
+(por defecto, octubre de 2025 al último mes cerrado), sin referencias, variaciones,
+tasas ni importes históricos. Cada métrica conserva su escala continua
+verde–amarillo–rojo: menor tiempo es verde y mayor tiempo es rojo. Los datos
+históricos se enlazan a las métricas fuente y el último mes a Comisiones.
+No inmoviliza paneles; no incluye gráficos ni series auxiliares. Los valores
+faltantes quedan pendientes. Se elimina Resumen ejecutivo solamente en
+v2: Comisiones asume ese rol y las estadísticas ampliadas siguen en el detalle. El Excel
+conserva colocación, métricas de referencia, reglas y feriados, además del detalle
+original y el muestreo. Las fórmulas se recalculan al abrirlo en Excel;
+el JSON conserva los resultados numéricos calculados en Python.
+
+### Análisis de cambios en los tiempos (v2)
+
+La cuarta hoja, **Cambios en tiempos**, presenta una comparación a la vez, con
+selectores de mes y métrica (primera respuesta, transferencia o punta a punta).
+Abre en el último mes y primera respuesta. Sigue la lectura de **Aporte controlado**:
+cuatro indicadores, ranking de superiores y un bloque corto de subcategorías.
+El ranking muestra los diez mayores aportes de desempeño en valor absoluto;
+el resto se agrega sin perder cantidades ni aportes. El selector de superior del
+bloque de cancelaciones/nuevas permite consultar cualquiera, incluso una del resto.
+Incluye el mes
+anterior al inicio solicitado usando la extracción de referencia existente.
+Conserva exactamente los casos, calendario y exclusiones de cada métrica del reporte.
+
+Los grupos son `ID de línea superior × operación × antigüedad`. Se consulta
+`Solicitud.LineaPrestamo.ID/Descripcion/Superior.ID/Superior.Descripcion` por OID;
+no se unen líneas por nombres potencialmente repetidos. Las clasificaciones son
+las actuales del Core, no una reconstrucción de la jerarquía histórica. Los casos
+sin mapeo o con descripción inconsistente se conservan como **Sin clasificar**.
+
+- **Cancelaciones**: nombre de la línea contiene `cancel`, ignorando mayúsculas
+  y acentos. Las demás se rotulan **Otras operaciones**; no se afirma que sean simples.
+- **Nueva**: solo el mes calendario de la primera actividad disponible en Core,
+  obtenida con el mínimo histórico de `NovedadSolicitud.Fecha` para el ID de línea.
+  No se usa el inicio del período extraído como fecha de alta. Esta fecha no demuestra
+  creación ni aprendizaje del equipo. Fechas ausentes quedan con antigüedad desconocida.
+- Los atributos se cruzan: una línea nueva de cancelaciones integra un solo grupo.
+  Se fija la antigüedad al mes comparado en ambos lados de cada comparación para
+  evitar aportes artificiales por el paso de nueva a existente.
+
+Para grupos con casos en ambos meses, siendo `p` su participación y `u` su promedio:
+
+- Mix: `(p_actual - p_anterior) × u_actual`.
+- Desempeño controlado: `(u_actual - u_anterior) × p_anterior`.
+  Mantiene fijo el peso del mes anterior, como el Excel local de referencia;
+  reemplaza el método simétrico de la primera propuesta de esta hoja. La interacción
+  entre cambio de tiempo y peso queda en mix. Cambian los componentes, no el total.
+- Grupos sin casos en uno de los meses: el aporte ponderado entrante o saliente
+  queda separado en **Entradas/salidas**, sin inventar un promedio para el mes ausente.
+
+La suma de los tres componentes concilia con la variación total en minutos.
+Si cualquiera de los meses carece de casos, no se calcula descomposición.
+No se descomponen medianas ni se atribuye causalidad al componente de performance.
+Los cálculos se realizan dentro de `superior × operación × antigüedad` y luego
+se suman por superior: el desempeño no se calcula a partir del promedio agregado
+de la superior, que podría ocultar cambios de mix entre sus subcategorías.
+La vista principal muestra cancelaciones/otras operaciones cruzadas con
+nueva/existente, más faltantes cuando los hay; permite ver el total o una superior.
+Sus aportes siempre usan el denominador global y no se suman nuevamente al ranking.
+Los selectores recalculan todas las fórmulas, incluyendo el ranking, sin macros.
+La hoja final **Soporte tiempos** conserva historia completa, cantidades y sumas
+de minutos por grupo, fórmulas, controles de conciliación y catálogo para auditar
+superiores, cancelaciones y primera actividad. Solo se ocultan columnas auxiliares
+de los selectores; el detalle técnico sigue visible y enlazado desde la vista principal.
+El manifiesto JSON
+guarda el mapeo por solicitud, reglas y resultados numéricos para reproducir el análisis.
+
+### Mantenimiento del calendario
+
+La última hoja **Jornadas evaluación** conserva la detección diaria y un listado
+de excepciones, fuera de la vista principal. El generador usa todas las novedades
+mensuales obtenidas por `EvaluateList`, no solo solicitudes cerradas ni las líneas
+del reporte, y agrupa por la fecha de creación del evento. Observa cualquier
+movimiento de los usuarios de referencia; Revisar, Rechazada, PreAprobado y Liquidada
+aportan además una señal de decisiones. La nómina es orientativa, configurable con
+`REPORTE_EVALUACION_ACTIVITY_USERS` (usuarios separados por comas); debe revisarse
+ante cambios de equipo. Las decisiones de usuarios fuera de esa nómina se señalan
+como actividad por atribuir, no como ausencia.
+
+Los días laborables sin actividad aparente y los cierres confirmados se revalidan
+en Core con `Count / EvaluateList / Count`, IDs únicos, fecha y autor
+`Creado.Usuario.UserName`. La consulta se filtra por `Fecha`, mientras la actividad
+se atribuye por creación; se unen las observaciones de todos los meses extraídos
+para no perder eventos desfasados dentro del período. La ausencia sigue siendo un
+indicio, no prueba de cierre. Límites, cambios de cantidad, fechas inválidas o errores
+quedan como **Sin datos completos**, nunca como prueba de que no se trabajó.
+
+**Solo cierres confirmados** agregan días descontados. `operational_calendar.py`
+registra el **10/07/2026**, confirmado por Santiago el 10/09/2026. Otros días
+sin movimientos quedan como **Posible no trabajado** y mantienen el calendario
+base hasta confirmación explícita y cambio en Git. Si hay actividad en un cierre
+confirmado, se muestra el conflicto; la confirmación explícita mantiene precedencia.
+No se usa el primer/último evento para reducir jornadas ni se descartan solicitudes
+extremas. La fecha, origen, cobertura, conteos, usuarios y decisión aplicada quedan
+en Excel; el manifiesto conserva además la regla y las verificaciones del Core.
+
+Estos cierres operativos se aplican **solo a primera respuesta**, incluyendo las
+referencias históricas, comisiones y aportes por superior derivados de esa métrica.
+Transferencia, punta a punta y duración por estado conservan el calendario nacional;
+no se asume que otras áreas comparten los cierres del equipo de evaluación.
+El dashboard de objetivos reutiliza estos cierres confirmados para el promedio y
+la mediana de primera respuesta, incluyendo los tres meses de referencia. Cada
+estadística usa la media simple de sus tres valores mensuales y los mismos rangos
+de comisiones; transferencia mantiene el calendario nacional. El snapshot conserva
+el promedio en los campos superiores y agrega `mediana` con resultado, objetivo,
+variación y estado propios.
+El comportamiento predeterminado del paquete compartido y de la v1 no cambia.
+
+`reporte_evaluacion_comisiones/calendar.py` fija `holidays==0.104`, filtra los
+opcionales y corrige el traslado nacional del 12 al 10 de octubre de 2025.
+Las fuentes oficiales quedan dentro del reporte. El calendario admite
+2017–2026; actualizarlo y revisar las disposiciones anuales antes de procesar
+2027. Fuera de ese rango falla explícitamente, incluyendo años de eventos
+históricos que intervengan en los intervalos medidos.
+
+Namespace files: `reporte_evaluacion_comisiones/**` y
+`reporte_evaluacion_report/**`. El paquete compartido mantiene los valores
+predeterminados del reporte anterior, sin exclusión de feriados.
+
+## mudon_credixsa_report
+
+Genera el padron de socios con credito activo en las lineas `MUDON HABERES` y
+`MUDON HABERES SOCIOS NUEVOS`, enriquece cada CUIL con CredixSA y publica un
+Excel para Cobranzas.
+
+### Operacion reanudable
+
+- crea un snapshot mensual de socios desde `F.Module.Cuentas.Prestamos.Prestamo`;
+- deduplica por CUIL y conserva todas las cuentas activas del socio;
+- reutiliza resultados CredixSA de hasta 7 dias;
+- procesa por defecto 5 socios por lote y espera 15 segundos entre consultas online;
+- persiste cada resultado en `/data/credixsa-cache/mudon-report.sqlite`;
+- recupera automaticamente leases de ejecuciones interrumpidas;
+- reintenta errores tecnicos hasta 3 veces en lotes posteriores;
+- publica el Excel aunque existan errores definitivos, marcandolos por fila.
+
+El estado SQLite es runtime mutable. El esquema, las migraciones y toda la
+logica que lo administra viven en Git.
+
+### Triggers
+
+- `primer_dia_del_mes`: dia 1 a las 07:30, solo en produccion;
+- `reanudar_corrida`: cada 10 minutos, solo en produccion; sale como `idle` si no hay corrida activa;
+- `webhook_manual`: asincrono y protegido por `ANALISIS_CREDITO_WEBHOOK_KEY`.
+
+Cada trigger fija explicitamente el input interno `run_mode` (`monthly`, `resume` o `manual`). El worker no infiere el modo desde metadatos del trigger: `resume` nunca crea una corrida nueva y solo continua una corrida activa.
+
+Body manual opcional:
+
+```json
+{
+  "force_refresh": false,
+  "retry_errors": false
+}
+```
+
+`force_refresh` solo afecta una corrida nueva. `retry_errors` reabre los errores
+definitivos de la ultima corrida. Para consultar estado sin procesar un lote:
+
+```json
+{ "mode": "status" }
+```
+
+### Salidas
+
+- `/reports/cobranzas/mudon-jubilados/ultimo.xlsx`
+- `/reports/cobranzas/mudon-jubilados/historico/YYYY-MM-DD.xlsx`
+
+El workbook contiene las hojas `Resumen` y `Socios`. La publicacion de ambos
+archivos es atomica.
+
+### Configuracion
+
+Secrets reutilizados:
+
+- `DEVEXPRESS_EVALUATE_API_BASE_URL` (puerto operativo 5002)
+- `DEVEXPRESS_EVALUATE_API_BEARER_TOKEN`
+- `CREDIX_CLIENTE`
+- `CREDIX_USER`
+- `CREDIX_PASS`
+- `ANALISIS_CREDITO_WEBHOOK_KEY`
+
+Variables:
+
+- `mudon_core_timeout_seconds` (default `60`)
+- `mudon_core_verify_tls` (default `false`)
+- `mudon_core_max_rows` (default `5000`; alcanzar el limite aborta la corrida)
+- `mudon_loan_lines`
+- `mudon_credixsa_batch_size` (default `5`, maximo `10`)
+- `mudon_credixsa_delay_seconds` (default `15`)
+- `mudon_credixsa_cache_max_age_days` (default `7`)
+- `mudon_credixsa_max_attempts` (default `3`)
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/mudon_credixsa_report/**`
+- reutiliza `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
+
+### Cálculos compartidos con el dashboard de objetivos
+
+El snapshot del dashboard conserva sus dos indicadores de promedio (primera respuesta
+y transferencia) y el mes actual hasta la fecha de actualización. Reutiliza las funciones
+de métricas del informe y su calendario de feriados nacionales obligatorios.
+El objetivo es la media simple de los tres promedios mensuales anteriores, con igual
+peso por mes. Si falta un mes, queda sin objetivo. Los colores reutilizan los tramos
+de comisiones: hasta 100% verde, más de 100% hasta 110% amarillo, superiores rojo;
+referencia cero o datos ausentes quedan neutrales. Ya no admite un umbral independiente
+por variable de entorno. El flujo incluye ambos paquetes compartidos y holidays==0.104.
+
+## resolver_cuil_a13_por_dni
+
+Subflow interno, sin trigger, que recibe `dni` y reutiliza las credenciales y cache
+WSAA de `consulta_padron_a13`. Ejecuta `getIdPersonaListByDocumento` y `getPersona`
+para todas las claves distintas. Conserva CUIT/CUIL activos y descarta CDI e
+inactivos. Nunca compara nombres. Exige documento coincidente e identificador valido.
+
+Outputs: `ok`, `status` (`single`, `none`, `multiple`, `invalid_request`,
+`technical_error`), `cuil` (solo si hay una unica clave elegible) y `candidate_count`.
+Un error consultando cualquier candidato impide aceptar un resultado parcial como
+unico. Los errores tecnicos se devuelven para habilitar el respaldo CredixSA del
+prefill Finguru. El ticket renovado se conserva incluso si falla la busqueda.
+
+Desplegar este flow y sus namespace files antes del consumidor `marketing-crm`.
+Contrato oficial: https://www.afip.gob.ar/ws/ws-padron-a13/manual-ws-sr-padron-a13-v1.4.pdf

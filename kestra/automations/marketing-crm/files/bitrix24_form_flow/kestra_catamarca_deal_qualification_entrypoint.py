@@ -6,7 +6,10 @@ import json
 import os
 import sys
 
-from .form_processor.catamarca_deal_qualification import qualify_catamarca_deal
+from .form_processor.catamarca_deal_qualification import (
+    qualify_catamarca_deal,
+    technical_deal_trace,
+)
 
 try:
     from kestra import Kestra
@@ -21,19 +24,7 @@ def main() -> int:
             raise ValueError("Falta DEAL_ID.")
         result = qualify_catamarca_deal(deal_id)
     except Exception as exc:
-        result = {
-            "ok": False,
-            "action": "error",
-            "has_pending": True,
-            "deal_id": deal_id,
-            "lead_id": "",
-            "stage_id": "",
-            "reason": "internal_error",
-            "assigned_by_id": "",
-            "routing_bucket": "",
-            "commercial_line": "",
-            "message": str(exc),
-        }
+        result = technical_deal_trace(deal_id, exc)
 
     if Kestra is not None:
         Kestra.outputs(result)

@@ -1,0 +1,44 @@
+id: capturar_revision_riesgo
+namespace: redunisol
+description: Conserva solicitudes observadas en RevisionRiesgo y todos sus adjuntos, sin sobrescribir originales ni modificar el core.
+
+labels:
+  env: prod
+  team: redunisol
+  domain: analisis-credito
+  kind: scheduled
+  integration: devexpress-evaluate
+  schedule_scope: prod_only
+
+concurrency:
+  limit: 1
+  behavior: CANCEL
+
+tasks:
+  - id: capturar
+    type: io.kestra.plugin.scripts.python.Commands
+    timeout: PT10M
+    namespaceFiles:
+      enabled: true
+      include:
+        - capturar_revision_riesgo/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+      volumes:
+        - "/opt/kestra/data/analisis-credito-capturas/{{ flow.namespace }}:/data/capturas"
+    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    env:
+      RISK_SNAPSHOT_ROOT: /data/capturas
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
+      VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds ?? '20' }}"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls ?? 'true' }}"
+    commands:
+      - python -m capturar_revision_riesgo.archive
+
+triggers:
+  - id: cada_minuto
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* * * * *"
+    timezone: America/Argentina/Buenos_Aires

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 import datetime as dt
 import json
 import os
@@ -30,6 +31,13 @@ SOCIO_FIELDS = [
     "NroSocio",
     "NroDoc",
     "CUIT",
+    "FechaDeNacimiento",
+    "Edad",
+    "Sexo",
+    "DadoDeBaja",
+    "CategoriaActual.ID",
+    "CategoriaActual.Nombre",
+    "CuentaBancariaHabitual.CBU",
 ]
 
 CUOTA_FIELDS = [
@@ -46,7 +54,12 @@ CUOTA_FIELDS = [
     "Prestamo.Cuenta.Estado",
     "Prestamo.Estado",
     "Prestamo.EstadoPrestamo",
+    "Prestamo.LineaPrestamo.ID",
+    "Prestamo.LineaPrestamo.Codigo",
     "Prestamo.LineaPrestamo.Descripcion",
+    "Prestamo.LineaPrestamo.Superior.ID",
+    "Prestamo.LineaPrestamo.Superior.Codigo",
+    "Prestamo.LineaPrestamo.Superior.Descripcion",
     "Prestamo.SocioTitular.Socio.ID",
     "Prestamo.SocioTitular.Socio.NroSocio",
     "Prestamo.SocioTitular.Socio.NroDoc",
@@ -67,6 +80,7 @@ class VimarxConfig:
     base_url: str
     timeout_seconds: float
     verify_tls: bool
+    bearer_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -111,17 +125,18 @@ def sync_lead_vimarx_enrichment(
     return enrichment.ok
 
 
-def load_vimarx_config_from_env() -> VimarxConfig:
-    base_url = os.getenv("VIMARX_EVAL_BASE_URL", "").strip().rstrip("/")
+def load_vimarx_config_from_env(env: Mapping[str, str] | None = None) -> VimarxConfig:
+    source = os.environ if env is None else env
+    base_url = source.get("VIMARX_EVAL_BASE_URL", "").strip().rstrip("/")
     if not base_url:
         raise ValueError("Falta VIMARX_EVAL_BASE_URL.")
 
-    timeout_raw = os.getenv("VIMARX_TIMEOUT_SECONDS", "60").strip()
+    timeout_raw = source.get("VIMARX_TIMEOUT_SECONDS", "60").strip()
     timeout_seconds = float(timeout_raw or "60")
     if timeout_seconds <= 0:
         raise ValueError("VIMARX_TIMEOUT_SECONDS debe ser mayor a cero.")
 
-    verify_tls = parse_bool(os.getenv("VIMARX_VERIFY_TLS", "false"))
+    verify_tls = parse_bool(source.get("VIMARX_VERIFY_TLS", "false"))
     if not verify_tls:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -129,6 +144,7 @@ def load_vimarx_config_from_env() -> VimarxConfig:
         base_url=base_url,
         timeout_seconds=timeout_seconds,
         verify_tls=verify_tls,
+        bearer_token=source.get("VIMARX_BEARER_TOKEN", "").strip(),
     )
 
 
@@ -260,6 +276,13 @@ def fetch_socio_by_cuil(cuil_digits: str, config: VimarxConfig) -> dict[str, Any
         "dni": stringify(row.get("NroDoc")),
         "cuil": stringify(row.get("CUIT")),
         "nombre": stringify(row.get("NombreCompleto")),
+        "fecha_nacimiento": normalize_date_text(row.get("FechaDeNacimiento")),
+        "edad": parse_int(row.get("Edad")),
+        "sexo_codigo": stringify(row.get("Sexo")),
+        "dado_de_baja": parse_bool(row.get("DadoDeBaja")),
+        "categoria_id": stringify(row.get("CategoriaActual.ID")),
+        "categoria": stringify(row.get("CategoriaActual.Nombre")),
+        "cbu_habitual": only_digits(row.get("CuentaBancariaHabitual.CBU")),
     }
 
 
@@ -278,6 +301,16 @@ def fetch_cuotas_by_cuil(cuil_digits: str, config: VimarxConfig) -> list[dict[st
         criterio=f"({criterio_cuil}) And [NroCuota] > 0",
         max_filas=MAX_FILAS,
     )
+
+
+def _build_headers(config: VimarxConfig) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    token = config.bearer_token
+    if token is None:
+        token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def evaluate_list(
@@ -303,7 +336,7 @@ def evaluate_list(
         try:
             response = session.post(
                 url,
-                headers={"Content-Type": "application/json"},
+                headers=_build_headers(config),
                 json=payload,
                 verify=config.verify_tls,
                 timeout=config.timeout_seconds,
@@ -387,6 +420,17 @@ def build_creditos_activos(
                 "nro_cuenta": stringify(first.get("Prestamo.NroCuenta")),
                 "referencia": stringify(first.get("Prestamo.Referencia")),
                 "linea": stringify(first.get("Prestamo.LineaPrestamo.Descripcion")),
+                "linea_id": stringify(first.get("Prestamo.LineaPrestamo.ID")),
+                "linea_codigo": stringify(first.get("Prestamo.LineaPrestamo.Codigo")),
+                "linea_superior_id": stringify(
+                    first.get("Prestamo.LineaPrestamo.Superior.ID")
+                ),
+                "linea_superior_codigo": stringify(
+                    first.get("Prestamo.LineaPrestamo.Superior.Codigo")
+                ),
+                "linea_superior": stringify(
+                    first.get("Prestamo.LineaPrestamo.Superior.Descripcion")
+                ),
                 "fecha_emision": normalize_date_text(first.get("Prestamo.FechaEmision")),
                 "cuotas_totales": cuotas_totales,
                 "cuotas_pagas": cuotas_pagas,

@@ -210,6 +210,28 @@ def consultar_padron(request: SearchRequest, config: ArcaConfig) -> dict[str, An
                 error="",
             )
 
+        if _is_inactive_key_fault(str(exc)):
+            log_event(
+                "arca_padron_a13_clave_inactiva",
+                cuit_cuil=request.cuit_cuil,
+                ta_source=ta_source,
+                error=str(exc),
+            )
+            return _build_result(
+                ok=False,
+                found=False,
+                status="clave_inactiva",
+                request=request,
+                config=config,
+                ta=ta,
+                ta_source=ta_source,
+                ta_cache_should_persist=ta_cache_should_persist,
+                ta_cache_ttl=ta_cache_ttl,
+                response={},
+                persona={},
+                error=str(exc),
+            )
+
         log_event(
             "arca_padron_a13_technical_error",
             cuit_cuil=request.cuit_cuil,
@@ -295,6 +317,15 @@ def _is_not_found_fault(message: str) -> bool:
         "clave (cuit/cuil) consultada es inexistente" in normalized
         or ("clave" in normalized and "inexistente" in normalized)
     )
+
+
+def _is_inactive_key_fault(message: str) -> bool:
+    """La clave existe en ARCA pero esta dada de baja.
+
+    Es un resultado de negocio valido, no un fallo de la automatizacion.
+    """
+    normalized = " ".join(str(message or "").strip().lower().split())
+    return "clave" in normalized and "inactiva" in normalized
 
 
 def build_output_payload(result: dict[str, Any]) -> dict[str, Any]:

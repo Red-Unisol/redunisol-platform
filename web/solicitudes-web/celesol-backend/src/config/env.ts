@@ -138,6 +138,7 @@ const envSchema = z.object({
     .number()
     .int("MINIO_PORT must be an integer")
     .positive("MINIO_PORT must be greater than 0"),
+  MINIO_REGION: z.string().default(""),
   MINIO_SECRET_KEY: z.string().min(1, "MINIO_SECRET_KEY is required"),
   MINIO_USE_SSL: z
     .enum(["true", "false"])

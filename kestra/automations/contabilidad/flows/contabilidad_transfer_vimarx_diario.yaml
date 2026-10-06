@@ -42,6 +42,7 @@ tasks:
       CONTABILIDAD_OUTPUT_ROOT: "/data/contabilidad-transfer"
       CONTABILIDAD_CACHE_DIR: "/data/contabilidad-transfer/cache/vimarx"
       VIMARX_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
       VIMARX_TIMEOUT_SECONDS: "{{ envs.vimarx_timeout_seconds ?? '30' }}"
     commands:
       - python -m contabilidad_transfer.kestra_daily_entrypoint

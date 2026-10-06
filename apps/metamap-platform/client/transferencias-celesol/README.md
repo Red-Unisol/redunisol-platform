@@ -1,5 +1,170 @@
 # Transferencias Celesol
 
+## Transferencias a terceros (2.2.0)
+
+Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/22097/).
+
+- Si el CUIT informado por Coinag para el CBU difiere del CUIT del solicitante,
+  la solicitud muestra una advertencia y queda excluida de transferencias automaticas.
+  La comparacion usa CUIT normalizado, no diferencias de escritura en el nombre.
+- El operador puede transferir manualmente: el cartel muestra solicitante, importe,
+  CBU y titular receptor (nombre si el banco lo informa y CUIT). Debe escribir
+  exactamente `TRANSFERIR` para habilitar la confirmacion. Cancelar o abrir otro
+  cartel borra esa autorizacion; no se guarda una excepcion permanente.
+- Antes del envio se vuelven a consultar los datos. Si cambian la solicitud, CUIT,
+  CBU, linea, importe o plan de cancelacion autorizado, se exige confirmar de nuevo.
+  El payload bancario usa el CUIT del titular del CBU consultado en Coinag.
+- La excepcion solo resuelve la diferencia de titularidad. Una consulta fallida,
+  titular desconocido, moneda incompatible, inconsistencia documental o de importes,
+  linea inhabilitada y controles contra reenvios siguen bloqueando la operacion.
+- En cancelaciones aplica al destino del Monto En Mano; las verificaciones y la
+  whitelist de las entidades acreedoras conservan sus reglas.
+- `manual_transfer_authorized` registra operador, respuestas de confirmacion y
+  destino aprobado en la traza existente. `transfer_confirmation_required` registra
+  intentos detenidos por falta de autorizacion o cambios en los datos.
+
+### Modelo comun de advertencias y confirmacion
+
+`ValidationReport.warnings` contiene `ValidationWarning` con `WarningKind` y mensaje.
+`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante,
+validaciones multiples, renovaciones y acreedores nuevos o con CBU nuevo;
+`TypeWord("TRANSFERIR")` para una cuenta de terceros. El texto visible no determina
+la politica. Los productores asignan el tipo al detectar la condicion.
+
+El cartel y el worker obtienen la misma `ConfirmationPolicy` desde el informe de
+validacion. El cartel genera los campos requeridos y el worker verifica las respuestas
+contra el informe refrescado antes de enviar al banco. Todas las advertencias bloquean
+la via automatica mediante `can_transfer_automatically()`; ninguna autorizacion manual
+habilita una automatica ni elimina bloqueos.
+
+Cada confirmacion manual queda ligada al destino, importe y plan presentados, tambien
+para cuentas propias y advertencias simples. Una advertencia nueva o modificada exige
+volver a revisar el cartel; una advertencia resuelta o un cambio de orden no lo exige.
+Las trazas conservan `warnings` como lista de textos para sus consumidores existentes
+y agregan `warning_details` con los tipos. Para incorporar otra advertencia, agregar
+su `WarningKind`, definir su requisito y emitirla desde la validacion correspondiente;
+no agregar condiciones por tipo en el cartel o en el worker.
+
+## Evaluaciones y recuperacion del comprobante (2.1.1)
+
+- Cada solicitud evaluada emite `transfer_candidate_evaluated`, aun sin pulsar
+  Transferir: estado, linea, inhabilitacion, bloqueos y advertencias. Se registra la
+  primera evaluacion de cada sesion y los cambios (incluida la resolucion), no cada
+  refresco identico. Incluye lineas inhabilitadas. Usa la outbox central existente.
+  Es evidencia de la evaluacion, no una afirmacion de por que el operador actuo por fuera.
+- Tras un error HTTP 5xx, 408, 429 o de transporte al registrar un comprobante de
+  una transferencia confirmada, consulta `EvaluateList` por Oid cada 30 segundos,
+  durante 10 minutos. El plazo puede extenderse por la consulta HTTP ya en curso.
+  `Pagada` confirma el resultado. Solo `A Transferir` autoriza otro envio del mismo
+  comprobante. Respuestas vacias, ambiguas o fallidas nunca autorizan un envio;
+  otro estado detiene la recuperacion para revision. Errores locales y otros 4xx
+  no se reintentan. Tras un envio HTTP 200 solo consulta, sin volver a cargar el PDF.
+- La recuperacion corre en el worker existente, mantiene bloqueado el boton de esa
+  solicitud y muestra `Transferida: verificando Pagada...`. Nunca llama al banco.
+  Las automaticas conservan su serializacion y esperan este resultado.
+  Los eventos `mark_paid_recovery_started`, `mark_paid_state_checked` y
+  `mark_paid_recovery_confirmed`/`mark_paid_recovery_failed` documentan el resultado,
+  junto con los eventos existentes de cada intento de carga.
+- Mantener la app abierta hasta terminar. No hay reanudacion automatica de esta
+  recuperacion tras cerrar la app; el PDF, antirreenvio bancario y trazas permanecen.
+  Al vencer el plazo queda pendiente para revision, sin repetir el pago bancario.
+- Consultar antes de reenviar no garantiza idempotencia del endpoint externo:
+  una peticion anterior podria seguir procesandose o el estado consultado estar
+  atrasado. No se encontro en esta monorepo el contrato/implementacion del core que
+  garantice deduplicacion del comprobante. No se afirma semantica exactamente una vez.
+  No se modifican endpoints ni credenciales del entorno local.
+
+## Autoactualizacion desde 2.1.0
+
+La version Windows release comprueba actualizaciones antes de abrir la configuracion
+y antes de iniciar los servicios operativos. Usa HTTPS con validacion de certificados,
+sin redirects ni credenciales de la app, en
+`https://kestra.redunisol.com.ar/metamap-platform/updates/transferencias/latest.json`.
+
+El manifiesto se verifica con Ed25519 y una clave publica embebida en el ejecutable.
+Incluye version, aplicacion, canal, arquitectura, SHA-256, tamano y vencimiento. La
+firma cubre todos esos campos. El cliente rechaza firmas invalidas, versiones
+incompatibles, descargas truncadas, metadatos vencidos y retrocesos de version.
+Conserva la version mas alta observada para rechazar replays despues de un rollback.
+El vencimiento es de 90 dias; mantener el canal activo requiere publicar una nueva
+version antes de ese plazo. Si la comprobacion falla, se informa en la ventana de
+inicio y el operador puede continuar con la version instalada. No hay actualizaciones
+obligatorias en esta primera version.
+
+La actualizacion cambia solamente `transferencias-celesol.exe`. Conserva el entorno
+cifrado, claves SSH, lineas, acreedores, comprobantes, log antirreenvio, identidad de
+instalacion y outbox. Las rutas existentes no cambian. La carpeta de instalacion debe
+ser escribible por el usuario y el ejecutable debe conservar su nombre original.
+Un bloqueo de archivo impide abrir dos instancias de la misma instalacion.
+
+Se copia el ejecutable actual como `.transferencias-update/helper.exe`; esa copia
+actua como proceso auxiliar, espera el cierre, vuelve a verificar la descarga y hace
+un respaldo durable `previous.exe` seguido de un reemplazo con `MoveFileExW` en el
+mismo volumen, sin retirar primero el EXE instalado. No hay un segundo binario
+que deba actualizarse por separado. Un journal permite recuperar una instalacion
+interrumpida. La version nueva confirma el arranque en su primer frame de interfaz;
+si termina antes (incluida la cancelacion de la configuracion inicial), se restaura la
+anterior. Si se interrumpe tambien el helper, la proxima apertura inicia la recuperacion.
+No se mata una app que espera la passphrase. Una version que fallo queda identificada
+por hash y no se reinstala en bucle. El respaldo queda disponible luego del exito.
+
+Las actualizaciones se aplican exclusivamente al arranque. Las transferencias
+automaticas siguen comenzando pausadas. Los builds debug no consultan el canal.
+La recuperacion cubre el ejecutable; cambios futuros de formatos de datos deben ser
+compatibles con la version anterior o incorporar su propia migracion y recuperacion.
+La firma Ed25519 de este canal no reemplaza un certificado Windows Authenticode ni
+garantiza eliminar advertencias de SmartScreen.
+
+### Publicacion y primera instalacion
+
+1. Mergear el cambio de servidor para exponer `/updates/transferencias/` con el volumen
+   `/srv/redunisol-updates:/updates:ro`. No requiere modificar Apache ni DNS.
+2. Mergear el cliente y crear un tag `transferencias-v2.1.0` sobre el commit aprobado
+   de `main`. El tag debe coincidir exactamente con la version de `Cargo.toml`.
+3. `transferencias-release.yml` prueba y compila en Windows; firma y publica desde
+   un job separado en el environment `vps-infra`. No ejecuta `build-package.ps1`.
+   Usa `TRANSFERENCIAS_UPDATE_SIGNING_KEY`, los accesos SSH existentes y la variable
+   publica `TRANSFERENCIAS_UPDATE_KNOWN_HOSTS` para verificar la identidad de la VPS.
+   Ese environment debe permitir tags `transferencias-v*`.
+4. La VPS recibe un directorio inmutable por version y un `latest.json` firmado que
+   se promueve atomicamente al final. Una publicacion interrumpida puede reintentarse;
+   no se permite reemplazar una version con bytes diferentes ni retroceder el canal.
+5. Construir la primera instalacion **localmente** con `build-package.ps1`; el script
+   rechaza ejecucion en CI. Admite `-PackageInputDirectory` para usar insumos locales
+   desde otra carpeta sin copiarlos al checkout. Distribuir el ZIP por el canal privado
+   habitual. Para una instalacion existente, reemplazar una vez el EXE con la app cerrada
+   y conservar sus archivos. A partir de esa apertura, se actualiza sola.
+
+El repositorio contiene solo codigo, ejemplos sin valores reales y la clave publica.
+Ninguna variante real del entorno (en claro o cifrada), clave SSH operativa, dato de
+instalacion o ZIP inicial debe subirse a Git, Actions, artifacts ni al canal de updates.
+`tools/check_release_inputs.py` comprueba esta restriccion en CI. El artifact de build
+contiene exclusivamente el EXE, y la publicacion usa una lista explicita de archivos.
+
+La clave privada de firma se genero localmente y se cargo con `gh secret set`, sin
+mostrarla. Consultar su ubicacion local en `credentials.txt`. No reutilizar la clave
+SSH ni la passphrase del entorno como clave de firma. La clave publica tiene ID
+`production-2026`. Para rotarla hay que distribuir primero una version firmada por la
+clave vigente que confie tambien en la siguiente; nunca tomar claves del servidor de
+descargas como nueva raiz de confianza. Este protocolo no implementa TUF completo;
+sus controles de version y vencimiento siguen los principios de su
+[especificacion](https://theupdateframework.github.io/specification/).
+
+### Verificacion local
+
+```powershell
+cargo test --locked --all-targets
+cargo build --locked --release --bin transferencias-celesol
+python -m unittest discover -s tools -p "test_*.py"
+python tools/check_release_inputs.py
+```
+
+Las pruebas Windows ejecutan procesos reales desde directorios temporales, con claves
+efimeras: reemplazo con app abierta, cierre ordenado, arranque correcto, fallo prematuro
+y binario rechazado por Windows. Tambien prueban firma, vencimiento, integridad,
+descargas interrumpidas, bloqueo de instancias, journal, antirretroceso, preservacion de
+datos y publicacion interrumpida. No consultan bancos ni usan entornos operativos.
+
 Cliente desktop en Rust para operar solicitudes del core financiero en estado `A Transferir`.
 
 ## Estado de este corte
@@ -11,7 +176,12 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - validaciones bloqueantes de:
   - solicitud en `A Transferir`
   - `Prestamo.[CBU transferencia]`
-  - titularidad Coinag via CUIL/CUIT
+  - consulta de titularidad Coinag via CUIL/CUIT (terceros requieren confirmacion escrita)
+- configuracion unificada de lineas por ID estable, editable desde la aplicacion
+- cancelaciones detectadas por `MontoCancelaciones` o `DetalleFormaPago.Count()`, sin depender del nombre de la linea
+- cancelaciones ejecutadas como patas independientes al socio y a cada acreedor
+- whitelist dinamica por CUIT juridico + CBU, con validacion Coinag en cada operacion
+- transferencia automatica habilitada/pausada para lineas marcadas como automaticas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
 - si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
   - documento MetaMap vs core
@@ -19,6 +189,8 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - barrera local anti reenvio por `request_oid` en archivo persistido
 - envio a Coinag si el runtime esta configurado
 - generacion de comprobante PDF simple
+- carga del comprobante confirmado en el core y marcado de la solicitud como `Pagada`
+- trazabilidad central append-only con outbox local durable e idempotencia por evento
 
 ## Variables de entorno minimas
 
@@ -52,10 +224,51 @@ Obligatorias:
 Opcionales frecuentes:
 
 - `TRANSFERENCIAS_CORE_BASE_URL`
+- `TRANSFERENCIAS_MARK_PAID_ENDPOINT` default `https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada`
+- `TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN` token Bearer requerido para registrar el comprobante
+- `TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS` default `true`
 - `TRANSFERENCIAS_OPERATOR_NAME`
 - `TRANSFERENCIAS_POLL_INTERVAL_SECONDS` default `20`
 - `TRANSFERENCIAS_RECEIPTS_DIR`
+- `TRANSFERENCIAS_AUTO_RECEIPTS_DIR` default `receipts-automaticas`
 - `TRANSFERENCIAS_SMOKE_TRANSFERS_DIR` default `smoke-transfers`
+- `TRANSFERENCIAS_LINEAS_CONFIG_PATH` default `lineas.toml` junto a la configuracion
+- `TRANSFERENCIAS_ACREEDORES_CONFIG_PATH` default `acreedores-confiables.toml`
+- `TRANSFERENCIAS_TRACE_OUTBOX_PATH` default `transfer-trace-outbox.jsonl`
+
+Configuracion de lineas:
+
+- `lineas.toml` reemplaza los archivos historicos `lineas_habilitadas` y `lineas_automaticas`
+- la identidad se resuelve exclusivamente por `LineaPrestamo.ID`; codigo y descripcion son informativos
+- si el archivo no existe, se consultan las lineas con solicitudes en los ultimos tres meses y todas se crean `inhabilitada`
+- `Configurar lineas` permite elegir `Inhabilitada`, `Habilitada` o `Automatica` por separado para creditos normales y cancelaciones
+- `Refrescar desde el core` conserva el modo de IDs que siguen activos, actualiza sus metadatos, incorpora IDs nuevos inhabilitados y retira los que ya no tienen actividad en la ventana de tres meses
+- el orden del archivo no modifica el comportamiento
+- el guardado crea `lineas.toml.bak` y reemplaza el archivo principal de forma atomica
+
+Cancelaciones:
+
+- una solicitud es candidata si `MontoCancelaciones != 0` o `DetalleFormaPago.Count() > 0`
+- antes de transferir deben coincidir la suma de detalles, `MontoCancelaciones`, `abs(Monto En Mano)`, `MontoAFinanciar` y el unico campo bancario no nulo
+- cada CBU se consulta siempre en Coinag; para acreedores, CUIT juridico, nombre y cuenta en pesos son bloqueantes
+- una entidad o un CBU nuevos generan advertencia y requieren confirmacion manual; la accion `Confiar acreedor` los agrega a la whitelist atomica
+- cualquier advertencia impide el modo automatico
+- se hace preflight de todas las patas antes del primer envio y cada pata tiene un `idTrxCliente` estable
+- un reintento solo omite una pata previa si Coinag confirma que CBU, CUIT e importe coinciden exactamente
+- el core se marca `Pagada` unicamente despues de confirmar todas las patas y generar el comprobante conjunto
+
+Si no hay ninguna linea marcada como automatica, el control habilitado/pausado queda deshabilitado.
+Cada apertura de la app comienza con las transferencias automaticas pausadas. Al habilitarlas, procesa una solicitud elegible por vez; al pausarlas, deja terminar la transferencia en curso y no comienza la siguiente.
+Las automaticas solo corren si la solicitud esta verde, sin warnings ni bloqueos, con MetaMap `completed`.
+Los comprobantes de automaticas se generan en `TRANSFERENCIAS_AUTO_RECEIPTS_DIR`, separado de los comprobantes manuales.
+
+Registro del comprobante en el core:
+
+- se ejecuta solo cuando Coinag confirma la transferencia y el PDF se genero correctamente
+- envia el OID unico dentro de la propiedad `numeroSolicitud`
+- considera exitosa solamente una respuesta HTTP `200`
+- ante otro estado HTTP, timeout o error de red, informa que la transferencia bancaria fue realizada pero el registro en el core requiere revision; nunca sugiere repetir la transferencia
+- los comprobantes rechazados y los smoke de debug no se envian al endpoint de marcado
 
 Coinag para habilitar `Transferir`:
 
@@ -124,6 +337,27 @@ El script busca estos archivos locales dentro de `package-input/`:
 
 El zip se genera en `dist/`.
 
+La fuente local canonica para las credenciales y la passphrase de empaquetado es la
+seccion `Transferencias Celesol - entorno canonico de empaquetado` de `credentials.txt`.
+Ese archivo nunca se versiona. El insumo que consume el build es
+`package-input/transferencias.env.enc`, que tambien queda fuera de Git y debe conservarse
+cifrado; nunca distribuyas el entorno en texto plano.
+
+Antes de crear el ZIP, el script descifra temporalmente el entorno y valida el contrato
+operativo completo:
+
+- `TRANSFERENCIAS_CORE_BASE_URL=https://celesol.dyndns.org:5002` para `EvaluateList` y
+  `EvaluateObj`.
+- `TRANSFERENCIAS_MARK_PAID_ENDPOINT=https://celesol.dyndns.org:35010/api/Transferencias/marcar-pagada`.
+- `TRANSFERENCIAS_MARK_PAID_AUTH_TOKEN` presente y no vacio.
+- `TRANSFERENCIAS_MARK_PAID_ALLOW_INVALID_CERTS=true`.
+
+Los puertos no son intercambiables: `5002` consulta el Core y `35010` registra el
+comprobante y cambia la solicitud a `Pagada`. Si falta cualquiera de estas variables o
+apunta a otro servicio, el build se cancela. La passphrase se toma de
+`TRANSFERENCIAS_CONFIG_PASSPHRASE` o se solicita de forma interactiva; el plaintext
+temporal se elimina siempre al terminar la validacion.
+
 Recomendacion importante para que el paquete funcione sin tocar rutas por instalacion:
 
 - en `transferencias.env.enc`, defini `TRANSFERENCIAS_COINAG_SSH_PRIVATE_KEY_PATH=ssh/coinag_tunnel_key`
@@ -141,6 +375,27 @@ La app escribe logs descriptivos por defecto en:
 Si queres cambiar la ubicacion, defini:
 
 - `TRANSFERENCIAS_DEBUG_LOG_PATH`
+
+Cada transferencia deja eventos JSON correlacionables en ese mismo archivo con el target
+`transfer_audit`. La traza incluye:
+
+- solicitud, operador, tipo manual/automatico y snapshots usados para validar
+- payload completo enviado a Coinag
+- respuesta inicial completa
+- `idTrxCliente` e `idCoelsa`
+- clasificacion inicial y resultado de cada intento de confirmacion
+- resultado final y ruta o error de generacion del PDF
+- inicio, resultado HTTP y body de respuesta del marcado como pagada
+- tamaño y SHA-256 del PDF enviado al core
+
+Los requests y responses operativos de Coinag tambien se registran completos con el target
+`coinag_http`. Se omiten solamente el body OAuth, tokens, passwords y claves SSH.
+
+Los eventos `transfer_audit` y las trazas HTTP de Coinag tambien se guardan primero en la
+outbox JSONL y se envian en lotes al server. Cada evento incluye IDs de evento, sesion e instalacion, operador, version,
+fecha local, solicitud, modo y datos operativos. Si el server no responde, la transferencia
+no se bloquea: los eventos permanecen pendientes y se reintentan durante la sesion o en el
+proximo arranque. Un marcador de sesion permite detectar cierres no limpios.
 
 ## Smoke en debug
 
@@ -202,5 +457,18 @@ Antes de habilitar `Transferir`, la app consulta Coinag por `idTrxCliente` deriv
 
 - si Coinag responde `SIN_REGISTROS`, permite transferir
 - si Coinag responde estado `1`, bloquea como `YA TRANSFERIDA`
-- si Coinag responde estado `2`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
+- si Coinag responde estado `2`, bloquea como `NO COMPLETADA`
+- si Coinag responde estado `3`, bloquea como `EN PROCESO` y el polling periodico vuelve a consultar
 - para cualquier otra respuesta, bloquea como `ERROR`
+
+La confirmacion por estado Coelsa reconoce:
+
+- `00` o `ACREDITADO / 0600`: transferencia confirmada
+- `0601`, `0602`, `0612`, `2100` o `2000`: transferencia pendiente; continua el polling
+- estados explicitos de error/rechazo/no completada: transferencia rechazada
+- estados desconocidos: se mantienen pendientes para evitar falsos rechazos
+
+Desde 2.0.1, cada sesión emite además `transfer_candidate_observed` una sola vez por
+OID cuando una solicitud aparece en la lista `A Transferir`. Esta señal permite
+calcular el universo observado y las solicitudes que no fueron completadas vía app
+sin recurrir a fuentes externas.

@@ -31,6 +31,16 @@ return [
 
     'connections' => [
 
+        // Keep inbox + job inserts atomic on the application's default database.
+        'edna' => [
+            'driver' => 'database',
+            'connection' => null,
+            'table' => 'jobs',
+            'queue' => 'edna',
+            'retry_after' => 90,
+            'after_commit' => false,
+        ],
+
         'sync' => [
             'driver' => 'sync',
         ],

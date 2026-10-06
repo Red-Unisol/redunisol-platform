@@ -9,6 +9,7 @@ type MinioAdjuntosObjectStorageDependencies = {
   accessKey: string;
   endPoint: string;
   port: number;
+  region?: string;
   secretKey: string;
   useSSL: boolean;
 };
@@ -21,6 +22,7 @@ export class MinioAdjuntosObjectStorage implements AdjuntosObjectStorage {
       accessKey: dependencies.accessKey,
       endPoint: dependencies.endPoint,
       port: dependencies.port,
+      region: dependencies.region || undefined,
       secretKey: dependencies.secretKey,
       useSSL: dependencies.useSSL,
     });

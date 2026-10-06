@@ -13,6 +13,26 @@ return [
     ],
     'catalog' => [
         [
+            'id' => 'padrones',
+            'title' => 'Administrar padrones',
+            'description' => 'Cargá y publicá versiones de los padrones complementarios de Consulta CredixSA.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Administrar padrones',
+            'helper' => 'Acceso con la contraseña del equipo de Análisis.',
+        ],
+        [
+            'id' => 'analisis',
+            'title' => 'Bandeja de análisis',
+            'description' => 'Seguí las solicitudes asignadas a tu usuario de Vimarx y recibí avisos de nuevas asignaciones.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Abrir bandeja',
+            'helper' => 'Acceso con la contraseña compartida del equipo de análisis.',
+        ],
+        [
             'id' => 'consulta-renovacion-cruz-del-eje',
             'title' => 'Consulta Renovacion Cruz del Eje',
             'description' => 'Ingresa un CUIL y consulta si el socio puede renovar su prestamo, con respuesta directa del flujo de analisis de credito.',

@@ -15,6 +15,7 @@ from arca_padron_a13.service import (  # noqa: E402
     ConfigurationError,
     InvalidRequestError,
     SearchRequest,
+    _is_inactive_key_fault,
     build_error_result,
     build_login_ticket_request,
     build_output_payload,
@@ -145,6 +146,63 @@ class ArcaPadronA13Tests(unittest.TestCase):
         self.assertFalse(result["found"])
         self.assertEqual(result["status"], "not_found")
         self.assertEqual(result["ta_source"], "cache")
+
+    def test_consultar_padron_maps_clave_inactiva_to_business_result(self) -> None:
+        config = ArcaConfig(
+            cuit_representada="33708707029",
+            cert_pem=b"cert",
+            key_pem=b"key",
+            timeout_seconds=60.0,
+            cached_ta={},
+        )
+
+        with (
+            patch(
+                "arca_padron_a13.service.get_ta",
+                return_value=(
+                    {
+                        "token": "cached-token",
+                        "sign": "cached-sign",
+                        "expirationTime": "2099-01-01T00:00:00+00:00",
+                    },
+                    "cache",
+                    False,
+                    "",
+                ),
+            ),
+            patch(
+                "arca_padron_a13.service.call_get_persona",
+                side_effect=RuntimeError(
+                    "La clave (CUIT/CUIL) consultada se encuentra INACTIVA"
+                ),
+            ),
+        ):
+            result = consultar_padron(SearchRequest("27382524506"), config)
+
+        # ok=False mantiene el comportamiento que marketing ya maneja: sin datos
+        # de ARCA, bitrix24_lead_prefill recurre al nombre informado por BCRA.
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["found"])
+        self.assertEqual(result["status"], "clave_inactiva")
+        self.assertIn("INACTIVA", result["error"])
+
+    def test_clave_inactiva_no_se_confunde_con_fallos_tecnicos(self) -> None:
+        self.assertTrue(
+            _is_inactive_key_fault(
+                "La clave (CUIT/CUIL) consultada se encuentra INACTIVA"
+            )
+        )
+        self.assertFalse(_is_inactive_key_fault("HTTP 503: Service Unavailable"))
+        self.assertFalse(
+            _is_inactive_key_fault(
+                "Network error against https://aws.afip.gov.ar: timed out"
+            )
+        )
+        self.assertFalse(
+            _is_inactive_key_fault(
+                "La Clave (CUIT/CUIL) consultada es inexistente"
+            )
+        )
 
     def test_load_config_from_env_missing_credentials_raises_configuration_error(
         self,

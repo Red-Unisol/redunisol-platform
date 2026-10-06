@@ -14,7 +14,8 @@ export const defaultSectionLabel = (
     type: string,
     data?: Record<string, unknown>,
 ) => {
-    if (data?.title) return data.title as string;
+    if (typeof data?.title === 'string' && data.title.trim())
+        return data.title.trim();
     const map: Record<string, string> = {
         form: 'Solicitá hoy',
         services: 'Créditos',
@@ -24,9 +25,34 @@ export const defaultSectionLabel = (
         testimonios: 'Testimonios',
         convenios: 'Convenios',
         requisitos: 'Requisitos',
+        youtube: 'Videos',
+        legal_text: 'Información legal',
+        contact: 'Contacto',
+        regulatory: 'Entidades reguladoras',
     };
-    return map[type] ?? 'Sección';
+    return map[type] ?? null;
 };
+
+function SiteLinks({ onNavigate }: { onNavigate?: () => void }) {
+    return (
+        <>
+            <Link
+                href="/"
+                onClick={onNavigate}
+                className="rounded-xl px-4 py-3 font-semibold text-[#1F2A37] hover:bg-gray-100"
+            >
+                Inicio
+            </Link>
+            <Link
+                href="/blog"
+                onClick={onNavigate}
+                className="rounded-xl px-4 py-3 font-semibold text-[#1F2A37] hover:bg-gray-100"
+            >
+                Blog
+            </Link>
+        </>
+    );
+}
 
 function SectionIcon({ type, size = 18 }: { type: string; size?: number }) {
     if (type === 'form') return <UserCheckIcon size={size} />;
@@ -38,17 +64,20 @@ function SectionIcon({ type, size = 18 }: { type: string; size?: number }) {
 
 export default function NavTabs({
     sections = [],
-    activeId,
+    activeId = null,
     onNavigate,
 }: {
-    sections: { id: string; type: string; data?: Record<string, unknown> }[];
-    activeId: string | null;
-    onNavigate: (id: string) => void;
+    sections?: { id: string; type: string; data?: Record<string, unknown> }[];
+    activeId?: string | null;
+    onNavigate?: (id: string) => void;
 }) {
     const [open, setOpen] = useState(false);
+    const navigationSections = sections.filter((section) =>
+        defaultSectionLabel(section.type, section.data),
+    );
 
     const handleNavigate = (id: string) => {
-        onNavigate(id);
+        onNavigate?.(id);
         setOpen(false);
     };
 
@@ -67,7 +96,8 @@ export default function NavTabs({
 
                 {/* Tabs — solo desktop */}
                 <div className="hidden items-center gap-1 rounded-2xl bg-white p-1 md:flex">
-                    {sections.map((s) => {
+                    {navigationSections.length === 0 && <SiteLinks />}
+                    {navigationSections.map((s) => {
                         const label = defaultSectionLabel(s.type, s.data);
                         const isActive = activeId === s.id;
                         return (
@@ -126,7 +156,14 @@ export default function NavTabs({
                         className="fixed top-18 z-30 w-full px-4 md:hidden"
                     >
                         <div className="overflow-hidden rounded-2xl bg-white shadow-xl">
-                            {sections.map((s, i) => {
+                            {navigationSections.length === 0 && (
+                                <div className="flex flex-col p-2">
+                                    <SiteLinks
+                                        onNavigate={() => setOpen(false)}
+                                    />
+                                </div>
+                            )}
+                            {navigationSections.map((s, i) => {
                                 const label = defaultSectionLabel(
                                     s.type,
                                     s.data,

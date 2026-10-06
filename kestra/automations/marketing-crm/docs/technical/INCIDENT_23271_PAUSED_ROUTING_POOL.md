@@ -1,0 +1,77 @@
+# Incidente 23271: pool pausado bloqueaba la calificación
+
+## Causa y alcance
+
+El 02/10/2026 se confirmó que la negociación 1237759, creada el 01/10 a las
+21:03 ART, encabezaba la selección FIFO global de PENDIENTE CALIFICACION KESTRA.
+Su bucket `policia_federal_caba` tenía un pool remoto explícitamente vacío.
+`resolve_round_robin_assignee` lanzaba un error técnico; el caso permanecía pendiente
+y se volvía a seleccionar cada minuto. La cola de asignación fallaba por el mismo
+motivo. Kestra mostraba SUCCESS porque los entrypoints emitían `ok=false` sin
+terminar el proceso con error; el estado de ejecución solo no acreditaba avance.
+
+Al diagnóstico había 66 pendientes y tres casos en cola. Justo antes del deploy,
+la lectura paginada registró **71 pendientes y tres en cola**. La pausa del pool
+permanece vigente: no se agregaron vendedores ni se modificó elegibilidad.
+
+## Cambio
+
+Según [ROUTE-DEC-23271](../commercial-rules/DECISION_LOG.md), un pool vacío utiliza
+la misma excepción controlada que la falta de vendedores disponibles. La primera
+calificación conserva la decisión y envía el caso a la cola temporal; la selección
+siguiente puede continuar. Los reintentos de esa cola informan
+`queue_waiting / routing_pool_paused`, sin transferencias ni asignación de fallback.
+Otros buckets siguen su circuito habitual. Al habilitar vendedores, el caso puede
+salir de la cola conservando decisión y etapa destino. Se mantienen horarios,
+rechazos y cierre semanal.
+
+La corrección no altera el contrato general de estados Kestra ante otros errores;
+seguir mirando `ok`, resultado comercial, distribución y estado real en Bitrix.
+
+## Publicación y validación
+
+- Rama `fix/paused-routing-pool-23271`, implementación `da687ca`.
+- Se compararon los tres namespace files productivos con la base Git: coincidían.
+- Se publicaron únicamente `commercial_trace.py`, `catamarca_deal_qualification.py`
+  y `deal_service.py`, mediante el helper de deploy del repositorio. La descarga
+  posterior coincide byte a byte. Se conservaron los flows y sus crons por minuto.
+- Pruebas: 224 del package y 106 del dominio (329 correctas, una omitida en Windows
+  por requerir Linux); validación estructural Kestra y `git diff --check` correctos.
+- Regresiones: pool vacío con vendedor online no lo asigna; el primer pendiente
+  sale a cola y permite seleccionar el siguiente; otro bucket distribuye y transfiere
+  chat; al reactivar el pool se conserva la decisión y se transfiere el chat pendiente.
+- Primera ejecución productiva corregida: `4Gm0UeALw9dgyT0DOBxAuz`, caso 1237759,
+  `ok=true`, `queued`, `routing_pool_paused`. Relectura Bitrix: cola con Maru (57).
+- Cola: `6PbEd8od54Ci6ici3zjRGQ`, `ok=true`, espera por pool pausado para 1237441.
+- Evidencia privada: `.local/artifacts/bitrix-task-23271/` del checkout operativo:
+  inventario previo, configuración de pools, respaldos de código, hashes publicados
+  y observaciones de ejecuciones. No versionar datos personales de las operaciones.
+
+El deploy ya está aplicado; el PR debe incorporarse a main para conservarlo en los
+siguientes despliegues. Los checks remotos no se monitorean desde esta intervención.
+
+
+## Verificación posterior, 02/10 a las 12:36 ART
+
+La relectura completa de los 71 IDs previos confirmó **nueve fuera de PENDIENTE**:
+dos en cola por pool pausado y siete en etapas posteriores de su circuito comercial.
+Quedan **62 de esos casos pendientes**, que continúan automáticamente por el cron de
+una negociación por minuto. La cola de distribución tiene cinco casos (tres previos
+y los dos incorporados). No se afirma que todo el acumulado haya terminado.
+
+La ejecución `14Shoj7h2WTCPPk2XMAR7v` procesó 1237773 con `ok=true`, vendedor 110059,
+`transferred_chat_count=1`, `chat_transfer_status=transferred`, chat 137167.
+La lectura directa confirmó el mismo responsable en negociación 1237773, lead
+401695 y chat 137167 (owner y manager). Esto verifica una transferencia real;
+no acredita todavía la transferencia de todos los chats del acumulado.
+
+La consulta de vínculos de negociación, lead y contacto encontró chats en ocho
+negociaciones del inventario. Se conservaron las lecturas para el control posterior;
+las demás conversaciones se resolverán cuando su caso alcance el procesamiento,
+según clasificación, disponibilidad y pausa vigentes. No se transfirieron chats
+manualmente ni se reactivó el pool de Policía Federal CABA.
+
+PR de incorporación a main: [#416](https://github.com/Red-Unisol/redunisol-platform/pull/416).
+El incidente puede revisarse para cierre cuando el acumulado termine o quede
+explicado por esperas/revisiones legítimas. No se cerró la tarea ni se enviaron
+mensajes al chat de Bitrix durante esta intervención.

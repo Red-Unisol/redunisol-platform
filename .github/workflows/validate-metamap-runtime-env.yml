@@ -1,0 +1,103 @@
+name: Validate MetaMap Runtime Env
+
+on:
+  workflow_dispatch:
+
+jobs:
+  decrypt-and-validate:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+    defaults:
+      run:
+        working-directory: apps/metamap-platform/server
+    steps:
+      - name: Checkout protected ref
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install server and encrypted env tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+          pip install -r ../../../kestra/tools/requirements.txt
+
+      - name: Decrypt and validate runtime env files
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime-env.key"
+          python ../../../kestra/tools/manage_encrypted_env.py decrypt-many \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --pair "deploy/metamap-platform-server.dev.env.enc=$RUNNER_TEMP/metamap-platform-server.dev.env" \
+            --pair "deploy/metamap-platform-server.prod.env.enc=$RUNNER_TEMP/metamap-platform-server.prod.env" \
+            --force
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from dotenv import dotenv_values
+          from metamap_server.config import _parse_bootstrap_clients
+
+          temp_dir = Path(os.environ["RUNNER_TEMP"])
+          required_keys = [
+              "TARGET_DIR",
+              "COMPOSE_PROJECT_NAME",
+              "METAMAP_SERVER_DATABASE_URL",
+              "METAMAP_SERVER_WEBHOOK_SECRET",
+              "METAMAP_SERVER_BANK_CALLBACK_TOKEN",
+              "METAMAP_SERVER_METAMAP_TIMEOUT_SECONDS",
+              "METAMAP_SERVER_METAMAP_MAX_ATTEMPTS",
+              "METAMAP_SERVER_METAMAP_RETRY_BACKOFF_SECONDS",
+              "METAMAP_SERVER_METAMAP_OAUTH_TOKEN_TTL_SECONDS",
+              "METAMAP_SERVER_ENRICHMENT_WORKERS",
+              "METAMAP_SERVER_ENRICHMENT_QUEUE_SIZE",
+              "METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON",
+          ]
+          positive_float_keys = [
+              "METAMAP_SERVER_METAMAP_TIMEOUT_SECONDS",
+              "METAMAP_SERVER_METAMAP_OAUTH_TOKEN_TTL_SECONDS",
+          ]
+          positive_int_keys = [
+              "METAMAP_SERVER_METAMAP_MAX_ATTEMPTS",
+              "METAMAP_SERVER_ENRICHMENT_WORKERS",
+              "METAMAP_SERVER_ENRICHMENT_QUEUE_SIZE",
+          ]
+
+          for env_name in ("dev", "prod"):
+              path = temp_dir / f"metamap-platform-server.{env_name}.env"
+              values = dotenv_values(path)
+              missing = [key for key in required_keys if not values.get(key)]
+              if missing:
+                  raise SystemExit(f"{path} missing keys: {', '.join(missing)}")
+              has_oauth = bool(
+                  values.get("METAMAP_SERVER_METAMAP_CLIENT_ID")
+                  and values.get("METAMAP_SERVER_METAMAP_CLIENT_SECRET")
+              )
+              if not has_oauth and not values.get("METAMAP_SERVER_METAMAP_API_TOKEN"):
+                  raise SystemExit(f"{path} has no complete MetaMap credentials")
+              for key in positive_float_keys:
+                  if float(values[key]) <= 0:
+                      raise SystemExit(f"{path} requires {key} > 0")
+              for key in positive_int_keys:
+                  if int(values[key]) < 1:
+                      raise SystemExit(f"{path} requires {key} >= 1")
+              if float(values["METAMAP_SERVER_METAMAP_RETRY_BACKOFF_SECONDS"]) < 0:
+                  raise SystemExit(
+                      f"{path} requires METAMAP_SERVER_METAMAP_RETRY_BACKOFF_SECONDS >= 0"
+                  )
+              _parse_bootstrap_clients(values["METAMAP_SERVER_BOOTSTRAP_CLIENTS_JSON"])
+          print("Encrypted MetaMap runtime env files decrypted and parsed successfully.")
+          PY
+
+      - name: Clean decrypted runtime env files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f "$RUNNER_TEMP/metamap-platform-server.dev.env"
+          rm -f "$RUNNER_TEMP/metamap-platform-server.prod.env"

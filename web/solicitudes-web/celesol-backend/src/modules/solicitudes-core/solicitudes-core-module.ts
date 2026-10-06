@@ -131,6 +131,7 @@ export function createSolicitudesCoreRouter(
     accessKey: env.MINIO_ACCESS_KEY,
     endPoint: env.MINIO_ENDPOINT,
     port: env.MINIO_PORT,
+    region: env.MINIO_REGION,
     secretKey: env.MINIO_SECRET_KEY,
     useSSL: env.MINIO_USE_SSL,
   });

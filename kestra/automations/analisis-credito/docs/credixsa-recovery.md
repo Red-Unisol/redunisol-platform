@@ -58,9 +58,36 @@ Habia una alerta RUNNING desde el dia anterior, detenida en
 marcar_alerta_abierta despues de enviar el mensaje, y mas de 6000 alertas
 QUEUED. Son observaciones historicas: releer estados antes de intervenir.
 
+### Intervencion autorizada: descarte de alertas historicas
+
+El operador autorizo perder la cola historica. Se aplico temporalmente la
+definicion de alertas del commit b4fb35c con disabled=true y sin triggers
+(revision runtime 3). El endpoint de deshabilitacion de la revision anterior
+fallaba; la definicion compatible de Git permitio pausarla.
+
+Se cancelaron/eliminaron las ejecuciones historicas pendientes exclusivamente
+de redunisol.prod.system/alerta_flow_fallos. Unqueue libero otras ejecuciones
+antiguas y la cancelacion dejo estados intermedios. Durante la limpieza Kestra
+tuvo un reinicio automatico; PostgreSQL permanecio sano. Se verifico al menos
+un envio antiguo durante ese intervalo: no afirmar que fue silencioso.
+
+La API llego a mostrar cero pendientes, pero quedaron 3396 filas huerfanas
+en execution_queued y running=1 en concurrency_limit. Se eliminaron esas
+filas y se fijo value.running=0 en una transaccion acotada por namespace y
+flow_id, con comprobacion previa de ausencia de ejecuciones activas, usando
+ON_ERROR_STOP y limites de tiempo. No se modificaron datos de otros flows,
+KV ni SQLite. Las entradas eliminadas de la cola no son recuperables por UI.
+
+Verificacion posterior: RUNNING=0, QUEUED=0 y KILLING=0 en API;
+execution_queued=0 y concurrency_limit.running=0 en PostgreSQL.
+Las alertas quedan pausadas hasta desplegar la definicion Git del PR.
+Esto resuelve el bloqueo historico, no verifica aun los arreglos de CredixSA
+ni el montaje posterior al despliegue.
+
 ## Orden de despliegue y cierre
 
-**Antes del merge o de reiniciar Kestra:** recuperar la cola historica segun
+**Antes del merge o de reiniciar Kestra:** comprobar que sigue vacia la cola
+historica (limpieza realizada arriba). En futuras incidencias recuperarla segun
 el punto 6, dejando temporalmente pausados los triggers de alertas. Un reinicio
 podria liberar la ejecucion atascada y despachar miles de mensajes antiguos.
 Los workflows de infra y flows se disparan por main de forma independiente:
@@ -81,13 +108,14 @@ el orden siguiente requiere coordinacion operativa, no lo garantiza el CI.
    del webhook descifrado sin mostrar su clave.
 5. Confirmar los dos flows retirados deshabilitados y sin triggers en ambos
    namespaces. Conservar el backfill de empleadores deshabilitado.
-6. Recuperar las alertas en una intervencion controlada: pausar sus triggers,
-   inventariar y conservar IDs/estados de la cola exacta de
-   redunisol.prod.system/alerta_flow_fallos, cancelar las notificaciones
-   historicas sin borrar ejecuciones y SOLO entonces terminar la ejecucion
-   atascada. No liberar primero la concurrencia: enviaria notificaciones
-   antiguas. Verificar la clave de deduplicacion del mensaje ya enviado, sin
-   reenviarlo. Desplegar/restaurar el flow nuevo y confirmar avance de la cola.
+6. Recuperar las alertas en una intervencion controlada: pausar sus triggers
+   e identificar la cola exacta de redunisol.prod.system/alerta_flow_fallos.
+   El 9 de septiembre el operador autorizo descartar la cola historica, sin
+   requisito de conservar esas ejecuciones de notificacion. No extender esta
+   autorizacion a ejecuciones de negocio, KV o cache. La pausa de triggers no
+   frena ejecuciones ya encoladas y unqueue con estado CANCELLED puede liberar
+   otras por concurrencia: verificar tambien RUNNING y KILLING durante la
+   limpieza. Desplegar/restaurar el flow nuevo y confirmar avance de la cola.
    La pausa y cancelacion de historicos preceden a los pasos 1 y 2; la
    restauracion ocurre despues de verificar los flows corregidos.
 7. En las busquedas API de Kestra 2 usar QueryFilters:
@@ -99,6 +127,6 @@ el orden siguiente requiere coordinacion operativa, no lo garantiza el CI.
    Separar FAILED real, error del proveedor y severidad del stream stderr.
    No contar cada linea ERROR como una consulta fallida.
 
-No borrar SQLite, KV, historiales de ejecucion ni reejecutar en masa consultas
+No borrar SQLite, KV, historiales de negocio ni reejecutar en masa consultas
 para reconstruir la cache. Esta recuperacion debe quedar vinculada al commit
 desplegado; un PR aprobado o un healthcheck HTTP no demuestran el cierre.

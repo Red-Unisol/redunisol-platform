@@ -1,0 +1,66 @@
+{
+    "template_id": 395,
+    "source_stage": "7",
+    "reason_label": "NUMERO INCORRECTO",
+    "source_bpt_sha256": "1555f9b5e42605eca573f55b3aea9543c47b21d1de16701bc844c91d212eae1c",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A30480_59325_42009_65733",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A10518_16932_92831_67066",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta por Préstamo - Red Unisol",
+                                    "MessageText": "base64,wqFIb2xhISBIZW1vcyByZWNpYmlkbyB0dSBjb25zdWx0YSBhIHRyYXbDqXMgZGUgbnVlc3RybyBzaXRpbyB3ZWIuIEludGVudGFtb3MgY29tdW5pY2Fybm9zJm5ic3A7dsOtYSBXaGF0c0FwcCBhbCBuw7ptZXJvIHF1ZSByZWdpc3RyYXN0ZSwgcGVybyBubyBmdWUgcG9zaWJsZS4gVGUgcGVkaW1vcyBxdWUgdGUgcG9uZ2FzIGVuIGNvbnRhY3RvIGNvbiBub3NvdHJvcyB2w61hIFdoYXRzQXBwIGFsIDxhIGhyZWY9Imh0dHA6Ly93YS5tZS81NDkzNTE4MDQyNjQwIj4zNTE8L2E+PGEgaHJlZj0iaHR0cDovL3dhLm1lLzU0OTM1MTgwNDI2NDAiPjgwNDI2NDA8L2E+LCBpbmRpY2FuZG8gZWwgbm9tYnJlIHkgYXBlbGxpZG8gcXVlIGluZ3Jlc2FzdGUgZW4gZWwgZm9ybXVsYXJpby4gwqFNdWNoYXMgZ3JhY2lhcyE=",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente"
+                                },
+                                "Name": "A15021_11420_39149_89061",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A59729_83452_13594_61282",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

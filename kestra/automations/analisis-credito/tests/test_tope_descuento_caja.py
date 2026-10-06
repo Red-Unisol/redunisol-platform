@@ -73,6 +73,49 @@ class TopeDescuentoCajaTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertEqual(emit_outputs.call_args.args[1], "technical_error")
 
+    def test_entrypoint_returns_success_for_persona_no_encontrada(self) -> None:
+        with (
+            patch.object(
+                entrypoint, "_load_trigger_body", return_value={"cuil": "20-11595147-6"}
+            ),
+            patch.object(entrypoint, "login_cidi", return_value="hash-sesion"),
+            patch.object(entrypoint, "obtener_token_caja", return_value="token"),
+            patch.object(
+                entrypoint,
+                "_obtener_datos",
+                side_effect=entrypoint.PersonaNoEncontradaError(
+                    'Error al obtener datos de persona: "No se encontró la persona."'
+                ),
+            ),
+            patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
+            patch.object(entrypoint, "_log_event"),
+            patch("sys.stdout.write"),
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(emit_outputs.call_args.args[1], "not_found")
+
+    def test_detector_de_persona_no_encontrada(self) -> None:
+        self.assertTrue(
+            entrypoint._es_persona_no_encontrada('"No se encontró la persona."')
+        )
+        self.assertTrue(
+            entrypoint._es_persona_no_encontrada("NO SE ENCONTRO LA PERSONA")
+        )
+        self.assertFalse(
+            entrypoint._es_persona_no_encontrada("Error de autenticacion en CIDI")
+        )
+
+    def test_flow_expone_status_como_output(self) -> None:
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "tope_descuento_caja.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("outputs.consultar_tope.vars.status", flow_source)
+
 
 if __name__ == "__main__":
     unittest.main()

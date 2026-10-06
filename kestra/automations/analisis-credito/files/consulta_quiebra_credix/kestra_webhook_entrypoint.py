@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+import time
 from typing import Any
 
 try:
@@ -15,7 +16,9 @@ except ImportError:  # pragma: no cover - optional outside Kestra
 
 from .service import (
     ConfigurationError,
+    CredixConfig,
     InvalidRequestError,
+    SearchRequest,
     build_error_result,
     build_output_payload,
     consultar_tabla,
@@ -23,8 +26,16 @@ from .service import (
     parse_search_request,
 )
 from .sqlite_cache import write_cache_entries
+from .bcra import enrich_bcra
 
 logger = logging.getLogger(__name__)
+
+# El reintento vive aca: en la instalacion actual de Kestra 2 se observaron
+# estados FAILED intermedios y task runs duplicados con el retry del YAML.
+# Se mantienen los 2 intentos y la pausa de d784e78; no es un timeout global,
+# porque cada consulta puede acumular varias esperas del navegador.
+CONSULTA_MAX_ATTEMPTS = 2
+CONSULTA_RETRY_PAUSE_SECONDS = 10
 
 
 def main() -> int:
@@ -34,7 +45,7 @@ def main() -> int:
         payload = _load_trigger_body()
         request = parse_search_request(payload)
         config = load_config_from_env()
-        result = consultar_tabla(request, config)
+        result = _consultar_con_reintento(request, config)
     except InvalidRequestError as exc:
         logger.warning("Solicitud invalida de consulta CredixSA: %s", exc)
         result = build_error_result(request, str(exc), status="invalid_request")
@@ -43,7 +54,7 @@ def main() -> int:
         result = build_error_result(request, str(exc), status="technical_error")
         exit_code = 1
 
-    output_payload = build_output_payload(result)
+    output_payload = build_output_payload(enrich_bcra(result))
     _write_sqlite_cache_if_configured(output_payload)
     _emit_outputs_if_available(output_payload)
     if Kestra is None:
@@ -53,6 +64,26 @@ def main() -> int:
         print(json.dumps({"event": "credixsa_completed", "status": output_payload["status"],
                           "cache_hit": output_payload["cache_hit"]}))
     return exit_code
+
+
+def _consultar_con_reintento(request: SearchRequest, config: CredixConfig) -> dict[str, Any]:
+    for attempt in range(1, CONSULTA_MAX_ATTEMPTS + 1):
+        try:
+            return consultar_tabla(request, config)
+        except (InvalidRequestError, ConfigurationError):
+            raise
+        except Exception as exc:
+            if attempt >= CONSULTA_MAX_ATTEMPTS:
+                raise
+            logger.warning(
+                "Intento %s/%s de consulta CredixSA fallo: %s. Reintentando en %s segundos.",
+                attempt,
+                CONSULTA_MAX_ATTEMPTS,
+                exc,
+                CONSULTA_RETRY_PAUSE_SECONDS,
+            )
+            time.sleep(CONSULTA_RETRY_PAUSE_SECONDS)
+    raise RuntimeError("CredixSA: se agotaron los intentos sin resultado.")
 
 
 def _load_trigger_body() -> Any:

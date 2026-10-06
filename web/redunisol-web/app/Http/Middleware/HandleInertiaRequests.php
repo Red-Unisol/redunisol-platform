@@ -2,8 +2,13 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Author;
+use App\Models\Blog;
+use App\Models\Category;
+use App\Models\Page;
 use App\Models\Regulator;
 use App\Models\SiteSetting;
+use App\Services\SeoService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -42,6 +47,7 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            'attributionEnabled' => (bool) config('attribution.enabled'),
             'auth' => [
                 'user' => $request->user(),
             ],
@@ -51,7 +57,7 @@ class HandleInertiaRequests extends Middleware
                 try {
                     return [
                         'regulators' => Regulator::active()->orderBy('sort_order')->get()->toArray(),
-                        'settings'   => SiteSetting::allAsArray(),
+                        'settings' => SiteSetting::allAsArray(),
                     ];
                 } catch (\Throwable $e) {
                     return ['regulators' => [], 'settings' => []];
@@ -67,14 +73,49 @@ class HandleInertiaRequests extends Middleware
     {
         $appName = config('app.name', 'Red Unisol');
         $currentUrl = $request->url();
-        $defaultDescription = 'Soluciones de crédito personalizadas para jubilados y policías';
+        $defaultDescription = config('seo.meta.default_description', 'Soluciones de crédito personalizadas para jubilados y policías');
+        $seoService = app(SeoService::class);
+        $currentPath = $request->path();
+        $pageSlug = $currentPath === '/' ? '/' : '/'.ltrim($currentPath, '/');
+        $model = Page::where('slug', $pageSlug)->first();
+
+        if (! $model && str_starts_with($currentPath, 'blog/')) {
+            $model = Blog::where('slug', substr($currentPath, strlen('blog/')))->first();
+        }
+
+        if ($model) {
+            return [
+                'metaTitle' => $seoService->formatTitle($model->meta_title ?: $seoService->generateMetaTitle($model)),
+                'metaDescription' => $model->meta_description ?: $seoService->generateMetaDescription($model),
+                'keyword' => $model->keyword,
+                'robots' => $seoService->getRobotsTag($model),
+                'canonical' => $seoService->getCanonicalUrl($model),
+                'ogImage' => $model instanceof Blog ? ($model->image_url ?: asset('logo.jpeg')) : asset('logo.jpeg'),
+                'ogType' => $model instanceof Blog ? 'article' : 'website',
+                'structuredData' => json_encode($seoService->getStructuredData($model)),
+            ];
+        }
+
+        $title = $appName;
+        if ($request->routeIs('blog.index')) {
+            $title = 'Blog';
+            $defaultDescription = 'Consejos, novedades y guías sobre préstamos personales para empleados públicos, jubilados y más.';
+        } elseif ($request->routeIs('blog.category')) {
+            $category = Category::where('slug', $request->route('slug'))->first();
+            $title = $category ? 'Artículos sobre '.$category->name : 'Blog';
+        } elseif ($request->routeIs('author.show')) {
+            $author = Author::active()->where('slug', $request->route('slug'))->first();
+            $title = $author ? 'Artículos de '.$author->name : 'Blog';
+        }
 
         return [
-            'metaTitle'       => $appName,
+            'metaTitle' => $seoService->formatTitle($title),
             'metaDescription' => $defaultDescription,
-            'keyword'         => null,
-            'robots'          => 'index, follow',
-            'canonical'       => $currentUrl,
+            'keyword' => null,
+            'robots' => 'index, follow',
+            'canonical' => $currentUrl,
+            'ogImage' => asset('logo.jpeg'),
+            'ogType' => 'website',
         ];
     }
 }

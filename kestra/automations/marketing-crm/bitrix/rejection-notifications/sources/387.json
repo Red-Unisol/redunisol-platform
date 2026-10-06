@@ -1,0 +1,119 @@
+{
+    "template_id": 387,
+    "source_stage": "3",
+    "reason_label": "AUTONOMO",
+    "source_bpt_sha256": "307cd85f7a43053a50fe90718ae61ec376b754a8d6f4c2bbb71c4cc8afd0467d",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A10715_31362_21145_26153",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A22289_51437_45401_65506",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "IfElseActivity",
+                                "Name": "A47600_87151_68555_77601",
+                                "Activated": "Y",
+                                "Properties": {
+                                    "Title": "Condición"
+                                },
+                                "Children": [
+                                    {
+                                        "Type": "IfElseBranchActivity",
+                                        "Name": "A81211_65783_75955_84040",
+                                        "Properties": {
+                                            "Title": "Condición",
+                                            "mixedcondition": [
+                                                {
+                                                    "object": "Document",
+                                                    "field": "UF_CRM_1714071903",
+                                                    "operator": "=",
+                                                    "value": "0b8c70305bf0f7b2a0823319ad31a3ea",
+                                                    "joiner": 0
+                                                }
+                                            ]
+                                        },
+                                        "Children": [
+                                            {
+                                                "Type": "ImOpenLinesMessageActivity",
+                                                "Properties": {
+                                                    "MessageText": "Por el momento no otorgamos prestamos bajo la modalidad de monotributo/ autónomo. Agradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en nuestras políticas de préstamo. ¡Que tengas un buen día!😊",
+                                                    "IsSystem": "N",
+                                                    "AttachmentType": "",
+                                                    "Attachment": null,
+                                                    "Title": "Enviar un mensaje al chat"
+                                                },
+                                                "Name": "A62589_68062_62419_88964",
+                                                "Activated": "Y",
+                                                "Children": []
+                                            }
+                                        ],
+                                        "Activated": "Y"
+                                    },
+                                    {
+                                        "Type": "IfElseBranchActivity",
+                                        "Name": "A14610_44116_53290_89180",
+                                        "Properties": {
+                                            "Title": "Condición",
+                                            "truecondition": "1"
+                                        },
+                                        "Children": [],
+                                        "Activated": "Y"
+                                    }
+                                ]
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A54532_91145_19227_81903",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiBIb2xhITxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij5MYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGFjdHVhbG1lbnRlIG5vIG90b3JnYW1vcyBwcmVzdGFtb3MgYmFqbyBsYSBtb2RhbGlkYWQgZGUgbW9ub3RyaWJ1dG8vIGF1dMOzbm9tby48YnI+Cjwvc3Bhbj48YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+ClNlZ3Vpbm9zIGVuIHJlZGVzIHNvY2lhbGVzIDxhIGhyZWY9Imh0dHBzOi8vd3d3LmZhY2Vib29rLmNvbS9yZWR1bmlzb2wvIj5GYWNlYm9vazwvYT4gZSA8YSBocmVmPSJodHRwczovL3d3dy5pbnN0YWdyYW0uY29tL3JlZHVuaXNvbC8iPkluc3RhZ3JhbTwvYT4gcGFyYSBubyBwZXJkZXJ0ZSBsYXMgbm92ZWRhZGVzIHkgZm9ybWFyIHBhcnRlIGRlIG51ZXN0cmEgY29tdW5pZGFkITwvc3Bhbj48YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+ClBvZMOpcyBjb25vY2VyIG3DoXMgc29icmUgbm9zb3Ryb3MgZW4gbnVlc3RybyA8YSBocmVmPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvIj5TaXRpbyBXZWI8L2E+PC9zcGFuPi48YnI+CiA8YnI+CkdyYWNpYXMh",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)  (copia)"
+                                },
+                                "Activated": "Y",
+                                "Name": "A69812_72686_62291_54280",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

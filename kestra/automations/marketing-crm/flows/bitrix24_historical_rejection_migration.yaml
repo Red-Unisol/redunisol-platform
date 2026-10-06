@@ -1,0 +1,77 @@
+id: bitrix24_historical_rejection_migration
+namespace: redunisol
+description: Conserva la inspeccion manual del inventario historico procesado.
+  Cron retirado tras el cierre del inventario el 02/10/2026.
+labels:
+  env: prod
+  team: redunisol
+  domain: marketing-crm
+  kind: manual
+concurrency:
+  limit: 1
+  behavior: QUEUE
+inputs:
+- id: mode
+  type: SELECT
+  values:
+  - inspect
+  - bootstrap
+  - run
+  - resume
+  defaults: inspect
+- id: seed
+  type: FILE
+  required: false
+- id: resume_pause_sha256
+  type: STRING
+  required: false
+  description: SHA-256 del paused.json revisado; requerido para mode=resume.
+- id: resume_expected_handled
+  type: INT
+  required: false
+  description: Cantidad procesada revisada; requerido para mode=resume.
+tasks:
+- id: migrar
+  type: io.kestra.plugin.scripts.python.Commands
+  timeout: PT12M
+  namespaceFiles:
+    enabled: true
+    include:
+    - bitrix24_rejection_history/**
+  inputFiles:
+    seed.zip: '{{ inputs.seed ?? '''' }}'
+  taskRunner:
+    type: io.kestra.plugin.scripts.runner.docker.Docker
+    networkMode: kestra_net
+    volumes:
+    - /srv/redunisol-migrations/bitrix-rejections-20260924:/migration
+    - /opt/bitrix-lead-receiver/.env:/receiver.env:ro
+  containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
+  env:
+    FLOW_NAMESPACE: '{{ flow.namespace }}'
+    MIGRATION_MODE: '{{ inputs.mode }}'
+    RESUME_PAUSE_SHA256: '{{ inputs.resume_pause_sha256 ?? '''' }}'
+    RESUME_EXPECTED_HANDLED: '{{ inputs.resume_expected_handled ?? -1 }}'
+    BITRIX24_BASE_URL: '{{ envs.bitrix24_base_url }}'
+    BITRIX24_WEBHOOK_PATH: '{{ secret(''BITRIX24_WEBHOOK_PATH'') }}'
+  commands:
+  - python -m bitrix24_rejection_history.run
+outputs:
+- id: status
+  type: STRING
+  value: '{{ outputs.migrar.vars.status ?? ''failed_requires_review'' }}'
+- id: handled
+  type: INT
+  value: '{{ outputs.migrar.vars.handled ?? 0 }}'
+- id: remaining
+  type: INT
+  value: '{{ outputs.migrar.vars.remaining ?? 0 }}'
+- id: uncertain
+  type: INT
+  value: '{{ outputs.migrar.vars.uncertain ?? 0 }}'
+- id: live_verified
+  type: INT
+  value: '{{ outputs.migrar.vars.live_verified ?? 0 }}'
+- id: paused
+  type: BOOL
+  value: '{{ outputs.migrar.vars.paused ?? false }}'

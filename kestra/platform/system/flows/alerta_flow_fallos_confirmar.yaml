@@ -1,0 +1,46 @@
+id: alerta_flow_fallos_confirmar
+namespace: redunisol
+
+description: Espera la ventana de reintentos y devuelve la confirmacion al gestor, sin modificar KV ni enviar mensajes.
+
+sla:
+  - id: limitar_duracion
+    type: MAX_DURATION
+    duration: PT5M
+    behavior: CANCEL
+
+# Las esperas corren en paralelo; solo el gestor serializa el estado.
+
+labels:
+  env: prod
+  team: redunisol
+  kind: system
+  scope: observability
+
+inputs:
+  - id: ejecucion
+    type: STRING
+  - id: namespace_origen
+    type: STRING
+  - id: flow_origen
+    type: STRING
+  - id: generacion
+    type: INT
+
+tasks:
+  - id: esperar_reintentos
+    type: io.kestra.plugin.core.flow.Sleep
+    duration: "{{ envs.alerta_espera_reintentos ?? 'PT45S' }}"
+
+  - id: confirmar_en_gestor
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: "{{ flow.namespace }}"
+    flowId: alerta_flow_fallos_gestionar
+    wait: true
+    transmitFailed: true
+    inputs:
+      evento: CONFIRM
+      ejecucion: "{{ inputs.ejecucion }}"
+      namespace_origen: "{{ inputs.namespace_origen }}"
+      flow_origen: "{{ inputs.flow_origen }}"
+      generacion: "{{ inputs.generacion }}"

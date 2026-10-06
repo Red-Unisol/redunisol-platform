@@ -1,0 +1,80 @@
+{
+    "template_id": 695,
+    "source_stage": "UC_LG4IKC",
+    "reason_label": "JUBILADO PROVINCIAL",
+    "source_bpt_sha256": "13728960c23cda0c83310a4b019faf41c26a30b0c3a66bce15e89e0978a3105a",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A31679_99797_75580_41377",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A64894_34399_66690_67213",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "Por el momento no tomamos Jubilados en tu provincia. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "file",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al chat"
+                                },
+                                "Name": "A27688_44190_89963_41782",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A24589_26153_69603_96410",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PGltZyB3aWR0aD0iNTQwIiBzcmM9Imh0dHBzOi8vcmVkdW5pc29sLmNvbS5hci9pbWFnZXMvR3JhY2lhcyUyMHBvciUyMHR1JTIwY29uc3VsdGElMjAyLnBuZyIgaGVpZ2h0PSIyNzAiPjxicj4KIEhvbGEhPGJyPgogTGFtZW50YW1vcyBpbmZvcm1hcnRlIHF1ZSBubyBwb2RlbW9zIGFzaXN0aXJ0ZSBlbiBlc3RlIG1vbWVudG8sIHlhIHF1ZSBhY3R1YWxtZW50ZSBubyB0b21hbW9zIGp1YmlsYWRvcyBlbiB0dSBwcm92aW5jaWEgeSwgcG9yIGxvIHRhbnRvLCBubyBwb2RlbW9zIG90b3JnYXJ0ZSB1biBwcsOpc3RhbW8uPGJyPgogPGJyPgogU2VndWlub3MgZW4gcmVkZXMgc29jaWFsZXMgRmFjZWJvb2sgZSBJbnN0YWdyYW0gcGFyYSBubyBwZXJkZXJ0ZSBsYXMgbm92ZWRhZGVzIHkgZm9ybWFyIHBhcnRlIGRlIG51ZXN0cmEgY29tdW5pZGFkITxicj4KIFBvZMOpcyBjb25vY2VyIG3DoXMgc29icmUgbm9zb3Ryb3MgZW4gbnVlc3RybyBTaXRpbyBXZWIuPGJyPgogPGJyPgogR3JhY2lhcyEmbmJzcDs8YnI+CiA8YnI+",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente"
+                                },
+                                "Name": "A66005_42703_61401_61054",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

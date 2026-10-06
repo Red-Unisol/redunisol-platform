@@ -26,6 +26,12 @@ class AppSettings:
     metamap_client_secret: str | None = None
     metamap_api_token: str | None = None
     metamap_auth_scheme: str = "Token"
+    metamap_timeout_seconds: float = 10.0
+    metamap_max_attempts: int = 3
+    metamap_retry_backoff_seconds: float = 0.5
+    metamap_oauth_token_ttl_seconds: float = 300.0
+    enrichment_workers: int = 4
+    enrichment_queue_size: int = 200
 
 
 def load_settings_from_env() -> AppSettings:
@@ -60,6 +66,24 @@ def load_settings_from_env() -> AppSettings:
             os.environ.get("METAMAP_SERVER_METAMAP_AUTH_SCHEME")
         )
         or "Token",
+        metamap_timeout_seconds=_positive_float_env(
+            "METAMAP_SERVER_METAMAP_TIMEOUT_SECONDS", 10.0
+        ),
+        metamap_max_attempts=_positive_int_env(
+            "METAMAP_SERVER_METAMAP_MAX_ATTEMPTS", 3
+        ),
+        metamap_retry_backoff_seconds=_non_negative_float_env(
+            "METAMAP_SERVER_METAMAP_RETRY_BACKOFF_SECONDS", 0.5
+        ),
+        metamap_oauth_token_ttl_seconds=_positive_float_env(
+            "METAMAP_SERVER_METAMAP_OAUTH_TOKEN_TTL_SECONDS", 300.0
+        ),
+        enrichment_workers=_positive_int_env(
+            "METAMAP_SERVER_ENRICHMENT_WORKERS", 4
+        ),
+        enrichment_queue_size=_positive_int_env(
+            "METAMAP_SERVER_ENRICHMENT_QUEUE_SIZE", 200
+        ),
     )
 
 
@@ -113,4 +137,25 @@ def _empty_to_none(value: str | None) -> str | None:
 def _strip_matching_quotes(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]
+    return value
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    value = int(os.environ.get(name, str(default)))
+    if value < 1:
+        raise ValueError(f"{name} debe ser mayor o igual a 1.")
+    return value
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    value = float(os.environ.get(name, str(default)))
+    if value <= 0:
+        raise ValueError(f"{name} debe ser mayor a 0.")
+    return value
+
+
+def _non_negative_float_env(name: str, default: float) -> float:
+    value = float(os.environ.get(name, str(default)))
+    if value < 0:
+        raise ValueError(f"{name} debe ser mayor o igual a 0.")
     return value

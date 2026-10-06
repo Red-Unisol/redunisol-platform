@@ -1,10 +1,32 @@
 <?php
 
-use App\Http\Controllers\HerramientasController;
+use App\Http\Controllers\AnalisisController;
 use App\Http\Controllers\ContabilidadTransferController;
+use App\Http\Controllers\HerramientasController;
 use App\Http\Controllers\ObjectivesDashboardController;
+use App\Http\Controllers\PadronesController;
+use App\Http\Middleware\AnalisisAccess;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/analisis', [AnalisisController::class, 'index'])->name('analisis');
+Route::get('/padrones', [PadronesController::class, 'index'])->name('padrones');
+Route::post('/padrones/login', [PadronesController::class, 'login']);
+Route::middleware(AnalisisAccess::class)->prefix('/api/padrones')->group(function () {
+    Route::get('/sources', [PadronesController::class, 'sources']);
+    Route::post('/sources', [PadronesController::class, 'create']);
+    Route::post('/lookup', [PadronesController::class, 'lookup'])->middleware('throttle:120,1');
+    Route::post('/sources/{source}/versions', [PadronesController::class, 'upload'])->middleware('throttle:15,1');
+    Route::get('/sources/{source}/versions/{version}', [PadronesController::class, 'inspect']);
+    Route::post('/sources/{source}/versions/{version}/prepare', [PadronesController::class, 'prepare'])->middleware('throttle:15,1');
+    Route::post('/sources/{source}/versions/{version}/activate', [PadronesController::class, 'activate']);
+});
+Route::post('/analisis/login', [AnalisisController::class, 'login']);
+Route::middleware(AnalisisAccess::class)->group(function () {
+    Route::post('/analisis/logout', [AnalisisController::class, 'logout']);
+    Route::get('/api/analisis/analysts', [AnalisisController::class, 'analysts']);
+    Route::get('/api/analisis/snapshot', [AnalisisController::class, 'snapshot']);
+});
 
 Route::get('/', [HerramientasController::class, 'index'])->name('home');
 Route::get('/credixsa', [HerramientasController::class, 'credixsa'])->name('credixsa');

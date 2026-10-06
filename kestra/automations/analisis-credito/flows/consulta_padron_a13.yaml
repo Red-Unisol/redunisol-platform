@@ -25,6 +25,10 @@ tasks:
   - id: consultar_padron
     type: io.kestra.plugin.scripts.python.Commands
     targetOS: LINUX
+    retry:
+      type: constant
+      interval: PT15S
+      maxAttempts: 3
     namespaceFiles:
       enabled: true
       include:

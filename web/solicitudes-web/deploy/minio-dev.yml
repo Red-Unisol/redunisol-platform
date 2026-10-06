@@ -1,0 +1,59 @@
+# ------------------------------------------------------------------
+# MinIO para el ambiente de DEV de solicitudes-web.
+#
+# Va en un archivo APARTE de docker-compose.vps.yml a proposito: ese lo
+# comparten dev y prod, y produccion no debe levantar MinIO -- va a usar
+# un bucket de AWS S3 cuando se consigan las credenciales.
+#
+# Como levantarlo (en la VPS):
+#   docker compose -p solicitudes-minio-dev \
+#     --env-file /opt/solicitudes-web-dev/.env \
+#     -f minio-dev.yml up -d
+#
+# Toma el usuario y la clave del mismo .env que usa la aplicacion, asi
+# no hay dos lugares donde mantener la misma credencial.
+# ------------------------------------------------------------------
+
+services:
+  minio:
+    # Version fija y no "latest": si algun dia hay que recrear el
+    # contenedor, queremos exactamente el mismo MinIO que venia
+    # funcionando, no el que este publicado ese dia.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: solicitudes-minio-dev
+    restart: unless-stopped
+
+    # Las mismas credenciales que la aplicacion usa como MINIO_ACCESS_KEY
+    # y MINIO_SECRET_KEY. MinIO las llama ROOT_USER y ROOT_PASSWORD.
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+
+    command: server /data
+
+    volumes:
+      - solicitudes-minio-dev-data:/data
+
+    # Sin "ports": no se publica nada en la VPS. Solo es alcanzable desde
+    # adentro de la red de Docker, por el nombre del contenedor.
+
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  # external: el volumen ya existe, creado a mano el 21/8. Sin esto,
+  # Compose crearia uno nuevo con el nombre del proyecto por delante y
+  # los archivos ya subidos quedarian huerfanos.
+  solicitudes-minio-dev-data:
+    external: true
+
+networks:
+  # La red la crea el compose principal de dev. Este archivo se cuelga de
+  # ella para que el backend pueda resolver "solicitudes-minio-dev".
+  default:
+    name: solicitudes-web-dev_default
+    external: true
