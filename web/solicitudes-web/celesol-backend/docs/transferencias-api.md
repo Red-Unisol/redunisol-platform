@@ -45,9 +45,38 @@ Usar HTTPS. La rotación cambia el hash y conserva el mismo client ID para
 recuperar operaciones anteriores. No reutilizar una cuenta personal ni activar
 el servicio como administrador. La autorización se verifica en cada request.
 
+### Alta de la identidad de servicio
+
+`scripts/ensure-transferencias-service-user.mjs` provisiona la cuenta técnica
+`svc-transferencias-beex` usando el componente de usuarios de la aplicación.
+Debe ejecutarse desde el backend, con `dist/` y su acceso a PostgreSQL, o enviarse
+por stdin al contenedor operativo (`node --input-type=module -`). Sin `--create`
+solo consulta; el alta requiere
+autorización operacional explícita y el argumento `--create`.
+
+La cuenta queda activa en TESORERIA, sin permisos de administrador y fuera de
+la asignación automática. Usa un correo reservado `.invalid`, no envía emails y
+mantiene `emailVerified=false` para impedir el login interactivo. El hash de una
+contraseña aleatoria se genera y su original se descarta; la autenticación de
+la integración usa el token separado, no esa contraseña. `legacyUser` es una
+identidad técnica de Beex: no crea ni modifica un usuario Vimarx.
+
+El script verifica las condiciones antes de confirmar la transacción, devuelve
+el UUID y es idempotente: si ya existe con otra configuración, falla sin editarla.
+No activa la API ni modifica el runtime env. Incorporar luego el UUID y el hash
+del token a la configuración cifrada Git-managed, y desplegar ambos juntos.
+
+Checkpoint 2026-10-06: identidad técnica creada en producción mediante el componente
+de usuarios, con las condiciones anteriores verificadas. El UUID y un token generado
+con 256 bits aleatorios se registraron localmente fuera de Git. La configuración
+cifrada `web/solicitudes-web/deploy/solicitudes-web.prod.env.enc` incorpora el hash
+SHA-256 y el UUID juntos; su despliegue habilita la API en producción. El token
+original no se incluye en el repositorio. El estado actual del usuario debe
+comprobarse antes de desplegar la configuración.
+
 Aplicar las migraciones antes de arrancar la versión nueva. Los ejemplos y
-Compose dejan ambas variables vacías; este cambio no crea usuarios ni activa
-credenciales en ningún ambiente.
+Compose dejan ambas variables vacías por defecto; desarrollo conserva la API
+deshabilitada. El alta del usuario es una operación separada del despliegue.
 
 ## Identidades y datos financieros
 
