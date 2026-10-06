@@ -27,7 +27,7 @@ Este corte deja resuelto:
 - eventos append-only de trazabilidad de transferencias, idempotentes por `event_id`
 - consulta de trazas por solicitud, sesion, instalacion, operador y tipo de evento
 - CI de validacion y build de imagen
-- deploy automatico a `dev`
+- deploy del runtime operativo exclusivamente desde `main`
 
 Todavia no resuelve:
 
@@ -107,8 +107,10 @@ desde el environment `vps-infra`.
 
 El deploy usa el mismo environment `vps-infra`, publica una imagen en GHCR y actualiza el
 runtime remoto en `/opt/metamap-platform-server-dev`. Corre automaticamente cuando los
-cambios del servidor o de su workflow llegan a `main` o `dev`; tambien puede ejecutarse
-manualmente mediante `Deploy MetaMap Server Dev` con `workflow_dispatch`.
+cambios del servidor o de su workflow llegan a `main`. El job rechaza otras ramas;
+el dispatch manual mediante `Deploy MetaMap Server Operativo` requiere `main` y `Nasst`.
+Los nombres historicos con `dev` se conservan, pero ese destino es operativo.
+La rama `dev` valida codigo y build en CI sin desplegar sobre ese servidor.
 
 Para cambios coordinados con el cliente desktop, desplegar primero el servidor y distribuir
 despues el ZIP de `transferencias-celesol`. Este es el runtime operativo publicado

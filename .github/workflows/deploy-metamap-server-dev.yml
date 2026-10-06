@@ -1,10 +1,9 @@
-name: Deploy MetaMap Server Dev
+name: Deploy MetaMap Server Operativo
 
 on:
   push:
     branches:
       - main
-      - dev
     paths:
       - 'apps/metamap-platform/server/**'
       - '.github/workflows/deploy-metamap-server-dev.yml'
@@ -19,7 +18,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # El destino historico "dev" es el runtime operativo de Transferencias.
   deploy-dev:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: vps-infra
     env:
@@ -31,12 +32,13 @@ jobs:
       RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
       PUBLIC_HEALTHCHECK_URL: https://kestra.redunisol.com.ar/metamap-platform/health
     steps:
-      - name: Allow manual dev deploy only by Nasst
+      - name: Allow manual operational deploy only from main by Nasst
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
           [ "${GITHUB_ACTOR}" = "Nasst" ]
+          [ "${GITHUB_REF}" = "refs/heads/main" ]
 
       - name: Checkout
         uses: actions/checkout@v4

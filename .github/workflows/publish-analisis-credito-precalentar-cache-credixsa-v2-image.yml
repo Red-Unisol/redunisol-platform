@@ -9,6 +9,7 @@ on:
       - "kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2/**"
       - "kestra/automations/analisis-credito/flows/precalentar_cache_credixsa_v2_sondeo.yaml"
       - ".github/workflows/publish-analisis-credito-precalentar-cache-credixsa-v2-image.yml"
+      - 'kestra/tools/ci_image_tags.py'
   workflow_dispatch:
 
 concurrency:
@@ -17,6 +18,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
 
     permissions:
@@ -30,6 +32,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Select branch publication tags
+        id: image_tags
+        shell: bash
+        run: python kestra/tools/ci_image_tags.py --image-name "$IMAGE_NAME"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -40,20 +52,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest
-            type=sha
-
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2
           file: kestra/automations/analisis-credito/docker/precalentar-cache-credixsa-v2/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.image_tags.outputs.tags }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
