@@ -4015,6 +4015,67 @@ mod tests {
     }
 
     #[test]
+    fn beex_warning_is_shown_in_manual_confirmation_and_checked_by_worker() {
+        let mut case = third_party_case();
+        case.core.coinag_cuil = case.core.request_cuil.clone();
+        revalidate(&mut case);
+        let previous_approval = authorize(&case);
+        let mut plan = crate::beex_client::test_support::plan();
+        plan.prestamo_legacy_id = case.core.request_oid.clone();
+        plan.verification.request_number = plan.prestamo_legacy_id.clone();
+        case.core.beex = Some(plan);
+        revalidate(&mut case);
+
+        let confirmation = TransferConfirmation::for_case(&case);
+        let warning = case
+            .validation
+            .warnings
+            .iter()
+            .find(|warning| warning.kind == WarningKind::BeexManualReview)
+            .unwrap();
+        assert!(
+            confirmation
+                .warning_message
+                .as_deref()
+                .unwrap()
+                .contains(&warning.message)
+        );
+        assert!(confirmation.policy.required_words().is_empty());
+        assert!(
+            transfer_authorization_error(&case.core, &case.validation, TransferKind::Manual, None,)
+                .is_some()
+        );
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&previous_approval),
+            )
+            .is_some()
+        );
+        let approved = confirmation.confirmed_request().unwrap().approval;
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Manual,
+                Some(&approved),
+            )
+            .is_none()
+        );
+        assert!(
+            transfer_authorization_error(
+                &case.core,
+                &case.validation,
+                TransferKind::Automatic,
+                Some(&approved),
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
     fn every_warning_blocks_automatic_transfers_and_manual_approval_cannot_bypass_it() {
         let case = third_party_case();
         for kind in [
@@ -4024,6 +4085,7 @@ mod tests {
             WarningKind::ThirdPartyDestination,
             WarningKind::KnownCreditorNewCbu,
             WarningKind::NewCreditor,
+            WarningKind::BeexManualReview,
         ] {
             let mut item = case.clone();
             item.validation.warnings = vec![ValidationWarning::new(kind, "Aviso")];

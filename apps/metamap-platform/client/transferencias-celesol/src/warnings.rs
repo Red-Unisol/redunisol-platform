@@ -11,6 +11,7 @@ pub enum WarningKind {
     ThirdPartyDestination,
     KnownCreditorNewCbu,
     NewCreditor,
+    BeexManualReview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -29,7 +30,8 @@ impl WarningKind {
             | Self::MultipleMetamapValidations
             | Self::Renewal
             | Self::KnownCreditorNewCbu
-            | Self::NewCreditor => ConfirmationRequirement::Simple,
+            | Self::NewCreditor
+            | Self::BeexManualReview => ConfirmationRequirement::Simple,
         }
     }
 }
@@ -101,6 +103,7 @@ mod tests {
             WarningKind::Renewal,
             WarningKind::KnownCreditorNewCbu,
             WarningKind::NewCreditor,
+            WarningKind::BeexManualReview,
         ] {
             assert_eq!(kind.confirmation(), ConfirmationRequirement::Simple);
             let policy = ConfirmationPolicy::new(&[ValidationWarning::new(kind, "Aviso")]);

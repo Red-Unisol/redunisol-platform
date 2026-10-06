@@ -7,6 +7,12 @@ Implementa la [tarea Bitrix 23291](https://redunisol.bitrix24.es/workgroups/grou
 - La lista muestra ambos origenes. Las solicitudes Beex usan UUID; su prestamo
   Vimarx vinculado se usa para la validacion digital, nunca como OID de solicitud.
   Los IDs bancarios y el registro de Pagada de Vimarx conservan su comportamiento.
+- Por el momento, todas las solicitudes Beex muestran una advertencia obligatoria
+  de revision manual, incluidos los pagos a acreedores y los casos con neto cero.
+  Quedan excluidas de automaticas aunque su linea este configurada como Automatica.
+  El cartel manual muestra el aviso y exige confirmarlo con el mecanismo existente;
+  el worker vuelve a verificar esa autorizacion antes de enviar. La recuperacion
+  de confirmaciones y comprobantes sigue funcionando sin iniciar pagos nuevos.
 - Beex entrega el plan financiero y numeros bancarios permanentes por pago. Se
   reutilizan las reglas de lineas, titularidad, moneda, MetaMap, advertencias y
   acreedores. En Beex la titularidad debe coincidir con su plan reservado; cambiar
@@ -79,7 +85,7 @@ Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/persona
 
 `ValidationReport.warnings` contiene `ValidationWarning` con `WarningKind` y mensaje.
 `warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante,
-validaciones multiples, renovaciones y acreedores nuevos o con CBU nuevo;
+validaciones multiples, renovaciones, revision manual Beex y acreedores nuevos o con CBU nuevo;
 `TypeWord("TRANSFERIR")` para una cuenta de terceros. El texto visible no determina
 la politica. Los productores asignan el tipo al detectar la condicion.
 
