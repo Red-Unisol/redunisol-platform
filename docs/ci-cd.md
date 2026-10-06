@@ -101,8 +101,8 @@ Construye y despliega `apps/metamap-platform/server/` en
 
 Comportamiento:
 
-- corre automaticamente en push a `main` o `dev` cuando cambia el servidor o el workflow
-- tambien admite ejecucion manual mediante `workflow_dispatch`
+- corre automaticamente solo en push a `main` cuando cambia el servidor o el workflow
+- el job rechaza cualquier otra rama; el deploy manual requiere `main` y el operador `Nasst`
 - publica la imagen con tags `dev-<git-sha>` y `dev-latest` en GHCR
 - descifra el runtime env versionado y actualiza Docker Compose por SSH
 - valida primero `/health` dentro de la VPS y despues el healthcheck publico
@@ -113,8 +113,10 @@ distribuir despues el ZIP desktop. El cliente conserva eventos en su outbox si e
 de trazabilidad todavia no esta disponible, pero ese estado no debe mantenerse como forma
 normal de operacion.
 
-El merge a `main` despliega automaticamente el runtime operativo actual. No existe un
-workflow separado de deploy a prod.
+El merge a `main` despliega automaticamente el runtime operativo actual. Los nombres
+historicos del directorio, archivo de entorno y tags contienen `dev`, pero ese destino
+lo usan los clientes de Transferencias. `dev` valida codigo y build en CI sin desplegar
+sobre ese servidor; actualmente no hay un segundo runtime de pruebas.
 
 Checkpoint historico del 2026-09-03: el run manual `33771696321` desplego desde `main` el
 server `0.7.0`, commit `1e47df0`, y se verificaron el healthcheck publico y la proteccion
@@ -154,15 +156,23 @@ Comportamiento:
 La publicacion prevista es `https://media.redunisol.com.ar`. DNS, certificado
 Let's Encrypt y activacion del vhost son prerequisitos externos al contenedor.
 
-### `publish-analisis-credito-consulta-cuad-image.yml`
+### Imagenes base de Analisis de Credito
 
-Publica la imagen Docker usada por `consulta_cuad`.
+Los workflows `publish-analisis-credito-arca-padron-a13-image.yml`,
+`publish-analisis-credito-consulta-cuad-image.yml` y
+`publish-analisis-credito-precalentar-cache-credixsa-v2-image.yml` publican las
+imagenes de dependencias usadas por los flows. El codigo Python de cada ambiente
+se despliega por separado como namespace files.
 
-Comportamiento:
+- `main` publica `sha-<commit-completo>` y `latest`.
+- `dev` publica `dev-<commit-completo>` y `dev-latest`; nunca modifica tags de `main`.
+- otras ramas y tags no pueden publicar, incluido el dispatch manual de CredixSA.
+- los tres workflows usan `kestra/tools/ci_image_tags.py` para aplicar esa regla.
+- el build se dispara al cambiar su Dockerfile, flow, workflow o selector de tags.
 
-- construye una imagen basada en Playwright
-- publica tags `sha-<commit>` y `latest` en GHCR
-- corre cuando cambia el Dockerfile de `consulta-cuad`, el flow asociado o el propio workflow
+Los flows actuales conservan la imagen base aprobada por `main` mediante `latest`.
+Los tags de `dev` permiten probar cambios de dependencias sin reemplazarla. La
+sincronizacion de ramas no cambia los destinos ni las credenciales de los runtimes.
 
 ### `deploy-herramientas-dev.yml` y `deploy-herramientas-prod.yml`
 
