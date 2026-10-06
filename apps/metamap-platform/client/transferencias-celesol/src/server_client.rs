@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::{Client, Response};
+use serde_json::{Value, json};
 
 use crate::{
     config::ServerConfig,
@@ -69,6 +70,20 @@ impl ServerClient {
             selected.verification_id
         );
         Ok(Some(selected))
+    }
+
+    pub fn send_transfer_trace_events(&self, events: &[Value]) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        self.request(
+            self.http
+                .post(format!("{}/api/v1/transfer-trace-events", self.base_url))
+                .header("X-Client-Id", &self.client_id)
+                .header("X-Client-Secret", &self.client_secret)
+                .json(&json!({ "events": events })),
+        )?;
+        Ok(())
     }
 
     fn request(&self, builder: reqwest::blocking::RequestBuilder) -> Result<Response> {

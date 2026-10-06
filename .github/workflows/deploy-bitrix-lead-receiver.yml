@@ -1,0 +1,83 @@
+name: Deploy Bitrix Lead Receiver
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Install preserves current mode; ingress and cutover are separate explicit steps"
+        required: true
+        default: install
+        type: choice
+        options: [install, enable-ingress, cutover]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-bitrix-lead-receiver
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      PHASE: ${{ inputs.phase }}
+    steps:
+      - name: Require main and the operational owner
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_ACTOR" = Nasst
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test receiver
+        working-directory: platform/bitrix-lead-receiver
+        run: |
+          python -m pip install PyYAML==6.0.2
+          python -m unittest -v
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+      - name: Trust configured host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload versioned service artifact
+        if: inputs.phase == 'install'
+        run: |
+          tar --exclude=__pycache__ --exclude='*.pyc' --exclude=.env -czf "$RUNNER_TEMP/receiver.tgz" -C platform/bitrix-lead-receiver .
+          target="/tmp/bitrix-receiver-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/receiver.tgz" "$SSH_USER@$SSH_HOST:$target"
+          scp -P "$SSH_PORT" kestra/automations/marketing-crm/flows/bitrix24_lead_event_process.yaml "$SSH_USER@$SSH_HOST:/tmp/bitrix-receiver-flow-${GITHUB_RUN_ID}.yaml"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$target" "$GITHUB_SHA" "$GITHUB_RUN_ID" <<'EOF'
+          set -euo pipefail
+          install -d -m 755 /opt/bitrix-lead-receiver
+          cd /opt/bitrix-lead-receiver
+          tar -xzf "$1"
+          python3 prepare_env.py --revision "$2"
+          docker compose config -q
+          docker compose build
+          docker compose up -d --no-deps --wait --wait-timeout 90 receiver
+          python3 deploy_flow.py --source "/tmp/bitrix-receiver-flow-$3.yaml"
+          printf '%s\n' "$2" > deployed-revision
+          rm -f "$1" "/tmp/bitrix-receiver-flow-$3.yaml"
+          EOF
+      - name: Enable ingress or migrate the old queue
+        if: inputs.phase != 'install'
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$PHASE" "$GITHUB_SHA" <<'EOF'
+          set -euo pipefail
+          cd /opt/bitrix-lead-receiver
+          test "$(cat deployed-revision)" = "$2"
+          case "$1" in
+            enable-ingress) python3 enable_ingress.py ;;
+            cutover) python3 operate.py cutover ;;
+            *) exit 2 ;;
+          esac
+          EOF

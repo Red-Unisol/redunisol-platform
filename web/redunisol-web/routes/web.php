@@ -1,17 +1,24 @@
 <?php
 
+use App\Http\Controllers\AdminReportDownloadController;
 use App\Http\Controllers\BlogController;
+use App\Http\Controllers\FinalizarController;
+use App\Http\Controllers\RobotsController;
+use App\Http\Controllers\SitemapController;
+use App\Http\Controllers\WhatsAppJourneyController;
 use App\Models\Page;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
-Route::get('/admin/reportes/descargar/{path}', \App\Http\Controllers\AdminReportDownloadController::class)
+Route::get('/admin/reportes/descargar/{path}', AdminReportDownloadController::class)
     ->where('path', '.*')
     ->middleware(['auth'])
     ->name('admin.reports.download');
 
+Route::get('/whatsapp/start', WhatsAppJourneyController::class)
+    ->name('whatsapp.start');
 
 Route::get('/health', function () {
     $status = [];
@@ -21,7 +28,7 @@ Route::get('/health', function () {
         DB::connection()->getPdo();
         DB::select('SELECT 1');
         $status['database'] = 'OK';
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         $status['database'] = 'Error';
     }
 
@@ -30,7 +37,7 @@ Route::get('/health', function () {
         Cache::store('redis')->put('health_check', 'OK', 10);
         $value = Cache::store('redis')->get('health_check');
         $status['redis'] = ($value === 'OK') ? 'OK' : 'Error';
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         $status['redis'] = 'Error';
     }
 
@@ -41,18 +48,18 @@ Route::get('/health', function () {
         $content = Storage::get($testFile);
         Storage::delete($testFile);
         $status['storage'] = ($content === 'OK') ? 'OK' : 'Error';
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         $status['storage'] = 'Error';
     }
 
-    $isHealthy = collect($status)->every(fn($value) => $value === 'OK');
+    $isHealthy = collect($status)->every(fn ($value) => $value === 'OK');
 
     return response()->json($status, $isHealthy ? 200 : 503);
 });
 
-Route::get('/sitemap.xml', [\App\Http\Controllers\SitemapController::class, 'index'])->name('sitemap');
+Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
 
-Route::get('/robots.txt', [\App\Http\Controllers\RobotsController::class, 'show'])->name('robots');
+Route::get('/robots.txt', [RobotsController::class, 'show'])->name('robots');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', function () {
@@ -70,12 +77,12 @@ Route::get('/category/{slug}', [BlogController::class, 'category'])->name('blog.
 
 Route::get('/autores/{slug}', [BlogController::class, 'author'])->name('author.show');
 
-Route::get('/finalizar', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar');
-Route::get('/finalizar.php', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar.legacy');
+Route::get('/finalizar', [FinalizarController::class, 'show'])->name('finalizar');
+Route::get('/finalizar.php', [FinalizarController::class, 'show'])->name('finalizar.legacy');
 // Misma pagina, pero los datos del prestamo salen del sistema nuevo de
 // solicitudes en vez de Vimarx. Es una ruta aparte a proposito: los links que
 // ya circulan no la usan, asi que el circuito de siempre queda intacto.
-Route::get('/finalizar-nvo', [\App\Http\Controllers\FinalizarController::class, 'show'])->name('finalizar.solicitudes');
+Route::get('/finalizar-nvo', [FinalizarController::class, 'show'])->name('finalizar.solicitudes');
 
 require __DIR__.'/settings.php';
 
@@ -86,14 +93,14 @@ require __DIR__.'/settings.php';
 // ──────────────────────────────────────────────────────────────
 
 Route::get('/{slug?}', function ($slug = null) {
-    $slug = $slug ? '/' . ltrim($slug, '/') : '/';
+    $slug = $slug ? '/'.ltrim($slug, '/') : '/';
 
     $page = Page::where('slug', $slug)->firstOrFail();
 
     return Inertia::render('welcome', [
         'landingSlug' => $slug,
         'sections' => $page->sections,
-        'title'    => $page->title,
+        'title' => $page->title,
         'meta_title' => $page->meta_title,
         'meta_description' => $page->meta_description,
         'keyword' => $page->keyword,

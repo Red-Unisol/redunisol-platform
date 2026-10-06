@@ -20,6 +20,8 @@ pub fn init_logging() -> Result<()> {
     } else {
         builder.filter_level(LevelFilter::Warn);
         builder.filter_module("transferencias_celesol", debug_level());
+        builder.filter_module("transfer_audit", LevelFilter::Info);
+        builder.filter_module("coinag_http", LevelFilter::Info);
     }
 
     builder.format(|buf, record| {

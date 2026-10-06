@@ -1,0 +1,80 @@
+{
+    "template_id": 391,
+    "source_stage": "5",
+    "reason_label": "NO TIENE RECIBO (en negro)",
+    "source_bpt_sha256": "14cbaef0684c81f4494f0d9b3d89655da886709e2f3d5e9f3e5449fcfeda6246",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A55302_90512_95525_28449",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A28523_21385_50502_36751",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "Por el momento un requisito para el préstamo es  poseer recibo de sueldo comprobable y ser bancarizado. \nAgradecemos tu contacto de todos modos y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al chat"
+                                },
+                                "Name": "A46614_81541_28165_15687",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A71829_66712_29650_28276",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+SG9sYSE8L3NwYW4+PGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPkxhbWVudGFtb3MgaW5mb3JtYXJ0ZSBxdWUgbm8gcG9kZW1vcyBhc2lzdGlydGUgZW4gZXN0ZSBtb21lbnRvLCB5YSBxdWUgdW4gcmVxdWlzaXRvIGVzJm5ic3A7IHBvc2VlciByZWNpYm8gZGUgc3VlbGRvIGNvbXByb2JhYmxlIHkgc2VyIGJhbmNhcml6YWRvLCBwb3IgbG8gdGFudG8sIG5vIHBvZGVtb3Mgb3RvcmdhcnRlIHVuIHByw6lzdGFtby48YnI+Cjwvc3Bhbj48YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+ClNlZ3Vpbm9zIGVuIHJlZGVzIHNvY2lhbGVzIDxhIGhyZWY9Imh0dHBzOi8vd3d3LmZhY2Vib29rLmNvbS9yZWR1bmlzb2wvIj5GYWNlYm9vazwvYT4gZSA8YSBocmVmPSJodHRwczovL3d3dy5pbnN0YWdyYW0uY29tL3JlZHVuaXNvbC8iPkluc3RhZ3JhbTwvYT4gcGFyYSBubyBwZXJkZXJ0ZSBsYXMgbm92ZWRhZGVzIHkgZm9ybWFyIHBhcnRlIGRlIG51ZXN0cmEgY29tdW5pZGFkITwvc3Bhbj48YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+ClBvZMOpcyBjb25vY2VyIG3DoXMgc29icmUgbm9zb3Ryb3MgZW4gbnVlc3RybyA8YSBocmVmPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvIj5TaXRpbyBXZWI8L2E+PC9zcGFuPi48YnI+CiA8YnI+CkdyYWNpYXMh",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)  (copia)  (copia)  (copia)"
+                                },
+                                "Activated": "Y",
+                                "Name": "A88241_54319_94837_27484",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

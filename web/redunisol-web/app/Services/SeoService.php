@@ -2,11 +2,20 @@
 
 namespace App\Services;
 
-use App\Models\Page;
 use App\Models\Blog;
+use App\Models\Page;
+use Illuminate\Support\Str;
 
 class SeoService
 {
+    public function formatTitle(string $title): string
+    {
+        $name = config('app.name', 'Red Unisol');
+        $title = trim($title);
+
+        return $title === '' ? $name : (mb_stripos($title, $name) !== false ? $title : "{$title} | {$name}");
+    }
+
     /**
      * Generate meta title for a page
      */
@@ -35,7 +44,7 @@ class SeoService
         if ($model instanceof Blog && $model->content) {
             $description = strip_tags($model->content);
         } elseif ($model instanceof Page) {
-            $description = "Soluciones de crédito personalizadas para jubilados y policías";
+            $description = 'Soluciones de crédito personalizadas para jubilados y policías';
         }
 
         return $this->truncate($description ?: $model->title, $maxLength);
@@ -46,7 +55,7 @@ class SeoService
      */
     public function getRobotsTag(Page|Blog $model): string
     {
-        if (!$model->index) {
+        if (! $model->index) {
             return 'noindex, nofollow';
         }
 
@@ -65,7 +74,7 @@ class SeoService
         $truncated = substr($text, 0, $length);
         $truncated = preg_replace('/\s+?(\S+)?$/', '', $truncated);
 
-        return $truncated . '...';
+        return $truncated.'...';
     }
 
     /**
@@ -76,11 +85,20 @@ class SeoService
         $baseUrl = rtrim(config('app.url'), '/');
 
         if ($model instanceof Page) {
-            return $baseUrl . $model->slug;
+            $configuredCanonical = trim((string) $model->canonical_url);
+            if ($configuredCanonical !== '') {
+                if (Str::startsWith($configuredCanonical, ['http://', 'https://'])) {
+                    return $configuredCanonical;
+                }
+
+                return $baseUrl.'/'.ltrim($configuredCanonical, '/');
+            }
+
+            return $baseUrl.$model->slug;
         }
 
         if ($model instanceof Blog && $model->slug) {
-            return $baseUrl . '/blog/' . $model->slug;
+            return $baseUrl.'/blog/'.$model->slug;
         }
 
         return $baseUrl;

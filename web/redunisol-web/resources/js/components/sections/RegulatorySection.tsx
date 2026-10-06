@@ -3,6 +3,7 @@ import { ShieldCheckIcon } from '@phosphor-icons/react';
 import { motion } from 'framer-motion';
 
 import SectionCtaButton, { type SectionCta } from '@/components/section-cta';
+import { getRegulatorDisplayName } from '@/lib/regulators';
 
 export interface RegulatoryData {
     title?: string;
@@ -65,12 +66,18 @@ export default function RegulatorySection({ data }: { data: RegulatoryData }) {
                             {reg.logo_path && (
                                 <img
                                     src={`/storage/${reg.logo_path}`}
-                                    alt={reg.short_name ?? reg.name}
+                                    alt={getRegulatorDisplayName(
+                                        reg.short_name,
+                                        reg.name,
+                                    )}
                                     className="mb-4 h-12 w-auto object-contain"
                                 />
                             )}
                             <p className="font-bold text-gray-900">
-                                {reg.short_name ?? reg.name}
+                                {getRegulatorDisplayName(
+                                    reg.short_name,
+                                    reg.name,
+                                )}
                             </p>
                             <p className="mt-1 text-xs text-gray-500">
                                 {reg.name}

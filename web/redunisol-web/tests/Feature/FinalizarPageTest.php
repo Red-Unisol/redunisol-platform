@@ -4,7 +4,7 @@ use App\Models\SiteSetting;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
-it('loads legacy finalizar urls and resolves caja loan data server side', function () {
+it('resolves loan data and signature metadata for the requested line', function (string $path, string $line, string $flowId, string $docId) {
     config()->set('finalizar.metamap.client_id', 'public-client-id');
     config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
 
@@ -26,10 +26,11 @@ it('loads legacy finalizar urls and resolves caja loan data server side', functi
         ], 200),
     ]);
 
-    $this->get('/finalizar.php?sol=228418&ntrans=0&linea=caja')
+    $this->get("{$path}?sol=228418&ntrans=0&linea={$line}")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('finalizar')
+            ->where('finalizar.linea', $line)
             ->where('finalizar.loan.solicitud', '228418')
             ->where('finalizar.loan.nombre', 'Juan Perez')
             ->where('finalizar.loan.monto_total_display', '$ 100.000,00')
@@ -40,7 +41,10 @@ it('loads legacy finalizar urls and resolves caja loan data server side', functi
             ->where('finalizar.loan.prestamo_tna', '295.00')
             ->where('finalizar.loan.prestamo_tea', '1830.00')
             ->where('finalizar.metamap.client_id', 'public-client-id')
-            ->where('finalizar.metamap.flow_id', '66143f63a6c0b9001c9d8e57')
+            ->where('finalizar.metamap.flow_id', $flowId)
+            ->where('finalizar.metamap.doc_id', $docId)
+            ->where('finalizar.metamap.metadata.eSignature.customVariables', fn ($variables) => collect($variables)
+                ->every(fn ($variable) => $variable['documents'] === [$docId]))
             ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey.value', '228418')
             ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey2.value', '$ 100.000,00')
             ->where('finalizar.metamap.metadata.eSignature.customVariables.variableKey3.value', '6')
@@ -53,7 +57,11 @@ it('loads legacy finalizar urls and resolves caja loan data server side', functi
 
     Http::assertSent(fn ($request) => $request->url() === 'https://caja.example.test/api/redunisol/finSolicitud/0/228418'
         && $request->method() === 'POST');
-});
+})->with([
+    'caja legacy' => ['/finalizar.php', 'caja', '66143f63a6c0b9001c9d8e57', 'c617b2a4-9efc-4cda-8d69-9a20f3d8a1e7'],
+    'federal legacy' => ['/finalizar.php', 'federal', '6abbbd5f4bd9f2a3b505c6db', 'c4578953-da3a-4d17-b8ff-ae31c6787b5e'],
+    'federal' => ['/finalizar', 'federal', '6abbbd5f4bd9f2a3b505c6db', 'c4578953-da3a-4d17-b8ff-ae31c6787b5e'],
+]);
 
 it('uses the default metamap flow when the requested line does not match', function () {
     config()->set('finalizar.metamap.client_id', 'public-client-id');

@@ -1,0 +1,187 @@
+id: alerta_flow_fallos_gestionar
+namespace: redunisol
+
+description: Unico escritor del estado por flow y por ejecucion; serializa fallos, exitos, confirmaciones y notificaciones.
+
+sla:
+  - id: limitar_duracion
+    type: MAX_DURATION
+    duration: PT5M
+    behavior: CANCEL
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: system
+  scope: observability
+
+inputs:
+  - id: evento
+    type: STRING
+  - id: ejecucion
+    type: STRING
+  - id: namespace_origen
+    type: STRING
+  - id: flow_origen
+    type: STRING
+  - id: generacion
+    type: INT
+    defaults: -1
+
+tasks:
+  - id: leer_estado_flow
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ 'alerta.flow_fallos.estado.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    errorOnMissing: false
+
+  - id: leer_estado_ejecucion
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ 'alerta.flow_fallos.evento.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen ~ '.' ~ inputs.ejecucion }}"
+    errorOnMissing: false
+
+  # Conservar la clave anterior permite cerrar alertas ya abiertas.
+  - id: leer_alerta_abierta
+    type: io.kestra.plugin.core.kv.Get
+    key: "{{ 'alerta.flow_fallos.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    errorOnMissing: false
+
+  - id: evaluar_evento
+    type: io.kestra.plugin.scripts.python.Script
+    timeout: PT1M
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    env:
+      FLOW_STATE_JSON: "{{ (outputs.leer_estado_flow.value ?? null) | toJson }}"
+      EXECUTION_STATE_JSON: "{{ (outputs.leer_estado_ejecucion.value ?? null) | toJson }}"
+      ALERT_OPEN_JSON: "{{ ((outputs.leer_alerta_abierta.value ?? null) is not null) | toJson }}"
+      SOURCE_EVENT: "{{ inputs.evento }}"
+      SOURCE_EXECUTION_ID: "{{ inputs.ejecucion }}"
+      SOURCE_NAMESPACE: "{{ inputs.namespace_origen }}"
+      SOURCE_FLOW_ID: "{{ inputs.flow_origen }}"
+      CONFIRM_GENERATION: "{{ inputs.generacion }}"
+    script: |
+      import json
+      import os
+      from kestra import Kestra
+
+      previous = json.loads(os.environ["FLOW_STATE_JSON"])
+      receipt = json.loads(os.environ["EXECUTION_STATE_JSON"])
+      alert_open = json.loads(os.environ["ALERT_OPEN_JSON"])
+      event = os.environ["SOURCE_EVENT"]
+      execution_id = os.environ["SOURCE_EXECUTION_ID"]
+      namespace = os.environ["SOURCE_NAMESPACE"]
+      flow_id = os.environ["SOURCE_FLOW_ID"]
+      confirmation_generation = int(os.environ["CONFIRM_GENERATION"])
+      if event not in ("FAILED", "SUCCESS", "CONFIRM"):
+          raise ValueError("Unsupported alert event")
+      if not namespace.startswith("redunisol.prod.") or namespace == "redunisol.prod.system":
+          raise ValueError("Only production business flows can be monitored")
+
+      state = dict(previous or {"generation": 0, "failed_execution_ids": []})
+      failed_ids = list(state["failed_execution_ids"])
+      generation = state["generation"]
+      credixsa = namespace == "redunisol.prod.analisis-credito" and flow_id == "consulta_quiebra_credix"
+      threshold = 3 if credixsa else 1
+      schedule = notify_failure = notify_recovery = False
+      next_receipt = receipt
+
+      if event == "FAILED" and receipt is None:
+          # Reservar la generacion antes de lanzar la espera. Eventos repetidos
+          # de la misma ejecucion no programan otro temporizador.
+          next_receipt = {"generation": generation, "status": "pending"}
+          schedule = True
+      elif event == "SUCCESS" and (receipt or {}).get("status") != "success":
+          # Cualquier exito invalida TODOS los fallos pendientes del flow,
+          # incluidos los de otras ejecuciones. No expirar esta generacion.
+          generation += 1
+          failed_ids = []
+          next_receipt = {"generation": generation, "status": "success"}
+          notify_recovery = alert_open
+      elif (event == "CONFIRM" and receipt is not None
+            and confirmation_generation == generation == receipt["generation"]
+            and receipt["status"] in ("pending", "confirmed")):
+          if receipt["status"] == "pending":
+              if execution_id not in failed_ids:
+                  # Estado acotado durante una caida prolongada. Los recibos
+                  # deduplican tambien fuera de estos tres IDs.
+                  failed_ids = (failed_ids + [execution_id])[:threshold]
+              next_receipt = {"generation": generation, "status": "confirmed"}
+          # Reintentar un envio fallido no vuelve a contar la ejecucion ni
+          # duplica una alerta que ya quedo abierta.
+          notify_failure = len(failed_ids) >= threshold and not alert_open
+
+      state.update(generation=generation, failed_execution_ids=failed_ids)
+      message = ""
+      if notify_failure or notify_recovery:
+          message = "KESTRA - Flow " + ("fallido" if notify_failure else "recuperado")
+          message += f"\n\nFlow: {flow_id}\nNamespace: {namespace}"
+          message += "\nEstado: " + ("FAILED" if notify_failure else "SUCCESS")
+          message += f"\nEjecucion: {execution_id}"
+          if notify_failure and credixsa:
+              message += "\nFallos consecutivos: 3 o mas ejecuciones"
+      Kestra.outputs({
+          "schedule_confirmation": schedule,
+          "generation": generation,
+          "state_changed": state != previous,
+          "execution_changed": next_receipt != receipt,
+          "flow_state_json": json.dumps(state),
+          "execution_state_json": json.dumps(next_receipt),
+          "notify_failure": notify_failure,
+          "notify_recovery": notify_recovery,
+          "notification_json": json.dumps({"DIALOG_ID": "chat119621", "MESSAGE": message}),
+      })
+
+  # Persistir la racha/invalidacion antes de notificar. Todos estos pasos estan
+  # protegidos por la MISMA concurrency, tambien las recuperaciones.
+  - id: guardar_estado_flow
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.evaluar_evento.vars.state_changed }}"
+    key: "{{ 'alerta.flow_fallos.estado.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    value: "{{ outputs.evaluar_evento.vars.flow_state_json }}"
+    kvType: JSON
+    overwrite: true
+
+  - id: guardar_estado_ejecucion
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.evaluar_evento.vars.execution_changed }}"
+    key: "{{ 'alerta.flow_fallos.evento.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen ~ '.' ~ inputs.ejecucion }}"
+    value: "{{ outputs.evaluar_evento.vars.execution_state_json }}"
+    kvType: JSON
+    overwrite: true
+    ttl: P30D
+
+  - id: enviar_notificacion
+    type: io.kestra.plugin.core.http.Request
+    timeout: PT30S
+    runIf: "{{ outputs.evaluar_evento.vars.notify_failure or outputs.evaluar_evento.vars.notify_recovery }}"
+    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}/im.message.add"
+    method: POST
+    contentType: application/json
+    body: "{{ outputs.evaluar_evento.vars.notification_json }}"
+
+  - id: marcar_alerta_abierta
+    type: io.kestra.plugin.core.kv.Set
+    runIf: "{{ outputs.evaluar_evento.vars.notify_failure }}"
+    key: "{{ 'alerta.flow_fallos.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+    value: open
+    overwrite: true
+    ttl: P30D
+
+  - id: limpiar_alerta_abierta
+    type: io.kestra.plugin.core.kv.Delete
+    runIf: "{{ outputs.evaluar_evento.vars.notify_recovery }}"
+    key: "{{ 'alerta.flow_fallos.' ~ inputs.namespace_origen ~ '.' ~ inputs.flow_origen }}"
+
+outputs:
+  - id: programar_confirmacion
+    type: BOOL
+    value: "{{ outputs.evaluar_evento.vars.schedule_confirmation }}"
+  - id: generacion
+    type: INT
+    value: "{{ outputs.evaluar_evento.vars.generation }}"

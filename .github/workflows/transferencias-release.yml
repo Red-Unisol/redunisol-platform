@@ -1,0 +1,107 @@
+name: Build and publish signed Transferencias
+
+on:
+  push:
+    tags: ['transferencias-v*']
+  pull_request:
+    paths:
+      - 'apps/metamap-platform/client/transferencias-celesol/**'
+      - '.github/workflows/transferencias-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transferencias-${{ github.event_name == 'push' && 'release' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/metamap-platform/client/transferencias-celesol
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release source
+        if: github.event_name == 'push'
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($env:RELEASE_REF -ne "transferencias-v$version") { throw 'Tag and Cargo version differ' }
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release must be merged into main' }
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt
+      - name: Verify code-only source and tests
+        run: |
+          pip install 'cryptography==46.0.5' 'paramiko==4.0.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Signing test dependencies failed' }
+          python -m unittest discover -s tools -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Publication tests failed' }
+          python tools/check_release_inputs.py
+          if ($LASTEXITCODE -ne 0) { throw 'Unexpected private release inputs' }
+          cargo +1.88.0 test --locked --all-targets
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: Build executable only
+        run: |
+          cargo +1.88.0 build --locked --release --bin transferencias-celesol
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'push'
+        with:
+          name: transferencias-code-only
+          path: apps/metamap-platform/client/transferencias-celesol/target/release/transferencias-celesol.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: transferencias-code-only
+          path: binary
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Install publication tooling
+        run: pip install 'cryptography==46.0.5' 'paramiko==4.0.0'
+      - name: Sign release manifest
+        env:
+          TRANSFERENCIAS_UPDATE_SIGNING_KEY: ${{ secrets.TRANSFERENCIAS_UPDATE_SIGNING_KEY }}
+        run: |
+          VERSION=$(python -c 'import tomllib; print(tomllib.load(open("apps/metamap-platform/client/transferencias-celesol/Cargo.toml", "rb"))["package"]["version"])')
+          python apps/metamap-platform/client/transferencias-celesol/tools/update_release.py release \
+            --exe binary/transferencias-celesol.exe --version "$VERSION" --output signed \
+            --public-key apps/metamap-platform/client/transferencias-celesol/update-public-key.base64
+      - uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+      - name: Publish immutable release and atomic signed pointer
+        env:
+          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_USER: ${{ secrets.VPS_SSH_USER }}
+          UPDATE_KNOWN_HOSTS: ${{ vars.TRANSFERENCIAS_UPDATE_KNOWN_HOSTS }}
+        run: |
+          export UPDATE_KNOWN_HOSTS_FILE="$RUNNER_TEMP/update_known_hosts"
+          printf '%s\n' "$UPDATE_KNOWN_HOSTS" > "$UPDATE_KNOWN_HOSTS_FILE"
+          python apps/metamap-platform/client/transferencias-celesol/tools/publish_update.py \
+            --directory signed --public-key apps/metamap-platform/client/transferencias-celesol/update-public-key.base64
+      - name: Verify public release matches signed artifact
+        run: |
+          curl --fail --retry 3 --max-time 30 \
+            https://kestra.redunisol.com.ar/metamap-platform/updates/transferencias/latest.json -o public-latest.json
+          cmp signed/latest.json public-latest.json

@@ -1,0 +1,80 @@
+{
+    "template_id": 383,
+    "source_stage": "1",
+    "reason_label": "OTRO BANCO",
+    "source_bpt_sha256": "a4bdfb3dea8fef5c8ce0a888547a6a3e27f207050c57ccf6a9cbadffdc555e53",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A61882_39632_31188_51314",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A99364_98109_26196_77484",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "Por el momento no tenemos convenio con tu banco de cobro. \nAgradecemos tu contacto y te invitamos a que nos agendes y nos sigas en nuestras redes sociales donde publicamos si hay algún cambio en las políticas de préstamos. ¡Que tengas un buen día!😊",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al chat"
+                                },
+                                "Name": "A88504_68003_30838_41080",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A95032_31504_38938_48375",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiBIb2xhITxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij5MYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGFjdHVhbG1lbnRlJm5ic3A7bm8gdGVuZW1vcyBjb252ZW5pbyBjb24gdHUgYmFuY28gZGUgY29icm8uJm5ic3A7eSwgcG9yIGxvIHRhbnRvLCBubyBwb2RlbW9zIG90b3JnYXJ0ZSB1biBwcsOpc3RhbW8uIDxicj4KIDwvc3Bhbj48c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+Jm5ic3A7PC9zcGFuPjxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4KU2VndWlub3MgZW4gcmVkZXMgc29jaWFsZXMgPGEgaHJlZj0iaHR0cHM6Ly93d3cuZmFjZWJvb2suY29tL3JlZHVuaXNvbC8iPkZhY2Vib29rPC9hPiBlIDxhIGhyZWY9Imh0dHBzOi8vd3d3Lmluc3RhZ3JhbS5jb20vcmVkdW5pc29sLyI+SW5zdGFncmFtPC9hPiBwYXJhIG5vIHBlcmRlcnRlIGxhcyBub3ZlZGFkZXMgeSBmb3JtYXIgcGFydGUgZGUgbnVlc3RyYSBjb211bmlkYWQhPC9zcGFuPjxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4KUG9kw6lzIGNvbm9jZXIgbcOhcyBzb2JyZSBub3NvdHJvcyBlbiBudWVzdHJvIDxhIGhyZWY9Imh0dHBzOi8vcmVkdW5pc29sLmNvbS5hci8iPlNpdGlvIFdlYjwvYT48L3NwYW4+Ljxicj4KIDxicj4KR3JhY2lhcyE=",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "WORK",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)"
+                                },
+                                "Activated": "Y",
+                                "Name": "A96045_13150_13489_60734",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

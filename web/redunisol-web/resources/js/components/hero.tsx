@@ -13,12 +13,19 @@ export interface Hero {
     };
 }
 
-export default function Hero({ data }: { data: Hero }) {
+export default function Hero({
+    data,
+    headingLevel = 'h1',
+}: {
+    data: Hero;
+    headingLevel?: 'h1' | 'h2';
+}) {
+    const Heading = headingLevel === 'h1' ? motion.h1 : motion.h2;
     return (
         <section className="m-auto w-full max-w-200">
             <div className="mx-auto max-w-5xl px-6 pt-24 pb-20 text-center">
                 {/* TITLE */}
-                <motion.h1
+                <Heading
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6 }}
@@ -33,7 +40,7 @@ export default function Hero({ data }: { data: Hero }) {
                             </span>
                         </>
                     )}
-                </motion.h1>
+                </Heading>
 
                 {/* DESCRIPTION */}
                 {data.description && (

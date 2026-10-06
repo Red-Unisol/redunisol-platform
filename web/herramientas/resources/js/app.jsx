@@ -1,5 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import AnalisisPage from './AnalisisPage.jsx';
+import PadronesPage, { PadronesResults } from './PadronesPage.jsx';
+import { credixPrefill } from './analisis-state.js';
+import { prepareCredixBcra } from './credix-bcra.js';
 import '../css/app.css';
 
 const rootElement = document.getElementById('app');
@@ -62,6 +66,15 @@ function App({ branding, tools }) {
 
     const openTool = (tool) => {
         if (tool.isPlaceholder || tool.status !== 'active') {
+            return;
+        }
+
+        if (tool.id === 'padrones') {
+            window.location.assign('/padrones');
+            return;
+        }
+        if (tool.id === 'analisis') {
+            window.location.assign('/analisis');
             return;
         }
 
@@ -523,16 +536,23 @@ function CredixReportSections({ sections }) {
 }
 
 function CredixsaPage({ branding, tool }) {
-    const [formValues, setFormValues] = React.useState({ cuit: '', nombre: '' });
+    const [padronQuery, setPadronQuery] = React.useState({ document: '', key: 0 });
+    const prefill = React.useRef(credixPrefill(window.location.hash));
+    const autoStarted = React.useRef(false);
+    const [formValues, setFormValues] = React.useState(prefill.current);
     const [loading, setLoading] = React.useState(false);
     const [result, setResult] = React.useState(null);
     const [error, setError] = React.useState('');
-    const normalized = parseJsonObject(result?.normalized_json);
+    const normalized = React.useMemo(() => {
+        const report = parseJsonObject(result?.normalized_json);
+        return report ? { ...report, bcra: prepareCredixBcra(report.bcra) } : null;
+    }, [result]);
     const resultTone = getResultTone('consulta-quiebra-credix', result, error);
 
     const handleSubmit = async (event) => {
-        event.preventDefault();
+        event?.preventDefault();
 
+        setPadronQuery((q) => ({ document: formValues.cuit || '', key: q.key + 1 }));
         if (!tool?.endpoint) {
             setError('La herramienta todavia no tiene un endpoint configurado.');
             return;
@@ -559,6 +579,9 @@ function CredixsaPage({ branding, tool }) {
             }
 
             setResult(payload);
+            if (!formValues.cuit && payload.status === 'single' && payload.cuit) {
+                setPadronQuery((q) => ({ document: payload.cuit, key: q.key + 1 }));
+            }
         } catch (submitError) {
             setError(submitError.message);
         } finally {
@@ -566,7 +589,16 @@ function CredixsaPage({ branding, tool }) {
         }
     };
 
+    React.useEffect(() => {
+        if (!autoStarted.current && (prefill.current.cuit || prefill.current.nombre)) {
+            autoStarted.current = true;
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            handleSubmit();
+        }
+    }, []);
+
     const clearToolState = () => {
+        setPadronQuery((q) => ({ document: '', key: q.key + 1 }));
         setFormValues({ cuit: '', nombre: '' });
         setError('');
         setResult(null);
@@ -576,6 +608,7 @@ function CredixsaPage({ branding, tool }) {
         <div className="shell shell--wide">
             <section className="credix-page__topbar">
                 <a className="credix-page__back" href="/">Herramientas</a>
+                <a href="/padrones">Administrar padrones</a>
                 <img className="credix-page__logo" src={brandLogoUrl} alt="Red Unisol" />
             </section>
 
@@ -692,6 +725,7 @@ function CredixsaPage({ branding, tool }) {
                         )}
                     </section>
                 )}
+                <PadronesResults document={padronQuery.document} requestKey={padronQuery.key} />
             </main>
         </div>
     );
@@ -703,6 +737,7 @@ function CredixDedicatedReport({ normalized }) {
             <CredixAlertsPanel alerts={normalized?.alertas || []} />
             <CredixPersonPanel persona={normalized?.persona || {}} />
             <CredixBcraHistoryPanel bcra={normalized?.bcra || {}} />
+            <CredixBcraPanel bcra={normalized?.bcra || {}} />
             <CredixBcraEntityEvolutionPanel bcra={normalized?.bcra || {}} />
             <CredixPrevisionalHistoryPanel previsional={normalized?.previsional || {}} />
             <CredixQuiebrasPanel quiebras={normalized?.quiebras || {}} />
@@ -745,7 +780,6 @@ function CredixSecondarySections({ normalized }) {
                 <span>Ver secciones adicionales</span>
             </summary>
             <div className="credix-report__detailsBody">
-                <CredixBcraPanel bcra={normalized?.bcra || {}} />
                 <CredixPrevisionalPanel previsional={normalized?.previsional || {}} />
                 <CredixAportesPanel aportes={normalized?.aportes || {}} />
             </div>
@@ -788,31 +822,32 @@ function CredixBcraPanel({ bcra }) {
     const detailedHistoryRows = Array.isArray(bcra.evolucion_deuda_por_entidad?.filas)
         ? bcra.evolucion_deuda_por_entidad.filas
         : [];
-    const entities = Array.isArray(bcra.entidades) ? bcra.entidades : [];
     const activeDebts = Array.isArray(bcra.deudas_vigentes) ? bcra.deudas_vigentes : [];
 
     return (
-        <section className="credix-report__section">
+        <section className="credix-report__section credix-report__section--primary" aria-label="Deudas vigentes">
             <div className="credix-report__sectionHeader">
-                <h2>Situaciones BCRA</h2>
-                <span className={`credix-risk credix-risk--${String(bcra.resumen?.color || '').toLowerCase()}`}>
-                    {bcra.resumen?.color || 'Sin datos'}
-                </span>
+                <h2>Deudas vigentes sistema financiero</h2>
+                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
+            {bcra.consulta_directa_estado === 'unavailable' && <p className="credix-report__note">No se pudo completar la consulta a BCRA al preparar el informe. Se muestran datos de CredixSA.</p>}
+            {['invalid_response', 'processing_error'].includes(bcra.consulta_directa_estado) && <p className="credix-report__note">No se pudo procesar la respuesta de BCRA al preparar el informe. Se muestran datos de CredixSA.</p>}
+            {bcra.consultado_en && <p className="credix-report__note">Consultado: {formatDateTime(bcra.consultado_en)}</p>}
             <div className="credix-report__metricGrid">
-                <article className="credix-report__metric">
-                    <span>Detalle</span>
-                    <strong>{bcra.resumen?.detalle || 'Sin datos'}</strong>
-                </article>
                 <article className="credix-report__metric">
                     <span>Deuda vigente total</span>
                     <strong>{bcra.deuda_vigente_total || 'Sin datos'}</strong>
                 </article>
                 <article className="credix-report__metric">
+                    <span>Total en situación ≥ 2</span>
+                    <strong>{bcra.deuda_situacion_negativa_total ?? 'Sin datos'}</strong>
+                </article>
+                <article className="credix-report__metric">
                     <span>Entidades informadas</span>
-                    <strong>{entities.length || 'Sin datos'}</strong>
+                    <strong>{bcra.deuda_vigente_total ? activeDebts.length : 'Sin datos'}</strong>
                 </article>
             </div>
+            {bcra.mensaje && <p className="credix-report__note">{bcra.mensaje}</p>}
 
             {activeDebts.length > 0 && (
                 <CredixSimpleTable
@@ -821,7 +856,7 @@ function CredixBcraPanel({ bcra }) {
                         row.entidad || 'Sin dato',
                         row.periodo || 'Sin dato',
                         row.monto || 'Sin dato',
-                        row.situacion || row.porcentaje || 'Sin dato',
+                        row.situacion || 'Sin dato',
                     ])}
                 />
             )}
@@ -859,7 +894,7 @@ function CredixBcraHistoryPanel({ bcra }) {
         <section className="credix-report__section credix-report__section--primary">
             <div className="credix-report__sectionHeader">
                 <h2>Deudas en el sistema financiero</h2>
-                <span className="credix-risk">{matrix.fuente ? `Fuente: ${matrix.fuente}` : 'BCRA'}</span>
+                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
             <div className="credix-bcra-history">
                 <div className="credix-bcra-history__wrap">
@@ -921,7 +956,7 @@ function CredixBcraEntityEvolutionPanel({ bcra }) {
         <section className="credix-report__section credix-report__section--primary">
             <div className="credix-report__sectionHeader">
                 <h2>Evolucion deuda sistema financiero por entidad</h2>
-                <span className="credix-risk">{matrix.fuente ? `Fuente: ${matrix.fuente}` : 'BCRA'}</span>
+                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
             </div>
             <div className="credix-bcra-evolution">
                 <div className="credix-bcra-evolution__wrap">
@@ -1759,6 +1794,7 @@ function ObjectivesDashboardApp({ branding, config }) {
                 <section className="objectives-title">
                     <p className="section__eyebrow">Seguimiento comercial</p>
                     <h1>Objetivos de tiempos</h1>
+                    <p>Promedio y mediana del mes. Cada objetivo usa la media de esa medida en los tres meses anteriores.</p>
                 </section>
 
                 {loading && (
@@ -1783,7 +1819,11 @@ function ObjectivesDashboardApp({ branding, config }) {
                 {!loading && !error && metrics.length > 0 && (
                     <section className="objective-grid">
                         {metrics.map((metric) => (
-                            <ObjectiveMetricCard key={metric.id} metric={metric} />
+                            <section className="objective-category" key={metric.id} aria-labelledby={`objective-${metric.id}`}>
+                                <h2 id={`objective-${metric.id}`}>{metric.nombre}</h2>
+                                <ObjectiveMetricCard metric={metric} label="Promedio" />
+                                <ObjectiveMetricCard metric={metric.mediana} label="Mediana" />
+                            </section>
                         ))}
                     </section>
                 )}
@@ -1792,20 +1832,20 @@ function ObjectivesDashboardApp({ branding, config }) {
     );
 }
 
-function ObjectiveMetricCard({ metric }) {
+function ObjectiveMetricCard({ metric, label }) {
     const state = normalizeObjectiveState(metric.estado, metric.actualMin, metric.objetivoMin);
     const deltaText = formatDelta(metric.actualMin, metric.objetivoMin);
 
     return (
         <article className={`objective-card objective-card--${state}`}>
             <div className="objective-card__top">
-                <h2>{metric.nombre}</h2>
+                <h3>{label}</h3>
                 <span className="objective-card__status">{objectiveStateLabel(state)}</span>
             </div>
 
             <div className="objective-card__value">
                 <strong>{formatMinutes(metric.actualMin)}</strong>
-                <span>actual</span>
+                <span>{label} actual</span>
             </div>
 
             <div className="objective-card__target">
@@ -1834,6 +1874,12 @@ function normalizeObjectiveMetrics(snapshot) {
         objetivoMin: toNumberOrNull(row.objetivo_min ?? row.target_min ?? row.objetivoMin),
         casos: toIntegerOrNull(row.casos ?? row.cases),
         estado: row.estado || row.status || null,
+        mediana: {
+            actualMin: toNumberOrNull(row.mediana?.actual_min ?? undefined),
+            objetivoMin: toNumberOrNull(row.mediana?.objetivo_min ?? undefined),
+            casos: toIntegerOrNull(row.casos ?? row.cases),
+            estado: row.mediana?.estado || null,
+        },
     }));
 }
 
@@ -1849,6 +1895,9 @@ function toIntegerOrNull(value) {
 
 function normalizeObjectiveState(rawState, actualMin, targetMin) {
     const state = String(rawState || '').toLowerCase();
+    if (state === 'neutral') {
+        return 'neutral';
+    }
     if (['verde', 'green', 'ok'].includes(state)) {
         return 'green';
     }
@@ -1864,7 +1913,7 @@ function normalizeObjectiveState(rawState, actualMin, targetMin) {
     if (actualMin <= targetMin) {
         return 'green';
     }
-    if (actualMin <= targetMin * 1.15) {
+    if (actualMin <= targetMin * 1.10) {
         return 'yellow';
     }
     return 'red';
@@ -2079,7 +2128,11 @@ function formatDateTime(value) {
 if (rootElement) {
     let component = <App branding={initialPayload.branding || {}} tools={initialPayload.tools || []} />;
 
-    if (initialPayload.mode === 'contabilidad-transfer') {
+    if (initialPayload.page === 'padrones') {
+        component = <PadronesPage config={initialPayload.padrones || {}} />;
+    } else if (initialPayload.page === 'analisis') {
+        component = <AnalisisPage config={initialPayload.analisis || {}} />;
+    } else if (initialPayload.mode === 'contabilidad-transfer') {
         component = (
             <ContabilidadTransferApp
                 branding={initialPayload.branding || {}}

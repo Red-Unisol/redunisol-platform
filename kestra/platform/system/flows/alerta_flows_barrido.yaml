@@ -1,0 +1,65 @@
+id: alerta_flows_barrido
+namespace: redunisol
+
+description: |
+  Barre periodicamente las ejecuciones fallidas de prod y envia alertas deduplicadas a Bitrix24.
+  Reemplaza el esquema disparado por evento: en lugar de una ejecucion por cada exito o fallo
+  de cualquier flow de produccion, corre una sola vez cada 8 minutos.
+
+  La logica vive en files/alerta_barrido/barrido.py para poder cubrirla con tests.
+
+sla:
+  - id: limitar_duracion
+    type: MAX_DURATION
+    duration: PT5M
+    behavior: CANCEL
+
+concurrency:
+  limit: 1
+  behavior: CANCEL
+
+labels:
+  env: prod
+  team: redunisol
+  kind: system
+  scope: observability
+  schedule_scope: prod_only
+
+tasks:
+  - id: barrer
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - alerta_barrido/**
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    env:
+      # Credenciales de la propia API de Kestra. Se reutilizan las del informe
+      # diario para no dar de alta variables nuevas en produccion.
+      KESTRA_URL: "{{ envs.reports_kestra_url }}"
+      KESTRA_TENANT: "{{ envs.reports_kestra_tenant ?? 'main' }}"
+      KESTRA_USERNAME: "{{ secret('REPORTS_KESTRA_USERNAME') }}"
+      KESTRA_PASSWORD: "{{ secret('REPORTS_KESTRA_PASSWORD') }}"
+      # Destino de las alertas: mismo chat que usa el esquema por evento.
+      BITRIX_BASE_URL: "{{ envs.bitrix24_base_url }}"
+      BITRIX_ALERTAS_PATH: "{{ secret('BITRIX24_ALERTAS_WEBHOOK_PATH') }}"
+      BITRIX_DIALOG_ID: "chat119621"
+      # Ventana que barre cada corrida. Mayor que el intervalo del cron para
+      # tolerar un ciclo perdido sin dejar agujeros.
+      VENTANA_MINUTOS: "20"
+      # El namespace real lo resuelve el deploy segun el ambiente. Es
+      # imprescindible que el estado de dev no escriba sobre el de prod.
+      KV_NAMESPACE: "{{ flow.namespace }}"
+      # Un incidente sin novedades por mas de estos dias se descarta.
+      # Reemplaza al TTL del esquema anterior: la API REST de KV no expone TTL.
+      INCIDENTE_MAX_DIAS: "30"
+    commands:
+      - python alerta_barrido/barrido.py
+
+triggers:
+  - id: barrido_cada_8_minutos
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/8 * * * *"
+    timezone: America/Argentina/Buenos_Aires
+    recoverMissedSchedules: NONE

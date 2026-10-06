@@ -1,0 +1,80 @@
+{
+    "template_id": 707,
+    "source_stage": "UC_2B72LN",
+    "reason_label": "SIT NEG BCRA",
+    "source_bpt_sha256": "fe4634c4310ec321d14ae4a8d609b9feba236a743436368adab03216384128c7",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A30849_44189_90743_51713",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A85475_98819_48964_84623",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VuZXNfUmVkVW5pc29sRmlsZXMvZ3JhY2lhcyUyMHBvciUyMHR1JTIwY29uc3VsdGElMjAyLnBuZyIgdGl0bGU9IlJlZCBVbmlzb2wiPjxicj4KIDwvc3Bhbj48c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+PGJyPgogPC9zcGFuPjxicj4KIDxicj4KIMKhSG9sYSE8YnI+CiA8YnI+CiA8c3BhbiBzdHlsZT0iZm9udC1mYW1pbHk6IFRhaG9tYSwgR2VuZXZhOyI+TGFtZW50YW1vcyBpbmZvcm1hcnRlIHF1ZSBlbiBlc3RhIG9wb3J0dW5pZGFkIG5vIHBvZGVtb3MgYXZhbnphciBjb24gdHUgc29saWNpdHVkLCB5YSBxdWUgdHUgcGVyZmlsIGNyZWRpdGljaW8gcHJlc2VudGEgc2l0dWFjacOzbiBuZWdhdGl2YSBlbiBCQ1JBIHF1ZSBleGNlZGUgbGFzIGNvbmRpY2lvbmVzIGNvbiBsYXMgcXVlIHRyYWJhamFtb3MgZW4gUmVkIFVuaXNvbC4gRXNwZXJhbW9zIHBvZGVyIGF5dWRhcnRlIGVuIGVsIGZ1dHVybywgY3VhbmRvIHR1IHNpdHVhY2nDs24gc2UgZW5jdWVudHJlIHJlZ3VsYXJpemFkYS4gPGJyPgogPC9zcGFuPjxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij4mbmJzcDs8L3NwYW4+PGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPgpTZWd1aW5vcyBlbiByZWRlcyBzb2NpYWxlcyA8YSBocmVmPSJodHRwczovL3d3dy5mYWNlYm9vay5jb20vcmVkdW5pc29sLyI+RmFjZWJvb2s8L2E+IGUgPGEgaHJlZj0iaHR0cHM6Ly93d3cuaW5zdGFncmFtLmNvbS9yZWR1bmlzb2wvIj5JbnN0YWdyYW08L2E+IHBhcmEgbm8gcGVyZGVydGUgbGFzIG5vdmVkYWRlcyB5IGZvcm1hciBwYXJ0ZSBkZSBudWVzdHJhIGNvbXVuaWRhZCE8L3NwYW4+PGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPgpQb2TDqXMgY29ub2NlciBtw6FzIHNvYnJlIG5vc290cm9zIGVuIG51ZXN0cm8gPGEgaHJlZj0iaHR0cHM6Ly9yZWR1bmlzb2wuY29tLmFyLyI+U2l0aW8gV2ViPC9hPjwvc3Bhbj4uPGJyPgogPGJyPgrCoUdyYWNpYXMh",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "WORK",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)"
+                                },
+                                "Activated": "Y",
+                                "Name": "A57028_97693_9408_70287",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A10615_99885_53557_72368",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "ImOpenLinesMessageActivity",
+                                "Properties": {
+                                    "MessageText": "En este momento *no podemos avanzar con tu solicitud*, ya que tu situación en *BCRA supera los parámetros* con los que trabajamos actualmente.\n\nSi bien contamos con condiciones más accesibles, es necesario *cumplir ciertos criterios mínimos* para poder avanzar.\n\nLamentamos no poder asistirte en esta oportunidad. Podés volver a contactarnos más adelante y con gusto evaluaremos nuevamente tu caso.",
+                                    "IsSystem": "N",
+                                    "AttachmentType": "file",
+                                    "Attachment": null,
+                                    "Title": "Enviar un mensaje al Canal Abierto"
+                                },
+                                "Name": "A48202_13751_28928_33268",
+                                "Activated": "Y",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

@@ -1,0 +1,86 @@
+{
+    "template_id": 407,
+    "source_stage": "10",
+    "reason_label": "NO CUMPLE REQUISITOS PARA CONVENIO",
+    "source_bpt_sha256": "87ba501c59aba2f4d6b03e8c328c7c61993e78f478f617f6bb0f7d75ff5f1aca",
+    "template": {
+        "Type": "SequentialWorkflowActivity",
+        "Name": "Template",
+        "Properties": {
+            "Title": "Bizproc Automation template"
+        },
+        "Children": [
+            {
+                "Type": "ParallelActivity",
+                "Name": "A79495_78618_59283_36451",
+                "Properties": {
+                    "Title": "Ejecución en paralelo"
+                },
+                "Children": [
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A81809_39974_82991_89078",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Name": "A51141_68911_32034_46491",
+                                "Activated": "Y",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvaW1hZ2VzL0dyYWNpYXMlMjBwb3IlMjB0dSUyMGNvbnN1bHRhJTIwMi5wbmciIHRpdGxlPSJSZWQgVW5pc29sIj48YnI+CiA8L3NwYW4+PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxicj4KIDwvc3Bhbj48YnI+CiA8YnI+CiBIb2xhITxicj4KIDxzcGFuIHN0eWxlPSJmb250LWZhbWlseTogVGFob21hLCBHZW5ldmE7Ij5MYW1lbnRhbW9zIGluZm9ybWFydGUgcXVlIG5vIHBvZGVtb3MgYXNpc3RpcnRlIGVuIGVzdGUgbW9tZW50bywgeWEgcXVlIGVuIHR1IHByb3ZpbmNpYSBubyB0ZW5lbW9zIHByb3B1ZXN0YXMgZGlzcG9uaWJsZXMgcGFyYSB0dSBhY3RpdmlkYWQgbGFib3JhbCB5LCBwb3IgbG8gdGFudG8sIG5vIHBvZGVtb3Mgb3RvcmdhcnRlIHVuIHByw6lzdGFtby48L3NwYW4+PGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPgpTZWd1aW5vcyBlbiByZWRlcyBzb2NpYWxlcyA8YSBocmVmPSJodHRwczovL3d3dy5mYWNlYm9vay5jb20vcmVkdW5pc29sLyI+RmFjZWJvb2s8L2E+IGUgPGEgaHJlZj0iaHR0cHM6Ly93d3cuaW5zdGFncmFtLmNvbS9yZWR1bmlzb2wvIj5JbnN0YWdyYW08L2E+IHBhcmEgbm8gcGVyZGVydGUgbGFzIG5vdmVkYWRlcyB5IGZvcm1hciBwYXJ0ZSBkZSBudWVzdHJhIGNvbXVuaWRhZCE8L3NwYW4+PGJyPgogPHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPgpQb2TDqXMgY29ub2NlciBtw6FzIHNvYnJlIG5vc290cm9zIGVuIG51ZXN0cm8gPGEgaHJlZj0iaHR0cHM6Ly9yZWR1bmlzb2wuY29tLmFyLyI+U2l0aW8gV2ViPC9hPjwvc3Bhbj4uPGJyPgogPGJyPgpHcmFjaWFzIQ==",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)"
+                                },
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    },
+                    {
+                        "Type": "SequenceActivity",
+                        "Name": "A86045_15160_80544_24519",
+                        "Properties": {
+                            "Title": "Automation sequence"
+                        },
+                        "Children": [
+                            {
+                                "Type": "CrmSendEmailActivity",
+                                "Activated": "Y",
+                                "Properties": {
+                                    "Subject": "Consulta Préstamos Red Unisol",
+                                    "MessageText": "base64,PHNwYW4gc3R5bGU9ImZvbnQtZmFtaWx5OiBUYWhvbWEsIEdlbmV2YTsiPjxpbWcgd2lkdGg9IjYwMCIgc3JjPSJodHRwczovL3JlZHVuaXNvbC5jb20uYXIvTWFya2V0aW5nLVJlZC1Vbmlzb2wvSGVhZGVyUlUucG5nIiBoZWlnaHQ9IjEwMCIgdGl0bGU9IlJlZCBVbmlzb2wiPjxicj4KPC9zcGFuPgo8cD4KCUhvbGEg8J+Riwo8L3A+CjxwPgoJIEdyYWNpYXMgcG9yIGNvbnRhY3RhcnRlIGNvbiA8Yj5SZWQgVW5pc29sLjwvYj4KPC9wPgo8cD4KCSBQb3IgZWwgbW9tZW50bywgZW4gdHUgcHJvdmluY2lhIG5vIGNvbnRhbW9zIGNvbiBwcm9wdWVzdGFzIHZpZ2VudGVzIHBhcmEgdHUgYWN0aXZpZGFkIGxhYm9yYWwsIHBvciBsbyBxdWUgbm8gcG9kZW1vcyBhdmFuemFyIGNvbiB1bmEgc29saWNpdHVkIGRlIHByw6lzdGFtbyBlbiBlc3RhIG9jYXNpw7NuLgo8L3A+CjxwPgoJIFRlIGludml0YW1vcyBhIHNlZ3Vpcm5vcyBlbiBGYWNlYm9vayBlIEluc3RhZ3JhbSBwYXJhIGVudGVyYXJ0ZSBkZSBmdXR1cmFzIG5vdmVkYWRlcyB5IG51ZXZhcyBvcG9ydHVuaWRhZGVzLjxicj4KCSBUYW1iacOpbiBwb2TDqXMgY29ub2NlciBtw6FzIHNvYnJlIG5vc290cm9zIHZpc2l0YW5kbyBudWVzdHJvIHNpdGlvIHdlYi4KPC9wPgo8cD4KCSBRdWVkYW1vcyBhIGRpc3Bvc2ljacOzbi48YnI+CgkgU2FsdWRvcyw8YnI+CgkgUmVkIFVuaXNvbDxzcGFuIGlkPSJieC1jdXJzb3Itbm9kZSI+IDwvc3Bhbj4KPC9wPg==",
+                                    "MessageTextType": "html",
+                                    "AttachmentType": "file",
+                                    "MessageFrom": "RED UNISOL <contacto@redunisol.com.ar>",
+                                    "EmailType": "",
+                                    "EmailSelectRule": "first",
+                                    "UseLinkTracker": "Y",
+                                    "MessageTextEncoded": 1,
+                                    "Attachment": "",
+                                    "Title": "Enviar correo electrónico al cliente  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)  (copia)"
+                                },
+                                "Name": "A95574_65755_75768_61268",
+                                "Children": []
+                            }
+                        ],
+                        "Activated": "Y"
+                    }
+                ],
+                "Activated": "Y"
+            }
+        ]
+    },
+    "parameters": [],
+    "variables": [],
+    "constants": []
+}

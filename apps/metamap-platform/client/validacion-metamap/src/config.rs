@@ -29,6 +29,7 @@ pub struct ServerConfig {
 pub struct CoreConfig {
     pub base_url: String,
     pub allow_invalid_certs: bool,
+    pub evaluate_api_bearer_token: Option<String>,
 }
 
 #[derive(Clone)]
@@ -70,6 +71,10 @@ impl AppConfig {
                     "VALIDACION_METAMAP_CORE_ALLOW_INVALID_CERTS",
                     true,
                 )?,
+                evaluate_api_bearer_token: optional_value(
+                    values,
+                    "VALIDACION_METAMAP_CORE_EVALUATE_API_BEARER_TOKEN",
+                ),
             },
             media: MediaConfig {
                 downloads_dir: resolve_runtime_dir_path(

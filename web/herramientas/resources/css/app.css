@@ -1428,12 +1428,30 @@ input {
     align-items: stretch;
 }
 
+.objectives-title > p:last-child {
+    margin: 0;
+    color: var(--muted);
+}
+
+.objective-category {
+    display: grid;
+    grid-template-rows: auto 1fr 1fr;
+    gap: 18px;
+    min-width: 0;
+}
+
+.objective-category > h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.3rem, 2vw, 2rem);
+}
+
 .objective-card {
-    min-height: min(58vh, 560px);
+    min-height: 0;
     display: grid;
     grid-template-rows: auto 1fr auto auto;
-    gap: clamp(18px, 2.5vw, 28px);
-    padding: clamp(22px, 3vw, 38px);
+    gap: clamp(12px, 1.5vw, 18px);
+    padding: clamp(18px, 2vw, 26px);
     border-radius: 22px;
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid var(--line);
@@ -1474,11 +1492,11 @@ input {
     padding-top: 6px;
 }
 
-.objective-card__top h2 {
+.objective-card__top h3 {
     margin: 0;
     max-width: 780px;
     font-family: var(--font-display);
-    font-size: clamp(1.35rem, 2.5vw, 2.6rem);
+    font-size: clamp(1.2rem, 1.8vw, 1.8rem);
     line-height: 1.08;
     font-weight: 800;
     letter-spacing: 0;
@@ -1514,7 +1532,7 @@ input {
 
 .objective-card__value strong {
     display: block;
-    font-size: clamp(4rem, 9vw, 9.5rem);
+    font-size: clamp(2.3rem, 4.5vw, 4.8rem);
     line-height: 0.9;
     font-weight: 800;
     letter-spacing: 0;
@@ -1535,7 +1553,7 @@ input {
     align-items: baseline;
     justify-content: space-between;
     gap: 18px;
-    padding: clamp(16px, 2vw, 22px);
+    padding: 12px 16px;
     border-radius: 18px;
     background: rgba(232, 245, 242, 0.75);
     border: 1px solid rgba(116, 193, 180, 0.28);
@@ -1543,7 +1561,7 @@ input {
 
 .objective-card__target strong {
     color: var(--navy);
-    font-size: clamp(1.8rem, 3.5vw, 3.6rem);
+    font-size: clamp(1.4rem, 2.2vw, 2.2rem);
     line-height: 1;
     font-weight: 800;
 }
@@ -1658,7 +1676,7 @@ input {
     }
 
     .objective-card {
-        min-height: 420px;
+        min-height: 0;
         border-radius: 18px;
     }
 

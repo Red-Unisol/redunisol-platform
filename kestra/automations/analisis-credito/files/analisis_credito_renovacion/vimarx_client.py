@@ -18,13 +18,21 @@ if not VERIFY_TLS:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+def _build_headers() -> Dict[str, str]:
+    headers = {"Content-type": "application/json"}
+    token = os.getenv("VIMARX_BEARER_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def api_post(
     endpoint: str, payload: Dict[str, Any], timeout_seg: int = TIMEOUT_API
 ) -> Any:
     if not URL_BASE:
         raise ValueError("Missing VIMARX_EVAL_BASE_URL.")
     url = f"{URL_BASE}{endpoint}"
-    headers = {"Content-type": "application/json"}
+    headers = _build_headers()
     session = requests.Session()
     session.trust_env = False
 

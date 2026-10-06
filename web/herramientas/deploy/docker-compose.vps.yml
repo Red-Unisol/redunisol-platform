@@ -13,6 +13,10 @@ services:
       APP_URL: ${APP_URL}
       APP_KEY: ${APP_KEY}
       HERRAMIENTAS_ENABLED: ${HERRAMIENTAS_ENABLED}
+      ANALISIS_PASSWORD_HASH: ${ANALISIS_PASSWORD_HASH:-}
+      ANALISIS_CORE_URL: ${ANALISIS_CORE_URL:-}
+      ANALISIS_CORE_TOKEN: ${ANALISIS_CORE_TOKEN:-}
+      ANALISIS_CORE_VERIFY_TLS: ${ANALISIS_CORE_VERIFY_TLS:-true}
       ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL: ${ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL}
       ANALISIS_CREDITO_CONSULTA_CAJA: ${ANALISIS_CREDITO_CONSULTA_CAJA}
       ANALISIS_CREDITO_QUIEBRA_CREDIX_CACHE_URL: http://credixsa-cache-api:8000/credixsa/cache
@@ -28,6 +32,7 @@ services:
       OBJECTIVES_DASHBOARD_REFRESH_SECONDS: ${OBJECTIVES_DASHBOARD_REFRESH_SECONDS:-60}
       LOG_CHANNEL: ${LOG_CHANNEL}
     volumes:
+      - padrones:/var/www/html/storage/app/private/padrones
       - /opt/kestra/data/contabilidad-transfer:/data/contabilidad-transfer:ro
       - /opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion:ro
     restart: unless-stopped
@@ -41,3 +46,6 @@ services:
     volumes:
       - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
     restart: unless-stopped
+
+volumes:
+  padrones:

@@ -69,6 +69,10 @@ En otras palabras:
 - Docker Compose lee `.env` y pasa el resultado al contenedor
 - para secrets, Kestra espera variables con prefijo `SECRET_` y valores codificados en Base64
 
+La imagen de Kestra esta fijada a `v2.0.0` mediante `KESTRA_VERSION`. No debe
+usarse `latest` ni `nightly`: las actualizaciones de version se hacen como un
+cambio explicito en Git, junto con la revision de su guia de migracion.
+
 La definicion versionada de ese mecanismo vive en:
 
 - `kestra/platform/infra/.env.example`
@@ -95,9 +99,15 @@ Ejemplos reales:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
+- `ENV_BITRIX24_VOLUME_COMPENSATION_URL`
+- `ENV_BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 - `SECRET_BITRIX24_LEAD_WON_DEAL_WEBHOOK_KEY`
 - `SECRET_BITRIX24_LEAD_WON_DEAL_APPLICATION_TOKEN`
 - `SECRET_BITRIX24_WEBHOOK_PATH`
+- `SECRET_BITRIX24_ROUTING_ALLOCATION_TOKEN`
 - `SECRET_BITRIX24_FORM_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_WEBHOOK_KEY`
 - `SECRET_ANALISIS_CREDITO_INCOMING_METAMAP_WEBHOOK_KEY`
@@ -188,6 +198,33 @@ Alcance actual del workflow:
 - sube `.env`, `docker-compose.yml` y `application.yaml` a `/opt/kestra`
 - corre `docker compose config`, `docker compose pull` y `docker compose up -d`
 - limpia el plaintext descifrado al terminar
+
+### Recarga de application.yaml
+
+El contenido de un bind mount no forma parte del hash de servicio de Compose.
+Reemplazar application.yaml mediante install puede dejar al contenedor montado
+sobre el archivo anterior, incluso si el deploy termina exitosamente.
+
+Deploy Infra calcula SHA-256 del archivo staged y exporta KESTRA_CONFIG_SHA256.
+La etiqueta io.redunisol.kestra-config-sha256 pertenece exclusivamente al
+servicio Kestra: al cambiar su valor, Compose recrea ese servicio. Un archivo
+identico mantiene la etiqueta y no fuerza recreacion. El deploy comprueba
+despues que el hash del archivo dentro del contenedor coincida con el esperado.
+No se agrega esta variable calculada al archivo cifrado de secretos.
+
+En operaciones manuales, exportar la misma variable calculada desde el archivo
+que se va a aplicar; si se omite, la etiqueta toma el valor unmanaged. No usar
+una recreacion global para recargar solamente Kestra.
+
+Intervencion autorizada del 2026-09-09: se ejecuto en /opt/kestra
+docker compose --env-file .env up -d --no-deps --force-recreate --no-build
+--pull never kestra para cargar la configuracion ya mergeada en 9671fe8.
+Se verifico cambio del contenedor Kestra, imagen identica y mismo ID/fecha
+de inicio de PostgreSQL. Host y contenedor quedaron con el mismo archivo.
+Una tarea temporal sin triggers, con bind de solo lectura, verifico que ve
+la carpeta y SQLite compartidos; se retiro la definicion de prueba conservando
+su ejecucion. La cola interna de alertas y su contador quedaron en cero.
+No se hicieron consultas al proveedor CredixSA en esta verificacion.
 
 Fuera de alcance en esta version:
 
@@ -376,6 +413,9 @@ Referenciadas hoy desde los flows:
 - `bitrix24_deal_commercial_line_field`
 - `bitrix24_deal_round_robin_user_ids`
 - `bitrix24_deal_round_robin_lookback_days`
+- `bitrix24_deal_cordoba_jubilados_user_ids`
+- `bitrix24_deal_cordoba_unc_user_ids`
+- `bitrix24_deal_cordoba_general_user_ids`
 
 En la infraestructura actual corresponden a:
 
@@ -401,6 +441,10 @@ En la infraestructura actual corresponden a:
 - `ENV_BITRIX24_DEAL_STAGE_ID`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_USER_IDS`
 - `ENV_BITRIX24_DEAL_ROUND_ROBIN_LOOKBACK_DAYS`
+- `ENV_BITRIX24_DEAL_CORDOBA_JUBILADOS_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_UNC_USER_IDS`
+- `ENV_BITRIX24_DEAL_CORDOBA_GENERAL_USER_IDS`
+- `ENV_BITRIX24_DISTRIBUTABLE_OPEN_LINE_IDS`
 
 En el pipeline actual:
 
@@ -456,7 +500,7 @@ Incorporado a partir de la documentacion tecnica bajo `untracked/`.
 
 Ejemplo de host para documentacion publica:
 
-- `https://internal-api.example.local:5050`
+- `https://internal-api.example.local:5002`
 
 Endpoints documentados:
   - `/api/Empresa/Evaluate`
@@ -481,6 +525,24 @@ Importante:
 - se guarda solo el base URL
 - los paths concretos de la API siguen definidos por la automatizacion que la consuma
 - el valor real no debe copiarse en `.env.example` ni en documentacion publica versionada
+
+### Runtime reporte MUDON CredixSA: variables no sensibles
+
+Referenciadas desde `kestra/automations/analisis-credito/flows/mudon_credixsa_report.yaml`:
+
+- `mudon_core_timeout_seconds`
+- `mudon_core_verify_tls`
+- `mudon_core_max_rows`
+- `mudon_loan_lines`
+- `mudon_credixsa_batch_size`
+- `mudon_credixsa_delay_seconds`
+- `mudon_credixsa_cache_max_age_days`
+- `mudon_credixsa_max_attempts`
+
+En infraestructura corresponden a las mismas claves en mayusculas con prefijo
+`ENV_`. El reporte reutiliza los secrets DevExpress, CredixSA y el webhook
+general de Analisis Credito. El endpoint DevExpress operativo usa el puerto
+`5002`.
 
 ### Runtime Analisis Credito: webhook secret
 
@@ -727,6 +789,19 @@ Consecuencia practica:
 - cambiar una variable global de la instancia impacta potencialmente a cualquier flow que la consuma en cualquier namespace de esa instancia
 
 Esto no bloquea el modelo actual, pero si en el futuro dev y prod necesitan valores distintos dentro de la misma instancia, habra que definir una estrategia mas fina.
+
+## Runtime Del Informe De Transferencias
+
+El flow `kestra/automations/contabilidad/flows/transfer_trace_report_daily.yaml`
+usa:
+
+- `ENV_TRANSFERENCIAS_SERVER_BASE_URL`: base pública del MetaMap Platform Server
+- `ENV_TRANSFER_TRACE_COVERAGE_FROM`: primer día incluido al reconstruir el backlog
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_ID`: cliente autenticado del server
+- `SECRET_TRANSFERENCIAS_SERVER_CLIENT_SECRET`: secreto del cliente autenticado
+
+Los valores reales no se copian al flow ni a esta documentación. El informe usa
+estas credenciales exclusivamente para leer `/api/v1/transfer-trace-events`.
 
 ## Referencias
 

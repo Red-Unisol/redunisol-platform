@@ -2,16 +2,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from .attribution import lead_fields as attribution_lead_fields, source_from_lead
 from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
+from .catalogs import ORIGENES_LEAD
 from .config import AppConfig
-from .input_parser import NormalizedInput, normalize_business_input
+from .input_parser import (
+    NormalizedInput,
+    PrequalificationInput,
+    RoutingInput,
+    normalize_business_input,
+    normalize_prequalification_input,
+    normalize_routing_input,
+)
 from .logger import Logger
 from .normalization import normalize_birthdate
 from .receipt_file import build_bitrix_file_data
 
 
-KESTRA_COMMERCIAL_OWNER_PROVINCES = {"catamarca"}
+class MissingLeadFieldError(ValueError):
+    """A required lead value is absent; a later CRM update may supply it."""
+
+    def __init__(self, field_name: str) -> None:
+        self.field_name = field_name
+        super().__init__(f'El lead no contiene el campo requerido "{field_name}".')
 
 
 def create_lead(
@@ -22,8 +36,13 @@ def create_lead(
     logger: Logger,
 ) -> int:
     logger.info(f"Creando lead para el contacto {contact_id}.")
+    source_id = (
+        _resolve_enum_id(client, config.fields.lead_source, "Sin origen")
+        if submission.lead_source.key == "sin_origen"
+        else submission.lead_source.bitrix_id
+    )
     fields = {
-        "TITLE": submission.full_name,
+        "TITLE": prequalification_title(submission),
         "NAME": submission.full_name,
         "STATUS_ID": config.lead_statuses.new,
         "EMAIL": [{"VALUE": submission.email, "VALUE_TYPE": "WORK"}],
@@ -43,10 +62,14 @@ def create_lead(
         config.fields.lead_employment_status: submission.employment_status.bitrix_id,
         config.fields.lead_payment_bank: [submission.payment_bank.bitrix_id],
         config.fields.lead_province: submission.province.bitrix_id,
-        config.fields.lead_source: submission.lead_source.bitrix_id,
+        config.fields.lead_source: source_id,
     }
 
     fields.update(_build_optional_tracking_fields(config, submission))
+    fields.update(attribution_lead_fields(
+        client, submission.attribution,
+        source_label=submission.lead_source.label, source_id=source_id,
+    ))
     if config.fields.lead_recibo_file and submission.recibo_url:
         logger.info("Adjuntando recibo al lead.")
         fields[config.fields.lead_recibo_file] = build_bitrix_file_data(
@@ -101,6 +124,20 @@ def resolve_commercial_owner_enum_id(
     return _resolve_enum_id(client, config.fields.lead_commercial_owner, owner_label)
 
 
+def resolve_processing_policy_enum_id(
+    client: BitrixClient,
+    config: AppConfig,
+    policy: str,
+) -> str:
+    normalized = policy.strip().casefold()
+    label = (
+        config.processing_policy.skip
+        if normalized in {"skip", "no procesar"}
+        else config.processing_policy.process
+    )
+    return _resolve_enum_id(client, config.fields.lead_processing_policy, label)
+
+
 def lead_has_commercial_owner(
     client: BitrixClient,
     lead: dict[str, Any],
@@ -137,15 +174,14 @@ def lead_enum_label(
 
 
 def determine_commercial_owner(submission: NormalizedInput) -> str:
-    if submission.province.key in KESTRA_COMMERCIAL_OWNER_PROVINCES:
-        return "kestra"
-    return "bitrix"
+    return "kestra"
 
 
 def build_submission_from_lead(
     lead: dict[str, Any],
     config: AppConfig,
 ) -> NormalizedInput:
+    _required_lead_value(lead, config.fields.lead_source)
     payload = {
         "full_name": _lead_full_name(lead),
         "email": _first_multifield_value(lead.get("EMAIL"), "EMAIL"),
@@ -154,9 +190,38 @@ def build_submission_from_lead(
         "province": _required_lead_value(lead, config.fields.lead_province),
         "employment_status": _required_lead_value(lead, config.fields.lead_employment_status),
         "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
-        "lead_source": _required_lead_value(lead, config.fields.lead_source),
+        "lead_source": source_from_lead(lead, config.fields.lead_source),
     }
     return normalize_business_input(payload)
+
+
+def build_prequalification_input_from_lead(
+    lead: dict[str, Any],
+    config: AppConfig,
+) -> PrequalificationInput:
+    payload = {
+        "province": _required_lead_value(lead, config.fields.lead_province),
+        "employment_status": _required_lead_value(
+            lead,
+            config.fields.lead_employment_status,
+        ),
+        "payment_bank": _required_lead_value(lead, config.fields.lead_payment_bank),
+    }
+    return normalize_prequalification_input(payload)
+
+
+def build_routing_input_from_lead(
+    lead: dict[str, Any],
+    config: AppConfig,
+) -> RoutingInput:
+    payload = {
+        "province": _required_lead_value(lead, config.fields.lead_province),
+        "employment_status": _required_lead_value(
+            lead,
+            config.fields.lead_employment_status,
+        ),
+    }
+    return normalize_routing_input(payload)
 
 
 def update_lead_status(
@@ -178,6 +243,66 @@ def update_lead_status(
         )
     client.call("crm.lead.update", {"id": lead_id, "fields": fields})
     return status_id
+
+
+def update_lead_prequalification_result(
+    client: BitrixClient,
+    config: AppConfig,
+    lead_id: int,
+    *,
+    outcome: str,
+    rejection_reason: str | None,
+    title: str | None,
+    commercial_owner_id: str | None = None,
+    logger: Logger,
+) -> str:
+    if outcome == "qualified":
+        status_id = config.lead_statuses.qualified
+    elif outcome == "external_referral":
+        status_id = config.lead_statuses.external_referral
+    else:
+        status_id = config.lead_statuses.rejected
+
+    logger.info(f"Actualizando resultado de precalificacion del lead {lead_id} a {status_id}.")
+    fields = {"STATUS_ID": status_id}
+    if commercial_owner_id:
+        fields[config.fields.lead_commercial_owner] = commercial_owner_id
+    if title:
+        fields["TITLE"] = title
+    if outcome == "rejected" and rejection_reason:
+        fields[config.fields.lead_rejection_reason] = _resolve_rejection_reason_enum_id(
+            client,
+            config.fields.lead_rejection_reason,
+            rejection_reason,
+        )
+    client.call("crm.lead.update", {"id": lead_id, "fields": fields})
+    return status_id
+
+
+def prequalification_title(submission: NormalizedInput) -> str:
+    if submission.lead_source.key == "finguru":
+        return submission.full_name
+    return f"{submission.full_name} - {submission.province.label}"
+
+
+def prequalification_title_from_lead(
+    lead: dict[str, Any],
+    config: AppConfig,
+    submission: PrequalificationInput,
+) -> str | None:
+    full_name = _lead_full_name(lead)
+    source_value = _optional_lead_value(lead, config.fields.lead_source)
+    if source_value is not None:
+        try:
+            source = ORIGENES_LEAD.resolve(source_value, "lead_source")
+        except ValueError:
+            source = None
+        if source is not None and source.key == "finguru":
+            return full_name or None
+
+    if full_name:
+        return f"{full_name} - {submission.province.label}"
+    return None
 
 
 def update_lead_bcra_snapshot(
@@ -406,7 +531,7 @@ def _first_multifield_value(raw_value: Any, field_name: str) -> str:
 def _required_lead_value(lead: dict[str, Any], field_name: str) -> Any:
     value = _optional_lead_value(lead, field_name)
     if value is None:
-        raise ValueError(f'El lead no contiene el campo requerido "{field_name}".')
+        raise MissingLeadFieldError(field_name)
     return value
 
 

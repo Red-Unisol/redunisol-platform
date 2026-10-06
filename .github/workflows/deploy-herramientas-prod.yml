@@ -1,13 +1,13 @@
 name: Deploy Herramientas Prod
 
 on:
-  # Disabled until the production environment and bootstrap are ready.
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'web/herramientas/**'
-  #     - '.github/workflows/deploy-herramientas-prod.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/herramientas/**'
+      - 'apps/credixsa-cache-api/**'
+      - '.github/workflows/deploy-herramientas-prod.yml'
   workflow_dispatch:
   workflow_call:
 

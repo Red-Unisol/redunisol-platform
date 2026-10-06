@@ -835,7 +835,8 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
                 entrypoint,
                 "consultar_tabla",
                 side_effect=TimeoutError("Timed out waiting for CredixSA report sections."),
-            ),
+            ) as consultar,
+            patch.object(entrypoint.time, "sleep") as sleep,
             patch.object(entrypoint, "_write_sqlite_cache_if_configured"),
             patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
             patch("sys.stdout.write"),
@@ -843,8 +844,89 @@ class ConsultaQuiebraCredixTests(unittest.TestCase):
             exit_code = entrypoint.main()
 
         self.assertEqual(exit_code, 1)
+        self.assertEqual(consultar.call_count, entrypoint.CONSULTA_MAX_ATTEMPTS)
+        self.assertEqual(sleep.call_count, entrypoint.CONSULTA_MAX_ATTEMPTS - 1)
         output_payload = emit_outputs.call_args.args[0]
         self.assertEqual(output_payload["status"], "technical_error")
+
+    def test_entrypoint_retries_transient_error_and_succeeds(self) -> None:
+        request = SearchRequest(cuit="20123456783", nombre="")
+        resultado = build_single_result(
+            request,
+            [{"title": "Datos Filiatorios", "rows": [["Nombre", "PEREZ JUAN"]]}],
+            cuit="20123456783",
+            nombre="PEREZ JUAN",
+        )
+
+        with (
+            patch.object(
+                entrypoint,
+                "_load_trigger_body",
+                return_value={"cuit": "20-12345678-3"},
+            ),
+            patch.object(entrypoint, "parse_search_request", return_value=request),
+            patch.object(entrypoint, "load_config_from_env", return_value=object()),
+            patch.object(
+                entrypoint,
+                "consultar_tabla",
+                side_effect=[
+                    TimeoutError("Timed out waiting for CredixSA report tables."),
+                    resultado,
+                ],
+            ) as consultar,
+            patch.object(entrypoint.time, "sleep") as sleep,
+            patch("consulta_quiebra_credix.bcra.consult_bcra", return_value=None),
+            patch.object(entrypoint, "_write_sqlite_cache_if_configured"),
+            patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
+            patch("sys.stdout.write"),
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(consultar.call_count, 2)
+        sleep.assert_called_once_with(entrypoint.CONSULTA_RETRY_PAUSE_SECONDS)
+        output_payload = emit_outputs.call_args.args[0]
+        self.assertEqual(output_payload["status"], "single")
+
+    def test_entrypoint_does_not_retry_configuration_error(self) -> None:
+        request = SearchRequest(cuit="20123456783", nombre="")
+
+        with (
+            patch.object(
+                entrypoint,
+                "_load_trigger_body",
+                return_value={"cuit": "20-12345678-3"},
+            ),
+            patch.object(entrypoint, "parse_search_request", return_value=request),
+            patch.object(entrypoint, "load_config_from_env", return_value=object()),
+            patch.object(
+                entrypoint,
+                "consultar_tabla",
+                side_effect=ConfigurationError("Missing CREDIX_LOGIN_URL."),
+            ) as consultar,
+            patch.object(entrypoint.time, "sleep") as sleep,
+            patch.object(entrypoint, "_write_sqlite_cache_if_configured"),
+            patch.object(entrypoint, "_emit_outputs_if_available") as emit_outputs,
+            patch("sys.stdout.write"),
+        ):
+            exit_code = entrypoint.main()
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(consultar.call_count, 1)
+        sleep.assert_not_called()
+        output_payload = emit_outputs.call_args.args[0]
+        self.assertEqual(output_payload["status"], "technical_error")
+
+    def test_flow_consultar_quiebra_has_no_kestra_retry(self) -> None:
+        # En Kestra 2 el retry de task pasa la ejecucion por FAILED y dispara
+        # alertas falsas; el reintento vive en kestra_webhook_entrypoint.
+        flow_source = (
+            Path(__file__).resolve().parent.parent
+            / "flows"
+            / "consulta_quiebra_credix.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("retry:", flow_source)
 
     def test_is_detail_summary_page_detects_credix_detail_view(self) -> None:
         class BodyLocator:

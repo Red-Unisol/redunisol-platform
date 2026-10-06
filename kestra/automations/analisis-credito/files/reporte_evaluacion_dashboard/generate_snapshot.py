@@ -6,7 +6,8 @@ import re
 import sys
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 from zoneinfo import ZoneInfo
@@ -14,13 +15,20 @@ from zoneinfo import ZoneInfo
 import requests
 import urllib3
 
+from reporte_evaluacion_report.analysis import (
+    compute_first_response_metrics, compute_transfer_metrics, is_analysis_excluded_solicitud, summarize_minutes,
+)
+from reporte_evaluacion_comisiones.calendar import national_holidays, CALENDAR_DESCRIPTION
+from reporte_evaluacion_comisiones.core import commission_rate, reference_average
+from reporte_evaluacion_comisiones.operational_calendar import confirmed_closure_dates
+
 try:
     from kestra import Kestra
 except ImportError:  # pragma: no cover - optional outside Kestra
     Kestra = None
 
 
-DEFAULT_BASE_URL = "https://celesol.dyndns.org:5050"
+DEFAULT_BASE_URL = "https://celesol.dyndns.org:5002"
 NOVEDAD_FIELDS = (
     "ID;Fecha;Texto;Creado.Descripcion;Solicitud.Oid;"
     "Solicitud.Socio.NroSocio;Solicitud.NroSocio;Solicitud.LineaPrestamo.Descripcion;"
@@ -76,14 +84,23 @@ class EvaluateApiClient:
         if not verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def evaluate_list(self, cmd: str, tipo: str, campos: str, max_rows: int) -> list[list[Any]]:
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        token = os.getenv("REPORTE_EVALUACION_BEARER_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def evaluate_list(
+        self, cmd: str, tipo: str, campos: str, max_rows: int
+    ) -> list[list[Any]]:
         response = self.session.request(
             method="POST",
             url=f"{self.base_url}/api/Empresa/EvaluateList",
             json={"cmd": cmd, "tipo": tipo, "campos": campos, "max": max_rows},
             timeout=self.timeout,
             verify=self.verify_ssl,
-            headers={"Content-Type": "application/json"},
+            headers=self._build_headers(),
         )
         response.raise_for_status()
         data = response.json()
@@ -122,7 +139,9 @@ def to_int(value: Optional[Any]) -> Optional[int]:
         return None
 
 
-def pick_nro_socio(solicitud_socio_nro: Optional[Any], solicitud_nro_socio: Optional[Any]) -> Optional[int]:
+def pick_nro_socio(
+    solicitud_socio_nro: Optional[Any], solicitud_nro_socio: Optional[Any]
+) -> Optional[int]:
     socio_nro = to_int(solicitud_socio_nro)
     legacy_nro = to_int(solicitud_nro_socio)
     if socio_nro is not None and socio_nro > 0:
@@ -135,7 +154,9 @@ def pick_nro_socio(solicitud_socio_nro: Optional[Any], solicitud_nro_socio: Opti
 def parse_created_description(created_description: Optional[str]) -> Optional[datetime]:
     if not created_description:
         return None
-    match = re.match(r"^\s*(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", created_description)
+    match = re.match(
+        r"^\s*(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})", created_description
+    )
     if not match:
         return None
     return datetime.strptime(match.group(1), "%d/%m/%y %H:%M:%S")
@@ -270,152 +291,69 @@ def fetch_full_history_for_solicitudes(
     return list(dedup.values())
 
 
-def business_seconds_between(start_dt: datetime, end_dt: datetime) -> float:
-    if end_dt <= start_dt:
-        return 0.0
-    work_start = time(8, 0, 0)
-    work_end = time(17, 0, 0)
-    total_seconds = 0.0
-    current_day = start_dt.date()
-    end_day = end_dt.date()
-    while current_day <= end_day:
-        if current_day.weekday() >= 5:
-            current_day += timedelta(days=1)
-            continue
-        day_start = datetime.combine(current_day, work_start)
-        day_end = datetime.combine(current_day, work_end)
-        interval_start = max(start_dt, day_start)
-        interval_end = min(end_dt, day_end)
-        if interval_end > interval_start:
-            total_seconds += (interval_end - interval_start).total_seconds()
-        current_day += timedelta(days=1)
-    return total_seconds
-
-
-def events_by_solicitud(events: Sequence[NovedadEvent]) -> dict[int, list[NovedadEvent]]:
+def metric_minutes(events: Sequence[NovedadEvent], metric: str, *, today: Optional[date] = None) -> list[float]:
     grouped: dict[int, list[NovedadEvent]] = {}
     for event in events:
         grouped.setdefault(event.solicitud_oid, []).append(event)
-    return grouped
+    grouped = {oid: items for oid, items in grouped.items() if not is_analysis_excluded_solicitud(items)}
+    years = [event.created_at.year for items in grouped.values() for event in items if event.created_at]
+    # Include intervening years for histories spanning a year boundary.
+    calendar = national_holidays(range(min(years), max(years) + 1)) if years else {}
+    exclusions = frozenset(calendar)
+    if metric == "first_response":
+        exclusions |= confirmed_closure_dates(today or datetime.now(LOCAL_TZ).date())
+    compute = compute_first_response_metrics if metric == "first_response" else compute_transfer_metrics
+    return [row["minutos"] for row in compute(grouped, excluded_dates=exclusions)]
 
 
-def sorted_state_events(items: Sequence[NovedadEvent]) -> list[NovedadEvent]:
-    events = [event for event in items if event.created_at is not None and event.parsed_state]
-    events.sort(key=lambda event: (event.created_at, event.event_id))
-    return events
-
-
-def compute_first_response_minutes(events: Sequence[NovedadEvent]) -> list[float]:
-    values: list[float] = []
-    for items in events_by_solicitud(events).values():
-        state_events = sorted_state_events(items)
-        first_rr_index = next(
-            (
-                index
-                for index, event in enumerate(state_events)
-                if normalize_text(event.parsed_state) == "revisionriesgo"
-            ),
-            None,
-        )
-        if first_rr_index is None:
-            continue
-        first_rr_event = state_events[first_rr_index]
-        if is_excluded_line(first_rr_event.linea_descripcion, FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS):
-            continue
-        response_event = next(
-            (
-                event
-                for event in state_events[first_rr_index + 1 :]
-                if normalize_text(event.parsed_state) != "revisionriesgo"
-            ),
-            None,
-        )
-        if response_event is None:
-            continue
-        values.append(business_seconds_between(first_rr_event.created_at, response_event.created_at) / 60.0)
-    return values
-
-
-def is_excluded_line(linea: Optional[str], keywords: Sequence[str]) -> bool:
-    normalized = normalize_text(linea)
-    return any(keyword in normalized for keyword in keywords)
+def compute_first_response_minutes(events: Sequence[NovedadEvent], *, today: Optional[date] = None) -> list[float]:
+    return metric_minutes(events, "first_response", today=today)
 
 
 def compute_transfer_minutes(events: Sequence[NovedadEvent]) -> list[float]:
-    values: list[float] = []
-    for items in events_by_solicitud(events).values():
-        with_datetime = [event for event in items if event.created_at is not None]
-        if not with_datetime:
-            continue
-        paid_currently = any(
-            normalize_text(event.solicitud_estado_descripcion) == TRANSFER_END_STATE
-            for event in items
-        )
-        if not paid_currently:
-            continue
-        linea = next((event.linea_descripcion for event in with_datetime if event.linea_descripcion), None)
-        if is_excluded_line(linea, TRANSFER_EXCLUDED_LINE_KEYWORDS):
-            continue
-        transfer_events = [
-            event for event in with_datetime if normalize_text(event.parsed_state) == TRANSFER_START_STATE
-        ]
-        paid_events = [
-            event for event in with_datetime if normalize_text(event.parsed_state) == TRANSFER_END_STATE
-        ]
-        if not transfer_events or not paid_events:
-            continue
-        last_paid = max(paid_events, key=lambda event: (event.created_at, event.event_id))
-        transfer_before_last_paid = [
-            event for event in transfer_events if event.created_at <= last_paid.created_at
-        ]
-        if not transfer_before_last_paid:
-            continue
-        transfer_for_measure = max(
-            transfer_before_last_paid,
-            key=lambda event: (event.created_at, event.event_id),
-        )
-        values.append(business_seconds_between(transfer_for_measure.created_at, last_paid.created_at) / 60.0)
-    return values
+    return metric_minutes(events, "transfer")
 
 
 def average(values: Sequence[float]) -> Optional[float]:
     if not values:
         return None
-    return sum(values) / len(values)
+    return summarize_minutes(values)["promedio_minutos"]
 
 
-def classify_state(actual: Optional[float], target: Optional[float], yellow_threshold_pct: float) -> str:
-    if actual is None or target is None or target <= 0:
+def classify_state(actual: Optional[float], target: Optional[float]) -> str:
+    if actual is None or target is None:
         return "neutral"
-    if actual <= target:
-        return "verde"
-    if actual <= target * (1 + yellow_threshold_pct / 100):
-        return "amarillo"
-    return "rojo"
+    rate = commission_rate(Decimal(str(actual)), Decimal(str(target)))
+    return {Decimal("0.005"): "verde", Decimal("0.003"): "amarillo", Decimal("0.001"): "rojo"}.get(rate, "neutral")
 
 
 def metric_payload(
-    *,
-    metric_id: str,
-    name: str,
-    current_values: Sequence[float],
-    target_values: Sequence[float],
-    yellow_threshold_pct: float,
+    *, metric_id: str, name: str, current_values: Sequence[float],
+    target_month_values: Sequence[Sequence[float]],
 ) -> dict[str, Any]:
-    actual = average(current_values)
-    target = average(target_values)
-    delta_pct = None
-    if actual is not None and target is not None and target > 0:
-        delta_pct = ((actual - target) / target) * 100
+    current = summarize_minutes(current_values)
+    monthly = [summarize_minutes(values) for values in target_month_values]
     return {
-        "id": metric_id,
-        "nombre": name,
-        "actual_min": actual,
-        "objetivo_min": target,
-        "delta_pct": delta_pct,
+        "id": metric_id, "nombre": name,
+        **statistic_payload(current, monthly, "promedio_minutos"),
+        "mediana": statistic_payload(current, monthly, "mediana_minutos"),
         "casos": len(current_values),
-        "casos_objetivo": len(target_values),
-        "estado": classify_state(actual, target, yellow_threshold_pct),
+        "casos_objetivo": sum(len(values) for values in target_month_values),
+    }
+
+
+def statistic_payload(
+    current: dict[str, Optional[float]], monthly_summaries: Sequence[dict[str, Optional[float]]],
+    statistic: str,
+) -> dict[str, Any]:
+    actual = current[statistic]
+    monthly = [summary[statistic] for summary in monthly_summaries]
+    reference = reference_average(monthly)
+    target = float(reference) if reference is not None else None
+    delta_pct = ((actual - target) / target) * 100 if actual is not None and target is not None and target > 0 else None
+    return {
+        "actual_min": actual, "objetivo_min": target, "delta_pct": delta_pct,
+        "estado": classify_state(actual, reference),
     }
 
 
@@ -461,7 +399,9 @@ def fetch_history_by_month(
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(path.suffix + ".tmp")
-    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     temp_path.replace(path)
 
 
@@ -500,51 +440,51 @@ def build_snapshot() -> tuple[Path, dict[str, Any], list[str]]:
     )
 
     current_history = history_by_month[run_month]
-    target_history = [
-        event
-        for month_value in target_months
-        for event in history_by_month.get(month_value, [])
-    ]
-
-    yellow_threshold_pct = float(env("OBJECTIVES_YELLOW_THRESHOLD_PCT", "15"))
     snapshot = {
         "ok": True,
         "periodo_actual": run_month,
         "periodo_objetivo": {
             "meses": target_months,
-            "descripcion": "Promedio ponderado por caso de los ultimos 3 meses cerrados",
+            "descripcion": "Media simple de cada estadistica mensual (promedio o mediana) de los ultimos 3 meses cerrados",
         },
         "actualizado_en": now.isoformat(),
         "reglas": {
+            "calendario": CALENDAR_DESCRIPTION,
+            "cierres_primera_respuesta": sorted(day.isoformat() for day in confirmed_closure_dates(now.date())),
             "primera_respuesta": "desde primera RevisionRiesgo hasta primer cambio de estado posterior, solo horario laboral lunes a viernes 08:00-17:00",
             "transferencia": "ultimo Pagada y A Transferir inmediatamente anterior, solo horario laboral lunes a viernes 08:00-17:00",
-            "lineas_excluidas_primera_respuesta": list(FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS),
+            "lineas_excluidas_primera_respuesta": list(
+                FIRST_RESPONSE_EXCLUDED_LINE_KEYWORDS
+            ),
             "lineas_excluidas_transferencia": list(TRANSFER_EXCLUDED_LINE_KEYWORDS),
         },
         "thresholds": {
             "verde": "actual <= objetivo",
-            "amarillo": f"actual <= objetivo + {yellow_threshold_pct:g}%",
-            "rojo": f"actual > objetivo + {yellow_threshold_pct:g}%",
+            "amarillo": "objetivo < actual <= objetivo + 10%",
+            "rojo": "actual > objetivo + 10%",
         },
         "metricas": [
             metric_payload(
                 metric_id="first_response",
                 name="Tiempo de Primera Respuesta",
-                current_values=compute_first_response_minutes(current_history),
-                target_values=compute_first_response_minutes(target_history),
-                yellow_threshold_pct=yellow_threshold_pct,
+                current_values=compute_first_response_minutes(current_history, today=now.date()),
+                target_month_values=[compute_first_response_minutes(history_by_month[m], today=now.date()) for m in target_months],
             ),
             metric_payload(
                 metric_id="transfer",
                 name="Tiempo de Transferencia",
                 current_values=compute_transfer_minutes(current_history),
-                target_values=compute_transfer_minutes(target_history),
-                yellow_threshold_pct=yellow_threshold_pct,
+                target_month_values=[compute_transfer_minutes(history_by_month[m]) for m in target_months],
             ),
         ],
     }
 
-    output_path = Path(env("OBJECTIVES_DASHBOARD_SNAPSHOT_PATH", "/data/reporte-evaluacion/dashboard/latest.json"))
+    output_path = Path(
+        env(
+            "OBJECTIVES_DASHBOARD_SNAPSHOT_PATH",
+            "/data/reporte-evaluacion/dashboard/latest.json",
+        )
+    )
     return output_path, snapshot, warnings
 
 
@@ -599,9 +539,7 @@ def _append_warning(warnings: list[str], message: str) -> None:
 
 
 def _log_event(event: str, **fields: Any) -> None:
-    sys.stdout.write(
-        json.dumps({"event": event, **fields}, ensure_ascii=True) + "\n"
-    )
+    sys.stdout.write(json.dumps({"event": event, **fields}, ensure_ascii=True) + "\n")
 
 
 if __name__ == "__main__":

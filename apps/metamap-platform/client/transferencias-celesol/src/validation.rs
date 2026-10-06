@@ -4,6 +4,10 @@ use crate::models::{
     CoinagTransferGuard, CoreSnapshot, MetamapSnapshot, TransferAmountOutcome, ValidationReport,
     ValidationSnapshot,
 };
+use crate::{
+    cancellations,
+    warnings::{ValidationWarning, WarningKind},
+};
 
 pub fn normalize_digits(value: impl AsRef<str>) -> Option<String> {
     let digits: String = value
@@ -67,6 +71,21 @@ pub fn format_money(value: Decimal) -> String {
     format!("{prefix} {},{}", groups.join("."), &decimal_part[..2])
 }
 
+fn has_third_party_destination(core: &CoreSnapshot) -> bool {
+    let needs_destination = !cancellations::is_candidate(core)
+        || core
+            .cash_in_hand_amount
+            .is_some_and(|amount| !amount.is_zero());
+    needs_destination
+        && matches!(
+            (
+                core.request_cuil.as_deref().and_then(normalize_digits),
+                core.coinag_cuil.as_deref().and_then(normalize_digits),
+            ),
+            (Some(request), Some(holder)) if request != holder
+        )
+}
+
 pub fn build_validation_report(
     server_validation: &ValidationSnapshot,
     metamap: &MetamapSnapshot,
@@ -76,6 +95,7 @@ pub fn build_validation_report(
     let mut blockers = Vec::new();
     let mut warnings = Vec::new();
     let has_metamap_validation = server_validation.has_completed_validation();
+    let is_cancellation = cancellations::is_candidate(core);
     let transfer_amount_resolution = core.transfer_amount_resolution();
 
     match transfer_guard {
@@ -86,14 +106,17 @@ pub fn build_validation_report(
     }
 
     if !has_metamap_validation {
-        warnings.push("No existe validacion MetaMap completed asociada en el server.".to_owned());
+        warnings.push(ValidationWarning::new(
+            WarningKind::MissingMetamap,
+            "No existe validacion MetaMap completed asociada en el server.",
+        ));
     }
 
     if has_metamap_validation && server_validation.match_count > 1 {
-        warnings.push(format!(
+        warnings.push(ValidationWarning::new(WarningKind::MultipleMetamapValidations, format!(
             "El server devolvio {} validaciones completed para esta solicitud; se usa la mas reciente.",
             server_validation.match_count
-        ));
+        )));
     }
 
     if has_metamap_validation {
@@ -120,20 +143,29 @@ pub fn build_validation_report(
             .push("No se pudo obtener Estado.Descripcion desde el core financiero.".to_owned()),
     }
 
-    if core.transfer_cbu.is_none() {
+    if core.transfer_cbu.is_none()
+        && (!is_cancellation
+            || core
+                .cash_in_hand_amount
+                .is_some_and(|amount| !amount.is_zero()))
+    {
         blockers.push("No existe Prestamo.[CBU transferencia] en el core financiero.".to_owned());
     }
 
-    match transfer_amount_resolution.outcome {
-        TransferAmountOutcome::Exact => {}
-        TransferAmountOutcome::Renovacion => {
-            if let Some(detail) = transfer_amount_resolution.detail {
-                warnings.push(detail);
+    if is_cancellation {
+        blockers.extend(cancellations::build_plan(core).blockers);
+    } else {
+        match transfer_amount_resolution.outcome {
+            TransferAmountOutcome::Exact => {}
+            TransferAmountOutcome::Renovacion => {
+                if let Some(detail) = transfer_amount_resolution.detail {
+                    warnings.push(ValidationWarning::new(WarningKind::Renewal, detail));
+                }
             }
-        }
-        TransferAmountOutcome::Error => {
-            if let Some(detail) = transfer_amount_resolution.detail {
-                blockers.push(detail);
+            TransferAmountOutcome::Error => {
+                if let Some(detail) = transfer_amount_resolution.detail {
+                    blockers.push(detail);
+                }
             }
         }
     }
@@ -193,8 +225,27 @@ pub fn build_validation_report(
     if request_cuil.is_none() {
         blockers.push("No se pudo obtener CUIL/CUIT del core por solicitud.".to_owned());
     }
-    if coinag_cuil.is_none() {
+    let needs_member_destination = !is_cancellation
+        || core
+            .cash_in_hand_amount
+            .is_some_and(|amount| !amount.is_zero());
+    if needs_member_destination && coinag_cuil.as_ref().is_none_or(|cuit| cuit.len() != 11) {
         blockers.push("No se pudo validar titularidad del CBU en Coinag via CUIL.".to_owned());
+    }
+    if needs_member_destination && core.transfer_cbu.is_some() {
+        match core.coinag_account_type_is_pesos_transfer_compatible() {
+            Some(true) => {}
+            Some(false) => {
+                let account_type = core
+                    .coinag_account_type_display()
+                    .unwrap_or_else(|| "N/D".to_owned());
+                blockers.push(format!(
+                    "Tipo de cuenta Coinag no compatible con transferencia en pesos: {account_type}."
+                ));
+            }
+            None => blockers
+                .push("No se pudo validar moneda/tipo de cuenta del CBU en Coinag.".to_owned()),
+        }
     }
 
     if let (Some(document_cuil), Some(request_cuil)) = (&document_cuil, &request_cuil) {
@@ -205,12 +256,12 @@ pub fn build_validation_report(
         }
     }
 
-    if let (Some(request_cuil), Some(coinag_cuil)) = (&request_cuil, &coinag_cuil) {
-        if request_cuil != coinag_cuil {
-            blockers.push(format!(
-                "Titularidad Coinag inconsistente: solicitud {request_cuil}, Coinag {coinag_cuil}."
-            ));
-        }
+    if has_third_party_destination(core) {
+        warnings.push(ValidationWarning::new(WarningKind::ThirdPartyDestination, format!(
+            "El CBU pertenece a un tercero: solicitante {}, titular de la cuenta {}. Transferencia automatica bloqueada; requiere confirmacion manual.",
+            request_cuil.as_deref().unwrap_or_default(),
+            coinag_cuil.as_deref().unwrap_or_default(),
+        )));
     }
 
     ValidationReport {
@@ -238,6 +289,8 @@ mod tests {
             document_cuil: Some("20-30111222-3".to_owned()),
             transfer_cbu: Some("2850590940090418135201".to_owned()),
             coinag_cuil: Some("20-30111222-3".to_owned()),
+            coinag_account_type_code: Some("10".to_owned()),
+            coinag_account_type_label: Some("CA Pesos".to_owned()),
             ..Default::default()
         }
     }
@@ -249,6 +302,81 @@ mod tests {
             request_number: Some("123".to_owned()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn third_party_owner_warns_but_does_not_remove_other_blockers() {
+        let mut core = valid_core_snapshot();
+        core.coinag_cuil = Some("27-33444555-6".to_owned());
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(super::has_third_party_destination(&core));
+        assert!(report.can_transfer());
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("tercero")
+                    && warning.kind == crate::warnings::WarningKind::ThirdPartyDestination)
+        );
+        core.document_cuil = Some("20-99888777-1".to_owned());
+        let blocked = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(!blocked.can_transfer());
+        assert!(
+            blocked
+                .blockers
+                .iter()
+                .any(|reason| reason.contains("lookup por DNI"))
+        );
+    }
+
+    #[test]
+    fn unavailable_owner_still_blocks_and_names_do_not_override_cuit_identity() {
+        let mut core = valid_core_snapshot();
+        core.coinag_holder_name = Some("Nombre con otra ortografia".to_owned());
+        assert!(!super::has_third_party_destination(&core));
+        core.coinag_cuil = Some("0".to_owned());
+        let invalid_owner = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(!invalid_owner.can_transfer());
+        core.coinag_cuil = None;
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+        assert!(!report.can_transfer());
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|reason| reason.contains("titularidad"))
+        );
+    }
+
+    #[test]
+    fn creditors_alone_do_not_trigger_member_third_party_override() {
+        let mut core = valid_core_snapshot();
+        core.cancellation_amount = Some(Decimal::new(1000, 0));
+        core.cash_in_hand_amount = Some(Decimal::ZERO);
+        core.coinag_cuil = Some("27-33444555-6".to_owned());
+        assert!(!super::has_third_party_destination(&core));
+        core.cash_in_hand_amount = Some(Decimal::new(-100, 0));
+        assert!(super::has_third_party_destination(&core));
     }
 
     #[test]
@@ -264,7 +392,7 @@ mod tests {
         assert_eq!(report.warnings.len(), 1);
         assert!(report.can_transfer());
         assert_eq!(
-            report.warnings[0],
+            report.warnings[0].message,
             "No existe validacion MetaMap completed asociada en el server."
         );
     }
@@ -295,6 +423,28 @@ mod tests {
                 .blockers
                 .iter()
                 .any(|value| value.contains("Prestamo.[CBU transferencia]"))
+        );
+        assert!(!report.can_transfer());
+    }
+
+    #[test]
+    fn dollar_account_type_blocks_transfer() {
+        let mut core = valid_core_snapshot();
+        core.coinag_account_type_code = Some("11".to_owned());
+        core.coinag_account_type_label = Some("CA Dolares".to_owned());
+
+        let report = build_validation_report(
+            &ValidationSnapshot::default(),
+            &MetamapSnapshot::default(),
+            &core,
+            &CoinagTransferGuard::NotFound,
+        );
+
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|value| value.contains("11 - CA Dolares"))
         );
         assert!(!report.can_transfer());
     }
@@ -391,7 +541,7 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|value| value.contains("Se detecto renovacion"))
+                .any(|value| value.message.contains("Se detecto renovacion"))
         );
         assert!(report.can_transfer());
     }
