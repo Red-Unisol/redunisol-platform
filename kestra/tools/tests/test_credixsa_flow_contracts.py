@@ -309,6 +309,17 @@ class AlertFlowWiringTests(unittest.TestCase):
 
 
 class CredixsaFlowContractsTests(unittest.TestCase):
+    def test_employer_backfill_guards_skipped_task_results(self):
+        flow = yaml.safe_load((ROOT / "kestra/automations/marketing-crm/flows/bitrix24_credixsa_employer_backfill.yaml").read_text(encoding="utf-8"))
+        tasks = {task["id"]: task for task in flow["tasks"]}
+        # Kestra 2 publishes a skipped task without its vars/subflow outputs.
+        for expression in tasks["actualizar_bitrix"]["env"].values():
+            if "outputs.consultar_credixsa" in expression:
+                self.assertIn("outputs.consultar_credixsa.outputs is defined", expression)
+        for output in flow["outputs"]:
+            if "outputs.actualizar_bitrix" in output["value"]:
+                self.assertIn("outputs.actualizar_bitrix.vars is defined", output["value"])
+
     def test_prefill_batch_is_serialized_and_children_are_bounded(self):
         root = ROOT / "kestra/automations/marketing-crm/flows"
         parent = yaml.safe_load((root / "bitrix24_lead_prefill.yaml").read_text())

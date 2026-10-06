@@ -90,14 +90,14 @@ tasks:
     env:
       LEAD_ID: "{{ outputs.seleccionar_lead.vars.lead_id }}"
       BACKFILL_DRY_RUN: "{{ inputs.dry_run ?? false }}"
-      CREDIX_OK: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
-      CREDIX_STATUS: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
-      CREDIX_CUIT: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
-      CREDIX_NOMBRE: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
-      CREDIX_NORMALIZED_JSON: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
-      CREDIX_ERROR: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
-      CREDIX_CACHE_HIT: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
-      CREDIX_CACHED_AT: "{{ (outputs.consultar_credixsa is defined) ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
+      CREDIX_OK: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.ok ?? false) : false }}"
+      CREDIX_STATUS: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.status ?? '') : '' }}"
+      CREDIX_CUIT: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.cuit ?? '') : '' }}"
+      CREDIX_NOMBRE: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.nombre ?? '') : '' }}"
+      CREDIX_NORMALIZED_JSON: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.normalized_json ?? '') : '' }}"
+      CREDIX_ERROR: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.error ?? '') : '' }}"
+      CREDIX_CACHE_HIT: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.cache_hit ?? false) : false }}"
+      CREDIX_CACHED_AT: "{{ (outputs.consultar_credixsa.outputs is defined) ? (outputs.consultar_credixsa.outputs.cached_at ?? '') : '' }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
       BITRIX24_CONTACT_CUIL_FIELD: "{{ envs.bitrix24_contact_cuil_field }}"
@@ -118,10 +118,10 @@ tasks:
 outputs:
   - id: ok
     type: BOOL
-    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.ok : outputs.seleccionar_lead.vars.ok }}"
+    value: "{{ outputs.actualizar_bitrix.vars is defined ? outputs.actualizar_bitrix.vars.ok : outputs.seleccionar_lead.vars.ok }}"
   - id: action
     type: STRING
-    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.action : outputs.seleccionar_lead.vars.action }}"
+    value: "{{ outputs.actualizar_bitrix.vars is defined ? outputs.actualizar_bitrix.vars.action : outputs.seleccionar_lead.vars.action }}"
   - id: has_pending
     type: BOOL
     value: "{{ outputs.seleccionar_lead.vars.has_pending }}"
@@ -133,10 +133,10 @@ outputs:
     value: "{{ outputs.seleccionar_lead.vars.cuil }}"
   - id: credixsa_status
     type: STRING
-    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.status : '' }}"
+    value: "{{ outputs.actualizar_bitrix.vars is defined ? outputs.actualizar_bitrix.vars.status : '' }}"
   - id: dry_run
     type: BOOL
-    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.dry_run : (inputs.dry_run ?? false) }}"
+    value: "{{ outputs.actualizar_bitrix.vars is defined ? outputs.actualizar_bitrix.vars.dry_run : (inputs.dry_run ?? false) }}"
   - id: checked_count
     type: STRING
     value: "{{ outputs.seleccionar_lead.vars.checked_count }}"
@@ -151,7 +151,7 @@ outputs:
     value: "{{ outputs.seleccionar_lead.vars.skipped_temporary_error_count }}"
   - id: message
     type: STRING
-    value: "{{ outputs.actualizar_bitrix is defined ? outputs.actualizar_bitrix.vars.message : outputs.seleccionar_lead.vars.message }}"
+    value: "{{ outputs.actualizar_bitrix.vars is defined ? outputs.actualizar_bitrix.vars.message : outputs.seleccionar_lead.vars.message }}"
 
 triggers:
   - id: cada_minuto
