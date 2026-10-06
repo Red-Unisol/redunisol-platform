@@ -67,13 +67,16 @@ No activa la API ni modifica el runtime env. Incorporar luego el UUID y el hash
 del token a la configuración cifrada Git-managed, y desplegar ambos juntos.
 
 Checkpoint 2026-10-06: identidad técnica creada en producción mediante el componente
-de usuarios, con las condiciones anteriores verificadas. Se registró su UUID en
-el archivo local de accesos; no se generó un token ni se activó la API. El estado
-actual debe comprobarse ejecutando la consulta antes de configurar la integración.
+de usuarios, con las condiciones anteriores verificadas. El UUID y un token generado
+con 256 bits aleatorios se registraron localmente fuera de Git. La configuración
+cifrada `web/solicitudes-web/deploy/solicitudes-web.prod.env.enc` incorpora el hash
+SHA-256 y el UUID juntos; su despliegue habilita la API en producción. El token
+original no se incluye en el repositorio. El estado actual del usuario debe
+comprobarse antes de desplegar la configuración.
 
 Aplicar las migraciones antes de arrancar la versión nueva. Los ejemplos y
-Compose dejan ambas variables vacías; este cambio no crea usuarios ni activa
-credenciales en ningún ambiente.
+Compose dejan ambas variables vacías por defecto; desarrollo conserva la API
+deshabilitada. El alta del usuario es una operación separada del despliegue.
 
 ## Identidades y datos financieros
 
