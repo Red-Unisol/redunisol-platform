@@ -116,6 +116,8 @@ export type PaymentLeg = {
   cbu: string;
   cuit: string;
   name: string;
+  // A decimal string, never derived from the UUID or linked loan ID.
+  bankNumber?: string;
 };
 export type PaymentPlan = {
   source: "BEEX";
@@ -129,6 +131,7 @@ export type PaymentPlan = {
   bank: "CMF" | "COINAG";
   requiresRenewalReview: boolean;
   verification: { requestNumber: string; document: string; required: boolean };
+  member: { cuit: string; name: string };
   payments: PaymentLeg[];
   version: string;
 };
@@ -259,6 +262,10 @@ export function buildPlan(
       requestNumber: source.legacyOid,
       document,
       required: source.firmaDigitalmente,
+    },
+    member: {
+      cuit: memberCuit,
+      name: [source.titular.apellidoDenominacion, source.titular.nombre].filter(Boolean).join(" "),
     },
     payments,
   };

@@ -59,6 +59,7 @@ test("member plan distinguishes UUID, loan ID and financial line ID", () => {
   assert.equal(plan.payments[0]?.amount, "1000.01");
   assert.equal(plan.verification.requestNumber, "101");
   assert.equal(plan.verification.required, true);
+  assert.equal(plan.member.cuit, memberCuit);
   assert.equal(plan.version, buildPlan(source, loan, new Map()).version);
 });
 
