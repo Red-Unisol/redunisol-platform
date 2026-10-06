@@ -40,11 +40,12 @@ Importante:
 
 ### `deploy-dev.yml`
 
-Corre en push a `main` y tambien manualmente.
+Corre en push a `dev` y tambien manualmente desde `dev`.
 
 Comportamiento:
 
 - detecta cambios por dominio con filtros de paths
+- compara cada push con el estado anterior de `dev`, incluyendo cambios incorporados desde `main`
 - despliega a `kestra-dev` solo los dominios afectados
 - tambien puede ejecutarse manualmente para un dominio o para todos
 
