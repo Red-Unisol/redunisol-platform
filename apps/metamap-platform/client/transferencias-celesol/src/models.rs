@@ -42,6 +42,7 @@ pub struct ValidationSnapshot {
 
 #[derive(Clone, Debug, Default)]
 pub struct CoreSnapshot {
+    pub beex: Option<crate::beex_client::BeexPlan>,
     pub request_oid: String,
     pub request_name: Option<String>,
     pub credit_line_id: Option<u64>,
@@ -327,6 +328,23 @@ impl HydratedCase {
 }
 
 impl CoreSnapshot {
+    pub fn verification_request_number(&self) -> &str {
+        self.beex
+            .as_ref()
+            .map(|p| p.verification.request_number.as_str())
+            .unwrap_or(&self.request_oid)
+    }
+    pub fn request_display(&self) -> String {
+        self.beex
+            .as_ref()
+            .map(|p| {
+                format!(
+                    "Beex {}",
+                    p.nro_solicitud.as_deref().unwrap_or(&p.solicitud_id)
+                )
+            })
+            .unwrap_or_else(|| self.request_oid.clone())
+    }
     pub fn coinag_account_type_display(&self) -> Option<String> {
         match (
             self.coinag_account_type_code.as_deref(),

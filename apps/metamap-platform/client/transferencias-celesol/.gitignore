@@ -1,4 +1,5 @@
 target/
+beex-state/
 dist/
 package-input/
 receipts/

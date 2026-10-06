@@ -3,6 +3,8 @@ pub const BUILD_TAG: &str = env!("CARGO_PKG_VERSION");
 pub const APP_NAME_WITH_TAG: &str = concat!("Transferencias Celesol ", env!("CARGO_PKG_VERSION"));
 
 pub mod app;
+pub mod beex_client;
+pub mod beex_recovery;
 pub mod cancellations;
 pub mod coinag_client;
 pub mod completed_log;

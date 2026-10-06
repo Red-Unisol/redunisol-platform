@@ -98,6 +98,14 @@ pub fn build_validation_report(
     let is_cancellation = cancellations::is_candidate(core);
     let transfer_amount_resolution = core.transfer_amount_resolution();
 
+    // Beex remains manual-only during its initial rollout, regardless of line mode.
+    if core.beex.is_some() {
+        warnings.push(ValidationWarning::new(
+            WarningKind::BeexManualReview,
+            "Solicitud Beex: por el momento requiere revision y confirmacion manual. Las transferencias automaticas estan deshabilitadas para Beex.",
+        ));
+    }
+
     match transfer_guard {
         CoinagTransferGuard::Unknown | CoinagTransferGuard::NotFound => {}
         CoinagTransferGuard::YaTransferida => blockers.push("YA TRANSFERIDA".to_owned()),
@@ -172,7 +180,7 @@ pub fn build_validation_report(
 
     if has_metamap_validation {
         if let Some(validation_request_number) = server_validation.request_number.as_deref() {
-            if validation_request_number.trim() != core.request_oid.trim() {
+            if validation_request_number.trim() != core.verification_request_number().trim() {
                 blockers.push(format!(
                     "La validacion del server corresponde a la solicitud {}, no a {}.",
                     validation_request_number.trim(),
@@ -182,7 +190,7 @@ pub fn build_validation_report(
         }
 
         if let Some(metamap_request_number) = metamap.request_number.as_deref() {
-            if metamap_request_number.trim() != core.request_oid.trim() {
+            if metamap_request_number.trim() != core.verification_request_number().trim() {
                 blockers.push(format!(
                     "Numero de solicitud inconsistente entre MetaMap ({}) y core ({}).",
                     metamap_request_number.trim(),
@@ -301,6 +309,52 @@ mod tests {
             normalized_status: Some("completed".to_owned()),
             request_number: Some("123".to_owned()),
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn beex_always_warns_even_with_completed_validation_and_no_other_warnings() {
+        let member_plan = crate::beex_client::test_support::plan();
+        let mut creditor_only_plan = member_plan.clone();
+        creditor_only_plan.payments[0].kind = "creditor".to_owned();
+        creditor_only_plan.payments[0].payment_key = format!("creditor:{}", uuid::Uuid::new_v4());
+        creditor_only_plan.payments[0].cuit = "30712345671".to_owned();
+
+        for plan in [member_plan, creditor_only_plan] {
+            let mut core = plan.core().unwrap();
+            core.document_cuil = core.request_cuil.clone();
+            core.coinag_cuil = core.request_cuil.clone();
+            core.coinag_account_type_code = Some("10".to_owned());
+            for creditor in &mut core.cancellation_payments {
+                creditor.account_type_code = Some("10".to_owned());
+            }
+            let server = ValidationSnapshot {
+                request_number: Some(plan.prestamo_legacy_id.clone()),
+                ..completed_validation()
+            };
+            let metamap = MetamapSnapshot {
+                document: core.request_document.clone(),
+                request_number: server.request_number.clone(),
+                amount: core.request_amount,
+                ..Default::default()
+            };
+            let report =
+                build_validation_report(&server, &metamap, &core, &CoinagTransferGuard::NotFound);
+            assert!(report.can_transfer(), "{:?}", report.blockers);
+            assert_eq!(report.warnings.len(), 1);
+            assert_eq!(
+                report.warnings[0].kind,
+                crate::warnings::WarningKind::BeexManualReview
+            );
+            assert!(!report.can_transfer_automatically());
+            assert!(report.confirmation_policy().required_words().is_empty());
+
+            // The same valid data keeps legacy eligible for automatic transfers.
+            core.request_oid = plan.prestamo_legacy_id;
+            core.beex = None;
+            let legacy =
+                build_validation_report(&server, &metamap, &core, &CoinagTransferGuard::NotFound);
+            assert!(legacy.can_transfer_automatically(), "{legacy:?}");
         }
     }
 

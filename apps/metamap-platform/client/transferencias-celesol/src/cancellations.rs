@@ -6,6 +6,7 @@ use crate::{models::CoreSnapshot, validation::normalize_digits};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CancellationPayment {
+    pub payment_key: Option<String>,
     pub id: u64,
     pub amount_raw: Option<String>,
     pub amount: Option<Decimal>,
@@ -135,7 +136,10 @@ pub fn build_plan(core: &CoreSnapshot) -> CancellationPlan {
         }
         if let (Some(cbu), Some(cuit)) = (cbu, cuit) {
             plan.legs.push(TransferLeg {
-                key: format!("creditor:{}", payment.id),
+                key: payment
+                    .payment_key
+                    .clone()
+                    .unwrap_or_else(|| format!("creditor:{}", payment.id)),
                 kind: TransferLegKind::Creditor,
                 amount,
                 cbu,

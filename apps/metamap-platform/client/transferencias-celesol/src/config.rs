@@ -11,6 +11,7 @@ use crate::secure_config;
 
 #[derive(Clone)]
 pub struct AppConfig {
+    pub beex: BeexConfig,
     pub server: ServerConfig,
     pub core: CoreConfig,
     pub mark_paid: MarkPaidConfig,
@@ -24,6 +25,42 @@ pub struct AppConfig {
     pub credit_lines_path: PathBuf,
     pub creditor_whitelist_path: PathBuf,
     pub trace_outbox_path: PathBuf,
+}
+
+#[derive(Clone, Default)]
+pub struct BeexConfig {
+    pub base_url: String,
+    pub token: String,
+    pub state_dir: PathBuf,
+}
+
+impl BeexConfig {
+    pub fn enabled(&self) -> bool {
+        !self.base_url.is_empty() && !self.token.is_empty()
+    }
+    pub fn validate(&self) -> Result<()> {
+        if self.base_url.is_empty() && self.token.is_empty() {
+            return Ok(());
+        }
+        let url = url::Url::parse(&self.base_url).context("URL de Beex invalida.")?;
+        if url.scheme() != "https"
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(anyhow!(
+                "Beex requiere una URL HTTPS sin credenciales, query ni fragmento."
+            ));
+        }
+        if !(32..=512).contains(&self.token.len()) || self.token.chars().any(char::is_whitespace) {
+            return Err(anyhow!(
+                "Beex requiere TRANSFERENCIAS_BEEX_API_TOKEN valido junto con la URL."
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -257,7 +294,18 @@ impl AppConfig {
             .or_else(|| optional_value(values, "COMPUTERNAME"))
             .unwrap_or_else(|| "operador_desconocido".to_owned());
 
+        let beex = BeexConfig {
+            base_url: optional_value(values, "TRANSFERENCIAS_BEEX_BASE_URL").unwrap_or_default(),
+            token: optional_value(values, "TRANSFERENCIAS_BEEX_API_TOKEN").unwrap_or_default(),
+            state_dir: resolve_path(
+                base_dir,
+                optional_value(values, "TRANSFERENCIAS_BEEX_STATE_DIR").as_deref(),
+                "beex-state",
+            ),
+        };
+        beex.validate()?;
         Ok(Self {
+            beex,
             server: ServerConfig {
                 base_url: required_value(values, "TRANSFERENCIAS_SERVER_BASE_URL")?,
                 client_id: required_value(values, "TRANSFERENCIAS_SERVER_CLIENT_ID")?,
@@ -582,6 +630,29 @@ fn parse_u64_value(values: &ConfigValues, name: &str, default: u64) -> Result<u6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn beex_is_optional_but_partial_configuration_and_insecure_urls_fail() {
+        let mut config = BeexConfig::default();
+        assert!(!config.enabled());
+        assert!(config.validate().is_ok());
+        config.token = "synthetic-test-token-123456789012345".to_owned();
+        assert!(config.validate().is_err());
+        for url in [
+            "http://beex.example",
+            "https://user@beex.example",
+            "https://beex.example?token=x",
+            "https://beex.example#x",
+        ] {
+            config.base_url = url.to_owned();
+            assert!(config.validate().is_err());
+        }
+        config.base_url = "https://beex.example".to_owned();
+        assert!(config.validate().is_ok());
+        assert!(config.enabled());
+        config.token.clear();
+        assert!(config.validate().is_err());
+    }
 
     fn config_values(entries: &[(&str, &str)]) -> ConfigValues {
         entries
