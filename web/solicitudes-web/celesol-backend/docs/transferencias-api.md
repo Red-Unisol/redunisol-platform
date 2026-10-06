@@ -58,9 +58,24 @@ credenciales en ningún ambiente.
   configuración bancaria usando este namespace explícito.
 - `id` del desembolso: UUID persistente de la operación reservada.
 - `paymentKey`: `member` o `creditor:<UUID de cancelación BEEX>`.
+- `bankNumber`: número secuencial global por solicitud/pago, serializado como
+  string decimal. Lo asigna PostgreSQL al consultar el plan y permanece igual
+  entre instalaciones, consultas concurrentes y reintentos. No es `nroSolicitud`
+  ni el ID del préstamo. Puede haber huecos; no se recicla y la secuencia no cicla.
+  La nueva migración debe aplicarse antes de usar el cliente compatible con Beex.
 - `bankTransactionId`: ID que el cliente genera con el formato admitido por el
   banco y guarda en BEEX **antes de enviar**. Único, inmutable y nunca reciclado.
 - `bankOperationId`: referencia bancaria confirmada; no puede usarse en dos pagos.
+
+El plan incluye `member: {cuit, name}` aunque el neto al socio sea cero, para
+validar el titular contra el lookup por DNI sin inferirlo de una pata acreedora.
+
+El cliente conserva los IDs de Vimarx. Para Beex usa `ID_EMPRESA` + ocho dígitos
+altos de `bankNumber` + `3` + cinco dígitos bajos + `9`. El sufijo tiene 15
+dígitos: el `3` separa las patas legacy (tipos `1`/`2`) y el `9` lo separa del
+pago legacy normal (terminado en `0`). La misma empresa y el mismo número
+producen siempre el mismo ID. Los desembolsos reservados con formatos anteriores
+conservan sus IDs; no se reemplazan automáticamente.
 
 El plan lee el préstamo por ID, restringido al socio vinculado al CUIT del
 titular BEEX. Consulta los campos `LineaPrestamo.ID`, `[CBU transferencia]`,

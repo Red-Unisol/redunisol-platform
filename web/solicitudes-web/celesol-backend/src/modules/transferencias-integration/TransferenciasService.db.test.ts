@@ -108,7 +108,7 @@ test(
       },
     };
     let counter = 0;
-    async function fixture() {
+    async function sourceFixture() {
       const source = await db.solicitud.create({
         data: {
           legacyOid: `${Date.now()}${counter++}`,
@@ -130,6 +130,10 @@ test(
           },
         },
       });
+      return source;
+    }
+    async function fixture() {
+      const source = await sourceFixture();
       const service = new TransferenciasService(deps);
       const plan = await service.plan(source.id);
       const input = {
@@ -144,6 +148,23 @@ test(
       };
       return { source, service, plan, input };
     }
+    await t.test("bank numbers are durable, unique, concurrent and immutable", async () => {
+      const source = await sourceFixture();
+      const service = new TransferenciasService(deps);
+      // Race the first allocation, not just reads of an existing mapping.
+      const concurrent = await Promise.all(Array.from({ length: 8 }, () => service.plan(source.id)));
+      const plan = concurrent[0]!;
+      const number = plan.payments[0]!.bankNumber!;
+      assert.match(number, /^[1-9]\d{0,12}$/);
+      assert(concurrent.every((p) => p.payments[0]!.bankNumber === number && p.version === plan.version));
+      assert.equal(await db.transferenciaIdentificador.count({ where: { solicitudId: source.id } }), 1);
+      const next = await fixture();
+      assert(BigInt(next.plan.payments[0]!.bankNumber!) > BigInt(number));
+      await assert.rejects(db.transferenciaIdentificador.updateMany({
+        where: { solicitudId: source.id }, data: { paymentKey: "changed" },
+      }));
+      await assert.rejects(db.transferenciaIdentificador.deleteMany({ where: { solicitudId: source.id } }));
+    });
     const evidence = (
       plan: PaymentPlan,
       bankTransactionId: string,

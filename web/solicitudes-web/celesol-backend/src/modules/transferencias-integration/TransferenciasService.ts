@@ -157,8 +157,26 @@ export class TransferenciasService {
       );
       creditors.set(cancellation.id, creditor.cuit);
     }
+    const built = buildPlan(source, loan, creditors);
+    // Concurrent readers allocate once. Gaps are intentional; never recycle IDs.
+    await this.deps.db.transferenciaIdentificador.createMany({
+      data: built.payments.map((p) => ({ solicitudId: id, paymentKey: p.paymentKey })),
+      skipDuplicates: true,
+    });
+    const identifiers = await this.deps.db.transferenciaIdentificador.findMany({
+      where: { solicitudId: id },
+    });
+    const { version, ...base } = built;
+    void version;
+    const numbered = {
+      ...base,
+      payments: built.payments.map((p) => ({
+        ...p,
+        bankNumber: identifiers.find((row) => row.paymentKey === p.paymentKey)!.numero.toString(),
+      })),
+    };
     return {
-      plan: buildPlan(source, loan, creditors),
+      plan: { ...numbered, version: digest(numbered) },
       sourceVersion: digest(source),
     };
   }
