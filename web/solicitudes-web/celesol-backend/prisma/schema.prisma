@@ -175,6 +175,7 @@ model Solicitud {
   credixsaInforme          SolicitudCredixsaInforme?
   estadoHistorial          SolicitudEstadoHistorial[]
   participants             SolicitudParticipant[]
+  desembolso               TransferenciaDesembolso?
 
   @@index([estadoActualId])
   @@index([createdBy])
@@ -399,6 +400,7 @@ model SolicitudAdjunto {
   deleteReason     String?   @map("delete_reason")
   solicitud        Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
   uploadedByUser   User?     @relation("SolicitudAdjuntoUploadedByUser", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  desembolso       TransferenciaDesembolso?
   deletedByUser    User?     @relation("SolicitudAdjuntoDeletedByUser", fields: [deletedBy], references: [id], onDelete: SetNull)
 
   @@index([solicitudId])
@@ -527,4 +529,42 @@ model PasswordResetToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_tokens")
+}
+
+model TransferenciaDesembolso {
+  id               String              @id @default(uuid()) @db.Uuid
+  solicitudId      String              @unique @map("solicitud_id") @db.Uuid
+  prestamoLegacyId String              @unique @map("prestamo_legacy_id")
+  idempotencyKey   String              @unique @map("idempotency_key")
+  reservationHash  String              @map("reservation_hash")
+  planVersion      String              @map("plan_version")
+  plan             Json
+  clientId         String              @map("client_id")
+  installationId   String              @map("installation_id")
+  operator         String
+  verificationId   String?             @map("verification_id")
+  receiptSha256    String?             @map("receipt_sha256")
+  receiptAdjuntoId String?             @unique @map("receipt_adjunto_id") @db.Uuid
+  receiptAdjunto   SolicitudAdjunto?    @relation(fields: [receiptAdjuntoId], references: [id], onDelete: Restrict)
+  completedAt      DateTime?           @map("completed_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  solicitud        Solicitud           @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
+  pagos            TransferenciaPago[]
+
+  @@map("transferencia_desembolsos")
+}
+
+model TransferenciaPago {
+  id                String                  @id @default(uuid()) @db.Uuid
+  desembolsoId      String                  @map("desembolso_id") @db.Uuid
+  paymentKey        String                  @map("payment_key")
+  bankTransactionId String                  @unique @map("bank_transaction_id")
+  bankOperationId   String?                 @unique @map("bank_operation_id")
+  confirmedPayload  Json?                   @map("confirmed_payload")
+  confirmedAt       DateTime?               @map("confirmed_at")
+  desembolso        TransferenciaDesembolso @relation(fields: [desembolsoId], references: [id], onDelete: Restrict)
+
+  @@unique([desembolsoId, paymentKey])
+  @@map("transferencia_pagos")
 }

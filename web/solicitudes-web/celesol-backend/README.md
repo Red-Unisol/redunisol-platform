@@ -2,6 +2,12 @@
 
 Backend service for the Celesol loan management system.
 
+## Integración con Transferencias
+
+El contrato de la API, reservas, comprobantes y recuperación está en
+[docs/transferencias-api.md](docs/transferencias-api.md).
+La integración está deshabilitada por defecto y requiere una identidad de servicio.
+
 ## Tech Stack
 
 - Node.js 22+

@@ -8,6 +8,16 @@ type HttpError = Error & {
 };
 
 export const errorHandler: ErrorRequestHandler = (error: HttpError, _req, res, _next) => {
+  // A reservation freezes financial inputs and its receipt, including writes
+  // from the regular UI. The database enforces this across concurrent requests.
+  if (error.message.includes("BEEX_TRANSFERENCIAS_LOCKED")) {
+    res.status(409).json({ error: {
+      code: "TRANSFERENCIAS_LOCKED",
+      message: "Los datos quedaron fijados por un desembolso. Revisar la operación en Transferencias.",
+      statusCode: 409,
+    } });
+    return;
+  }
   const statusCode = error.statusCode ?? error.status ?? 500;
   const message =
     statusCode === 500
