@@ -238,6 +238,16 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
         icon: <CircleCheckBig className="size-5" />,
         duration: 3500,
       });
+
+      // Una vez creada, la solicitud se sigue trabajando en su detalle. Si se
+      // quedaba en esta pantalla, un segundo "Guardar" volvia a ejecutar el
+      // alta y creaba otra solicitud igual, sin los adjuntos de la primera.
+      navigate(
+        `/solicitudes/core/detalle/${createdSolicitud.id}?${new URLSearchParams(
+          { origen: "precarga" },
+        ).toString()}`,
+        { replace: true },
+      );
     } catch (error) {
       const message =
         error instanceof ApiError || error instanceof Error
