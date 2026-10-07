@@ -7,6 +7,63 @@ if (!API_BASE_URL) {
   throw new Error("Falta definir VITE_API_BASE_URL en el entorno.");
 }
 
+// En estas rutas un 401 no es "se vencio el token de acceso" (credenciales o
+// clave actual incorrectas, o la propia renovacion): no se renueva ni reintenta.
+const PATHS_SIN_RENOVACION = new Set([
+  "/auth/login",
+  "/auth/refresh",
+  "/auth/logout",
+  "/auth/register",
+  "/auth/verify-email",
+  "/auth/resend-verification-code",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+  "/auth/me/change-password",
+]);
+
+// El backend rota el refresh token en cada uso: dos renovaciones simultaneas
+// harian fallar a la segunda. Todas las llamadas que reciban 401 a la vez
+// comparten esta misma promesa.
+let renovacionEnCurso: Promise<boolean> | null = null;
+
+function renovarSesion(): Promise<boolean> {
+  if (!renovacionEnCurso) {
+    renovacionEnCurso = fetch(new URL("/auth/refresh", API_BASE_URL), {
+      credentials: "include",
+      method: "POST",
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        renovacionEnCurso = null;
+      });
+  }
+
+  return renovacionEnCurso;
+}
+
+/**
+ * fetch contra la API con la sesion del usuario. Si el token de acceso
+ * (15 minutos) se vencio, lo renueva con el refresh token y reintenta una vez.
+ */
+export async function fetchConSesion(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const target = new URL(url, API_BASE_URL);
+  const response = await fetch(target, { ...init, credentials: "include" });
+
+  if (response.status !== 401 || PATHS_SIN_RENOVACION.has(target.pathname)) {
+    return response;
+  }
+
+  const renovada = await renovarSesion();
+
+  return renovada
+    ? fetch(target, { ...init, credentials: "include" })
+    : response;
+}
+
 function resolveErrorDetails(responseText: string): {
   code?: string;
   message: string;
@@ -190,9 +247,8 @@ async function request<TResponse>(
 
   try {
     const hasBody = body !== undefined;
-    const response = await fetch(new URL(url, API_BASE_URL), {
+    const response = await fetchConSesion(url, {
       body: hasBody ? JSON.stringify(body) : undefined,
-      credentials: "include",
       headers: hasBody
         ? {
             "Content-Type": "application/json",
