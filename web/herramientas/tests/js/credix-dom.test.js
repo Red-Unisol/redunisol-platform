@@ -62,7 +62,7 @@ for (const source of ['BCRA', 'CredixSA']) {
             assert.deepEqual([...panel.querySelectorAll('th')].map((el) => el.textContent),
                 ['Entidad', 'Periodo', 'Monto', 'Situacion']);
             assert.equal([...app.document.querySelectorAll('.credix-report__sectionHeader .credix-risk')]
-                .filter((el) => el.textContent === `Fuente: ${source}`).length, 3);
+                .filter((el) => el.textContent === `Fuente: ${source}`).length, 4);
             assert.doesNotMatch(app.document.body.textContent, /Consultando BCRA/);
             const result = app.document.querySelector('.credix-page__result');
             assert.ok(result.nextElementSibling.classList.contains('padrones-results'));
@@ -82,8 +82,8 @@ test('DOM: situación cero de BCRA conserva el valor y el monto con color neutro
     report.normalized_json = JSON.stringify(normalized);
     const app = mount(async () => response(report));
     try {
-        await until(() => app.document.querySelector('.credix-bcra-history__status'));
-        const cell = app.document.querySelector('.credix-bcra-history__status');
+        await until(() => app.document.querySelector('.credix-bcra-history__table .credix-bcra-history__status'));
+        const cell = app.document.querySelector('.credix-bcra-history__table .credix-bcra-history__status');
         assert.equal(cell.textContent, '0');
         assert.ok(cell.classList.contains('credix-bcra-history__status--na'));
         const amount = app.document.querySelector('.credix-bcra-evolution__cell');
@@ -124,5 +124,61 @@ test('DOM: cache anterior sin fuente sigue siendo CredixSA y no dispara consulta
         assert.match(app.document.querySelector('[aria-label="Deudas vigentes"]').textContent, /Fuente: CredixSA/);
         await pause();
         assert.deepEqual(requests, ['/credix']);
+    } finally { app.dom.window.close(); }
+});
+
+for (const source of ['BCRA', 'CredixSA']) {
+    test(`DOM: resumen ${source} conserva el último período por entidad y deja las antiguas en el historial`, async () => {
+        const requests = [];
+        const report = credix();
+        const normalized = JSON.parse(report.normalized_json);
+        normalized.persona.nombre_completo = 'Persona de prueba';
+        normalized.bcra = { fuente: source, deudas_vigentes: [],
+            deudas_24_meses: { anios: [{ anio: '2026', span: 4 }], meses: ['Ago', 'Jul', 'Jun', 'May'],
+                filas: [
+                    { entidad: 'Entidad agosto', situaciones: ['1', '-', '-', '-'] },
+                    { entidad: 'Entidad julio', situaciones: ['-', '4', '-', '-'] },
+                    { entidad: 'Entidad junio', situaciones: ['-', '-', '0', '-'] },
+                    { entidad: 'Entidad mayo', situaciones: ['-', '-', '-', '5'] },
+                ] },
+        };
+        report.normalized_json = JSON.stringify(normalized);
+        const app = mount(async (url) => { requests.push(url); return response(report); });
+        try {
+            await until(() => app.document.querySelector('[aria-label="Últimas situaciones por entidad"]'));
+            const panel = app.document.querySelector('[aria-label="Últimas situaciones por entidad"]');
+            assert.deepEqual([...panel.querySelectorAll('thead th')].map((el) => el.textContent),
+                ['Denominación del deudor', 'Entidad', 'Período', 'Situación']);
+            const rows = [...panel.querySelectorAll('tbody tr')].map((row) =>
+                [...row.children].map((cell) => cell.textContent));
+            assert.deepEqual(rows, [
+                ['Persona de prueba', 'Entidad agosto', '08/2026', '1'],
+                ['Persona de prueba', 'Entidad julio', '07/2026', '4'],
+                ['Persona de prueba', 'Entidad junio', '06/2026', '0'],
+            ]);
+            assert.ok(panel.textContent.includes(`Fuente: ${source}`));
+            assert.match(panel.textContent, /06\/2026 y 08\/2026/);
+            assert.match(panel.textContent, /1 entidad tiene información/);
+            assert.ok(panel.querySelector('tbody tr:last-child td:last-child').classList.contains('credix-bcra-history__status--na'));
+            assert.match(app.document.querySelector('.credix-bcra-history__table').textContent, /Entidad mayo/);
+            assert.ok(panel.nextElementSibling.querySelector('.credix-bcra-history__table'));
+            assert.deepEqual(requests, ['/credix']);
+            assert.deepEqual(app.errors, []);
+        } finally { app.dom.window.close(); }
+    });
+}
+
+test('DOM: el resumen explica la ausencia de situaciones sin presentar una tabla vacía', async () => {
+    const report = credix();
+    const normalized = JSON.parse(report.normalized_json);
+    normalized.bcra = { fuente: 'BCRA', deudas_vigentes: [], deuda_vigente_total: '$ 0' };
+    report.normalized_json = JSON.stringify(normalized);
+    const app = mount(async () => response(report));
+    try {
+        await until(() => app.document.querySelector('[aria-label="Últimas situaciones por entidad"]'));
+        const panel = app.document.querySelector('[aria-label="Últimas situaciones por entidad"]');
+        assert.match(panel.textContent, /No hay situaciones informadas/);
+        assert.equal(panel.querySelector('table'), null);
+        assert.doesNotMatch(panel.textContent, /null|undefined/);
     } finally { app.dom.window.close(); }
 });
