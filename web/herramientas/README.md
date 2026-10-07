@@ -173,6 +173,22 @@ muestra el historial de situaciones de 24 meses y luego las deudas vigentes y su
 Contrato oficial: [Manual de Central de Deudores BCRA](https://www.bcra.gob.ar/archivos/Catalogo/Content/files/pdf/central-deudores-v1.pdf).
 Relacion funcional: tarea Bitrix **22961**, extendida con consulta directa y respaldo.
 
+## Últimas situaciones BCRA por entidad (tarea 23223)
+
+Antes del historial de 24 meses, `/credixsa` muestra un resumen con denominación
+del deudor, entidad, período y situación. Selecciona el último dato disponible
+de **cada entidad**, aunque las entidades informen en meses distintos. Incluye
+períodos hasta **2 meses detrás del período más reciente del informe**, inclusive:
+si el informe llega a agosto, admite agosto, julio y junio. El corte usa meses
+calendario y funciona al cambiar de año; no depende de la fecha de consulta.
+
+El resumen reutiliza las deudas vigentes y el historial del informe preparado,
+conservando la fuente BCRA o el respaldo CredixSA. No dispara otra consulta ni
+modifica el cache, los totales o las reglas comerciales. Conserva la situación
+`0` literalmente. Los valores ausentes o N/D no se convierten en situación 1.
+Las entidades cuyo último dato supera la tolerancia quedan fuera del resumen;
+se informa su cantidad y sus registros siguen disponibles en el historial.
+
 ## Dashboard de objetivos
 
 La pantalla interna de objetivos vive en:

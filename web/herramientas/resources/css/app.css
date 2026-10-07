@@ -1756,3 +1756,16 @@ input {
         max-height: 94vh;
     }
 }
+
+.credix-bcra-latest__table {
+    min-width: 620px;
+}
+
+.credix-bcra-latest__table tbody th[scope='row'] {
+    background: transparent;
+    color: var(--navy);
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
