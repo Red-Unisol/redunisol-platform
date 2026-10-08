@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareCredixBcra, latestBcraSituations } from '../../resources/js/credix-bcra.js';
+import { prepareCredixBcra, latestBcraSituations, bcraSituation, formatBcraSituation } from '../../resources/js/credix-bcra.js';
 
 test('CredixSA: incluye todas las entidades de una situación agrupada y excluye situación 1', () => {
     const report = { deudas_vigentes: [
@@ -33,9 +33,35 @@ test('el informe precalentado conserva la fuente BCRA, los ceros y sus totales',
     assert.deepEqual(prepareCredixBcra(report), report);
 });
 
+test('situación desconocida no es normal ni un subtotal de riesgo completo, incluso en cache BCRA anterior', () => {
+    for (const value of [0, '0', null, 'N/D', '']) {
+        const report = { fuente: 'BCRA', deuda_vigente_total: '$ 500', deuda_situacion_negativa_total: '$ 0',
+            deudas_vigentes: [{ entidad: 'Banco', situacion: value, monto: '$ 500' }] };
+        const original = JSON.stringify(report);
+        const prepared = prepareCredixBcra(report);
+        assert.equal(prepared.deuda_situacion_negativa_total, null);
+        assert.equal(prepared.deuda_vigente_total, '$ 500');
+        assert.equal(prepared.deudas_vigentes[0].situacion, value);
+        assert.equal(JSON.stringify(report), original);
+    }
+    assert.equal(prepareCredixBcra({ deudas_vigentes: [{ situacion: '0', monto: '$ 500' }] })
+        .deuda_situacion_negativa_total, null);
+});
+
+test('solo las situaciones 1..6 son calificaciones; los valores ausentes o inválidos se muestran N/D', () => {
+    for (const value of [0, '0', ' 0 ', null, undefined, '', '-', 'N/D', 7, -1, 1.5]) {
+        assert.equal(bcraSituation(value), null);
+        assert.equal(formatBcraSituation(value), 'N/D');
+    }
+    for (let value = 1; value <= 6; value++) {
+        assert.equal(bcraSituation(value), String(value));
+        assert.equal(formatBcraSituation(` ${value} `), String(value));
+    }
+});
+
 const snapshot = (fuente = 'BCRA') => ({
     fuente,
-    deudas_vigentes: [{ entidad: 'Banco Agosto', periodo: '08/2026', situacion: '1', monto: '$ 100' }],
+    deudas_vigentes: [],
     deudas_24_meses: { anios: [{ anio: '2026', span: 4 }], meses: ['Ago', 'Jul', 'Jun', 'May'], filas: [
         { entidad: 'Banco Agosto', situaciones: ['1', '2', '3', '-'] },
         { entidad: 'Banco Julio', situaciones: ['N/D', '4', '1', '-'] },
@@ -45,7 +71,7 @@ const snapshot = (fuente = 'BCRA') => ({
 });
 
 for (const source of ['BCRA', 'CredixSA']) {
-    test(`${source}: último período individual, tolerancia inclusiva de dos meses y situación cero`, () => {
+    test(`${source}: último período válido individual y tolerancia inclusiva de dos meses`, () => {
         const input = snapshot(source);
         const original = JSON.stringify(input);
         const result = latestBcraSituations(input);
@@ -54,9 +80,8 @@ for (const source of ['BCRA', 'CredixSA']) {
         assert.deepEqual(result.filas, [
             { entidad: 'Banco Agosto', situacion: '1', periodo: '08/2026' },
             { entidad: 'Banco Julio', situacion: '4', periodo: '07/2026' },
-            { entidad: 'Banco Junio', situacion: '0', periodo: '06/2026' },
         ]);
-        assert.equal(result.entidades_fuera_de_ventana, 1);
+        assert.equal(result.entidades_fuera_de_ventana, 2);
         assert.equal(JSON.stringify(input), original);
     });
 }
@@ -84,7 +109,34 @@ test('usa el período más nuevo aunque las filas estén desordenadas y no dupli
         { periodo: '07/2026', celdas: [{ entidad: 'Banco Córdoba', situacion: '4' }] },
         { periodo: '08/2026', celdas: [{ entidad: 'BANCO CORDOBA', situacion: '0' }] },
     ] } });
-    assert.deepEqual(result.filas, [{ entidad: 'BANCO CORDOBA', situacion: '0', periodo: '08/2026' }]);
+    assert.deepEqual(result.filas, [{ entidad: 'Banco Córdoba', situacion: '4', periodo: '07/2026' }]);
+});
+
+for (const source of ['BCRA', 'CredixSA']) {
+    test(`${source}: caso Ariel, el cero reciente no desplaza a Celesol ni agrega Banco Nación`, () => {
+        const report = { fuente: source, deudas_vigentes: [
+            { entidad: 'Celesol', periodo: '07/2026', situacion: '1' },
+            { entidad: 'Videgar', periodo: '08/2026', situacion: '5' },
+        ], deudas_24_meses: { anios: [{ anio: '2026', span: 4 }], meses: ['Ago', 'Jul', 'Jun', 'May'], filas: [
+            { entidad: 'Celesol', situaciones: ['0', '1', '1', '1'] },
+            { entidad: 'Banco Nación', situaciones: [0, '1', '1', '1'] },
+            { entidad: 'Videgar', situaciones: ['5', '5', '5', '5'] },
+        ] } };
+        const original = JSON.stringify(report);
+        assert.deepEqual(latestBcraSituations(report).filas, [
+            { entidad: 'Celesol', periodo: '07/2026', situacion: '1' },
+            { entidad: 'Videgar', periodo: '08/2026', situacion: '5' },
+        ]);
+        assert.equal(latestBcraSituations(report).entidades_fuera_de_ventana, 0);
+        assert.equal(JSON.stringify(report), original);
+    });
+}
+
+test('un informe vigente sin deudas no rescata entidades del historial ni convierte ausencia en situación 1', () => {
+    const report = snapshot();
+    report.deuda_vigente_total = '$ 0';
+    assert.deepEqual(latestBcraSituations(report).filas, []);
+    assert.equal(report.deudas_24_meses.filas[0].situaciones[0], '1');
 });
 
 test('admite snapshots anteriores con solo vigentes o solo evolución, sin fabricar situaciones', () => {
