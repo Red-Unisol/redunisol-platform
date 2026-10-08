@@ -28,6 +28,7 @@ import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
 import { canViewPrestamosDelSocio,
   canAccessRiesgoTools,
   canCreateSocio,
+  isVendedor,
 } from "@/modules/auth/utils/auth-user";
 import { AdjuntoPreviewModal } from "@/modules/solicitudes-editor/components/AdjuntoPreviewModal";
 import {
@@ -1285,6 +1286,7 @@ function SolicitudSection({
   isEditing,
   isExecutiveAssignmentDisabled,
   lineas,
+  mostrarEjecutivo,
   onAssignmentChange,
   onBooleanChange,
   onChange,
@@ -1300,6 +1302,8 @@ function SolicitudSection({
   isEditing: boolean;
   lineas: LineaPrestamoPresolicitud[];
   isExecutiveAssignmentDisabled: boolean;
+  /** El vendedor no ve quien analiza su solicitud: se oculta solo a Vendedores. */
+  mostrarEjecutivo: boolean;
   onAssignmentChange: (value: string) => void;
   onBooleanChange: (
     field: keyof EditableSolicitudCoreValues["solicitud"],
@@ -1400,20 +1404,22 @@ function SolicitudSection({
           readOnlyValue={formatText(solicitud.motivo)}
           value={values.motivo}
         />
-        <EditableField
-          editor={
-            <StyledSelect
-              disabled={isExecutiveAssignmentDisabled}
-              onChange={onAssignmentChange}
-              options={assignmentOptions}
-              placeholder="Seleccionar ejecutivo"
-              value={assignmentValue}
-            />
-          }
-          isEditing={isEditing}
-          label="Ejecutivo solicitud"
-          value={assignmentValueLabel}
-        />
+        {mostrarEjecutivo ? (
+          <EditableField
+            editor={
+              <StyledSelect
+                disabled={isExecutiveAssignmentDisabled}
+                onChange={onAssignmentChange}
+                options={assignmentOptions}
+                placeholder="Seleccionar ejecutivo"
+                value={assignmentValue}
+              />
+            }
+            isEditing={isEditing}
+            label="Ejecutivo solicitud"
+            value={assignmentValueLabel}
+          />
+        ) : null}
         <EditableTextInput
           {...getReadonlyProps("solicitud.vendedorSolicitud")}
           disabled={!isFieldEditableByKey("solicitud.vendedorSolicitud")}
@@ -4100,6 +4106,7 @@ export function SolicitudesActualDetallePage() {
             isFieldEditableByKey={isSolicitudFieldEditable}
             isEditing={isEditing}
             isExecutiveAssignmentDisabled={!canManageAssignment}
+            mostrarEjecutivo={!isVendedor(currentUser)}
             lineas={lineasSimulador}
             onAssignmentChange={setSelectedAssignmentValue}
             onBooleanChange={updateSolicitudBooleanField}
