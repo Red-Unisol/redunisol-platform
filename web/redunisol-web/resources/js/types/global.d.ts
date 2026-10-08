@@ -7,7 +7,7 @@ export {};
 
 declare global {
     interface Window {
-        dataLayer: DataLayerEvent[];
+        dataLayer: (DataLayerEvent | IArguments)[];
         gtag?: (...args: unknown[]) => void;
         fbq?: (...args: unknown[]) => void;
     }
