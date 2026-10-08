@@ -91,13 +91,13 @@ def _periods(status: int, payload: object, cuit: str) -> dict:
     return dict(sorted(periods.items(), reverse=True))
 
 
-def consult_bcra(cuit: str, *, attempts: list | None = None) -> dict | None:
+def consult_bcra(cuit: str, *, attempts: list | None = None, max_attempts: int = MAX_ATTEMPTS) -> dict | None:
     if not re.fullmatch(r"\d{11}", cuit):
         return None
     paths = {"current": cuit, "history": "Historicas/" + cuit}
     reports = {}
     attempts = attempts if attempts is not None else []
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(max_attempts):
         with ThreadPoolExecutor(max_workers=2) as pool:
             pending = {key: pool.submit(_fetch, path) for key, path in paths.items() if key not in reports}
             for key, future in pending.items():
@@ -124,9 +124,9 @@ def consult_bcra(cuit: str, *, attempts: list | None = None) -> dict | None:
                 logger.log(level, "BCRA attempt: %s", json.dumps(outcome, sort_keys=True))
         if len(reports) == 2:
             return _normalize(reports["current"], reports["history"])
-        if attempt + 1 < MAX_ATTEMPTS:
+        if attempt + 1 < max_attempts:
             time.sleep(RETRY_PAUSE_SECONDS)
-    logger.warning("BCRA report incomplete after 3 attempts; caching CredixSA fallback.")
+    logger.warning("BCRA report incomplete after %s attempts; retaining CredixSA fallback.", max_attempts)
     return None
 
 
