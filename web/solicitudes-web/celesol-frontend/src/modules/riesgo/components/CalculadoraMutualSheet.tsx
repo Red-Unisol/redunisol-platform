@@ -466,7 +466,14 @@ export function CalculadoraMutualSheet({
 
           {puedeGuardar ? (
             <Button
-              disabled={isLoading || isHydrating || isSaving || !!errorMessage}
+              // Apagado (naranja al 50%) hasta que haya algo para guardar.
+              disabled={
+                !hayCambios ||
+                isLoading ||
+                isHydrating ||
+                isSaving ||
+                !!errorMessage
+              }
               onClick={() => void guardar()}
               size="sm"
             >
