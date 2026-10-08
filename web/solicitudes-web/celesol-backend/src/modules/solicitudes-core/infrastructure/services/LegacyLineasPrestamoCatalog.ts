@@ -19,9 +19,21 @@ export class LegacyLineasPrestamoCatalog implements LineasPrestamoCatalog {
     }
 
     return {
+      cantidadMaximaCuotas: matched.cantidadMaximaCuotas,
+      cantidadMinimaCuotas: matched.cantidadMinimaCuotas,
       descripcion: matched.descripcion,
       legacyOid: matched.oid,
+      montoMaximo: matched.montoMaximo,
+      montoMinimo: matched.montoMinimo,
       vigente: matched.vigente,
     };
+  }
+
+  async listVigentesByLegacyUser(legacyUser: string) {
+    const lineas = await this.solicitudesLegacyGateway.getLineasPrestamoByLegacyUser(
+      legacyUser,
+    );
+
+    return lineas.filter((linea) => linea.vigente !== false);
   }
 }

@@ -23,6 +23,7 @@ type EditableSolicitudSectionValues = {
   firmaDigitalmente: boolean;
   fechaPrimerVencimiento: string;
   cupoTitular: string;
+  lineaPrestamoLegacyOid: string;
   montoAFinanciar: string;
   motivo: string;
   nroOperacion: string;
@@ -605,6 +606,9 @@ export function mapSolicitudCoreToEditableValues(
       firmaDigitalmente: solicitud.firmaDigitalmente,
       fechaPrimerVencimiento: toEditableDate(solicitud.fechaPrimerVencimiento),
       cupoTitular: formatMoneyAmount(solicitud.cupoTitular),
+      lineaPrestamoLegacyOid: toEditableString(
+        solicitud.lineaPrestamoLegacyOid,
+      ),
       montoAFinanciar: formatMoneyAmount(solicitud.montoAFinanciar),
       motivo: toEditableString(solicitud.motivo),
       nroOperacion: toEditableString(solicitud.nroOperacion),
@@ -727,6 +731,15 @@ export function mapEditableValuesToPatchSolicitudCoreRequest(
   );
   if (observaciones !== undefined) {
     solicitudPatch.observaciones = observaciones;
+  }
+
+  // La linea no se puede vaciar: solo viaja si se eligio otra.
+  const lineaPrestamoLegacyOid = values.solicitud.lineaPrestamoLegacyOid.trim();
+  if (
+    lineaPrestamoLegacyOid &&
+    lineaPrestamoLegacyOid !== solicitud.lineaPrestamoLegacyOid
+  ) {
+    solicitudPatch.lineaPrestamoLegacyOid = lineaPrestamoLegacyOid;
   }
 
   const vendedorSolicitud = toOptionalStringPatch(

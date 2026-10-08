@@ -493,6 +493,26 @@ export class SolicitudesCorePrismaDatasource {
     return owner?.code ?? null;
   }
 
+  async findVendedorLegacyUser(solicitudId: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      where: { id: solicitudId },
+      select: {
+        creator: { select: { legacyUser: true } },
+        vendedor: { select: { legacyUser: true } },
+      },
+    });
+
+    if (!solicitud) {
+      return null;
+    }
+
+    return (
+      solicitud.vendedor?.legacyUser.trim() ||
+      solicitud.creator.legacyUser.trim() ||
+      null
+    );
+  }
+
   async listUsersByWorkflowOwnerId(workflowOwnerId?: string) {
     const users = await this.prisma.user.findMany({
       where: {

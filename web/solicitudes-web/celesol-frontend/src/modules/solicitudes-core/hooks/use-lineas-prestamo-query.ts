@@ -1,12 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getLineasPrestamoByAgente } from "@/modules/solicitudes/services/solicitudes-api";
+import { getSolicitudCoreLineasPrestamo } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 
-export function useLineasPrestamoQuery() {
+// Lineas que se le pueden asignar a la solicitud (las del agente de su
+// vendedor). Las usan el cambio de linea y el simulador del detalle.
+export function useLineasPrestamoQuery(solicitudId: string) {
   return useQuery({
-    queryFn: getLineasPrestamoByAgente,
-    queryKey: solicitudesCoreQueryKeys.lineasPrestamo,
+    enabled: Boolean(solicitudId),
+    queryFn: () => getSolicitudCoreLineasPrestamo(solicitudId),
+    queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId),
     staleTime: Infinity,
   });
 }

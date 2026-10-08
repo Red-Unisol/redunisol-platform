@@ -1,15 +1,19 @@
 import type { UpdateSolicitudInput } from "../dtos/UpdateSolicitud.dto";
 import {
   ForbiddenSolicitudAccessError,
-  LegacyLineaPrestamoUnavailableError,
+  LineaPrestamoNoDisponibleParaSolicitudError,
   SolicitudCoreNotFoundError,
+  SolicitudFueraDeLimitesDeLineaError,
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type {
   SolicitudesCoreRepository,
   UpdateSolicitudCorePatch,
 } from "../../domain/repositories/SolicitudesCoreRepository";
-import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
+import type {
+  LegacyLineaPrestamo,
+  LineasPrestamoCatalog,
+} from "../../domain/services/LineasPrestamoCatalog";
 import {
   assertPatchMatchesFieldAccess,
   buildSolicitudFieldAccess,
@@ -70,16 +74,37 @@ export class UpdateSolicitudUseCase {
           input.solicitud.fechaPrimerVencimiento;
       }
 
-      if (input.solicitud.lineaPrestamoLegacyOid) {
+      if (
+        input.solicitud.lineaPrestamoLegacyOid &&
+        input.solicitud.lineaPrestamoLegacyOid !==
+          solicitud.lineaPrestamoLegacyOid
+      ) {
+        // Las lineas posibles son las del agente del vendedor de la
+        // solicitud, no las de quien la edita: RIESGO no tiene que mezclar
+        // convenios.
+        const vendedorLegacyUser =
+          (await this.repository.findVendedorLegacyUser?.(solicitud.id)) ??
+          input.createdByLegacyUser;
         const lineaPrestamo =
           await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
-            input.createdByLegacyUser,
+            vendedorLegacyUser,
             input.solicitud.lineaPrestamoLegacyOid,
           );
 
         if (!lineaPrestamo || !lineaPrestamo.vigente) {
-          throw new LegacyLineaPrestamoUnavailableError();
+          throw new LineaPrestamoNoDisponibleParaSolicitudError();
         }
+
+        assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, {
+          cuotas:
+            input.solicitud.cuotas !== undefined
+              ? input.solicitud.cuotas
+              : solicitud.cuotas,
+          montoAFinanciar:
+            input.solicitud.montoAFinanciar !== undefined
+              ? input.solicitud.montoAFinanciar
+              : solicitud.montoAFinanciar,
+        });
 
         patch.solicitud.lineaPrestamoDescripcion = lineaPrestamo.descripcion;
         patch.solicitud.lineaPrestamoLegacyOid = lineaPrestamo.legacyOid;
@@ -181,4 +206,47 @@ export class UpdateSolicitudUseCase {
     cambios.cuotaResultante = simulacion.cuotaResultante;
     cambios.fechaPrimerVencimiento = simulacion.fechaPrimerVencimiento;
   }
+}
+
+/**
+ * Al cambiar la linea, las cuotas y el monto que ya tenia la solicitud tienen
+ * que entrar en los limites de la nueva. Mismos mensajes que el formulario.
+ */
+function assertSolicitudDentroDeLimitesDeLinea(
+  linea: LegacyLineaPrestamo,
+  valores: { cuotas: number | null; montoAFinanciar: number | null },
+) {
+  const { cuotas, montoAFinanciar } = valores;
+  const minCuotas = linea.cantidadMinimaCuotas ?? null;
+  const maxCuotas = linea.cantidadMaximaCuotas ?? null;
+  const minMonto = linea.montoMinimo ?? null;
+  const maxMonto = linea.montoMaximo ?? null;
+
+  if (cuotas !== null && minCuotas !== null && cuotas < minCuotas) {
+    throw new SolicitudFueraDeLimitesDeLineaError(
+      `La línea requiere al menos ${minCuotas} cuotas.`,
+    );
+  }
+
+  if (cuotas !== null && maxCuotas !== null && cuotas > maxCuotas) {
+    throw new SolicitudFueraDeLimitesDeLineaError(
+      `La línea permite hasta ${maxCuotas} cuotas.`,
+    );
+  }
+
+  if (montoAFinanciar !== null && minMonto && montoAFinanciar < minMonto) {
+    throw new SolicitudFueraDeLimitesDeLineaError(
+      `La línea requiere financiar al menos ${formatMonto(minMonto)}.`,
+    );
+  }
+
+  if (montoAFinanciar !== null && maxMonto && montoAFinanciar > maxMonto) {
+    throw new SolicitudFueraDeLimitesDeLineaError(
+      `La línea permite financiar hasta ${formatMonto(maxMonto)}.`,
+    );
+  }
+}
+
+function formatMonto(value: number) {
+  return `$${value.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
 }

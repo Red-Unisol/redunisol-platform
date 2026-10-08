@@ -26,6 +26,7 @@ import { SolicitudCancelacionRepositoryImpl } from "./cancelaciones/infrastructu
 import { SolicitudCancelacionesController } from "./cancelaciones/presentation/SolicitudCancelacionesController";
 import { ChangeSolicitudStateUseCase } from "./application/use-cases/ChangeSolicitudState.use-case";
 import { CreatePrestamoLegacyUseCase } from "./application/use-cases/CreatePrestamoLegacy.use-case";
+import { ListLineasPrestamoDeSolicitudUseCase } from "./application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
@@ -234,6 +235,11 @@ export function createSolicitudesCoreRouter(
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
   });
+  const listLineasPrestamoDeSolicitudUseCase =
+    new ListLineasPrestamoDeSolicitudUseCase({
+      lineasPrestamoCatalog,
+      repository: solicitudesCoreRepository,
+    });
   const listPrestamosDelSocioUseCase = new ListPrestamosDelSocioUseCase({
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
@@ -350,6 +356,7 @@ export function createSolicitudesCoreRouter(
   const solicitudesCoreController = new SolicitudesCoreController({
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
+    listLineasPrestamoDeSolicitudUseCase,
     listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,

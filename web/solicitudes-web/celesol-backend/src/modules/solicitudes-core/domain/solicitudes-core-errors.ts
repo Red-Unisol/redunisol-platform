@@ -355,3 +355,21 @@ export class WorkflowTransitionVersionConflictError extends SolicitudesError {
     this.name = "WorkflowTransitionVersionConflictError";
   }
 }
+
+export class LineaPrestamoNoDisponibleParaSolicitudError extends SolicitudesError {
+  constructor() {
+    super(
+      "La línea elegida no está disponible para el convenio de esta solicitud.",
+      422,
+    );
+    this.name = "LineaPrestamoNoDisponibleParaSolicitudError";
+  }
+}
+
+// El mensaje dice que ajustar: lo ve el analista al cambiar la linea.
+export class SolicitudFueraDeLimitesDeLineaError extends SolicitudesError {
+  constructor(message: string) {
+    super(message, 422);
+    this.name = "SolicitudFueraDeLimitesDeLineaError";
+  }
+}

@@ -17,6 +17,7 @@ import type { ListAssignableSolicitudAgentsUseCase } from "../application/use-ca
 import type { ListSolicitudHistoryUseCase } from "../application/use-cases/ListSolicitudHistory.use-case";
 import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/ListSolicitudTransitions.use-case";
 import { GetCredixsaSolicitudUseCase } from "../application/use-cases/GetCredixsaSolicitud.use-case";
+import { ListLineasPrestamoDeSolicitudUseCase } from "../application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
 import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
@@ -75,6 +76,7 @@ type Dependencies = {
   listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
   getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
+  listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
@@ -98,6 +100,7 @@ export class SolicitudesCoreController {
   private readonly listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
   private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
+  private readonly listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
@@ -125,6 +128,8 @@ export class SolicitudesCoreController {
       dependencies.listSolicitudTransitionsUseCase;
     this.getCredixsaSolicitudUseCase = dependencies.getCredixsaSolicitudUseCase;
     this.getPrestamoDelSocioUseCase = dependencies.getPrestamoDelSocioUseCase;
+    this.listLineasPrestamoDeSolicitudUseCase =
+      dependencies.listLineasPrestamoDeSolicitudUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
@@ -330,6 +335,30 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json({ prestamos });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Lineas que se le pueden asignar a la solicitud (las del agente de su
+  // vendedor). Las usa el detalle para cambiar la linea y para el simulador.
+  listLineasPrestamo = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      await this.getCurrentUser(req);
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const lineas = await this.listLineasPrestamoDeSolicitudUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(lineas);
     } catch (error) {
       next(error);
     }

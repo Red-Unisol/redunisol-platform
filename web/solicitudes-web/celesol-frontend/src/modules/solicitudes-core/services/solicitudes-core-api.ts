@@ -1,6 +1,7 @@
 import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
+import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 
 import type {
   CreateSolicitudCoreCancelacionRequest,
@@ -86,6 +87,16 @@ export function listSolicitudesCore(query: ListSolicitudesCoreQuery) {
 
 export function getSolicitudCoreById(solicitudId: string) {
   return apiClient.get<SolicitudCoreResponse>(`/solicitudes/${solicitudId}`);
+}
+
+// Lineas del agente del vendedor de la solicitud: las que se le pueden
+// asignar, sin importar quien la este mirando.
+export function getSolicitudCoreLineasPrestamo(solicitudId: string) {
+  return withAreaForbiddenMessage(
+    apiClient.get<LineaPrestamoPresolicitud[]>(
+      `/solicitudes/${solicitudId}/lineas-prestamo`,
+    ),
+  );
 }
 
 export function patchSolicitudCore(

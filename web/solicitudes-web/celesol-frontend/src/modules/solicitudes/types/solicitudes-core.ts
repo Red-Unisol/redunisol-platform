@@ -164,6 +164,7 @@ export type SolicitudFieldKey =
   | "solicitud.cuotas"
   | "solicitud.fechaPrimerVencimiento"
   | "solicitud.firmaDigitalmente"
+  | "solicitud.lineaPrestamoLegacyOid"
   | "solicitud.linkFirmaDigital"
   | "solicitud.montoAFinanciar"
   | "solicitud.motivo"
