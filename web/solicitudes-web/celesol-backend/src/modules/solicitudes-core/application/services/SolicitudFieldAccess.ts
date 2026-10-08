@@ -21,6 +21,9 @@ export const SOLICITUD_EDITABLE_FIELDS = [
   "solicitud.cuotas",
   "solicitud.fechaPrimerVencimiento",
   "solicitud.firmaDigitalmente",
+  // Se habilita por estado desde la configuracion: la cambia RIESGO al
+  // analizar, entre las lineas del agente del vendedor.
+  "solicitud.lineaPrestamoLegacyOid",
   "solicitud.linkFirmaDigital",
   "solicitud.montoAFinanciar",
   "solicitud.motivo",
@@ -124,7 +127,6 @@ export const LEGACY_EDITABLE_GROUPS = [
 ] as const satisfies readonly SolicitudFieldGroup[];
 
 export const BLOCKED_FIELD_KEYS = [
-  "solicitud.lineaPrestamoLegacyOid",
   "solicitud.ejecutivoSolicitud",
 ] as const;
 
@@ -163,9 +165,13 @@ export function buildSolicitudFieldAccess(
     return buildReadonlyFieldAccess();
   }
 
+  // Sin regla no se habilita la linea: solo se cambia si la configuracion
+  // del estado lo permite.
   return {
     defaultMode: "readonly",
-    editableFields: [...EDITABLE_FIELDS],
+    editableFields: EDITABLE_FIELDS.filter(
+      (field) => field !== "solicitud.lineaPrestamoLegacyOid",
+    ),
     editableGroups: [...EDITABLE_GROUPS],
   };
 }

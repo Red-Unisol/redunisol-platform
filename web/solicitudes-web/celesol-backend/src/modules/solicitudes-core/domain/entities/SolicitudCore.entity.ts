@@ -21,6 +21,7 @@ export type SolicitudFieldKey =
   | "solicitud.cuotaResultante"
   | "solicitud.cuotas"
   | "solicitud.fechaPrimerVencimiento"
+  | "solicitud.lineaPrestamoLegacyOid"
   | "solicitud.firmaDigitalmente"
   | "solicitud.linkFirmaDigital"
   | "solicitud.montoAFinanciar"

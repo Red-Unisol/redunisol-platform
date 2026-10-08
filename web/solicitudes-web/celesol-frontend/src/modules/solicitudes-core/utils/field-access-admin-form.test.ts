@@ -49,7 +49,7 @@ describe("field-access-admin-form", () => {
     const issues = validateFieldAccessRuleDraft(
       {
         ...draft(),
-        editableFields: ["solicitud.lineaPrestamoLegacyOid"],
+        editableFields: ["solicitud.ejecutivoSolicitud"],
       },
       catalog(),
     );
@@ -361,10 +361,7 @@ function draft(): FieldAccessRuleDraft {
 function catalog(): FieldAccessFieldsResponse {
   return {
     allowedDefaultModes: ["readonly"],
-    blockedFields: [
-      "solicitud.lineaPrestamoLegacyOid",
-      "solicitud.ejecutivoSolicitud",
-    ],
+    blockedFields: ["solicitud.ejecutivoSolicitud"],
     defaultReadonlyReason:
       "La solicitud no admite edici\\u00f3n de datos en su estado actual.",
     fieldCatalog: {
