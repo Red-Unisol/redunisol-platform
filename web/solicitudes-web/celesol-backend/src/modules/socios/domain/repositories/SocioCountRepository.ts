@@ -7,5 +7,5 @@
  * con paginación de socios).
  */
 export interface SocioCountRepository {
-  count(input: { search?: string }): Promise<number>;
+  count(input: { documentoExacto?: string; search?: string }): Promise<number>;
 }

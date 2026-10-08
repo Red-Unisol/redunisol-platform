@@ -29,8 +29,15 @@ export function canEditSocio(user: AuthUser | null | undefined) {
   return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
 }
 
+// Borrar un socio queda solo para admin. El backend hace el mismo chequeo.
 export function canDeleteSocio(user: AuthUser | null | undefined) {
-  return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
+  return user?.isSystemAdmin === true;
+}
+
+export function isVendedor(user: AuthUser | null | undefined) {
+  return (
+    user?.isSystemAdmin !== true && user?.workflowOwner?.code === "VENDEDORES"
+  );
 }
 
 export function canAccessRiesgoTools(user: AuthUser | null | undefined) {
@@ -42,8 +49,7 @@ export function canAccessRiesgoTools(user: AuthUser | null | undefined) {
 // chequeo, esto solo evita mostrar una pestaña que va a dar 403.
 export function canViewPrestamosDelSocio(user: AuthUser | null | undefined) {
   return (
-    user?.isSystemAdmin === true ||
-    user?.workflowOwner?.code !== "VENDEDORES"
+    user?.isSystemAdmin === true || user?.workflowOwner?.code !== "VENDEDORES"
   );
 }
 
