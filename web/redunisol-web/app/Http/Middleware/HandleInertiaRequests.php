@@ -48,6 +48,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'attributionEnabled' => (bool) config('attribution.enabled'),
+            'ga4MeasurementId' => config('attribution.ga4_measurement_id'),
             'auth' => [
                 'user' => $request->user(),
             ],
