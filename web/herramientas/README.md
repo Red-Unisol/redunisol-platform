@@ -176,30 +176,14 @@ muestra el historial de situaciones de 24 meses y luego las deudas vigentes y su
 Contrato oficial: [Manual de Central de Deudores BCRA](https://www.bcra.gob.ar/archivos/Catalogo/Content/files/pdf/central-deudores-v1.pdf).
 Relacion funcional: tarea Bitrix **22961**, extendida con consulta directa y respaldo.
 
-## Últimas situaciones BCRA por entidad (tarea 23223)
+## Presentación de situaciones BCRA (tarea 23223)
 
-Antes del historial de 24 meses, `/credixsa` muestra un resumen con denominación
-del deudor, entidad, período y situación. Selecciona la última situación válida
-de **cada entidad**, aunque las entidades informen en meses distintos. Incluye
-períodos hasta **2 meses detrás del período más reciente del informe**, inclusive:
-si el informe llega a agosto, admite agosto, julio y junio. El corte usa meses
-calendario y funciona al cambiar de año; no depende de la fecha de consulta.
-Cuando el informe trae deudas vigentes, estas determinan las entidades del resumen:
-el historial puede recuperar una clasificación válida, pero no reintroducir una
-entidad que ya no figura vigente. Un informe confirmado sin deudas no rescata
-deudas históricas. Los snapshots antiguos sin ese detalle mantienen el respaldo
-basado en historial.
-
-El resumen reutiliza las deudas vigentes y el historial del informe preparado,
-conservando la fuente BCRA o el respaldo CredixSA. No dispara otra consulta ni
-modifica el cache ni las reglas comerciales. Solo las situaciones **1 a 6** son
-calificaciones: `0`, valores ausentes o N/D no reemplazan un dato válido anterior
-ni se convierten en situación 1. El período de referencia sigue siendo el más
-reciente del informe, aunque tenga registros sin clasificación. Las tablas de
-historial y deudas vigentes muestran N/D en esos casos; las situaciones válidas
-de la tabla de deudas vigentes usan los mismos colores que el historial.
-Las entidades cuyo último dato supera la tolerancia quedan fuera del resumen;
-se informa su cantidad y sus registros siguen disponibles en el historial.
+El informe muestra el historial de situaciones de 24 meses y luego una única
+sección de deudas vigentes, con entidad, período, monto y situación. Esa tabla
+conserva el período informado por cada entidad y usa los mismos colores que el
+historial para las situaciones 1 a 6. Los valores sin clasificación se muestran
+como N/D, con color neutro. No se presenta otro resumen de las mismas entidades.
+La fuente BCRA o el respaldo CredixSA y las reglas del cache se conservan.
 
 ## Dashboard de objetivos
 
