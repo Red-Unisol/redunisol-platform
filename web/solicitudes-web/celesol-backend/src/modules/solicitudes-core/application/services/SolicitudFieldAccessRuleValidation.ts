@@ -18,14 +18,14 @@ import {
   sortFieldAccessFields,
   sortFieldAccessGroups,
 } from "./SolicitudFieldAccessAdminCatalog";
+import { BLOCKED_FIELD_KEYS } from "./SolicitudFieldAccess";
 
 const FIELD_KEY_SET = new Set<string>(FIELD_ACCESS_ALL_FIELDS);
 const GROUP_KEY_SET = new Set<string>(FIELD_ACCESS_ALL_GROUPS);
 const HEX_COLOR_REGEX = /^#[0-9A-F]{6}$/;
-const BLOCKED_FIELD_KEY_SET = new Set<string>([
-  "solicitud.lineaPrestamoLegacyOid",
-  "solicitud.ejecutivoSolicitud",
-]);
+// Misma lista que usa el acceso por campo: una copia aparte se
+// desincronizaba (la linea se desbloqueo alla y aca seguia protegida).
+const BLOCKED_FIELD_KEY_SET = new Set<string>(BLOCKED_FIELD_KEYS);
 
 export type NormalizeFieldAccessRuleInput = {
   active?: boolean;
