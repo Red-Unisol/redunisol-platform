@@ -64,10 +64,21 @@ export class ForbiddenSocioUpdateError extends SocioError {
   }
 }
 
+export class ForbiddenSocioSyncError extends SocioError {
+  constructor() {
+    super(
+      "Los vendedores no pueden actualizar el padrón de socios desde Vimarx.",
+      "SOCIO_SYNC_FORBIDDEN",
+      403,
+    );
+    this.name = "ForbiddenSocioSyncError";
+  }
+}
+
 export class ForbiddenSocioDeleteError extends SocioError {
   constructor() {
     super(
-      "Solo analistas y administradores pueden eliminar socios.",
+      "Solo los administradores pueden eliminar socios.",
       "SOCIO_DELETE_FORBIDDEN",
       403,
     );

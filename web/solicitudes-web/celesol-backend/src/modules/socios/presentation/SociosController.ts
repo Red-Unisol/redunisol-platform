@@ -4,6 +4,7 @@ import type { ZodSchema } from "zod";
 import type { GetCurrentUserUseCase } from "../../auth/application/use-cases/GetCurrentUser.use-case";
 import type { AuthUser } from "../../auth/domain/entities/User.entity";
 import { ACCESS_TOKEN_COOKIE } from "../../auth/presentation/AuthCookies";
+import { esUsuarioVendedor } from "../../solicitudes-core/domain/services/VisibilidadVendedorResolver";
 import type { CheckSocioCuitDuplicateUseCase } from "../application/use-cases/CheckSocioCuitDuplicate.use-case";
 import type { CheckSocioDocumentoDuplicateUseCase } from "../application/use-cases/CheckSocioDocumentoDuplicate.use-case";
 import type { CreateSocioUseCase } from "../application/use-cases/CreateSocio.use-case";
@@ -16,6 +17,7 @@ import type { UpdateSocioUseCase } from "../application/use-cases/UpdateSocio.us
 import {
   ForbiddenSocioCreationError,
   ForbiddenSocioDeleteError,
+  ForbiddenSocioSyncError,
   ForbiddenSocioUpdateError,
   InvalidSocioRequestError,
 } from "../domain/socios-errors";
@@ -114,11 +116,35 @@ export class SociosController {
 
   list = async (req: CookieRequest, res: Response, next: NextFunction) => {
     try {
-      await this.getCurrentUser(req);
+      const user = await this.getCurrentUser(req);
       const query = this.parseRequest<ListSociosQuery>(
         listSociosQuerySchema,
         req.query,
       );
+
+      // Un vendedor no ve el padron: solo el socio del DNI o CUIL/CUIT que
+      // carga, completo y exacto. Sin documento valido, nada.
+      if (esUsuarioVendedor(user)) {
+        const documento = documentoCompleto(query.search);
+
+        if (!documento) {
+          res.status(200).json({ items: [], total: 0 });
+          return;
+        }
+
+        const result = await this.listSociosUseCase.execute({
+          documentoExacto: documento,
+          limit: query.limit,
+          offset: 0,
+        });
+
+        res.status(200).json({
+          items: toSocioListResponse(result.items),
+          total: result.total,
+        });
+        return;
+      }
+
       const result = await this.listSociosUseCase.execute(query);
 
       res.status(200).json({
@@ -233,7 +259,7 @@ export class SociosController {
     try {
       const currentUser = await this.getCurrentUser(req);
 
-      if (!this.isRiesgoOrAdmin(currentUser)) {
+      if (!currentUser.isSystemAdmin) {
         throw new ForbiddenSocioDeleteError();
       }
 
@@ -258,7 +284,13 @@ export class SociosController {
     next: NextFunction,
   ) => {
     try {
-      await this.getCurrentUser(req);
+      const user = await this.getCurrentUser(req);
+
+      // Trae el padron entero desde Vimarx: no es algo que dispare un vendedor.
+      if (esUsuarioVendedor(user)) {
+        throw new ForbiddenSocioSyncError();
+      }
+
       const result = await this.syncSociosFromVimaxUseCase.execute();
 
       res.status(200).json(result);
@@ -284,4 +316,14 @@ export class SociosController {
 
     return parsed.data;
   }
+}
+
+/**
+ * DNI (7 u 8 digitos) o CUIL/CUIT (11) completo, sin puntos ni guiones; o
+ * null si lo cargado no es un documento entero.
+ */
+export function documentoCompleto(valor: string | undefined) {
+  const digitos = (valor ?? "").replace(/[.\-\s]/g, "");
+
+  return /^(\d{7,8}|\d{11})$/.test(digitos) ? digitos : null;
 }
