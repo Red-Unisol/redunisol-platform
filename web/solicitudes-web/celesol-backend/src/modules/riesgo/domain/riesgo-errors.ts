@@ -64,3 +64,36 @@ export class SolicitudNotFoundError extends RiesgoError {
     this.name = "SolicitudNotFoundError";
   }
 }
+
+export class ForbiddenGuardarEvaluacionError extends RiesgoError {
+  constructor() {
+    super(
+      "Solo Riesgo puede guardar la evaluación, mientras la solicitud está a su cargo.",
+      "EVALUACION_GUARDAR_FORBIDDEN",
+      403,
+    );
+    this.name = "ForbiddenGuardarEvaluacionError";
+  }
+}
+
+export class EvaluacionStorageUnavailableError extends RiesgoError {
+  constructor() {
+    super(
+      "No se pudo acceder al almacenamiento de la evaluación. Intentá de nuevo en unos minutos.",
+      "EVALUACION_STORAGE_UNAVAILABLE",
+      503,
+    );
+    this.name = "EvaluacionStorageUnavailableError";
+  }
+}
+
+export class InvalidEvaluacionRequestError extends RiesgoError {
+  constructor() {
+    super(
+      "Los datos de la evaluación no son válidos.",
+      "EVALUACION_INVALID_REQUEST",
+      400,
+    );
+    this.name = "InvalidEvaluacionRequestError";
+  }
+}

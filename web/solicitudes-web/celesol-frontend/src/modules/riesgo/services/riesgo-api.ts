@@ -1,4 +1,4 @@
-import { fetchConSesion } from "@/shared/services/http/api-client";
+import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
 
@@ -134,4 +134,31 @@ export async function getCalculadoraRiesgoFile(): Promise<Blob> {
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+export type EvaluacionRiesgo = {
+  guardadaEn: string;
+  guardadaPor: { id: string; nombre: string } | null;
+  nivelRiesgo: number | null;
+  /** Snapshot de la planilla de Univer (IWorkbookData). */
+  snapshot: unknown;
+};
+
+// Planilla guardada de la pestana Evaluacion; null si todavia no se guardo.
+export async function getEvaluacionRiesgo(solicitudId: string) {
+  const response = await apiClient.get<{ evaluacion: EvaluacionRiesgo | null }>(
+    `/api/riesgo/calculadora/core/${encodeURIComponent(solicitudId)}/evaluacion`,
+  );
+
+  return response.evaluacion;
+}
+
+export function guardarEvaluacionRiesgo(
+  solicitudId: string,
+  payload: { nivelRiesgo: number | null; snapshot: unknown },
+) {
+  return apiClient.put<Omit<EvaluacionRiesgo, "snapshot">>(
+    `/api/riesgo/calculadora/core/${encodeURIComponent(solicitudId)}/evaluacion`,
+    payload,
+  );
 }
