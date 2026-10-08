@@ -2925,6 +2925,12 @@ export function SolicitudesActualDetallePage() {
   const canViewCalculadora = canAccessRiesgoTools(currentUser);
   const solicitudCapabilities = solicitud?.capabilities;
   const canChangeState = solicitudCapabilities?.canChangeState ?? false;
+  // Guarda la evaluacion Riesgo con la solicitud a cargo, o un admin. El
+  // backend vuelve a chequearlo.
+  const canGuardarEvaluacion =
+    currentUser?.isSystemAdmin === true ||
+    (currentUser?.workflowOwner?.code === "RIESGO" &&
+      (solicitudCapabilities?.canEdit ?? false));
   const {
     data: adjuntos = [],
     error: adjuntosError,
@@ -2999,6 +3005,27 @@ export function SolicitudesActualDetallePage() {
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
     useState<SolicitudDetailVistaTab>("solicitud");
+  const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
+
+  function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
+    // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
+    if (
+      vistaTab === "evaluacion" &&
+      tab !== "evaluacion" &&
+      evaluacionConCambios &&
+      !window.confirm(
+        "Hay cambios sin guardar en la evaluación. Si cambiás de pestaña se pierden. ¿Continuar?",
+      )
+    ) {
+      return;
+    }
+
+    if (tab !== "evaluacion") {
+      setEvaluacionConCambios(false);
+    }
+
+    setVistaTab(tab);
+  }
   const [editableGarantias, setEditableGarantias] = useState<
     CreateSolicitudCoreGarantiaRequest[] | null
   >(null);
@@ -4029,7 +4056,7 @@ export function SolicitudesActualDetallePage() {
                       : "border-transparent text-foreground-secondary hover:text-foreground"
                   }`}
                   key={tab.value}
-                  onClick={() => setVistaTab(tab.value)}
+                  onClick={() => cambiarVistaTab(tab.value)}
                   type="button"
                 >
                   {tab.label}
@@ -4157,6 +4184,8 @@ export function SolicitudesActualDetallePage() {
           >
             <CalculadoraMutualSheet
               className="flex-1"
+              onCambiosSinGuardarChange={setEvaluacionConCambios}
+              puedeGuardar={canGuardarEvaluacion}
               source={{ kind: "embedded", solicitudId }}
             />
           </Suspense>
