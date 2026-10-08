@@ -122,8 +122,12 @@ class CoreClient:
         rows = self.query('PreSolicitud.Module.NovedadSolicitud', f'[Solicitud.Oid] = {identifier(oid)}', EVENT_FIELDS, 10000)
         return sorted(rows, key=lambda row: identifier(row['ID']))
 
-    def content(self, oid):
+    def content(self, oid, expected_size=None):
         rows = self.query('PreSolicitud.Module.AdjuntoSolicitud', f'[Oid] = {identifier(oid)}', ['Archivo.Content'], 1)
+        # Un adjunto declarado vacio en el core devuelve el contenido null: es un
+        # archivo vacio, no uno faltante. Con otro tamaño, null sigue siendo error.
+        if len(rows) == 1 and rows[0]['Archivo.Content'] is None and expected_size == 0:
+            return b''
         if len(rows) != 1 or not isinstance(rows[0]['Archivo.Content'], str):
             raise CaptureError('attachment_missing')
         try:
@@ -286,7 +290,7 @@ def capture_one(client, archive, application, folder, origin):
         for meta in attachment_index:
             observation = {'metadata': meta, 'download_started_at': now()}
             try:
-                data = client.content(meta['Oid'])
+                data = client.content(meta['Oid'], meta['Archivo.Size'])
                 # Preserve every byte even if metadata changed while being downloaded.
                 observation['object'] = archive.blob(data)
                 if meta['Archivo.Size'] is not None and len(data) != meta['Archivo.Size']:
