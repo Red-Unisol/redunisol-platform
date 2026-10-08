@@ -27,6 +27,7 @@ from .core import (
 from .excel import enrich_workbook
 from .time_mix import fetch_line_context, analyze_time_mix
 from .operational_calendar import detect_operational_calendar, DEFAULT_USERS
+from .exclusions import EXCLUDED_TEST_MEMBERS, exclude_test_applications
 
 REPORT_DIRECTORY = "reporte-evaluacion-comisiones"
 
@@ -103,8 +104,11 @@ def generate_report(now: datetime | None = None) -> dict:
         activity_users = tuple(u.strip() for u in user_config.split(",") if u.strip()) if user_config else DEFAULT_USERS
         operational = detect_operational_calendar(client, datasets, calendar, today=now.date(), limit=limit, users=activity_users)
         evaluation_closures = frozenset(date.fromisoformat(d) for d in operational["extra_excluded_dates"])
+        filtered_datasets = [exclude_test_applications(dataset) for dataset in datasets]
+        excluded_applications = {dataset.month_value: ids for dataset, ids in filtered_datasets}
         reports = [build_month_report(dataset, excluded_dates=exclusions,
-                                      first_response_extra_excluded_dates=evaluation_closures) for dataset in datasets]
+                                      first_response_extra_excluded_dates=evaluation_closures)
+                   for dataset, _ in filtered_datasets]
         selected_reports = [report for report in reports if report.month_value in months]
         loans = {month: fetch_loans(client, month, limit) for month in months}
         commissions = evaluate_commissions(reports, loans, months)
@@ -123,6 +127,8 @@ def generate_report(now: datetime | None = None) -> dict:
             "from_month": from_month, "to_month": to_month, "reference_months": extraction_months,
             "sample_seed": seed, "queries": {month: loan_filter(month) for month in months},
             "loans": loan_snapshot(loans), "commissions": commissions,
+            "test_member_exclusions": EXCLUDED_TEST_MEMBERS,
+            "excluded_applications": excluded_applications,
             "line_context": line_context, "time_mix": time_mix,
             "operational_calendar": operational,
             "manual_rules": MANUAL_RULES, "manual_commission": None, "manual_status": "Pendiente de revision humana",

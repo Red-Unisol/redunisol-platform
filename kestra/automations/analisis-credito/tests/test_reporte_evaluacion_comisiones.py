@@ -21,6 +21,7 @@ from reporte_evaluacion_comisiones.core import (
 from reporte_evaluacion_comisiones.comparison import build_monthly_comparison
 from reporte_evaluacion_comisiones.excel import build_commission_sheet
 from reporte_evaluacion_comisiones.kestra_entrypoint import atomic_publish, generate_report
+from reporte_evaluacion_comisiones.exclusions import exclude_test_applications
 
 
 def comparison_fixture(workbook, months):
@@ -70,6 +71,49 @@ class CommissionsTests(unittest.TestCase):
         })
         activity.start()
         self.addCleanup(activity.stop)
+
+    def test_test_member_exclusion_removes_whole_application_and_preserves_real_user_work(self):
+        data = dataset("2026-08", count=2)
+        data.history_events[0].nro_socio = 110380
+        # A missing member on later events cannot leak the same test back in.
+        for event in data.history_events[1:4]:
+            event.nro_socio = None
+        for event in data.history_events[4:]:
+            event.usuario_evento = "nsallitto"
+        filtered, excluded = exclude_test_applications(data)
+        self.assertEqual(excluded, [1])
+        self.assertEqual(filtered.closed_solicitud_oids, [2])
+        self.assertEqual({event.solicitud_oid for event in filtered.month_events}, {2})
+        report = build_month_report(filtered, log=lambda _: None)
+        for rows in (report.base_rows, report.first_response, report.transfer,
+                     report.end_to_end, report.legajos_sample):
+            self.assertEqual({row["solicitud_oid"] for row in rows}, {2})
+        self.assertEqual(len(data.history_events), 8)  # Raw audit evidence remains intact.
+
+    def test_exclusion_applies_to_reference_months_and_manifest_keeps_raw_evidence(self):
+        def source(client, month, **kwargs):
+            data = dataset(month, count=2)
+            for event in data.history_events[:4]:
+                event.nro_socio = 110380
+            return data
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict("os.environ", {
+                "REPORTE_EVALUACION_BASE_URL": "https://example.invalid", "REPORTS_ROOT": tmp,
+                "REPORT_INPUT_FROM_MONTH": "2026-08", "REPORT_INPUT_TO_MONTH": "2026-08", "TRIGGER_BODY_JSON": "{}",
+            }), patch("reporte_evaluacion_comisiones.kestra_entrypoint.CommissionApiClient"), \
+                patch("reporte_evaluacion_comisiones.kestra_entrypoint.fetch_month_dataset", side_effect=source), \
+                patch("reporte_evaluacion_comisiones.kestra_entrypoint.fetch_loans", return_value=[]):
+                result = generate_report(datetime(2026, 9, 1, 8, 15))
+            snapshots = Path(result["latest_path"]).parent / "datos"
+            manifest = json.loads(next(snapshots.glob("*.json")).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["test_member_exclusions"], {"110380": "Nicolás Sallito: solicitudes de prueba"})
+            self.assertEqual(manifest["excluded_applications"], {m: [1] for m in ["2026-05", "2026-06", "2026-07", "2026-08"]})
+            _, saved = SQLiteDatasetStore(next(snapshots.glob("*.sqlite"))).load_dataset()
+            self.assertTrue(all(len(month.history_events) == 8 for month in saved))
+            workbook = load_workbook(result["latest_path"])
+            self.assertEqual([workbook["Metricas referencia"].cell(r, 2).value for r in range(5, 9)], [1] * 4)
+            self.assertEqual(workbook["Muestreo legajos"]["B5"].value, 2)
+            workbook.close()
 
     def test_confirmed_rate_boundaries(self):
         for value, expected in [("9.5", ".005"), ("10", ".005"), ("10.00001", ".003"), ("11", ".003"), ("11.00001", ".001")]:
@@ -134,6 +178,8 @@ class CommissionsTests(unittest.TestCase):
         self.assertIn("[FechaEmision] < #2026-09-01#", args[0])
         self.assertIn("'Martin Rodriguez'", args[0])
         self.assertIn("[Solicitud.Estado.Descripcion] = 'Pagada'", args[0])
+        self.assertIn("[Solicitud.Socio.NroSocio] In (110380)", args[0])
+        self.assertIn("[Solicitud.NroSocio] In (110380)", args[0])
         client.evaluate.return_value = 2
         with self.assertRaisesRegex(ValueError, "cantidad"):
             fetch_loans(client, "2026-08")

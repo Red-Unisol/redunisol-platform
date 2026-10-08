@@ -745,8 +745,13 @@ Filtra por `FechaEmision` del mes, `Solicitud.Estado.Descripcion = 'Pagada'` y
 excluye vendedores Alvaro Pajon, Gabriela Acosta, Jorgelina Marin,
 Karina Altamirano y Martin Rodriguez, reproduciendo el procedimiento del operador.
 La base monetaria es `MontoADesembolsar` (Monto Deseado), no `Capital`.
-Las métricas conservan el universo y las exclusiones de líneas del evaluatorio;
-los filtros de colocación se aplican por separado.
+Las métricas conservan las exclusiones de líneas del evaluatorio; los filtros de
+colocación se aplican por separado. V2 excluye además las solicitudes del socio
+`110380` (Nicolás Sallito, casos de prueba) en todos los meses y referencias:
+métricas, base histórica visible, análisis de tiempos, muestreo y colocación.
+Se excluye la solicitud completa por socio, no toda intervención del usuario
+`nsallitto` sobre solicitudes reales. La evidencia SQLite conserva los eventos
+originales; el manifiesto registra la regla y los OID excluidos por mes.
 
 Comprueba cantidad antes/después, filas únicas y filtros. Si se alcanza el límite
 de extracción o hay inconsistencias, falla sin reemplazar `ultimo.xlsx`.
