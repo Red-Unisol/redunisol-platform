@@ -73,7 +73,7 @@ Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/persona
   CBU, linea, importe o plan de cancelacion autorizado, se exige confirmar de nuevo.
   El payload bancario usa el CUIT del titular del CBU consultado en Coinag.
 - La excepcion solo resuelve la diferencia de titularidad. Una consulta fallida,
-  titular desconocido, moneda incompatible, inconsistencia documental o de importes,
+  titular desconocido, moneda incompatible, inconsistencia de CUIL en el core o de importes bancarios,
   linea inhabilitada y controles contra reenvios siguen bloqueando la operacion.
 - En cancelaciones aplica al destino del Monto En Mano; las verificaciones y la
   whitelist de las entidades acreedoras conservan sus reglas.
@@ -84,7 +84,7 @@ Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/persona
 ### Modelo comun de advertencias y confirmacion
 
 `ValidationReport.warnings` contiene `ValidationWarning` con `WarningKind` y mensaje.
-`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante,
+`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante o incorrecto,
 validaciones multiples, renovaciones, revision manual Beex y acreedores nuevos o con CBU nuevo;
 `TypeWord("TRANSFERIR")` para una cuenta de terceros. El texto visible no determina
 la politica. Los productores asignan el tipo al detectar la condicion.
@@ -241,9 +241,17 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - whitelist dinamica por CUIT juridico + CBU, con validacion Coinag en cada operacion
 - transferencia automatica habilitada/pausada para lineas marcadas como automaticas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
-- si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
-  - documento MetaMap vs core
-  - monto exacto MetaMap vs core
+- se consultan todas las paginas de validaciones MetaMap `completed` y se elige la mas
+  reciente por fecha de finalizacion que coincida con solicitud, DNI e importe solicitado
+- una validacion posterior incompleta o con datos distintos no reemplaza una anterior
+  que cumple; cada intento se evalua con sus propios datos, sin completar campos con otro
+- si existen validaciones pero ninguna cumple, se muestra una advertencia de MetaMap
+  incorrecto con los IDs y motivos; permite continuar manualmente tras confirmacion
+  si los demas controles pasan. Se conserva el ultimo intento para mostrarlo y auditarlo
+- la existencia de varios intentos conserva la advertencia de revision manual y muestra
+  la validacion elegida y los motivos de descarte; todas las advertencias impiden automaticas
+- la seleccion se repite contra el core actualizado antes de transferir. Esta regla
+  conserva el criterio `completed`; no incorpora un requisito nuevo de identidad `verified`
 - barrera local anti reenvio por `request_oid` en archivo persistido
 - envio a Coinag si el runtime esta configurado
 - generacion de comprobante PDF simple

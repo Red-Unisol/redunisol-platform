@@ -695,24 +695,28 @@ mod tests {
         assert!(report.can_transfer(), "{:?}", report.blockers);
         metamap.request_number = Some("102".to_owned());
         assert!(
-            !crate::validation::build_validation_report(
+            crate::validation::build_validation_report(
                 &server,
                 &metamap,
                 &core,
                 &crate::models::CoinagTransferGuard::NotFound
             )
-            .can_transfer()
+            .warnings
+            .iter()
+            .any(|warning| warning.kind == crate::warnings::WarningKind::InvalidMetamap)
         );
         metamap.request_number = Some("101".to_owned());
         metamap.amount = Some(exact_money("1000.02").unwrap());
         assert!(
-            !crate::validation::build_validation_report(
+            crate::validation::build_validation_report(
                 &server,
                 &metamap,
                 &core,
                 &crate::models::CoinagTransferGuard::NotFound
             )
-            .can_transfer()
+            .warnings
+            .iter()
+            .any(|warning| warning.kind == crate::warnings::WarningKind::InvalidMetamap)
         );
     }
     #[test]

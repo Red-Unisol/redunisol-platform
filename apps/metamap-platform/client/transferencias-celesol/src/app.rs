@@ -30,8 +30,7 @@ use crate::{
     creditor_whitelist::{CreditorWhitelistFile, TrustStatus},
     mark_paid_client::{MarkPaidClient, MarkPaidHttpError},
     models::{
-        CoinagTransferGuard, CoreSnapshot, HydratedCase, MetamapSnapshot, TransferAmountOutcome,
-        ValidationReport,
+        CoinagTransferGuard, CoreSnapshot, HydratedCase, TransferAmountOutcome, ValidationReport,
     },
     receipt,
     server_client::ServerClient,
@@ -2568,8 +2567,7 @@ impl AppServices {
                 .and_then(|client| client.plan(&plan.solicitud_id))
                 .and_then(|p| p.core())
         } else {
-            self.core
-                .fetch_core_snapshot(case.request_oid(), case.metamap.document.as_deref())
+            self.core.fetch_core_snapshot(case.request_oid(), None)
         };
         match snapshot {
             Ok(core_snapshot) => refreshed.core = core_snapshot,
@@ -2593,20 +2591,9 @@ impl AppServices {
         let previous_validation = case.server_validation.clone();
         let previous_metamap = case.metamap.clone();
 
-        match self
-            .server
-            .find_validation_by_request_number(case.core.verification_request_number())
-        {
+        match self.server.find_validation_for_core(&case.core) {
             Ok(Some(server_validation)) => {
-                let mut metamap = server_validation.to_metamap_snapshot();
-                if previous_validation.verification_id == server_validation.verification_id {
-                    preserve_metamap_value(&mut metamap, &previous_metamap);
-                }
-                if metamap.request_number.is_none() && server_validation.has_completed_validation()
-                {
-                    metamap.request_number =
-                        Some(case.core.verification_request_number().to_owned());
-                }
+                let metamap = server_validation.to_metamap_snapshot();
                 case.server_validation = server_validation;
                 case.metamap = metamap;
                 log::debug!(
@@ -2858,6 +2845,12 @@ impl AppServices {
             "warnings": case.validation.warning_messages(),
             "warning_details": case.validation.warnings,
             "source": "evaluation",
+            "metamap_selection": {
+                "verification_id": case.server_validation.verification_id,
+                "completed_at": case.server_validation.completed_at,
+                "match_count": case.server_validation.match_count,
+                "rejections": case.server_validation.selection_rejections,
+            },
         });
         let Ok(mut observed) = self.observed_evaluations.write() else {
             log::warn!(
@@ -4080,6 +4073,7 @@ mod tests {
         let case = third_party_case();
         for kind in [
             WarningKind::MissingMetamap,
+            WarningKind::InvalidMetamap,
             WarningKind::MultipleMetamapValidations,
             WarningKind::Renewal,
             WarningKind::ThirdPartyDestination,
@@ -4150,24 +4144,6 @@ fn compare_request_oids(left: &str, right: &str) -> std::cmp::Ordering {
     match (left.parse::<u64>(), right.parse::<u64>()) {
         (Ok(left), Ok(right)) => left.cmp(&right),
         _ => left.cmp(right),
-    }
-}
-
-fn preserve_metamap_value(current: &mut MetamapSnapshot, previous: &MetamapSnapshot) {
-    if current.name.trim().is_empty() && !previous.name.trim().is_empty() {
-        current.name = previous.name.clone();
-    }
-    if current.document.is_none() {
-        current.document = previous.document.clone();
-    }
-    if current.request_number.is_none() {
-        current.request_number = previous.request_number.clone();
-    }
-    if current.amount_raw.is_none() {
-        current.amount_raw = previous.amount_raw.clone();
-    }
-    if current.amount.is_none() {
-        current.amount = previous.amount;
     }
 }
 
