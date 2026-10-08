@@ -77,6 +77,8 @@ export function AdminUsersPage() {
     label: owner.name,
     value: owner.id,
   }));
+  const riesgoWorkflowOwnerId =
+    workflowOwners.find((owner) => owner.code === "RIESGO")?.id ?? null;
   const isLoading = usersQuery.isLoading || workflowOwnersQuery.isLoading;
   const hasLoadError = usersQuery.isError || workflowOwnersQuery.isError;
 
@@ -289,6 +291,7 @@ export function AdminUsersPage() {
         }}
         onSubmit={handleSubmitUserUpdate}
         open={editingUser !== null}
+        riesgoWorkflowOwnerId={riesgoWorkflowOwnerId}
         user={editingUser}
         workflowOwnerOptions={workflowOwnerOptions}
       />
