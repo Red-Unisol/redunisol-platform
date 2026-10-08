@@ -650,6 +650,64 @@ describe("ListSolicitudesUseCase", () => {
     });
   });
 
+  it("filtra por creador en precarga, recientes e historicas solo si viene creadoresVisibles", async () => {
+    const recibidos: Record<string, unknown> = {};
+    const repository: SolicitudesCoreRepository = {
+      create: async () => {
+        throw new Error("not used");
+      },
+      findById: async () => null,
+      listByOwner: async (input) => {
+        recibidos.work = input.creadoPorIn;
+        return [];
+      },
+      listHistoricas: async (input) => {
+        recibidos.historicas = input.creadoPorIn;
+        return [];
+      },
+      listRecientes: async (input) => {
+        recibidos.recientes = input.creadoPorIn;
+        return [];
+      },
+      update: async () => {
+        throw new Error("not used");
+      },
+    };
+    const useCase = new ListSolicitudesUseCase({
+      fieldAccessRulesRepository: buildFieldAccessRulesRepository(),
+      repository,
+    });
+    const base = {
+      currentUser: { id: "id-pcano", workflowOwnerId: "owner-v" },
+      limit: 20,
+      offset: 0,
+    };
+
+    for (const scope of ["work", "recientes", "historicas"] as const) {
+      await useCase.execute({
+        ...base,
+        creadoresVisibles: ["id-pcano"],
+        scope,
+      });
+    }
+
+    assert.deepEqual(recibidos, {
+      historicas: ["id-pcano"],
+      recientes: ["id-pcano"],
+      work: ["id-pcano"],
+    });
+
+    for (const scope of ["work", "recientes", "historicas"] as const) {
+      await useCase.execute({ ...base, scope });
+    }
+
+    assert.deepEqual(recibidos, {
+      historicas: undefined,
+      recientes: undefined,
+      work: undefined,
+    });
+  });
+
   it("resolves appearance once per unique workflow state id", async () => {
     const batchCalls: string[][] = [];
     let singleCalls = 0;

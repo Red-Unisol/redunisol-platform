@@ -7,6 +7,7 @@ import type {
   CreateSolicitudCoreRecord,
   GetAnalistaStatsInput,
   GetSolicitudesStatsInput,
+  ListSolicitudesHistoricasInput,
   ListSolicitudesRecientesInput,
   ListSolicitudesByOwnerInput,
   ListSolicitudesTrackingInput,
@@ -434,6 +435,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: SolicitudesCorePrismaDatasource.buildWorkflowStateFilter({
           ownerId: input.workflowOwnerId,
           estado: input.estado,
@@ -482,6 +484,15 @@ export class SolicitudesCorePrismaDatasource {
         workflowOwnerId: true,
       },
     });
+  }
+
+  async findCreadorById(id: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      select: { createdBy: true },
+      where: { id },
+    });
+
+    return solicitud?.createdBy ?? null;
   }
 
   async findWorkflowOwnerCodeById(id: string) {
@@ -688,6 +699,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: {
           code: {
             notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
@@ -729,7 +741,7 @@ export class SolicitudesCorePrismaDatasource {
     }));
   }
 
-  async listHistoricas(input: { limit: number; nroDocumento?: string; offset: number }) {
+  async listHistoricas(input: ListSolicitudesHistoricasInput) {
     const recientesDateRangeStart = new Date();
     recientesDateRangeStart.setDate(
       recientesDateRangeStart.getDate() - RECIENTES_WINDOW_DAYS,
@@ -747,6 +759,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         OR: [
           {
             estadoActual: {

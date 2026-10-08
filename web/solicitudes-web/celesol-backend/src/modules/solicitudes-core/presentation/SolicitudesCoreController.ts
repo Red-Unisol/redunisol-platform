@@ -19,6 +19,10 @@ import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/L
 import { GetCredixsaSolicitudUseCase } from "../application/use-cases/GetCredixsaSolicitud.use-case";
 import { ListLineasPrestamoDeSolicitudUseCase } from "../application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
+import {
+  esUsuarioVendedor,
+  type VisibilidadVendedorResolver,
+} from "../domain/services/VisibilidadVendedorResolver";
 import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
@@ -78,6 +82,7 @@ type Dependencies = {
   getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
+  visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -102,6 +107,7 @@ export class SolicitudesCoreController {
   private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   private readonly listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
+  private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -132,6 +138,7 @@ export class SolicitudesCoreController {
       dependencies.listLineasPrestamoDeSolicitudUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
+    this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
@@ -263,8 +270,14 @@ export class SolicitudesCoreController {
         query.scope === "work" && !user.isSystemAdmin
           ? this.requireWorkflowOwnerId(user.workflowOwnerId)
           : undefined;
+      // Un vendedor ve lo suyo y, si es dueño de un agente, lo de sus
+      // vendedores. Las demas areas ven todo.
+      const creadoresVisibles = esUsuarioVendedor(user)
+        ? await this.visibilidadVendedorResolver.creadoresVisibles(user)
+        : undefined;
       const solicitudes = await this.listSolicitudesUseCase.execute({
         ...query,
+        ...(creadoresVisibles ? { creadoresVisibles } : {}),
         currentUser: {
           id: user.id,
           workflowOwnerId: user.workflowOwnerId,
