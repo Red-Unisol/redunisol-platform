@@ -3,11 +3,14 @@ import { SolicitudCoreNotFoundError } from "../../domain/solicitudes-core-errors
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 
+// Required: si el repositorio no expone findVendedorLegacyUser, que falle el
+// typecheck y no una lista vacia en silencio (paso con el #433).
 type Dependencies = {
-  lineasPrestamoCatalog: Pick<LineasPrestamoCatalog, "listVigentesByLegacyUser">;
-  repository: Pick<
-    SolicitudesCoreRepository,
-    "findById" | "findVendedorLegacyUser"
+  lineasPrestamoCatalog: Required<
+    Pick<LineasPrestamoCatalog, "listVigentesByLegacyUser">
+  >;
+  repository: Required<
+    Pick<SolicitudesCoreRepository, "findById" | "findVendedorLegacyUser">
   >;
 };
 
@@ -38,11 +41,11 @@ export class ListLineasPrestamoDeSolicitudUseCase {
       throw new SolicitudCoreNotFoundError();
     }
 
-    const vendedorLegacyUser = await this.repository.findVendedorLegacyUser?.(
+    const vendedorLegacyUser = await this.repository.findVendedorLegacyUser(
       solicitud.id,
     );
 
-    if (!vendedorLegacyUser || !this.lineasPrestamoCatalog.listVigentesByLegacyUser) {
+    if (!vendedorLegacyUser) {
       return [];
     }
 
