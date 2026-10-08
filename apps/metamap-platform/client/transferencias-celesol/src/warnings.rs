@@ -6,6 +6,7 @@ use serde::Serialize;
 #[serde(rename_all = "snake_case")]
 pub enum WarningKind {
     MissingMetamap,
+    InvalidMetamap,
     MultipleMetamapValidations,
     Renewal,
     ThirdPartyDestination,
@@ -27,6 +28,7 @@ impl WarningKind {
         match self {
             Self::ThirdPartyDestination => ConfirmationRequirement::TypeWord("TRANSFERIR"),
             Self::MissingMetamap
+            | Self::InvalidMetamap
             | Self::MultipleMetamapValidations
             | Self::Renewal
             | Self::KnownCreditorNewCbu
@@ -99,6 +101,7 @@ mod tests {
     fn existing_warning_kinds_keep_simple_confirmation() {
         for kind in [
             WarningKind::MissingMetamap,
+            WarningKind::InvalidMetamap,
             WarningKind::MultipleMetamapValidations,
             WarningKind::Renewal,
             WarningKind::KnownCreditorNewCbu,

@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     cancellations::CancellationPayment,
@@ -9,6 +9,18 @@ use crate::{
 #[derive(Clone, Debug, Deserialize)]
 pub struct ValidationSearchResponse {
     pub items: Vec<ValidationSnapshot>,
+    pub pagination: ValidationPagination,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ValidationPagination {
+    pub total: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ValidationRejection {
+    pub verification_id: Option<String>,
+    pub reasons: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -34,10 +46,15 @@ pub struct ValidationSnapshot {
     pub requested_amount_value: Option<String>,
     pub applicant_name: Option<String>,
     pub document_number: Option<String>,
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub latest_event_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pub first_received_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub event_count: u64,
     #[serde(skip)]
     pub match_count: usize,
+    #[serde(skip)]
+    pub selection_rejections: Vec<ValidationRejection>,
 }
 
 #[derive(Clone, Debug, Default)]
