@@ -1285,6 +1285,7 @@ function SolicitudSection({
   isEditing,
   isExecutiveAssignmentDisabled,
   lineas,
+  mostrarEjecutivo,
   onAssignmentChange,
   onBooleanChange,
   onChange,
@@ -1300,6 +1301,8 @@ function SolicitudSection({
   isEditing: boolean;
   lineas: LineaPrestamoPresolicitud[];
   isExecutiveAssignmentDisabled: boolean;
+  /** El ejecutivo es informacion de Riesgo: solo lo ven Riesgo y admin. */
+  mostrarEjecutivo: boolean;
   onAssignmentChange: (value: string) => void;
   onBooleanChange: (
     field: keyof EditableSolicitudCoreValues["solicitud"],
@@ -1400,20 +1403,22 @@ function SolicitudSection({
           readOnlyValue={formatText(solicitud.motivo)}
           value={values.motivo}
         />
-        <EditableField
-          editor={
-            <StyledSelect
-              disabled={isExecutiveAssignmentDisabled}
-              onChange={onAssignmentChange}
-              options={assignmentOptions}
-              placeholder="Seleccionar ejecutivo"
-              value={assignmentValue}
-            />
-          }
-          isEditing={isEditing}
-          label="Ejecutivo solicitud"
-          value={assignmentValueLabel}
-        />
+        {mostrarEjecutivo ? (
+          <EditableField
+            editor={
+              <StyledSelect
+                disabled={isExecutiveAssignmentDisabled}
+                onChange={onAssignmentChange}
+                options={assignmentOptions}
+                placeholder="Seleccionar ejecutivo"
+                value={assignmentValue}
+              />
+            }
+            isEditing={isEditing}
+            label="Ejecutivo solicitud"
+            value={assignmentValueLabel}
+          />
+        ) : null}
         <EditableTextInput
           {...getReadonlyProps("solicitud.vendedorSolicitud")}
           disabled={!isFieldEditableByKey("solicitud.vendedorSolicitud")}
@@ -4100,6 +4105,7 @@ export function SolicitudesActualDetallePage() {
             isFieldEditableByKey={isSolicitudFieldEditable}
             isEditing={isEditing}
             isExecutiveAssignmentDisabled={!canManageAssignment}
+            mostrarEjecutivo={canViewCalculadora}
             lineas={lineasSimulador}
             onAssignmentChange={setSelectedAssignmentValue}
             onBooleanChange={updateSolicitudBooleanField}
