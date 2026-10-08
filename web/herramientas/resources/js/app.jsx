@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import AnalisisPage from './AnalisisPage.jsx';
 import PadronesPage, { PadronesResults } from './PadronesPage.jsx';
 import { credixPrefill } from './analisis-state.js';
-import { prepareCredixBcra, latestBcraSituations, bcraSituation, formatBcraSituation } from './credix-bcra.js';
+import { prepareCredixBcra, bcraSituation, formatBcraSituation } from './credix-bcra.js';
 import '../css/app.css';
 
 const rootElement = document.getElementById('app');
@@ -736,7 +736,6 @@ function CredixDedicatedReport({ normalized }) {
         <div className="credix-report">
             <CredixAlertsPanel alerts={normalized?.alertas || []} />
             <CredixPersonPanel persona={normalized?.persona || {}} />
-            <CredixBcraLatestSituationsPanel bcra={normalized?.bcra || {}} persona={normalized?.persona || {}} />
             <CredixBcraHistoryPanel bcra={normalized?.bcra || {}} />
             <CredixBcraPanel bcra={normalized?.bcra || {}} />
             <CredixBcraEntityEvolutionPanel bcra={normalized?.bcra || {}} />
@@ -814,60 +813,6 @@ function CredixPersonPanel({ persona }) {
                 ))}
             </div>
             {persona.domicilio && <p className="credix-report__note">{persona.domicilio}</p>}
-        </section>
-    );
-}
-
-function CredixBcraLatestSituationsPanel({ bcra, persona }) {
-    const summary = latestBcraSituations(bcra);
-    const name = persona.nombre_completo || persona.nombre || 'Sin dato';
-
-    return (
-        <section className="credix-report__section credix-report__section--primary" aria-label="Últimas situaciones por entidad">
-            <div className="credix-report__sectionHeader">
-                <h2>Últimas situaciones BCRA por entidad</h2>
-                <span className="credix-risk">Fuente: {bcra.fuente || 'CredixSA'}</span>
-            </div>
-            {summary.periodo_referencia && (
-                <p className="credix-report__note">
-                    Último período del informe: <strong>{summary.periodo_referencia}</strong>. Se muestra la última situación válida
-                    de cada entidad entre {summary.periodo_desde} y {summary.periodo_referencia} (tolerancia de 2 meses).
-                </p>
-            )}
-            {summary.filas.length > 0 ? (
-                <div className="result__tableWrap">
-                    <table className="result__table credix-bcra-latest__table">
-                        <thead>
-                            <tr>
-                                <th>Denominación del deudor</th>
-                                <th>Entidad</th>
-                                <th>Período</th>
-                                <th>Situación</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {summary.filas.map((row) => (
-                                <tr key={row.entidad}>
-                                    <td>{name}</td>
-                                    <th scope="row">{row.entidad}</th>
-                                    <td>{row.periodo}</td>
-                                    <td className={`credix-bcra-history__status credix-bcra-history__status--${getBcraSituationClass(row.situacion)}`}>
-                                        {row.situacion}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            ) : (
-                <p className="credix-report__note">No hay situaciones informadas dentro de la ventana de 2 meses.</p>
-            )}
-            {summary.entidades_fuera_de_ventana > 0 && (
-                <p className="credix-report__note">
-                    {summary.entidades_fuera_de_ventana} {summary.entidades_fuera_de_ventana === 1 ? 'entidad tiene' : 'entidades tienen'} información
-                    anterior a esta ventana. Podés consultarla en el historial; no se incluye en este resumen.
-                </p>
-            )}
         </section>
     );
 }
