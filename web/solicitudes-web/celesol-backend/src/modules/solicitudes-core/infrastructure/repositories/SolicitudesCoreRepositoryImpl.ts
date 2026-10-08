@@ -35,6 +35,10 @@ export class SolicitudesCoreRepositoryImpl implements SolicitudesCoreRepository 
     return this.datasource.findWorkflowOwnerCodeById(id);
   }
 
+  findCreadorById(id: string) {
+    return this.datasource.findCreadorById(id);
+  }
+
   findVendedorLegacyUser(solicitudId: string) {
     return this.datasource.findVendedorLegacyUser(solicitudId);
   }

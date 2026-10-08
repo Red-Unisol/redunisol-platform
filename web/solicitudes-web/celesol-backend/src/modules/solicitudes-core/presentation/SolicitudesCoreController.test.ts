@@ -17,6 +17,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -59,6 +60,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -114,6 +116,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -158,6 +161,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -197,6 +201,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -243,6 +248,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -298,6 +304,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -353,6 +360,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -402,6 +410,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -469,6 +478,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase:
@@ -568,6 +578,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {
@@ -636,6 +647,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -684,6 +696,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -731,6 +744,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -779,6 +793,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -821,6 +836,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -869,6 +885,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -918,6 +935,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -954,6 +972,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -999,6 +1018,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       ...workflowUseCases(),
@@ -1057,6 +1077,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1113,6 +1134,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1176,6 +1198,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1227,6 +1250,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1323,6 +1347,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {
@@ -1384,6 +1409,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1443,6 +1469,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1477,6 +1504,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1511,6 +1539,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1552,6 +1581,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
@@ -1594,6 +1624,7 @@ describe("SolicitudesCoreController", () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
       createSolicitudUseCase: {} as never,
