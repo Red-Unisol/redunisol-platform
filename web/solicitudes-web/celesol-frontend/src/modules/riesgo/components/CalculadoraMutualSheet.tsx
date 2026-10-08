@@ -147,10 +147,6 @@ export function CalculadoraMutualSheet({
               initialSheet.getRange("A1").activate();
             }
 
-            console.log(
-              "[calculadora-debug] xlsx loaded ok, isMounted=",
-              isMounted,
-            );
             // Se activa isHydrating en el mismo render que isLoading pasa a
             // false (para el caso embedded) para que la transición entre los
             // dos loaders sea continua. Si no, hay un render intermedio -- el
@@ -163,11 +159,6 @@ export function CalculadoraMutualSheet({
             setIsLoading(false);
           },
           (conversionError: Error) => {
-            console.log(
-              "[calculadora-debug] xlsx conversion error, isMounted=",
-              isMounted,
-              conversionError,
-            );
             if (!isMounted) {
               return;
             }
@@ -180,11 +171,6 @@ export function CalculadoraMutualSheet({
           },
         );
       } catch (error) {
-        console.log(
-          "[calculadora-debug] load() threw, isMounted=",
-          isMounted,
-          error,
-        );
         if (!isMounted) {
           return;
         }
@@ -228,10 +214,6 @@ export function CalculadoraMutualSheet({
   async function hydrate(
     fetchDatos: () => ReturnType<typeof getCalculadoraMutualDatos>,
   ) {
-    console.log(
-      "[calculadora-debug] hydrate() called, workbookRef.current=",
-      workbookRef.current,
-    );
     const workbook = workbookRef.current;
 
     if (!workbook) {
@@ -240,7 +222,6 @@ export function CalculadoraMutualSheet({
     }
 
     const datosSheet = workbook.getSheetByName(CALCULADORA_DATOS_SHEET_NAME);
-    console.log("[calculadora-debug] datosSheet found?", !!datosSheet);
 
     if (!datosSheet) {
       setHydrationError(
@@ -254,43 +235,13 @@ export function CalculadoraMutualSheet({
 
     try {
       const datos = await fetchDatos();
-      console.log("[calculadora-debug] fetchDatos() resolved:", datos);
       const writes = buildCalculadoraDatosCellWrites(datos);
-      console.log("[calculadora-debug] writes to apply:", writes);
 
       for (const write of writes) {
         datosSheet.getRange(write.cell).setValue(write.value);
       }
 
-      console.log(
-        "[calculadora-debug] Datos!B15 after write => value=",
-        datosSheet.getRange("B15").getValue(),
-        "formula=",
-        datosSheet.getRange("B15").getFormula(),
-      );
 
-      const evaluacionSheet = workbook.getSheetByName("Evaluacion");
-      if (evaluacionSheet) {
-        console.log(
-          "[calculadora-debug] Evaluacion!D19 (CUIT) => value=",
-          evaluacionSheet.getRange("D19").getValue(),
-          "formula=",
-          evaluacionSheet.getRange("D19").getFormula(),
-        );
-        console.log(
-          "[calculadora-debug] Evaluacion!D20 (Nombre) => value=",
-          evaluacionSheet.getRange("D20").getValue(),
-          "formula=",
-          evaluacionSheet.getRange("D20").getFormula(),
-        );
-      } else {
-        console.log("[calculadora-debug] Evaluacion sheet not found!");
-      }
-
-      console.log(
-        "[calculadora-debug] forcing FULL recalculation, univerApiRef.current=",
-        univerApiRef.current,
-      );
       const formulaEngine = univerApiRef.current?.getFormula();
       // Por defecto Univer usa CalculationMode.WHEN_EMPTY: solo recalcula
       // fórmulas que NO tienen un valor cacheado todavía. Como el Excel
@@ -302,14 +253,8 @@ export function CalculadoraMutualSheet({
       formulaEngine?.executeCalculation();
       await formulaEngine?.onCalculationResultApplied();
 
-      console.log(
-        "[calculadora-debug] Evaluacion!D19 AFTER recalculation => value=",
-        evaluacionSheet?.getRange("D19").getValue(),
-      );
 
-      console.log("[calculadora-debug] hydration success");
     } catch (error) {
-      console.log("[calculadora-debug] hydrate() error:", error);
       setHydrationError(
         error instanceof ApiError || error instanceof Error
           ? error.message
@@ -321,23 +266,11 @@ export function CalculadoraMutualSheet({
   }
 
   useEffect(() => {
-    console.log(
-      "[calculadora-debug] auto-hydrate effect ran. isLoading=",
-      isLoading,
-      "errorMessage=",
-      errorMessage,
-      "source=",
-      source,
-    );
 
     if (source.kind !== "embedded" || isLoading || errorMessage) {
       return;
     }
 
-    console.log(
-      "[calculadora-debug] calling hydrate for solicitudId=",
-      source.solicitudId,
-    );
     void hydrate(() => getCalculadoraMutualDatosByCoreId(source.solicitudId));
     // Solo se auto-hidrata una vez, cuando la planilla termina de cargar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
