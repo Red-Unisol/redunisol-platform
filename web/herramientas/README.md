@@ -161,10 +161,13 @@ sin rescatar deudas viejas de CredixSA. Los datos incompletos no se convierten e
 La fecha de consulta no implica que el periodo de informacion sea el mes actual.
 
 La API tambien devuelve situacion `0`, observada en historiales reales aunque el
-manual no define su significado. Se conserva literalmente, junto con el monto,
-y se muestra con color neutro. No se transforma en situacion 1 ni en deuda cero.
-El subtotal sigue sumando exclusivamente situaciones >=2. Valores ausentes o
-fuera de 0..6 siguen provocando respaldo para evitar una interpretacion inventada.
+manual no la define como clasificacion crediticia. El informe original conserva
+ese valor y su monto para trazabilidad; la pantalla lo muestra como **N/D**, con
+color neutro. No se transforma en situacion 1 ni en deuda cero. Si una deuda vigente
+tiene situacion desconocida, el subtotal de situaciones >=2 es `null` (Sin datos),
+porque no puede afirmarse que este completo. Esto tambien se aplica al leer caches
+anteriores. El total de montos conocidos se conserva. Valores ausentes o fuera de
+0..6 en la respuesta de la API siguen provocando respaldo.
 
 El respaldo CredixSA calcula el mismo subtotal y contempla las situaciones
 compartidas entre filas de una misma tabla en los informes cacheados. Primero se
@@ -176,16 +179,25 @@ Relacion funcional: tarea Bitrix **22961**, extendida con consulta directa y res
 ## Últimas situaciones BCRA por entidad (tarea 23223)
 
 Antes del historial de 24 meses, `/credixsa` muestra un resumen con denominación
-del deudor, entidad, período y situación. Selecciona el último dato disponible
+del deudor, entidad, período y situación. Selecciona la última situación válida
 de **cada entidad**, aunque las entidades informen en meses distintos. Incluye
 períodos hasta **2 meses detrás del período más reciente del informe**, inclusive:
 si el informe llega a agosto, admite agosto, julio y junio. El corte usa meses
 calendario y funciona al cambiar de año; no depende de la fecha de consulta.
+Cuando el informe trae deudas vigentes, estas determinan las entidades del resumen:
+el historial puede recuperar una clasificación válida, pero no reintroducir una
+entidad que ya no figura vigente. Un informe confirmado sin deudas no rescata
+deudas históricas. Los snapshots antiguos sin ese detalle mantienen el respaldo
+basado en historial.
 
 El resumen reutiliza las deudas vigentes y el historial del informe preparado,
 conservando la fuente BCRA o el respaldo CredixSA. No dispara otra consulta ni
-modifica el cache, los totales o las reglas comerciales. Conserva la situación
-`0` literalmente. Los valores ausentes o N/D no se convierten en situación 1.
+modifica el cache ni las reglas comerciales. Solo las situaciones **1 a 6** son
+calificaciones: `0`, valores ausentes o N/D no reemplazan un dato válido anterior
+ni se convierten en situación 1. El período de referencia sigue siendo el más
+reciente del informe, aunque tenga registros sin clasificación. Las tablas de
+historial y deudas vigentes muestran N/D en esos casos; las situaciones válidas
+de la tabla de deudas vigentes usan los mismos colores que el historial.
 Las entidades cuyo último dato supera la tolerancia quedan fuera del resumen;
 se informa su cantidad y sus registros siguen disponibles en el historial.
 

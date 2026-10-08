@@ -2,7 +2,10 @@
 // may omit the situation on subsequent rows of a merged HTML cell.
 export function prepareCredixBcra(bcra = {}) {
     bcra = bcra || {};
-    if (bcra.fuente === 'BCRA') return bcra;
+    if (bcra.fuente === 'BCRA') {
+        const unknown = array(bcra.deudas_vigentes).some((row) => !bcraSituation(row?.situacion));
+        return unknown ? { ...bcra, deuda_situacion_negativa_total: null } : bcra;
+    }
     let groupSituation = '';
     const debts = (Array.isArray(bcra.deudas_vigentes) ? bcra.deudas_vigentes : []).map((row) => {
         const raw = Array.isArray(row.raw) ? row.raw : [];
@@ -28,6 +31,16 @@ export function prepareCredixBcra(bcra = {}) {
     };
 }
 
+// Keep the original value in the report; only 1..6 are credit classifications.
+export function bcraSituation(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-6]$/.test(text) ? text : null;
+}
+
+export function formatBcraSituation(value) {
+    return bcraSituation(value) ?? 'N/D';
+}
+
 function amountInCents(value) {
     const text = String(value ?? '').replace(/^\$\s*/, '').trim();
     if (!/^(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?$/.test(text)) return null;
@@ -50,6 +63,12 @@ const LATEST_SITUATION_TOLERANCE_MONTHS = 2;
 export function latestBcraSituations(bcra = {}) {
     bcra = bcra || {};
     const latestByEntity = new Map();
+    const currentDebts = array(bcra.deudas_vigentes);
+    const hasCurrentSnapshot = Array.isArray(bcra.deudas_vigentes)
+        && (currentDebts.length > 0 || amountInCents(bcra.deuda_vigente_total) === 0);
+    const entityKey = (name) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const currentEntities = new Set(currentDebts.map((row) =>
+        entityKey(String(row?.entidad ?? '').trim().replace(/\s+/g, ' '))));
     let reference = null;
     const observePeriod = (period) => {
         if (period !== null) reference = Math.max(reference ?? period, period);
@@ -57,16 +76,19 @@ export function latestBcraSituations(bcra = {}) {
     const add = (entity, period, situation) => {
         observePeriod(period);
         const name = String(entity ?? '').trim().replace(/\s+/g, ' ');
-        const value = String(situation ?? '').trim();
-        if (!name || period === null || !/^[0-6]$/.test(value)) return;
-        const key = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+        const value = bcraSituation(situation);
+        if (!name || period === null || value === null) return;
+        const key = entityKey(name);
+        // The current endpoint determines which entities remain reported as debts.
+        // History can recover a classification, but cannot revive an inactive debt.
+        if (hasCurrentSnapshot && !currentEntities.has(key)) return;
         const previous = latestByEntity.get(key);
         if (!previous || period > previous.month) {
             latestByEntity.set(key, { entidad: name, month: period, situacion: value });
         }
     };
     // Current records take precedence if two representations have the same period.
-    for (const row of array(bcra.deudas_vigentes)) {
+    for (const row of currentDebts) {
         if (row) add(row.entidad, periodMonth(row.periodo), row.situacion);
     }
     const matrix = bcra.deudas_24_meses || {};

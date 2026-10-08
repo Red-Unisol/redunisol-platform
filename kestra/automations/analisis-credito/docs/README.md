@@ -412,10 +412,15 @@ Un 404 documentado sin registros es una respuesta valida sin deuda; una respuest
 invalida no se interpreta como cero. La API de cache y Herramientas leen el mismo
 contrato, con **Fuente: BCRA** o **Fuente: CredixSA** y las mismas tablas.
 
-La situacion `0` devuelta por la API se conserva sin interpretacion, con su monto
-original convertido a pesos y color neutro en la pantalla. No invalida el historial
-ni se transforma en situacion 1 o en monto cero. Se siguen rechazando situaciones
-ausentes o fuera de 0..6, importes invalidos e identidades que no coincidan.
+La situacion `0` devuelta por la API se conserva en el informe original para
+trazabilidad, con su monto convertido a pesos; no es una clasificacion crediticia
+valida. Herramientas la muestra como **N/D**, con color neutro, y la omite al buscar
+la ultima situacion valida de cada entidad. No invalida el historial ni se transforma
+en situacion 1 o monto cero. Si una deuda vigente tiene situacion `0`, el subtotal
+negativo es `null` porque su clasificacion es desconocida; el total de montos se
+conserva. Un 404 documentado sin registros sigue dando totales cero. Se siguen
+rechazando situaciones ausentes o fuera de 0..6, importes invalidos e identidades
+que no coincidan.
 
 `consulta_directa_intentos` guarda por endpoint el numero de intento, HTTP cuando
 se recibio una respuesta y resultado (`ok`, `http_error`, `transport_error` o
