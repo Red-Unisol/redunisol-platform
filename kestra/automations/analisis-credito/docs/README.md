@@ -376,6 +376,14 @@ Configuracion inline en el flow:
 
 - `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
 
+## recuperar_bcra_cache
+
+Recupera los informes vigentes que quedaron con respaldo de CredixSA por un
+fallo de BCRA. Corre cada dos minutos, con lotes acotados, cuatro oportunidades
+por version, backoff persistido y proteccion contra escrituras concurrentes.
+Actualiza solamente BCRA, conserva la antiguedad del informe y sincroniza KV
+mediante una outbox. Ver [contrato y operacion](bcra-recovery.md).
+
 ## precalentar_cache_credixsa_v2_sondeo
 
 Sondea solicitudes nuevas de CredixSA y solo ejecuta el worker pesado cuando hay candidatos.
