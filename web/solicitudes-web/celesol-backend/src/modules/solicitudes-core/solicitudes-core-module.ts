@@ -26,6 +26,7 @@ import { SolicitudCancelacionRepositoryImpl } from "./cancelaciones/infrastructu
 import { SolicitudCancelacionesController } from "./cancelaciones/presentation/SolicitudCancelacionesController";
 import { ChangeSolicitudStateUseCase } from "./application/use-cases/ChangeSolicitudState.use-case";
 import { CreatePrestamoLegacyUseCase } from "./application/use-cases/CreatePrestamoLegacy.use-case";
+import { ListLineasPrestamoDeSolicitudUseCase } from "./application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
@@ -82,6 +83,8 @@ import { WorkflowTransitionAdminController } from "./presentation/WorkflowTransi
 import { WorkflowTransitionAdminRoutes } from "./presentation/WorkflowTransitionAdminRoutes";
 import { SolicitudesCoreController } from "./presentation/SolicitudesCoreController";
 import { SolicitudesCoreRoutes } from "./presentation/SolicitudesCoreRoutes";
+import { crearVisibilidadVendedorGuard } from "./presentation/VisibilidadVendedorGuard";
+import { VimarxVisibilidadVendedorResolver } from "./infrastructure/services/VimarxVisibilidadVendedorResolver";
 import { FinSolicitudController } from "./presentation/FinSolicitudController";
 import { FinSolicitudRoutes } from "./presentation/FinSolicitudRoutes";
 import { Router } from "express";
@@ -234,6 +237,11 @@ export function createSolicitudesCoreRouter(
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
   });
+  const listLineasPrestamoDeSolicitudUseCase =
+    new ListLineasPrestamoDeSolicitudUseCase({
+      lineasPrestamoCatalog,
+      repository: solicitudesCoreRepository,
+    });
   const listPrestamosDelSocioUseCase = new ListPrestamosDelSocioUseCase({
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
@@ -347,9 +355,34 @@ export function createSolicitudesCoreRouter(
       repository: solicitudCancelacionRepository,
       solicitudesRepository: solicitudesCoreRepository,
     });
+  const visibilidadVendedorResolver = new VimarxVisibilidadVendedorResolver(
+    {
+      baseUrl: env.LEGACY_API_BASE_URL,
+      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    },
+    {
+      // Los usuarios de Vimarx no siempre coinciden en mayusculas con el
+      // legacyUser con el que se registraron en Sol Web.
+      buscarIdsPorLegacyUsers: async (legacyUsers) => {
+        const usuarios = await prisma.user.findMany({
+          select: { id: true },
+          where: {
+            deletedAt: null,
+            OR: legacyUsers.map((legacyUser) => ({
+              legacyUser: { equals: legacyUser, mode: "insensitive" as const },
+            })),
+          },
+        });
+
+        return usuarios.map((usuario) => usuario.id);
+      },
+    },
+  );
   const solicitudesCoreController = new SolicitudesCoreController({
+    visibilidadVendedorResolver,
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
+    listLineasPrestamoDeSolicitudUseCase,
     listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,
@@ -390,6 +423,11 @@ export function createSolicitudesCoreRouter(
     solicitudesCoreController,
     solicitudAdjuntosController,
     solicitudCancelacionesController,
+    crearVisibilidadVendedorGuard({
+      getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+      repository: solicitudesCoreRepository,
+      visibilidadVendedorResolver,
+    }),
   );
 }
 

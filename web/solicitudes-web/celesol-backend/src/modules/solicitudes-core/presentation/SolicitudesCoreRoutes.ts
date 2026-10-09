@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 
 import type { SolicitudAdjuntosController } from "../adjuntos/presentation/SolicitudAdjuntosController";
 import { SolicitudAdjuntosRoutes } from "../adjuntos/presentation/SolicitudAdjuntosRoutes";
@@ -11,8 +11,15 @@ export class SolicitudesCoreRoutes {
     controller: SolicitudesCoreController,
     solicitudAdjuntosController: SolicitudAdjuntosController,
     solicitudCancelacionesController: SolicitudCancelacionesController,
+    visibilidadVendedorGuard?: RequestHandler<{ id?: string }>,
   ) {
     const router = Router();
+
+    // Antes que todo: cualquier ruta de una solicitud (y lo que cuelga de
+    // ella) pasa por la visibilidad de Vendedores.
+    if (visibilidadVendedorGuard) {
+      router.use("/:id", visibilidadVendedorGuard);
+    }
 
     router.post("/", controller.create);
     router.get("/", controller.list);
@@ -32,6 +39,7 @@ export class SolicitudesCoreRoutes {
       controller.getPrestamoDelSocio,
     );
     router.get("/:id/credixsa", controller.getCredixsa);
+    router.get("/:id/lineas-prestamo", controller.listLineasPrestamo);
     router.get("/:id/assignment/agents", controller.listAssignableAgents);
     router.post("/:id/assignment/self", controller.assignToSelf);
     router.post("/:id/assignment", controller.assignToUser);

@@ -8,6 +8,7 @@ import type {
   SimularPrestamoRequest,
 } from "@/modules/solicitudes/types/solicitudes-core";
 import { useSimularPrestamoMutation } from "@/modules/solicitudes-core/hooks/use-simular-prestamo-mutation";
+import { StyledSelect } from "@/modules/solicitudes-editor/components/fields/base";
 import { MoneyInputField } from "@/shared/components/forms/money-input-field";
 import { Button } from "@/shared/components/ui/button";
 import { DateInput } from "@/shared/components/ui/date-input";
@@ -18,7 +19,6 @@ import {
   DialogTitle,
 } from "@/shared/components/ui/dialog";
 import { Input } from "@/shared/components/ui/input";
-import { StyledSelect } from "@/shared/components/ui/styled-select";
 import { TableLoader } from "@/shared/components/ui/table-loader";
 import {
   formatDecimalMoneyValue,
@@ -358,6 +358,8 @@ export function SimuladorPrestamoModal({
                           value: linea.oid ?? "",
                         }))}
                         placeholder="Seleccione una línea"
+                        // Mismo buscador que al cargar la linea en la solicitud.
+                        searchable
                         value={field.value}
                       />
                     )}

@@ -28,6 +28,7 @@ import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
 import { canViewPrestamosDelSocio,
   canAccessRiesgoTools,
   canCreateSocio,
+  isVendedor,
 } from "@/modules/auth/utils/auth-user";
 import { AdjuntoPreviewModal } from "@/modules/solicitudes-editor/components/AdjuntoPreviewModal";
 import {
@@ -107,6 +108,7 @@ import type {
   ExecuteWorkflowTransitionRequest,
   WorkflowTransition,
 } from "@/modules/solicitudes/types/solicitudes-core";
+import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 import {
   mapEditableValuesToPatchSolicitudCoreRequest,
   mapSolicitudCoreToEditableValues,
@@ -1201,6 +1203,81 @@ function DetailCard({
   return <Section title={title}>{children}</Section>;
 }
 
+// La linea se cambia donde la regla del estado lo habilita (pensado para que
+// RIESGO la ajuste al analizar), entre las del agente del vendedor.
+function LineaField({
+  isEditable,
+  lineas,
+  onChange,
+  solicitud,
+  value,
+}: {
+  isEditable: boolean;
+  lineas: LineaPrestamoPresolicitud[];
+  onChange: (value: string) => void;
+  solicitud: SolicitudCoreResponse;
+  value: string;
+}) {
+  if (!isEditable) {
+    return (
+      <ReadOnlyField
+        label="Línea"
+        value={formatText(solicitud.lineaPrestamoDescripcion)}
+      />
+    );
+  }
+
+  const options: StyledSelectOption[] = lineas.flatMap((linea) =>
+    linea.oid && linea.descripcion
+      ? [{ label: linea.descripcion.trim(), value: linea.oid }]
+      : [],
+  );
+
+  // Si la linea actual no vino en la lista (dejo de estar vigente), igual se
+  // muestra para no dejar el selector vacio.
+  if (
+    solicitud.lineaPrestamoLegacyOid &&
+    !options.some((option) => option.value === solicitud.lineaPrestamoLegacyOid)
+  ) {
+    options.unshift({
+      label: solicitud.lineaPrestamoDescripcion,
+      value: solicitud.lineaPrestamoLegacyOid,
+    });
+  }
+
+  const seleccionada = lineas.find((linea) => linea.oid === value);
+  const limites = seleccionada
+    ? [
+        seleccionada.cantidadMaximaCuotas !== null
+          ? `Hasta ${seleccionada.cantidadMaximaCuotas} cuotas`
+          : null,
+        seleccionada.montoMaximo !== null
+          ? `monto máximo ${formatAmount(seleccionada.montoMaximo)}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+
+  return (
+    <div className="grid gap-1.5">
+      <span className="text-xs font-medium text-foreground-secondary">
+        Línea
+      </span>
+      <StyledSelect
+        onChange={onChange}
+        options={options}
+        placeholder="Seleccione una línea"
+        searchable
+        value={value}
+      />
+      {limites ? (
+        <span className="text-xs text-foreground-muted">{limites}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function SolicitudSection({
   assignmentOptions,
   assignmentValue,
@@ -1208,6 +1285,8 @@ function SolicitudSection({
   isFieldEditableByKey,
   isEditing,
   isExecutiveAssignmentDisabled,
+  lineas,
+  mostrarEjecutivo,
   onAssignmentChange,
   onBooleanChange,
   onChange,
@@ -1221,7 +1300,10 @@ function SolicitudSection({
   assignmentValueLabel: string;
   isFieldEditableByKey: (fieldKey: string) => boolean;
   isEditing: boolean;
+  lineas: LineaPrestamoPresolicitud[];
   isExecutiveAssignmentDisabled: boolean;
+  /** El vendedor no ve quien analiza su solicitud: se oculta solo a Vendedores. */
+  mostrarEjecutivo: boolean;
   onAssignmentChange: (value: string) => void;
   onBooleanChange: (
     field: keyof EditableSolicitudCoreValues["solicitud"],
@@ -1246,9 +1328,15 @@ function SolicitudSection({
   return (
     <DetailCard title="Solicitud">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <ReadOnlyField
-          label="Línea"
-          value={formatText(solicitud.lineaPrestamoDescripcion)}
+        <LineaField
+          isEditable={
+            isEditing &&
+            isFieldEditableByKey("solicitud.lineaPrestamoLegacyOid")
+          }
+          lineas={lineas}
+          onChange={(value) => onChange("lineaPrestamoLegacyOid", value)}
+          solicitud={solicitud}
+          value={values.lineaPrestamoLegacyOid}
         />
         <EditableDateInput
           {...getReadonlyProps("solicitud.fechaPrimerVencimiento")}
@@ -1316,20 +1404,22 @@ function SolicitudSection({
           readOnlyValue={formatText(solicitud.motivo)}
           value={values.motivo}
         />
-        <EditableField
-          editor={
-            <StyledSelect
-              disabled={isExecutiveAssignmentDisabled}
-              onChange={onAssignmentChange}
-              options={assignmentOptions}
-              placeholder="Seleccionar ejecutivo"
-              value={assignmentValue}
-            />
-          }
-          isEditing={isEditing}
-          label="Ejecutivo solicitud"
-          value={assignmentValueLabel}
-        />
+        {mostrarEjecutivo ? (
+          <EditableField
+            editor={
+              <StyledSelect
+                disabled={isExecutiveAssignmentDisabled}
+                onChange={onAssignmentChange}
+                options={assignmentOptions}
+                placeholder="Seleccionar ejecutivo"
+                value={assignmentValue}
+              />
+            }
+            isEditing={isEditing}
+            label="Ejecutivo solicitud"
+            value={assignmentValueLabel}
+          />
+        ) : null}
         <EditableTextInput
           {...getReadonlyProps("solicitud.vendedorSolicitud")}
           disabled={!isFieldEditableByKey("solicitud.vendedorSolicitud")}
@@ -2841,6 +2931,12 @@ export function SolicitudesActualDetallePage() {
   const canViewCalculadora = canAccessRiesgoTools(currentUser);
   const solicitudCapabilities = solicitud?.capabilities;
   const canChangeState = solicitudCapabilities?.canChangeState ?? false;
+  // Guarda la evaluacion Riesgo con la solicitud a cargo, o un admin. El
+  // backend vuelve a chequearlo.
+  const canGuardarEvaluacion =
+    currentUser?.isSystemAdmin === true ||
+    (currentUser?.workflowOwner?.code === "RIESGO" &&
+      (solicitudCapabilities?.canEdit ?? false));
   const {
     data: adjuntos = [],
     error: adjuntosError,
@@ -2908,13 +3004,34 @@ export function SolicitudesActualDetallePage() {
   const [isUploadingAdjunto, setIsUploadingAdjunto] = useState(false);
   const [isGarantiaModalOpen, setIsGarantiaModalOpen] = useState(false);
   const [isSimuladorOpen, setIsSimuladorOpen] = useState(false);
-  const { data: lineasSimulador = [] } = useLineasPrestamoQuery();
+  const { data: lineasSimulador = [] } = useLineasPrestamoQuery(solicitudId);
   const [datosPersonalesTab, setDatosPersonalesTab] =
     useState<DatosPersonalesTab>("datosPersonales");
   const [solicitanteTab, setSolicitanteTab] =
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
     useState<SolicitudDetailVistaTab>("solicitud");
+  const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
+
+  function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
+    // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
+    if (
+      vistaTab === "evaluacion" &&
+      tab !== "evaluacion" &&
+      evaluacionConCambios &&
+      !window.confirm(
+        "Hay cambios sin guardar en la evaluación. Si cambiás de pestaña se pierden. ¿Continuar?",
+      )
+    ) {
+      return;
+    }
+
+    if (tab !== "evaluacion") {
+      setEvaluacionConCambios(false);
+    }
+
+    setVistaTab(tab);
+  }
   const [editableGarantias, setEditableGarantias] = useState<
     CreateSolicitudCoreGarantiaRequest[] | null
   >(null);
@@ -3300,20 +3417,25 @@ export function SolicitudesActualDetallePage() {
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
 
-    // Solo si se cambiaron las cuotas: una solicitud que ya venia fuera de
-    // rango no tiene que bloquear otras ediciones. Si la linea no esta entre
-    // las del usuario no hay limites contra que comparar y no se valida.
+    // Solo si se cambiaron las cuotas o la linea: una solicitud que ya venia
+    // fuera de rango no tiene que bloquear otras ediciones. Se compara contra
+    // la linea elegida; si no esta en la lista no hay limites y no se valida.
     const cuotasCambiaron =
       currentValues.solicitud.cuotas.trim() !==
       String(resolvedSolicitud.cuotas ?? "");
-    const cuotasError = cuotasCambiaron
-      ? getCuotasFueraDeLineaError(
-          currentValues.solicitud.cuotas,
-          lineasSimulador.find(
-            (linea) => linea.oid === resolvedSolicitud.lineaPrestamoLegacyOid,
-          ),
-        )
-      : null;
+    const lineaCambio =
+      currentValues.solicitud.lineaPrestamoLegacyOid !==
+      resolvedSolicitud.lineaPrestamoLegacyOid;
+    const cuotasError =
+      cuotasCambiaron || lineaCambio
+        ? getCuotasFueraDeLineaError(
+            currentValues.solicitud.cuotas,
+            lineasSimulador.find(
+              (linea) =>
+                linea.oid === currentValues.solicitud.lineaPrestamoLegacyOid,
+            ),
+          )
+        : null;
 
     if (cuotasError) {
       toast.error(cuotasError, {
@@ -3940,7 +4062,7 @@ export function SolicitudesActualDetallePage() {
                       : "border-transparent text-foreground-secondary hover:text-foreground"
                   }`}
                   key={tab.value}
-                  onClick={() => setVistaTab(tab.value)}
+                  onClick={() => cambiarVistaTab(tab.value)}
                   type="button"
                 >
                   {tab.label}
@@ -3984,6 +4106,8 @@ export function SolicitudesActualDetallePage() {
             isFieldEditableByKey={isSolicitudFieldEditable}
             isEditing={isEditing}
             isExecutiveAssignmentDisabled={!canManageAssignment}
+            mostrarEjecutivo={!isVendedor(currentUser)}
+            lineas={lineasSimulador}
             onAssignmentChange={setSelectedAssignmentValue}
             onBooleanChange={updateSolicitudBooleanField}
             onChange={updateSolicitudField}
@@ -4067,6 +4191,8 @@ export function SolicitudesActualDetallePage() {
           >
             <CalculadoraMutualSheet
               className="flex-1"
+              onCambiosSinGuardarChange={setEvaluacionConCambios}
+              puedeGuardar={canGuardarEvaluacion}
               source={{ kind: "embedded", solicitudId }}
             />
           </Suspense>

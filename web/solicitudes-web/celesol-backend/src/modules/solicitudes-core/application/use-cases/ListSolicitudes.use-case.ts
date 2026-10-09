@@ -26,6 +26,9 @@ export class ListSolicitudesUseCase {
 
       return this.repository
         .listHistoricas({
+          ...(input.creadoresVisibles
+            ? { creadoPorIn: input.creadoresVisibles }
+            : {}),
           limit: input.limit,
           nroDocumento: input.nroDocumento,
           offset: input.offset,
@@ -42,6 +45,9 @@ export class ListSolicitudesUseCase {
 
       return this.repository
         .listRecientes({
+          ...(input.creadoresVisibles
+            ? { creadoPorIn: input.creadoresVisibles }
+            : {}),
           createdFrom: input.createdFrom,
           createdTo: input.createdTo,
           ...(resolvedExcludeEstado
@@ -82,6 +88,9 @@ export class ListSolicitudesUseCase {
 
     return this.repository
       .listByOwner({
+        ...(input.creadoresVisibles
+          ? { creadoPorIn: input.creadoresVisibles }
+          : {}),
         createdFrom: input.createdFrom,
         createdTo: input.createdTo,
         ...(input.excludeEstado

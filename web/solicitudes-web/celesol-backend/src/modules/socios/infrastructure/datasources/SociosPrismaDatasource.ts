@@ -39,7 +39,16 @@ type SocioPrismaClient = PrismaClient & {
   socio: SocioPrismaDelegate;
 };
 
-function buildSearchWhere(search?: string) {
+function buildSearchWhere(search?: string, documentoExacto?: string) {
+  // Busqueda de Vendedores: solo el socio con ese documento, sin parciales.
+  if (documentoExacto) {
+    return {
+      where: {
+        OR: [{ nroDocumento: documentoExacto }, { cuit: documentoExacto }],
+      },
+    };
+  }
+
   const searchTerm = search?.trim();
 
   if (!searchTerm) {
@@ -156,13 +165,17 @@ export class SociosPrismaDatasource {
       : null;
   }
 
-  async count(input: { search?: string }): Promise<number> {
+  async count(input: {
+    documentoExacto?: string;
+    search?: string;
+  }): Promise<number> {
     return this.prisma.socio.count({
-      ...buildSearchWhere(input.search),
+      ...buildSearchWhere(input.search, input.documentoExacto),
     });
   }
 
   async list(input: {
+    documentoExacto?: string;
     limit: number;
     offset: number;
     search?: string;
@@ -173,7 +186,7 @@ export class SociosPrismaDatasource {
       },
       skip: input.offset,
       take: input.limit,
-      ...buildSearchWhere(input.search),
+      ...buildSearchWhere(input.search, input.documentoExacto),
     });
 
     return socios.map((socio) =>

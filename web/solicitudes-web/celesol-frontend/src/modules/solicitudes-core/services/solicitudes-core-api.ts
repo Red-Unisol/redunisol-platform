@@ -1,6 +1,7 @@
-import { apiClient } from "@/shared/services/http/api-client";
+import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
+import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 
 import type {
   CreateSolicitudCoreCancelacionRequest,
@@ -27,7 +28,6 @@ import type {
   WorkflowTransition,
 } from "@/modules/solicitudes/types/solicitudes-core";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const AREA_ASSIGNMENT_REQUIRED_MESSAGE =
   "Tu cuenta no tiene un área asignada. Contactá a un administrador.";
 
@@ -87,6 +87,16 @@ export function listSolicitudesCore(query: ListSolicitudesCoreQuery) {
 
 export function getSolicitudCoreById(solicitudId: string) {
   return apiClient.get<SolicitudCoreResponse>(`/solicitudes/${solicitudId}`);
+}
+
+// Lineas del agente del vendedor de la solicitud: las que se le pueden
+// asignar, sin importar quien la este mirando.
+export function getSolicitudCoreLineasPrestamo(solicitudId: string) {
+  return withAreaForbiddenMessage(
+    apiClient.get<LineaPrestamoPresolicitud[]>(
+      `/solicitudes/${solicitudId}/lineas-prestamo`,
+    ),
+  );
 }
 
 export function patchSolicitudCore(
@@ -369,13 +379,9 @@ export async function downloadSolicitudCoreAdjunto(
   );
 
   try {
-    const response = await fetch(
-      new URL(
-        `/solicitudes/${solicitudId}/adjuntos/${adjuntoId}/download`,
-        API_BASE_URL,
-      ),
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/adjuntos/${adjuntoId}/download`,
       {
-        credentials: "include",
         method: "GET",
         signal: controller.signal,
       },
@@ -442,11 +448,10 @@ export async function uploadSolicitudCoreAdjunto(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(
-      new URL(`/solicitudes/${solicitudId}/adjuntos`, API_BASE_URL),
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/adjuntos`,
       {
         body: formData,
-        credentials: "include",
         method: "POST",
         signal: controller.signal,
       },
@@ -508,11 +513,10 @@ export async function uploadSolicitudCoreAdjuntosLote(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(
-      new URL(`/solicitudes/${solicitudId}/adjuntos/batch`, API_BASE_URL),
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/adjuntos/batch`,
       {
         body: formData,
-        credentials: "include",
         method: "POST",
         signal: controller.signal,
       },

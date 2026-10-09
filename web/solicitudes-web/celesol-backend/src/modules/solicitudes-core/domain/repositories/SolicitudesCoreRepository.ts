@@ -31,6 +31,8 @@ export type CreateSolicitudCoreRecord = {
 };
 
 export type ListSolicitudesByOwnerInput = {
+  /** Solo las creadas por estos usuarios (visibilidad de Vendedores). */
+  creadoPorIn?: string[];
   createdFrom?: string;
   createdTo?: string;
   excludeEstado?: string;
@@ -53,6 +55,7 @@ export type ListSolicitudesTrackingInput = {
 };
 
 export type ListSolicitudesRecientesInput = {
+  creadoPorIn?: string[];
   createdFrom?: string;
   createdTo?: string;
   excludeEstado?: string;
@@ -63,6 +66,7 @@ export type ListSolicitudesRecientesInput = {
 };
 
 export type ListSolicitudesHistoricasInput = {
+  creadoPorIn?: string[];
   limit: number;
   nroDocumento?: string;
   offset: number;
@@ -316,6 +320,11 @@ export type SolicitudesCoreRepository = {
   findById(id: string): Promise<SolicitudCore | null>;
   findByLegacyOid?(legacyOid: string): Promise<SolicitudCore | null>;
   findWorkflowOwnerCodeById?(id: string): Promise<string | null>;
+  /** Quien creo la solicitud, o null si no existe. */
+  findCreadorById?(id: string): Promise<string | null>;
+  // Usuario del legado del vendedor de la solicitud (si no tiene, el de quien
+  // la creo): define de que agente salen las lineas que se le pueden asignar.
+  findVendedorLegacyUser?(solicitudId: string): Promise<string | null>;
   findUserById?(id: string): Promise<{ id: string; workflowOwnerId: string | null } | null>;
   listUsersByWorkflowOwnerId?(workflowOwnerId?: string): Promise<
     Array<{

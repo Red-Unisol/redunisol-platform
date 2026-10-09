@@ -27,7 +27,13 @@ describe("SolicitudFieldAccess", () => {
     );
 
     assert.equal(fieldAccess.defaultMode, "readonly");
-    assert.deepEqual(fieldAccess.editableFields, [...EDITABLE_FIELDS]);
+    // Sin regla persistida, todo menos la linea (solo la habilita la regla).
+    assert.deepEqual(
+      fieldAccess.editableFields,
+      EDITABLE_FIELDS.filter(
+        (field) => field !== "solicitud.lineaPrestamoLegacyOid",
+      ),
+    );
     assert.deepEqual(fieldAccess.editableGroups, []);
     assert.equal(fieldAccess.readonlyReason, undefined);
   });
@@ -37,7 +43,13 @@ describe("SolicitudFieldAccess", () => {
       solicitudCore({ estadoActual: state("Revisar") }),
     );
 
-    assert.deepEqual(fieldAccess.editableFields, [...EDITABLE_FIELDS]);
+    // Sin regla persistida, todo menos la linea (solo la habilita la regla).
+    assert.deepEqual(
+      fieldAccess.editableFields,
+      EDITABLE_FIELDS.filter(
+        (field) => field !== "solicitud.lineaPrestamoLegacyOid",
+      ),
+    );
     assert.deepEqual(fieldAccess.editableGroups, []);
   });
 

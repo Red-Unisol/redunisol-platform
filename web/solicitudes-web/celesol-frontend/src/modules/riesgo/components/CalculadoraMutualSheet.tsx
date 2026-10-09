@@ -32,6 +32,9 @@ import {
   getCalculadoraMutualDatos,
   getCalculadoraMutualDatosByCoreId,
   getCalculadoraRiesgoFile,
+  getEvaluacionRiesgo,
+  guardarEvaluacionRiesgo,
+  type EvaluacionRiesgo,
 } from "../services/riesgo-api";
 
 export type CalculadoraMutualSheetSource =
@@ -40,22 +43,74 @@ export type CalculadoraMutualSheetSource =
 
 type CalculadoraMutualSheetProps = {
   className?: string;
+  /** Avisa al detalle si hay cambios sin guardar, para frenar el cambio de pestaña. */
+  onCambiosSinGuardarChange?: (hayCambios: boolean) => void;
+  /** Riesgo con la solicitud a cargo, o admin. El backend vuelve a chequearlo. */
+  puedeGuardar?: boolean;
   source: CalculadoraMutualSheetSource;
 };
 
+type EvaluacionGuardadaInfo = Omit<EvaluacionRiesgo, "snapshot">;
+
+// Nivel de riesgo que da la planilla (Evaluacion!D30): un entero de 1 a 5. El
+// legado lo grababa en la solicitud con STOREXP("NivelRiesgo", ...).
+function leerNivelRiesgo(workbook: FWorkbook) {
+  const valor = Number(
+    workbook.getSheetByName("Evaluacion")?.getRange("D30").getValue(),
+  );
+
+  return Number.isInteger(valor) && valor >= 1 && valor <= 5 ? valor : null;
+}
+
+function formatGuardada(info: EvaluacionGuardadaInfo) {
+  const fecha = new Date(info.guardadaEn).toLocaleString("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+  const quien = info.guardadaPor ? ` por ${info.guardadaPor.nombre}` : "";
+
+  return `Guardada${quien} el ${fecha}`;
+}
+
 export function CalculadoraMutualSheet({
   className,
+  onCambiosSinGuardarChange,
+  puedeGuardar = false,
   source,
 }: CalculadoraMutualSheetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const workbookRef = useRef<FWorkbook | null>(null);
   const univerApiRef = useRef<FUniver | null>(null);
+  const cambiosListenerRef = useRef<{ dispose: () => void } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [solicitudOid, setSolicitudOid] = useState("");
   const [isHydrating, setIsHydrating] = useState(false);
   const [hydrationError, setHydrationError] = useState<string | null>(null);
+  const [evaluacionGuardada, setEvaluacionGuardada] =
+    useState<EvaluacionGuardadaInfo | null>(null);
+  const [hayCambios, setHayCambios] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onCambiosSinGuardarChange?.(hayCambios);
+  }, [hayCambios, onCambiosSinGuardarChange]);
+
+  useEffect(() => {
+    if (!hayCambios) {
+      return;
+    }
+
+    // Cerrar o recargar el navegador con cambios: el navegador pregunta.
+    function avisar(event: BeforeUnloadEvent) {
+      event.preventDefault();
+    }
+
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [hayCambios]);
 
   useEffect(() => {
     let isMounted = true;
@@ -64,6 +119,22 @@ export function CalculadoraMutualSheet({
 
     async function load() {
       try {
+        // Si la solicitud ya tiene una evaluacion guardada se abre esa, con lo
+        // que cargo Riesgo; si no, la plantilla. Si no se puede leer la
+        // guardada no se abre la plantilla: guardarla pisaria la anterior.
+        const guardada =
+          source.kind === "embedded"
+            ? await getEvaluacionRiesgo(source.solicitudId)
+            : null;
+
+        if (isMounted && guardada) {
+          setEvaluacionGuardada({
+            guardadaEn: guardada.guardadaEn,
+            guardadaPor: guardada.guardadaPor,
+            nivelRiesgo: guardada.nivelRiesgo,
+          });
+        }
+
         const blob = await getCalculadoraRiesgoFile();
         objectUrl = URL.createObjectURL(blob);
 
@@ -75,99 +146,98 @@ export function CalculadoraMutualSheet({
           type: blob.type,
         });
 
+        const montar = (workbookData: IWorkbookData) => {
+          if (!isMounted || !containerRef.current) {
+            return;
+          }
+
+          const { univer, univerAPI } = createUniver({
+            locale: LocaleType.ES_ES,
+            locales: {
+              [LocaleType.ES_ES]: mergeLocales(
+                UniverPresetSheetsCoreEsES,
+                UniverPresetSheetsDrawingEsES,
+              ),
+            },
+            presets: [
+              UniverSheetsCorePreset({
+                container: containerRef.current,
+                customFontFamily: {
+                  list: [
+                    {
+                      value: "Calibri",
+                      label: "Calibri",
+                    },
+                  ],
+                  override: false,
+                },
+                disableAutoFocus: true,
+                footer: {
+                  menus: false,
+                  sheetBar: true,
+                  statisticBar: false,
+                  zoomSlider: true,
+                },
+                formulaBar: false,
+                header: false,
+                toolbar: false,
+              }),
+              UniverSheetsDrawingPreset(),
+            ],
+          });
+
+          univerInstance = univer;
+          univerAPI.createWorkbook(workbookData);
+
+          const workbook = univerAPI.getActiveWorkbook();
+          workbookRef.current = workbook ?? null;
+          univerApiRef.current = univerAPI;
+          const sheets = workbook?.getSheets() ?? [];
+
+          sheets.forEach((sheet) => {
+            sheet.zoom(resolveCalculadoraSheetZoom(sheet.getSheetName()));
+          });
+
+          const initialSheetName = resolveInitialCalculadoraSheetName(
+            sheets.map((sheet) => sheet.getSheetName()),
+          );
+          const initialSheet = initialSheetName
+            ? workbook?.getSheetByName(initialSheetName)
+            : null;
+
+          if (workbook && initialSheet) {
+            workbook.setActiveSheet(initialSheet);
+            initialSheet.scrollToCell(0, 0);
+            initialSheet.getRange("A1").activate();
+          }
+
+          // Se activa isHydrating en el mismo render que isLoading pasa a
+          // false (para el caso embedded) para que la transición entre los
+          // dos loaders sea continua. Si no, hay un render intermedio -- el
+          // efecto de auto-hidratación recién corre en el próximo tick --
+          // donde ninguno de los dos está activo y se ve la planilla sin
+          // hidratar por un instante.
+          if (source.kind === "embedded") {
+            setIsHydrating(true);
+          }
+          setIsLoading(false);
+        };
+
+        if (guardada) {
+          montar(guardada.snapshot as IWorkbookData);
+          return;
+        }
+
         LuckyExcel.transformExcelToUniver(
           file,
-          (workbookData: IWorkbookData) => {
-            if (!isMounted || !containerRef.current) {
-              return;
-            }
-
-            const { univer, univerAPI } = createUniver({
-              locale: LocaleType.ES_ES,
-              locales: {
-                [LocaleType.ES_ES]: mergeLocales(
-                  UniverPresetSheetsCoreEsES,
-                  UniverPresetSheetsDrawingEsES,
-                ),
-              },
-              presets: [
-                UniverSheetsCorePreset({
-                  container: containerRef.current,
-                  customFontFamily: {
-                    list: [
-                      {
-                        value: "Calibri",
-                        label: "Calibri",
-                      },
-                    ],
-                    override: false,
-                  },
-                  disableAutoFocus: true,
-                  footer: {
-                    menus: false,
-                    sheetBar: true,
-                    statisticBar: false,
-                    zoomSlider: true,
-                  },
-                  formulaBar: false,
-                  header: false,
-                  toolbar: false,
-                }),
-                UniverSheetsDrawingPreset(),
-              ],
-            });
-
-            univerInstance = univer;
-            univerAPI.createWorkbook(
+          (workbookData: IWorkbookData) =>
+            montar(
               stripLuckyExcelSpuriousBorders({
                 ...workbookData,
                 styles: workbookData.styles ?? {},
               }),
-            );
-
-            const workbook = univerAPI.getActiveWorkbook();
-            workbookRef.current = workbook ?? null;
-            univerApiRef.current = univerAPI;
-            const sheets = workbook?.getSheets() ?? [];
-
-            sheets.forEach((sheet) => {
-              sheet.zoom(resolveCalculadoraSheetZoom(sheet.getSheetName()));
-            });
-
-            const initialSheetName = resolveInitialCalculadoraSheetName(
-              sheets.map((sheet) => sheet.getSheetName()),
-            );
-            const initialSheet = initialSheetName
-              ? workbook?.getSheetByName(initialSheetName)
-              : null;
-
-            if (workbook && initialSheet) {
-              workbook.setActiveSheet(initialSheet);
-              initialSheet.scrollToCell(0, 0);
-              initialSheet.getRange("A1").activate();
-            }
-
-            console.log(
-              "[calculadora-debug] xlsx loaded ok, isMounted=",
-              isMounted,
-            );
-            // Se activa isHydrating en el mismo render que isLoading pasa a
-            // false (para el caso embedded) para que la transición entre los
-            // dos loaders sea continua. Si no, hay un render intermedio -- el
-            // efecto de auto-hidratación recién corre en el próximo tick --
-            // donde ninguno de los dos está activo y se ve la planilla sin
-            // hidratar por un instante.
-            if (source.kind === "embedded") {
-              setIsHydrating(true);
-            }
-            setIsLoading(false);
-          },
+            ),
           (conversionError: Error) => {
-            console.log(
-              "[calculadora-debug] xlsx conversion error, isMounted=",
-              isMounted,
-              conversionError,
-            );
             if (!isMounted) {
               return;
             }
@@ -180,11 +250,6 @@ export function CalculadoraMutualSheet({
           },
         );
       } catch (error) {
-        console.log(
-          "[calculadora-debug] load() threw, isMounted=",
-          isMounted,
-          error,
-        );
         if (!isMounted) {
           return;
         }
@@ -204,6 +269,8 @@ export function CalculadoraMutualSheet({
       isMounted = false;
       workbookRef.current = null;
       univerApiRef.current = null;
+      cambiosListenerRef.current?.dispose();
+      cambiosListenerRef.current = null;
 
       // Univer desarma su propio árbol de React internamente al hacer
       // dispose(). Si eso corre en medio del ciclo de render/commit de
@@ -228,10 +295,6 @@ export function CalculadoraMutualSheet({
   async function hydrate(
     fetchDatos: () => ReturnType<typeof getCalculadoraMutualDatos>,
   ) {
-    console.log(
-      "[calculadora-debug] hydrate() called, workbookRef.current=",
-      workbookRef.current,
-    );
     const workbook = workbookRef.current;
 
     if (!workbook) {
@@ -240,7 +303,6 @@ export function CalculadoraMutualSheet({
     }
 
     const datosSheet = workbook.getSheetByName(CALCULADORA_DATOS_SHEET_NAME);
-    console.log("[calculadora-debug] datosSheet found?", !!datosSheet);
 
     if (!datosSheet) {
       setHydrationError(
@@ -254,43 +316,12 @@ export function CalculadoraMutualSheet({
 
     try {
       const datos = await fetchDatos();
-      console.log("[calculadora-debug] fetchDatos() resolved:", datos);
       const writes = buildCalculadoraDatosCellWrites(datos);
-      console.log("[calculadora-debug] writes to apply:", writes);
 
       for (const write of writes) {
         datosSheet.getRange(write.cell).setValue(write.value);
       }
 
-      console.log(
-        "[calculadora-debug] Datos!B15 after write => value=",
-        datosSheet.getRange("B15").getValue(),
-        "formula=",
-        datosSheet.getRange("B15").getFormula(),
-      );
-
-      const evaluacionSheet = workbook.getSheetByName("Evaluacion");
-      if (evaluacionSheet) {
-        console.log(
-          "[calculadora-debug] Evaluacion!D19 (CUIT) => value=",
-          evaluacionSheet.getRange("D19").getValue(),
-          "formula=",
-          evaluacionSheet.getRange("D19").getFormula(),
-        );
-        console.log(
-          "[calculadora-debug] Evaluacion!D20 (Nombre) => value=",
-          evaluacionSheet.getRange("D20").getValue(),
-          "formula=",
-          evaluacionSheet.getRange("D20").getFormula(),
-        );
-      } else {
-        console.log("[calculadora-debug] Evaluacion sheet not found!");
-      }
-
-      console.log(
-        "[calculadora-debug] forcing FULL recalculation, univerApiRef.current=",
-        univerApiRef.current,
-      );
       const formulaEngine = univerApiRef.current?.getFormula();
       // Por defecto Univer usa CalculationMode.WHEN_EMPTY: solo recalcula
       // fórmulas que NO tienen un valor cacheado todavía. Como el Excel
@@ -302,14 +333,16 @@ export function CalculadoraMutualSheet({
       formulaEngine?.executeCalculation();
       await formulaEngine?.onCalculationResultApplied();
 
-      console.log(
-        "[calculadora-debug] Evaluacion!D19 AFTER recalculation => value=",
-        evaluacionSheet?.getRange("D19").getValue(),
-      );
-
-      console.log("[calculadora-debug] hydration success");
+      // Recien despues de cargar los datos de la solicitud: esa carga no es
+      // un cambio de Riesgo y no debe marcar la planilla como sin guardar.
+      const univerAPI = univerApiRef.current;
+      if (puedeGuardar && univerAPI && !cambiosListenerRef.current) {
+        cambiosListenerRef.current = univerAPI.addEvent(
+          univerAPI.Event.SheetValueChanged,
+          () => setHayCambios(true),
+        );
+      }
     } catch (error) {
-      console.log("[calculadora-debug] hydrate() error:", error);
       setHydrationError(
         error instanceof ApiError || error instanceof Error
           ? error.message
@@ -320,24 +353,39 @@ export function CalculadoraMutualSheet({
     }
   }
 
-  useEffect(() => {
-    console.log(
-      "[calculadora-debug] auto-hydrate effect ran. isLoading=",
-      isLoading,
-      "errorMessage=",
-      errorMessage,
-      "source=",
-      source,
-    );
+  async function guardar() {
+    const workbook = workbookRef.current;
 
+    if (!workbook || source.kind !== "embedded") {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const guardada = await guardarEvaluacionRiesgo(source.solicitudId, {
+        nivelRiesgo: leerNivelRiesgo(workbook),
+        snapshot: workbook.save(),
+      });
+      setEvaluacionGuardada(guardada);
+      setHayCambios(false);
+    } catch (error) {
+      setSaveError(
+        error instanceof ApiError || error instanceof Error
+          ? error.message
+          : "No se pudo guardar la evaluación.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  useEffect(() => {
     if (source.kind !== "embedded" || isLoading || errorMessage) {
       return;
     }
 
-    console.log(
-      "[calculadora-debug] calling hydrate for solicitudId=",
-      source.solicitudId,
-    );
     void hydrate(() => getCalculadoraMutualDatosByCoreId(source.solicitudId));
     // Solo se auto-hidrata una vez, cuando la planilla termina de cargar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -396,6 +444,47 @@ export function CalculadoraMutualSheet({
             ) : null}
           </div>
         </header>
+      ) : null}
+
+      {source.kind === "embedded" ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2">
+          <p className="text-sm text-foreground-secondary">
+            {evaluacionGuardada
+              ? formatGuardada(evaluacionGuardada)
+              : "Todavía no se guardó una evaluación para esta solicitud."}
+            {evaluacionGuardada?.nivelRiesgo ? (
+              <span className="ml-2 font-medium text-foreground">
+                Nivel de riesgo: {evaluacionGuardada.nivelRiesgo}
+              </span>
+            ) : null}
+            {hayCambios ? (
+              <span className="ml-2 font-medium text-amber-800">
+                Hay cambios sin guardar
+              </span>
+            ) : null}
+          </p>
+
+          {puedeGuardar ? (
+            <Button
+              // Apagado (naranja al 50%) hasta que haya algo para guardar.
+              disabled={
+                !hayCambios ||
+                isLoading ||
+                isHydrating ||
+                isSaving ||
+                !!errorMessage
+              }
+              onClick={() => void guardar()}
+              size="sm"
+            >
+              {isSaving ? "Guardando..." : "Guardar evaluación"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {saveError ? (
+        <p className="px-4 py-1.5 text-sm text-destructive">{saveError}</p>
       ) : null}
 
       {errorMessage ? (

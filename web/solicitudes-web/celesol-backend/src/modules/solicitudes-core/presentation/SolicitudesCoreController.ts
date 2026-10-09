@@ -17,7 +17,12 @@ import type { ListAssignableSolicitudAgentsUseCase } from "../application/use-ca
 import type { ListSolicitudHistoryUseCase } from "../application/use-cases/ListSolicitudHistory.use-case";
 import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/ListSolicitudTransitions.use-case";
 import { GetCredixsaSolicitudUseCase } from "../application/use-cases/GetCredixsaSolicitud.use-case";
+import { ListLineasPrestamoDeSolicitudUseCase } from "../application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
+import {
+  esUsuarioVendedor,
+  type VisibilidadVendedorResolver,
+} from "../domain/services/VisibilidadVendedorResolver";
 import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
@@ -75,7 +80,9 @@ type Dependencies = {
   listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
   getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
+  listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
+  visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -98,7 +105,9 @@ export class SolicitudesCoreController {
   private readonly listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
   private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
+  private readonly listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
+  private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -125,8 +134,11 @@ export class SolicitudesCoreController {
       dependencies.listSolicitudTransitionsUseCase;
     this.getCredixsaSolicitudUseCase = dependencies.getCredixsaSolicitudUseCase;
     this.getPrestamoDelSocioUseCase = dependencies.getPrestamoDelSocioUseCase;
+    this.listLineasPrestamoDeSolicitudUseCase =
+      dependencies.listLineasPrestamoDeSolicitudUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
+    this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
@@ -258,8 +270,14 @@ export class SolicitudesCoreController {
         query.scope === "work" && !user.isSystemAdmin
           ? this.requireWorkflowOwnerId(user.workflowOwnerId)
           : undefined;
+      // Un vendedor ve lo suyo y, si es dueño de un agente, lo de sus
+      // vendedores. Las demas areas ven todo.
+      const creadoresVisibles = esUsuarioVendedor(user)
+        ? await this.visibilidadVendedorResolver.creadoresVisibles(user)
+        : undefined;
       const solicitudes = await this.listSolicitudesUseCase.execute({
         ...query,
+        ...(creadoresVisibles ? { creadoresVisibles } : {}),
         currentUser: {
           id: user.id,
           workflowOwnerId: user.workflowOwnerId,
@@ -330,6 +348,30 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json({ prestamos });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Lineas que se le pueden asignar a la solicitud (las del agente de su
+  // vendedor). Las usa el detalle para cambiar la linea y para el simulador.
+  listLineasPrestamo = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      await this.getCurrentUser(req);
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const lineas = await this.listLineasPrestamoDeSolicitudUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(lineas);
     } catch (error) {
       next(error);
     }

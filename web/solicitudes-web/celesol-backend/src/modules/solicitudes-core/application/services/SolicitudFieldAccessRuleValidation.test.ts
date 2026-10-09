@@ -107,14 +107,12 @@ describe("normalizeFieldAccessRule", () => {
     );
   });
 
-  it("rejects protected line field", () => {
-    assert.throws(
-      () =>
-        normalizeFieldAccessRule(input({
-          editableFields: ["solicitud.lineaPrestamoLegacyOid"],
-        })),
-      FieldAccessRuleBlockedFieldError,
-    );
+  it("accepts the line field: it is enabled per state from the configuration", () => {
+    const rule = normalizeFieldAccessRule(input({
+      editableFields: ["solicitud.lineaPrestamoLegacyOid"],
+    }));
+
+    assert.deepEqual(rule.editableFields, ["solicitud.lineaPrestamoLegacyOid"]);
   });
 
   it("rejects protected ejecutivo field", () => {

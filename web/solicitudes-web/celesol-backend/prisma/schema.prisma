@@ -55,6 +55,7 @@ model User {
   deletedSolicitudCancelaciones SolicitudCancelacion[]     @relation("SolicitudCancelacionDeletedByUser")
   changedSolicitudEstados       SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
   solicitudParticipants         SolicitudParticipant[]     @relation("SolicitudParticipantUser")
+  evaluacionesRiesgo            SolicitudEvaluacionRiesgo[] @relation("EvaluacionRiesgoGuardadaPor")
   createdSolicitudParticipants  SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
   workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
 
@@ -173,6 +174,7 @@ model Solicitud {
   adjuntos                 SolicitudAdjunto[]
   cancelaciones            SolicitudCancelacion[]
   credixsaInforme          SolicitudCredixsaInforme?
+  evaluacionRiesgo         SolicitudEvaluacionRiesgo?
   estadoHistorial          SolicitudEstadoHistorial[]
   participants             SolicitudParticipant[]
   desembolso               TransferenciaDesembolso?
@@ -452,6 +454,26 @@ model SolicitudCredixsaInforme {
   solicitud    Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
 
   @@map("solicitud_credixsa_informes")
+}
+
+// Calculadora de riesgo guardada por solicitud (pestaña Evaluacion). La
+// planilla (snapshot de Univer en JSON) va al almacenamiento de archivos
+// -- MinIO en dev, S3 en prod --; aca queda donde esta, el nivel de riesgo
+// que dio y quien la guardo. Una fila por solicitud: cada guardado la pisa.
+model SolicitudEvaluacionRiesgo {
+  id            String    @id @default(uuid()) @db.Uuid
+  solicitudId   String    @unique @map("solicitud_id") @db.Uuid
+  storageBucket String    @map("storage_bucket")
+  storageKey    String    @map("storage_key")
+  nivelRiesgo   Int?      @map("nivel_riesgo")
+  guardadaPorId String?   @map("guardada_por_id") @db.Uuid
+  guardadaEn    DateTime  @map("guardada_en")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  solicitud     Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  guardadaPor   User?     @relation("EvaluacionRiesgoGuardadaPor", fields: [guardadaPorId], references: [id], onDelete: SetNull)
+
+  @@map("solicitud_evaluaciones_riesgo")
 }
 
 model SolicitudFieldAccessRule {

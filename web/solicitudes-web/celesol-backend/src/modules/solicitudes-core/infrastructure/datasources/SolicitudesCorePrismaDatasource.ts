@@ -7,6 +7,7 @@ import type {
   CreateSolicitudCoreRecord,
   GetAnalistaStatsInput,
   GetSolicitudesStatsInput,
+  ListSolicitudesHistoricasInput,
   ListSolicitudesRecientesInput,
   ListSolicitudesByOwnerInput,
   ListSolicitudesTrackingInput,
@@ -434,6 +435,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: SolicitudesCorePrismaDatasource.buildWorkflowStateFilter({
           ownerId: input.workflowOwnerId,
           estado: input.estado,
@@ -484,6 +486,15 @@ export class SolicitudesCorePrismaDatasource {
     });
   }
 
+  async findCreadorById(id: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      select: { createdBy: true },
+      where: { id },
+    });
+
+    return solicitud?.createdBy ?? null;
+  }
+
   async findWorkflowOwnerCodeById(id: string) {
     const owner = await this.prisma.workflowOwner.findUnique({
       where: { id },
@@ -491,6 +502,26 @@ export class SolicitudesCorePrismaDatasource {
     });
 
     return owner?.code ?? null;
+  }
+
+  async findVendedorLegacyUser(solicitudId: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      where: { id: solicitudId },
+      select: {
+        creator: { select: { legacyUser: true } },
+        vendedor: { select: { legacyUser: true } },
+      },
+    });
+
+    if (!solicitud) {
+      return null;
+    }
+
+    return (
+      solicitud.vendedor?.legacyUser.trim() ||
+      solicitud.creator.legacyUser.trim() ||
+      null
+    );
   }
 
   async listUsersByWorkflowOwnerId(workflowOwnerId?: string) {
@@ -668,6 +699,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: {
           code: {
             notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
@@ -709,7 +741,7 @@ export class SolicitudesCorePrismaDatasource {
     }));
   }
 
-  async listHistoricas(input: { limit: number; nroDocumento?: string; offset: number }) {
+  async listHistoricas(input: ListSolicitudesHistoricasInput) {
     const recientesDateRangeStart = new Date();
     recientesDateRangeStart.setDate(
       recientesDateRangeStart.getDate() - RECIENTES_WINDOW_DAYS,
@@ -727,6 +759,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         OR: [
           {
             estadoActual: {
