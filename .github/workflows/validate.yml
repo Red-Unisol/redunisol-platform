@@ -137,4 +137,4 @@ jobs:
           printf 'APP_URL=http://localhost\n' > .env
           php artisan package:discover
       - name: Test Edna HTTP inbox and delivery worker
-        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/WhatsAppSalesContextTest.php
