@@ -355,7 +355,16 @@ fn draw_transfer_receipt_page(
             timestamp.format("%d/%m/%Y %H:%M").to_string(),
         ),
         ("Operador".to_owned(), operator_name.to_owned()),
-        ("Solicitud".to_owned(), case.request_oid().to_owned()),
+        ("Solicitud".to_owned(), case.core.request_display()),
+        (
+            "Origen".to_owned(),
+            if case.core.beex.is_some() {
+                "Beex"
+            } else {
+                "Vimarx"
+            }
+            .to_owned(),
+        ),
         (
             "Verification ID".to_owned(),
             case.server_validation

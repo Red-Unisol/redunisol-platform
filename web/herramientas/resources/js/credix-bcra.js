@@ -2,7 +2,10 @@
 // may omit the situation on subsequent rows of a merged HTML cell.
 export function prepareCredixBcra(bcra = {}) {
     bcra = bcra || {};
-    if (bcra.fuente === 'BCRA') return bcra;
+    if (bcra.fuente === 'BCRA') {
+        const unknown = array(bcra.deudas_vigentes).some((row) => !bcraSituation(row?.situacion));
+        return unknown ? { ...bcra, deuda_situacion_negativa_total: null } : bcra;
+    }
     let groupSituation = '';
     const debts = (Array.isArray(bcra.deudas_vigentes) ? bcra.deudas_vigentes : []).map((row) => {
         const raw = Array.isArray(row.raw) ? row.raw : [];
@@ -28,6 +31,16 @@ export function prepareCredixBcra(bcra = {}) {
     };
 }
 
+// Keep the original value in the report; only 1..6 are credit classifications.
+export function bcraSituation(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-6]$/.test(text) ? text : null;
+}
+
+export function formatBcraSituation(value) {
+    return bcraSituation(value) ?? 'N/D';
+}
+
 function amountInCents(value) {
     const text = String(value ?? '').replace(/^\$\s*/, '').trim();
     if (!/^(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?$/.test(text)) return null;
@@ -40,4 +53,8 @@ function formatCents(value) {
         minimumFractionDigits: value % 100 ? 2 : 0,
         maximumFractionDigits: 2,
     });
+}
+
+function array(value) {
+    return Array.isArray(value) ? value : [];
 }

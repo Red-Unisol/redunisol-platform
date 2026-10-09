@@ -24,6 +24,7 @@ class AttributionTests(unittest.TestCase):
             "utm_campaign": "cordoba",
             "attribution": {
                 "version": 1, "journey_id": "a" * 24, "status": "resolved",
+                "ga_client_id": "123456789.1791469720", "ga_session_id": "1791469719",
                 "first": {"utm_source": "meta", "utm_campaign": "primera", "fbclid": "click"},
                 "last": {"utm_source": "meta", "utm_campaign": "cordoba"},
                 "wa_assisted": True, "wa": {"WA_SEGMENT": "cordoba_jubilado"},
@@ -51,6 +52,8 @@ class AttributionTests(unittest.TestCase):
         snapshot = json.loads(added["UF_CRM_ATTR_JSON"])
         self.assertEqual(snapshot["first"]["utm_campaign"], "primera")
         self.assertEqual(snapshot["last"]["utm_campaign"], "cordoba")
+        self.assertEqual(snapshot["ga_client_id"], "123456789.1791469720")
+        self.assertEqual(snapshot["ga_session_id"], "1791469719")
         # Item API field aliases come from metadata, never a guessed casing transform.
         self.client.call.side_effect = None
         self.client.call.return_value = {"fields": {

@@ -178,6 +178,7 @@ model Solicitud {
   estadoHistorial          SolicitudEstadoHistorial[]
   participants             SolicitudParticipant[]
   desembolso               TransferenciaDesembolso?
+  bankIdentifiers          TransferenciaIdentificador[]
 
   @@index([estadoActualId])
   @@index([createdBy])
@@ -589,4 +590,15 @@ model TransferenciaPago {
 
   @@unique([desembolsoId, paymentKey])
   @@map("transferencia_pagos")
+}
+
+// Permanent UUID/payment-key -> sequential bank number, separate from display IDs.
+model TransferenciaIdentificador {
+  numero      BigInt @id @default(autoincrement())
+  solicitudId String @map("solicitud_id") @db.Uuid
+  paymentKey  String @map("payment_key")
+  solicitud   Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([solicitudId, paymentKey])
+  @@map("transferencia_identificadores")
 }

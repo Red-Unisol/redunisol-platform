@@ -40,7 +40,7 @@ class FakeCore:
             raise CaptureError('network_error')
         return copy.deepcopy(self.metadata)
 
-    def content(self, oid):
+    def content(self, oid, expected_size=None):
         if self.fail_content:
             raise CaptureError('network_error')
         return self.data
@@ -340,6 +340,28 @@ class SnapshotTests(unittest.TestCase):
             self.assertTrue(request.full_url.endswith('/api/Empresa/EvaluateList'))
             self.assertEqual(request.get_method(), 'POST')
             self.assertEqual(json.loads(request.data)['max'], 2)
+
+    def test_null_content_is_empty_only_when_core_declares_size_zero(self):
+        client = CoreClient('https://core.test')
+        with patch.object(client, 'query', return_value=[{'Archivo.Content': None}]):
+            self.assertEqual(client.content(91, 0), b'')
+            with self.assertRaisesRegex(CaptureError, 'attachment_missing'):
+                client.content(91, 10)
+            with self.assertRaisesRegex(CaptureError, 'attachment_missing'):
+                client.content(91, None)
+        with patch.object(client, 'query', return_value=[]):
+            with self.assertRaisesRegex(CaptureError, 'attachment_missing'):
+                client.content(91, 0)
+
+    def test_empty_attachment_completes_capture_and_clears_pending(self):
+        self.client.metadata[0]['Archivo.Size'] = 0
+        self.client.data = b''
+        result = self.poll()
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['pending'], 0)
+        manifest = self.manifest(self.observations()[0])
+        self.assertTrue(manifest['complete'])
+        self.assertEqual(manifest['downloads'][0]['object']['bytes'], 0)
 
     def test_flow_runs_every_minute_prod_only_with_persistent_volume(self):
         import yaml

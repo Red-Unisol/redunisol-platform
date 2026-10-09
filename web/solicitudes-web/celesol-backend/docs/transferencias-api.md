@@ -45,9 +45,38 @@ Usar HTTPS. La rotación cambia el hash y conserva el mismo client ID para
 recuperar operaciones anteriores. No reutilizar una cuenta personal ni activar
 el servicio como administrador. La autorización se verifica en cada request.
 
+### Alta de la identidad de servicio
+
+`scripts/ensure-transferencias-service-user.mjs` provisiona la cuenta técnica
+`svc-transferencias-beex` usando el componente de usuarios de la aplicación.
+Debe ejecutarse desde el backend, con `dist/` y su acceso a PostgreSQL, o enviarse
+por stdin al contenedor operativo (`node --input-type=module -`). Sin `--create`
+solo consulta; el alta requiere
+autorización operacional explícita y el argumento `--create`.
+
+La cuenta queda activa en TESORERIA, sin permisos de administrador y fuera de
+la asignación automática. Usa un correo reservado `.invalid`, no envía emails y
+mantiene `emailVerified=false` para impedir el login interactivo. El hash de una
+contraseña aleatoria se genera y su original se descarta; la autenticación de
+la integración usa el token separado, no esa contraseña. `legacyUser` es una
+identidad técnica de Beex: no crea ni modifica un usuario Vimarx.
+
+El script verifica las condiciones antes de confirmar la transacción, devuelve
+el UUID y es idempotente: si ya existe con otra configuración, falla sin editarla.
+No activa la API ni modifica el runtime env. Incorporar luego el UUID y el hash
+del token a la configuración cifrada Git-managed, y desplegar ambos juntos.
+
+Checkpoint 2026-10-06: identidad técnica creada en producción mediante el componente
+de usuarios, con las condiciones anteriores verificadas. El UUID y un token generado
+con 256 bits aleatorios se registraron localmente fuera de Git. La configuración
+cifrada `web/solicitudes-web/deploy/solicitudes-web.prod.env.enc` incorpora el hash
+SHA-256 y el UUID juntos; su despliegue habilita la API en producción. El token
+original no se incluye en el repositorio. El estado actual del usuario debe
+comprobarse antes de desplegar la configuración.
+
 Aplicar las migraciones antes de arrancar la versión nueva. Los ejemplos y
-Compose dejan ambas variables vacías; este cambio no crea usuarios ni activa
-credenciales en ningún ambiente.
+Compose dejan ambas variables vacías por defecto; desarrollo conserva la API
+deshabilitada. El alta del usuario es una operación separada del despliegue.
 
 ## Identidades y datos financieros
 
@@ -58,9 +87,24 @@ credenciales en ningún ambiente.
   configuración bancaria usando este namespace explícito.
 - `id` del desembolso: UUID persistente de la operación reservada.
 - `paymentKey`: `member` o `creditor:<UUID de cancelación BEEX>`.
+- `bankNumber`: número secuencial global por solicitud/pago, serializado como
+  string decimal. Lo asigna PostgreSQL al consultar el plan y permanece igual
+  entre instalaciones, consultas concurrentes y reintentos. No es `nroSolicitud`
+  ni el ID del préstamo. Puede haber huecos; no se recicla y la secuencia no cicla.
+  La nueva migración debe aplicarse antes de usar el cliente compatible con Beex.
 - `bankTransactionId`: ID que el cliente genera con el formato admitido por el
   banco y guarda en BEEX **antes de enviar**. Único, inmutable y nunca reciclado.
 - `bankOperationId`: referencia bancaria confirmada; no puede usarse en dos pagos.
+
+El plan incluye `member: {cuit, name}` aunque el neto al socio sea cero, para
+validar el titular contra el lookup por DNI sin inferirlo de una pata acreedora.
+
+El cliente conserva los IDs de Vimarx. Para Beex usa `ID_EMPRESA` + ocho dígitos
+altos de `bankNumber` + `3` + cinco dígitos bajos + `9`. El sufijo tiene 15
+dígitos: el `3` separa las patas legacy (tipos `1`/`2`) y el `9` lo separa del
+pago legacy normal (terminado en `0`). La misma empresa y el mismo número
+producen siempre el mismo ID. Los desembolsos reservados con formatos anteriores
+conservan sus IDs; no se reemplazan automáticamente.
 
 El plan lee el préstamo por ID, restringido al socio vinculado al CUIT del
 titular BEEX. Consulta los campos `LineaPrestamo.ID`, `[CBU transferencia]`,

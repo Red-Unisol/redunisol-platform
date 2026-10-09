@@ -74,7 +74,7 @@ def _periods(status: int, payload: object, cuit: str) -> dict:
             name = str(entity.get("entidad") or "").strip()
             situation = str(entity.get("situacion", ""))
             amount = Decimal(str(entity.get("monto")))
-            # The live API also returns 0. Preserve it without assigning a risk meaning.
+            # Preserve raw 0 for traceability; it is not a credit classification.
             if (not name or situation not in {"0", "1", "2", "3", "4", "5", "6"}
                     or not amount.is_finite() or amount < 0 or name in entities):
                 raise ValueError("Invalid BCRA entity")
@@ -91,13 +91,13 @@ def _periods(status: int, payload: object, cuit: str) -> dict:
     return dict(sorted(periods.items(), reverse=True))
 
 
-def consult_bcra(cuit: str, *, attempts: list | None = None) -> dict | None:
+def consult_bcra(cuit: str, *, attempts: list | None = None, max_attempts: int = MAX_ATTEMPTS) -> dict | None:
     if not re.fullmatch(r"\d{11}", cuit):
         return None
     paths = {"current": cuit, "history": "Historicas/" + cuit}
     reports = {}
     attempts = attempts if attempts is not None else []
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(max_attempts):
         with ThreadPoolExecutor(max_workers=2) as pool:
             pending = {key: pool.submit(_fetch, path) for key, path in paths.items() if key not in reports}
             for key, future in pending.items():
@@ -124,9 +124,9 @@ def consult_bcra(cuit: str, *, attempts: list | None = None) -> dict | None:
                 logger.log(level, "BCRA attempt: %s", json.dumps(outcome, sort_keys=True))
         if len(reports) == 2:
             return _normalize(reports["current"], reports["history"])
-        if attempt + 1 < MAX_ATTEMPTS:
+        if attempt + 1 < max_attempts:
             time.sleep(RETRY_PAUSE_SECONDS)
-    logger.warning("BCRA report incomplete after 3 attempts; caching CredixSA fallback.")
+    logger.warning("BCRA report incomplete after %s attempts; retaining CredixSA fallback.", max_attempts)
     return None
 
 
@@ -134,13 +134,16 @@ def _normalize(current: dict, history: dict) -> dict:
     active = set()
     debts = []
     total = negative = 0
+    negative_complete = True
     for period, entities in current.items():
         for name, entity in entities.items():
             if name in active:
                 continue
             active.add(name)
             total += entity["cents"]
-            if int(entity["situacion"]) >= 2:
+            if entity["situacion"] == "0":
+                negative_complete = False
+            elif int(entity["situacion"]) >= 2:
                 negative += entity["cents"]
             debts.append({"entidad": name, "periodo": _period_label(period),
                           "situacion": entity["situacion"], "monto": _money(entity["cents"]),
@@ -182,7 +185,8 @@ def _normalize(current: dict, history: dict) -> dict:
     return {
         "fuente": "BCRA", "consultado_en": _timestamp(), "consulta_directa_estado": "ok",
         "resumen": {}, "entidades": sorted(active), "deudas_vigentes": debts,
-        "deuda_vigente_total": _money(total), "deuda_situacion_negativa_total": _money(negative),
+        "deuda_vigente_total": _money(total),
+        "deuda_situacion_negativa_total": _money(negative) if negative_complete else None,
         "mensaje": "" if debts else "Sin deudas vigentes informadas por BCRA.",
         "deudas_24_meses": {"fuente": "BCRA", "anios": years, "meses": months, "filas": rows},
         "evolucion_deuda_por_entidad": {"fuente": "BCRA", "entidades": list(names), "filas": evolution},

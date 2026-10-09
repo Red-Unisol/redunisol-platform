@@ -436,10 +436,10 @@ impl CoinagClient {
             .ok_or_else(|| anyhow!("No se pudo resolver el importe de la transferencia."))?;
 
         Ok(json!({
-            "idTrxCliente": self.build_id_trx_cliente(
-                Some(case.request_oid()),
-                case.server_validation.verification_id.as_deref(),
-            )?,
+            "idTrxCliente": if let Some(plan) = &case.core.beex {
+                let member = plan.payments.iter().find(|p| p.payment_key == "member").ok_or_else(|| anyhow!("Beex no tiene pago al socio."))?;
+                crate::beex_client::bank_id(&self.config.id_empresa, member.bank_number.as_deref().ok_or_else(|| anyhow!("Falta bankNumber."))?)?
+            } else { self.build_id_trx_cliente(Some(case.request_oid()), case.server_validation.verification_id.as_deref())? },
             "cuitDebito": cuit_debito,
             "cbuDebito": cbu_debito,
             "titularDebito": titular_debito,
@@ -467,7 +467,7 @@ impl CoinagClient {
             ));
         }
         Ok(json!({
-            "idTrxCliente": self.build_cancellation_id_trx_cliente(case.request_oid(), leg)?,
+            "idTrxCliente": self.build_case_leg_id(case, leg)?,
             "cuitDebito": cuit_debito,
             "cbuDebito": cbu_debito,
             "titularDebito": titular_debito,
@@ -477,6 +477,29 @@ impl CoinagClient {
             "importe": leg.amount.round_dp(2).to_string(),
             "descripcion": self.config.descripcion,
         }))
+    }
+
+    pub fn build_case_leg_id(&self, case: &HydratedCase, leg: &TransferLeg) -> Result<String> {
+        if let Some(plan) = &case.core.beex {
+            let payment = plan
+                .payments
+                .iter()
+                .find(|p| p.payment_key == leg.key)
+                .ok_or_else(|| anyhow!("Pago fuera del plan Beex."))?;
+            crate::beex_client::bank_id(
+                &self.config.id_empresa,
+                payment
+                    .bank_number
+                    .as_deref()
+                    .ok_or_else(|| anyhow!("Falta bankNumber."))?,
+            )
+        } else {
+            self.build_cancellation_id_trx_cliente(case.request_oid(), leg)
+        }
+    }
+
+    pub fn beex_bank_id(&self, number: &str) -> Result<String> {
+        crate::beex_client::bank_id(&self.config.id_empresa, number)
     }
 
     pub fn build_cancellation_id_trx_cliente(

@@ -116,12 +116,19 @@ class BcraWarmupTests(unittest.TestCase):
             self.assertEqual(json.loads(cached["normalized_json"])["bcra"], financial)
             gc.collect()
 
-    def test_current_zero_keeps_its_amount_and_only_two_or_more_counts_in_negative_total(self):
+    def test_current_zero_keeps_raw_value_and_amount_but_negative_total_is_unknown(self):
         current = bcra._periods(200, payload([period("202607", [("Banco", 0, 123), ("Otra", 2, 41)])]), CUIT)
         financial = bcra._normalize(current, {})
         self.assertEqual(financial["deudas_vigentes"][0]["situacion"], "0")
         self.assertEqual(financial["deuda_vigente_total"], "$ 164.000")
-        self.assertEqual(financial["deuda_situacion_negativa_total"], "$ 41.000")
+        self.assertIsNone(financial["deuda_situacion_negativa_total"])
+
+    def test_unknown_classification_with_zero_amount_is_not_normal_or_confirmed_zero_risk(self):
+        current = bcra._periods(200, payload([period("202607", [("Banco", 0, 0)])]), CUIT)
+        financial = bcra._normalize(current, {})
+        self.assertEqual(financial["deudas_vigentes"][0]["situacion"], "0")
+        self.assertEqual(financial["deuda_vigente_total"], "$ 0")
+        self.assertIsNone(financial["deuda_situacion_negativa_total"])
 
     def test_invalid_response_records_http_success_and_does_not_claim_transport_failure(self):
         def fetch(path):
