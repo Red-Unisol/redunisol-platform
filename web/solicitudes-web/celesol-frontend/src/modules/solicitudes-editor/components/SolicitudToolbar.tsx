@@ -3,6 +3,7 @@ import {
   FileText,
   Landmark,
   Pencil,
+  Paperclip,
   RefreshCw,
   Save,
   Send,
@@ -77,6 +78,7 @@ export function SolicitudDetailToolbar({
   onStartEdit,
   transitionControl,
   submitAction,
+  attachmentsAction,
 }: {
   canEdit?: boolean;
   isCreatePrestamoLegacyPending?: boolean;
@@ -92,6 +94,7 @@ export function SolicitudDetailToolbar({
   onStartEdit?: () => void;
   transitionControl?: ReactNode;
   submitAction?: { onClick: () => void; disabled: boolean; disabledReason?: string };
+  attachmentsAction?: { onClick: () => void; count?: number };
 }) {
   return (
     <div className="border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5">
@@ -118,6 +121,12 @@ export function SolicitudDetailToolbar({
           >
             <Send className="size-4" aria-hidden="true" />
             Enviar solicitud
+          </Button>
+        ) : null}
+        {attachmentsAction ? (
+          <Button onClick={attachmentsAction.onClick} size="sm" type="button" variant="outline">
+            <Paperclip className="size-4" aria-hidden="true" />
+            Adjuntos{attachmentsAction.count !== undefined ? ` (${attachmentsAction.count})` : ""}
           </Button>
         ) : null}
         {onCreateSocio ? (
