@@ -22,7 +22,8 @@ function setup(overrides: Partial<DatosRapidosGateway> = {}) {
         calls.push(`linea:${id}`);
         return "Convenio superior";
       },
-      getCreditosVigentesRapido: async (id) => {
+      getMoraRapido: async () => true,
+      getCreditosActivosRapido: async (id) => {
         calls.push(`prestamos:${id}`);
         return true;
       },
@@ -34,18 +35,21 @@ describe("Datos rápidos del solicitante", () => {
   it("confirma socio y créditos usando identidad del legado", async () => {
     const { useCase, calls } = setup();
     assert.deepEqual(await useCase.socio(solicitud), { condicion: "member" });
-    assert.deepEqual(await useCase.creditos(solicitud), { vigentes: true });
+    assert.deepEqual(await useCase.creditos(solicitud), { activos: true });
     assert.ok(calls.includes("12345678:DNI"));
     assert.ok(calls.includes("prestamos:71"));
   });
   it("confirma ausencia de créditos solo con resultado explícito", async () => {
-    const { useCase } = setup({ getCreditosVigentesRapido: async () => false });
-    assert.deepEqual(await useCase.creditos(solicitud), { vigentes: false });
+    const { useCase } = setup({
+      getMoraRapido: async () => true,
+      getCreditosActivosRapido: async () => false,
+    });
+    assert.deepEqual(await useCase.creditos(solicitud), { activos: false });
   });
   it("no socio confirmado no dispara préstamos", async () => {
     const { useCase, calls } = setup({ lookupSocioRapido: async () => [] });
     assert.deepEqual(await useCase.socio(solicitud), { condicion: "none" });
-    assert.deepEqual(await useCase.creditos(solicitud), { vigentes: null });
+    assert.deepEqual(await useCase.creditos(solicitud), { activos: null });
     assert.equal(calls.length, 0);
   });
   it("coincidencias múltiples no se convierten en no socio", async () => {
@@ -53,7 +57,7 @@ describe("Datos rápidos del solicitante", () => {
       lookupSocioRapido: async () => [{ id: "1" }, { id: "2" }],
     });
     assert.deepEqual(await useCase.socio(solicitud), { condicion: "unknown" });
-    assert.deepEqual(await useCase.creditos(solicitud), { vigentes: null });
+    assert.deepEqual(await useCase.creditos(solicitud), { activos: null });
   });
   it("errores de socio o préstamos no producen negativos", async () => {
     const error = async (): Promise<never> => {
@@ -64,10 +68,11 @@ describe("Datos rápidos del solicitante", () => {
       { condicion: "unknown" },
     );
     assert.deepEqual(
-      await setup({ getCreditosVigentesRapido: error }).useCase.creditos(
-        solicitud,
-      ),
-      { vigentes: null },
+      await setup({
+        getMoraRapido: async () => true,
+        getCreditosActivosRapido: error,
+      }).useCase.creditos(solicitud),
+      { activos: null },
     );
   });
   it("documento ausente o inválido queda sin verificar", async () => {
@@ -106,6 +111,34 @@ describe("Datos rápidos del solicitante", () => {
         titular: { nroDocumento: "999", tipoDocumento: "DNI" },
       }),
       { condicion: "none" },
+    );
+  });
+});
+
+describe("Mora del solicitante", () => {
+  it("evalúa mora aunque no tenga préstamos activos", async () => {
+    const { useCase } = setup({ getCreditosActivosRapido: async () => false });
+    assert.deepEqual(await useCase.creditos(solicitud), { activos: false });
+    assert.deepEqual(await useCase.mora(solicitud), { enMora: true });
+  });
+  it("distingue ausencia, errores y socio ambiguo", async () => {
+    assert.deepEqual(
+      await setup({ getMoraRapido: async () => false }).useCase.mora(solicitud),
+      { enMora: false },
+    );
+    assert.deepEqual(
+      await setup({
+        getMoraRapido: async () => {
+          throw Error("offline");
+        },
+      }).useCase.mora(solicitud),
+      { enMora: null },
+    );
+    assert.deepEqual(
+      await setup({
+        lookupSocioRapido: async () => [{ id: "1" }, { id: "2" }],
+      }).useCase.mora(solicitud),
+      { enMora: null },
     );
   });
 });

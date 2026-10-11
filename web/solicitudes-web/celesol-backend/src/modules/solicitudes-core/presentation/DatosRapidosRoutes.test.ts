@@ -70,7 +70,8 @@ async function request(
         legacyCalls++;
         return [{ id: "71" }];
       },
-      getCreditosVigentesRapido: async () => {
+      getMoraRapido: async () => true,
+      getCreditosActivosRapido: async () => {
         legacyCalls++;
         return true;
       },
@@ -115,11 +116,11 @@ describe("Datos rápidos: autorización HTTP", () => {
       const result = await request("creditos", { role });
       assert.equal(result.status, 200);
       assert.equal(result.cache, "no-store");
-      assert.deepEqual(result.body, { vigentes: true });
+      assert.deepEqual(result.body, { activos: true });
       assert.equal(result.solicitudCalls, 1);
     });
   }
-  for (const parte of ["socio", "convenio", "creditos"]) {
+  for (const parte of ["socio", "convenio", "creditos", "mora"]) {
     it(`protege ${parte} antes de consultar legacy`, async () => {
       for (const options of [
         { authenticated: false },

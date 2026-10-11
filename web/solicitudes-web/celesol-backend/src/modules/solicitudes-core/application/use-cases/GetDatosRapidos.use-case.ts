@@ -9,7 +9,8 @@ export type DatosRapidosGateway = {
     tipoDocumento?: string,
   ): Promise<{ id: string }[]>;
   getConvenioRapido(lineaOid: string): Promise<string | null>;
-  getCreditosVigentesRapido(socioId: string): Promise<boolean | null>;
+  getMoraRapido(socioId: string): Promise<boolean | null>;
+  getCreditosActivosRapido(socioId: string): Promise<boolean | null>;
 };
 
 export class GetDatosRapidosUseCase {
@@ -55,15 +56,25 @@ export class GetDatosRapidosUseCase {
     }
   }
 
+  async mora(solicitud: Solicitud) {
+    try {
+      const socio = await this.resolveSocio(solicitud);
+      if (socio.condicion !== "member") return { enMora: null };
+      return { enMora: await this.gateway.getMoraRapido(socio.id) };
+    } catch {
+      return { enMora: null };
+    }
+  }
+
   async creditos(solicitud: Solicitud) {
     try {
       const socio = await this.resolveSocio(solicitud);
-      if (socio.condicion !== "member") return { vigentes: null };
+      if (socio.condicion !== "member") return { activos: null };
       return {
-        vigentes: await this.gateway.getCreditosVigentesRapido(socio.id),
+        activos: await this.gateway.getCreditosActivosRapido(socio.id),
       };
     } catch {
-      return { vigentes: null };
+      return { activos: null };
     }
   }
 }

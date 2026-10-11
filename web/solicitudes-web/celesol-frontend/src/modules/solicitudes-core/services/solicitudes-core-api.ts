@@ -258,6 +258,7 @@ export function getCredixsaSolicitud(solicitudId: string) {
 }
 
 export type PrestamoDelSocioResponse = {
+  estado: number | null;
   capital: number | null;
   fechaEmision: string | null;
   legacyId: string | null;

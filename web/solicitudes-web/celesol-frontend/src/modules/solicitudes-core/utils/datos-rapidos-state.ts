@@ -21,15 +21,15 @@ export function socioIndicator(query: QueryState<{ condicion: string }>) {
     : { text: "No es socio", member: false, variant: "neutral" as const };
 }
 export function creditosIndicator(
-  query: QueryState<{ vigentes: boolean | null }>,
+  query: QueryState<{ activos: boolean | null }>,
 ) {
   if (query.isPending)
     return { text: "Consultando créditos", variant: "neutral" as const };
-  if (query.isError || typeof query.data?.vigentes !== "boolean") {
+  if (query.isError || typeof query.data?.activos !== "boolean") {
     return { text: "No se pudo verificar", variant: "warning" as const };
   }
   return {
-    text: query.data.vigentes ? "Tiene" : "No tiene",
+    text: query.data.activos ? "Tiene" : "No tiene",
     variant: "neutral" as const,
   };
 }

@@ -30,22 +30,22 @@ describe("Indicadores de datos rápidos", () => {
       false,
     );
     assert.equal(
-      creditosIndicator({ ...ready, isError: true, data: { vigentes: false } })
+      creditosIndicator({ ...ready, isError: true, data: { activos: false } })
         .text,
       "No se pudo verificar",
     );
   });
   it("créditos distingue true, false, null y carga", () => {
     assert.equal(
-      creditosIndicator({ ...ready, data: { vigentes: true } }).text,
+      creditosIndicator({ ...ready, data: { activos: true } }).text,
       "Tiene",
     );
     assert.equal(
-      creditosIndicator({ ...ready, data: { vigentes: false } }).text,
+      creditosIndicator({ ...ready, data: { activos: false } }).text,
       "No tiene",
     );
     assert.equal(
-      creditosIndicator({ ...ready, data: { vigentes: null } }).text,
+      creditosIndicator({ ...ready, data: { activos: null } }).text,
       "No se pudo verificar",
     );
     assert.equal(

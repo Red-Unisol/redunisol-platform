@@ -5,10 +5,11 @@ No modifica alta de socios, transiciones ni generación de préstamos.
 
 ## Contrato
 
-Tres consultas independientes bajo `/solicitudes/:id/datos-rapidos/`:
+Cuatro consultas independientes bajo `/solicitudes/:id/datos-rapidos/`:
 
 - `socio`: `{ condicion: "member" | "none" | "unknown" }`.
-- `creditos`: `{ vigentes: true | false | null }`.
+- `creditos`: `{ activos: true | false | null }`.
+- `mora`: `{ enMora: true | false | null }`.
 - `convenio`: `{ descripcion: string | null }`.
 
 Todas pasan por el guard existente de visibilidad de solicitudes, autentican al
@@ -27,9 +28,17 @@ No se usa la ausencia de número de socio de la solicitud para decidir.
 
 La consulta de créditos vuelve a resolver la identidad en el servidor. Reutiliza
 el criterio por Integrantes[Socio.ID] del listado existente y consulta existencia
-con Vigente=True. Si no hay coincidencias, descarta Vigente nulo antes de responder
+con Estado=0 (activo, confirmado por negocio). Si no hay coincidencias, descarta Estado nulo antes de responder
 false. Así el máximo de 100 del listado no genera negativos por truncamiento.
-No se filtra por convenio, saldo ni fecha de cobro.
+No se filtra por convenio, saldo ni fecha de cobro. Vigente no determina actividad.
+Los demás códigos se muestran como Otros estados, sin asumir que estén pagados.
+
+La mora se consulta independientemente del estado del préstamo: cuotas del plan
+con número mayor a cero, saldo positivo y vencimiento anterior al día actual en
+America/Argentina/Buenos_Aires. Se excluyen movimientos de cobro y desembolso
+mediante el identificador de cuota del plan. Un pago parcial no elimina la mora
+mientras reste saldo vencido. Los errores se muestran como desconocidos; alcanzar
+el límite de 2000 filas sin encontrar cuotas del plan tampoco confirma ausencia.
 
 La fuente confirmada es `LineaPrestamo.Superior.Descripcion` sobre
 `F.Module.Cuentas.Prestamos.Prestamo` (por ejemplo, `NroCuenta == 993989`).
@@ -57,7 +66,16 @@ Las claves React Query separan persona y convenio e incluyen solicitud, document
 tipo y línea guardados. Al cambiar esos datos no se retienen resultados de otra
 identidad. Los indicadores generales quedan separados de futuras reglas por convenio.
 
-## Validación (2026-10-11)
+## Validación de corrección Estado y mora (2026-10-11)
+
+- Compilaciones backend y frontend aprobadas; lint de archivos afectados aprobado.
+- 993 pruebas backend aprobadas, 2 opcionales omitidas; 94 pruebas frontend aprobadas.
+- Consulta real de solo lectura: préstamo 130338 con Estado=0 y Vigente=false;
+  12 cuotas vencidas con saldo positivo y sin fecha de cobro.
+- Chromium: RIESGO y VENDEDORES a 390 y 1366 px con datos simulados, indicadores
+  independientes, filtros por Estado, identidad fija y sin desbordamiento horizontal.
+
+## Validación inicial (2026-10-11)
 
 - Integrado sobre `dev` en `bd1d938`, conservando los PRs 455–459.
 - Dependencias instaladas con `npm ci`, sin modificar lockfiles; Prisma 6.19.3
