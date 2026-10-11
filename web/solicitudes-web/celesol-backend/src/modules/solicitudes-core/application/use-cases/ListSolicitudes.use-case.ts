@@ -1,3 +1,4 @@
+import { InvalidSolicitudesCoreRequestError } from "../../domain/solicitudes-core-errors";
 import type { ListSolicitudesInput } from "../dtos/ListSolicitudes.dto";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
@@ -41,10 +42,16 @@ export class ListSolicitudesUseCase {
         throw new Error("Recientes list repository method is not available.");
       }
 
+      if (input.vista === "mi-area" && !input.currentUser.workflowOwnerId) {
+        throw new InvalidSolicitudesCoreRequestError("No tenés un área asignada para consultar Mi área.");
+      }
       const resolvedExcludeEstado = input.excludeEstado ?? "CargaVendedor";
 
       return this.repository
         .listRecientes({
+          ...(input.vista === "mi-area" && input.currentUser.workflowOwnerId
+            ? { estadoOwnerId: input.currentUser.workflowOwnerId }
+            : {}),
           ...(input.creadoresVisibles
             ? { creadoPorIn: input.creadoresVisibles }
             : {}),

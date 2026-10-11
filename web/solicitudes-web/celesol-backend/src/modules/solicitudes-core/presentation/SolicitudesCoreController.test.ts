@@ -1224,6 +1224,8 @@ describe("SolicitudesCoreController", () => {
           limit: "20",
           offset: "0",
           scope: "recientes",
+          vista: "mi-area",
+          estadoOwnerId: "untrusted-owner",
         },
       }),
       response,
@@ -1242,6 +1244,7 @@ describe("SolicitudesCoreController", () => {
       limit: 20,
       offset: 0,
       scope: "recientes",
+      vista: "mi-area",
     });
   });
 

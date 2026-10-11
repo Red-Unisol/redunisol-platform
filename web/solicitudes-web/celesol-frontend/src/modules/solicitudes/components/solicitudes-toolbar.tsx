@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ArchiveRestore,
   ArchiveX,
@@ -25,6 +26,7 @@ export type SolicitudesToolbarAction = {
 };
 
 type SolicitudesToolbarProps = {
+  viewControl?: ReactNode;
   leftActions?: SolicitudesToolbarAction[];
   onAction?: (actionId: string) => void;
   onSimularIntent?: () => void;
@@ -60,6 +62,7 @@ const DEFAULT_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
 ];
 
 export function SolicitudesToolbar({
+  viewControl,
   leftActions = DEFAULT_LEFT_ACTIONS,
   onAction,
   onSimularIntent,
@@ -96,6 +99,7 @@ export function SolicitudesToolbar({
           );
         })}
 
+        {viewControl}
         <div className="relative min-w-64 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-muted" />
           <Input
