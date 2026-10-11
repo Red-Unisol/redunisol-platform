@@ -503,6 +503,66 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     );
   }
 
+  // Consultas acotadas del resumen: nunca inferir ausencia por un padrón
+  // local desactualizado ni por el límite del listado de préstamos.
+  async lookupSocioRapido(documento: string, tipoDocumento?: string) {
+    if (!/^\d+$/.test(documento)) throw new LegacySolicitudesUnavailableError();
+    const rows = await this.executeEvaluateList({
+      buildCmd: () => `[NroDoc] = ${documento}${tipoDocumento ? ` And [TipoDoc.Descripcion] = '${escapeLegacyString(tipoDocumento)}'` : ""}`,
+      defaultMax: 2,
+      fields: ["ID"],
+      tipo: "F.Module.SocioMutual",
+      mapRow: (row) => {
+        if (row.length !== 1 || !/^\d+$/.test(String(row[0] ?? ""))) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return { id: String(row[0]) };
+      },
+    }, 2, true);
+    return rows;
+  }
+
+  async getConvenioRapido(lineaOid: string) {
+    if (!/^\d+$/.test(lineaOid)) throw new LegacySolicitudesUnavailableError();
+    const rows = await this.executeEvaluateList({
+      // Same superior as Prestamo.LineaPrestamo.Superior, including before loan creation.
+      // The stored Oid belongs to LineaPrestamoPresolicitud, not the loan line ID.
+      buildCmd: () => `[LineaSolicitud.Oid] = ${lineaOid}`,
+      defaultMax: 2,
+      fields: ["Superior.Descripcion"],
+      tipo: "F.Module.Cuentas.Prestamos.LineaPrestamo",
+      mapRow: (row) => {
+        if (row.length !== 1 || (row[0] !== null && typeof row[0] !== "string")) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return typeof row[0] === "string" ? row[0].trim() || null : null;
+      },
+    }, 2, true);
+    return rows.length === 1 ? rows[0] : null;
+  }
+
+  async getCreditosVigentesRapido(socioId: string): Promise<boolean | null> {
+    if (!/^\d+$/.test(socioId)) throw new LegacySolicitudesUnavailableError();
+    const base = buildPrestamosDelSocioDefinition(socioId);
+    const exists = async (condition: string) => {
+      const rows = await this.executeEvaluateList({
+        ...base,
+        buildCmd: () => `(${base.buildCmd()}) And (${condition})`,
+        fields: ["ID"],
+        mapRow: (row) => {
+          if (row.length !== 1 || !/^\d+$/.test(String(row[0] ?? ""))) {
+            throw new LegacySolicitudesUnavailableError();
+          }
+          return true;
+        },
+      }, 1, true);
+      return rows.length > 0;
+    };
+    if (await exists("[Vigente] = True")) return true;
+    // Un estado desconocido impide confirmar que no tenga créditos vigentes.
+    return await exists("[Vigente] Is Null") ? null : false;
+  }
+
   listPrestamosDelSocio(socioLegacyId: string) {
     return this.executeEvaluateList(
       buildPrestamosDelSocioDefinition(socioLegacyId),
@@ -583,6 +643,7 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   private async executeEvaluateList<TResult>(
     definition: EvaluateListDefinition<TResult>,
     max = definition.defaultMax,
+    strictRows = false,
   ): Promise<TResult[]> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -604,6 +665,10 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       const responseBody = await response.json();
 
       if (!Array.isArray(responseBody)) {
+        throw new LegacySolicitudesUnavailableError();
+      }
+
+      if (strictRows && responseBody.some((row) => !Array.isArray(row))) {
         throw new LegacySolicitudesUnavailableError();
       }
 

@@ -1,3 +1,5 @@
+import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
+import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
@@ -419,7 +421,7 @@ export function createSolicitudesCoreRouter(
     updateSolicitudCancelacionUseCase,
   });
 
-  return SolicitudesCoreRoutes.create(
+  const router = SolicitudesCoreRoutes.create(
     solicitudesCoreController,
     solicitudAdjuntosController,
     solicitudCancelacionesController,
@@ -429,6 +431,11 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
+  return addDatosRapidosRoutes(router, {
+    getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+    getSolicitudByIdUseCase,
+    datosRapidos: new GetDatosRapidosUseCase(solicitudesLegacyGateway),
+  });
 }
 
 export function createSolicitudesCoreAdminRouter(
