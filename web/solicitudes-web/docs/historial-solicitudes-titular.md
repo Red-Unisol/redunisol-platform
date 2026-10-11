@@ -21,7 +21,7 @@ Los importes vacíos permanecen null. No hay navegación, edición ni paginació
 La interfaz usa las claves solicitud + documento, carga solo al abrir la pestaña,
 y distingue carga, vacío, error con reintento y documento inválido. Reutiliza los
 formatos de fecha del legado e importes y ofrece desplazamiento horizontal por
-teclado en pantallas pequeñas. El mensaje de límite no promete historial completo.
+teclado en pantallas pequeñas. La consulta no garantiza un historial completo.
 
 ## Verificación
 
