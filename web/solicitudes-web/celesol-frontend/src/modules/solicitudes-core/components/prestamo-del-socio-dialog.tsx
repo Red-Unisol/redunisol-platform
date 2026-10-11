@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Landmark, X } from "lucide-react";
 
 import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
@@ -43,9 +44,27 @@ export function PrestamoDelSocioDialog({
   );
   const prestamo = data?.prestamo ?? null;
   const cuotas = data?.cuotas ?? [];
+  const [expandedPrestamoId, setExpandedPrestamoId] = useState<string | null>(null);
+  const mostrarCobradas = expandedPrestamoId === prestamoId && prestamoId !== null;
+  const cobradas = cuotas.filter((cuota) => Boolean(cuota.fechaCobro));
+  // Ultima cuota del plan con cobro registrado, por numero de cuota.
+  const ultimaCobrada = cobradas.reduce<(typeof cuotas)[number] | null>(
+    (ultima, cuota) =>
+      !ultima || (cuota.nroCuota ?? -1) > (ultima.nroCuota ?? -1) ? cuota : ultima,
+    null,
+  );
+  const cuotasVisibles = cuotas.filter(
+    (cuota) => !cuota.fechaCobro || mostrarCobradas || cuota === ultimaCobrada,
+  );
 
   return (
-    <DialogRoot onOpenChange={onOpenChange} open={prestamoId !== null}>
+    <DialogRoot
+      onOpenChange={(open) => {
+        if (!open) setExpandedPrestamoId(null);
+        onOpenChange(open);
+      }}
+      open={prestamoId !== null}
+    >
       <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[960px] flex-col overflow-hidden p-0">
         <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -99,6 +118,18 @@ export function PrestamoDelSocioDialog({
                 />
               </dl>
 
+              {cobradas.length > 1 && (
+                <Button
+                  aria-expanded={mostrarCobradas}
+                  onClick={() => setExpandedPrestamoId(mostrarCobradas ? null : prestamoId)}
+                  type="button"
+                  variant="ghost"
+                >
+                  {mostrarCobradas
+                    ? "Ocultar cuotas cobradas anteriores"
+                    : `Ver todas las cuotas cobradas (${cobradas.length})`}
+                </Button>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] border-collapse text-sm">
                   <thead className="bg-background text-left text-xs text-foreground-secondary">
@@ -115,7 +146,7 @@ export function PrestamoDelSocioDialog({
                   </thead>
                   <tbody>
                     {cuotas.length > 0 ? (
-                      cuotas.map((cuota) => (
+                      cuotasVisibles.map((cuota) => (
                         <tr
                           className="border-t border-border"
                           key={cuota.nroCuota ?? cuota.fecha}
