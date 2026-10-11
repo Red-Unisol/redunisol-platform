@@ -11,7 +11,8 @@ No se filtra por ejecutivo, asignación, participantes ni última intervención.
 Se conserva el filtro de creadores visibles que ya existía para vendedores.
 Las capacidades de edición, asignación y transición no cambian.
 
-El frontend inicia en Mi área para VENDEDORES, RIESGO y TESORERIA no administradores.
+El frontend inicia en Mi área para VENDEDORES y RIESGO no administradores.
+Tesorería conserva el listado habitual sin filtro de área y sin el control de alternancia.
 Según confirmación del usuario, administradores y usuarios sin área inician en
 Ver todas; Mi área está deshabilitada sin área. Las demás áreas mantienen la vista
 habitual. Una petición explícita de Mi área sin área devuelve solicitud inválida.
@@ -26,9 +27,8 @@ vacía se muestra fuera del ancho desplazable de la tabla para ser visible en m�
 
 - Se conserva la ventana de 21 días y las exclusiones existentes de Recientes.
 - `Transferir` ya está excluido de Recientes y es el único estado activo de
-  TESORERIA en el catálogo actual. Por eso Mi área de Tesorería queda vacía con
-  ese catálogo; Ver todas tampoco incorpora Transferir. Se informó este hallazgo
-  al usuario y no se amplió el alcance ni se modificó el catálogo.
+  TESORERIA en el catálogo actual. Se conserva esta exclusión; Tesorería queda
+  fuera del filtro de visualización por indicación del usuario.
 - El buscador mantiene su comportamiento existente por documento; los filtros de
   columnas mantienen su alcance sobre la página descargada. El nuevo filtro de
   área sí se aplica en backend antes de paginar.
@@ -50,7 +50,8 @@ vacía se muestra fuera del ancho desplazable de la tabla para ser visible en m�
 - Chromium: seis escenarios (Riesgo, Vendedores, Tesorería, administrador con área,
   administrador sin área y Riesgo móvil a 390 px). Vista inicial, alternancia con
   teclado, página 1, limpieza de selección, búsqueda conservada, vacío con Ver todas
-  disponible y actualización respetando la vista. Sin errores JavaScript.
+  disponible y actualización respetando la vista. Tesorería consulta todas sin
+  mostrar el control de área. Sin errores JavaScript.
 
 ## Archivos modificados
 

@@ -204,7 +204,7 @@ function RecientesList({ user }: { user: AuthUser }) {
   const [vista, setVista] = useState<"mi-area" | "todas">(() =>
     !user.isSystemAdmin &&
     user.workflowOwnerId &&
-    ["VENDEDORES", "RIESGO", "TESORERIA"].includes(user.workflowOwner?.code ?? "")
+    ["VENDEDORES", "RIESGO"].includes(user.workflowOwner?.code ?? "")
       ? "mi-area"
       : "todas",
   );
@@ -300,7 +300,7 @@ function RecientesList({ user }: { user: AuthUser }) {
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm"
     >
       <SolicitudesToolbar
-        viewControl={
+        viewControl={user.workflowOwner?.code !== "TESORERIA" && (
           <div
             className="flex flex-wrap items-center gap-2"
             role="group"
@@ -328,7 +328,7 @@ function RecientesList({ user }: { user: AuthUser }) {
               </Button>
             ))}
           </div>
-        }
+        )}
         leftActions={CORE_RECIENTES_LEFT_ACTIONS}
         onAction={(actionId) => {
           if (actionId === "refresh") {
