@@ -20,11 +20,12 @@ describe("ListSolicitudesUseCase", () => {
     for (const owner of ["riesgo", "vendedores", "tesoreria"]) {
       for (const vista of ["mi-area", "todas", "mi-area"] as const) {
         await useCase.execute({ scope: "recientes", vista,
-          currentUser: { id: "user", workflowOwnerId: owner }, workflowOwnerId: "ajeno",
+          currentUser: { id: "user", workflowOwnerId: owner }, workflowOwnerId: "ajeno", search: "  Ramiro López  ",
           creadoresVisibles: ["visible"], limit: 10, offset: 20, nroDocumento: "123",
           createdFrom: "2026-10-01", createdTo: "2026-10-11" });
         assert.deepEqual(calls.at(-1), {
           ...(vista === "mi-area" ? { estadoOwnerId: owner } : {}),
+          search: "Ramiro López",
           creadoPorIn: ["visible"], limit: 10, offset: 20, nroDocumento: "123",
           createdFrom: "2026-10-01", createdTo: "2026-10-11", excludeEstado: "CargaVendedor",
         });

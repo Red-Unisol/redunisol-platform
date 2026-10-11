@@ -33,6 +33,7 @@ type SolicitudesToolbarProps = {
   onSearchChange: (value: string) => void;
   rightActions?: SolicitudesToolbarAction[];
   searchTerm: string;
+  searchPlaceholder?: string;
 };
 
 const DEFAULT_LEFT_ACTIONS: SolicitudesToolbarAction[] = [
@@ -69,6 +70,7 @@ export function SolicitudesToolbar({
   onSearchChange,
   rightActions = DEFAULT_RIGHT_ACTIONS,
   searchTerm,
+  searchPlaceholder = "Texto a buscar",
 }: SolicitudesToolbarProps) {
   return (
     <div className="border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2">
@@ -105,7 +107,8 @@ export function SolicitudesToolbar({
           <Input
             className="pl-9"
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Texto a buscar"
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
             value={searchTerm}
           />
         </div>

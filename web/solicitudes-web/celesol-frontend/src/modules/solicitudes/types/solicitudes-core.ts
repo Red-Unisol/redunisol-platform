@@ -442,6 +442,7 @@ export type SolicitudCoreResponse = {
 };
 
 export type ListSolicitudesCoreQuery = {
+  search?: string;
   vista?: "mi-area" | "todas";
   createdFrom?: string;
   createdTo?: string;

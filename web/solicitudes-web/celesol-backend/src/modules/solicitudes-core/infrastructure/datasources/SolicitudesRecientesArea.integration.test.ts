@@ -28,7 +28,7 @@ it("Recientes filtra por área antes de paginar e incorpora cambios de estado, c
         const row = await tx.solicitud.create({ data: { ...base, estadoActualId: state.id,
           createdAt: new Date(`2026-10-0${i + 2}T12:${assigned ? "01" : "00"}:00Z`),
           assignedToUserId: assigned ? user.id : null,
-          titular: { create: { nroDocumento: doc } },
+          titular: { create: { nroDocumento: doc, nombre: "Ramiro Ángel", apellidoDenominacion: "López" } },
         } });
         ids.push(row.id);
       }
@@ -51,6 +51,18 @@ it("Recientes filtra por área antes de paginar e incorpora cambios de estado, c
       assert.equal(second[0].assignedToUserId, null);
     }
     assert.equal((await datasource.listRecientes({ ...query, limit: 100 })).length, 4);
+    for (const search of ["rami", "LÓPEZ RAMIRO", "  Ramiro   López  ", doc.slice(0, 8), `Ramiro ${doc.slice(0, 8)}`]) {
+      assert.equal((await datasource.listRecientes({ ...query, search, limit: 100 })).length, 4, search);
+    }
+    for (const search of ["Ramiro inexistente", "%", "_", "\\"]) {
+      assert.equal((await datasource.listRecientes({ ...query, search, limit: 100 })).length, 0, search);
+    }
+    const searched = await datasource.listRecientes({ ...query, search: "López Ram", estadoOwnerId: byArea[0].ownerId, offset: 1 });
+    assert.equal(searched.length, 1);
+    assert.equal(searched[0].assignedToUserId, null);
+    assert.equal(searched[0].estadoActual.ownerId, byArea[0].ownerId);
+    assert.equal((await datasource.listRecientes({ ...query, search: "Ramiro", creadoPorIn: [], limit: 100 })).length, 0);
+
     assert.equal((await datasource.listRecientes({ ...query, limit: 100, creadoPorIn: [] })).length, 0);
     await tx.solicitud.update({ where: { id: ids[0] }, data: { estadoActualId: byArea[1].id } });
     assert.equal((await datasource.listRecientes({ ...query, limit: 100, estadoOwnerId: byArea[0].ownerId })).length, 1);
