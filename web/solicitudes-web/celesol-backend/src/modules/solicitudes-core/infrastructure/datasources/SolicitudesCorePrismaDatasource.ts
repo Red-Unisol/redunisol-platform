@@ -701,6 +701,7 @@ export class SolicitudesCorePrismaDatasource {
         archivedAt: null,
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: {
+          ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),
           code: {
             notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
             ...(input.estado ? { equals: input.estado } : {}),

@@ -5,12 +5,34 @@ import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type {
   ListSolicitudesByOwnerInput,
+  ListSolicitudesRecientesInput,
   ListSolicitudesTrackingInput,
   SolicitudesCoreRepository,
 } from "../../domain/repositories/SolicitudesCoreRepository";
 import { ListSolicitudesUseCase } from "./ListSolicitudes.use-case";
 
 describe("ListSolicitudesUseCase", () => {
+  it("Mi área usa el owner autenticado y alterna sin modificar los filtros", async () => {
+    const calls: ListSolicitudesRecientesInput[] = [];
+    const useCase = new ListSolicitudesUseCase({ repository: {
+      listRecientes: async (input: ListSolicitudesRecientesInput) => { calls.push(input); return []; },
+    } as unknown as SolicitudesCoreRepository });
+    for (const owner of ["riesgo", "vendedores", "tesoreria"]) {
+      for (const vista of ["mi-area", "todas", "mi-area"] as const) {
+        await useCase.execute({ scope: "recientes", vista,
+          currentUser: { id: "user", workflowOwnerId: owner }, workflowOwnerId: "ajeno",
+          creadoresVisibles: ["visible"], limit: 10, offset: 20, nroDocumento: "123",
+          createdFrom: "2026-10-01", createdTo: "2026-10-11" });
+        assert.deepEqual(calls.at(-1), {
+          ...(vista === "mi-area" ? { estadoOwnerId: owner } : {}),
+          creadoPorIn: ["visible"], limit: 10, offset: 20, nroDocumento: "123",
+          createdFrom: "2026-10-01", createdTo: "2026-10-11", excludeEstado: "CargaVendedor",
+        });
+      }
+    }
+    await assert.rejects(useCase.execute({ scope: "recientes", vista: "mi-area", currentUser: { id: "user", workflowOwnerId: null }, limit: 10, offset: 0 }), /área asignada/);
+  });
+
   it("lists work solicitudes scoped to the current workflow owner and forwards filters", async () => {
     let receivedInput: ListSolicitudesByOwnerInput | null = null;
     const repository: SolicitudesCoreRepository = {

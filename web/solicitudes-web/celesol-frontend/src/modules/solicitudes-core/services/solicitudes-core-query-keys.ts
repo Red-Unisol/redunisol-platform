@@ -45,6 +45,9 @@ export const solicitudesCoreQueryKeys = {
     offset: number;
   }) => [...solicitudesCoreHistoricasRootKey, input] as const,
   recientes: (input: {
+    vista?: "mi-area" | "todas";
+    userId?: string;
+    workflowOwnerId?: string | null;
     createdFrom: string;
     createdTo: string;
     excludeEstado?: string;

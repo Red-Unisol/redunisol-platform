@@ -5,12 +5,18 @@ import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/so
 import { buildRecientesDateRange } from "@/modules/solicitudes-core/utils/recientes-date-range";
 
 type UseSolicitudesCoreRecientesQueryOptions = {
+  vista: "mi-area" | "todas";
+  userId?: string;
+  workflowOwnerId?: string | null;
   nroDocumento?: string;
   page: number;
   pageSize: number;
 };
 
 export function useSolicitudesCoreRecientesQuery({
+  vista,
+  userId,
+  workflowOwnerId,
   nroDocumento,
   page,
   pageSize,
@@ -21,8 +27,10 @@ export function useSolicitudesCoreRecientesQuery({
   const { createdFrom, createdTo } = buildRecientesDateRange();
 
   return useQuery({
+    enabled: Boolean(userId),
     queryFn: () =>
       listSolicitudesCore({
+        vista,
         createdFrom,
         createdTo,
         excludeEstado: "CargaVendedor",
@@ -32,6 +40,9 @@ export function useSolicitudesCoreRecientesQuery({
         scope: "recientes",
       }),
     queryKey: solicitudesCoreQueryKeys.recientes({
+      vista,
+      userId,
+      workflowOwnerId,
       createdFrom,
       createdTo,
       excludeEstado: "CargaVendedor",

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  listSolicitudesQuerySchema,
   createSolicitudBodySchema,
   patchSolicitudBodySchema,
 } from "./SolicitudesCoreRequest.schema";
@@ -94,4 +95,13 @@ describe("SolicitudesCoreRequest.schema", () => {
       assert.equal(result.success, false);
     });
   });
+});
+
+it("valida vista y no acepta owner del cliente", () => {
+  for (const vista of ["mi-area", "todas"]) {
+    const parsed = listSolicitudesQuerySchema.parse({ scope: "recientes", vista, estadoOwnerId: "ajeno" });
+    assert.equal(parsed.vista, vista);
+    assert.equal("estadoOwnerId" in parsed, false);
+  }
+  assert.equal(listSolicitudesQuerySchema.safeParse({ vista: "ajena" }).success, false);
 });
