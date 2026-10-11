@@ -201,6 +201,11 @@ export function SolicitudesCoreRecientesPage() {
 }
 
 function RecientesList({ user }: { user: AuthUser }) {
+  const areaLabel = user.workflowOwner?.code === "RIESGO"
+    ? "Riesgo"
+    : user.workflowOwner?.code === "VENDEDORES"
+      ? "Vendedores"
+      : user.workflowOwner?.name ?? "Sin área asignada";
   const [vista, setVista] = useState<"mi-area" | "todas">(() =>
     !user.isSystemAdmin &&
     user.workflowOwnerId &&
@@ -307,7 +312,7 @@ function RecientesList({ user }: { user: AuthUser }) {
             aria-label="Vista por área"
           >
             <span className="text-sm text-foreground-secondary">
-              Área: {user.workflowOwner?.name ?? "Sin área asignada"}
+              Área: {areaLabel}
             </span>
             {(["mi-area", "todas"] as const).map((value) => (
               <Button
@@ -324,7 +329,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                   setSelectedIds([]);
                 }}
               >
-                {value === "mi-area" ? "Mi área" : "Ver todas"}
+                {value === "mi-area" ? areaLabel : "Ver todas"}
               </Button>
             ))}
           </div>
