@@ -54,7 +54,7 @@ export function DatosRapidosSolicitante({
   const mora = useQuery({
     queryKey: [...key, "persona", "mora"],
     queryFn: () => datosRapidosApi.mora(solicitudId),
-    enabled: condicion.member,
+    enabled: condicion.member && canViewDetalle,
     retry: false,
   });
   const moraText = mora.isPending
@@ -121,7 +121,7 @@ export function DatosRapidosSolicitante({
           </span>
           <Badge variant={condicion.variant}>{condicion.text}</Badge>
         </div>
-        {condicion.member && (
+        {condicion.member && canViewDetalle && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-foreground-secondary">Mora</span>
             <Badge

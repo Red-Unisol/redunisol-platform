@@ -12,6 +12,7 @@ async function request(
   parte: string,
   options: {
     role?: string;
+    admin?: boolean;
     authenticated?: boolean;
     visible?: boolean;
     accessible?: boolean;
@@ -21,7 +22,7 @@ async function request(
   let solicitudCalls = 0;
   const user = {
     id: "owner",
-    isSystemAdmin: options.role === "ADMIN",
+    isSystemAdmin: options.admin ?? options.role === "ADMIN",
     workflowOwnerId: "area",
     workflowOwner: {
       id: "area",
@@ -111,6 +112,28 @@ async function request(
 }
 
 describe("Datos rápidos: autorización HTTP", () => {
+  it("deniega mora a vendedores antes de consultar solicitud o legacy", async () => {
+    const result = await request("mora", { role: "VENDEDORES" });
+    assert.equal(result.status, 403);
+    assert.equal(result.legacyCalls, 0);
+    assert.equal(result.solicitudCalls, 0);
+  });
+  for (const role of ["RIESGO", "TESORERIA", "ADMIN"]) {
+    it(`permite mora a ${role}`, async () => {
+      const result = await request("mora", { role });
+      assert.equal(result.status, 200);
+      assert.deepEqual(result.body, { enMora: true });
+      assert.equal(result.cache, "no-store");
+    });
+  }
+  it("conserva acceso de administrador incluso asignado a vendedores", async () => {
+    assert.equal((await request("mora", { role: "VENDEDORES", admin: true })).status, 200);
+  });
+  it("conserva condición de socio para vendedores", async () => {
+    const result = await request("socio", { role: "VENDEDORES" });
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, { condicion: "member" });
+  });
   for (const role of ["VENDEDORES", "RIESGO", "ADMIN"]) {
     it(`permite el resumen a ${role} autorizado y no expone detalles`, async () => {
       const result = await request("creditos", { role });

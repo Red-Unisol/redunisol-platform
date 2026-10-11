@@ -14,8 +14,11 @@ Cuatro consultas independientes bajo `/solicitudes/:id/datos-rapidos/`:
 
 Todas pasan por el guard existente de visibilidad de solicitudes, autentican al
 usuario y reutilizan GetSolicitudById. La respuesta es no-store. El resumen no
-entrega identidades ni importes de préstamos. VENDEDORES puede ver los indicadores,
-pero conserva la restricción existente del detalle de préstamos.
+entrega identidades ni importes de préstamos. VENDEDORES puede ver condición de socio y créditos activos, pero no mora.
+El endpoint de mora responde 403 a vendedores sin consultar legacy; el frontend
+no solicita ni muestra ese indicador. Se conserva el acceso de administradores
+y áreas internas (incluidas Riesgo y Tesorería), y la restricción existente del
+detalle de préstamos.
 
 ## Fuentes y estados
 
