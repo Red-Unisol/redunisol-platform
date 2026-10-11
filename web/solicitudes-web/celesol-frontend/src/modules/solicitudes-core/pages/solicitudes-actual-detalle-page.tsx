@@ -1,3 +1,4 @@
+import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
 import {
   ArrowLeft,
   CircleAlert,
@@ -1224,13 +1225,15 @@ function EditableMoneyInput({
 }
 
 function DetailCard({
+  id,
   children,
   title,
 }: {
+  id?: string;
   children: ReactNode;
   title: string;
 }) {
-  return <Section title={title}>{children}</Section>;
+  return <Section id={id} title={title}>{children}</Section>;
 }
 
 // La linea se cambia donde la regla del estado lo habilita (pensado para que
@@ -2648,7 +2651,7 @@ function SolicitanteSection({
   }
 
   return (
-    <DetailCard title="Solicitante">
+    <DetailCard id="solicitante-prestamos" title="Solicitante">
       <SectionTabs<SolicitanteContentTab>
         activeTab={activeContentTab}
         onTabChange={(tab) => {
@@ -3037,6 +3040,7 @@ export function SolicitudesActualDetallePage() {
   const { data: lineasSimulador = [] } = useLineasPrestamoQuery(solicitudId);
   const [datosPersonalesTab, setDatosPersonalesTab] =
     useState<DatosPersonalesTab>("datosPersonales");
+  const [prestamosNavigation, setPrestamosNavigation] = useState(0);
   const [solicitanteTab, setSolicitanteTab] =
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
@@ -3053,7 +3057,7 @@ export function SolicitudesActualDetallePage() {
         "Hay cambios sin guardar en la evaluación. Si cambiás de pestaña se pierden. ¿Continuar?",
       )
     ) {
-      return;
+      return false;
     }
 
     if (tab !== "evaluacion") {
@@ -3061,6 +3065,7 @@ export function SolicitudesActualDetallePage() {
     }
 
     setVistaTab(tab);
+    return true;
   }
   const [editableGarantias, setEditableGarantias] = useState<
     CreateSolicitudCoreGarantiaRequest[] | null
@@ -4022,6 +4027,27 @@ export function SolicitudesActualDetallePage() {
         </div>
       </header>
 
+      <DatosRapidosSolicitante
+        key={resolvedSolicitud.id}
+        solicitudId={resolvedSolicitud.id}
+        revision={JSON.stringify([
+          resolvedSolicitud.titular.nroDocumento,
+          resolvedSolicitud.titular.tipoDocumento,
+          resolvedSolicitud.lineaPrestamoLegacyOid,
+        ])}
+        canViewDetalle={Boolean(currentUser) && canViewPrestamosDelSocio(currentUser)}
+        onVerDetalle={() => {
+          if (!cambiarVistaTab("solicitud")) return;
+          setSolicitanteTab("prestamos");
+          setPrestamosNavigation((value) => value + 1);
+          requestAnimationFrame(() => {
+            const target = document.getElementById("solicitante-prestamos");
+            target?.scrollIntoView({ behavior: "smooth", block: "start" });
+            target?.focus({ preventScroll: true });
+          });
+        }}
+      />
+
       <SolicitudDetailToolbar
         canEdit={canEnterEditMode}
         isCreatePrestamoLegacyPending={createPrestamoLegacyMutation.isPending}
@@ -4147,6 +4173,7 @@ export function SolicitudesActualDetallePage() {
             values={currentValues.solicitud}
           />
           <SolicitanteSection
+            key={`${resolvedSolicitud.id}:${prestamosNavigation}`}
             activeTab={solicitanteTab}
             adjuntos={adjuntos}
             canCreateAdicional={isEditing && canUploadAdjuntos}
