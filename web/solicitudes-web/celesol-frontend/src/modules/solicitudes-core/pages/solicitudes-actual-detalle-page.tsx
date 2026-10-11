@@ -3249,6 +3249,10 @@ export function SolicitudesActualDetallePage() {
         : workflowTransitionOptions.length > 0
           ? "Enviar a..."
           : "Sin acciones disponibles";
+  const submissionTransition =
+    resolvedSolicitud.estadoActual.code === "CargaVendedor"
+      ? workflowTransitions.find((transition) => transition.toState.code === "Motor")
+      : undefined;
   const workflowHistoryErrorMessage =
     workflowHistoryError instanceof ApiError &&
     workflowHistoryError.status === 403
@@ -4070,6 +4074,19 @@ export function SolicitudesActualDetallePage() {
         onRefresh={handleRefresh}
         onSave={handleSaveToolbarAction}
         onStartEdit={handleStartEditing}
+        submitAction={
+          canChangeState && submissionTransition
+            ? {
+                onClick: () => handleWorkflowTransitionChange(submissionTransition.id),
+                disabled:
+                  isLoadingWorkflowTransitions ||
+                  workflowTransitionSelectorErrorMessage !== null ||
+                  executeWorkflowTransitionMutation.isPending ||
+                  submissionTransition.blockedReason !== null,
+                disabledReason: submissionTransition.blockedReason ?? undefined,
+              }
+            : undefined
+        }
         transitionControl={
           <StyledSelect
             className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"

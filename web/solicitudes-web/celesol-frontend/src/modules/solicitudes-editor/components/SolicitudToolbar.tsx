@@ -5,6 +5,7 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  Send,
   UserPlus,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -75,6 +76,7 @@ export function SolicitudDetailToolbar({
   onSave,
   onStartEdit,
   transitionControl,
+  submitAction,
 }: {
   canEdit?: boolean;
   isCreatePrestamoLegacyPending?: boolean;
@@ -89,6 +91,7 @@ export function SolicitudDetailToolbar({
   onSave?: () => void;
   onStartEdit?: () => void;
   transitionControl?: ReactNode;
+  submitAction?: { onClick: () => void; disabled: boolean; disabledReason?: string };
 }) {
   return (
     <div className="border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5">
@@ -105,6 +108,18 @@ export function SolicitudDetailToolbar({
           <FileText className="size-4" />
           Simulador
         </Button>
+        {submitAction ? (
+          <Button
+            disabled={submitAction.disabled}
+            onClick={submitAction.onClick}
+            title={submitAction.disabledReason}
+            size="sm"
+            type="button"
+          >
+            <Send className="size-4" aria-hidden="true" />
+            Enviar solicitud
+          </Button>
+        ) : null}
         {onCreateSocio ? (
           <Button
             onClick={onCreateSocio}
