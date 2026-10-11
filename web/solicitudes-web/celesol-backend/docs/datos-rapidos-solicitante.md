@@ -58,33 +58,33 @@ identidad. Los indicadores generales quedan separados de futuras reglas por conv
 
 ## Validación local (2026-10-11)
 
-- Parche incorporado sobre `6fc17eb` en `feat/datos-rapidos-solicitante`.
-  La comparación con `dev` actualizado queda pendiente: GitHub responde 403
-  por la política de red de este entorno.
-- `npm ci --no-audit --no-fund` completado en frontend y backend, conservando
-  ambos lockfiles. `HUSKY=0` evita instalar hooks durante la preparación.
-- `npm run build` del frontend aprobado después de corregir el cierre JSX
-  faltante en el parche. Vite avisa sobre chunks grandes y eval en una dependencia.
-- 37 pruebas backend de datos rápidos, autorización HTTP y regresión del gateway
-  aprobadas; 3 pruebas frontend de estados aprobadas.
+- Cambios integrados sobre `dev` en `bd1d938`, conservando los PRs 455–459,
+  en la rama `feat/datos-rapidos-solicitante`.
+- Dependencias instaladas con `npm ci`, sin modificar lockfiles.
+- Cliente Prisma 6.19.3 generado con verificación de checksums habilitada.
+- `npm run build` aprobado en frontend y backend sobre esa base actualizada.
+  Vite avisa sobre chunks grandes y eval en una dependencia.
+- 40 pruebas específicas aprobadas (caso de uso, gateway, autorización HTTP y
+  estados frontend). Lint aprobado para los archivos afectados antes del rebase.
 - Chromium con respuestas simuladas: 8 escenarios del componente aprobados a
   375 px (socio con/sin créditos, no socio, ambigüedad, error de socio, error de
   créditos, vendedor y cambio de solicitud). Sin desbordamiento horizontal;
   botón oculto para vendedor y no socio. Se verificó el callback del botón,
   no el recorrido completo hasta la pestaña de préstamos en una sesión real.
-- Suite frontend completa: 75 aprobadas y 1 fallida preexistente en
-  `field-access-admin-form.test.ts`, por esperar escapes Unicode literales
-  donde el código devuelve texto acentuado. Esos archivos no se modificaron.
-- La generación de Prisma, incluso con `--no-engine`, está bloqueada al obtener
-  checksums desde `binaries.prisma.sh` (403). No se deshabilitó su verificación.
-  El build backend falla por tipos de Prisma no generados. En la suite global
-  inicial del backend hubo 927 aprobadas, 33 fallidas y 2 omitidas; las fallas
-  corresponden al cliente Prisma ausente. Las 6 pruebas HTTP agregadas después
-  pasaron dentro de las 37 pruebas específicas indicadas arriba.
+- Suite backend sobre dev: 978 aprobadas, 6 fallidas por falta de DATABASE_URL
+  y PostgreSQL local, 2 omitidas. La descarga de PostgreSQL 18.3 desde Docker Hub
+  está bloqueada por la política de red.
+- Suite frontend: falla preexistente en `field-access-admin-form.test.ts`, por
+  esperar escapes Unicode literales donde el código devuelve texto acentuado.
+  Esos archivos no se modificaron.
+- La consulta de integración del convenio a Vimarx devuelve 403 del proxy, antes
+  de llegar al servidor. La API de GitHub también está bloqueada.
 
-Para completar la validación, habilitar los dominios `github.com` y
-`binaries.prisma.sh` guardados en el borrador del entorno, actualizar/comparar
-con `dev`, ejecutar `npm run prisma:generate`, `npm run build` y `npm test`
-en el backend. Revalidar el frontend si la integración con dev cambia sus archivos.
-Quedan pendientes la respuesta real del convenio en Vimarx y el recorrido de
-navegación en la página completa autenticada. No desplegar sin instrucción expresa.
+El usuario autorizó desplegar únicamente en dev después de pasar las
+verificaciones. No se ha desplegado ni modificado producción.
+Para continuar se guardaron en el borrador, conservando los dominios actuales:
+`api.github.com`, `registry-1.docker.io`, `auth.docker.io`,
+`production.cloudfront.docker.com` y `celesol.dyndns.org`.
+Tras activar la configuración: preparar PostgreSQL local con las migraciones,
+repetir las pruebas fallidas, resolver la regresión preexistente de texto y validar
+convenio/navegación antes de publicar por el workflow exclusivo de dev.
