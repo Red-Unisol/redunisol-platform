@@ -1,3 +1,4 @@
+import type { SolicitudDelTitular } from "../../../solicitudes-core/domain/services/HistorialSolicitudesGateway";
 import { LegacySolicitudesUnavailableError } from "../../domain/solicitudes-errors";
 import type { SolicitudesLegacyGateway } from "../../domain/services/SolicitudesLegacyGateway";
 import type {
@@ -586,6 +587,43 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     if (await exists("[Estado] = 0")) return true;
     // Un estado desconocido impide confirmar que no tenga créditos activos.
     return await exists("[Estado] Is Null") ? null : false;
+  }
+
+  async listSolicitudesDelTitular(documento: string): Promise<SolicitudDelTitular[]> {
+    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+      throw new Error("Documento del titular inválido");
+    }
+    const fields = [
+      "NroSolicitud", "Fecha", "Estado.Descripcion", "VendedorSolicitud.Nombre",
+      "Creado.Usuario.UserName", "Linea.Descripcion", "MontoAFinanciar",
+      "MontoADesembolsar", "Cuotas", "CuotaResultante", "Prestamo.NroCuenta",
+      "NroSocio", "NroDocumento", "NombreCompleto",
+    ];
+    const indexes = Object.fromEntries(fields.map((field, index) => [field, index]));
+    const records = await this.executeEvaluateList<SolicitudDelTitular>({
+      buildCmd: () => `Socio.NroDoc = ${documento}`,
+      defaultMax: 50,
+      fields,
+      tipo: "PreSolicitud.Module.Solicitud",
+      mapRow: (row) => {
+        if (row.length !== fields.length) throw new LegacySolicitudesUnavailableError();
+        const text = (field: string) => getStringValue(row, indexes, field)?.trim() || null;
+        const number = (field: string) => {
+          const value = getNullableNumberValue(row, indexes, field);
+          return value !== null && Number.isFinite(value) ? value : null;
+        };
+        return {
+          nroSolicitud: text("NroSolicitud"), fecha: text("Fecha"),
+          estado: text("Estado.Descripcion"), vendedor: text("VendedorSolicitud.Nombre"),
+          usuarioCreador: text("Creado.Usuario.UserName"), linea: text("Linea.Descripcion"),
+          montoAFinanciar: number("MontoAFinanciar"), montoADesembolsar: number("MontoADesembolsar"),
+          cuotas: number("Cuotas"), cuotaResultante: number("CuotaResultante"),
+          nroCuentaPrestamo: text("Prestamo.NroCuenta"), nroSocio: text("NroSocio"),
+          nroDocumento: text("NroDocumento"), nombreCompleto: text("NombreCompleto"),
+        };
+      },
+    }, 50, true);
+    return records.slice(0, 50);
   }
 
   listPrestamosDelSocio(socioLegacyId: string) {

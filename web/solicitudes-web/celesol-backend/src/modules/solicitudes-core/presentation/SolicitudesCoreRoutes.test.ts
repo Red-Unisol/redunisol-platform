@@ -22,6 +22,7 @@ describe("SolicitudesCoreRoutes", () => {
         listLineasPrestamo: () => undefined,
         getCredixsa: () => undefined,
         getPrestamoDelSocio: () => undefined,
+        listSolicitudesDelTitular: () => undefined,
         listPrestamosDelSocio: () => undefined,
         listHistory: () => undefined,
         listTransitions: () => undefined,
@@ -48,7 +49,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 21), [
+    assert.deepEqual(routePaths.slice(0, 22), [
       "/",
       "/",
       "/stats",
@@ -60,6 +61,7 @@ describe("SolicitudesCoreRoutes", () => {
       "/:id/transitions",
       "/:id/transitions",
       "/:id/prestamo-legacy",
+      "/:id/solicitudes-titular",
       "/:id/prestamos-socio",
       "/:id/prestamos-socio/:prestamoId",
       "/:id/credixsa",
