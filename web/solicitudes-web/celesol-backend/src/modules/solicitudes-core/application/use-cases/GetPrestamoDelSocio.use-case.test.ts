@@ -122,6 +122,7 @@ describe("GetPrestamoDelSocioUseCase", () => {
 
 function prestamo() {
   return {
+    cuotas: 18,
     asiento: "1584",
     cobrador: "Haberes",
     destino: "Consumo",

@@ -233,6 +233,7 @@ export type PrestamoDelSocioLegacy = {
 // "tasaInicial" llega como fraccion (0.1135), no como porcentaje: Vimarx la
 // muestra multiplicada por 100 (11,350 %).
 export type PrestamoDelSocioDetalleLegacy = {
+  cuotas: number | null;
   asiento: string | null;
   cobrador: string | null;
   destino: string | null;
