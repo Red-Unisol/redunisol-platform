@@ -339,7 +339,7 @@ describe("field-access-admin-form", () => {
 
     assert.equal(
       getFieldAccessAdminErrorMessage(error),
-      "Otra persona modific\\u00f3 esta configuraci\\u00f3n mientras la estabas editando. Recarga la regla antes de guardar nuevamente.",
+      "Otra persona modificó esta configuración mientras la estabas editando. Recarga la regla antes de guardar nuevamente.",
     );
   });
 });

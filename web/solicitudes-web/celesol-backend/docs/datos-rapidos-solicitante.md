@@ -41,7 +41,8 @@ el Oid de la línea de presolicitud no se confunde con el ID de la línea del pr
 No se utiliza un número de cuenta fijo ni se sustituye el convenio por la descripción
 de la línea específica. Cero o múltiples líneas candidatas y superior vacío dan
 convenio no disponible. Se conserva el endpoint legacy configurado del entorno.
-La respuesta real de esta consulta sigue pendiente de validación en integración.
+La consulta fue validada en integración: la cuenta de referencia 993989 y su
+línea de presolicitud 2617 devuelven el mismo superior, MUDON HABERES.
 
 ## Interfaz
 
@@ -56,35 +57,27 @@ Las claves React Query separan persona y convenio e incluyen solicitud, document
 tipo y línea guardados. Al cambiar esos datos no se retienen resultados de otra
 identidad. Los indicadores generales quedan separados de futuras reglas por convenio.
 
-## Validación local (2026-10-11)
+## Validación (2026-10-11)
 
-- Cambios integrados sobre `dev` en `bd1d938`, conservando los PRs 455–459,
-  en la rama `feat/datos-rapidos-solicitante`.
-- Dependencias instaladas con `npm ci`, sin modificar lockfiles.
-- Cliente Prisma 6.19.3 generado con verificación de checksums habilitada.
-- `npm run build` aprobado en frontend y backend sobre esa base actualizada.
-  Vite avisa sobre chunks grandes y eval en una dependencia.
-- 40 pruebas específicas aprobadas (caso de uso, gateway, autorización HTTP y
-  estados frontend). Lint aprobado para los archivos afectados antes del rebase.
-- Chromium con respuestas simuladas: 8 escenarios del componente aprobados a
-  375 px (socio con/sin créditos, no socio, ambigüedad, error de socio, error de
-  créditos, vendedor y cambio de solicitud). Sin desbordamiento horizontal;
-  botón oculto para vendedor y no socio. Se verificó el callback del botón,
-  no el recorrido completo hasta la pestaña de préstamos en una sesión real.
-- Suite backend sobre dev: 978 aprobadas, 6 fallidas por falta de DATABASE_URL
-  y PostgreSQL local, 2 omitidas. La descarga de PostgreSQL 18.3 desde Docker Hub
-  está bloqueada por la política de red.
-- Suite frontend: falla preexistente en `field-access-admin-form.test.ts`, por
-  esperar escapes Unicode literales donde el código devuelve texto acentuado.
-  Esos archivos no se modificaron.
-- La consulta de integración del convenio a Vimarx devuelve 403 del proxy, antes
-  de llegar al servidor. La API de GitHub también está bloqueada.
+- Integrado sobre `dev` en `bd1d938`, conservando los PRs 455–459.
+- Dependencias instaladas con `npm ci`, sin modificar lockfiles; Prisma 6.19.3
+  generado manteniendo verificación de checksums.
+- Compilaciones frontend y backend aprobadas. Vite conserva advertencias de
+  chunks grandes y eval en una dependencia.
+- PostgreSQL 18.3 local con todas las migraciones aplicadas: 984 pruebas backend
+  aprobadas; 2 opcionales omitidas por ausencia de TEST_DATABASE_URL.
+- 76 pruebas frontend aprobadas. Se corrigió la expectativa preexistente de un
+  mensaje que contenía escapes Unicode literales en lugar de texto acentuado;
+  no se cambió el comportamiento de la aplicación para hacerlo pasar.
+- Lint de los archivos afectados aprobado.
+- Chromium a 375 px: 8 escenarios del bloque aprobados con respuestas simuladas
+  (socio con/sin créditos, no socio, ambigüedad, errores, vendedor y cambio de
+  solicitud), sin desbordamiento horizontal.
+- Página completa a 390 px con sesión y datos simulados: Ver detalle abre la
+  pestaña Préstamos, expande Solicitante y lleva allí el foco, sin errores JS.
+- Vimarx real: la consulta de referencia de convenio y la relación
+  `[LineaSolicitud.Oid] = 2617` devolvieron `MUDON HABERES`.
 
-El usuario autorizó desplegar únicamente en dev después de pasar las
-verificaciones. No se ha desplegado ni modificado producción.
-Para continuar se guardaron en el borrador, conservando los dominios actuales:
-`api.github.com`, `registry-1.docker.io`, `auth.docker.io`,
-`production.cloudfront.docker.com` y `celesol.dyndns.org`.
-Tras activar la configuración: preparar PostgreSQL local con las migraciones,
-repetir las pruebas fallidas, resolver la regresión preexistente de texto y validar
-convenio/navegación antes de publicar por el workflow exclusivo de dev.
+El usuario autorizó el despliegue exclusivamente en dev tras estas verificaciones.
+Los escenarios de identidad, permisos y créditos se validaron con pruebas
+controladas; no se realizaron escrituras de datos operativos para probarlos.
