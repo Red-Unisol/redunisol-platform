@@ -250,9 +250,6 @@ type SolicitanteContentTab =
 
 const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Datos Personales", value: "datosPersonales" },
-  { label: "Cónyuge", value: "conyuge" },
-  { label: "Económicos/Laborales", value: "economicosLaborales" },
-  { label: "Adicionales", value: "adicionales" },
   { label: "Cancelaciones", value: "cancelaciones" },
   { label: "Adjuntos", value: "adjuntos" },
 ];
