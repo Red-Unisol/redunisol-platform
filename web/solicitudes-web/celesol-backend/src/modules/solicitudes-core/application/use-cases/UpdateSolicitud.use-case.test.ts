@@ -20,6 +20,26 @@ import { EDITABLE_FIELDS } from "../services/SolicitudFieldAccess";
 import { UpdateSolicitudUseCase } from "./UpdateSolicitud.use-case";
 
 describe("UpdateSolicitudUseCase", () => {
+  for (const isSystemAdmin of [false, true]) {
+    it(`rechaza cambiar o borrar el vendedor (admin=${isSystemAdmin})`, async () => {
+      let updated = false;
+      const useCase = buildUseCase({
+        findById: async () => solicitudCore(),
+        update: async () => { updated = true; return solicitudCore(); },
+      });
+      for (const vendedorSolicitud of ["Otro vendedor", null]) {
+        await assert.rejects(
+          () => useCase.execute(updateInput({
+            currentUser: { id: "operator-1", workflowOwnerId: "owner-1", isSystemAdmin },
+            solicitud: { vendedorSolicitud },
+          })),
+          SolicitudFieldNotEditableInCurrentStateError,
+        );
+      }
+      assert.equal(updated, false);
+    });
+  }
+
   it("allows update for current owner even when user is not creator and not participant", async () => {
     let receivedPatch: UpdateSolicitudCorePatch | null = null;
     const useCase = buildUseCase({

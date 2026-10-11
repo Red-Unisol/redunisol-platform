@@ -742,14 +742,6 @@ export function mapEditableValuesToPatchSolicitudCoreRequest(
     solicitudPatch.lineaPrestamoLegacyOid = lineaPrestamoLegacyOid;
   }
 
-  const vendedorSolicitud = toOptionalStringPatch(
-    values.solicitud.vendedorSolicitud,
-    solicitud.vendedorSolicitud,
-  );
-  if (vendedorSolicitud !== undefined) {
-    solicitudPatch.vendedorSolicitud = vendedorSolicitud;
-  }
-
   const titular = buildTitularPatch(values.titular, solicitud.titular);
   if (titular) {
     nextPatch.titular = titular;
