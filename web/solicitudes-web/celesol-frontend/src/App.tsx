@@ -1,7 +1,8 @@
+import { ImpersonationBanner } from "@/modules/auth/components/impersonation-banner";
 import { AppRouter } from "@/app/router";
 
 function App() {
-  return <AppRouter />;
+  return <ImpersonationBanner><AppRouter /></ImpersonationBanner>;
 }
 
 export default App;
