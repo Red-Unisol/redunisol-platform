@@ -1,3 +1,4 @@
+import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
 import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
 import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
 import {
@@ -241,12 +242,14 @@ type SolicitanteTab =
   | "adjuntos"
   | "cancelaciones"
   | "prestamos"
-  | "solicitante";
+  | "solicitante"
+  | "solicitudes";
 type SolicitanteContentTab =
   | DatosPersonalesTab
   | "adjuntos"
   | "cancelaciones"
-  | "prestamos";
+  | "prestamos"
+  | "solicitudes";
 
 const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Datos Personales", value: "datosPersonales" },
@@ -2579,7 +2582,8 @@ function SolicitanteSection({
   const activeContentTab: SolicitanteContentTab =
     activeTab === "adjuntos" ||
     activeTab === "cancelaciones" ||
-    activeTab === "prestamos"
+    activeTab === "prestamos" ||
+    activeTab === "solicitudes"
       ? activeTab
       : datosPersonalesTab;
   const [selectedGarantiaIndexes, setSelectedGarantiaIndexes] = useState<
@@ -2653,7 +2657,8 @@ function SolicitanteSection({
           if (
             tab === "adjuntos" ||
             tab === "cancelaciones" ||
-            tab === "prestamos"
+            tab === "prestamos" ||
+            tab === "solicitudes"
           ) {
             onTabChange(tab);
             return;
@@ -2664,11 +2669,13 @@ function SolicitanteSection({
         }}
         tabs={
           canViewPrestamos
-            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB]
+            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB, { label: "Solicitudes", value: "solicitudes" }]
             : SOLICITANTE_CONTENT_TABS
         }
       />
-      {activeContentTab === "prestamos" ? (
+      {activeContentTab === "solicitudes" && canViewPrestamos ? (
+        <SolicitudesDelTitularSection solicitudId={solicitudId} documento={titular.nroDocumento} />
+      ) : activeContentTab === "prestamos" ? (
         <PrestamosDelSocioSection
           isActive={activeContentTab === "prestamos"}
           solicitudId={solicitudId}

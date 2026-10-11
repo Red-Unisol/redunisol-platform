@@ -1,3 +1,4 @@
+import type { ListSolicitudesDelTitularUseCase } from "../application/use-cases/ListSolicitudesDelTitular.use-case";
 import type { NextFunction, Request, Response } from "express";
 import type { ZodSchema } from "zod";
 
@@ -81,6 +82,7 @@ type Dependencies = {
   getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
+  listSolicitudesDelTitularUseCase: ListSolicitudesDelTitularUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
@@ -106,6 +108,7 @@ export class SolicitudesCoreController {
   private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   private readonly listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
+  private readonly listSolicitudesDelTitularUseCase: ListSolicitudesDelTitularUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
@@ -136,6 +139,7 @@ export class SolicitudesCoreController {
     this.getPrestamoDelSocioUseCase = dependencies.getPrestamoDelSocioUseCase;
     this.listLineasPrestamoDeSolicitudUseCase =
       dependencies.listLineasPrestamoDeSolicitudUseCase;
+    this.listSolicitudesDelTitularUseCase = dependencies.listSolicitudesDelTitularUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
     this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
@@ -327,6 +331,15 @@ export class SolicitudesCoreController {
   // es informacion para analizar, no para cargar. Mismo criterio que la
   // calculadora de riesgo, que tambien se restringe por area en el backend --
   // ocultar la pestaña en el frontend no alcanza.
+  listSolicitudesDelTitular = async (req: CookieRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = await this.getCurrentUser(req);
+      const params = this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params);
+      const result = await this.listSolicitudesDelTitularUseCase.execute({ solicitudId: params.id, currentUser: user });
+      res.status(200).json(result);
+    } catch (error) { next(error); }
+  };
+
   listPrestamosDelSocio = async (
     req: CookieRequest,
     res: Response,

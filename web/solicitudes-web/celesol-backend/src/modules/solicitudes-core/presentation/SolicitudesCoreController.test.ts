@@ -16,6 +16,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -59,6 +60,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -115,6 +117,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -160,6 +163,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects destination state fields in change state payloads", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -200,6 +204,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -247,6 +252,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -303,6 +309,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -359,6 +366,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -409,6 +417,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -477,6 +486,7 @@ describe("SolicitudesCoreController", () => {
     };
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -577,6 +587,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects forbidden canonical lookalike fields in patch payloads", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -646,6 +657,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -695,6 +707,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -743,6 +756,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -792,6 +806,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects assign-to-self when client tries to send actor override in body.user", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -835,6 +850,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -884,6 +900,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -934,6 +951,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects assignment body with invalid targetUserId", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -971,6 +989,7 @@ describe("SolicitudesCoreController", () => {
   it("rejects assign-to-user when client tries to send actor override in body.user", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1017,6 +1036,7 @@ describe("SolicitudesCoreController", () => {
     const conflictError = new SolicitudAlreadyAssignedError();
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1076,6 +1096,7 @@ describe("SolicitudesCoreController", () => {
   it("returns controlled 403 error when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1133,6 +1154,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1197,6 +1219,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1254,6 +1277,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1351,6 +1375,7 @@ describe("SolicitudesCoreController", () => {
   it("returns controlled 403 on create when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1413,6 +1438,7 @@ describe("SolicitudesCoreController", () => {
   it("returns controlled 403 on update when authenticated user has no workflow owner", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1473,6 +1499,7 @@ describe("SolicitudesCoreController", () => {
   it("returns forbidden when a non-admin user requests solicitud stats", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1508,6 +1535,7 @@ describe("SolicitudesCoreController", () => {
   it("returns stats for a system admin", async () => {
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1543,6 +1571,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1585,6 +1614,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
@@ -1628,6 +1658,7 @@ describe("SolicitudesCoreController", () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
       listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
       listPrestamosDelSocioUseCase: {} as never,
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,

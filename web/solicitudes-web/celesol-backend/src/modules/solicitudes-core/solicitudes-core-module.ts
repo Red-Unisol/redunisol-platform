@@ -1,3 +1,4 @@
+import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSolicitudesDelTitular.use-case";
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
 import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
@@ -385,6 +386,7 @@ export function createSolicitudesCoreRouter(
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
     listLineasPrestamoDeSolicitudUseCase,
+    listSolicitudesDelTitularUseCase: new ListSolicitudesDelTitularUseCase({ repository: solicitudesCoreRepository, legacyGateway: solicitudesLegacyGateway }),
     listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,
