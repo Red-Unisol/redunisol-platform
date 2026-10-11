@@ -2210,7 +2210,7 @@ function AdjuntosSection({
   }
 
   const content = (
-    <div className="space-y-3">
+    <div id="solicitud-adjuntos" tabIndex={-1} className="space-y-3 scroll-mt-36">
       {canCreateAdjunto || canDownloadAdjunto || canDeleteAdjunto ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -3037,7 +3037,7 @@ export function SolicitudesActualDetallePage() {
   const { data: lineasSimulador = [] } = useLineasPrestamoQuery(solicitudId);
   const [datosPersonalesTab, setDatosPersonalesTab] =
     useState<DatosPersonalesTab>("datosPersonales");
-  const [prestamosNavigation, setPrestamosNavigation] = useState(0);
+  const [solicitanteNavigation, setSolicitanteNavigation] = useState(0);
   const [solicitanteTab, setSolicitanteTab] =
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
@@ -4037,7 +4037,7 @@ export function SolicitudesActualDetallePage() {
         onVerDetalle={() => {
           if (!cambiarVistaTab("solicitud")) return;
           setSolicitanteTab("prestamos");
-          setPrestamosNavigation((value) => value + 1);
+          setSolicitanteNavigation((value) => value + 1);
           requestAnimationFrame(() => {
             const target = document.getElementById("solicitante-prestamos");
             target?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -4070,6 +4070,19 @@ export function SolicitudesActualDetallePage() {
         onRefresh={handleRefresh}
         onSave={handleSaveToolbarAction}
         onStartEdit={handleStartEditing}
+        attachmentsAction={{
+          count: isLoadingAdjuntos || adjuntosError ? undefined : adjuntos.length,
+          onClick: () => {
+            if (!cambiarVistaTab("solicitud")) return;
+            setSolicitanteTab("adjuntos");
+            setSolicitanteNavigation((value) => value + 1);
+            requestAnimationFrame(() => {
+              const target = document.getElementById("solicitud-adjuntos");
+              target?.scrollIntoView({ behavior: "smooth", block: "start" });
+              target?.focus({ preventScroll: true });
+            });
+          },
+        }}
         transitionControl={
           <StyledSelect
             className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
@@ -4170,8 +4183,13 @@ export function SolicitudesActualDetallePage() {
             ultimaNovedad={ultimaNovedad}
             values={currentValues.solicitud}
           />
+          {solicitanteTab === "adjuntos" && !isEditing && canEnterEditMode && canManageAdjuntos ? (
+            <p className="px-4 text-sm text-foreground-secondary">
+              Podés consultar los archivos guardados. Para agregar o eliminar adjuntos, seleccioná «Editar» en la barra de acciones.
+            </p>
+          ) : null}
           <SolicitanteSection
-            key={`${resolvedSolicitud.id}:${prestamosNavigation}`}
+            key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
             activeTab={solicitanteTab}
             adjuntos={adjuntos}
             canCreateAdicional={isEditing && canUploadAdjuntos}
