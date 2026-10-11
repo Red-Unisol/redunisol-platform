@@ -43,7 +43,8 @@ export function PrestamoDelSocioDialog({
     prestamoId,
   );
   const prestamo = data?.prestamo ?? null;
-  const cuotas = data?.cuotas ?? [];
+  // La cuota 0 es un movimiento interno del sistema legado.
+  const cuotas = (data?.cuotas ?? []).filter((cuota) => cuota.nroCuota !== 0);
   const [expandedPrestamoId, setExpandedPrestamoId] = useState<string | null>(null);
   const mostrarCobradas = expandedPrestamoId === prestamoId && prestamoId !== null;
   const cobradas = cuotas.filter((cuota) => Boolean(cuota.fechaCobro));
