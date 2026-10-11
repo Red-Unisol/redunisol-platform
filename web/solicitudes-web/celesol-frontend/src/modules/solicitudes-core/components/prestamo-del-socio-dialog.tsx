@@ -1,7 +1,14 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Landmark, X } from "lucide-react";
 
+import type { CuotaPrestamoResponse } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
+import {
+  diaDeNegocio,
+  diaLegacy,
+  ETIQUETAS_COBRO,
+  vistaCuotas,
+} from "@/modules/solicitudes-core/utils/cuotas-cobro";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -17,8 +24,9 @@ const PLACEHOLDER = "-";
 
 const CUOTAS_TABLE_COLUMNS = [
   "Nro cuota",
-  "Fecha",
+  "Vencimiento",
   "Fecha de cobro",
+  "Estado",
   "Monto total",
   "Saldo cuota con punitorios",
   "Saldo cuota",
@@ -43,29 +51,10 @@ export function PrestamoDelSocioDialog({
     prestamoId,
   );
   const prestamo = data?.prestamo ?? null;
-  // La cuota 0 es un movimiento interno del sistema legado.
-  const cuotas = (data?.cuotas ?? []).filter((cuota) => cuota.nroCuota !== 0);
-  const [expandedPrestamoId, setExpandedPrestamoId] = useState<string | null>(null);
-  const mostrarCobradas = expandedPrestamoId === prestamoId && prestamoId !== null;
-  const cobradas = cuotas.filter((cuota) => Boolean(cuota.fechaCobro));
-  // Ultima cuota del plan con cobro registrado, por numero de cuota.
-  const ultimaCobrada = cobradas.reduce<(typeof cuotas)[number] | null>(
-    (ultima, cuota) =>
-      !ultima || (cuota.nroCuota ?? -1) > (ultima.nroCuota ?? -1) ? cuota : ultima,
-    null,
-  );
-  const cuotasVisibles = cuotas.filter(
-    (cuota) => !cuota.fechaCobro || mostrarCobradas || cuota === ultimaCobrada,
-  );
+  const cuotas = data?.cuotas ?? [];
 
   return (
-    <DialogRoot
-      onOpenChange={(open) => {
-        if (!open) setExpandedPrestamoId(null);
-        onOpenChange(open);
-      }}
-      open={prestamoId !== null}
-    >
+    <DialogRoot onOpenChange={onOpenChange} open={prestamoId !== null}>
       <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[960px] flex-col overflow-hidden p-0">
         <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -83,6 +72,7 @@ export function PrestamoDelSocioDialog({
           </div>
           <DialogClose asChild>
             <Button
+              aria-label="Cerrar detalle del préstamo"
               className="text-foreground-secondary"
               size="icon-sm"
               type="button"
@@ -105,95 +95,149 @@ export function PrestamoDelSocioDialog({
           ) : (
             <>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
+                <Dato
+                  label="Cantidad de cuotas"
+                  value={
+                    prestamo.cuotas == null ? null : String(prestamo.cuotas)
+                  }
+                />
+                <Dato label="Orden de compra" value={prestamo.ordenCompra} />
                 <Dato label="Cobrador" value={prestamo.cobrador} />
+                <Dato label="Destino" value={prestamo.destino} />
+                <Dato label="Asiento" value={prestamo.asiento} />
                 <Dato
                   label="Línea préstamo"
                   value={prestamo.lineaPrestamoDescripcion}
                 />
                 <Dato
-                  label="Cantidad de cuotas"
-                  value={prestamo.cuotas == null ? null : String(prestamo.cuotas)}
+                  label="Tasa inicial"
+                  value={formatTasa(prestamo.tasaInicial)}
                 />
               </dl>
 
-              {cobradas.length > 1 && (
-                <Button
-                  aria-expanded={mostrarCobradas}
-                  onClick={() => setExpandedPrestamoId(mostrarCobradas ? null : prestamoId)}
-                  type="button"
-                  variant="ghost"
-                >
-                  {mostrarCobradas
-                    ? "Ocultar cuotas cobradas anteriores"
-                    : `Ver todas las cuotas cobradas (${cobradas.length})`}
-                </Button>
+              {prestamoId !== null && (
+                <CuotasTable
+                  key={`${solicitudId}/${prestamoId}`}
+                  cuotas={cuotas}
+                />
               )}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse text-sm">
-                  <thead className="bg-background text-left text-xs text-foreground-secondary">
-                    <tr>
-                      {CUOTAS_TABLE_COLUMNS.map((column) => (
-                        <th
-                          className="border-r border-border px-3 py-2 font-medium"
-                          key={column}
-                        >
-                          {column}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cuotas.length > 0 ? (
-                      cuotasVisibles.map((cuota) => (
-                        <tr
-                          className="border-t border-border"
-                          key={cuota.nroCuota ?? cuota.fecha}
-                        >
-                          <td className="border-r border-border px-3 py-2">
-                            {cuota.nroCuota ?? PLACEHOLDER}
-                          </td>
-                          <td className="border-r border-border px-3 py-2">
-                            {formatLegacyDate(cuota.fecha)}
-                          </td>
-                          <td className="border-r border-border px-3 py-2">
-                            {formatLegacyDate(cuota.fechaCobro)}
-                          </td>
-                          <td className="border-r border-border px-3 py-2">
-                            {formatNullableAmount(cuota.montoTotal) ||
-                              PLACEHOLDER}
-                          </td>
-                          <td className="border-r border-border px-3 py-2">
-                            {formatNullableAmount(
-                              cuota.saldoCuotaConPunitorios,
-                            ) || PLACEHOLDER}
-                          </td>
-                          <td className="border-r border-border px-3 py-2">
-                            {formatNullableAmount(cuota.saldoCuota) ||
-                              PLACEHOLDER}
-                          </td>
-                          <td className="px-3 py-2">
-                            {formatNullableAmount(cuota.capital) || PLACEHOLDER}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr className="border-t border-border">
-                        <td
-                          className="px-3 py-4 text-foreground-secondary"
-                          colSpan={CUOTAS_TABLE_COLUMNS.length}
-                        >
-                          El préstamo no tiene cuotas registradas.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
             </>
           )}
         </div>
       </DialogContent>
     </DialogRoot>
+  );
+}
+
+const ROW_STYLES = {
+  cobrada: "text-foreground-secondary",
+  "mes-anterior":
+    "bg-yellow-50 dark:bg-yellow-950/30 [&>td:first-child]:border-l-4 [&>td:first-child]:border-l-yellow-500",
+  vencida:
+    "bg-red-50 dark:bg-red-950/30 [&>td:first-child]:border-l-4 [&>td:first-child]:border-l-red-500",
+  pendiente: "",
+  "sin-vencimiento": "",
+  desconocido: "",
+};
+
+function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
+  const [expandida, setExpandida] = useState(false);
+  const tableId = useId();
+  const { filas, cantidadOcultas } = vistaCuotas(
+    cuotas,
+    expandida,
+    diaDeNegocio(),
+  );
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1000px] border-collapse text-sm">
+        <caption className="sr-only">Plan de cuotas y estado de cobro</caption>
+        <thead className="bg-background text-left text-xs text-foreground-secondary">
+          <tr>
+            {CUOTAS_TABLE_COLUMNS.map((column) => (
+              <th
+                scope="col"
+                className="border-r border-border px-3 py-2 font-medium"
+                key={column}
+              >
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {cantidadOcultas > 0 && (
+            <tr className="border-t border-border bg-background">
+              <td colSpan={CUOTAS_TABLE_COLUMNS.length} className="px-3 py-1">
+                <Button
+                  aria-expanded={expandida}
+                  aria-controls={tableId}
+                  onClick={() => setExpandida(!expandida)}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                >
+                  {expandida
+                    ? "Ocultar cuotas cobradas anteriores"
+                    : `Mostrar ${cantidadOcultas} cuotas cobradas anteriores`}
+                </Button>
+              </td>
+            </tr>
+          )}
+        </tbody>
+        <tbody id={tableId}>
+          {filas.length ? (
+            filas.map(({ cuota, estado, ultimaCobrada }, index) => (
+              <tr
+                className={`border-t border-border ${ROW_STYLES[estado]}`}
+                key={`${cuota.nroCuota}-${index}`}
+              >
+                <td className="border-r border-border px-3 py-2">
+                  {cuota.nroCuota ?? PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2 whitespace-nowrap">
+                  {diaLegacy(cuota.fecha)
+                    ? formatLegacyDate(diaLegacy(cuota.fecha))
+                    : "No disponible"}
+                </td>
+                <td className="border-r border-border px-3 py-2 whitespace-nowrap">
+                  {estado === "cobrada"
+                    ? formatLegacyDate(cuota.fechaCobro!.trim())
+                    : estado === "desconocido"
+                      ? "No disponible"
+                      : "Sin cobro"}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {ultimaCobrada ? "Última cobrada" : ETIQUETAS_COBRO[estado]}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(cuota.montoTotal) || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(cuota.saldoCuotaConPunitorios) ||
+                    PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(cuota.saldoCuota) || PLACEHOLDER}
+                </td>
+                <td className="px-3 py-2">
+                  {formatNullableAmount(cuota.capital) || PLACEHOLDER}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr className="border-t border-border">
+              <td
+                className="px-3 py-4 text-foreground-secondary"
+                colSpan={CUOTAS_TABLE_COLUMNS.length}
+              >
+                El préstamo no tiene cuotas registradas.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -204,4 +248,17 @@ function Dato({ label, value }: { label: string; value: string | null }) {
       <dd className="mt-0.5 text-foreground">{value || PLACEHOLDER}</dd>
     </div>
   );
+}
+
+// Vimarx guarda la tasa como fraccion (0.1135) y la muestra por 100 con tres
+// decimales ("11,350 %").
+function formatTasa(value: number | null) {
+  if (value === null) {
+    return null;
+  }
+
+  return `${(value * 100).toLocaleString("es-AR", {
+    maximumFractionDigits: 3,
+    minimumFractionDigits: 3,
+  })} %`;
 }

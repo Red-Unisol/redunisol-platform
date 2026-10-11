@@ -1959,11 +1959,17 @@ function mapPrestamoDelSocioDetalleRow(
 function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
   const nroCuota = getNumberValue(row, cuotasDelPrestamoFieldIndex, "NroCuota");
 
+  // No convertir una columna ausente o de tipo inesperado en un cobro vacío.
+  const fechaCobro = row[cuotasDelPrestamoFieldIndex.FechaCobro];
+
   return {
     cuota: {
       capital: getNumberValue(row, cuotasDelPrestamoFieldIndex, "Capital"),
       fecha: getStringValue(row, cuotasDelPrestamoFieldIndex, "Fecha"),
-      fechaCobro: getStringValue(row, cuotasDelPrestamoFieldIndex, "FechaCobro"),
+      fechaCobro:
+        fechaCobro === null || typeof fechaCobro === "string"
+          ? fechaCobro
+          : undefined,
       montoTotal: getNumberValue(
         row,
         cuotasDelPrestamoFieldIndex,
