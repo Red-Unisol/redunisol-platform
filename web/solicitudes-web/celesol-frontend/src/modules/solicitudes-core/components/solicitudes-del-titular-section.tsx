@@ -75,10 +75,6 @@ export function SolicitudesDelTitularSection({
     );
   return (
     <div className="space-y-3 p-3">
-      <p className="text-sm text-foreground-secondary">
-        Hasta 50 solicitudes por documento del titular, sin filtros de fecha ni
-        estado. Los resultados pueden no representar el historial completo.
-      </p>
       {query.data.solicitudes.length === 0 ? (
         <p role="status">
           No se encontraron solicitudes para el documento del titular.
