@@ -8,7 +8,7 @@ type UseSolicitudesCoreRecientesQueryOptions = {
   vista: "mi-area" | "todas";
   userId?: string;
   workflowOwnerId?: string | null;
-  nroDocumento?: string;
+  search?: string;
   page: number;
   pageSize: number;
 };
@@ -17,11 +17,11 @@ export function useSolicitudesCoreRecientesQuery({
   vista,
   userId,
   workflowOwnerId,
-  nroDocumento,
+  search,
   page,
   pageSize,
 }: UseSolicitudesCoreRecientesQueryOptions) {
-  const normalizedDocument = nroDocumento?.trim() || undefined;
+  const normalizedSearch = search?.trim().replace(/\s+/g, " ") || undefined;
   const limit = pageSize;
   const offset = (page - 1) * pageSize;
   const { createdFrom, createdTo } = buildRecientesDateRange();
@@ -35,7 +35,7 @@ export function useSolicitudesCoreRecientesQuery({
         createdTo,
         excludeEstado: "CargaVendedor",
         limit,
-        nroDocumento: normalizedDocument,
+        search: normalizedSearch,
         offset,
         scope: "recientes",
       }),
@@ -47,7 +47,7 @@ export function useSolicitudesCoreRecientesQuery({
       createdTo,
       excludeEstado: "CargaVendedor",
       limit,
-      nroDocumento: normalizedDocument,
+      search: normalizedSearch,
       offset,
       scope: "recientes",
     }),

@@ -696,9 +696,21 @@ export class SolicitudesCorePrismaDatasource {
   }
 
   async listRecientes(input: ListSolicitudesRecientesInput) {
+    // Cada palabra debe coincidir con algún dato del titular, sin depender del
+    // orden nombre/apellido. Escapar comodines para buscar texto literal.
+    const terms = input.search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    const searchConditions: Prisma.SolicitudWhereInput[] = terms.map((term) => {
+      const contains = term.replace(/[\\%_]/g, "\\$&");
+      return { titular: { OR: [
+        { nombre: { contains, mode: "insensitive" } },
+        { apellidoDenominacion: { contains, mode: "insensitive" } },
+        { nroDocumento: { contains, mode: "insensitive" } },
+      ] } };
+    });
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(searchConditions.length ? { AND: searchConditions } : {}),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: {
           ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),

@@ -55,6 +55,7 @@ export type ListSolicitudesTrackingInput = {
 };
 
 export type ListSolicitudesRecientesInput = {
+  search?: string;
   estadoOwnerId?: string;
   creadoPorIn?: string[];
   createdFrom?: string;

@@ -105,3 +105,8 @@ it("valida vista y no acepta owner del cliente", () => {
   }
   assert.equal(listSolicitudesQuerySchema.safeParse({ vista: "ajena" }).success, false);
 });
+
+it("normaliza la búsqueda de Recientes y limita su longitud", () => {
+  assert.equal(listSolicitudesQuerySchema.parse({ scope: "recientes", search: "  Ramiro López  " }).search, "Ramiro López");
+  assert.equal(listSolicitudesQuerySchema.safeParse({ search: "a".repeat(161) }).success, false);
+});

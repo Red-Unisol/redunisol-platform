@@ -228,7 +228,7 @@ function RecientesList({ user }: { user: AuthUser }) {
       vista,
       userId: user.id,
       workflowOwnerId: user.workflowOwnerId,
-      nroDocumento: searchTerm,
+      search: searchTerm,
       page,
       pageSize,
     });
@@ -305,6 +305,7 @@ function RecientesList({ user }: { user: AuthUser }) {
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm"
     >
       <SolicitudesToolbar
+        searchPlaceholder="Buscar por DNI, nombre o apellido"
         viewControl={user.workflowOwner?.code !== "TESORERIA" && (
           <div
             className="flex flex-wrap items-center gap-2"
@@ -343,6 +344,7 @@ function RecientesList({ user }: { user: AuthUser }) {
         onSearchChange={(value) => {
           setSearchTerm(value);
           setPage(1);
+          setSelectedIds([]);
         }}
         rightActions={rightActions}
         searchTerm={searchTerm}

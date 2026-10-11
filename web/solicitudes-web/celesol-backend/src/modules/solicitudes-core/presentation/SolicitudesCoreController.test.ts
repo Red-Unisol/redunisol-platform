@@ -1226,6 +1226,7 @@ describe("SolicitudesCoreController", () => {
           scope: "recientes",
           vista: "mi-area",
           estadoOwnerId: "untrusted-owner",
+          search: "Ramiro López",
         },
       }),
       response,
@@ -1245,6 +1246,7 @@ describe("SolicitudesCoreController", () => {
       offset: 0,
       scope: "recientes",
       vista: "mi-area",
+      search: "Ramiro López",
     });
   });
 

@@ -29,9 +29,13 @@ vacía se muestra fuera del ancho desplazable de la tabla para ser visible en m�
 - `Transferir` ya está excluido de Recientes y es el único estado activo de
   TESORERIA en el catálogo actual. Se conserva esta exclusión; Tesorería queda
   fuera del filtro de visualización por indicación del usuario.
-- El buscador mantiene su comportamiento existente por documento; los filtros de
-  columnas mantienen su alcance sobre la página descargada. El nuevo filtro de
-  área sí se aplica en backend antes de paginar.
+- El buscador acepta DNI, nombre y apellido parciales mediante `search`. Cada
+  palabra debe coincidir con alguno de esos campos, sin distinguir mayúsculas
+  y sin depender del orden nombre/apellido. Conserva las diferencias de tildes.
+  Los caracteres `%`, `_` y barra inversa se buscan literalmente.
+- La búsqueda y el área se aplican antes de paginar. Los filtros de columnas
+  mantienen su alcance sobre la página descargada. El parámetro `nroDocumento`
+  conserva su coincidencia exacta para clientes existentes.
 - La selección de vista es de la pantalla; al volver a ingresar se usa el valor inicial.
 - No se desplegó ni se modificaron datos de dev/producción. No se probaron sesiones
   reales de usuarios: los escenarios de navegador utilizan sesiones y datos simulados.
@@ -71,3 +75,16 @@ vacía se muestra fuera del ancho desplazable de la tabla para ser visible en m�
 - `celesol-frontend/src/modules/solicitudes/types/solicitudes-core.ts`
 - `celesol-backend/src/modules/solicitudes-core/infrastructure/datasources/SolicitudesRecientesArea.integration.test.ts`
 - `celesol-backend/docs/recientes-filtro-area.md`
+
+## Ampliación de búsqueda (2026-10-11)
+
+Recientes envía `search` en lugar de `nroDocumento`, con espacios normalizados,
+y lo incluye en la clave de consulta. La toolbar admite un placeholder específico
+sin cambiar el buscador de otras pantallas. Cambiar el texto reinicia página y
+selección. Se preservan fechas, permisos, vista y filtros de columnas.
+
+Verificado con PostgreSQL local y rollback: nombre parcial, apellido/nombre en
+orden inverso, mayúsculas, varias palabras, DNI parcial, mezcla de nombre y DNI,
+caracteres literales, búsqueda sin coincidencias, área, paginación y visibilidad.
+También se verificaron la transmisión del texto desde el navegador, su persistencia
+al alternar la vista y la limpieza del campo. Sin escrituras en dev ni producción.

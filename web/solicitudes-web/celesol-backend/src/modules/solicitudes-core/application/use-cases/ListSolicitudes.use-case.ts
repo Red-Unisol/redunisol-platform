@@ -49,6 +49,7 @@ export class ListSolicitudesUseCase {
 
       return this.repository
         .listRecientes({
+          ...(input.search?.trim() ? { search: input.search.trim() } : {}),
           ...(input.vista === "mi-area" && input.currentUser.workflowOwnerId
             ? { estadoOwnerId: input.currentUser.workflowOwnerId }
             : {}),
