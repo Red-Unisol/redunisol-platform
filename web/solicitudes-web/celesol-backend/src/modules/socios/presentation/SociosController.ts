@@ -98,7 +98,7 @@ export class SociosController {
     try {
       const currentUser = await this.getCurrentUser(req);
 
-      if (!this.isRiesgoOrAdmin(currentUser)) {
+      if (!this.isRiesgoOrAdmin(currentUser) && currentUser.workflowOwner?.code !== "TESORERIA") {
         throw new ForbiddenSocioCreationError();
       }
 
