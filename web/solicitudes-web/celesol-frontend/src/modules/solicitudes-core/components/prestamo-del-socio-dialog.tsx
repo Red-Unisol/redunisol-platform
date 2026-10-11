@@ -17,6 +17,7 @@ const PLACEHOLDER = "-";
 const CUOTAS_TABLE_COLUMNS = [
   "Nro cuota",
   "Fecha",
+  "Fecha de cobro",
   "Monto total",
   "Saldo cuota con punitorios",
   "Saldo cuota",
@@ -124,6 +125,9 @@ export function PrestamoDelSocioDialog({
                           </td>
                           <td className="border-r border-border px-3 py-2">
                             {formatLegacyDate(cuota.fecha)}
+                          </td>
+                          <td className="border-r border-border px-3 py-2">
+                            {formatLegacyDate(cuota.fechaCobro)}
                           </td>
                           <td className="border-r border-border px-3 py-2">
                             {formatNullableAmount(cuota.montoTotal) ||

@@ -137,6 +137,7 @@ function cuota() {
   return {
     capital: 58770.31,
     fecha: "2025-08-31",
+    fechaCobro: null,
     montoTotal: 419988.31,
     nroCuota: 1,
     saldoCuota: 0,
