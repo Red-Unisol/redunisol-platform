@@ -7,7 +7,6 @@ import type { SolicitudAdjuntoRepository } from "../../adjuntos/domain/repositor
 import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import {
-  SolicitudMontoReciboRequiredForWorkflowError,
   SolicitudPrestamoLegacyRequiredForWorkflowError,
   SolicitudReciboSueldoAdjuntoRequiredForWorkflowError,
   SolicitudTitularDataIncompleteForConfirmarError,
@@ -514,66 +513,34 @@ describe("ChangeSolicitudStateUseCase", () => {
     );
   });
 
-  it("rejects enviar when the monto del recibo is empty or zero", async () => {
+  for (const isSystemAdmin of [false, true]) {
     for (const montoRecibo of [null, 0]) {
-      const useCase = new ChangeSolicitudStateUseCase({
-        adjuntoRepository: adjuntoRepository(),
-        engine: {
-          execute: async () => {
-            throw new Error("not used");
-          },
-        } as unknown as SolicitudWorkflowEngine,
-        now: () => new Date("2026-05-18T12:00:00.000Z"),
-        sociosRepository: socioRepository(),
-        solicitudesRepository: solicitudesRepository({
-          findById: async () => solicitudConMontoRecibo(montoRecibo),
-        }),
-      });
-
-      await assert.rejects(
-        () =>
-          useCase.execute({
-            actionCode: "enviar",
-            currentUser: {
-              id: "user-1",
-              workflowOwnerId: "owner-1",
+      it(`envía sin monto de recibo (${montoRecibo}, admin=${isSystemAdmin})`, async () => {
+        let executed = false;
+        const useCase = new ChangeSolicitudStateUseCase({
+          adjuntoRepository: adjuntoRepository(),
+          engine: {
+            execute: async (input: Parameters<SolicitudWorkflowEngine["execute"]>[0]) => {
+              assert.equal(input.actionCode, "enviar");
+              executed = true;
+              return { solicitud: solicitud(), transitions: [] };
             },
-            solicitudId: "sol-1",
+          } as unknown as SolicitudWorkflowEngine,
+          now: () => new Date("2026-05-18T12:00:00.000Z"),
+          sociosRepository: socioRepository(),
+          solicitudesRepository: solicitudesRepository({
+            findById: async () => solicitudConMontoRecibo(montoRecibo),
           }),
-        SolicitudMontoReciboRequiredForWorkflowError,
-      );
-    }
-  });
-
-  it("still enforces the monto-del-recibo guard for a system admin actor", async () => {
-    const useCase = new ChangeSolicitudStateUseCase({
-      adjuntoRepository: adjuntoRepository(),
-      engine: {
-        execute: async () => {
-          throw new Error("not used");
-        },
-      } as unknown as SolicitudWorkflowEngine,
-      now: () => new Date("2026-05-18T12:00:00.000Z"),
-      sociosRepository: socioRepository(),
-      solicitudesRepository: solicitudesRepository({
-        findById: async () => solicitudConMontoRecibo(null),
-      }),
-    });
-
-    await assert.rejects(
-      () =>
-        useCase.execute({
+        });
+        await useCase.execute({
           actionCode: "enviar",
-          currentUser: {
-            id: "admin-1",
-            isSystemAdmin: true,
-            workflowOwnerId: "",
-          },
+          currentUser: { id: "user-1", workflowOwnerId: "owner-1", isSystemAdmin },
           solicitudId: "sol-1",
-        }),
-      SolicitudMontoReciboRequiredForWorkflowError,
-    );
-  });
+        });
+        assert.equal(executed, true);
+      });
+    }
+  }
 
   it("sends when there is a recibo de sueldo adjunto and the monto del recibo", async () => {
     let received: Parameters<SolicitudWorkflowEngine["execute"]>[0] | null = null;
