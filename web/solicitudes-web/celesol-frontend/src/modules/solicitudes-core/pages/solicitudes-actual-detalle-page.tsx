@@ -1450,14 +1450,12 @@ function SolicitudSection({
             value={assignmentValueLabel}
           />
         ) : null}
-        <EditableTextInput
-          {...getReadonlyProps("solicitud.vendedorSolicitud")}
-          disabled={!isFieldEditableByKey("solicitud.vendedorSolicitud")}
-          isEditing={isEditing}
+        <EditableField
+          appearanceStyle={readonlyAppearanceStyle}
+          isEditing={false}
+          editor={null}
           label="Vendedor solicitud"
-          onChange={(value) => onChange("vendedorSolicitud", value)}
-          readOnlyValue={formatText(solicitud.vendedorSolicitud)}
-          value={values.vendedorSolicitud}
+          value={formatText(solicitud.vendedorSolicitud)}
         />
         <EditableField
           appearanceStyle={readonlyAppearanceStyle}
