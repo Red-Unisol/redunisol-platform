@@ -78,3 +78,7 @@ export function updateUser(userId: string, payload: UpdateAdminUserRequest) {
     payload,
   );
 }
+
+export function enterUser(userId: string) {
+  return apiClient.post("/auth/impersonation/start", { userId });
+}

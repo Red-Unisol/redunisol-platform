@@ -1,3 +1,4 @@
+import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { DbClient } from "../../../../db/prisma";
 import type { Prisma } from "@prisma/client";
 
@@ -601,6 +602,7 @@ export class SolicitudesCorePrismaDatasource {
 
       await tx.solicitudEstadoHistorial.create({
         data: {
+          ...actingHistoryFields(),
           actionCode: "ASSIGNMENT_SET",
           actionLabel: "Asignación registrada",
           changedBy: input.actorUserId,

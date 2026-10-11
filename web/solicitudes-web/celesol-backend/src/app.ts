@@ -10,6 +10,7 @@ import { errorHandler } from "./middleware/error-handler";
 import { notFoundHandler } from "./middleware/not-found-handler";
 import {
   authRouter,
+  impersonation,
   getCurrentUserUseCase,
   usersRouter,
 } from "./modules/auth/auth-module";
@@ -40,6 +41,8 @@ app.use(
   express.json({ limit: "10mb" }),
 );
 app.use(express.json());
+app.use("/auth/impersonation", impersonation.router());
+app.use(impersonation.middleware);
 app.use("/integrations/transferencias/v1", createTransferenciasIntegrationRouter());
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/auth", authRouter);

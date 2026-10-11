@@ -235,6 +235,9 @@ model WorkflowTransition {
 }
 
 model SolicitudEstadoHistorial {
+  realActorUserId        String? @map("real_actor_user_id") @db.Uuid
+  impersonationSessionId String? @map("impersonation_session_id") @db.Uuid
+  operationAuditId       String? @map("operation_audit_id") @db.Uuid
   id                    String              @id @default(uuid()) @db.Uuid
   solicitudId           String              @map("solicitud_id") @db.Uuid
   transitionId          String?             @map("transition_id") @db.Uuid
@@ -601,4 +604,32 @@ model TransferenciaIdentificador {
 
   @@unique([solicitudId, paymentKey])
   @@map("transferencia_identificadores")
+}
+
+// Snapshots remain available when an account is subsequently changed/deleted.
+model ImpersonationSession {
+  id String @id @default(uuid()) @db.Uuid
+  administratorId String @map("administrator_id") @db.Uuid
+  selectedUserId String @map("selected_user_id") @db.Uuid
+  administratorLabel String @map("administrator_label")
+  selectedUserLabel String @map("selected_user_label")
+  startedAt DateTime @default(now()) @map("started_at")
+  expiresAt DateTime @map("expires_at")
+  endedAt DateTime? @map("ended_at")
+  endReason String? @map("end_reason")
+  @@index([administratorId])
+  @@map("impersonation_sessions")
+}
+
+model ImpersonationOperation {
+  id String @id @default(uuid()) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  administratorId String @map("administrator_id") @db.Uuid
+  selectedUserId String @map("selected_user_id") @db.Uuid
+  action String
+  startedAt DateTime @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  statusCode Int? @map("status_code")
+  @@index([sessionId, startedAt])
+  @@map("impersonation_operations")
 }
