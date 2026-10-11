@@ -431,12 +431,14 @@ describe("EvaluateListSolicitudesGateway", () => {
         1584,
         "CRUZ DEL EJE -premium-",
         0.1135,
+        18,
       ],
     ]);
 
     const prestamo = await gateway.getPrestamoDelSocio("146871", "423331");
 
     assert.deepEqual(prestamo, {
+      cuotas: 18,
       asiento: "1584",
       cobrador: "Haberes",
       destino: "Consumo",

@@ -230,6 +230,7 @@ const PRESTAMO_DEL_SOCIO_DETALLE_FIELDS = [
   "Asiento.NroAsiento",
   "LineaPrestamo.Descripcion",
   "TasaInicial",
+  "Cuotas",
 ] as const;
 
 // CuotaPrestamo trae, ademas del plan de cuotas, el desembolso y cada pago
@@ -1850,6 +1851,7 @@ function mapPrestamoDelSocioDetalleRow(
   row: EvaluateListRow,
 ): PrestamoDelSocioDetalleLegacy {
   return {
+    cuotas: getNumberValue(row, prestamoDelSocioDetalleFieldIndex, "Cuotas"),
     asiento: getStringValue(
       row,
       prestamoDelSocioDetalleFieldIndex,

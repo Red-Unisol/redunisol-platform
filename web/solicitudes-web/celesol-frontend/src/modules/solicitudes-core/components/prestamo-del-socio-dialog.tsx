@@ -104,17 +104,14 @@ export function PrestamoDelSocioDialog({
           ) : (
             <>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
-                <Dato label="Orden de compra" value={prestamo.ordenCompra} />
                 <Dato label="Cobrador" value={prestamo.cobrador} />
-                <Dato label="Destino" value={prestamo.destino} />
-                <Dato label="Asiento" value={prestamo.asiento} />
                 <Dato
                   label="Línea préstamo"
                   value={prestamo.lineaPrestamoDescripcion}
                 />
                 <Dato
-                  label="Tasa inicial"
-                  value={formatTasa(prestamo.tasaInicial)}
+                  label="Cantidad de cuotas"
+                  value={prestamo.cuotas == null ? null : String(prestamo.cuotas)}
                 />
               </dl>
 
@@ -206,17 +203,4 @@ function Dato({ label, value }: { label: string; value: string | null }) {
       <dd className="mt-0.5 text-foreground">{value || PLACEHOLDER}</dd>
     </div>
   );
-}
-
-// Vimarx guarda la tasa como fraccion (0.1135) y la muestra por 100 con tres
-// decimales ("11,350 %").
-function formatTasa(value: number | null) {
-  if (value === null) {
-    return null;
-  }
-
-  return `${(value * 100).toLocaleString("es-AR", {
-    maximumFractionDigits: 3,
-    minimumFractionDigits: 3,
-  })} %`;
 }

@@ -277,6 +277,7 @@ export function listPrestamosDelSocio(solicitudId: string) {
 }
 
 export type PrestamoDelSocioDetalleResponse = {
+  cuotas: number | null;
   asiento: string | null;
   cobrador: string | null;
   destino: string | null;
