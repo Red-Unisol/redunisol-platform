@@ -297,13 +297,38 @@ function PrestamosDelSocioSection({
     isActive,
   );
   const prestamos = data?.prestamos ?? [];
+  const [filtro, setFiltro] = useState<"pendientes" | "terminados" | "todos">("pendientes");
+  const terminados = prestamos.filter((prestamo) => prestamo.vigente === false);
+  const pendientes = prestamos.filter((prestamo) => prestamo.vigente !== false);
+  const prestamosVisibles = filtro === "pendientes"
+    ? pendientes
+    : filtro === "terminados" ? terminados : [...pendientes, ...terminados];
   // Id en Vimarx del prestamo abierto en el modal; null con el modal cerrado.
   const [prestamoAbiertoId, setPrestamoAbiertoId] = useState<string | null>(
     null,
   );
 
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-3">
+      <div aria-label="Filtrar préstamos por estado" className="flex flex-wrap gap-2" role="group">
+        {([
+          ["pendientes", "Pendientes", pendientes.length],
+          ["terminados", "Terminados", terminados.length],
+          ["todos", "Todos", prestamos.length],
+        ] as const).map(([value, label, count]) => (
+          <Button
+            aria-pressed={filtro === value}
+            key={value}
+            onClick={() => setFiltro(value)}
+            size="sm"
+            type="button"
+            variant={filtro === value ? "default" : "outline"}
+          >
+            {label}{!isLoading && !error ? ` (${count})` : ""}
+          </Button>
+        ))}
+      </div>
+      <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] border-collapse text-sm">
         <thead className="bg-background text-left text-xs text-foreground-secondary">
           <tr>
@@ -336,14 +361,14 @@ function PrestamosDelSocioSection({
                 No se pudieron consultar los préstamos del socio.
               </td>
             </tr>
-          ) : prestamos.length > 0 ? (
-            prestamos.map((prestamo) => (
+          ) : prestamosVisibles.length > 0 ? (
+            prestamosVisibles.map((prestamo) => (
               <tr
                 // Los no vigentes van atenuados: siguen siendo utiles como
                 // historial, pero no son la informacion principal.
                 className={[
                   "border-t border-border",
-                  prestamo.vigente ? "" : "text-foreground-secondary",
+                  prestamo.vigente === false ? "text-foreground-secondary" : "",
                   prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
                 ]
                   .filter(Boolean)
@@ -388,12 +413,17 @@ function PrestamosDelSocioSection({
                 className="px-3 py-4 text-foreground-secondary"
                 colSpan={PRESTAMOS_TABLE_COLUMNS.length}
               >
-                El socio no tiene préstamos registrados.
+                {prestamos.length === 0
+                  ? "El socio no tiene préstamos registrados."
+                  : filtro === "pendientes"
+                    ? "No hay préstamos pendientes. Podés consultar los terminados con el filtro."
+                    : "No hay préstamos terminados."}
               </td>
             </tr>
           )}
         </tbody>
       </table>
+      </div>
       <PrestamoDelSocioDialog
         onOpenChange={(open) => {
           if (!open) {
