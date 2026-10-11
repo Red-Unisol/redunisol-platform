@@ -292,7 +292,8 @@ export type PrestamoDelSocioDetalleResponse = {
 export type CuotaPrestamoResponse = {
   capital: number | null;
   fecha: string | null;
-  fechaCobro: string | null;
+  /** null/vacío: sin cobro; ausente: dato no disponible. */
+  fechaCobro?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
   saldoCuota: number | null;

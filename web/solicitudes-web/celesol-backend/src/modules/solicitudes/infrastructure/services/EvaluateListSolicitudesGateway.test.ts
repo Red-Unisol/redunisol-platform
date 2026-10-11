@@ -488,10 +488,7 @@ describe("EvaluateListSolicitudesGateway", () => {
       [0, 1],
     );
     assert.equal(cuotas[0]?.fechaCobro, null);
-    assert.match(
-      (requests[0]?.body as { campos: string }).campos,
-      /\bFechaCobro\b/,
-    );
+    assert.match((requests[0]?.body as { campos: string }).campos, /\bFechaCobro\b/);
     assert.deepEqual(cuotas[1], {
       capital: 58770.31,
       fecha: "2025-08-31",
@@ -505,6 +502,15 @@ describe("EvaluateListSolicitudesGateway", () => {
       (requests[0]?.body as { cmd: string }).cmd,
       "[Prestamo.ID] = 423331",
     );
+  });
+
+  it("distinguishes missing collection data from explicit null and empty values", async () => {
+    for (const value of [null, "", "   ", "invalid", 42, false, undefined]) {
+      const row = [0, "2026-10-10", 100, 100, 100, 100, "123/0", 123];
+      const { gateway } = createGateway([value === undefined ? row : [...row, value]]);
+      const cuotas = await gateway.listCuotasDelPrestamo("1");
+      assert.equal(cuotas[0]?.fechaCobro, value === null || typeof value === "string" ? value : undefined);
+    }
   });
 
   it("resolves the numeric legacy user id by username", async () => {
