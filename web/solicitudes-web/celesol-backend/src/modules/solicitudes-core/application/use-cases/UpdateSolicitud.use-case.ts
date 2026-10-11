@@ -3,6 +3,7 @@ import {
   ForbiddenSolicitudAccessError,
   LineaPrestamoNoDisponibleParaSolicitudError,
   SolicitudCoreNotFoundError,
+  SolicitudFieldNotEditableInCurrentStateError,
   SolicitudFueraDeLimitesDeLineaError,
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
@@ -52,6 +53,14 @@ export class UpdateSolicitudUseCase {
       throw new ForbiddenSolicitudAccessError();
     }
 
+    // El vendedor queda fijado al crear la solicitud, incluso para administradores.
+    if (
+      input.solicitud?.vendedorSolicitud !== undefined &&
+      input.solicitud.vendedorSolicitud !== solicitud.vendedorSolicitud
+    ) {
+      throw new SolicitudFieldNotEditableInCurrentStateError("solicitud.vendedorSolicitud");
+    }
+
     const fieldAccessRule =
       await this.fieldAccessRulesRepository.findByWorkflowStateId(
         solicitud.estadoActual.id,
@@ -68,6 +77,7 @@ export class UpdateSolicitudUseCase {
 
     if (input.solicitud) {
       patch.solicitud = { ...input.solicitud };
+      delete patch.solicitud.vendedorSolicitud;
 
       if (input.solicitud.fechaPrimerVencimiento !== undefined) {
         patch.solicitud.fechaPrimerVencimiento =

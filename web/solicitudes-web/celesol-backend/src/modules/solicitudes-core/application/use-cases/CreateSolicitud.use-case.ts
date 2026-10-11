@@ -152,7 +152,7 @@ export class CreateSolicitudUseCase {
       ejecutivoSolicitud: input.ejecutivoSolicitud ?? null,
       linkFirmaDigital: input.linkFirmaDigital ?? null,
       estadoActual: initialState,
-      firmaDigitalmente: input.firmaDigitalmente ?? false,
+      firmaDigitalmente: input.firmaDigitalmente ?? true,
       lineaPrestamoDescripcion: lineaPrestamo.descripcion,
       lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
       montoAFinanciar: input.montoAFinanciar ?? null,
