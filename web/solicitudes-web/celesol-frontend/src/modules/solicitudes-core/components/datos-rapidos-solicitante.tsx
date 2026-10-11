@@ -51,6 +51,19 @@ export function DatosRapidosSolicitante({
     enabled: condicion.member,
     retry: false,
   });
+  const mora = useQuery({
+    queryKey: [...key, "persona", "mora"],
+    queryFn: () => datosRapidosApi.mora(solicitudId),
+    enabled: condicion.member,
+    retry: false,
+  });
+  const moraText = mora.isPending
+    ? "Consultando mora"
+    : mora.isError || typeof mora.data?.enMora !== "boolean"
+      ? "No se pudo verificar"
+      : mora.data.enMora
+        ? "Tiene cuotas vencidas impagas"
+        : "Sin cuotas vencidas impagas";
   const vigencia = creditosIndicator(creditos);
   return (
     <section
@@ -110,8 +123,22 @@ export function DatosRapidosSolicitante({
         </div>
         {condicion.member && (
           <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-foreground-secondary">Mora</span>
+            <Badge
+              variant={
+                mora.isError || mora.data?.enMora !== false
+                  ? "warning"
+                  : "neutral"
+              }
+            >
+              {moraText}
+            </Badge>
+          </div>
+        )}
+        {condicion.member && (
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-foreground-secondary">
-              Créditos vigentes
+              Créditos activos
             </span>
             <Badge variant={vigencia.variant}>{vigencia.text}</Badge>
             {canViewDetalle && (

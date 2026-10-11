@@ -1,3 +1,4 @@
+import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
 import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
 import {
   ArrowLeft,
@@ -298,12 +299,11 @@ function PrestamosDelSocioSection({
     isActive,
   );
   const prestamos = data?.prestamos ?? [];
-  const [filtro, setFiltro] = useState<"pendientes" | "terminados" | "todos">("pendientes");
-  const terminados = prestamos.filter((prestamo) => prestamo.vigente === false);
-  const pendientes = prestamos.filter((prestamo) => prestamo.vigente !== false);
-  const prestamosVisibles = filtro === "pendientes"
-    ? pendientes
-    : filtro === "terminados" ? terminados : [...pendientes, ...terminados];
+  const [filtro, setFiltro] = useState<"activos" | "otros" | "desconocidos" | "todos">("activos");
+  const activos = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "activos");
+  const otros = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "otros");
+  const desconocidos = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "desconocidos");
+  const prestamosVisibles = filtro === "activos" ? activos : filtro === "otros" ? otros : filtro === "desconocidos" ? desconocidos : [...activos, ...otros, ...desconocidos];
   // Id en Vimarx del prestamo abierto en el modal; null con el modal cerrado.
   const [prestamoAbiertoId, setPrestamoAbiertoId] = useState<string | null>(
     null,
@@ -313,8 +313,9 @@ function PrestamosDelSocioSection({
     <div className="space-y-3">
       <div aria-label="Filtrar préstamos por estado" className="flex flex-wrap gap-2" role="group">
         {([
-          ["pendientes", "Pendientes", pendientes.length],
-          ["terminados", "Terminados", terminados.length],
+          ["activos", "Activos", activos.length],
+          ["otros", "Otros estados", otros.length],
+          ["desconocidos", "Sin verificar", desconocidos.length],
           ["todos", "Todos", prestamos.length],
         ] as const).map(([value, label, count]) => (
           <Button
@@ -365,11 +366,10 @@ function PrestamosDelSocioSection({
           ) : prestamosVisibles.length > 0 ? (
             prestamosVisibles.map((prestamo) => (
               <tr
-                // Los no vigentes van atenuados: siguen siendo utiles como
-                // historial, pero no son la informacion principal.
+                // Otros estados no equivalen a créditos pagados ni libres de mora.
                 className={[
                   "border-t border-border",
-                  prestamo.vigente === false ? "text-foreground-secondary" : "",
+                  clasificarEstadoPrestamo(prestamo) === "otros" ? "text-foreground-secondary" : "",
                   prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
                 ]
                   .filter(Boolean)
@@ -416,9 +416,9 @@ function PrestamosDelSocioSection({
               >
                 {prestamos.length === 0
                   ? "El socio no tiene préstamos registrados."
-                  : filtro === "pendientes"
-                    ? "No hay préstamos pendientes. Podés consultar los terminados con el filtro."
-                    : "No hay préstamos terminados."}
+                  : filtro === "activos"
+                    ? "No hay préstamos activos. Podés consultar los otros estados o los pendientes de verificación."
+                    : "No hay préstamos en este filtro."}
               </td>
             </tr>
           )}

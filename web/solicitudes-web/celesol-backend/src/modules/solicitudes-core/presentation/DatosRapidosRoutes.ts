@@ -15,7 +15,7 @@ export function addDatosRapidosRoutes(
     datosRapidos: GetDatosRapidosUseCase;
   },
 ) {
-  for (const parte of ["socio", "convenio", "creditos"] as const) {
+  for (const parte of ["socio", "convenio", "creditos", "mora"] as const) {
     router.get(`/:id/datos-rapidos/${parte}`, async (req, res, next) => {
       try {
         const user = await dependencies.getCurrentUserUseCase.execute(

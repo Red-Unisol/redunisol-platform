@@ -214,6 +214,7 @@ const PRESTAMOS_DEL_SOCIO_FIELDS = [
   "Saldo",
   "PrimerVencimiento",
   "Vencimiento",
+  "Estado",
 ] as const;
 
 // Detalle de un prestamo para el modal de la pestaña Préstamos. Estos nombres
@@ -541,7 +542,31 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return rows.length === 1 ? rows[0] : null;
   }
 
-  async getCreditosVigentesRapido(socioId: string): Promise<boolean | null> {
+  async getMoraRapido(socioId: string, now = new Date()): Promise<boolean | null> {
+    if (!/^\d+$/.test(socioId)) throw new LegacySolicitudesUnavailableError();
+    // Día de negocio argentino: una cuota que vence hoy aún no está vencida.
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(now);
+    const max = 2000;
+    const rows = await this.executeEvaluateList({
+      tipo: "F.Module.Cuentas.Prestamos.CuotaPrestamo",
+      defaultMax: max,
+      fields: ["NroCuota", "Descripcion", "Prestamo.NroCuenta"],
+      buildCmd: () => `Prestamo.Integrantes[Socio.ID = ${socioId}].Count() > 0 And [NroCuota] > 0 And [SaldoCuota] > 0.0m And [Fecha] < #${today}#`,
+      mapRow: (row) => {
+        if (row.length !== 3 || !/^\d+$/.test(String(row[0] ?? "")) || typeof row[1] !== "string" || !/^\d+$/.test(String(row[2] ?? ""))) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return esCuotaDelPlan({ nroCuota: Number(row[0]), descripcion: row[1], nroCuenta: String(row[2]) });
+      },
+    }, max, true);
+    if (rows.some(Boolean)) return true;
+    // Un resultado limitado nunca confirma ausencia de mora.
+    return rows.length >= max ? null : false;
+  }
+
+  async getCreditosActivosRapido(socioId: string): Promise<boolean | null> {
     if (!/^\d+$/.test(socioId)) throw new LegacySolicitudesUnavailableError();
     const base = buildPrestamosDelSocioDefinition(socioId);
     const exists = async (condition: string) => {
@@ -558,9 +583,9 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       }, 1, true);
       return rows.length > 0;
     };
-    if (await exists("[Vigente] = True")) return true;
-    // Un estado desconocido impide confirmar que no tenga créditos vigentes.
-    return await exists("[Vigente] Is Null") ? null : false;
+    if (await exists("[Estado] = 0")) return true;
+    // Un estado desconocido impide confirmar que no tenga créditos activos.
+    return await exists("[Estado] Is Null") ? null : false;
   }
 
   listPrestamosDelSocio(socioLegacyId: string) {
@@ -1879,6 +1904,7 @@ function mapPrestamoOtorgadoRow(row: EvaluateListRow): PrestamoOtorgadoLegacy {
 
 function mapPrestamoDelSocioRow(row: EvaluateListRow): PrestamoDelSocioLegacy {
   return {
+    estado: getNumberValue(row, prestamosDelSocioFieldIndex, "Estado"),
     capital: getNumberValue(row, prestamosDelSocioFieldIndex, "Capital"),
     fechaEmision: getStringValue(
       row,

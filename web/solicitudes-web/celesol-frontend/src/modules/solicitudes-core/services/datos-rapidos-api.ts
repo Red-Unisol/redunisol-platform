@@ -10,8 +10,12 @@ export const datosRapidosApi = {
     apiClient.get<{ descripcion: string | null }>(
       `/solicitudes/${id}/datos-rapidos/convenio`,
     ),
+  mora: (id: string) =>
+    apiClient.get<{ enMora: boolean | null }>(
+      `/solicitudes/${id}/datos-rapidos/mora`,
+    ),
   creditos: (id: string) =>
-    apiClient.get<{ vigentes: boolean | null }>(
+    apiClient.get<{ activos: boolean | null }>(
       `/solicitudes/${id}/datos-rapidos/creditos`,
     ),
 };

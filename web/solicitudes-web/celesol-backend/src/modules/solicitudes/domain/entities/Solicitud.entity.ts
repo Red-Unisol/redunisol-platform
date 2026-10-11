@@ -215,6 +215,7 @@ export type PrestamoOtorgadoLegacy = {
 // "vigente" lo calcula el legado, no lo deducimos nosotros. OJO: no significa
 // "tiene deuda" -- hay prestamos no vigentes con saldo pendiente.
 export type PrestamoDelSocioLegacy = {
+  estado: number | null;
   capital: number | null;
   fechaEmision: string | null;
   legacyId: string | null;
