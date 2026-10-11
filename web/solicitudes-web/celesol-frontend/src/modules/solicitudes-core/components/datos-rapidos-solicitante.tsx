@@ -10,11 +10,19 @@ import {
 export function DatosRapidosSolicitante({
   solicitudId,
   revision,
+  titular,
   canViewDetalle,
   onVerDetalle,
 }: {
   solicitudId: string;
   revision: string;
+  titular: {
+    nombre: string | null;
+    apellidoDenominacion: string | null;
+    tipoDocumento: string | null;
+    nroDocumento: string | null;
+    cuit: string | null;
+  };
   canViewDetalle: boolean;
   onVerDetalle: () => void;
 }) {
@@ -47,18 +55,49 @@ export function DatosRapidosSolicitante({
   return (
     <section
       aria-label="Datos rápidos del solicitante"
-      className="shrink-0 border-b border-border bg-background px-3 py-3 md:px-4"
+      className="sticky top-0 z-20 shrink-0 border-b border-border bg-background px-3 py-2.5 md:px-4"
     >
-      <p className="text-xs font-medium text-foreground-secondary">
-        Datos rápidos del solicitante · Convenio
-      </p>
-      <h2 className="mt-1 break-words text-lg font-semibold text-foreground">
-        {convenio.isPending
-          ? "Consultando convenio"
-          : convenio.isError || !convenio.data?.descripcion
-            ? "Convenio no disponible"
-            : convenio.data.descripcion}
-      </h2>
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-6">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-foreground-secondary">
+            Solicitante
+          </p>
+          <h2 className="break-words text-lg font-semibold text-foreground">
+            {[titular.nombre, titular.apellidoDenominacion]
+              .map((value) => value?.trim())
+              .filter(Boolean)
+              .join(" ") || "Nombre no informado"}
+          </h2>
+          <dl className="mt-0.5 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            <div className="flex gap-1.5">
+              <dt className="text-foreground-secondary">
+                {titular.tipoDocumento?.trim() || "Documento"}
+              </dt>
+              <dd className="font-medium tabular-nums text-foreground">
+                {titular.nroDocumento?.trim() || "No informado"}
+              </dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="text-foreground-secondary">CUIT</dt>
+              <dd className="font-medium tabular-nums text-foreground">
+                {titular.cuit?.trim() || "No informado"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <div className="min-w-0 md:max-w-[45%] md:text-right">
+          <p className="text-xs font-medium text-foreground-secondary">
+            Convenio
+          </p>
+          <h2 className="mt-1 break-words text-lg font-semibold text-foreground">
+            {convenio.isPending
+              ? "Consultando convenio"
+              : convenio.isError || !convenio.data?.descripcion
+                ? "Convenio no disponible"
+                : convenio.data.descripcion}
+          </h2>
+        </div>
+      </div>
       <div
         aria-live="polite"
         className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2"

@@ -4030,6 +4030,7 @@ export function SolicitudesActualDetallePage() {
       <DatosRapidosSolicitante
         key={resolvedSolicitud.id}
         solicitudId={resolvedSolicitud.id}
+        titular={resolvedSolicitud.titular}
         revision={JSON.stringify([
           resolvedSolicitud.titular.nroDocumento,
           resolvedSolicitud.titular.tipoDocumento,
