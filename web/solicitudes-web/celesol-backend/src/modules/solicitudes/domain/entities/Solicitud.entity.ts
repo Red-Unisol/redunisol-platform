@@ -248,6 +248,7 @@ export type PrestamoDelSocioDetalleLegacy = {
 export type CuotaPrestamoLegacy = {
   capital: number | null;
   fecha: string | null;
+  fechaCobro: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
   saldoCuota: number | null;

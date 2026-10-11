@@ -244,6 +244,7 @@ const CUOTAS_DEL_PRESTAMO_FIELDS = [
   "Capital",
   "Descripcion",
   "Prestamo.NroCuenta",
+  "FechaCobro",
 ] as const;
 
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
@@ -1895,6 +1896,7 @@ function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
     cuota: {
       capital: getNumberValue(row, cuotasDelPrestamoFieldIndex, "Capital"),
       fecha: getStringValue(row, cuotasDelPrestamoFieldIndex, "Fecha"),
+      fechaCobro: getStringValue(row, cuotasDelPrestamoFieldIndex, "FechaCobro"),
       montoTotal: getNumberValue(
         row,
         cuotasDelPrestamoFieldIndex,
