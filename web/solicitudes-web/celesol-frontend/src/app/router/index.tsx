@@ -12,6 +12,7 @@ import { AuthLayout } from "@/app/layouts/auth-layout";
 import {
   AdminOnlyRoute,
   PendingAreaRoute,
+  PrecargaRoute,
   ProtectedRoute,
   PublicOnlyRoute,
   RiesgoOnlyRoute,
@@ -255,7 +256,7 @@ export function AppRouter() {
           path="/solicitudes/core/precarga"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <SolicitudesActualPrecargaPage />
+              <PrecargaRoute><SolicitudesActualPrecargaPage /></PrecargaRoute>
             </Suspense>
           }
         />
@@ -263,7 +264,7 @@ export function AppRouter() {
           path="/solicitudes/core/precarga/nueva"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <SolicitudesNuevaPage />
+              <PrecargaRoute><SolicitudesNuevaPage /></PrecargaRoute>
             </Suspense>
           }
         />
@@ -287,7 +288,7 @@ export function AppRouter() {
           path="/solicitudes/anterior/precarga"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <SolicitudesPrecargaPage />
+              <PrecargaRoute><SolicitudesPrecargaPage /></PrecargaRoute>
             </Suspense>
           }
         />
