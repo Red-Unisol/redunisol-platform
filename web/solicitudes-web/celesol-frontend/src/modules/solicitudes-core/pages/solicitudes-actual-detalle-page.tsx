@@ -1,5 +1,6 @@
 import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
+import { LinkFirmaDigital } from "../components/link-firma-digital";
 import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
 import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
 import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
@@ -1500,14 +1501,7 @@ function SolicitudSection({
           label="Link firma digital"
           value={
             solicitud.linkFirmaDigital ? (
-              <a
-                className="break-all text-primary underline underline-offset-2"
-                href={solicitud.linkFirmaDigital}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {solicitud.linkFirmaDigital}
-              </a>
+              <LinkFirmaDigital url={solicitud.linkFirmaDigital} />
             ) : (
               "El link estará disponible al generar préstamo"
             )
