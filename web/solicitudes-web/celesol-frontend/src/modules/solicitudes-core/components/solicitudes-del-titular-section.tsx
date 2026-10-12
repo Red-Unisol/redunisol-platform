@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { filtrarHistorialSolicitudes } from "../utils/filtrar-historial-solicitudes";
 import { useQuery } from "@tanstack/react-query";
 import {
   listSolicitudesDelTitular,
@@ -36,13 +38,18 @@ function display(row: SolicitudDelTitular, key: keyof SolicitudDelTitular) {
     return formatNullableAmount(row[key]);
   return value;
 }
-export function SolicitudesDelTitularSection({
+export function SolicitudesDelTitularSection(props: { solicitudId: string; documento: string | null }) {
+  return <HistorialSolicitudes key={JSON.stringify([props.solicitudId, props.documento])} {...props} />;
+}
+function HistorialSolicitudes({
   solicitudId,
   documento,
 }: {
   solicitudId: string;
   documento: string | null;
 }) {
+  const [texto, setTexto] = useState("");
+  const [estado, setEstado] = useState("");
   const query = useQuery({
     queryKey: solicitudesCoreQueryKeys.solicitudesDelTitular(
       solicitudId,
@@ -73,11 +80,22 @@ export function SolicitudesDelTitularSection({
         realizó la consulta.
       </p>
     );
+  const rows = filtrarHistorialSolicitudes(query.data.solicitudes, texto, estado);
+  const estados = [...new Set(query.data.solicitudes.map(row => row.estado).filter((value): value is string => Boolean(value)))].sort((a,b) => a.localeCompare(b, "es"));
   return (
     <div className="-mx-3 -mb-3 min-w-0 md:-mx-4 md:-mb-4">
-      {query.data.solicitudes.length === 0 ? (
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-2 py-2">
+        <input aria-label="Buscar en solicitudes" placeholder="Buscar en solicitudes…" value={texto} onChange={event => setTexto(event.target.value)} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-sm focus-visible:outline-primary" />
+        <select aria-label="Filtrar solicitudes por estado" value={estado} onChange={event => setEstado(event.target.value)} className="h-8 max-w-full rounded-md border border-border bg-surface px-2 text-sm focus-visible:outline-primary">
+          <option value="">Todos los estados</option>
+          {estados.map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+        <Button type="button" variant="outline" size="sm" disabled={!texto && !estado} onClick={() => { setTexto(""); setEstado(""); }}>Limpiar filtros</Button>
+        <span className="text-xs text-foreground-secondary" role="status">{rows.length} de {query.data.solicitudes.length}</span>
+      </div>
+      {rows.length === 0 ? (
         <p role="status" className="px-3 py-3 md:px-4">
-          No se encontraron solicitudes para el documento del titular.
+          {query.data.solicitudes.length === 0 ? "No se encontraron solicitudes para el documento del titular." : "No hay solicitudes que coincidan con los filtros aplicados."}
         </p>
       ) : (
         <div
@@ -100,16 +118,17 @@ export function SolicitudesDelTitularSection({
                 {columns.map(([key, label]) => (
                   <th
                     scope="col"
+                    aria-sort={key === "fecha" ? "descending" : undefined}
                     key={key}
                     className="border-r border-border px-1.5 py-2 text-left align-top font-medium wrap-anywhere"
                   >
-                    {label}
+                    {label}{key === "fecha" ? " ↓" : ""}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {query.data.solicitudes.map((row, index) => (
+              {rows.map((row, index) => (
                 <tr key={index} className="border-t border-border">
                   {columns.map(([key]) => (
                     <td key={key} className="border-r border-border px-1.5 py-2 align-top wrap-anywhere">
