@@ -51,6 +51,36 @@ describe("Solicitud workflow metadata bootstrap", () => {
     await prisma.$disconnect();
   });
 
+  it("makes verification comments optional while preserving the automatic comment and return requirement", async () => {
+    const transitions = await prisma.workflowTransition.findMany({
+      where: {
+        OR: [
+          { actionCode: "verificar_firma", fromState: { code: "Liquidada" } },
+          {
+            actionCode: "devolver_a_liquidada",
+            fromState: { code: "VerificarFirmaYDocumentacion" },
+          },
+        ],
+      },
+      include: { toState: true },
+    });
+    const verification = transitions.find(
+      (item) => item.actionCode === "verificar_firma",
+    );
+    assert.ok(verification);
+    assert.equal(verification.requiresComment, false);
+    assert.equal(
+      verification.defaultComment,
+      "Verificar firma y documentación",
+    );
+    assert.equal(verification.toState.code, "VerificarFirmaYDocumentacion");
+    assert.equal(
+      transitions.find((item) => item.actionCode === "devolver_a_liquidada")
+        ?.requiresComment,
+      true,
+    );
+  });
+
   it("applies the versioned workflow metadata bootstrap on a clean test database", async () => {
     const states = await prisma.workflowState.findMany({
       where: { isActive: true },
@@ -69,10 +99,7 @@ describe("Solicitud workflow metadata bootstrap", () => {
         sortOrder: true,
         toState: { select: { code: true } },
       },
-      orderBy: [
-        { fromState: { code: "asc" } },
-        { actionCode: "asc" },
-      ],
+      orderBy: [{ fromState: { code: "asc" } }, { actionCode: "asc" }],
     });
     const rules = await prisma.solicitudFieldAccessRule.findMany({
       include: {
