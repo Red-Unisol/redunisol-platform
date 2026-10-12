@@ -1,3 +1,4 @@
+import { GetRevisionPrestamoUseCase } from "./application/use-cases/GetRevisionPrestamo.use-case";
 import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSolicitudesDelTitular.use-case";
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
 import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
@@ -255,6 +256,10 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
     sociosRepository,
   });
+  const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
+    repository: solicitudesCoreRepository, sociosRepository,
+    lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
+  });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     authRepository,
     cancelacionesRepository: solicitudCancelacionRepository,
@@ -392,6 +397,7 @@ export function createSolicitudesCoreRouter(
     assignSolicitudToUserUseCase,
     changeSolicitudStateUseCase,
     createPrestamoLegacyUseCase,
+    getRevisionPrestamoUseCase,
     createSolicitudUseCase,
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     getSolicitudByIdUseCase,

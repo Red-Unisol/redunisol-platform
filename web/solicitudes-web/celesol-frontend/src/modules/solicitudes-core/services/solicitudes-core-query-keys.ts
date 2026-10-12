@@ -14,6 +14,8 @@ const solicitudesCoreHistoricasRootKey = [
 
 export const solicitudesCoreQueryKeys = {
   all: solicitudesCoreRootKey,
+  revisionPrestamo: (id: string, condiciones: string) =>
+    [...solicitudesCoreRootKey, "revision-prestamo", id, condiciones] as const,
   assignmentAgents: (id: string) =>
     [...solicitudesCoreRootKey, "assignment-agents", id] as const,
   adjuntos: (id: string) =>

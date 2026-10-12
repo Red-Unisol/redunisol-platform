@@ -11,6 +11,7 @@ describe("SolicitudesCoreRoutes", () => {
         assignToUser: () => undefined,
         changeState: () => undefined,
         create: () => undefined,
+        getRevisionPrestamo: () => undefined,
         createPrestamoLegacy: () => undefined,
         getById: () => undefined,
         getStats: () => undefined,
@@ -49,7 +50,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 22), [
+    assert.deepEqual(routePaths.slice(0, 23), [
       "/",
       "/",
       "/stats",
@@ -60,6 +61,7 @@ describe("SolicitudesCoreRoutes", () => {
       "/tipos-adjunto",
       "/:id/transitions",
       "/:id/transitions",
+      "/:id/revision-prestamo",
       "/:id/prestamo-legacy",
       "/:id/solicitudes-titular",
       "/:id/prestamos-socio",

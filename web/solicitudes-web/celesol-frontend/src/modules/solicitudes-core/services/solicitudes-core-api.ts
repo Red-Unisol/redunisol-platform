@@ -589,3 +589,23 @@ export type HistorialSolicitudesResponse = {
 export function listSolicitudesDelTitular(id: string) {
  return apiClient.get<HistorialSolicitudesResponse>(`/solicitudes/${id}/solicitudes-titular`);
 }
+
+export type RevisionPrestamoResponse = {
+  titular: { nombreCompleto: string | null; nroSocio: string | null };
+  condiciones: { lineaDescripcion: string; montoAFinanciar: number | null; cuotas: number | null };
+  calculo: {
+    capital: number | null; cuotaResultante: number | null; cuotas: number | null;
+    gastos: number | null; tasa: number | null; total: number | null;
+    fechaPrimerVencimiento: string | null; fechaUltimaCuota: string | null;
+    cuotasDetalle: {
+      capital: number | null; fechaVencimiento: string | null; gastos: number | null;
+      interes: number | null; numeroCuota: number | null; total: number | null;
+    }[] | null;
+  } | null;
+};
+
+export function getRevisionPrestamo(solicitudId: string) {
+  return withAreaForbiddenMessage(apiClient.get<RevisionPrestamoResponse>(
+    `/solicitudes/${solicitudId}/revision-prestamo`,
+  ));
+}

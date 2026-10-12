@@ -1,3 +1,4 @@
+import type { GetRevisionPrestamoUseCase } from "../application/use-cases/GetRevisionPrestamo.use-case";
 import type { ListSolicitudesDelTitularUseCase } from "../application/use-cases/ListSolicitudesDelTitular.use-case";
 import type { NextFunction, Request, Response } from "express";
 import type { ZodSchema } from "zod";
@@ -69,6 +70,7 @@ type Dependencies = {
   assignSolicitudToUserUseCase: AssignSolicitudToUserUseCase;
   listAssignableSolicitudAgentsUseCase: ListAssignableSolicitudAgentsUseCase;
   changeSolicitudStateUseCase: ChangeSolicitudStateUseCase;
+  getRevisionPrestamoUseCase: GetRevisionPrestamoUseCase;
   createPrestamoLegacyUseCase: CreatePrestamoLegacyUseCase;
   createSolicitudUseCase: CreateSolicitudUseCase;
   getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -95,6 +97,7 @@ export class SolicitudesCoreController {
   private readonly assignSolicitudToUserUseCase: AssignSolicitudToUserUseCase;
   private readonly listAssignableSolicitudAgentsUseCase: ListAssignableSolicitudAgentsUseCase;
   private readonly changeSolicitudStateUseCase: ChangeSolicitudStateUseCase;
+  private readonly getRevisionPrestamoUseCase: GetRevisionPrestamoUseCase;
   private readonly createPrestamoLegacyUseCase: CreatePrestamoLegacyUseCase;
   private readonly createSolicitudUseCase: CreateSolicitudUseCase;
   private readonly getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -121,6 +124,7 @@ export class SolicitudesCoreController {
     this.listAssignableSolicitudAgentsUseCase =
       dependencies.listAssignableSolicitudAgentsUseCase;
     this.changeSolicitudStateUseCase = dependencies.changeSolicitudStateUseCase;
+    this.getRevisionPrestamoUseCase = dependencies.getRevisionPrestamoUseCase;
     this.createPrestamoLegacyUseCase = dependencies.createPrestamoLegacyUseCase;
     this.createSolicitudUseCase = dependencies.createSolicitudUseCase;
     this.getCurrentUserUseCase = dependencies.getCurrentUserUseCase;
@@ -499,6 +503,35 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getRevisionPrestamo = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+      const workflowOwnerId = user.isSystemAdmin
+        ? user.workflowOwnerId ?? ""
+        : this.requireWorkflowOwnerId(user.workflowOwnerId);
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const solicitud = await this.getRevisionPrestamoUseCase.execute({
+        currentUser: {
+          id: user.id,
+          workflowOwnerId,
+          ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+        },
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(solicitud);
     } catch (error) {
       next(error);
     }
