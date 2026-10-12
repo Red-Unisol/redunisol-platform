@@ -32,6 +32,7 @@ export class SolicitudesCoreRoutes {
 
     router.get("/:id/transitions", controller.listTransitions);
     router.post("/:id/transitions", controller.changeState);
+    router.get("/:id/revision-prestamo", controller.getRevisionPrestamo);
     router.post("/:id/prestamo-legacy", controller.createPrestamoLegacy);
     router.get("/:id/solicitudes-titular", controller.listSolicitudesDelTitular);
     router.get("/:id/prestamos-socio", controller.listPrestamosDelSocio);

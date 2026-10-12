@@ -4398,6 +4398,7 @@ export function SolicitudesActualDetallePage() {
         socio={null}
       />
       <GenerarPrestamoDialog
+        condicionesKey={JSON.stringify([resolvedSolicitud.lineaPrestamoLegacyOid, resolvedSolicitud.montoAFinanciar, resolvedSolicitud.cuotas, resolvedSolicitud.titular])}
         cuotas={resolvedSolicitud.cuotas}
         isPending={createPrestamoLegacyMutation.isPending}
         lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}

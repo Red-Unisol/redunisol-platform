@@ -752,6 +752,55 @@ describe("SolicitudesCoreController", () => {
     });
   });
 
+  it("delegates read-only loan preview using the authenticated effective user", async () => {
+    let receivedInput: unknown;
+    const controller = new SolicitudesCoreController({
+      listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
+      listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
+      ...workflowUseCases(),
+      getRevisionPrestamoUseCase: {
+        execute: async (input: unknown) => {
+          receivedInput = input;
+          return { titular: { nroSocio: "123" }, calculo: null };
+        },
+      } as never,
+      createSolicitudUseCase: {} as never,
+      getCurrentUserUseCase: {
+        execute: async () => authenticatedUser(),
+      } as never,
+      getSolicitudByIdUseCase: {} as never,
+      listSolicitudesUseCase: {} as never,
+      updateSolicitudUseCase: {} as never,
+    });
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.getRevisionPrestamo(
+      request({
+        params: { id: solicitudId() },
+      }),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { titular: { nroSocio: "123" }, calculo: null });
+    assert.deepEqual(receivedInput, {
+      currentUser: {
+        id: "user-1",
+        workflowOwnerId: "owner-1",
+      },
+      solicitudId: solicitudId(),
+    });
+  });
+
   it("lists assignable agents for the solicitud using authenticated current user", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({
@@ -1813,6 +1862,7 @@ function authenticatedUser() {
 
 function workflowUseCases() {
   return {
+    getRevisionPrestamoUseCase: { execute: async () => ({}) } as never,
     assignSolicitudToSelfUseCase: {
       execute: async () => ({ id: "sol-1", assignedToUserId: "user-1" }),
     } as never,
