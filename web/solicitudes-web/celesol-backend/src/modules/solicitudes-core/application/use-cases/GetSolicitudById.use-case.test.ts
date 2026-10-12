@@ -12,6 +12,19 @@ import {
 import { GetSolicitudByIdUseCase } from "./GetSolicitudById.use-case";
 
 describe("GetSolicitudByIdUseCase", () => {
+  it("expone Editar para Riesgo en Vendedores conservando el catálogo de campos", async () => {
+    const repository = repositoryReturning({ estadoActual: { id: "state-1", code: "PreAprobada", name: "PreAprobada", ownerId: "vendedores", owner: { id: "vendedores", code: "VENDEDORES", name: "Vendedores" } } });
+    repository.findWorkflowOwnerCodeById = async () => "RIESGO";
+    const useCase = new GetSolicitudByIdUseCase({ repository, fieldAccessRulesRepository: buildFieldAccessRulesRepository({
+      findByWorkflowStateId: async workflowStateId => ({ workflowStateId, active: true, defaultMode: "readonly", editableFields: ["solicitud.observaciones"], editableGroups: [], readonlyReason: null, canManageAttachments: true, backgroundColor: null, textColor: null }),
+    }) });
+    const result = await useCase.execute({ id: "sol-1", currentUser: { id: "risk", workflowOwnerId: "riesgo" } });
+    assert.equal(result.capabilities.canEdit, true);
+    assert.equal(result.capabilities.canChangeState, false);
+    assert.equal(result.capabilities.canUploadAdjuntos, false);
+    assert.deepEqual(result.capabilities.fieldAccess.editableFields, ["solicitud.observaciones"]);
+  });
+
   it("returns the solicitud when it belongs to the authenticated creator", async () => {
     const repository: SolicitudesCoreRepository = {
       create: async () => {

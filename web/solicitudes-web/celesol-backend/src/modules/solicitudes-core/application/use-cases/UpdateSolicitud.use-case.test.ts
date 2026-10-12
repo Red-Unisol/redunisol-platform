@@ -19,6 +19,24 @@ import { EDITABLE_FIELDS } from "../services/SolicitudFieldAccess";
 import { UpdateSolicitudUseCase } from "./UpdateSolicitud.use-case";
 
 describe("UpdateSolicitudUseCase", () => {
+  it("permite correcciones de Riesgo en Vendedores respetando campos y asignación", async () => {
+    const target = solicitudCore();
+    target.estadoActual = { ...target.estadoActual, code: "PreAprobada", owner: { id: "owner-1", code: "VENDEDORES", name: "Vendedores" } };
+    const useCase = buildUseCase({
+      findById: async () => target,
+      findWorkflowOwnerCodeById: async id => { assert.equal(id, "owner-riesgo"); return "RIESGO"; },
+      fieldAccessRulesRepository: reglaSinLinea(),
+    });
+    const actor = { id: "analyst", workflowOwnerId: "owner-riesgo" };
+    const result = await useCase.execute(updateInput({ currentUser: actor, solicitud: { observaciones: "Corrección de riesgo" } }));
+    assert.equal(result.observaciones, "Corrección de riesgo");
+    await assert.rejects(useCase.execute(updateInput({ currentUser: actor, solicitud: { lineaPrestamoLegacyOid: "LP-2" } })), SolicitudFieldNotEditableInCurrentStateError);
+    await assert.rejects(useCase.execute(updateInput({ currentUser: actor, solicitud: { vendedorSolicitud: "Otro vendedor" } })), SolicitudFieldNotEditableInCurrentStateError);
+    await assert.rejects(useCase.execute(updateInput({ currentUser: actor, solicitud: { cuotaResultante: "1" } })), SolicitudFieldNotEditableInCurrentStateError);
+    const treasury = buildUseCase({ findById: async () => target, findWorkflowOwnerCodeById: async () => "TESORERIA" });
+    await assert.rejects(treasury.execute(updateInput({ currentUser: actor, solicitud: { observaciones: "No autorizado" } })), ForbiddenSolicitudAccessError);
+  });
+
   for (const isSystemAdmin of [false, true]) {
     it(`rechaza cambiar o borrar el vendedor (admin=${isSystemAdmin})`, async () => {
       let updated = false;
@@ -770,6 +788,7 @@ describe("UpdateSolicitudUseCase", () => {
 function buildUseCase(overrides?: {
   fieldAccessRulesRepository?: SolicitudFieldAccessRulesRepository;
   findById?: SolicitudesCoreRepository["findById"];
+  findWorkflowOwnerCodeById?: SolicitudesCoreRepository["findWorkflowOwnerCodeById"];
   findVendedorLegacyUser?: SolicitudesCoreRepository["findVendedorLegacyUser"];
   lineasPrestamoCatalog?: LineasPrestamoCatalog;
   update?: SolicitudesCoreRepository["update"];
@@ -779,6 +798,7 @@ function buildUseCase(overrides?: {
       throw new Error("not used");
     },
     findById: overrides?.findById ?? (async () => solicitudCore()),
+    findWorkflowOwnerCodeById: overrides?.findWorkflowOwnerCodeById ?? (async () => null),
     findVendedorLegacyUser: overrides?.findVendedorLegacyUser ?? (async () => "seller-legacy"),
     listByOwner: async () => [],
     update:

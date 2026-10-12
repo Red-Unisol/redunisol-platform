@@ -1,3 +1,4 @@
+import type { SolicitudCoreState } from "../../../solicitudes-core/domain/entities/SolicitudCore.entity";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -26,7 +27,7 @@ const analistaRiesgo = {
 
 function armar(
   overrides: {
-    estado?: typeof EN_RIESGO | null;
+    estado?: SolicitudCoreState | null;
     falloAlSubir?: boolean;
   } = {},
 ) {
@@ -71,6 +72,12 @@ function armar(
 }
 
 describe("GuardarEvaluacionRiesgoUseCase", () => {
+  it("editar datos en Vendedores no habilita guardar la planilla de Evaluación", async () => {
+    const { subidos, useCase } = armar({ estado: { ...EN_RIESGO, code: "PreAprobada", ownerId: "owner-vendedores", owner: { id: "owner-vendedores", code: "VENDEDORES", name: "Vendedores" } } });
+    await assert.rejects(useCase.execute({ currentUser: analistaRiesgo, nivelRiesgo: 2, snapshot: SNAPSHOT, solicitudId: "sol-1" }), ForbiddenGuardarEvaluacionError);
+    assert.equal(subidos.length, 0);
+  });
+
   it("guarda la planilla en el almacenamiento y la referencia con el nivel de riesgo", async () => {
     const { guardados, subidos, useCase } = armar();
 

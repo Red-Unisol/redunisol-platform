@@ -12,6 +12,19 @@ import type {
 import { ListSolicitudesUseCase } from "./ListSolicitudes.use-case";
 
 describe("ListSolicitudesUseCase", () => {
+  it("lista capabilities de edición para Riesgo en Vendedores consultando el área una sola vez", async () => {
+    let lookups = 0;
+    const row = solicitudCore({ estadoActual: { id: "pre", code: "PreAprobada", name: "PreAprobada", ownerId: "vendedores", owner: { id: "vendedores", code: "VENDEDORES", name: "Vendedores" } } });
+    const repository = {
+      listRecientes: async () => [row, { ...row, id: "other" }],
+      findWorkflowOwnerCodeById: async (id: string) => { assert.equal(id, "riesgo"); lookups++; return "RIESGO"; },
+    } as unknown as SolicitudesCoreRepository;
+    const result = await new ListSolicitudesUseCase({ repository }).execute({ scope: "recientes", vista: "todas", currentUser: { id: "risk", workflowOwnerId: "riesgo" }, limit: 10, offset: 0 });
+    assert.equal(lookups, 1);
+    assert.equal(result.length, 2);
+    assert(result.every(row => row.capabilities.canEdit && !row.capabilities.canChangeState));
+  });
+
   it("Mi área usa el owner autenticado y alterna sin modificar los filtros", async () => {
     const calls: ListSolicitudesRecientesInput[] = [];
     const useCase = new ListSolicitudesUseCase({ repository: {

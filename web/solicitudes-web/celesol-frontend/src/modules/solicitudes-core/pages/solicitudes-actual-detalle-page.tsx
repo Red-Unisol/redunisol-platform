@@ -2966,6 +2966,8 @@ export function SolicitudesActualDetallePage() {
   const canGuardarEvaluacion =
     currentUser?.isSystemAdmin === true ||
     (currentUser?.workflowOwner?.code === "RIESGO" &&
+      Boolean(currentUser.workflowOwnerId) &&
+      currentUser.workflowOwnerId === solicitud?.estadoActual.ownerId &&
       (solicitudCapabilities?.canEdit ?? false));
   const {
     data: adjuntos = [],

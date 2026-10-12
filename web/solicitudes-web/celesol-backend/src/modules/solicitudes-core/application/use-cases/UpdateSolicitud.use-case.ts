@@ -57,7 +57,13 @@ export class UpdateSolicitudUseCase {
       throw new SolicitudCoreNotFoundError();
     }
 
-    if (!canEditSolicitud(input.currentUser, solicitud, "EDIT_DATA")) {
+    const workflowOwnerCode =
+      !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
+      this.repository.findWorkflowOwnerCodeById
+        ? await this.repository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId)
+        : null;
+    const permissionUser = { ...input.currentUser, workflowOwnerCode };
+    if (!canEditSolicitud(permissionUser, solicitud, "EDIT_DATA")) {
       throw new ForbiddenSolicitudAccessError();
     }
 
