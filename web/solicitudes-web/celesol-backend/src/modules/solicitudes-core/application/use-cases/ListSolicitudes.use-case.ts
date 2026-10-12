@@ -167,14 +167,9 @@ export class ListSolicitudesUseCase {
       }
     }
 
-    // Solo se necesita el codigo de owner del usuario para la excepcion de
-    // RIESGO en "Transferir" (ver SolicitudPermissions.canEditSolicitud).
-    const hasTransferirRow = solicitudes.some(
-      (solicitud) => solicitud.estadoActual.code === "Transferir",
-    );
+    // Consultar una sola vez el área autenticada para las capabilities.
     const workflowOwnerCode =
       !input.currentUser.isSystemAdmin &&
-      hasTransferirRow &&
       input.currentUser.workflowOwnerId &&
       this.repository.findWorkflowOwnerCodeById
         ? await this.repository.findWorkflowOwnerCodeById(

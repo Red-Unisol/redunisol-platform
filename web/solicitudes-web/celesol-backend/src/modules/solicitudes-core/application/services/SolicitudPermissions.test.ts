@@ -10,6 +10,24 @@ import {
 } from "./SolicitudPermissions";
 
 describe("SolicitudPermissions", () => {
+  it("permite a Riesgo editar datos en Vendedores sin conceder otras operaciones", () => {
+    const target = solicitud({ stateCode: "PreAprobada", ownerId: "owner-vendedor" });
+    target.estadoActual.owner = { id: "owner-vendedor", code: "VENDEDORES", name: "Vendedores" };
+    const actor = { id: "risk-user", workflowOwnerId: "owner-riesgo", workflowOwnerCode: "RIESGO" };
+    const capabilities = buildSolicitudCapabilities(actor, target);
+    assert.equal(capabilities.canEdit, true);
+    assert.equal(capabilities.canChangeState, false);
+    assert.equal(capabilities.canUploadAdjuntos, false);
+    assert.equal(capabilities.canDeleteAdjuntos, false);
+    assert.equal(capabilities.canManageCancelaciones, false);
+    for (const code of ["TESORERIA", "SISTEMA"]) {
+      target.estadoActual.owner.code = code;
+      assert.equal(canEditSolicitud(actor, target, "EDIT_DATA"), false);
+    }
+    target.estadoActual.owner.code = "VENDEDORES";
+    assert.equal(canEditSolicitud({ ...actor, workflowOwnerCode: "TESORERIA" }, target, "EDIT_DATA"), false);
+  });
+
   it("allows a current owner user to operate edit, upload and delete actions", () => {
     const currentOwnerSolicitud = solicitud({
       createdBy: "creator-1",
