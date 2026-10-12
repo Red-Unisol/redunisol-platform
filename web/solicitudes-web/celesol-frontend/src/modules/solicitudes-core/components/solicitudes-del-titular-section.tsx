@@ -74,29 +74,34 @@ export function SolicitudesDelTitularSection({
       </p>
     );
   return (
-    <div className="space-y-3 p-3">
+    <div className="-mx-3 -mb-3 min-w-0 md:-mx-4 md:-mb-4">
       {query.data.solicitudes.length === 0 ? (
-        <p role="status">
+        <p role="status" className="px-3 py-3 md:px-4">
           No se encontraron solicitudes para el documento del titular.
         </p>
       ) : (
         <div
-          className="overflow-x-auto rounded-md border border-border"
+          className="overflow-x-auto"
           role="region"
           aria-label="Historial de solicitudes del titular"
           tabIndex={0}
         >
-          <table className="min-w-[1800px] w-full text-sm">
+          <table className="w-full min-w-[960px] table-fixed text-xs">
             <caption className="sr-only">
               Solicitudes del titular, hasta 50 resultados
             </caption>
+            <colgroup>
+              {[6, 9, 7, 8, 7, 8, 8, 8, 4, 7, 7, 5, 7, 9].map((width, index) => (
+                <col key={columns[index][0]} style={{ width: `${width}%` }} />
+              ))}
+            </colgroup>
             <thead className="bg-background text-foreground-secondary">
               <tr>
                 {columns.map(([key, label]) => (
                   <th
                     scope="col"
                     key={key}
-                    className="border-r border-border px-3 py-2 text-left font-medium"
+                    className="border-r border-border px-1.5 py-2 text-left align-top font-medium wrap-anywhere"
                   >
                     {label}
                   </th>
@@ -107,7 +112,7 @@ export function SolicitudesDelTitularSection({
               {query.data.solicitudes.map((row, index) => (
                 <tr key={index} className="border-t border-border">
                   {columns.map(([key]) => (
-                    <td key={key} className="border-r border-border px-3 py-2">
+                    <td key={key} className="border-r border-border px-1.5 py-2 align-top wrap-anywhere">
                       {display(row, key)}
                     </td>
                   ))}
