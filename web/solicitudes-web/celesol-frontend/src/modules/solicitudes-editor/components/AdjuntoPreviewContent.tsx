@@ -75,7 +75,7 @@ export function AdjuntoPreviewContent({ file }: { file: File }) {
             />
           ) : file.type === "application/pdf" ? (
             <iframe
-              src={url}
+              src={`${url}#navpanes=0&view=FitH`}
               title={file.name}
               className="h-full min-h-64 w-full border-none"
             />
