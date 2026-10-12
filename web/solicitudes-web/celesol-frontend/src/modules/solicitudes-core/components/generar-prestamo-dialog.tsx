@@ -8,6 +8,15 @@ import { formatMoneyAmount } from "@/shared/utils/money-format";
 const PLACEHOLDER = "-";
 
 type GenerarPrestamoDialogProps = {
+  datosSolicitud: {
+    nombreCompleto: string;
+    documento: string | null;
+    cuit: string | null;
+    nroSocio: string | null;
+    fechaPrimerVencimiento: string | null;
+    cuotaResultante: string | null;
+    tasaLinea: number | null;
+  };
   condicionesKey: string;
   cuotas: number | null;
   isPending: boolean;
@@ -34,6 +43,7 @@ export function GenerarPrestamoDialog(props: GenerarPrestamoDialogProps) {
 }
 
 function RevisionPrestamoDialog({
+  datosSolicitud,
   condicionesKey,
   cuotas,
   isPending,
@@ -49,7 +59,9 @@ function RevisionPrestamoDialog({
   const data =
     revision.isFetching || revision.isError ? undefined : revision.data;
   const calculo = data?.calculo;
-  const montoRevision = data ? data.condiciones.montoAFinanciar : montoAFinanciar;
+  const montoRevision = data
+    ? data.condiciones.montoAFinanciar
+    : montoAFinanciar;
   const {
     data: cancelaciones = [],
     error,
@@ -90,14 +102,17 @@ function RevisionPrestamoDialog({
           <p role="status" className="text-sm text-foreground-secondary">
             Calculando el plan de cuotas...
           </p>
-        ) : revision.isError ? (
+        ) : revision.isError || data?.errorCalculo || data?.errorTitular ? (
           <div
             role="alert"
             className="rounded-md border border-destructive/30 p-3 text-sm text-destructive"
           >
             <p>
-              No se pudo obtener la revisión del préstamo.{" "}
-              {revision.error.message}
+              {revision.isError
+                ? "No se pudo consultar el cálculo ni el socio. Podés revisar los datos guardados de la solicitud."
+                : [data?.errorTitular, data?.errorCalculo]
+                    .filter(Boolean)
+                    .join(" ")}
             </p>
             <Button
               className="mt-2"
@@ -113,13 +128,51 @@ function RevisionPrestamoDialog({
           aria-label="Titular"
           className="rounded-md border border-border bg-background p-3"
         >
-          <h3 className="mb-2 text-sm font-semibold">Titular</h3>
+          <h3 className="mb-2 text-sm font-semibold">Datos de la solicitud</h3>
+          <dl className="mb-3 grid gap-3 sm:grid-cols-2 md:grid-cols-3 text-sm">
+            <Campo
+              label="Nombre completo registrado"
+              value={datosSolicitud.nombreCompleto}
+            />
+            <Campo label="Documento" value={datosSolicitud.documento} />
+            <Campo label="CUIT" value={datosSolicitud.cuit} />
+            <Campo
+              label="Número de socio registrado"
+              value={datosSolicitud.nroSocio}
+            />
+            <Campo
+              label="Primer vencimiento registrado"
+              value={
+                datosSolicitud.fechaPrimerVencimiento
+                  ? formatLegacyDate(datosSolicitud.fechaPrimerVencimiento)
+                  : null
+              }
+            />
+            <Campo
+              label="Cuota resultante registrada"
+              value={datosSolicitud.cuotaResultante}
+            />
+            <Campo
+              label="Tasa de la línea"
+              value={
+                datosSolicitud.tasaLinea == null
+                  ? null
+                  : String(datosSolicitud.tasaLinea).replace(".", ",")
+              }
+            />
+          </dl>
+          <h3 className="mb-2 border-t border-border pt-3 text-sm font-semibold">
+            Titular para la generación
+          </h3>
           <dl className="grid gap-3 sm:grid-cols-2 text-sm">
             <Campo
               label="Nombre completo"
               value={data?.titular.nombreCompleto}
             />
-            <Campo label="Número de socio" value={data?.titular.nroSocio} />
+            <Campo
+              label="Número de socio para generar"
+              value={data?.titular.nroSocio}
+            />
           </dl>
         </section>
         <section aria-label="Condiciones">
@@ -133,9 +186,7 @@ function RevisionPrestamoDialog({
             />
             <Campo
               label="Monto a financiar"
-              value={formatMoneyAmount(
-                montoRevision,
-              )}
+              value={formatMoneyAmount(montoRevision)}
             />
             <Campo
               label="Tasa del cálculo"
@@ -169,7 +220,7 @@ function RevisionPrestamoDialog({
         </section>
         <dl className="grid gap-3 rounded-md border border-primary/30 bg-primary/5 p-3 sm:grid-cols-2 text-sm">
           <Campo
-            label="Fecha de primer vencimiento"
+            label="Primer vencimiento calculado"
             value={
               calculo?.fechaPrimerVencimiento
                 ? formatLegacyDate(calculo.fechaPrimerVencimiento)
@@ -178,7 +229,7 @@ function RevisionPrestamoDialog({
             destacado
           />
           <Campo
-            label="Fecha de última cuota"
+            label="Última cuota calculada"
             value={
               calculo?.fechaUltimaCuota
                 ? formatLegacyDate(calculo.fechaUltimaCuota)
@@ -246,7 +297,7 @@ function RevisionPrestamoDialog({
             <p className="rounded-md border border-border p-4 text-sm text-foreground-secondary">
               {revision.isFetching
                 ? "Consultando cuotas..."
-                : revision.isError
+                : revision.isError || data?.errorCalculo
                   ? "El detalle no pudo consultarse."
                   : "Detalle de cuotas no disponible."}
             </p>

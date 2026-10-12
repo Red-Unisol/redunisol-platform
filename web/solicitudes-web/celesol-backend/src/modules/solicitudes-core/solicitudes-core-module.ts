@@ -258,7 +258,7 @@ export function createSolicitudesCoreRouter(
   });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
     repository: solicitudesCoreRepository, sociosRepository,
-    lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
+    gateway: prestamosSimulacionGateway,
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     authRepository,

@@ -4,7 +4,6 @@ import { GetRevisionPrestamoUseCase } from "./GetRevisionPrestamo.use-case";
 import {
   ForbiddenSolicitudAccessError,
   SolicitudCoreNotFoundError,
-  SolicitudLineaPrestamoLegacyIdUnresolvedError,
 } from "../../domain/solicitudes-core-errors";
 
 function setup(
@@ -12,7 +11,8 @@ function setup(
     missing?: boolean;
     owner?: string;
     socio?: boolean;
-    linea?: boolean;
+    calculoError?: boolean;
+    socioError?: boolean;
     monto?: number | null;
   } = {},
 ) {
@@ -41,6 +41,7 @@ function setup(
     sociosRepository: {
       lookupByDocumento: async (documento: string) => {
         calls.push({ documento });
+        if (options.socioError) throw new Error("Socios unavailable");
         return options.socio === false
           ? []
           : [
@@ -54,17 +55,10 @@ function setup(
             ];
       },
     } as never,
-    lineaPrestamoLegacyIdResolver: {
-      resolveByPresolicitudOid: async (oid) => {
-        calls.push({ oid });
-        return options.linea === false
-          ? null
-          : { id: "2552", codigoMutual: null };
-      },
-    },
     gateway: {
       simularRevision: async (input) => {
         calls.push(input);
+        if (options.calculoError) throw new Error("Simulation unavailable");
         return { fechaPrimerVencimiento: "2026-11-30", tasa: 0.165 } as never;
       },
     },
@@ -75,7 +69,7 @@ const input = {
   solicitudId: "sol-1",
   currentUser: { id: "user", workflowOwnerId: "riesgo" },
 };
-it("resolves the generation socio and line relationship, uses simulation OID and omits manual date/rate", async () => {
+it("resolves the generation socio independently, uses simulation OID and omits manual date/rate", async () => {
   const { useCase, calls } = setup();
   const result = await useCase.execute(input);
   assert.deepEqual(result.titular, {
@@ -84,7 +78,6 @@ it("resolves the generation socio and line relationship, uses simulation OID and
   });
   assert.deepEqual(calls, [
     { documento: "33344455" },
-    { oid: "2519" },
     { capitalPuro: false, lineaId: 2519, montoAFinanciar: 10000, cuotas: 6 },
   ]);
   assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-11-30");
@@ -107,13 +100,19 @@ it("rejects nonexistent requests", async () => {
     SolicitudCoreNotFoundError,
   );
 });
-it("does not simulate when the generation line cannot be resolved", async () => {
-  const { useCase, calls } = setup({ linea: false });
-  await assert.rejects(
-    useCase.execute(input),
-    SolicitudLineaPrestamoLegacyIdUnresolvedError,
-  );
-  assert.equal(calls.length, 2);
+it("retains titular and conditions when calculation fails", async () => {
+  const { useCase } = setup({ calculoError: true });
+  const result = await useCase.execute(input);
+  assert.equal(result.titular.nroSocio, "143471");
+  assert.equal(result.condiciones.montoAFinanciar, 10000);
+  assert.equal(result.calculo, null);
+  assert.ok(result.errorCalculo);
+});
+it("can calculate even if socio lookup fails, without inventing the generation socio", async () => {
+  const result = await setup({ socioError: true }).useCase.execute(input);
+  assert.equal(result.titular.nroSocio, null);
+  assert.ok(result.errorTitular);
+  assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-11-30");
 });
 it("preserves missing socio and missing conditions without making up a calculation", async () => {
   const { useCase, calls } = setup({ socio: false, monto: null });
