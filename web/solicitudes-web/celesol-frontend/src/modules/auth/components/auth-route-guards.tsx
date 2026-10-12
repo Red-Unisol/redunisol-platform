@@ -7,6 +7,7 @@ import {
 } from "@/modules/auth/hooks/use-auth-session";
 import {
   canAccessRiesgoTools,
+  canCreateSolicitud,
   canManageUsers,
   getDefaultAuthenticatedRoute,
   isPendingAreaAssignment,
@@ -200,5 +201,13 @@ export function RiesgoOnlyRoute({ children }: AuthGuardProps) {
     );
   }
 
+  return <>{children}</>;
+}
+
+export function PrecargaRoute({ children }: AuthGuardProps) {
+  const { data: user, isPending } = useAuthSessionQuery();
+  if (isPending) return <FullPageAuthLoader />;
+  if (!user) return <Navigate replace to="/login" />;
+  if (!canCreateSolicitud(user)) return <Navigate replace to="/solicitudes/core/recientes" />;
   return <>{children}</>;
 }
