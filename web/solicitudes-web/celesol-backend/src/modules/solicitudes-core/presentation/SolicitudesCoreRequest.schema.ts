@@ -117,15 +117,9 @@ const garantiaPatchSchema = z.object({
   tipoRelacion: nullableTrimmedStringSchema.optional(),
 }).strict();
 
-// Acepta importes en formato argentino y decimales sin separadores de miles.
-const cuotaResultanteSchema = z.string().trim().regex(
-  /^(?:[0-9]+(?:[.,][0-9]{1,2})?|[0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?)$/,
-  "La cuota resultante debe ser un importe numérico.",
-);
-
 export const createSolicitudBodySchema = z.object({
   cupoTitular: z.coerce.number().min(0).optional(),
-  cuotaResultante: cuotaResultanteSchema.optional(),
+  cuotaResultante: z.never().optional(),
   cuotas: z.coerce.number().int().positive().optional(),
   ejecutivoSolicitud: z.string().trim().min(1).optional(),
   linkFirmaDigital: nullableNormalizedStringSchema.optional(),
@@ -286,7 +280,7 @@ export const patchSolicitudBodySchema = z.object({
   solicitud: z
     .object({
       cupoTitular: z.union([z.coerce.number().min(0), z.null()]).optional(),
-      cuotaResultante: cuotaResultanteSchema.nullable().optional(),
+      cuotaResultante: z.never().optional(),
       cuotas: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
       ejecutivoSolicitud: nullableTrimmedStringSchema.optional(),
       linkFirmaDigital: nullableNormalizedStringSchema.optional(),

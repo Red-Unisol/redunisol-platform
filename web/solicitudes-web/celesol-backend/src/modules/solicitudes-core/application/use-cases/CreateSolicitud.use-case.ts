@@ -1,3 +1,5 @@
+import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
+import { SolicitudFieldNotEditableInCurrentStateError } from "../../domain/solicitudes-core-errors";
 import type { CreateSolicitudInput } from "../dtos/CreateSolicitud.dto";
 import {
   LegacyLineaPrestamoUnavailableError,
@@ -13,7 +15,10 @@ import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 
 type Dependencies = {
   lineasPrestamoCatalog: LineasPrestamoCatalog;
-  consultarCredixsaAlCrearSolicitud: Pick<ConsultarCredixsaAlCrearSolicitud, "execute">;
+  consultarCredixsaAlCrearSolicitud: Pick<
+    ConsultarCredixsaAlCrearSolicitud,
+    "execute"
+  >;
   repository: SolicitudesCoreRepository;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
@@ -26,7 +31,10 @@ export class CreateSolicitudUseCase {
     "execute"
   >;
   private readonly repository: SolicitudesCoreRepository;
-  private readonly simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
+  private readonly simularCuotaSolicitud: Pick<
+    SimularCuotaSolicitud,
+    "execute"
+  >;
   private readonly workflowStateCatalog: WorkflowStateCatalog;
 
   constructor(dependencies: Dependencies) {
@@ -39,6 +47,10 @@ export class CreateSolicitudUseCase {
   }
 
   async execute(input: CreateSolicitudInput) {
+    if (input.cuotaResultante !== undefined)
+      throw new SolicitudFieldNotEditableInCurrentStateError(
+        "solicitud.cuotaResultante",
+      );
     const createdByLegacyUser = input.createdByLegacyUser.trim();
     const authenticatedSellerName = formatAuthenticatedSellerName(
       input.authenticatedSellerName,
@@ -52,15 +64,20 @@ export class CreateSolicitudUseCase {
       throw new MissingAuthenticatedSellerNameError();
     }
 
-    const lineaPrestamo = await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
-      createdByLegacyUser,
-      input.lineaPrestamoLegacyOid,
-    );
+    const lineaPrestamo =
+      await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
+        createdByLegacyUser,
+        input.lineaPrestamoLegacyOid,
+      );
 
     if (!lineaPrestamo || !lineaPrestamo.vigente) {
       throw new LegacyLineaPrestamoUnavailableError();
     }
 
+    const efectivos = ajustarMaximosLinea(lineaPrestamo, {
+      montoAFinanciar: input.montoAFinanciar ?? null,
+      cuotas: input.cuotas ?? null,
+    });
     const initialState = await this.workflowStateCatalog.getInitialState();
 
     if (!initialState) {
@@ -68,13 +85,13 @@ export class CreateSolicitudUseCase {
     }
 
     // La cuota y la fecha del primer vencimiento las calcula el legado, igual
-    // que hace Vimarx al guardar. Si no se pueden obtener se guarda lo que
-    // haya mandado el formulario (que puede venir del simulador) o null.
+    // que hace Vimarx al guardar. Si falla el cálculo, la cuota queda en null;
+    // nunca se toma un importe de cuota enviado por el cliente.
     const simulacion = await this.simularCuotaSolicitud.execute({
-      cuotas: input.cuotas ?? null,
+      cuotas: efectivos.cuotas,
       fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
       lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
-      montoAFinanciar: input.montoAFinanciar ?? null,
+      montoAFinanciar: efectivos.montoAFinanciar,
     });
 
     const solicitud = await this.repository.create({
@@ -121,9 +138,8 @@ export class CreateSolicitudUseCase {
         tipoGarantia: garantia.tipoGarantia ?? null,
         tipoRelacion: garantia.tipoRelacion ?? null,
       })),
-      cuotaResultante:
-        simulacion?.cuotaResultante ?? input.cuotaResultante ?? null,
-      cuotas: input.cuotas ?? null,
+      cuotaResultante: simulacion?.cuotaResultante ?? null,
+      cuotas: efectivos.cuotas,
       fechaPrimerVencimiento:
         simulacion?.fechaPrimerVencimiento ??
         input.fechaPrimerVencimiento ??
@@ -155,7 +171,7 @@ export class CreateSolicitudUseCase {
       firmaDigitalmente: input.firmaDigitalmente ?? true,
       lineaPrestamoDescripcion: lineaPrestamo.descripcion,
       lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
-      montoAFinanciar: input.montoAFinanciar ?? null,
+      montoAFinanciar: efectivos.montoAFinanciar,
       motivo: input.motivo ?? null,
       nroOperacion: input.nroOperacion ?? null,
       observaciones: input.observaciones ?? null,
@@ -210,9 +226,7 @@ function formatAuthenticatedSellerName(value: string): string {
     .map((word) => {
       const normalizedWord = word.toLowerCase();
 
-      return (
-        normalizedWord.charAt(0).toUpperCase() + normalizedWord.slice(1)
-      );
+      return normalizedWord.charAt(0).toUpperCase() + normalizedWord.slice(1);
     })
     .join(" ");
 }

@@ -363,3 +363,19 @@ export class SolicitudFueraDeLimitesDeLineaError extends SolicitudesError {
     this.name = "SolicitudFueraDeLimitesDeLineaError";
   }
 }
+
+export class ConfiguracionMaximosLineaInvalidaError extends SolicitudesError {
+  constructor() {
+    super("La línea tiene máximos ausentes o inválidos. Corregí su configuración en el legacy.", 503);
+    this.name = "ConfiguracionMaximosLineaInvalidaError";
+  }
+}
+
+export class CalculoConValoresEfectivosError extends SolicitudesError {
+  readonly effectiveValues: { montoAFinanciar: number; cuotas: number };
+  constructor(values: { montoAFinanciar: number; cuotas: number }, message = "El cálculo del legacy no coincide con las condiciones solicitadas.", status = 502) {
+    super(message, status);
+    this.name = "CalculoConValoresEfectivosError";
+    this.effectiveValues = values;
+  }
+}

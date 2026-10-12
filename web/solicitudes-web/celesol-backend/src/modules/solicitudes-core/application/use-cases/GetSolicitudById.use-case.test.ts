@@ -295,7 +295,7 @@ describe("GetSolicitudByIdUseCase", () => {
     assert.equal(solicitud.capabilities?.canEdit, false);
     assert.equal(solicitud.capabilities?.fieldAccess?.defaultMode, "readonly");
     assert.deepEqual(solicitud.capabilities?.fieldAccess?.editableFields, [
-      ...EDITABLE_FIELDS,
+      ...EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
     ]);
   });
 
@@ -387,7 +387,7 @@ describe("GetSolicitudByIdUseCase", () => {
 
     assert.deepEqual(solicitud.capabilities?.fieldAccess, {
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...EDITABLE_GROUPS, ...LEGACY_EDITABLE_GROUPS],
     });
     assert.deepEqual(solicitud.appearance, {
@@ -532,7 +532,7 @@ function buildFieldAccessRulesRepository(overrides?: {
             backgroundColor: "#FF7F7F",
             canManageAttachments: true,
             defaultMode: "readonly",
-            editableFields: [...EDITABLE_FIELDS],
+            editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
             editableGroups: ["garantias"],
             readonlyReason: null,
             textColor: "#000000",

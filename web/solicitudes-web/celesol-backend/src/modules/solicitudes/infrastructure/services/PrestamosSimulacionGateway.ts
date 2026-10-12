@@ -186,7 +186,8 @@ export class PrestamosSimulacionGateway {
     return {
       capital: Number(row.Capital),
       capitalPuro: Boolean(row.CapitalPuro),
-      cuotaResultante: Number(row.CuotaResultante),
+      cuotaResultante: row.CuotaResultante === null || row.CuotaResultante === undefined || (typeof row.CuotaResultante === "string" && !row.CuotaResultante.trim())
+        ? Number.NaN : Number(row.CuotaResultante),
       cuotas: Number(row.Cuotas),
       cuotasDetalle,
       fechaPrimerVencimiento:

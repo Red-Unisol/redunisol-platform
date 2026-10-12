@@ -50,7 +50,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 23), [
+    assert.deepEqual(routePaths.slice(0, 24), [
       "/",
       "/",
       "/stats",
@@ -59,6 +59,7 @@ describe("SolicitudesCoreRoutes", () => {
       "/stats/analista/v2",
       "/simulacion",
       "/tipos-adjunto",
+      "/:id/simulacion",
       "/:id/transitions",
       "/:id/transitions",
       "/:id/revision-prestamo",

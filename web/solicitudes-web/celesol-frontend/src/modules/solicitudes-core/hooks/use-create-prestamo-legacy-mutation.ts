@@ -8,8 +8,8 @@ export function useCreatePrestamoLegacyMutation(solicitudId: string) {
 
   return useMutation({
     mutationFn: () => createPrestamoLegacy(solicitudId),
-    onSuccess: async (updatedSolicitud) => {
-      queryClient.setQueryData(
+    onSettled: async (updatedSolicitud) => {
+      if (updatedSolicitud) queryClient.setQueryData(
         solicitudesCoreQueryKeys.detail(solicitudId),
         updatedSolicitud,
       );

@@ -111,7 +111,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     useState<DatosPersonalesTab>("datosPersonales");
   const [solicitanteTab, setSolicitanteTab] =
     useState<SolicitanteTab>("solicitante");
-  const { isLoadingLineas, lineas, setLineas } =
+  const { isLoadingLineas, lineas, setLineas, refreshLineas } =
     useLineasPrestamo(isDetailRoute);
   const createSolicitudCoreMutation = useCreateSolicitudCoreMutation();
   const {
@@ -138,7 +138,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     setValue,
     sexoConyugeOptions,
     sexoOptions,
-  } = useSolicitudEditorForm(lineas);
+  } = useSolicitudEditorForm(lineas, () => { void refreshLineas(); });
   const { detalleNroSolicitud, isLoadingLegacyData, legacyNotice } =
     useSolicitudDetailHydration({
       isDetailRoute,
@@ -573,6 +573,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
   const simulador = isSimuladorOpen ? (
     <Suspense fallback={<ModalLoadingOverlay label="Cargando simulador..." />}>
       <SimuladorPrestamoModal
+        onLimitsAdjusted={() => { void refreshLineas(); }}
         defaultLineaOid={selectedLinea?.oid ?? undefined}
         lineas={lineas}
         onApply={(valores) => {

@@ -554,10 +554,11 @@ export async function uploadSolicitudCoreAdjuntosLote(
   }
 }
 
-export function simularPrestamo(payload: SimularPrestamoRequest) {
+export function simularPrestamo(input: SimularPrestamoRequest) {
+  const { solicitudId, ...payload } = input;
   return withAreaForbiddenMessage(
     apiClient.post<SimulacionPrestamoResponse>(
-      "/solicitudes/simulacion",
+      solicitudId ? `/solicitudes/${solicitudId}/simulacion` : "/solicitudes/simulacion",
       payload,
     ),
   );

@@ -1,3 +1,4 @@
+import { CalculoConValoresEfectivosError } from "../domain/solicitudes-core-errors";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { NextFunction, Response } from "express";
@@ -750,6 +751,50 @@ describe("SolicitudesCoreController", () => {
       },
       solicitudId: solicitudId(),
     });
+  });
+
+  it("returns effective conditions when simulation fails without returning a stale quote", async () => {
+    let receivedInput: unknown;
+    const controller = new SolicitudesCoreController({
+      listLineasPrestamoDeSolicitudUseCase: {} as never,
+      listSolicitudesDelTitularUseCase: {} as never,
+      listPrestamosDelSocioUseCase: {} as never,
+      visibilidadVendedorResolver: {} as never,
+      getCredixsaSolicitudUseCase: {} as never,
+      getPrestamoDelSocioUseCase: {} as never,
+      ...workflowUseCases(),
+      simularPrestamoUseCase: {
+        execute: async (input: unknown) => {
+          receivedInput = input;
+          throw new CalculoConValoresEfectivosError({ montoAFinanciar: 50000, cuotas: 6 });
+        },
+      } as never,
+      createSolicitudUseCase: {} as never,
+      getCurrentUserUseCase: {
+        execute: async () => authenticatedUser(),
+      } as never,
+      getSolicitudByIdUseCase: {} as never,
+      listSolicitudesUseCase: {} as never,
+      updateSolicitudUseCase: {} as never,
+    });
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.simular(
+      request({
+        params: { id: solicitudId() },
+        body: { lineaId: 2519, montoAFinanciar: 100000, cuotas: 48 },
+      }),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 502);
+    assert.deepEqual((response.body as { effectiveValues: unknown }).effectiveValues, { montoAFinanciar: 50000, cuotas: 6 });
+    assert.equal((receivedInput as { solicitudId: string }).solicitudId, solicitudId());
   });
 
   it("delegates read-only loan preview using the authenticated effective user", async () => {

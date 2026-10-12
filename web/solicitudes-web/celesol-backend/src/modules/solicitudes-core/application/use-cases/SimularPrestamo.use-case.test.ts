@@ -1,3 +1,4 @@
+import { CalculoConValoresEfectivosError } from "../../domain/solicitudes-core-errors";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -7,7 +8,7 @@ import type { PrestamosSimulacionGateway } from "../../../solicitudes/infrastruc
 import { SimularPrestamoUseCase } from "./SimularPrestamo.use-case";
 
 function catalogWith(
-  linea: { descripcion: string; legacyOid: string; vigente: boolean } | null,
+  linea: { descripcion: string; legacyOid: string; vigente: boolean; montoMaximo?: number; cantidadMaximaCuotas?: number } | null,
 ): LineasPrestamoCatalog {
   return {
     findByLegacyUserAndOid: async () => linea,
@@ -52,8 +53,10 @@ describe("SimularPrestamoUseCase", () => {
       },
     } as unknown as PrestamosSimulacionGateway;
     const useCase = new SimularPrestamoUseCase({
+      repository: {} as never,
       gateway,
       lineasPrestamoCatalog: catalogWith({
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
         descripcion: "AMEJUCA ESPECIAL",
         legacyOid: "2519",
         vigente: true,
@@ -83,6 +86,7 @@ describe("SimularPrestamoUseCase", () => {
   it("rejects when the line does not belong to the authenticated agent", async () => {
     let gatewayCallCount = 0;
     const useCase = new SimularPrestamoUseCase({
+      repository: {} as never,
       gateway: {
         simular: async (input: unknown) => {
           gatewayCallCount += 1;
@@ -110,6 +114,7 @@ describe("SimularPrestamoUseCase", () => {
   it("rejects when the line is not vigente", async () => {
     let gatewayCallCount = 0;
     const useCase = new SimularPrestamoUseCase({
+      repository: {} as never,
       gateway: {
         simular: async (input: unknown) => {
           gatewayCallCount += 1;
@@ -118,6 +123,7 @@ describe("SimularPrestamoUseCase", () => {
         },
       } as unknown as PrestamosSimulacionGateway,
       lineasPrestamoCatalog: catalogWith({
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
         descripcion: "LINEA VIEJA",
         legacyOid: "10",
         vigente: false,
@@ -137,4 +143,22 @@ describe("SimularPrestamoUseCase", () => {
     );
     assert.equal(gatewayCallCount, 0);
   });
+});
+
+it("adjusts before simulation and uses the request seller instead of the authenticated editor", async () => {
+  let received: unknown;
+  let catalogUser: string | undefined;
+  const useCase = new SimularPrestamoUseCase({
+    repository: { findById: async () => ({ id: "sol" }) as never, findVendedorLegacyUser: async () => "seller" },
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async (user) => { catalogUser = user; return { descripcion: "L", legacyOid: "2519", vigente: true, montoMaximo: 50000, cantidadMaximaCuotas: 6 }; } },
+    gateway: { simular: async (input: unknown) => { received = input; return { lineaId: 2519, montoAFinanciar: 50000, cuotas: 6, cuotaResultante: 9000 }; } } as never,
+  });
+  const result = await useCase.execute({ solicitudId: "sol", legacyUser: "risk-editor", capitalPuro: false, lineaId: 2519, montoAFinanciar: 1000000, cuotas: 48 });
+  assert.equal(catalogUser, "seller");
+  assert.equal(result.cuotas, 6);
+  assert.deepEqual(received, { capitalPuro: false, lineaId: 2519, montoAFinanciar: 50000, cuotas: 6, fechaPrimerVencimiento: undefined, tasa: undefined });
+});
+it("does not present a legacy calculation with different installment conditions as current", async () => {
+  const useCase = new SimularPrestamoUseCase({ repository: {} as never, lineasPrestamoCatalog: catalogWith({ descripcion: "L", legacyOid: "2519", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }), gateway: fakeGateway() });
+  await assert.rejects(useCase.execute({ legacyUser: "seller", capitalPuro: false, lineaId: 2519, montoAFinanciar: 100000, cuotas: 48 }), CalculoConValoresEfectivosError);
 });
