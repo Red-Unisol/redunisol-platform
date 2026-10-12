@@ -87,14 +87,34 @@ export function EvaluacionRecibosView({
   error: string | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [leftPercent, setLeftPercent] = useState(65);
+  const [leftPercent, setLeftPercent] = useState(45);
+  const manuallyResized = useRef(false);
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    // Near the center on large screens, with ~840 px for A–H when space permits.
+    // Observer only changes the initial layout; the user's adjustment takes priority.
+    const observer = new ResizeObserver(([entry]) => {
+      if (manuallyResized.current || !entry || entry.contentRect.width <= 0)
+        return;
+      const percentage = Math.min(
+        65,
+        Math.max(45, (840 / entry.contentRect.width) * 100),
+      );
+      setLeftPercent(Math.round(percentage * 10) / 10);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const index = Math.max(
     0,
     recibos.findIndex((item) => item.id === selectedId),
   );
   const selected = recibos[index];
-  const changeWidth = (value: number) =>
+  const changeWidth = (value: number) => {
+    manuallyResized.current = true;
     setLeftPercent(Math.max(35, Math.min(75, value)));
+  };
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
