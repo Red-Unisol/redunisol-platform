@@ -1,3 +1,5 @@
+import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
+import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
 import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
 import { LinkFirmaDigital } from "../components/link-firma-digital";
@@ -3039,6 +3041,9 @@ export function SolicitudesActualDetallePage() {
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
     useState<SolicitudDetailVistaTab>("solicitud");
+  const [reciboView, setReciboView] = useState<{ solicitudId: string; selectedId: string | null } | null>(null);
+  const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
+  const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
@@ -3055,6 +3060,7 @@ export function SolicitudesActualDetallePage() {
     }
 
     if (tab !== "evaluacion") {
+      setReciboView(null);
       setEvaluacionConCambios(false);
     }
 
@@ -3710,6 +3716,11 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handlePreviewAdjunto(adjunto: SolicitudCoreAdjuntoResponse) {
+    if (canViewCalculadora && adjunto.tipoAdjunto === "Recibo de Sueldo" && adjunto.solicitudId === solicitudId) {
+      if (!cambiarVistaTab("evaluacion")) return;
+      setReciboView({ solicitudId, selectedId: adjunto.id });
+      return;
+    }
     toast.dismiss(PREVIEW_ADJUNTO_ERROR_TOAST_ID);
     setPreviewingAdjuntoId(adjunto.id);
 
@@ -4281,20 +4292,27 @@ export function SolicitudesActualDetallePage() {
       ) : null}
 
       {canViewCalculadora && vistaTab === "evaluacion" ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <Suspense
-            fallback={
-              <SolicitudesContentLoader label="Cargando calculadora..." />
-            }
-          >
+        <EvaluacionRecibosView
+          key={solicitudId}
+          solicitudId={solicitudId}
+          recibos={recibos}
+          open={visorRecibosOpen}
+          selectedId={visorRecibosOpen ? reciboView.selectedId : null}
+          onOpen={() => setReciboView({ solicitudId, selectedId: recibos[0]?.id ?? null })}
+          onClose={() => setReciboView(null)}
+          onSelect={selectedId => setReciboView({ solicitudId, selectedId })}
+          loading={isLoadingAdjuntos}
+          error={adjuntosError ? "No se pudo obtener el listado de recibos de sueldo." : null}
+        >
+          <Suspense fallback={<SolicitudesContentLoader label="Cargando calculadora..." />}>
             <CalculadoraMutualSheet
-              className="flex-1"
+              className="flex-1 min-w-0"
               onCambiosSinGuardarChange={setEvaluacionConCambios}
               puedeGuardar={canGuardarEvaluacion}
               source={{ kind: "embedded", solicitudId }}
             />
           </Suspense>
-        </div>
+        </EvaluacionRecibosView>
       ) : null}
 
       <NuevaGarantiaModal

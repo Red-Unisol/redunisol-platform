@@ -375,6 +375,7 @@ function decodeContentDispositionFileName(value: string) {
 export async function downloadSolicitudCoreAdjunto(
   solicitudId: string,
   adjuntoId: string,
+  signal?: AbortSignal,
 ): Promise<DownloadSolicitudCoreAdjuntoResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(
@@ -387,7 +388,7 @@ export async function downloadSolicitudCoreAdjunto(
       `/solicitudes/${solicitudId}/adjuntos/${adjuntoId}/download`,
       {
         method: "GET",
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       },
     );
 
