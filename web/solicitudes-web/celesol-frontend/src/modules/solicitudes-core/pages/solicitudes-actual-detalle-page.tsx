@@ -27,7 +27,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -2943,6 +2943,7 @@ function ErrorState({
 
 export function SolicitudesActualDetallePage() {
   const queryClient = useQueryClient();
+  const { closeSidebar } = useOutletContext<{ closeSidebar: () => void }>();
   const navigate = useNavigate();
   const params = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -3064,6 +3065,7 @@ export function SolicitudesActualDetallePage() {
       setEvaluacionConCambios(false);
     }
 
+    if (tab === "evaluacion" && canViewCalculadora) closeSidebar();
     setVistaTab(tab);
     return true;
   }
