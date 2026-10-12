@@ -18,7 +18,9 @@ function setup(
 ) {
   const calls: unknown[] = [];
   const useCase = new GetRevisionPrestamoUseCase({
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "2519", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
     repository: {
+      findVendedorLegacyUser: async () => "SELLER",
       findById: async () =>
         options.missing
           ? null

@@ -540,6 +540,7 @@ export type TipoAdjuntoCatalogItem = {
 };
 
 export type SimularPrestamoRequest = {
+  solicitudId?: string;
   capitalPuro: boolean;
   cuotas: number;
   fechaPrimerVencimiento?: string;

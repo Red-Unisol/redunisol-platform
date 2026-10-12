@@ -324,3 +324,9 @@ it("preview rejects a calculation for different conditions without creating a lo
     PrestamoSimulacionRechazadaError,
   );
 });
+
+it("does not turn a missing installment calculation into zero", async () => {
+  const gateway = new PrestamosSimulacionGateway({ baseUrl: "https://legacy.example.com", timeoutMs: 1000 }, async () => ({ ok: true, status: 200, json: async () => ({ LineaId: 2519, Cuotas: 6, MontoAFinanciar: 100000, CuotaResultante: null }) }));
+  const result = await gateway.simular({ capitalPuro: false, lineaId: 2519, cuotas: 6, montoAFinanciar: 100000 });
+  assert.ok(Number.isNaN(result.cuotaResultante));
+});

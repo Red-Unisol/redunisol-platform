@@ -48,6 +48,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
       },
     });
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -91,6 +93,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("sends the live cancelaciones total as NroLote in cents and skips the deleted ones", async () => {
     let receivedInput: { nroLote?: number } | undefined;
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -126,6 +130,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("omits NroLote when the solicitud has no cancelaciones", async () => {
     let receivedInput: { nroLote?: number } | undefined;
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -154,6 +160,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("rejects cancelaciones above what the legacy integer field holds, without creating the prestamo", async () => {
     let called = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -185,6 +193,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("allows a system admin regardless of ownerId", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -210,6 +220,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudCoreNotFoundError when the solicitud does not exist", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -233,6 +245,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudLegacyOidAlreadyExistsError when legacyOid is already set", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -258,6 +272,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws ForbiddenSolicitudAccessError when the current user is not the solicitud owner", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -281,6 +297,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudPrestamoDataIncompleteError listing missing fields when montoAFinanciar and cuotas are null", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -319,6 +337,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
     // confirmar.
     let crearCalled = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -359,6 +379,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioRequiredForWorkflowError when no socio matches the titular", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -382,6 +404,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudTitularSocioLegacyRequiredError when the socio has no nroSocioLegacy", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -408,6 +432,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
   it("does not persist anything when the gateway rejects the creation", async () => {
     let updateCalled = false;
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -441,6 +467,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator user is not found", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository({ findById: async () => null }),
@@ -464,6 +492,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
 
   it("throws SolicitudVendedorLegacyRequiredError when the creator has no legacy user id", async () => {
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
       lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
       authRepository: authRepository(),
@@ -496,6 +526,8 @@ describe("CreatePrestamoLegacyUseCase", () => {
       },
     });
     const useCase = new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
       authRepository: authRepository(),
       cancelacionesRepository: cancelacionesRepository(),
       gateway,
@@ -728,9 +760,34 @@ function solicitudesRepository(
     create: async () => {
       throw new Error("not used");
     },
+    findVendedorLegacyUser: async () => "VUSER",
     findById: async () => solicitud(),
     listByOwner: async () => [],
     update: async () => solicitud({ legacyOid: "999" }),
     ...overrides,
   };
 }
+
+it("rechecks current legacy maxima and persists adjusted values before the existing generation gateway", async () => {
+  const events: unknown[] = [];
+  const useCase = new CreatePrestamoLegacyUseCase({
+    authRepository: authRepository(), cancelacionesRepository: cancelacionesRepository(),
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async (user) => {
+      assert.equal(user, "VUSER");
+      return { descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 5000, cantidadMaximaCuotas: 3 };
+    } },
+    simularCuotaSolicitud: { execute: async (input) => { events.push({ calculation: input }); return { cuotaResultante: "2000,00", fechaPrimerVencimiento: "2026-11-30" }; } },
+    repository: solicitudesRepository({ update: async (_id, patch) => { events.push({ patch }); return solicitud(); } }),
+    gateway: fakeGateway({ crear: async (input) => { events.push({ generation: input }); return { id: "fake-only" }; } }),
+    lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(), linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+    sociosRepository: socioRepository(), solicitudesLegacyGateway: solicitudesLegacyGateway(), today: () => TODAY,
+  });
+  await useCase.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } });
+  assert.equal(events.length, 4);
+  const persisted = events[1] as { patch: { solicitud: { montoAFinanciar: number; cuotas: number; cuotaResultante: string } } };
+  assert.equal(persisted.patch.solicitud.montoAFinanciar, 5000);
+  assert.equal(persisted.patch.solicitud.cuotas, 3);
+  assert.equal(persisted.patch.solicitud.cuotaResultante, "2000,00");
+  const generated = (events[2] as { generation: { cuotas: number; montoDeseado: number } }).generation;
+  assert.equal(generated.cuotas, 3); assert.equal(generated.montoDeseado, 5000);
+});

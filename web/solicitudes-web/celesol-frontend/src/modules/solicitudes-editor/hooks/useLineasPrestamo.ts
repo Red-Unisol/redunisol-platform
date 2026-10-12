@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { getLineasPrestamoByAgente } from "@/modules/solicitudes/services/solicitudes-api";
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
@@ -6,6 +6,22 @@ import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/soli
 export function useLineasPrestamo(isDetailRoute: boolean) {
   const [isLoadingLineas, setIsLoadingLineas] = useState(false);
   const [lineas, setLineas] = useState<LineaPrestamoPresolicitud[]>([]);
+
+  const refreshLineas = useCallback(async () => {
+    if (isDetailRoute) return;
+    setIsLoadingLineas(true);
+    try {
+      const rows = await getLineasPrestamoByAgente();
+      setLineas(rows.filter(linea => linea.vigente !== false));
+    } catch {
+      // Los controles de cálculo/guardado consultan el legacy y muestran el fallo.
+    } finally { setIsLoadingLineas(false); }
+  }, [isDetailRoute]);
+  useEffect(() => {
+    const refresh = () => { void refreshLineas(); };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refreshLineas]);
 
   useEffect(() => {
     if (isDetailRoute) {
@@ -39,5 +55,5 @@ export function useLineasPrestamo(isDetailRoute: boolean) {
     };
   }, [isDetailRoute]);
 
-  return { isLoadingLineas, lineas, setLineas };
+  return { isLoadingLineas, lineas, setLineas, refreshLineas };
 }

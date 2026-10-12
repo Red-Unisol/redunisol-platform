@@ -1,3 +1,5 @@
+import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
+import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
 import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
 import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
 import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
@@ -138,7 +140,7 @@ import type {
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
   formatMoneyAmount,
-  formatMoneyValue,
+  formatDecimalMoneyValue,
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
@@ -1423,16 +1425,7 @@ function SolicitudSection({
           type="number"
           value={values.cuotas}
         />
-        <EditableTextInput
-          {...getReadonlyProps("solicitud.cuotaResultante")}
-          disabled={!isFieldEditableByKey("solicitud.cuotaResultante")}
-          isEditing={isEditing}
-          label="Cuota resultante"
-          inputMode="decimal"
-          onChange={(value) => onChange("cuotaResultante", formatMoneyValue(value).replace(/^\$/, ""))}
-          readOnlyValue={formatText(solicitud.cuotaResultante)}
-          value={values.cuotaResultante}
-        />
+        <ReadOnlyField label="Cuota resultante" value={values.cuotaResultante || "Cálculo no disponible"} />
         <EditableTextInput
           {...getReadonlyProps("solicitud.motivo")}
           disabled={!isFieldEditableByKey("solicitud.motivo")}
@@ -3210,6 +3203,19 @@ export function SolicitudesActualDetallePage() {
     return latestComment || PLACEHOLDER;
   }, [workflowHistory]);
 
+  const condicionesEdicion = editableValues?.solicitud;
+  const lineaEdicion = lineasSimulador.find(linea => linea.oid === condicionesEdicion?.lineaPrestamoLegacyOid);
+  const cuotaEdicion = useCuotaCalculada({
+    solicitudId, capitalPuro: false, lineaId: Number(condicionesEdicion?.lineaPrestamoLegacyOid),
+    montoAFinanciar: parseMoneyValue(ajustarMontoTexto(condicionesEdicion?.montoAFinanciar ?? "", lineaEdicion)),
+    cuotas: Number(ajustarCuotasTexto(condicionesEdicion?.cuotas ?? "", lineaEdicion)),
+    ...(condicionesEdicion?.fechaPrimerVencimiento ? { fechaPrimerVencimiento: condicionesEdicion.fechaPrimerVencimiento } : {}),
+  }, Boolean(isEditing && lineaEdicion && condicionesEdicion && Number(condicionesEdicion.cuotas) > 0 && parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0), result => {
+    if (parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !== result.montoAFinanciar || Number(condicionesEdicion?.cuotas) !== result.cuotas) void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) });
+    setEditableValues(current => current ? { ...current, solicitud: { ...current.solicitud,
+      montoAFinanciar: parseMoneyValue(current.solicitud.montoAFinanciar) === result.montoAFinanciar ? current.solicitud.montoAFinanciar : formatMoneyAmount(result.montoAFinanciar),
+      cuotas: String(result.cuotas) } } : current);
+  });
   if (!solicitudId) {
     return (
       <ErrorState
@@ -3290,7 +3296,11 @@ export function SolicitudesActualDetallePage() {
       return;
     }
 
-    setEditableValues(mapSolicitudCoreToEditableValues(resolvedSolicitud));
+    const editValues = mapSolicitudCoreToEditableValues(resolvedSolicitud);
+    const linea = lineasSimulador.find(linea => linea.oid === editValues.solicitud.lineaPrestamoLegacyOid);
+    editValues.solicitud.montoAFinanciar = ajustarMontoTexto(editValues.solicitud.montoAFinanciar, linea);
+    editValues.solicitud.cuotas = ajustarCuotasTexto(editValues.solicitud.cuotas, linea);
+    setEditableValues(editValues);
     setEditableGarantias(null);
     setEditingGarantiaIndex(null);
     setGarantiasDirty(false);
@@ -3311,21 +3321,15 @@ export function SolicitudesActualDetallePage() {
     setIsEditing(false);
   }
 
-  function updateSolicitudField(
-    field: keyof EditableSolicitudCoreValues["solicitud"],
-    value: string,
-  ) {
-    setEditableValues((current) =>
-      current
-        ? {
-            ...current,
-            solicitud: {
-              ...current.solicitud,
-              [field]: value,
-            },
-          }
-        : current,
-    );
+  function updateSolicitudField(field: keyof EditableSolicitudCoreValues["solicitud"], value: string) {
+    setEditableValues(current => {
+      if (!current) return current;
+      const draft = { ...current.solicitud, [field]: value };
+      const linea = lineasSimulador.find(linea => linea.oid === draft.lineaPrestamoLegacyOid);
+      draft.montoAFinanciar = ajustarMontoTexto(draft.montoAFinanciar, linea);
+      draft.cuotas = ajustarCuotasTexto(draft.cuotas, linea);
+      return { ...current, solicitud: draft };
+    });
   }
 
   function updateSolicitudBooleanField(
@@ -4208,7 +4212,7 @@ export function SolicitudesActualDetallePage() {
             readonlyAppearanceStyle={readonlyAppearanceStyle}
             solicitud={resolvedSolicitud}
             ultimaNovedad={ultimaNovedad}
-            values={currentValues.solicitud}
+            values={{ ...currentValues.solicitud, montoAFinanciar: ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error ? "No se pudo calcular" : "" : currentValues.solicitud.cuotaResultante }}
           />
           {solicitanteTab === "adjuntos" && !isEditing && canEnterEditMode && canManageAdjuntos ? (
             <p className="px-4 text-sm text-foreground-secondary">
@@ -4325,6 +4329,8 @@ export function SolicitudesActualDetallePage() {
           fallback={<ModalLoadingOverlay label="Cargando simulador..." />}
         >
           <SimuladorPrestamoModal
+            solicitudId={solicitudId}
+            onLimitsAdjusted={() => { void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) }); }}
             defaultLineaOid={
               resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
             }
