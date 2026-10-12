@@ -110,3 +110,14 @@ it("normaliza la búsqueda de Recientes y limita su longitud", () => {
   assert.equal(listSolicitudesQuerySchema.parse({ scope: "recientes", search: "  Ramiro López  " }).search, "Ramiro López");
   assert.equal(listSolicitudesQuerySchema.safeParse({ search: "a".repeat(161) }).success, false);
 });
+
+it("accepts numeric installment amounts and rejects text through the API", () => {
+  for (const value of ["1.313.847,24", "1313847,24", "1313847.24", "0", "1.000"]) {
+    assert.equal(patchSolicitudBodySchema.safeParse({ solicitud: { cuotaResultante: value } }).success, true, value);
+  }
+  for (const value of ["1.313.847,24aasdadas", "abc", "1e3", "-100", "1,2,3"]) {
+    assert.equal(patchSolicitudBodySchema.safeParse({ solicitud: { cuotaResultante: value } }).success, false, value);
+    assert.equal(createSolicitudBodySchema.safeParse({ ...minimalCreateBody("1990-01-01"), cuotaResultante: value }).success, false, value);
+  }
+  assert.equal(patchSolicitudBodySchema.safeParse({ solicitud: { cuotaResultante: null } }).success, true);
+});

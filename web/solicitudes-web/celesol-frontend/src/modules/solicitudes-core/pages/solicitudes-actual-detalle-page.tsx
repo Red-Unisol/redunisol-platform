@@ -138,6 +138,7 @@ import type {
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
   formatMoneyAmount,
+  formatMoneyValue,
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
@@ -676,6 +677,7 @@ type EditableFieldProps = {
 };
 
 type EditableTextInputProps = {
+  inputMode?: "decimal";
   appearanceStyle?: CSSProperties;
   disabled?: boolean;
   highlightReadOnly?: boolean;
@@ -1001,6 +1003,7 @@ function EditableField({
 }
 
 function EditableTextInput({
+  inputMode,
   appearanceStyle,
   disabled = false,
   highlightReadOnly = false,
@@ -1024,6 +1027,7 @@ function EditableTextInput({
           onChange={(event) => onChange(event.target.value)}
           style={disabled ? appearanceStyle : undefined}
           type={type}
+          inputMode={inputMode}
           value={value}
         />
       }
@@ -1424,7 +1428,8 @@ function SolicitudSection({
           disabled={!isFieldEditableByKey("solicitud.cuotaResultante")}
           isEditing={isEditing}
           label="Cuota resultante"
-          onChange={(value) => onChange("cuotaResultante", value)}
+          inputMode="decimal"
+          onChange={(value) => onChange("cuotaResultante", formatMoneyValue(value).replace(/^\$/, ""))}
           readOnlyValue={formatText(solicitud.cuotaResultante)}
           value={values.cuotaResultante}
         />
