@@ -64,16 +64,18 @@ Anotación validada: clasificación enum y cinco booleanos `periodo`, `agente`, 
 - Navegador Chromium con API simulada: selección/arrastre, individual/lote, estados positivo/negativo/indeterminado/error, guardado durante análisis, CUPO manual conservado, límite de 10, controles a 640 px y configuración guardada tras recargar. También se verificó la ruta con ID de solicitud existente y el cambio de solicitud durante un análisis, sin mezclar archivos ni respuestas.
 - Compilaciones frontend/backend, lint de archivos funcionales modificados y typecheck de scripts.
 
-Estas comprobaciones NO son una validación real de reconocimiento con Mistral. No se generaron préstamos, no se guardaron adjuntos ni solicitudes en dev y no se desplegó.
+Las 41 pruebas automatizadas y las comprobaciones de navegador utilizan proveedor/API simulados. Después de configurar la credencial privada en `.env`, se verificó realmente `GET /v1/models`: la clave autentica y tiene disponible `mistral-ocr-latest`, con alias OCR 4/4.1. También se ejecutó el gateway implementado contra Mistral con dos PDF sintéticos sin datos personales: un recibo con los cinco indicadores dio `recibo` y un inventario de oficina dio `no_recibo`. Estas dos pruebas sí ejecutaron OCR y anotación del proveedor; no sustituyen la validación de los cinco recibos aportados.
+
+No se generaron préstamos, no se guardaron adjuntos ni solicitudes en dev y no se desplegó.
 
 ## Prueba real pendiente y comienzo de pruebas
 
-En este entorno no existe `MISTRAL_API_KEY` configurada y las cinco imágenes visibles en el mensaje no están disponibles como archivos descargables; las rutas `C:/Users/...` pertenecen a la computadora del usuario. Los dos PDF técnicos sí se descargaron. Falta confirmar el modelo y la anotación con la credencial real y contrastar el criterio con las cinco muestras: no se declara terminada la integración funcional hasta hacerlo.
+La credencial privada ya está configurada y se comprobó el modelo y la anotación real con documentos sintéticos. Las cinco imágenes visibles en el mensaje todavía no están disponibles como archivos descargables; las rutas `C:/Users/...` pertenecen a la computadora del usuario. Los dos PDF técnicos sí se descargaron. Falta contrastar el criterio con las cinco muestras originales: no se declara terminada esa validación hasta hacerlo.
 
 Para ejecutar la prueba real sin guardar solicitudes ni adjuntos, configurar la credencial como secreto privado y aportar los cinco archivos originales. Desde `celesol-backend`:
 
 ```bash
-npx tsx scripts/probar-reconocimiento-recibos.ts /ruta/recibo1.png /ruta/recibo2.png /ruta/recibo3.png /ruta/recibo4.jpg /ruta/recibo5.jpg
+npx tsx --env-file=.env scripts/probar-reconocimiento-recibos.ts /ruta/recibo1.png /ruta/recibo2.png /ruta/recibo3.png /ruta/recibo4.jpg /ruta/recibo5.jpg
 ```
 
 El script verifica que haya cinco archivos y credencial antes de llamar al proveedor. Procesa las cinco muestras reales, imprime únicamente archivo/modelo solicitado/resultado y termina con código no cero si alguna no resulta positiva. No contiene respuestas simuladas ni envía archivos por su nombre como criterio.
