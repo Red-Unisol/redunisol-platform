@@ -3,6 +3,9 @@ import "dotenv/config";
 import { app } from "./app";
 import { env } from "./config/env";
 import { prisma } from "./db/prisma";
+import { startDocumentReviewWorker } from "./modules/document-review/document-review-module";
+
+const stopDocumentReviewWorker = startDocumentReviewWorker();
 
 const server = app.listen(env.PORT, () => {
   console.log(`Celesol backend listening on port ${env.PORT}`);
@@ -26,6 +29,7 @@ async function shutdown(signal: string) {
   console.log(`Received ${signal}. Shutting down Celesol backend.`);
 
   server.close(async () => {
+    await stopDocumentReviewWorker();
     await prisma.$disconnect();
     process.exit(0);
   });

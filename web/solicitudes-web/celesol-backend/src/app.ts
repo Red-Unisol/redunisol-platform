@@ -15,6 +15,7 @@ import {
   usersRouter,
 } from "./modules/auth/auth-module";
 import { createRiesgoRouter } from "./modules/riesgo/riesgo-module";
+import { createDocumentReviewRouter } from "./modules/document-review/document-review-module";
 import { createSociosRouter } from "./modules/socios/socios-module";
 import {
   createFinSolicitudRouter,
@@ -67,6 +68,7 @@ app.use(
 );
 app.use(
   "/solicitudes",
+  createDocumentReviewRouter(getCurrentUserUseCase),
   createSolicitudesCoreRouter({
     getCurrentUserUseCase,
   }),

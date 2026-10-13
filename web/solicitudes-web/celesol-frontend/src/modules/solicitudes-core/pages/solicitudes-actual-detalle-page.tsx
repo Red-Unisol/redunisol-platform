@@ -54,6 +54,8 @@ import { NuevaGarantiaModal } from "@/modules/solicitudes-editor/components/Nuev
 import { SolicitudDetailToolbar } from "@/modules/solicitudes-editor/components/SolicitudToolbar";
 import { SolicitudWorkflowActionDialog } from "@/modules/solicitudes-core/components/solicitud-workflow-action-dialog";
 import { SolicitudWorkflowHistorySection } from "@/modules/solicitudes-core/components/solicitud-workflow-history-section";
+import { DocumentReviewPanel } from "@/modules/solicitudes-core/components/document-review-panel";
+import { useDocumentReview } from "@/modules/solicitudes-core/services/document-review-api";
 import {
   RequiredMark,
   Section,
@@ -2979,6 +2981,7 @@ export function SolicitudesActualDetallePage() {
     refetch: refetchDetail,
   } = useSolicitudCoreDetailQuery(solicitudId);
   const { data: currentUser } = useAuthSessionQuery();
+  const documentReview = useDocumentReview(solicitudId);
   const canViewCalculadora = canAccessRiesgoTools(currentUser);
   const solicitudCapabilities = solicitud?.capabilities;
   const canChangeState = solicitudCapabilities?.canChangeState ?? false;
@@ -3214,15 +3217,17 @@ export function SolicitudesActualDetallePage() {
   const workflowTransitionOptions: StyledSelectOption[] = useMemo(
     () =>
       workflowTransitions.map((transition) => ({
-        disabled: transition.blockedReason !== null,
-        disabledReason: transition.blockedReason ?? undefined,
+        disabled: transition.blockedReason !== null || (documentReview.data?.enabled === true && ["transferir", "devolver_a_liquidada"].includes(transition.actionCode)),
+        disabledReason: documentReview.data?.enabled && ["transferir", "devolver_a_liquidada"].includes(transition.actionCode)
+          ? "Registrá la decisión humana en Revisión de firma."
+          : transition.blockedReason ?? undefined,
         label: formatWorkflowTransitionOptionLabel(
           transition,
           solicitud?.estadoActual.code,
         ),
         value: transition.id,
       })),
-    [solicitud?.estadoActual.code, workflowTransitions],
+    [solicitud?.estadoActual.code, workflowTransitions, documentReview.data?.enabled],
   );
   const ultimaNovedad = useMemo(() => {
     const latestHistoryWithComment = [...workflowHistory]
@@ -4275,6 +4280,7 @@ export function SolicitudesActualDetallePage() {
               </Button>
             </div>
           ) : null}
+          <DocumentReviewPanel solicitudId={solicitudId} editing={isEditing} />
           <SolicitudSection
             cuotaCalculoMensaje={cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) <= 0 ? "Ingresá una cuota mayor a cero." : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error?.message}
             assignmentOptions={assignmentAgentOptions}
