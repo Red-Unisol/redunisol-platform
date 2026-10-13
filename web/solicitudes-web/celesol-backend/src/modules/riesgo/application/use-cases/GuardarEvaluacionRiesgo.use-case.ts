@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AdjuntosObjectStorage } from "../../../solicitudes-core/adjuntos/domain/services/AdjuntosObjectStorage";
 import {
   canEditSolicitud,
@@ -57,7 +58,7 @@ export class GuardarEvaluacionRiesgoUseCase {
       throw new ForbiddenGuardarEvaluacionError();
     }
 
-    const storageKey = `evaluaciones/${input.solicitudId}.json`;
+    const storageKey = `evaluaciones/${input.solicitudId}/${randomUUID()}.json`;
 
     try {
       await this.dependencies.objectStorage.uploadObject({

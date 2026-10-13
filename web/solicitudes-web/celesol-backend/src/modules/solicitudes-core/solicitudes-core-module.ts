@@ -1,3 +1,6 @@
+import { ArchivarEvaluacionExcel } from "../riesgo/application/services/ArchivarEvaluacionExcel";
+import { EvaluacionRiesgoPrismaDatasource } from "../riesgo/infrastructure/datasources/EvaluacionRiesgoPrismaDatasource";
+import { exportarEvaluacionExcel } from "../riesgo/infrastructure/services/EvaluacionExcelExporter";
 import { GetRevisionPrestamoUseCase } from "./application/use-cases/GetRevisionPrestamo.use-case";
 import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSolicitudesDelTitular.use-case";
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
@@ -234,7 +237,15 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
     simularCuotaSolicitud,
   });
+  const archivarEvaluacion = new ArchivarEvaluacionExcel({
+    evaluaciones: new EvaluacionRiesgoPrismaDatasource(prisma),
+    adjuntos: solicitudAdjuntoRepository,
+    storage: adjuntosObjectStorage,
+    exportar: exportarEvaluacionExcel,
+    bucket: env.MINIO_BUCKET_SOLICITUDES,
+  });
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
+    archivarEvaluacion,
     adjuntoRepository: solicitudAdjuntoRepository,
     engine: workflowEngine,
     now: () => new Date(),
@@ -262,6 +273,7 @@ export function createSolicitudesCoreRouter(
     lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
+    archivarEvaluacion,
     lineasPrestamoCatalog, simularCuotaSolicitud,
     authRepository,
     cancelacionesRepository: solicitudCancelacionRepository,

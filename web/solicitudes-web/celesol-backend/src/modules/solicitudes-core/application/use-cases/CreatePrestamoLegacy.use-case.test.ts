@@ -34,8 +34,12 @@ const TODAY = "2026-07-22";
 describe("CreatePrestamoLegacyUseCase", () => {
   it("builds the payload from the solicitud and titular socio, calls the gateway, and persists legacyOid", async () => {
     let receivedInput: unknown;
+    let archiveFailed = false;
+    const archives: unknown[] = [];
+
     const gateway = fakeGateway({
       crear: async (input: unknown) => {
+        assert.equal(archives.length, 1);
         receivedInput = input;
         return { id: "555000" };
       },
@@ -48,6 +52,7 @@ describe("CreatePrestamoLegacyUseCase", () => {
       },
     });
     const useCase = new CreatePrestamoLegacyUseCase({
+      archivarEvaluacion: { execute: async input => { if(archiveFailed) throw new Error("archivo falló"); archives.push(input); } },
       lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
       simularCuotaSolicitud: { execute: async () => null },
       linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
@@ -67,6 +72,9 @@ describe("CreatePrestamoLegacyUseCase", () => {
     });
 
     assert.equal(result.legacyOid, "555000");
+    assert.deepEqual(archives, [{solicitudId:"sol-1",actorId:"user-1",etapa:"generacion"}]);
+
+
     assert.deepEqual(receivedInput, {
       cuotas: 6,
       fechaEmision: TODAY,
@@ -88,6 +96,10 @@ describe("CreatePrestamoLegacyUseCase", () => {
         },
       },
     });
+    archiveFailed = true;
+    receivedInput = undefined;
+    await assert.rejects(() => useCase.execute({currentUser:{id:"user-1",workflowOwnerId:"owner-2"},solicitudId:"sol-1"}), /archivo falló/);
+    assert.equal(receivedInput, undefined);
   });
 
   it("sends the live cancelaciones total as NroLote in cents and skips the deleted ones", async () => {
