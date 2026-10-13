@@ -1,8 +1,10 @@
+import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { UpdateSolicitudInput } from "../dtos/UpdateSolicitud.dto";
 import {
   ForbiddenSolicitudAccessError,
   LineaPrestamoNoDisponibleParaSolicitudError,
   SolicitudCoreNotFoundError,
+  SolicitudFieldNotEditableInCurrentStateError,
   SolicitudFueraDeLimitesDeLineaError,
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
@@ -32,7 +34,10 @@ export class UpdateSolicitudUseCase {
   private readonly fieldAccessRulesRepository: SolicitudFieldAccessRulesRepository;
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly repository: SolicitudesCoreRepository;
-  private readonly simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
+  private readonly simularCuotaSolicitud: Pick<
+    SimularCuotaSolicitud,
+    "execute"
+  >;
 
   constructor(dependencies: Dependencies) {
     this.fieldAccessRulesRepository = dependencies.fieldAccessRulesRepository;
@@ -42,14 +47,34 @@ export class UpdateSolicitudUseCase {
   }
 
   async execute(input: UpdateSolicitudInput) {
+    if (input.solicitud?.cuotaResultante !== undefined)
+      throw new SolicitudFieldNotEditableInCurrentStateError(
+        "solicitud.cuotaResultante",
+      );
     const solicitud = await this.repository.findById(input.id);
 
     if (!solicitud) {
       throw new SolicitudCoreNotFoundError();
     }
 
-    if (!canEditSolicitud(input.currentUser, solicitud, "EDIT_DATA")) {
+    const workflowOwnerCode =
+      !input.currentUser.isSystemAdmin && input.currentUser.workflowOwnerId &&
+      this.repository.findWorkflowOwnerCodeById
+        ? await this.repository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId)
+        : null;
+    const permissionUser = { ...input.currentUser, workflowOwnerCode };
+    if (!canEditSolicitud(permissionUser, solicitud, "EDIT_DATA")) {
       throw new ForbiddenSolicitudAccessError();
+    }
+
+    // El vendedor queda fijado al crear la solicitud, incluso para administradores.
+    if (
+      input.solicitud?.vendedorSolicitud !== undefined &&
+      input.solicitud.vendedorSolicitud !== solicitud.vendedorSolicitud
+    ) {
+      throw new SolicitudFieldNotEditableInCurrentStateError(
+        "solicitud.vendedorSolicitud",
+      );
     }
 
     const fieldAccessRule =
@@ -68,47 +93,55 @@ export class UpdateSolicitudUseCase {
 
     if (input.solicitud) {
       patch.solicitud = { ...input.solicitud };
+      delete patch.solicitud.vendedorSolicitud;
 
       if (input.solicitud.fechaPrimerVencimiento !== undefined) {
         patch.solicitud.fechaPrimerVencimiento =
           input.solicitud.fechaPrimerVencimiento;
       }
-
-      if (
-        input.solicitud.lineaPrestamoLegacyOid &&
-        input.solicitud.lineaPrestamoLegacyOid !==
-          solicitud.lineaPrestamoLegacyOid
-      ) {
-        // Las lineas posibles son las del agente del vendedor de la
-        // solicitud, no las de quien la edita: RIESGO no tiene que mezclar
-        // convenios.
-        const vendedorLegacyUser =
-          (await this.repository.findVendedorLegacyUser?.(solicitud.id)) ??
-          input.createdByLegacyUser;
-        const lineaPrestamo =
-          await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
-            vendedorLegacyUser,
-            input.solicitud.lineaPrestamoLegacyOid,
-          );
-
-        if (!lineaPrestamo || !lineaPrestamo.vigente) {
-          throw new LineaPrestamoNoDisponibleParaSolicitudError();
-        }
-
-        assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, {
-          cuotas:
-            input.solicitud.cuotas !== undefined
-              ? input.solicitud.cuotas
-              : solicitud.cuotas,
-          montoAFinanciar:
-            input.solicitud.montoAFinanciar !== undefined
-              ? input.solicitud.montoAFinanciar
-              : solicitud.montoAFinanciar,
-        });
-
-        patch.solicitud.lineaPrestamoDescripcion = lineaPrestamo.descripcion;
-        patch.solicitud.lineaPrestamoLegacyOid = lineaPrestamo.legacyOid;
-      }
+    }
+    const vendedorLegacyUser = await this.repository.findVendedorLegacyUser?.(
+      solicitud.id,
+    );
+    if (!vendedorLegacyUser)
+      throw new LineaPrestamoNoDisponibleParaSolicitudError();
+    const lineaOid =
+      input.solicitud?.lineaPrestamoLegacyOid ??
+      solicitud.lineaPrestamoLegacyOid;
+    const lineaPrestamo =
+      await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
+        vendedorLegacyUser,
+        lineaOid,
+      );
+    if (!lineaPrestamo || !lineaPrestamo.vigente)
+      throw new LineaPrestamoNoDisponibleParaSolicitudError();
+    const efectivos = ajustarMaximosLinea(lineaPrestamo, {
+      cuotas:
+        input.solicitud?.cuotas !== undefined
+          ? input.solicitud.cuotas
+          : solicitud.cuotas,
+      montoAFinanciar:
+        input.solicitud?.montoAFinanciar !== undefined
+          ? input.solicitud.montoAFinanciar
+          : solicitud.montoAFinanciar,
+    });
+    if (lineaOid !== solicitud.lineaPrestamoLegacyOid)
+      assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, efectivos);
+    if (
+      efectivos.cuotas !== solicitud.cuotas ||
+      efectivos.montoAFinanciar !== solicitud.montoAFinanciar ||
+      lineaOid !== solicitud.lineaPrestamoLegacyOid
+    ) {
+      patch.solicitud ??= {};
+      Object.assign(patch.solicitud, efectivos, {
+        lineaPrestamoLegacyOid: lineaOid,
+        lineaPrestamoDescripcion: lineaPrestamo.descripcion,
+      });
+    } else if (patch.solicitud) {
+      if (patch.solicitud.cuotas !== undefined)
+        patch.solicitud.cuotas = efectivos.cuotas;
+      if (patch.solicitud.montoAFinanciar !== undefined)
+        patch.solicitud.montoAFinanciar = efectivos.montoAFinanciar;
     }
 
     if (input.titular) {
@@ -169,7 +202,12 @@ export class UpdateSolicitudUseCase {
    */
   private async recalcularCuotaResultante(
     patch: UpdateSolicitudCorePatch,
-    solicitud: { cuotas: number | null; fechaPrimerVencimiento?: string | null; lineaPrestamoLegacyOid: string; montoAFinanciar: number | null },
+    solicitud: {
+      cuotas: number | null;
+      fechaPrimerVencimiento?: string | null;
+      lineaPrestamoLegacyOid: string;
+      montoAFinanciar: number | null;
+    },
   ) {
     const cambios = patch.solicitud;
 
@@ -199,9 +237,8 @@ export class UpdateSolicitudUseCase {
           : solicitud.montoAFinanciar,
     });
 
-    if (!simulacion) {
-      return;
-    }
+    cambios.cuotaResultante = simulacion?.cuotaResultante ?? null;
+    if (!simulacion) return;
 
     cambios.cuotaResultante = simulacion.cuotaResultante;
     cambios.fechaPrimerVencimiento = simulacion.fechaPrimerVencimiento;
@@ -218,9 +255,7 @@ function assertSolicitudDentroDeLimitesDeLinea(
 ) {
   const { cuotas, montoAFinanciar } = valores;
   const minCuotas = linea.cantidadMinimaCuotas ?? null;
-  const maxCuotas = linea.cantidadMaximaCuotas ?? null;
   const minMonto = linea.montoMinimo ?? null;
-  const maxMonto = linea.montoMaximo ?? null;
 
   if (cuotas !== null && minCuotas !== null && cuotas < minCuotas) {
     throw new SolicitudFueraDeLimitesDeLineaError(
@@ -228,21 +263,9 @@ function assertSolicitudDentroDeLimitesDeLinea(
     );
   }
 
-  if (cuotas !== null && maxCuotas !== null && cuotas > maxCuotas) {
-    throw new SolicitudFueraDeLimitesDeLineaError(
-      `La línea permite hasta ${maxCuotas} cuotas.`,
-    );
-  }
-
   if (montoAFinanciar !== null && minMonto && montoAFinanciar < minMonto) {
     throw new SolicitudFueraDeLimitesDeLineaError(
       `La línea requiere financiar al menos ${formatMonto(minMonto)}.`,
-    );
-  }
-
-  if (montoAFinanciar !== null && maxMonto && montoAFinanciar > maxMonto) {
-    throw new SolicitudFueraDeLimitesDeLineaError(
-      `La línea permite financiar hasta ${formatMonto(maxMonto)}.`,
     );
   }
 }

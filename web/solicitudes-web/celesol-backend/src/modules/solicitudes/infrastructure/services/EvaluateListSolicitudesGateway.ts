@@ -1,3 +1,4 @@
+import type { SolicitudDelTitular } from "../../../solicitudes-core/domain/services/HistorialSolicitudesGateway";
 import { LegacySolicitudesUnavailableError } from "../../domain/solicitudes-errors";
 import type { SolicitudesLegacyGateway } from "../../domain/services/SolicitudesLegacyGateway";
 import type {
@@ -214,6 +215,7 @@ const PRESTAMOS_DEL_SOCIO_FIELDS = [
   "Saldo",
   "PrimerVencimiento",
   "Vencimiento",
+  "Estado",
 ] as const;
 
 // Detalle de un prestamo para el modal de la pestaña Préstamos. Estos nombres
@@ -230,6 +232,7 @@ const PRESTAMO_DEL_SOCIO_DETALLE_FIELDS = [
   "Asiento.NroAsiento",
   "LineaPrestamo.Descripcion",
   "TasaInicial",
+  "Cuotas",
 ] as const;
 
 // CuotaPrestamo trae, ademas del plan de cuotas, el desembolso y cada pago
@@ -244,6 +247,7 @@ const CUOTAS_DEL_PRESTAMO_FIELDS = [
   "Capital",
   "Descripcion",
   "Prestamo.NroCuenta",
+  "FechaCobro",
 ] as const;
 
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
@@ -501,6 +505,127 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     );
   }
 
+  // Consultas acotadas del resumen: nunca inferir ausencia por un padrón
+  // local desactualizado ni por el límite del listado de préstamos.
+  async lookupSocioRapido(documento: string, tipoDocumento?: string) {
+    if (!/^\d+$/.test(documento)) throw new LegacySolicitudesUnavailableError();
+    const rows = await this.executeEvaluateList({
+      buildCmd: () => `[NroDoc] = ${documento}${tipoDocumento ? ` And [TipoDoc.Descripcion] = '${escapeLegacyString(tipoDocumento)}'` : ""}`,
+      defaultMax: 2,
+      fields: ["ID"],
+      tipo: "F.Module.SocioMutual",
+      mapRow: (row) => {
+        if (row.length !== 1 || !/^\d+$/.test(String(row[0] ?? ""))) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return { id: String(row[0]) };
+      },
+    }, 2, true);
+    return rows;
+  }
+
+  async getConvenioRapido(lineaOid: string) {
+    if (!/^\d+$/.test(lineaOid)) throw new LegacySolicitudesUnavailableError();
+    const rows = await this.executeEvaluateList({
+      // Same superior as Prestamo.LineaPrestamo.Superior, including before loan creation.
+      // The stored Oid belongs to LineaPrestamoPresolicitud, not the loan line ID.
+      buildCmd: () => `[LineaSolicitud.Oid] = ${lineaOid}`,
+      defaultMax: 2,
+      fields: ["Superior.Descripcion"],
+      tipo: "F.Module.Cuentas.Prestamos.LineaPrestamo",
+      mapRow: (row) => {
+        if (row.length !== 1 || (row[0] !== null && typeof row[0] !== "string")) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return typeof row[0] === "string" ? row[0].trim() || null : null;
+      },
+    }, 2, true);
+    return rows.length === 1 ? rows[0] : null;
+  }
+
+  async getMoraRapido(socioId: string, now = new Date()): Promise<boolean | null> {
+    if (!/^\d+$/.test(socioId)) throw new LegacySolicitudesUnavailableError();
+    // Día de negocio argentino: una cuota que vence hoy aún no está vencida.
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(now);
+    const max = 2000;
+    const rows = await this.executeEvaluateList({
+      tipo: "F.Module.Cuentas.Prestamos.CuotaPrestamo",
+      defaultMax: max,
+      fields: ["NroCuota", "Descripcion", "Prestamo.NroCuenta"],
+      buildCmd: () => `Prestamo.Integrantes[Socio.ID = ${socioId}].Count() > 0 And [NroCuota] > 0 And [SaldoCuota] > 0.0m And [Fecha] < #${today}#`,
+      mapRow: (row) => {
+        if (row.length !== 3 || !/^\d+$/.test(String(row[0] ?? "")) || typeof row[1] !== "string" || !/^\d+$/.test(String(row[2] ?? ""))) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return esCuotaDelPlan({ nroCuota: Number(row[0]), descripcion: row[1], nroCuenta: String(row[2]) });
+      },
+    }, max, true);
+    if (rows.some(Boolean)) return true;
+    // Un resultado limitado nunca confirma ausencia de mora.
+    return rows.length >= max ? null : false;
+  }
+
+  async getCreditosActivosRapido(socioId: string): Promise<boolean | null> {
+    if (!/^\d+$/.test(socioId)) throw new LegacySolicitudesUnavailableError();
+    const base = buildPrestamosDelSocioDefinition(socioId);
+    const exists = async (condition: string) => {
+      const rows = await this.executeEvaluateList({
+        ...base,
+        buildCmd: () => `(${base.buildCmd()}) And (${condition})`,
+        fields: ["ID"],
+        mapRow: (row) => {
+          if (row.length !== 1 || !/^\d+$/.test(String(row[0] ?? ""))) {
+            throw new LegacySolicitudesUnavailableError();
+          }
+          return true;
+        },
+      }, 1, true);
+      return rows.length > 0;
+    };
+    if (await exists("[Estado] = 0")) return true;
+    // Un estado desconocido impide confirmar que no tenga créditos activos.
+    return await exists("[Estado] Is Null") ? null : false;
+  }
+
+  async listSolicitudesDelTitular(documento: string): Promise<SolicitudDelTitular[]> {
+    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+      throw new Error("Documento del titular inválido");
+    }
+    const fields = [
+      "NroSolicitud", "Fecha", "Estado.Descripcion", "VendedorSolicitud.Nombre",
+      "Creado.Usuario.UserName", "Linea.Descripcion", "MontoAFinanciar",
+      "MontoADesembolsar", "Cuotas", "CuotaResultante", "Prestamo.NroCuenta",
+      "NroSocio", "NroDocumento", "NombreCompleto",
+    ];
+    const indexes = Object.fromEntries(fields.map((field, index) => [field, index]));
+    const records = await this.executeEvaluateList<SolicitudDelTitular>({
+      buildCmd: () => `Socio.NroDoc = ${documento}`,
+      defaultMax: 50,
+      fields,
+      tipo: "PreSolicitud.Module.Solicitud",
+      mapRow: (row) => {
+        if (row.length !== fields.length) throw new LegacySolicitudesUnavailableError();
+        const text = (field: string) => getStringValue(row, indexes, field)?.trim() || null;
+        const number = (field: string) => {
+          const value = getNullableNumberValue(row, indexes, field);
+          return value !== null && Number.isFinite(value) ? value : null;
+        };
+        return {
+          nroSolicitud: text("NroSolicitud"), fecha: text("Fecha"),
+          estado: text("Estado.Descripcion"), vendedor: text("VendedorSolicitud.Nombre"),
+          usuarioCreador: text("Creado.Usuario.UserName"), linea: text("Linea.Descripcion"),
+          montoAFinanciar: number("MontoAFinanciar"), montoADesembolsar: number("MontoADesembolsar"),
+          cuotas: number("Cuotas"), cuotaResultante: number("CuotaResultante"),
+          nroCuentaPrestamo: text("Prestamo.NroCuenta"), nroSocio: text("NroSocio"),
+          nroDocumento: text("NroDocumento"), nombreCompleto: text("NombreCompleto"),
+        };
+      },
+    }, 50, true);
+    return records.slice(0, 50);
+  }
+
   listPrestamosDelSocio(socioLegacyId: string) {
     return this.executeEvaluateList(
       buildPrestamosDelSocioDefinition(socioLegacyId),
@@ -581,6 +706,7 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   private async executeEvaluateList<TResult>(
     definition: EvaluateListDefinition<TResult>,
     max = definition.defaultMax,
+    strictRows = false,
   ): Promise<TResult[]> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -602,6 +728,10 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       const responseBody = await response.json();
 
       if (!Array.isArray(responseBody)) {
+        throw new LegacySolicitudesUnavailableError();
+      }
+
+      if (strictRows && responseBody.some((row) => !Array.isArray(row))) {
         throw new LegacySolicitudesUnavailableError();
       }
 
@@ -1812,6 +1942,7 @@ function mapPrestamoOtorgadoRow(row: EvaluateListRow): PrestamoOtorgadoLegacy {
 
 function mapPrestamoDelSocioRow(row: EvaluateListRow): PrestamoDelSocioLegacy {
   return {
+    estado: getNumberValue(row, prestamosDelSocioFieldIndex, "Estado"),
     capital: getNumberValue(row, prestamosDelSocioFieldIndex, "Capital"),
     fechaEmision: getStringValue(
       row,
@@ -1849,6 +1980,7 @@ function mapPrestamoDelSocioDetalleRow(
   row: EvaluateListRow,
 ): PrestamoDelSocioDetalleLegacy {
   return {
+    cuotas: getNumberValue(row, prestamoDelSocioDetalleFieldIndex, "Cuotas"),
     asiento: getStringValue(
       row,
       prestamoDelSocioDetalleFieldIndex,
@@ -1891,10 +2023,17 @@ function mapPrestamoDelSocioDetalleRow(
 function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
   const nroCuota = getNumberValue(row, cuotasDelPrestamoFieldIndex, "NroCuota");
 
+  // No convertir una columna ausente o de tipo inesperado en un cobro vacío.
+  const fechaCobro = row[cuotasDelPrestamoFieldIndex.FechaCobro];
+
   return {
     cuota: {
       capital: getNumberValue(row, cuotasDelPrestamoFieldIndex, "Capital"),
       fecha: getStringValue(row, cuotasDelPrestamoFieldIndex, "Fecha"),
+      fechaCobro:
+        fechaCobro === null || typeof fechaCobro === "string"
+          ? fechaCobro
+          : undefined,
       montoTotal: getNumberValue(
         row,
         cuotasDelPrestamoFieldIndex,

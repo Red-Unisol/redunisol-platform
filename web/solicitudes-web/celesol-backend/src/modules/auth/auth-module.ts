@@ -1,3 +1,4 @@
+import { Impersonation } from "./impersonation/Impersonation";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { GetCurrentUserUseCase } from "./application/use-cases/GetCurrentUser.use-case";
@@ -201,3 +202,9 @@ const authController = new AuthController({
 
 export const authRouter = AuthRoutes.create(authController);
 export const usersRouter = UsersRoutes.create(authController);
+
+export const impersonation = new Impersonation({
+  prisma, users: authRepository, accessTokens: accessTokenService,
+  refreshTokens: refreshTokenRepository, refreshService: refreshTokenService,
+  secure: env.NODE_ENV === "production", origin: env.APP_ORIGIN,
+});

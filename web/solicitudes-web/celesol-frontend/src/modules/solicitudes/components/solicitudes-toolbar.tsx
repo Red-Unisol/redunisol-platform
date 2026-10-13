@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ArchiveRestore,
   ArchiveX,
@@ -25,12 +26,14 @@ export type SolicitudesToolbarAction = {
 };
 
 type SolicitudesToolbarProps = {
+  viewControl?: ReactNode;
   leftActions?: SolicitudesToolbarAction[];
   onAction?: (actionId: string) => void;
   onSimularIntent?: () => void;
   onSearchChange: (value: string) => void;
   rightActions?: SolicitudesToolbarAction[];
   searchTerm: string;
+  searchPlaceholder?: string;
 };
 
 const DEFAULT_LEFT_ACTIONS: SolicitudesToolbarAction[] = [
@@ -60,12 +63,14 @@ const DEFAULT_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
 ];
 
 export function SolicitudesToolbar({
+  viewControl,
   leftActions = DEFAULT_LEFT_ACTIONS,
   onAction,
   onSimularIntent,
   onSearchChange,
   rightActions = DEFAULT_RIGHT_ACTIONS,
   searchTerm,
+  searchPlaceholder = "Texto a buscar",
 }: SolicitudesToolbarProps) {
   return (
     <div className="border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2">
@@ -96,12 +101,14 @@ export function SolicitudesToolbar({
           );
         })}
 
+        {viewControl}
         <div className="relative min-w-64 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-muted" />
           <Input
             className="pl-9"
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Texto a buscar"
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
             value={searchTerm}
           />
         </div>

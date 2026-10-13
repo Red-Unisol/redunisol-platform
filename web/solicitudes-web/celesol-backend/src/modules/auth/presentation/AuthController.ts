@@ -1,3 +1,4 @@
+import { actingContext } from "../impersonation/context";
 import type { NextFunction, Request, Response } from "express";
 import type { ZodSchema } from "zod";
 
@@ -284,7 +285,7 @@ export class AuthController {
       });
 
       setAuthCookies(res, session.tokens, this.authCookieConfig);
-      res.status(200).json({ user: session.user });
+      res.status(200).json({ user: actingContext.getStore()?.selectedUser ?? session.user });
     } catch (error) {
       next(error);
     }

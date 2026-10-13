@@ -74,6 +74,16 @@ export function canEditSolicitud(
     return true;
   }
 
+  // Riesgo puede corregir los datos al devolver una solicitud a Vendedores.
+  // Se mantienen las reglas de campos del estado y las demás operaciones.
+  if (
+    action === "EDIT_DATA" &&
+    user.workflowOwnerCode === "RIESGO" &&
+    solicitud.estadoActual.owner?.code === "VENDEDORES"
+  ) {
+    return true;
+  }
+
   // Excepcion puntual: desde "Transferir", un usuario del owner RIESGO
   // tambien puede cambiar el estado (ejecutar "pagar"), ademas del owner
   // actual (TESORERIA). No aplica a ningun otro estado ni accion.

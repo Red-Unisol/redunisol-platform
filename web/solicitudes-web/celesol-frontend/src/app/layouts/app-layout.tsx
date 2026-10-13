@@ -204,7 +204,7 @@ export function AppLayout() {
           }`}
           id="app-content-shell"
         >
-          <Outlet />
+          <Outlet context={{ closeSidebar: () => setIsSidebarOpen(false) }} />
           <div
             className="pointer-events-none absolute inset-0 z-50"
             id="app-content-overlays"

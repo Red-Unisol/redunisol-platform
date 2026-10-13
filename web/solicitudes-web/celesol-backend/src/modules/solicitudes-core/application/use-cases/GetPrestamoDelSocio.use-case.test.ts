@@ -38,6 +38,7 @@ describe("GetPrestamoDelSocioUseCase", () => {
     assert.deepEqual(llamadas, ["prestamo 146871 423331", "cuotas 423331"]);
     assert.equal(detalle.prestamo.ordenCompra, "90536");
     assert.equal(detalle.cuotas.length, 1);
+    assert.equal(detalle.cuotas[0]?.fechaCobro, "2026-10-01T00:00:00");
   });
 
   it("throws when the solicitud does not exist", async () => {
@@ -122,6 +123,7 @@ describe("GetPrestamoDelSocioUseCase", () => {
 
 function prestamo() {
   return {
+    cuotas: 18,
     asiento: "1584",
     cobrador: "Haberes",
     destino: "Consumo",
@@ -137,6 +139,7 @@ function cuota() {
   return {
     capital: 58770.31,
     fecha: "2025-08-31",
+    fechaCobro: "2026-10-01T00:00:00",
     montoTotal: 419988.31,
     nroCuota: 1,
     saldoCuota: 0,

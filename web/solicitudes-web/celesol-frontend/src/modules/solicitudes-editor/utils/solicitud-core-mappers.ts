@@ -63,7 +63,6 @@ export function mapNuevaSolicitudFormToCreateSolicitudCoreRequest(
 
   return {
     conyuge: hasEffectiveData(conyuge) ? conyuge : undefined,
-    cuotaResultante: toTrimmedString(values.cuotaResultante),
     cuotas: toOptionalNumber(values.cuotas),
     cupoTitular: toOptionalMoneyNumber(values.cupoTitular),
     datosLaborales: {

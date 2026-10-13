@@ -92,7 +92,7 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     actionLabel: "Verificar Firma y Documentación",
     defaultComment: "Verificar firma y documentación",
     description: null,
-    requiresComment: true,
+    requiresComment: false,
     sortOrder: 30,
   },
   "Motor|motor|RevisionRiesgo": {

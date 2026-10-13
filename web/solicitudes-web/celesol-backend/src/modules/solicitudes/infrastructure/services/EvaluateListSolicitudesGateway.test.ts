@@ -431,12 +431,14 @@ describe("EvaluateListSolicitudesGateway", () => {
         1584,
         "CRUZ DEL EJE -premium-",
         0.1135,
+        18,
       ],
     ]);
 
     const prestamo = await gateway.getPrestamoDelSocio("146871", "423331");
 
     assert.deepEqual(prestamo, {
+      cuotas: 18,
       asiento: "1584",
       cobrador: "Haberes",
       destino: "Consumo",
@@ -464,9 +466,9 @@ describe("EvaluateListSolicitudesGateway", () => {
   it("keeps only the plan installments, in order, leaving out the disbursement and payments", async () => {
     // Filas reales del prestamo 423331, desordenadas como las devuelve la API.
     const { gateway, requests } = createGateway([
-      [1, "2025-08-31", 419988.31, 0, 0, 58770.31, "1004051/1", 1004051],
+      [1, "2025-08-31", 419988.31, 0, 0, 58770.31, "1004051/1", 1004051, "2025-09-02T00:00:00"],
       [0, "2025-07-24", 2600000, 0, 0, 0, "Desembolso 17640860", 1004051],
-      [0, "2025-07-31", 468000, 0, 0, 0, "1004051/0", 1004051],
+      [0, "2025-07-31", 468000, 0, 0, 0, "1004051/0", 1004051, null],
       [
         19,
         "2025-08-31",
@@ -485,9 +487,12 @@ describe("EvaluateListSolicitudesGateway", () => {
       cuotas.map((cuota) => cuota.nroCuota),
       [0, 1],
     );
+    assert.equal(cuotas[0]?.fechaCobro, null);
+    assert.match((requests[0]?.body as { campos: string }).campos, /\bFechaCobro\b/);
     assert.deepEqual(cuotas[1], {
       capital: 58770.31,
       fecha: "2025-08-31",
+      fechaCobro: "2025-09-02T00:00:00",
       montoTotal: 419988.31,
       nroCuota: 1,
       saldoCuota: 0,
@@ -497,6 +502,15 @@ describe("EvaluateListSolicitudesGateway", () => {
       (requests[0]?.body as { cmd: string }).cmd,
       "[Prestamo.ID] = 423331",
     );
+  });
+
+  it("distinguishes missing collection data from explicit null and empty values", async () => {
+    for (const value of [null, "", "   ", "invalid", 42, false, undefined]) {
+      const row = [0, "2026-10-10", 100, 100, 100, 100, "123/0", 123];
+      const { gateway } = createGateway([value === undefined ? row : [...row, value]]);
+      const cuotas = await gateway.listCuotasDelPrestamo("1");
+      assert.equal(cuotas[0]?.fechaCobro, value === null || typeof value === "string" ? value : undefined);
+    }
   });
 
   it("resolves the numeric legacy user id by username", async () => {

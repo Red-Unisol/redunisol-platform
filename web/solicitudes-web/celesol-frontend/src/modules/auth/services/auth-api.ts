@@ -121,3 +121,16 @@ export function changeOwnPassword(payload: ChangeOwnPasswordRequest) {
     payload,
   );
 }
+
+export type ImpersonationContext = {
+  sessionId: string;
+  administrator: { id: string; label: string };
+  selectedUser: { id: string; label: string };
+  active: boolean;
+};
+export function getImpersonationContext() {
+  return apiClient.get<{ context: ImpersonationContext | null }>("/auth/impersonation");
+}
+export function stopImpersonation() {
+  return apiClient.post<{ user: AuthUser }>("/auth/impersonation/stop", {});
+}

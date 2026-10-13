@@ -1,3 +1,4 @@
+import { reloadIdentity } from "../utils/reload-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -66,8 +67,10 @@ export function useLogoutMutation() {
 
   return useMutation({
     mutationFn: logout,
-    onSettled: () => {
-      queryClient.setQueryData<AuthUser | null>(authQueryKeys.session, null);
+    onSettled: async () => {
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      reloadIdentity("/login");
     },
   });
 }

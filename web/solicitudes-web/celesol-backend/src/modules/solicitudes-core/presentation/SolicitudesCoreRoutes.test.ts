@@ -11,6 +11,7 @@ describe("SolicitudesCoreRoutes", () => {
         assignToUser: () => undefined,
         changeState: () => undefined,
         create: () => undefined,
+        getRevisionPrestamo: () => undefined,
         createPrestamoLegacy: () => undefined,
         getById: () => undefined,
         getStats: () => undefined,
@@ -22,6 +23,7 @@ describe("SolicitudesCoreRoutes", () => {
         listLineasPrestamo: () => undefined,
         getCredixsa: () => undefined,
         getPrestamoDelSocio: () => undefined,
+        listSolicitudesDelTitular: () => undefined,
         listPrestamosDelSocio: () => undefined,
         listHistory: () => undefined,
         listTransitions: () => undefined,
@@ -48,7 +50,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 21), [
+    assert.deepEqual(routePaths.slice(0, 24), [
       "/",
       "/",
       "/stats",
@@ -57,9 +59,12 @@ describe("SolicitudesCoreRoutes", () => {
       "/stats/analista/v2",
       "/simulacion",
       "/tipos-adjunto",
+      "/:id/simulacion",
       "/:id/transitions",
       "/:id/transitions",
+      "/:id/revision-prestamo",
       "/:id/prestamo-legacy",
+      "/:id/solicitudes-titular",
       "/:id/prestamos-socio",
       "/:id/prestamos-socio/:prestamoId",
       "/:id/credixsa",

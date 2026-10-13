@@ -30,9 +30,12 @@ export class SolicitudesCoreRoutes {
     router.post("/simulacion", controller.simular);
     router.get("/tipos-adjunto", solicitudAdjuntosController.listTiposAdjunto);
 
+    router.post("/:id/simulacion", controller.simular);
     router.get("/:id/transitions", controller.listTransitions);
     router.post("/:id/transitions", controller.changeState);
+    router.get("/:id/revision-prestamo", controller.getRevisionPrestamo);
     router.post("/:id/prestamo-legacy", controller.createPrestamoLegacy);
+    router.get("/:id/solicitudes-titular", controller.listSolicitudesDelTitular);
     router.get("/:id/prestamos-socio", controller.listPrestamosDelSocio);
     router.get(
       "/:id/prestamos-socio/:prestamoId",

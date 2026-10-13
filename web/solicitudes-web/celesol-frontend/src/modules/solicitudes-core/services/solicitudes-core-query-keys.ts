@@ -14,12 +14,16 @@ const solicitudesCoreHistoricasRootKey = [
 
 export const solicitudesCoreQueryKeys = {
   all: solicitudesCoreRootKey,
+  revisionPrestamo: (id: string, condiciones: string) =>
+    [...solicitudesCoreRootKey, "revision-prestamo", id, condiciones] as const,
   assignmentAgents: (id: string) =>
     [...solicitudesCoreRootKey, "assignment-agents", id] as const,
   adjuntos: (id: string) =>
     [...solicitudesCoreRootKey, "adjuntos", id] as const,
   cancelaciones: (id: string) =>
     [...solicitudesCoreRootKey, "cancelaciones", id] as const,
+  solicitudesDelTitular: (id: string, documento: string | null) =>
+    [...solicitudesCoreRootKey, "solicitudes-titular", id, documento] as const,
   prestamosDelSocio: (id: string) =>
     [...solicitudesCoreRootKey, "prestamos-socio", id] as const,
   prestamoDelSocio: (id: string, prestamoId: string) =>
@@ -45,6 +49,10 @@ export const solicitudesCoreQueryKeys = {
     offset: number;
   }) => [...solicitudesCoreHistoricasRootKey, input] as const,
   recientes: (input: {
+    search?: string;
+    vista?: "mi-area" | "todas";
+    userId?: string;
+    workflowOwnerId?: string | null;
     createdFrom: string;
     createdTo: string;
     excludeEstado?: string;

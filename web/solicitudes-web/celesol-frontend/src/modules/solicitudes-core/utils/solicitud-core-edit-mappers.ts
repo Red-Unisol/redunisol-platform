@@ -649,14 +649,6 @@ export function mapEditableValuesToPatchSolicitudCoreRequest(
   const nextPatch: Record<string, unknown> = {};
   const solicitudPatch: Record<string, unknown> = {};
 
-  const cuotaResultante = toOptionalStringPatch(
-    values.solicitud.cuotaResultante,
-    solicitud.cuotaResultante,
-  );
-  if (cuotaResultante !== undefined) {
-    solicitudPatch.cuotaResultante = cuotaResultante;
-  }
-
   const cuotas = toOptionalNumberPatch(
     values.solicitud.cuotas,
     solicitud.cuotas,
@@ -740,14 +732,6 @@ export function mapEditableValuesToPatchSolicitudCoreRequest(
     lineaPrestamoLegacyOid !== solicitud.lineaPrestamoLegacyOid
   ) {
     solicitudPatch.lineaPrestamoLegacyOid = lineaPrestamoLegacyOid;
-  }
-
-  const vendedorSolicitud = toOptionalStringPatch(
-    values.solicitud.vendedorSolicitud,
-    solicitud.vendedorSolicitud,
-  );
-  if (vendedorSolicitud !== undefined) {
-    solicitudPatch.vendedorSolicitud = vendedorSolicitud;
   }
 
   const titular = buildTitularPatch(values.titular, solicitud.titular);

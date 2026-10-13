@@ -5,12 +5,48 @@ import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type {
   ListSolicitudesByOwnerInput,
+  ListSolicitudesRecientesInput,
   ListSolicitudesTrackingInput,
   SolicitudesCoreRepository,
 } from "../../domain/repositories/SolicitudesCoreRepository";
 import { ListSolicitudesUseCase } from "./ListSolicitudes.use-case";
 
 describe("ListSolicitudesUseCase", () => {
+  it("lista capabilities de edición para Riesgo en Vendedores consultando el área una sola vez", async () => {
+    let lookups = 0;
+    const row = solicitudCore({ estadoActual: { id: "pre", code: "PreAprobada", name: "PreAprobada", ownerId: "vendedores", owner: { id: "vendedores", code: "VENDEDORES", name: "Vendedores" } } });
+    const repository = {
+      listRecientes: async () => [row, { ...row, id: "other" }],
+      findWorkflowOwnerCodeById: async (id: string) => { assert.equal(id, "riesgo"); lookups++; return "RIESGO"; },
+    } as unknown as SolicitudesCoreRepository;
+    const result = await new ListSolicitudesUseCase({ repository }).execute({ scope: "recientes", vista: "todas", currentUser: { id: "risk", workflowOwnerId: "riesgo" }, limit: 10, offset: 0 });
+    assert.equal(lookups, 1);
+    assert.equal(result.length, 2);
+    assert(result.every(row => row.capabilities.canEdit && !row.capabilities.canChangeState));
+  });
+
+  it("Mi área usa el owner autenticado y alterna sin modificar los filtros", async () => {
+    const calls: ListSolicitudesRecientesInput[] = [];
+    const useCase = new ListSolicitudesUseCase({ repository: {
+      listRecientes: async (input: ListSolicitudesRecientesInput) => { calls.push(input); return []; },
+    } as unknown as SolicitudesCoreRepository });
+    for (const owner of ["riesgo", "vendedores", "tesoreria"]) {
+      for (const vista of ["mi-area", "todas", "mi-area"] as const) {
+        await useCase.execute({ scope: "recientes", vista,
+          currentUser: { id: "user", workflowOwnerId: owner }, workflowOwnerId: "ajeno", search: "  Ramiro López  ",
+          creadoresVisibles: ["visible"], limit: 10, offset: 20, nroDocumento: "123",
+          createdFrom: "2026-10-01", createdTo: "2026-10-11" });
+        assert.deepEqual(calls.at(-1), {
+          ...(vista === "mi-area" ? { estadoOwnerId: owner } : {}),
+          search: "Ramiro López",
+          creadoPorIn: ["visible"], limit: 10, offset: 20, nroDocumento: "123",
+          createdFrom: "2026-10-01", createdTo: "2026-10-11", excludeEstado: "CargaVendedor",
+        });
+      }
+    }
+    await assert.rejects(useCase.execute({ scope: "recientes", vista: "mi-area", currentUser: { id: "user", workflowOwnerId: null }, limit: 10, offset: 0 }), /área asignada/);
+  });
+
   it("lists work solicitudes scoped to the current workflow owner and forwards filters", async () => {
     let receivedInput: ListSolicitudesByOwnerInput | null = null;
     const repository: SolicitudesCoreRepository = {

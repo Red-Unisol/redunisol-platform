@@ -1,3 +1,4 @@
+import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { Prisma } from "@prisma/client";
 
 import type { DbClient } from "../../../../db/prisma";
@@ -503,6 +504,7 @@ export class SolicitudWorkflowPrismaDatasource {
     // actionCode para poder distinguir en el historial que fue automatica.
     await input.executor.solicitudEstadoHistorial.create({
       data: {
+        ...actingHistoryFields(),
         actionCode: "ASSIGNMENT_AUTO",
         actionLabel: "Asignación automática",
         changedBy: input.actorUserId,
@@ -571,6 +573,7 @@ export class SolicitudWorkflowPrismaDatasource {
 
     await input.executor.solicitudEstadoHistorial.create({
       data: {
+        ...actingHistoryFields(),
         actionCode: input.transition.actionCode,
         actionLabel: input.transition.actionLabel,
         changedAt: input.now,

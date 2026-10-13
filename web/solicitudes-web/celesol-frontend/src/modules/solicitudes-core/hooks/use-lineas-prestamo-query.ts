@@ -10,6 +10,6 @@ export function useLineasPrestamoQuery(solicitudId: string) {
     enabled: Boolean(solicitudId),
     queryFn: () => getSolicitudCoreLineasPrestamo(solicitudId),
     queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId),
-    staleTime: Infinity,
+    staleTime: 0,
   });
 }

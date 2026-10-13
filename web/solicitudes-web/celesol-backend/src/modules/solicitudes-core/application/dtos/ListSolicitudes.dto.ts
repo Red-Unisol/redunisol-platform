@@ -1,4 +1,6 @@
 export type ListSolicitudesInput = {
+  search?: string;
+  vista?: "mi-area" | "todas";
   /**
    * Solo para Vendedores: ids de quienes crearon las solicitudes que puede
    * ver (las suyas y, si es dueño de un agente, las de sus vendedores).

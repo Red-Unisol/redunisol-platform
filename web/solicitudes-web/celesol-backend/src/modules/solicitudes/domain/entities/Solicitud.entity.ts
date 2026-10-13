@@ -215,6 +215,7 @@ export type PrestamoOtorgadoLegacy = {
 // "vigente" lo calcula el legado, no lo deducimos nosotros. OJO: no significa
 // "tiene deuda" -- hay prestamos no vigentes con saldo pendiente.
 export type PrestamoDelSocioLegacy = {
+  estado: number | null;
   capital: number | null;
   fechaEmision: string | null;
   legacyId: string | null;
@@ -233,6 +234,7 @@ export type PrestamoDelSocioLegacy = {
 // "tasaInicial" llega como fraccion (0.1135), no como porcentaje: Vimarx la
 // muestra multiplicada por 100 (11,350 %).
 export type PrestamoDelSocioDetalleLegacy = {
+  cuotas: number | null;
   asiento: string | null;
   cobrador: string | null;
   destino: string | null;
@@ -248,6 +250,8 @@ export type PrestamoDelSocioDetalleLegacy = {
 export type CuotaPrestamoLegacy = {
   capital: number | null;
   fecha: string | null;
+  /** null/vacío: sin cobro; ausente: dato no disponible. */
+  fechaCobro?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
   saldoCuota: number | null;

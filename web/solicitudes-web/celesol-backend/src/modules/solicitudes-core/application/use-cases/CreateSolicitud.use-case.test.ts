@@ -16,7 +16,6 @@ const createInput = (): CreateSolicitudInput => ({
   createdBy: "user-1",
   authenticatedSellerName: "elias gallay",
   createdByLegacyUser: "EGALLAY",
-  cuotaResultante: "10000",
   cuotas: 12,
   ejecutivoSolicitud: "Ejecutivo Uno",
   firmaDigitalmente: true,
@@ -147,7 +146,8 @@ describe("CreateSolicitudUseCase", () => {
     };
     const lineasPrestamoCatalog: LineasPrestamoCatalog = {
       findByLegacyUserAndOid: async () => ({
-        descripcion: "Personal",
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
+      descripcion: "Personal",
         legacyOid: "LP-1",
         vigente: true,
       }),
@@ -191,7 +191,8 @@ describe("CreateSolicitudUseCase", () => {
     };
     const lineasPrestamoCatalog: LineasPrestamoCatalog = {
       findByLegacyUserAndOid: async () => ({
-        descripcion: "Personal",
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
+      descripcion: "Personal",
         legacyOid: "LP-1",
         vigente: true,
       }),
@@ -224,7 +225,8 @@ describe("CreateSolicitudUseCase", () => {
     };
     const lineasPrestamoCatalog: LineasPrestamoCatalog = {
       findByLegacyUserAndOid: async () => ({
-        descripcion: "Personal",
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
+      descripcion: "Personal",
         legacyOid: "LP-1",
         vigente: true,
       }),
@@ -282,7 +284,8 @@ describe("CreateSolicitudUseCase", () => {
     };
     const lineasPrestamoCatalog: LineasPrestamoCatalog = {
       findByLegacyUserAndOid: async () => ({
-        descripcion: "Personal",
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
+      descripcion: "Personal",
         legacyOid: "LP-1",
         vigente: true,
       }),
@@ -316,7 +319,8 @@ describe("CreateSolicitudUseCase", () => {
     };
     const lineasPrestamoCatalog: LineasPrestamoCatalog = {
       findByLegacyUserAndOid: async () => ({
-        descripcion: "Personal",
+        montoMaximo: 10000000, cantidadMaximaCuotas: 48,
+      descripcion: "Personal",
         legacyOid: "LP-1",
         vigente: true,
       }),
@@ -502,9 +506,28 @@ function catalogoDeEstados(): WorkflowStateCatalog {
 function catalogoDeLineas(): LineasPrestamoCatalog {
   return {
     findByLegacyUserAndOid: async () => ({
+      montoMaximo: 10000000, cantidadMaximaCuotas: 48,
       descripcion: "Personal",
       legacyOid: "LP-1",
       vigente: true,
     }),
   };
 }
+
+it("adjusts both maxima before calculating and persisting a direct creation request", async () => {
+  let calculation: unknown;
+  const useCase = new CreateSolicitudUseCase({
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 50000, cantidadMaximaCuotas: 6 }) },
+    consultarCredixsaAlCrearSolicitud: { execute: async () => undefined },
+    repository: new InMemorySolicitudesCoreRepository(), workflowStateCatalog: catalogoDeEstados(),
+    simularCuotaSolicitud: { execute: async (input) => { calculation = input; return { cuotaResultante: "9000,00", fechaPrimerVencimiento: "2026-11-30" }; } },
+  });
+  const result = await useCase.execute({ ...createInput(), montoAFinanciar: 1000000, cuotas: 48 });
+  assert.equal(result.montoAFinanciar, 50000); assert.equal(result.cuotas, 6);
+  assert.equal(result.cuotaResultante, "9000,00");
+  assert.equal((calculation as { cuotas: number }).cuotas, 6);
+});
+it("does not accept a manually supplied cuota resultante during creation", async () => {
+  const useCase = new CreateSolicitudUseCase({ lineasPrestamoCatalog: catalogoDeLineas(), workflowStateCatalog: catalogoDeEstados(), repository: new InMemorySolicitudesCoreRepository(), consultarCredixsaAlCrearSolicitud: { execute: async () => undefined }, simularCuotaSolicitud: { execute: async () => null } });
+  await assert.rejects(useCase.execute({ ...createInput(), cuotaResultante: "9000" }), { fieldKey: "solicitud.cuotaResultante" });
+});
