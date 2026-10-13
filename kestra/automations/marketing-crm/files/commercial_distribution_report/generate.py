@@ -106,6 +106,9 @@ REASON_LABELS = {
     "caja_morosos_payment_bank_above_one": (
         "El banco de cobro está en situación BCRA mayor a 1 para la línea Caja Morosos."
     ),
+    "caja_morosos_new_more_than_eight_entities": (
+        "Es cliente nuevo de Caja Córdoba y tiene más de ocho entidades informadas en BCRA."
+    ),
     "caja_morosos_excluded_entity": (
         "Tiene una entidad excluida en situación BCRA 4 o 5; requiere revisión comercial."
     ),

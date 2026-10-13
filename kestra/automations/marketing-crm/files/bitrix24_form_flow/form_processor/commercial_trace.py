@@ -30,6 +30,7 @@ REASON_LABELS = {
     "caja_age_80_or_more": "La persona tiene 80 años o más.",
     "caja_new_payment_bank_above_one": "Es cliente nuevo y el banco de cobro está en situación BCRA mayor a 1.",
     "caja_morosos_payment_bank_above_one": "El banco de cobro está en situación BCRA mayor a 1 para Caja Morosos.",
+    "caja_morosos_new_more_than_eight_entities": "Es cliente nuevo de Caja Córdoba y tiene más de ocho entidades informadas en BCRA.",
     "caja_morosos_excluded_entity": "Tiene una entidad excluida en situación BCRA 4 o 5; requiere revisión comercial.",
     "caja_morosos_parallel_minimum_not_met": "Tiene un préstamo Caja activo con menos de cuatro cuotas pagadas.",
     "caja_irregular_parallel_minimum_not_met": "Tiene un préstamo Caja activo con menos de cuatro cuotas pagadas.",
