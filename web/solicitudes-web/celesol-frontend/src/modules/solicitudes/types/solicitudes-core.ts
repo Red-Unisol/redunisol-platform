@@ -147,6 +147,7 @@ export type SolicitudCoreCapabilitiesResponse = {
   canUploadAdjuntos: boolean;
   canDeleteAdjuntos: boolean;
   canDownloadAdjuntos: boolean;
+  canCreateCancelaciones?: boolean;
   canManageCancelaciones: boolean;
   canChangeState: boolean;
   canViewHistory: boolean;

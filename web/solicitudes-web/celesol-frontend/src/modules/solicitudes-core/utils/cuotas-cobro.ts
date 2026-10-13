@@ -86,3 +86,12 @@ export const ETIQUETAS_COBRO: Record<EstadoCobro, string> = {
   "sin-vencimiento": "Pendiente · vencimiento no disponible",
   desconocido: "Estado de cobro no disponible",
 };
+
+export function resaltadoCuota(cuota: Cuota, hoy: string) {
+  const vencimiento = diaLegacy(cuota.fecha);
+  const cobro = diaLegacy(cuota.fechaCobro);
+  return {
+    cobroEnOtroDia: Boolean(vencimiento && cobro && vencimiento !== cobro),
+    noVencida: Boolean(vencimiento && diaLegacy(hoy) && vencimiento >= hoy),
+  };
+}

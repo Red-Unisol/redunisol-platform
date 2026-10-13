@@ -15,6 +15,7 @@ export function useCreatePrestamoLegacyMutation(solicitudId: string) {
       );
 
       await Promise.all([
+        queryClient.invalidateQueries({queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId)}),
         queryClient.invalidateQueries({
           queryKey: solicitudesCoreQueryKeys.detail(solicitudId),
         }),

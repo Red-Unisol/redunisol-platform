@@ -7,10 +7,13 @@ import type {
   SolicitudAdjuntoRepository,
 } from "../../domain/repositories/SolicitudAdjuntoRepository";
 import type { AdjuntosObjectStorage } from "../../domain/services/AdjuntosObjectStorage";
-import { MAX_ADJUNTOS_LOTE, TIPO_ADJUNTO_VALUES } from "../../domain/TiposAdjuntoCatalog";
+import {
+  MAX_ADJUNTOS_LOTE,
+  TIPO_ADJUNTO_VALUES,
+} from "../../domain/TiposAdjuntoCatalog";
 import type { SolicitudFieldAccessRulesRepository } from "../../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type { SolicitudesCoreRepository } from "../../../domain/repositories/SolicitudesCoreRepository";
-import { canManageSolicitudAttachments } from "../../../application/services/SolicitudPermissions";
+import { canEditSolicitud } from "../../../application/services/SolicitudPermissions";
 import {
   ForbiddenSolicitudAdjuntoAccessError,
   SolicitudAdjuntoNotFoundError,
@@ -79,17 +82,26 @@ export class UploadSolicitudAdjuntosBatchUseCase {
       throw new SolicitudAdjuntoNotFoundError();
     }
 
+    const workflowOwnerCode =
+      input.currentUser.workflowOwnerId &&
+      this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
+        ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(
+            input.currentUser.workflowOwnerId,
+          )
+        : null;
+
     const fieldAccessRule =
       await this.dependencies.fieldAccessRulesRepository.findByWorkflowStateId(
         solicitud.estadoActual.id,
       );
 
     if (
-      !canManageSolicitudAttachments({
-        fieldAccess: fieldAccessRule,
+      !canEditSolicitud(
+        { ...input.currentUser, workflowOwnerCode },
         solicitud,
-        user: input.currentUser,
-      })
+        "UPLOAD_ATTACHMENT",
+        fieldAccessRule,
+      )
     ) {
       throw new ForbiddenSolicitudAdjuntoAccessError();
     }
@@ -132,7 +144,10 @@ export class UploadSolicitudAdjuntosBatchUseCase {
           contentType: fileInput.file.mimeType,
           key: storageKey,
         });
-        uploaded.push({ bucket: this.dependencies.storageBucket, key: storageKey });
+        uploaded.push({
+          bucket: this.dependencies.storageBucket,
+          key: storageKey,
+        });
 
         records.push({
           adjuntoId,
