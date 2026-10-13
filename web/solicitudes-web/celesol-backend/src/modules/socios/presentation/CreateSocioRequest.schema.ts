@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 const trimmedRequiredString = z.string().trim().min(1);
+// ID de ClasesBase.Localidad en Vimarx (se elige del desplegable).
+const localidadIdString = z.string().trim().regex(/^\d+$/);
 const normalizedOptionalString = z.preprocess((value) => {
   if (value === undefined) {
     return undefined;
@@ -33,9 +35,9 @@ const personaFisicaSchema = z
     celular: normalizedOptionalString,
     cuit: trimmedRequiredString,
     domicilioCalle: trimmedRequiredString,
-    domicilioCodigoPostal: trimmedRequiredString,
-    domicilioLocalidad: trimmedRequiredString,
-    domicilioNroPuerta: trimmedRequiredString,
+    domicilioCodigoPostal: normalizedOptionalString,
+    domicilioLocalidad: localidadIdString,
+    domicilioNroPuerta: normalizedOptionalString,
     email: normalizedOptionalEmail,
     fechaDeNacimiento: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
     nombre: trimmedRequiredString,
@@ -51,9 +53,9 @@ const personaJuridicaSchema = z
     celular: normalizedOptionalString,
     cuit: trimmedRequiredString,
     domicilioCalle: trimmedRequiredString,
-    domicilioCodigoPostal: trimmedRequiredString,
-    domicilioLocalidad: trimmedRequiredString,
-    domicilioNroPuerta: trimmedRequiredString,
+    domicilioCodigoPostal: normalizedOptionalString,
+    domicilioLocalidad: localidadIdString,
+    domicilioNroPuerta: normalizedOptionalString,
     email: normalizedOptionalEmail,
     razonSocial: trimmedRequiredString,
     tipoPersona: z.literal("JURIDICA"),

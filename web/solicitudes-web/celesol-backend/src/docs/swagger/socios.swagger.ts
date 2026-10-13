@@ -114,9 +114,7 @@
  *             - sexo
  *             - fechaDeNacimiento
  *             - domicilioCalle
- *             - domicilioNroPuerta
  *             - domicilioLocalidad
- *             - domicilioCodigoPostal
  *           properties:
  *             tipoPersona:
  *               type: string
@@ -156,9 +154,7 @@
  *             - cuit
  *             - razonSocial
  *             - domicilioCalle
- *             - domicilioNroPuerta
  *             - domicilioLocalidad
- *             - domicilioCodigoPostal
  *           properties:
  *             tipoPersona:
  *               type: string

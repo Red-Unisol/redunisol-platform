@@ -10,6 +10,7 @@ import type { CheckSocioDocumentoDuplicateUseCase } from "../application/use-cas
 import type { CreateSocioUseCase } from "../application/use-cases/CreateSocio.use-case";
 import type { DeleteSocioUseCase } from "../application/use-cases/DeleteSocio.use-case";
 import type { GetSocioByIdUseCase } from "../application/use-cases/GetSocioById.use-case";
+import type { ListLocalidadesUseCase } from "../application/use-cases/ListLocalidades.use-case";
 import type { ListSociosUseCase } from "../application/use-cases/ListSocios.use-case";
 import type { LookupSocioByDocumentoUseCase } from "../application/use-cases/LookupSocioByDocumento.use-case";
 import type { SyncSociosFromVimaxUseCase } from "../application/use-cases/SyncSociosFromVimax.use-case";
@@ -33,6 +34,10 @@ import {
   createSocioBodySchema,
   type CreateSocioBody,
 } from "./CreateSocioRequest.schema";
+import {
+  listLocalidadesQuerySchema,
+  type ListLocalidadesQuery,
+} from "./ListLocalidadesQuery.schema";
 import {
   listSociosQuerySchema,
   type ListSociosQuery,
@@ -60,6 +65,7 @@ type Dependencies = {
   deleteSocioUseCase: DeleteSocioUseCase;
   getCurrentUserUseCase: GetCurrentUserUseCase;
   getSocioByIdUseCase: GetSocioByIdUseCase;
+  listLocalidadesUseCase: ListLocalidadesUseCase;
   listSociosUseCase: ListSociosUseCase;
   lookupSocioByDocumentoUseCase: LookupSocioByDocumentoUseCase;
   syncSociosFromVimaxUseCase: SyncSociosFromVimaxUseCase;
@@ -73,6 +79,7 @@ export class SociosController {
   private readonly deleteSocioUseCase: DeleteSocioUseCase;
   private readonly getCurrentUserUseCase: GetCurrentUserUseCase;
   private readonly getSocioByIdUseCase: GetSocioByIdUseCase;
+  private readonly listLocalidadesUseCase: ListLocalidadesUseCase;
   private readonly listSociosUseCase: ListSociosUseCase;
   private readonly lookupSocioByDocumentoUseCase: LookupSocioByDocumentoUseCase;
   private readonly syncSociosFromVimaxUseCase: SyncSociosFromVimaxUseCase;
@@ -87,6 +94,7 @@ export class SociosController {
     this.deleteSocioUseCase = dependencies.deleteSocioUseCase;
     this.getCurrentUserUseCase = dependencies.getCurrentUserUseCase;
     this.getSocioByIdUseCase = dependencies.getSocioByIdUseCase;
+    this.listLocalidadesUseCase = dependencies.listLocalidadesUseCase;
     this.listSociosUseCase = dependencies.listSociosUseCase;
     this.lookupSocioByDocumentoUseCase =
       dependencies.lookupSocioByDocumentoUseCase;
@@ -166,6 +174,25 @@ export class SociosController {
       const result = await this.lookupSocioByDocumentoUseCase.execute(query);
 
       res.status(200).json(toLookupSocioResponse(result));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  localidades = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      await this.getCurrentUser(req);
+      const query = this.parseRequest<ListLocalidadesQuery>(
+        listLocalidadesQuerySchema,
+        req.query,
+      );
+      const items = await this.listLocalidadesUseCase.execute(query);
+
+      res.status(200).json({ items });
     } catch (error) {
       next(error);
     }

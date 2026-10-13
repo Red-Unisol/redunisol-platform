@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import { useCuitAvailabilityQuery } from "../hooks/use-cuit-availability-query";
 import { useDocumentoAvailabilityQuery } from "../hooks/use-documento-availability-query";
+import { LocalidadSelect } from "./localidad-select";
 import { Button } from "@/shared/components/ui/button";
 import { DateInput } from "@/shared/components/ui/date-input";
 import {
@@ -82,6 +83,11 @@ function isValidCuit(value: string) {
   if (checkDigit === 10) return false;
 
   return checkDigit === Number(digits[10]);
+}
+
+// La localidad se guarda con su id de Vimarx (se elige del desplegable).
+function isValidLocalidadId(value: string) {
+  return /^\d+$/.test(value);
 }
 
 function isValidCivilDate(value: string) {
@@ -168,19 +174,23 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
   const celular = toTrimmedValue(state.celular)
     ? toStoredSocioPhone(state.celular)
     : undefined;
+  // Como en InsCreditB, del domicilio solo calle y localidad son
+  // obligatorios; numero de puerta y codigo postal van si se cargaron.
   const domicilioCalle = state.domicilioCalle.trim();
-  const domicilioNroPuerta = state.domicilioNroPuerta.trim();
   const domicilioLocalidad = state.domicilioLocalidad.trim();
-  const domicilioCodigoPostal = state.domicilioCodigoPostal.trim();
+  const domicilioNroPuerta = toTrimmedValue(state.domicilioNroPuerta);
+  const domicilioCodigoPostal = toTrimmedValue(state.domicilioCodigoPostal);
+  const domicilioOpcional = {
+    ...(domicilioNroPuerta ? { domicilioNroPuerta } : {}),
+    ...(domicilioCodigoPostal ? { domicilioCodigoPostal } : {}),
+  };
 
   if (
     cuit.length === 0 ||
     !isValidCuit(cuit) ||
     !isValidEmail(state.email.trim()) ||
     domicilioCalle.length === 0 ||
-    domicilioNroPuerta.length === 0 ||
-    domicilioLocalidad.length === 0 ||
-    domicilioCodigoPostal.length === 0
+    !isValidLocalidadId(domicilioLocalidad)
   ) {
     return null;
   }
@@ -208,12 +218,11 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
     return {
       ...(celular ? { celular } : {}),
       ...(email ? { email } : {}),
+      ...domicilioOpcional,
       apellido,
       cuit,
       domicilioCalle,
-      domicilioCodigoPostal,
       domicilioLocalidad,
-      domicilioNroPuerta,
       fechaDeNacimiento,
       nombre,
       nroDocumento,
@@ -232,11 +241,10 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
   return {
     ...(celular ? { celular } : {}),
     ...(email ? { email } : {}),
+    ...domicilioOpcional,
     cuit,
     domicilioCalle,
-    domicilioCodigoPostal,
     domicilioLocalidad,
-    domicilioNroPuerta,
     razonSocial,
     tipoPersona: "JURIDICA",
   };
@@ -539,21 +547,13 @@ function SocioFormDialogContent({
       touched("domicilioCalle") && formState.domicilioCalle.trim().length === 0
         ? "La calle es obligatoria."
         : null,
-    domicilioCodigoPostal:
-      touched("domicilioCodigoPostal") &&
-      formState.domicilioCodigoPostal.trim().length === 0
-        ? "El código postal es obligatorio."
-        : null,
-    domicilioLocalidad:
-      touched("domicilioLocalidad") &&
-      formState.domicilioLocalidad.trim().length === 0
+    domicilioLocalidad: !touched("domicilioLocalidad")
+      ? null
+      : formState.domicilioLocalidad.trim().length === 0
         ? "La localidad es obligatoria."
-        : null,
-    domicilioNroPuerta:
-      touched("domicilioNroPuerta") &&
-      formState.domicilioNroPuerta.trim().length === 0
-        ? "El número de puerta es obligatorio."
-        : null,
+        : !isValidLocalidadId(formState.domicilioLocalidad.trim())
+          ? "Elegí la localidad de la lista."
+          : null,
   };
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -925,12 +925,10 @@ function SocioFormDialogContent({
                 </span>
               </ModalField>
 
-              <ModalField label="Nro. puerta *">
+              <ModalField label="Nro. puerta">
                 <Input
-                  aria-invalid={Boolean(domicilioErrors.domicilioNroPuerta)}
                   autoComplete="new-password"
                   disabled={isSaving}
-                  onBlur={() => markTouched("domicilioNroPuerta")}
                   onChange={(event) =>
                     setFormState((currentState) => ({
                       ...currentState,
@@ -939,22 +937,18 @@ function SocioFormDialogContent({
                   }
                   value={formState.domicilioNroPuerta}
                 />
-                <span className="block min-h-[1rem] text-xs text-destructive">
-                  {domicilioErrors.domicilioNroPuerta}
-                </span>
+                <span className="block min-h-[1rem]" />
               </ModalField>
 
-              <ModalField label="Localidad (ID legado) *">
-                <Input
-                  aria-invalid={Boolean(domicilioErrors.domicilioLocalidad)}
-                  autoComplete="new-password"
+              <ModalField label="Localidad *">
+                <LocalidadSelect
                   disabled={isSaving}
-                  inputMode="numeric"
+                  invalid={Boolean(domicilioErrors.domicilioLocalidad)}
                   onBlur={() => markTouched("domicilioLocalidad")}
-                  onChange={(event) =>
+                  onChange={(id) =>
                     setFormState((currentState) => ({
                       ...currentState,
-                      domicilioLocalidad: event.target.value,
+                      domicilioLocalidad: id,
                     }))
                   }
                   value={formState.domicilioLocalidad}
@@ -964,12 +958,10 @@ function SocioFormDialogContent({
                 </span>
               </ModalField>
 
-              <ModalField label="Código postal *">
+              <ModalField label="Código postal">
                 <Input
-                  aria-invalid={Boolean(domicilioErrors.domicilioCodigoPostal)}
                   autoComplete="new-password"
                   disabled={isSaving}
-                  onBlur={() => markTouched("domicilioCodigoPostal")}
                   onChange={(event) =>
                     setFormState((currentState) => ({
                       ...currentState,
@@ -978,9 +970,7 @@ function SocioFormDialogContent({
                   }
                   value={formState.domicilioCodigoPostal}
                 />
-                <span className="block min-h-[1rem] text-xs text-destructive">
-                  {domicilioErrors.domicilioCodigoPostal}
-                </span>
+                <span className="block min-h-[1rem]" />
               </ModalField>
             </div>
           </div>

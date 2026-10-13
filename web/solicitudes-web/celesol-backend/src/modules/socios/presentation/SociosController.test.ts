@@ -714,6 +714,39 @@ describe("SociosController", () => {
     assert.ok(nextError instanceof ForbiddenSocioSyncError);
   });
 
+  it("lists the Vimarx localidades for the domicilio dropdown", async () => {
+    const localidad = {
+      codigoPostal: "5000",
+      id: "2715",
+      nombre: "CORDOBA",
+      provincia: "CORDOBA",
+    };
+    let receivedInput: unknown;
+    const controller = buildController({
+      listLocalidadesUseCase: {
+        execute: async (input: unknown) => {
+          receivedInput = input;
+          return [localidad];
+        },
+      },
+    });
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.localidades(
+      request({ query: { search: " cordoba " } }),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(receivedInput, { limit: 50, search: "cordoba" });
+    assert.deepEqual(response.body, { items: [localidad] });
+  });
+
   it("deletes one socio and returns 204", async () => {
     const controller = buildController({
       getCurrentUserUseCase: {
@@ -786,6 +819,7 @@ function buildController(
     deleteSocioUseCase: unknown;
     getCurrentUserUseCase: unknown;
     getSocioByIdUseCase: unknown;
+    listLocalidadesUseCase: unknown;
     listSociosUseCase: unknown;
     lookupSocioByDocumentoUseCase: unknown;
     updateSocioUseCase: unknown;
@@ -815,6 +849,10 @@ function buildController(
     getSocioByIdUseCase: ({
       execute: async () => buildFisicaSocio(),
       ...(overrides?.getSocioByIdUseCase ?? {}),
+    } as never),
+    listLocalidadesUseCase: ({
+      execute: async () => [],
+      ...(overrides?.listLocalidadesUseCase ?? {}),
     } as never),
     listSociosUseCase: ({
       execute: async () => ({

@@ -5,9 +5,9 @@ export type CreateSocioDto =
       celular?: string;
       cuit: string;
       domicilioCalle: string;
-      domicilioCodigoPostal: string;
+      domicilioCodigoPostal?: string;
       domicilioLocalidad: string;
-      domicilioNroPuerta: string;
+      domicilioNroPuerta?: string;
       email?: string;
       fechaDeNacimiento: string;
       nombre: string;
@@ -20,9 +20,9 @@ export type CreateSocioDto =
       celular?: string;
       cuit: string;
       domicilioCalle: string;
-      domicilioCodigoPostal: string;
+      domicilioCodigoPostal?: string;
       domicilioLocalidad: string;
-      domicilioNroPuerta: string;
+      domicilioNroPuerta?: string;
       email?: string;
       razonSocial: string;
     };
