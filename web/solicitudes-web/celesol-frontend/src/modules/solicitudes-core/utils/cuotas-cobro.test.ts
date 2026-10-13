@@ -5,6 +5,7 @@ import {
   diaLegacy,
   estadoCobro,
   vistaCuotas,
+  resaltadoCuota,
 } from "./cuotas-cobro";
 
 const cuota = (
@@ -125,5 +126,51 @@ describe("Vista compacta del plan", () => {
     );
     assert.deepEqual(vistaCuotas(cuotas, false, hoy), compacta);
     assert.equal(cuotas[0].nroCuota, 6);
+  });
+});
+
+describe("Resaltado de fechas de cuotas", () => {
+  it("compara días de calendario y no las horas del legacy", () => {
+    assert.deepEqual(
+      resaltadoCuota(
+        cuota(1, "2026-10-10T23:59:00", "2026-10-10T00:00:00"),
+        hoy,
+      ),
+      { cobroEnOtroDia: false, noVencida: true },
+    );
+    assert.deepEqual(
+      resaltadoCuota(cuota(1, "2026-10-11", "2026-10-10"), hoy),
+      { cobroEnOtroDia: true, noVencida: true },
+    );
+    assert.deepEqual(
+      resaltadoCuota(cuota(1, "2026-10-09", "2026-10-10"), hoy),
+      { cobroEnOtroDia: true, noVencida: true },
+    );
+  });
+  it("no resalta cobros faltantes ni fechas inválidas", () => {
+    for (const fechaCobro of [null, undefined, "", "inválida", "2026-02-30"]) {
+      assert.equal(
+        resaltadoCuota(cuota(1, fechaCobro), hoy).cobroEnOtroDia,
+        false,
+      );
+    }
+    assert.deepEqual(resaltadoCuota(cuota(1, "2026-10-10", "inválida"), hoy), {
+      cobroEnOtroDia: false,
+      noVencida: false,
+    });
+  });
+  it("marca como no vencidas las cuotas de hoy y futuras; deja las anteriores sin negrita", () => {
+    assert.equal(
+      resaltadoCuota(cuota(1, null, "2026-10-09"), hoy).noVencida,
+      false,
+    );
+    assert.equal(
+      resaltadoCuota(cuota(1, null, "2026-10-10"), hoy).noVencida,
+      true,
+    );
+    assert.equal(
+      resaltadoCuota(cuota(1, null, "2026-10-11"), hoy).noVencida,
+      true,
+    );
   });
 });
