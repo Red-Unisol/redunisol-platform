@@ -35,6 +35,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   "/admin/solicitudes/field-access-rules":
     "Administración de permisos de edición",
   "/admin/solicitudes/workflow-transitions": "Administración de transiciones",
+  "/admin/solicitudes/reconocimiento-recibos": "Reconocimiento de recibos",
   "/socios": "Socios",
   "/dashboard": "Dashboard",
   "/perfil": "Mis datos",
@@ -66,6 +67,7 @@ const TITLE_ICON_BY_PATH: Record<string, LucideIcon> = {
   "/listados/resumen-estado-credito-dni": FileChartColumn,
   "/admin/solicitudes/field-access-rules": Shield,
   "/admin/solicitudes/workflow-transitions": Shield,
+  "/admin/solicitudes/reconocimiento-recibos": Shield,
   "/socios": Users,
   "/dashboard": BarChart3,
   "/perfil": Pencil,
