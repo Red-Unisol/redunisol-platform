@@ -14,6 +14,8 @@ import {
   Download,
   Eye,
   FileText,
+  Maximize2,
+  Minimize2,
   Pencil,
   Plus,
   Trash2,
@@ -3062,6 +3064,9 @@ export function SolicitudesActualDetallePage() {
   const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
   const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
+  const [modoAnalisis, setModoAnalisis] = useState(true);
+  const analisisActivo = canViewCalculadora && vistaTab === "evaluacion" && modoAnalisis;
+
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
     // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
@@ -3081,7 +3086,10 @@ export function SolicitudesActualDetallePage() {
       setEvaluacionConCambios(false);
     }
 
-    if (tab === "evaluacion" && canViewCalculadora) closeSidebar();
+    if (tab === "evaluacion" && canViewCalculadora) {
+      closeSidebar();
+      if (vistaTab !== "evaluacion") setModoAnalisis(true);
+    }
     setVistaTab(tab);
     return true;
   }
@@ -4024,6 +4032,7 @@ export function SolicitudesActualDetallePage() {
         canViewCalculadora ? "h-full" : "min-h-full"
       }`}
     >
+      <div id="solicitud-encabezado-completo" className={analisisActivo ? "hidden" : "contents"}>
       <header className="border-b border-border bg-surface px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex min-w-0 max-w-full items-center gap-2.5">
@@ -4165,6 +4174,15 @@ export function SolicitudesActualDetallePage() {
         }
       />
 
+      </div>
+      {analisisActivo ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-sm">
+          <Button aria-label="Volver al listado" onClick={() => navigate(originPath)} size="icon-sm" variant="ghost" type="button"><ArrowLeft className="size-4" /></Button>
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold"><span className="sr-only">Evaluación de </span>{[resolvedSolicitud.titular.nombre, resolvedSolicitud.titular.apellidoDenominacion].filter(Boolean).join(" ") || "Detalle de Solicitud"}</h1>
+          <Badge dot variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}>{formatText(resolvedSolicitud.estadoActual.code || resolvedSolicitud.estadoActual.name)}</Badge>
+        </div>
+      ) : null}
+
       <SolicitudWorkflowActionDialog
         errorMessage={workflowTransitionErrorMessage}
         isSubmitting={executeWorkflowTransitionMutation.isPending}
@@ -4181,7 +4199,7 @@ export function SolicitudesActualDetallePage() {
 
       {canViewCalculadora ? (
         <div className="border-b border-border bg-surface px-3 md:px-4">
-          <div className="flex gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
               const isActive = tab.value === vistaTab;
 
@@ -4200,6 +4218,25 @@ export function SolicitudesActualDetallePage() {
                 </button>
               );
             })}
+            {vistaTab === "evaluacion" ? (
+              <Button
+                className="ml-auto my-1"
+                aria-pressed={analisisActivo}
+                aria-expanded={!analisisActivo}
+                aria-controls="solicitud-encabezado-completo"
+                title={analisisActivo ? "Mostrar el encabezado completo" : "Plegar el encabezado para ampliar Evaluación"}
+                onClick={() => {
+                  if (!modoAnalisis) closeSidebar();
+                  setModoAnalisis(value => !value);
+                }}
+                size="sm"
+                type="button"
+                variant={analisisActivo ? "default" : "outline"}
+              >
+                {analisisActivo ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                Modo análisis
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
