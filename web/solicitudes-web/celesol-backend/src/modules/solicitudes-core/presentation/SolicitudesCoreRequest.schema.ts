@@ -119,7 +119,7 @@ const garantiaPatchSchema = z.object({
 
 export const createSolicitudBodySchema = z.object({
   cupoTitular: z.coerce.number().min(0).optional(),
-  cuotaResultante: z.string().trim().min(1).optional(),
+  cuotaResultante: z.never().optional(),
   cuotas: z.coerce.number().int().positive().optional(),
   ejecutivoSolicitud: z.string().trim().min(1).optional(),
   linkFirmaDigital: nullableNormalizedStringSchema.optional(),
@@ -280,7 +280,7 @@ export const patchSolicitudBodySchema = z.object({
   solicitud: z
     .object({
       cupoTitular: z.union([z.coerce.number().min(0), z.null()]).optional(),
-      cuotaResultante: nullableTrimmedStringSchema.optional(),
+      cuotaResultante: z.never().optional(),
       cuotas: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
       ejecutivoSolicitud: nullableTrimmedStringSchema.optional(),
       linkFirmaDigital: nullableNormalizedStringSchema.optional(),
@@ -328,6 +328,7 @@ export const patchSolicitudBodySchema = z.object({
 }).strict();
 
 export const simularPrestamoBodySchema = z.object({
+  cuotaObjetivo: z.coerce.number().finite().positive().optional(),
   capitalPuro: z.boolean().optional(),
   cuotas: z.coerce.number().int().positive(),
   fechaPrimerVencimiento: z.string().trim().min(1).optional(),

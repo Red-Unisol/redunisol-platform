@@ -1,3 +1,11 @@
+import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
+import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
+import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
+import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
+import {
+  LegacyLineaPrestamoUnavailableError,
+  InvalidSolicitudesCoreRequestError,
+} from "../../domain/solicitudes-core-errors";
 import type { CreatePrestamoLegacyInput } from "../dtos/CreatePrestamoLegacy.dto";
 import { buildLinkFirmaDigital } from "../services/buildLinkFirmaDigital";
 import { EnsureSolicitudTitularHasRequiredDataForConfirmar } from "../services/EnsureSolicitudTitularHasRequiredDataForConfirmar";
@@ -26,6 +34,9 @@ import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/servi
 const MAX_CANCELACIONES_CENTAVOS = 2147483647;
 
 type Dependencies = {
+  archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
+  lineasPrestamoCatalog: LineasPrestamoCatalog;
+  simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   authRepository: Pick<AuthRepository, "findById">;
   cancelacionesRepository: Pick<
     SolicitudCancelacionRepository,
@@ -36,11 +47,20 @@ type Dependencies = {
   linkFirmaDigitalBaseUrl: string;
   repository: SolicitudesCoreRepository;
   sociosRepository: SocioRepository;
-  solicitudesLegacyGateway: Pick<SolicitudesLegacyGateway, "getVendedorLegacyId">;
+  solicitudesLegacyGateway: Pick<
+    SolicitudesLegacyGateway,
+    "getVendedorLegacyId"
+  >;
   today: () => string;
 };
 
 export class CreatePrestamoLegacyUseCase {
+  private readonly archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
+  private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
+  private readonly simularCuotaSolicitud: Pick<
+    SimularCuotaSolicitud,
+    "execute"
+  >;
   private readonly authRepository: Pick<AuthRepository, "findById">;
   private readonly cancelacionesRepository: Pick<
     SolicitudCancelacionRepository,
@@ -59,6 +79,9 @@ export class CreatePrestamoLegacyUseCase {
   private readonly today: () => string;
 
   constructor(dependencies: Dependencies) {
+    this.archivarEvaluacion = dependencies.archivarEvaluacion;
+    this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
+    this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.authRepository = dependencies.authRepository;
     this.cancelacionesRepository = dependencies.cancelacionesRepository;
     this.ensureSolicitudTitularHasRequiredDataForConfirmar =
@@ -140,9 +163,10 @@ export class CreatePrestamoLegacyUseCase {
       throw new SolicitudVendedorLegacyRequiredError();
     }
 
-    const vendedorLegacyId = await this.solicitudesLegacyGateway.getVendedorLegacyId(
-      creator.legacyUser,
-    );
+    const vendedorLegacyId =
+      await this.solicitudesLegacyGateway.getVendedorLegacyId(
+        creator.legacyUser,
+      );
 
     if (vendedorLegacyId === null) {
       throw new SolicitudVendedorLegacyRequiredError();
@@ -164,13 +188,44 @@ export class CreatePrestamoLegacyUseCase {
       );
     }
 
+    const vendedorLegacyUser = await this.repository.findVendedorLegacyUser?.(
+      solicitud.id,
+    );
+    if (!vendedorLegacyUser) throw new LegacyLineaPrestamoUnavailableError();
+    const limitesLinea =
+      await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
+        vendedorLegacyUser,
+        solicitud.lineaPrestamoLegacyOid,
+      );
+    if (!limitesLinea || !limitesLinea.vigente)
+      throw new LegacyLineaPrestamoUnavailableError();
+    const efectivos = ajustarMaximosLinea(limitesLinea, solicitud);
+    const huboAjuste =
+      efectivos.cuotas !== solicitud.cuotas ||
+      efectivos.montoAFinanciar !== solicitud.montoAFinanciar;
+    if (huboAjuste) {
+      const calculo = await this.simularCuotaSolicitud.execute({
+        ...efectivos,
+        lineaPrestamoLegacyOid: solicitud.lineaPrestamoLegacyOid,
+        fechaPrimerVencimiento: solicitud.fechaPrimerVencimiento ?? null,
+      });
+      await this.repository.update(input.solicitudId, {
+        solicitud: {
+          ...efectivos,
+          cuotaResultante: calculo?.cuotaResultante ?? null,
+        },
+      });
+    }
+    const nroLote = await this.buildNroLoteCancelaciones(input.solicitudId,
+      huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
+    await this.archivarEvaluacion?.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "generacion"});
     const result = await this.gateway.crear({
-      cuotas: solicitud.cuotas as number,
+      cuotas: efectivos.cuotas as number,
       fechaEmision: this.today(),
       integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" }],
       lineaPrestamo: lineaPrestamo.id,
-      montoDeseado: solicitud.montoAFinanciar as number,
-      ...(await this.buildNroLoteCancelaciones(input.solicitudId)),
+      montoDeseado: efectivos.montoAFinanciar as number,
+      ...nroLote,
       vendedor: String(vendedorLegacyId),
     });
 
@@ -198,6 +253,7 @@ export class CreatePrestamoLegacyUseCase {
   // esa novedad configurada ignora el numero: no rompe nada.
   private async buildNroLoteCancelaciones(
     solicitudId: string,
+    montoAFinanciar?: number,
   ): Promise<{ nroLote?: number }> {
     const cancelaciones =
       await this.cancelacionesRepository.listBySolicitudId(solicitudId);
@@ -205,6 +261,10 @@ export class CreatePrestamoLegacyUseCase {
       .filter((cancelacion) => cancelacion.deletedAt === null)
       .reduce((suma, cancelacion) => suma + cancelacion.monto, 0);
 
+    if (montoAFinanciar !== undefined && total > montoAFinanciar)
+      throw new InvalidSolicitudesCoreRequestError(
+        "Las cancelaciones superan el monto a desembolsar.",
+      );
     if (total <= 0) {
       return {};
     }

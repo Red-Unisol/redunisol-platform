@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 
 import {
+  simularPrestamoBodySchema,
   listSolicitudesQuerySchema,
   createSolicitudBodySchema,
   patchSolicitudBodySchema,
@@ -109,4 +110,17 @@ it("valida vista y no acepta owner del cliente", () => {
 it("normaliza la búsqueda de Recientes y limita su longitud", () => {
   assert.equal(listSolicitudesQuerySchema.parse({ scope: "recientes", search: "  Ramiro López  " }).search, "Ramiro López");
   assert.equal(listSolicitudesQuerySchema.safeParse({ search: "a".repeat(161) }).success, false);
+});
+
+it("rejects manual cuota resultante, including numeric values and null", () => {
+  for (const cuotaResultante of ["1.313.847,24", "1000", "abc", null]) {
+    assert.equal(patchSolicitudBodySchema.safeParse({ solicitud: { cuotaResultante } }).success, false);
+    assert.equal(createSolicitudBodySchema.safeParse({ ...minimalCreateBody("1990-01-01"), cuotaResultante }).success, false);
+  }
+});
+
+test("acepta cuota objetivo únicamente positiva y finita en simulación", () => {
+  const base = { capitalPuro: false, cuotas: 12, lineaId: 1, montoAFinanciar: 1000 };
+  assert.equal(simularPrestamoBodySchema.parse({ ...base, cuotaObjetivo: 100 }).cuotaObjetivo, 100);
+  for (const cuotaObjetivo of [0, -1, Infinity, NaN, "letras"]) assert.equal(simularPrestamoBodySchema.safeParse({ ...base, cuotaObjetivo }).success, false);
 });

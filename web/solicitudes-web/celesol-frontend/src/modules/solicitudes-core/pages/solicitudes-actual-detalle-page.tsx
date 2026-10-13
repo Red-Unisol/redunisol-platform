@@ -1,3 +1,8 @@
+import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
+import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
+import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
+import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
+import { LinkFirmaDigital } from "../components/link-firma-digital";
 import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
 import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
 import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
@@ -9,6 +14,8 @@ import {
   Download,
   Eye,
   FileText,
+  Maximize2,
+  Minimize2,
   Pencil,
   Plus,
   Trash2,
@@ -22,7 +29,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -138,6 +145,7 @@ import type {
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
   formatMoneyAmount,
+  formatDecimalMoneyValue,
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
@@ -439,12 +447,14 @@ function PrestamosDelSocioSection({
 }
 
 type CancelacionesSectionProps = {
+  canCreateCancelaciones: boolean;
   canManageCancelaciones: boolean;
   isEditing: boolean;
   solicitudId: string;
 };
 
 function CancelacionesSection({
+  canCreateCancelaciones,
   canManageCancelaciones,
   isEditing,
   solicitudId,
@@ -534,7 +544,7 @@ function CancelacionesSection({
 
   return (
     <div className="space-y-2">
-      {canManageRows ? (
+      {canCreateCancelaciones ? (
         <div className="flex items-center justify-end">
           <Button onClick={handleAdd} size="sm" type="button" variant="outline">
             <Plus className="size-4" />
@@ -621,7 +631,7 @@ function CancelacionesSection({
           </tbody>
         </table>
       </div>
-      {canManageRows ? (
+      {canCreateCancelaciones || canManageRows ? (
         <NuevaCancelacionModal
           defaultValues={modalDefaultValues}
           onOpenChange={setIsModalOpen}
@@ -676,6 +686,7 @@ type EditableFieldProps = {
 };
 
 type EditableTextInputProps = {
+  inputMode?: "decimal";
   appearanceStyle?: CSSProperties;
   disabled?: boolean;
   highlightReadOnly?: boolean;
@@ -1001,6 +1012,7 @@ function EditableField({
 }
 
 function EditableTextInput({
+  inputMode,
   appearanceStyle,
   disabled = false,
   highlightReadOnly = false,
@@ -1024,6 +1036,7 @@ function EditableTextInput({
           onChange={(event) => onChange(event.target.value)}
           style={disabled ? appearanceStyle : undefined}
           type={type}
+          inputMode={inputMode}
           value={value}
         />
       }
@@ -1210,6 +1223,7 @@ function EditableMoneyInput({
       appearanceStyle={appearanceStyle}
       editor={
         <StaticMoneyInput
+          aria-label={label}
           disabled={disabled}
           onChange={onChange}
           style={disabled ? appearanceStyle : undefined}
@@ -1312,6 +1326,7 @@ function LineaField({
 }
 
 function SolicitudSection({
+  cuotaCalculoMensaje,
   assignmentOptions,
   assignmentValue,
   assignmentValueLabel,
@@ -1328,6 +1343,7 @@ function SolicitudSection({
   ultimaNovedad,
   values,
 }: {
+  cuotaCalculoMensaje?: string;
   assignmentOptions: StyledSelectOption[];
   assignmentValue: string;
   assignmentValueLabel: string;
@@ -1419,15 +1435,18 @@ function SolicitudSection({
           type="number"
           value={values.cuotas}
         />
-        <EditableTextInput
-          {...getReadonlyProps("solicitud.cuotaResultante")}
-          disabled={!isFieldEditableByKey("solicitud.cuotaResultante")}
-          isEditing={isEditing}
-          label="Cuota resultante"
-          onChange={(value) => onChange("cuotaResultante", value)}
-          readOnlyValue={formatText(solicitud.cuotaResultante)}
-          value={values.cuotaResultante}
-        />
+        <div>
+          <EditableMoneyInput
+            {...getReadonlyProps("solicitud.montoAFinanciar")}
+            disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+            isEditing={isEditing}
+            label="Cuota resultante"
+            onChange={value => onChange("cuotaResultante", value)}
+            readOnlyValue={values.cuotaResultante || "Cálculo no disponible"}
+            value={values.cuotaResultante}
+          />
+          {isEditing && cuotaCalculoMensaje ? <p role="status" className="mt-1 text-xs text-foreground-secondary">{cuotaCalculoMensaje}</p> : null}
+        </div>
         <EditableTextInput
           {...getReadonlyProps("solicitud.motivo")}
           disabled={!isFieldEditableByKey("solicitud.motivo")}
@@ -1502,14 +1521,7 @@ function SolicitudSection({
           label="Link firma digital"
           value={
             solicitud.linkFirmaDigital ? (
-              <a
-                className="break-all text-primary underline underline-offset-2"
-                href={solicitud.linkFirmaDigital}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {solicitud.linkFirmaDigital}
-              </a>
+              <LinkFirmaDigital url={solicitud.linkFirmaDigital} />
             ) : (
               "El link estará disponible al generar préstamo"
             )
@@ -2482,6 +2494,7 @@ function SolicitanteSection({
   canCreateAdjunto,
   canDeleteAdjunto,
   canDownloadAdjunto,
+  canCreateCancelaciones,
   canManageCancelaciones,
   datosPersonalesTab,
   datosLaborales,
@@ -2526,6 +2539,7 @@ function SolicitanteSection({
   canCreateAdjunto: boolean;
   canDeleteAdjunto: boolean;
   canDownloadAdjunto: boolean;
+  canCreateCancelaciones: boolean;
   canManageCancelaciones: boolean;
   datosPersonalesTab: DatosPersonalesTab;
   datosLaborales: SolicitudCoreDatosLaboralesResponse;
@@ -2682,6 +2696,7 @@ function SolicitanteSection({
         />
       ) : activeContentTab === "cancelaciones" ? (
         <CancelacionesSection
+          canCreateCancelaciones={canCreateCancelaciones}
           canManageCancelaciones={canManageCancelaciones}
           isEditing={isEditing}
           solicitudId={solicitudId}
@@ -2949,6 +2964,7 @@ function ErrorState({
 
 export function SolicitudesActualDetallePage() {
   const queryClient = useQueryClient();
+  const { closeSidebar } = useOutletContext<{ closeSidebar: () => void }>();
   const navigate = useNavigate();
   const params = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -2971,6 +2987,8 @@ export function SolicitudesActualDetallePage() {
   const canGuardarEvaluacion =
     currentUser?.isSystemAdmin === true ||
     (currentUser?.workflowOwner?.code === "RIESGO" &&
+      Boolean(currentUser.workflowOwnerId) &&
+      currentUser.workflowOwnerId === solicitud?.estadoActual.ownerId &&
       (solicitudCapabilities?.canEdit ?? false));
   const {
     data: adjuntos = [],
@@ -3047,7 +3065,13 @@ export function SolicitudesActualDetallePage() {
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
     useState<SolicitudDetailVistaTab>("solicitud");
+  const [reciboView, setReciboView] = useState<{ solicitudId: string; selectedId: string | null } | null>(null);
+  const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
+  const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
+  const [modoAnalisis, setModoAnalisis] = useState(true);
+  const analisisActivo = canViewCalculadora && vistaTab === "evaluacion" && modoAnalisis;
+
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
     // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
@@ -3063,9 +3087,14 @@ export function SolicitudesActualDetallePage() {
     }
 
     if (tab !== "evaluacion") {
+      setReciboView(null);
       setEvaluacionConCambios(false);
     }
 
+    if (tab === "evaluacion" && canViewCalculadora) {
+      closeSidebar();
+      if (vistaTab !== "evaluacion") setModoAnalisis(true);
+    }
     setVistaTab(tab);
     return true;
   }
@@ -3111,6 +3140,9 @@ export function SolicitudesActualDetallePage() {
   const canDeleteAdjuntos = solicitudCapabilities?.canDeleteAdjuntos ?? false;
   const canDownloadAdjuntos =
     solicitudCapabilities?.canDownloadAdjuntos ?? false;
+  const canCreateCancelaciones =
+    solicitudCapabilities?.canCreateCancelaciones ??
+    solicitudCapabilities?.canManageCancelaciones ?? false;
   const canManageCancelaciones =
     solicitudCapabilities?.canManageCancelaciones ?? false;
   const canManageAdjuntos = canUploadAdjuntos || canDeleteAdjuntos;
@@ -3205,6 +3237,21 @@ export function SolicitudesActualDetallePage() {
     return latestComment || PLACEHOLDER;
   }, [workflowHistory]);
 
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(null);
+  const condicionesEdicion = editableValues?.solicitud;
+  const lineaEdicion = lineasSimulador.find(linea => linea.oid === condicionesEdicion?.lineaPrestamoLegacyOid);
+  const cuotaEdicion = useCuotaCalculada({
+    ...(cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) > 0 ? { cuotaObjetivo: parseMoneyValue(cuotaObjetivoTexto) } : {}),
+    solicitudId, capitalPuro: false, lineaId: Number(condicionesEdicion?.lineaPrestamoLegacyOid),
+    montoAFinanciar: parseMoneyValue(cuotaObjetivoTexto !== null ? condicionesEdicion?.montoAFinanciar ?? "" : ajustarMontoTexto(condicionesEdicion?.montoAFinanciar ?? "", lineaEdicion)),
+    cuotas: Number(ajustarCuotasTexto(condicionesEdicion?.cuotas ?? "", lineaEdicion)),
+    ...(condicionesEdicion?.fechaPrimerVencimiento ? { fechaPrimerVencimiento: condicionesEdicion.fechaPrimerVencimiento } : {}),
+  }, Boolean(isEditing && (cuotaObjetivoTexto === null || parseMoneyValue(cuotaObjetivoTexto) > 0) && lineaEdicion && condicionesEdicion && Number(condicionesEdicion.cuotas) > 0 && parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0), result => {
+    if (parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !== result.montoAFinanciar || Number(condicionesEdicion?.cuotas) !== result.cuotas) void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) });
+    setEditableValues(current => current ? { ...current, solicitud: { ...current.solicitud,
+      montoAFinanciar: parseMoneyValue(current.solicitud.montoAFinanciar) === result.montoAFinanciar ? current.solicitud.montoAFinanciar : formatMoneyAmount(result.montoAFinanciar),
+      cuotas: String(result.cuotas) } } : current);
+  });
   if (!solicitudId) {
     return (
       <ErrorState
@@ -3281,11 +3328,16 @@ export function SolicitudesActualDetallePage() {
   );
 
   function handleStartEditing() {
+    setCuotaObjetivoTexto(null);
     if (!canEnterEditMode) {
       return;
     }
 
-    setEditableValues(mapSolicitudCoreToEditableValues(resolvedSolicitud));
+    const editValues = mapSolicitudCoreToEditableValues(resolvedSolicitud);
+    const linea = lineasSimulador.find(linea => linea.oid === editValues.solicitud.lineaPrestamoLegacyOid);
+    editValues.solicitud.montoAFinanciar = ajustarMontoTexto(editValues.solicitud.montoAFinanciar, linea);
+    editValues.solicitud.cuotas = ajustarCuotasTexto(editValues.solicitud.cuotas, linea);
+    setEditableValues(editValues);
     setEditableGarantias(null);
     setEditingGarantiaIndex(null);
     setGarantiasDirty(false);
@@ -3306,21 +3358,17 @@ export function SolicitudesActualDetallePage() {
     setIsEditing(false);
   }
 
-  function updateSolicitudField(
-    field: keyof EditableSolicitudCoreValues["solicitud"],
-    value: string,
-  ) {
-    setEditableValues((current) =>
-      current
-        ? {
-            ...current,
-            solicitud: {
-              ...current.solicitud,
-              [field]: value,
-            },
-          }
-        : current,
-    );
+  function updateSolicitudField(field: keyof EditableSolicitudCoreValues["solicitud"], value: string) {
+    if (field === "cuotaResultante") { setCuotaObjetivoTexto(value); return; }
+    if (["montoAFinanciar", "cuotas", "lineaPrestamoLegacyOid", "fechaPrimerVencimiento"].includes(field)) setCuotaObjetivoTexto(null);
+    setEditableValues(current => {
+      if (!current) return current;
+      const draft = { ...current.solicitud, [field]: value };
+      const linea = lineasSimulador.find(linea => linea.oid === draft.lineaPrestamoLegacyOid);
+      draft.montoAFinanciar = ajustarMontoTexto(draft.montoAFinanciar, linea);
+      draft.cuotas = ajustarCuotasTexto(draft.cuotas, linea);
+      return { ...current, solicitud: draft };
+    });
   }
 
   function updateSolicitudBooleanField(
@@ -3455,6 +3503,10 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handleSaveChanges() {
+    if (cuotaObjetivoTexto !== null && !cuotaEdicion.data) {
+      toast.error(cuotaEdicion.error?.message ?? "Esperá a que termine el cálculo de la cuota deseada.");
+      return;
+    }
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
 
@@ -3707,6 +3759,11 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handlePreviewAdjunto(adjunto: SolicitudCoreAdjuntoResponse) {
+    if (canViewCalculadora && adjunto.tipoAdjunto === "Recibo de Sueldo" && adjunto.solicitudId === solicitudId) {
+      if (!cambiarVistaTab("evaluacion")) return;
+      setReciboView({ solicitudId, selectedId: adjunto.id });
+      return;
+    }
     toast.dismiss(PREVIEW_ADJUNTO_ERROR_TOAST_ID);
     setPreviewingAdjuntoId(adjunto.id);
 
@@ -3983,6 +4040,7 @@ export function SolicitudesActualDetallePage() {
         canViewCalculadora ? "h-full" : "min-h-full"
       }`}
     >
+      <div id="solicitud-encabezado-completo" className={analisisActivo ? "hidden" : "contents"}>
       <header className="border-b border-border bg-surface px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex min-w-0 max-w-full items-center gap-2.5">
@@ -4061,6 +4119,7 @@ export function SolicitudesActualDetallePage() {
         isEditing={isEditing}
         isSaveDisabled={
           patchSolicitudCoreMutation.isPending ||
+          (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
           (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
         }
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
@@ -4123,6 +4182,15 @@ export function SolicitudesActualDetallePage() {
         }
       />
 
+      </div>
+      {analisisActivo ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-sm">
+          <Button aria-label="Volver al listado" onClick={() => navigate(originPath)} size="icon-sm" variant="ghost" type="button"><ArrowLeft className="size-4" /></Button>
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold"><span className="sr-only">Evaluación de </span>{[resolvedSolicitud.titular.nombre, resolvedSolicitud.titular.apellidoDenominacion].filter(Boolean).join(" ") || "Detalle de Solicitud"}</h1>
+          <Badge dot variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}>{formatText(resolvedSolicitud.estadoActual.code || resolvedSolicitud.estadoActual.name)}</Badge>
+        </div>
+      ) : null}
+
       <SolicitudWorkflowActionDialog
         errorMessage={workflowTransitionErrorMessage}
         isSubmitting={executeWorkflowTransitionMutation.isPending}
@@ -4139,7 +4207,7 @@ export function SolicitudesActualDetallePage() {
 
       {canViewCalculadora ? (
         <div className="border-b border-border bg-surface px-3 md:px-4">
-          <div className="flex gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
               const isActive = tab.value === vistaTab;
 
@@ -4158,6 +4226,25 @@ export function SolicitudesActualDetallePage() {
                 </button>
               );
             })}
+            {vistaTab === "evaluacion" ? (
+              <Button
+                className="ml-auto my-1"
+                aria-pressed={analisisActivo}
+                aria-expanded={!analisisActivo}
+                aria-controls="solicitud-encabezado-completo"
+                title={analisisActivo ? "Mostrar el encabezado completo" : "Plegar el encabezado para ampliar Evaluación"}
+                onClick={() => {
+                  if (!modoAnalisis) closeSidebar();
+                  setModoAnalisis(value => !value);
+                }}
+                size="sm"
+                type="button"
+                variant={analisisActivo ? "default" : "outline"}
+              >
+                {analisisActivo ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                Modo análisis
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -4179,7 +4266,7 @@ export function SolicitudesActualDetallePage() {
                 Cancelar
               </Button>
               <Button
-                disabled={patchSolicitudCoreMutation.isPending}
+                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data)}
                 onClick={() => void handleSaveChanges()}
                 type="button"
               >
@@ -4189,6 +4276,7 @@ export function SolicitudesActualDetallePage() {
             </div>
           ) : null}
           <SolicitudSection
+            cuotaCalculoMensaje={cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) <= 0 ? "Ingresá una cuota mayor a cero." : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error?.message}
             assignmentOptions={assignmentAgentOptions}
             assignmentValue={selectedAssignmentValue}
             assignmentValueLabel={assignmentValueLabel}
@@ -4203,21 +4291,17 @@ export function SolicitudesActualDetallePage() {
             readonlyAppearanceStyle={readonlyAppearanceStyle}
             solicitud={resolvedSolicitud}
             ultimaNovedad={ultimaNovedad}
-            values={currentValues.solicitud}
+            values={{ ...currentValues.solicitud, montoAFinanciar: cuotaObjetivoTexto !== null ? currentValues.solicitud.montoAFinanciar : ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaObjetivoTexto ?? "" : currentValues.solicitud.cuotaResultante }}
           />
-          {solicitanteTab === "adjuntos" && !isEditing && canEnterEditMode && canManageAdjuntos ? (
-            <p className="px-4 text-sm text-foreground-secondary">
-              Podés consultar los archivos guardados. Para agregar o eliminar adjuntos, seleccioná «Editar» en la barra de acciones.
-            </p>
-          ) : null}
           <SolicitanteSection
             key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
             activeTab={solicitanteTab}
             adjuntos={adjuntos}
             canCreateAdicional={isEditing && canUploadAdjuntos}
-            canCreateAdjunto={isEditing && canUploadAdjuntos}
+            canCreateAdjunto={canUploadAdjuntos}
             canDeleteAdjunto={isEditing && canDeleteAdjuntos}
             canDownloadAdjunto={canDownloadAdjuntos}
+            canCreateCancelaciones={canCreateCancelaciones}
             canManageCancelaciones={canManageCancelaciones}
             datosLaborales={resolvedSolicitud.datosLaborales}
             datosPersonalesTab={datosPersonalesTab}
@@ -4240,7 +4324,7 @@ export function SolicitudesActualDetallePage() {
             onDatosPersonalesTabChange={setDatosPersonalesTab}
             onDeleteAdjunto={handleDeleteAdjunto}
             onDownloadAdjunto={handleDownloadAdjunto}
-            onEditAdjunto={handleOpenEditAdjunto}
+            onEditAdjunto={isEditing && canDeleteAdjuntos ? handleOpenEditAdjunto : undefined}
             onGarantiaCreate={handleGarantiaCreate}
             onNewAdjuntosLote={handleAddAdjuntosLote}
             onPreviewAdjunto={handlePreviewAdjunto}
@@ -4278,20 +4362,27 @@ export function SolicitudesActualDetallePage() {
       ) : null}
 
       {canViewCalculadora && vistaTab === "evaluacion" ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <Suspense
-            fallback={
-              <SolicitudesContentLoader label="Cargando calculadora..." />
-            }
-          >
+        <EvaluacionRecibosView
+          key={solicitudId}
+          solicitudId={solicitudId}
+          recibos={recibos}
+          open={visorRecibosOpen}
+          selectedId={visorRecibosOpen ? reciboView.selectedId : null}
+          onOpen={() => setReciboView({ solicitudId, selectedId: recibos[0]?.id ?? null })}
+          onClose={() => setReciboView(null)}
+          onSelect={selectedId => setReciboView({ solicitudId, selectedId })}
+          loading={isLoadingAdjuntos}
+          error={adjuntosError ? "No se pudo obtener el listado de recibos de sueldo." : null}
+        >
+          <Suspense fallback={<SolicitudesContentLoader label="Cargando calculadora..." />}>
             <CalculadoraMutualSheet
-              className="flex-1"
+              className="flex-1 min-w-0"
               onCambiosSinGuardarChange={setEvaluacionConCambios}
               puedeGuardar={canGuardarEvaluacion}
               source={{ kind: "embedded", solicitudId }}
             />
           </Suspense>
-        </div>
+        </EvaluacionRecibosView>
       ) : null}
 
       <NuevaGarantiaModal
@@ -4320,6 +4411,8 @@ export function SolicitudesActualDetallePage() {
           fallback={<ModalLoadingOverlay label="Cargando simulador..." />}
         >
           <SimuladorPrestamoModal
+            solicitudId={solicitudId}
+            onLimitsAdjusted={() => { void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) }); }}
             defaultLineaOid={
               resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
             }
@@ -4335,6 +4428,7 @@ export function SolicitudesActualDetallePage() {
                       handleStartEditing();
                     }
 
+                    setCuotaObjetivoTexto(null);
                     setEditableValues((current) => {
                       const base =
                         current ??

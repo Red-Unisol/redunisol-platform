@@ -1,3 +1,4 @@
+import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import type { ChangeSolicitudStateInput } from "../dtos/ChangeSolicitudState.dto";
 import { AnnotateSolicitudTransitionsBlockedReason } from "../services/AnnotateSolicitudTransitionsBlockedReason";
 import { EnsureSolicitudHasPrestamoLegacy } from "../services/EnsureSolicitudHasPrestamoLegacy";
@@ -10,6 +11,7 @@ import type { SocioRepository } from "../../../socios/domain/repositories/SocioR
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 
 type Dependencies = {
+  archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   adjuntoRepository: SolicitudAdjuntoRepository;
   engine: SolicitudWorkflowEngine;
   now: () => Date;
@@ -23,6 +25,7 @@ type Dependencies = {
 const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
 
 export class ChangeSolicitudStateUseCase {
+  private readonly archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   private readonly annotateSolicitudTransitionsBlockedReason: AnnotateSolicitudTransitionsBlockedReason;
   private readonly ensureSolicitudHasReciboSueldoAdjunto: EnsureSolicitudHasReciboSueldoAdjunto;
   private readonly ensureSolicitudHasPrestamoLegacy: EnsureSolicitudHasPrestamoLegacy;
@@ -33,6 +36,7 @@ export class ChangeSolicitudStateUseCase {
   private readonly solicitudesRepository: SolicitudesCoreRepository;
 
   constructor(dependencies: Dependencies) {
+    this.archivarEvaluacion = dependencies.archivarEvaluacion;
     this.solicitudesRepository = dependencies.solicitudesRepository;
     this.annotateSolicitudTransitionsBlockedReason =
       new AnnotateSolicitudTransitionsBlockedReason({
@@ -108,7 +112,9 @@ export class ChangeSolicitudStateUseCase {
       workflowOwnerId: input.currentUser.workflowOwnerId,
       ...(workflowOwnerCode ? { workflowOwnerCode } : {}),
       ...(input.currentUser.isSystemAdmin ? { isSystemAdmin: true } : {}),
-    });
+    }, input.actionCode === "liquidar" && this.archivarEvaluacion
+      ? () => this.archivarEvaluacion!.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "liquidacion"})
+      : undefined);
 
     return {
       ...result,

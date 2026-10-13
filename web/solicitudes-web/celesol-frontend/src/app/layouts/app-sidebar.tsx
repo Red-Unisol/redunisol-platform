@@ -15,7 +15,7 @@ import {
 import { NavLink } from "react-router-dom";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
-import { canManageUsers } from "@/modules/auth/utils/auth-user";
+import { canCreateSolicitud, canManageUsers } from "@/modules/auth/utils/auth-user";
 import { Input } from "@/shared/components/ui/input";
 
 type SidebarGroup = {
@@ -107,8 +107,14 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
   const sessionQuery = useAuthSessionQuery();
   const user = sessionQuery.data;
   const [searchTerm, setSearchTerm] = useState("");
-  const sidebarGroups = [
-    ...SIDEBAR_GROUPS,
+  const sidebarGroups: SidebarGroup[] = [
+    ...SIDEBAR_GROUPS.map(group => ({
+      ...group,
+      sections: group.sections?.map(section => ({
+        ...section,
+        items: section.items.filter(item => item.to !== "/solicitudes/core/precarga" || canCreateSolicitud(user)),
+      })),
+    })),
     ...(canManageUsers(user)
       ? [
           {

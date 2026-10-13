@@ -1,3 +1,4 @@
+import { CalculoConValoresEfectivosError } from "../domain/solicitudes-core-errors";
 import type { GetRevisionPrestamoUseCase } from "../application/use-cases/GetRevisionPrestamo.use-case";
 import type { ListSolicitudesDelTitularUseCase } from "../application/use-cases/ListSolicitudesDelTitular.use-case";
 import type { NextFunction, Request, Response } from "express";
@@ -722,7 +723,10 @@ export class SolicitudesCoreController {
         simularPrestamoBodySchema,
         req.body,
       );
+      const solicitudId = req.params.id ? this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params).id : undefined;
       const simulacion = await this.simularPrestamoUseCase.execute({
+        solicitudId,
+        cuotaObjetivo: body.cuotaObjetivo,
         capitalPuro: body.capitalPuro ?? false,
         cuotas: body.cuotas,
         fechaPrimerVencimiento: body.fechaPrimerVencimiento,
@@ -734,6 +738,10 @@ export class SolicitudesCoreController {
 
       res.status(200).json(simulacion);
     } catch (error) {
+      if (error instanceof CalculoConValoresEfectivosError) {
+        res.status(error.statusCode).json({ error: { code: "CALCULO_CON_VALORES_EFECTIVOS", message: error.message }, effectiveValues: error.effectiveValues });
+        return;
+      }
       next(error);
     }
   };

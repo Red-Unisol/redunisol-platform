@@ -1,3 +1,8 @@
+import { calcularMontoPorCuota } from "../services/CalcularMontoPorCuota";
+import { CalculoConValoresEfectivosError } from "../../domain/solicitudes-core-errors";
+import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
+import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
+import { SolicitudCoreNotFoundError } from "../../domain/solicitudes-core-errors";
 import type {
   PrestamosSimulacionGateway,
   SimulacionPrestamo,
@@ -6,6 +11,8 @@ import { LegacyLineaPrestamoUnavailableError } from "../../domain/solicitudes-co
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 
 export type SimularPrestamoUseCaseInput = {
+  solicitudId?: string;
+  cuotaObjetivo?: number;
   capitalPuro: boolean;
   cuotas: number;
   fechaPrimerVencimiento?: string;
@@ -16,36 +23,91 @@ export type SimularPrestamoUseCaseInput = {
 };
 
 type Dependencies = {
+  repository: Pick<
+    SolicitudesCoreRepository,
+    "findById" | "findVendedorLegacyUser"
+  >;
   gateway: PrestamosSimulacionGateway;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
 };
 
 export class SimularPrestamoUseCase {
+  private readonly repository: Dependencies["repository"];
   private readonly gateway: PrestamosSimulacionGateway;
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
 
   constructor(dependencies: Dependencies) {
+    this.repository = dependencies.repository;
     this.gateway = dependencies.gateway;
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
   }
 
-  async execute(input: SimularPrestamoUseCaseInput): Promise<SimulacionPrestamo> {
-    const lineaPrestamo = await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
-      input.legacyUser,
-      String(input.lineaId),
-    );
+  async execute(
+    input: SimularPrestamoUseCaseInput,
+  ): Promise<SimulacionPrestamo> {
+    let legacyUser = input.legacyUser;
+    if (input.solicitudId) {
+      const solicitud = await this.repository.findById(input.solicitudId);
+      if (!solicitud) throw new SolicitudCoreNotFoundError();
+      const vendedor = await this.repository.findVendedorLegacyUser?.(
+        solicitud.id,
+      );
+      if (!vendedor) throw new LegacyLineaPrestamoUnavailableError();
+      legacyUser = vendedor;
+    }
+    const lineaPrestamo =
+      await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
+        legacyUser,
+        String(input.lineaId),
+      );
 
     if (!lineaPrestamo || !lineaPrestamo.vigente) {
       throw new LegacyLineaPrestamoUnavailableError();
     }
 
-    return this.gateway.simular({
-      capitalPuro: input.capitalPuro,
-      cuotas: input.cuotas,
-      fechaPrimerVencimiento: input.fechaPrimerVencimiento,
-      lineaId: input.lineaId,
-      montoAFinanciar: input.montoAFinanciar,
-      tasa: input.tasa,
-    });
+    const efectivos = ajustarMaximosLinea(lineaPrestamo, input);
+    const simular = async (montoAFinanciar: number) => {
+      let result: SimulacionPrestamo;
+      try {
+        result = await this.gateway.simular({
+          capitalPuro: input.capitalPuro,
+          cuotas: efectivos.cuotas as number,
+          fechaPrimerVencimiento: input.fechaPrimerVencimiento,
+          lineaId: input.lineaId,
+          montoAFinanciar,
+          tasa: input.tasa,
+        });
+      } catch (error) {
+        const domainError = error as { message?: string; statusCode?: number };
+        throw new CalculoConValoresEfectivosError(
+          efectivos as { montoAFinanciar: number; cuotas: number },
+          domainError.statusCode
+            ? domainError.message
+            : "No se pudo obtener el cálculo del legacy.",
+          domainError.statusCode ?? 503,
+        );
+      }
+      if (
+        !Number.isFinite(result.cuotaResultante) ||
+        result.cuotas !== efectivos.cuotas ||
+        result.montoAFinanciar !== montoAFinanciar ||
+        result.lineaId !== input.lineaId
+      ) {
+        throw new CalculoConValoresEfectivosError(
+          efectivos as { montoAFinanciar: number; cuotas: number },
+        );
+      }
+      return result;
+    };
+    if (input.cuotaObjetivo !== undefined) {
+      return calcularMontoPorCuota({
+        cuotaObjetivo: input.cuotaObjetivo,
+        montoMinimo: Math.max(0.01, lineaPrestamo.montoMinimo ?? 0.01),
+        montoMaximo: lineaPrestamo.montoMaximo as number,
+        simular,
+      });
+    }
+    const result = await simular(efectivos.montoAFinanciar as number);
+    return result;
   }
 }

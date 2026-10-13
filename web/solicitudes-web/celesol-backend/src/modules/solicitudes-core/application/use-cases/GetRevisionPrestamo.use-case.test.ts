@@ -14,11 +14,14 @@ function setup(
     calculoError?: boolean;
     socioError?: boolean;
     monto?: number | null;
+    cuotas?: number;
   } = {},
 ) {
   const calls: unknown[] = [];
   const useCase = new GetRevisionPrestamoUseCase({
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "2519", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
     repository: {
+      findVendedorLegacyUser: async () => "SELLER",
       findById: async () =>
         options.missing
           ? null
@@ -31,7 +34,7 @@ function setup(
               estadoActual: { ownerId: options.owner ?? "riesgo" },
               lineaPrestamoLegacyOid: "2519",
               lineaPrestamoDescripcion: "Línea de prueba",
-              cuotas: 6,
+              cuotas: options.cuotas ?? 6,
               montoAFinanciar:
                 options.monto === undefined ? 10000 : options.monto,
               fechaPrimerVencimiento: "2040-12-31",
@@ -120,4 +123,14 @@ it("preserves missing socio and missing conditions without making up a calculati
   assert.deepEqual(result.titular, { nombreCompleto: null, nroSocio: null });
   assert.equal(result.calculo, null);
   assert.equal(calls.length, 1);
+});
+
+it("preserves current seller line maxima in the updated preview", async () => {
+  const { useCase, calls } = setup({ monto: 20000000, cuotas: 72 });
+  const result = await useCase.execute(input);
+  assert.equal(result.condiciones.montoAFinanciar, 10000000);
+  assert.equal(result.condiciones.cuotas, 48);
+  assert.deepEqual(calls[1], {
+    capitalPuro: false, lineaId: 2519, montoAFinanciar: 10000000, cuotas: 48,
+  });
 });

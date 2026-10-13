@@ -11,7 +11,6 @@ import { UniverSheetsDrawingPreset } from "@univerjs/preset-sheets-drawing";
 import UniverPresetSheetsDrawingEsES from "@univerjs/preset-sheets-drawing/locales/es-ES";
 import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
 import type { FUniver, IWorkbookData, Univer } from "@univerjs/presets";
-import LuckyExcel from "@zwight/luckyexcel";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/shared/components/ui/button";
@@ -27,6 +26,7 @@ import {
   resolveCalculadoraSheetZoom,
   resolveInitialCalculadoraSheetName,
 } from "../pages/calculadora-riesgo-view-config";
+import { instalarPegadoNumerico } from "../utils/calculadora-pegado-numerico";
 import { stripLuckyExcelSpuriousBorders } from "../pages/calculadora-riesgo-workbook-fixes";
 import {
   getCalculadoraMutualDatos,
@@ -80,6 +80,9 @@ export function CalculadoraMutualSheet({
 }: CalculadoraMutualSheetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const workbookRef = useRef<FWorkbook | null>(null);
+  const datosInicialesRef = useRef<ReturnType<
+    typeof getCalculadoraMutualDatosByCoreId
+  > | null>(null);
   const univerApiRef = useRef<FUniver | null>(null);
   const cambiosListenerRef = useRef<{ dispose: () => void } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -116,9 +119,17 @@ export function CalculadoraMutualSheet({
     let isMounted = true;
     let univerInstance: Univer | null = null;
     let objectUrl: string | null = null;
+    let disposePegado: (() => void) | undefined;
 
     async function load() {
       try {
+        if (source.kind === "embedded") {
+          const datos = getCalculadoraMutualDatosByCoreId(source.solicitudId);
+          // La consulta corre durante la carga del libro. Su error se muestra
+          // en hydrate; este handler evita un rechazo sin manejar antes de montar.
+          void datos.catch(() => undefined);
+          datosInicialesRef.current = datos;
+        }
         // Si la solicitud ya tiene una evaluacion guardada se abre esa, con lo
         // que cargo Riesgo; si no, la plantilla. Si no se puede leer la
         // guardada no se abre la plantilla: guardarla pisaria la anterior.
@@ -127,24 +138,14 @@ export function CalculadoraMutualSheet({
             ? await getEvaluacionRiesgo(source.solicitudId)
             : null;
 
-        if (isMounted && guardada) {
+        if (!isMounted) return;
+        if (guardada) {
           setEvaluacionGuardada({
             guardadaEn: guardada.guardadaEn,
             guardadaPor: guardada.guardadaPor,
             nivelRiesgo: guardada.nivelRiesgo,
           });
         }
-
-        const blob = await getCalculadoraRiesgoFile();
-        objectUrl = URL.createObjectURL(blob);
-
-        if (isMounted) {
-          setDownloadUrl(objectUrl);
-        }
-
-        const file = new File([blob], "CALCULADORA MUTUAL.xlsx", {
-          type: blob.type,
-        });
 
         const montar = (workbookData: IWorkbookData) => {
           if (!isMounted || !containerRef.current) {
@@ -188,6 +189,7 @@ export function CalculadoraMutualSheet({
 
           univerInstance = univer;
           univerAPI.createWorkbook(workbookData);
+          disposePegado = instalarPegadoNumerico(univer, univerAPI);
 
           const workbook = univerAPI.getActiveWorkbook();
           workbookRef.current = workbook ?? null;
@@ -228,6 +230,21 @@ export function CalculadoraMutualSheet({
           return;
         }
 
+        const [blob, { default: LuckyExcel }] = await Promise.all([
+          getCalculadoraRiesgoFile(),
+          import("@zwight/luckyexcel"),
+        ]);
+        if (!isMounted) return;
+        objectUrl = URL.createObjectURL(blob);
+
+        if (isMounted) {
+          setDownloadUrl(objectUrl);
+        }
+
+        const file = new File([blob], "CALCULADORA MUTUAL.xlsx", {
+          type: blob.type,
+        });
+
         LuckyExcel.transformExcelToUniver(
           file,
           (workbookData: IWorkbookData) =>
@@ -267,6 +284,7 @@ export function CalculadoraMutualSheet({
 
     return () => {
       isMounted = false;
+      disposePegado?.();
       workbookRef.current = null;
       univerApiRef.current = null;
       cambiosListenerRef.current?.dispose();
@@ -386,7 +404,11 @@ export function CalculadoraMutualSheet({
       return;
     }
 
-    void hydrate(() => getCalculadoraMutualDatosByCoreId(source.solicitudId));
+    void hydrate(
+      () =>
+        datosInicialesRef.current ??
+        getCalculadoraMutualDatosByCoreId(source.solicitudId),
+    );
     // Solo se auto-hidrata una vez, cuando la planilla termina de cargar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, errorMessage, source.kind]);

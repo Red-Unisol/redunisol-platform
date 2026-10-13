@@ -11,6 +11,7 @@ export class SociosRoutes {
     router.get("/lookup", controller.lookup);
     router.get("/check-cuit", controller.checkCuit);
     router.get("/check-documento", controller.checkDocumento);
+    router.get("/localidades", controller.localidades);
     router.get("/", controller.list);
     router.get("/:id", controller.getById);
     router.patch("/:id", controller.update);

@@ -147,6 +147,7 @@ export type SolicitudCoreCapabilitiesResponse = {
   canUploadAdjuntos: boolean;
   canDeleteAdjuntos: boolean;
   canDownloadAdjuntos: boolean;
+  canCreateCancelaciones?: boolean;
   canManageCancelaciones: boolean;
   canChangeState: boolean;
   canViewHistory: boolean;
@@ -540,6 +541,8 @@ export type TipoAdjuntoCatalogItem = {
 };
 
 export type SimularPrestamoRequest = {
+  cuotaObjetivo?: number;
+  solicitudId?: string;
   capitalPuro: boolean;
   cuotas: number;
   fechaPrimerVencimiento?: string;

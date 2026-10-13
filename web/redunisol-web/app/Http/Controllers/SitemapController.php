@@ -20,8 +20,8 @@ class SitemapController extends Controller
         // Add Pages
         $pages = Page::where('index', true)->get();
         foreach ($pages as $page) {
-            // Skip finalizar.php
-            if ($page->slug === '/finalizar.php' || app(ManagedRedirects::class)->targetFor(parse_url(config('app.url'), PHP_URL_HOST), $page->slug) !== null) {
+            // Internal pages must stay out even when marked indexable in the CMS.
+            if (in_array('/'.trim($page->slug, '/'), ['/finalizar.php', '/dashboard'], true) || app(ManagedRedirects::class)->targetFor(parse_url(config('app.url'), PHP_URL_HOST), $page->slug) !== null) {
                 continue;
             }
 
@@ -41,7 +41,6 @@ class SitemapController extends Controller
         // Add static routes
         $staticRoutes = [
             ['url' => config('app.url'), 'priority' => '1.0', 'changefreq' => 'daily'],
-            ['url' => config('app.url').'/dashboard', 'priority' => '0.5', 'changefreq' => 'weekly'],
         ];
 
         foreach ($staticRoutes as $route) {

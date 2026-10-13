@@ -12,6 +12,19 @@ import {
 import { GetSolicitudByIdUseCase } from "./GetSolicitudById.use-case";
 
 describe("GetSolicitudByIdUseCase", () => {
+  it("expone Editar para Riesgo en Vendedores conservando el catálogo de campos", async () => {
+    const repository = repositoryReturning({ estadoActual: { id: "state-1", code: "PreAprobada", name: "PreAprobada", ownerId: "vendedores", owner: { id: "vendedores", code: "VENDEDORES", name: "Vendedores" } } });
+    repository.findWorkflowOwnerCodeById = async () => "RIESGO";
+    const useCase = new GetSolicitudByIdUseCase({ repository, fieldAccessRulesRepository: buildFieldAccessRulesRepository({
+      findByWorkflowStateId: async workflowStateId => ({ workflowStateId, active: true, defaultMode: "readonly", editableFields: ["solicitud.observaciones"], editableGroups: [], readonlyReason: null, canManageAttachments: true, backgroundColor: null, textColor: null }),
+    }) });
+    const result = await useCase.execute({ id: "sol-1", currentUser: { id: "risk", workflowOwnerId: "riesgo" } });
+    assert.equal(result.capabilities.canEdit, true);
+    assert.equal(result.capabilities.canChangeState, false);
+    assert.equal(result.capabilities.canUploadAdjuntos, true);
+    assert.deepEqual(result.capabilities.fieldAccess.editableFields, ["solicitud.observaciones"]);
+  });
+
   it("returns the solicitud when it belongs to the authenticated creator", async () => {
     const repository: SolicitudesCoreRepository = {
       create: async () => {
@@ -295,7 +308,7 @@ describe("GetSolicitudByIdUseCase", () => {
     assert.equal(solicitud.capabilities?.canEdit, false);
     assert.equal(solicitud.capabilities?.fieldAccess?.defaultMode, "readonly");
     assert.deepEqual(solicitud.capabilities?.fieldAccess?.editableFields, [
-      ...EDITABLE_FIELDS,
+      ...EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
     ]);
   });
 
@@ -387,7 +400,7 @@ describe("GetSolicitudByIdUseCase", () => {
 
     assert.deepEqual(solicitud.capabilities?.fieldAccess, {
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...EDITABLE_GROUPS, ...LEGACY_EDITABLE_GROUPS],
     });
     assert.deepEqual(solicitud.appearance, {
@@ -532,7 +545,7 @@ function buildFieldAccessRulesRepository(overrides?: {
             backgroundColor: "#FF7F7F",
             canManageAttachments: true,
             defaultMode: "readonly",
-            editableFields: [...EDITABLE_FIELDS],
+            editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
             editableGroups: ["garantias"],
             readonlyReason: null,
             textColor: "#000000",

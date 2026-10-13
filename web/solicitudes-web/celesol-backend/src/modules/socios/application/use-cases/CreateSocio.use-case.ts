@@ -36,9 +36,9 @@ export class CreateSocioUseCase {
 
     const domicilio = {
       calle: input.domicilioCalle,
-      codigoPostal: input.domicilioCodigoPostal,
+      codigoPostal: input.domicilioCodigoPostal ?? null,
       localidad: input.domicilioLocalidad,
-      nroPuerta: input.domicilioNroPuerta,
+      nroPuerta: input.domicilioNroPuerta ?? null,
     };
 
     if (input.tipoPersona === "FISICA") {
@@ -69,9 +69,9 @@ export class CreateSocioUseCase {
         celular: input.celular ?? null,
         cuit,
         domicilioCalle: input.domicilioCalle,
-        domicilioCodigoPostal: input.domicilioCodigoPostal,
+        domicilioCodigoPostal: input.domicilioCodigoPostal ?? null,
         domicilioLocalidad: input.domicilioLocalidad,
-        domicilioNroPuerta: input.domicilioNroPuerta,
+        domicilioNroPuerta: input.domicilioNroPuerta ?? null,
         email: input.email ?? null,
         fechaDeNacimiento: parseCivilDate(input.fechaDeNacimiento),
         nombre: input.nombre,
@@ -98,9 +98,9 @@ export class CreateSocioUseCase {
       celular: input.celular ?? null,
       cuit,
       domicilioCalle: input.domicilioCalle,
-      domicilioCodigoPostal: input.domicilioCodigoPostal,
+      domicilioCodigoPostal: input.domicilioCodigoPostal ?? null,
       domicilioLocalidad: input.domicilioLocalidad,
-      domicilioNroPuerta: input.domicilioNroPuerta,
+      domicilioNroPuerta: input.domicilioNroPuerta ?? null,
       email: input.email ?? null,
       fechaDeNacimiento: null,
       nombre: null,

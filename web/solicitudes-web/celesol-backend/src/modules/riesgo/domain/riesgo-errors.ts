@@ -97,3 +97,14 @@ export class InvalidEvaluacionRequestError extends RiesgoError {
     this.name = "InvalidEvaluacionRequestError";
   }
 }
+
+export class EvaluacionArchivoUnavailableError extends RiesgoError {
+  constructor() {
+    super(
+      "No se pudo adjuntar el Excel de la evaluación guardada. La operación no se ejecutó; intentá nuevamente.",
+      "EVALUACION_ARCHIVO_UNAVAILABLE",
+      503,
+    );
+    this.name = "EvaluacionArchivoUnavailableError";
+  }
+}

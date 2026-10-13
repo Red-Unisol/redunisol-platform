@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AdjuntosObjectStorage } from "../../../solicitudes-core/adjuntos/domain/services/AdjuntosObjectStorage";
 import {
   canEditSolicitud,
@@ -31,8 +32,8 @@ export type GuardarEvaluacionRiesgoUseCaseInput = {
  * Guarda la planilla de la pestaña Evaluacion. Solo se conserva la ultima,
  * como el Evaluacion1.xlsx del legado.
  *
- * La guarda Riesgo mientras la solicitud esta a su cargo (mismo criterio que
- * editar los datos de la solicitud), o un admin.
+ * La guarda Riesgo mientras la solicitud esta a su cargo, o un admin.
+ * La excepción para editar datos en Vendedores no amplía este permiso.
  */
 export class GuardarEvaluacionRiesgoUseCase {
   constructor(private readonly dependencies: Dependencies) {}
@@ -49,13 +50,15 @@ export class GuardarEvaluacionRiesgoUseCase {
 
     const esRiesgoACargo =
       input.currentUser.workflowOwnerCode === "RIESGO" &&
+      Boolean(input.currentUser.workflowOwnerId) &&
+      input.currentUser.workflowOwnerId === estadoActual.ownerId &&
       canEditSolicitud(input.currentUser, { estadoActual }, "EDIT_DATA");
 
     if (!input.currentUser.isSystemAdmin && !esRiesgoACargo) {
       throw new ForbiddenGuardarEvaluacionError();
     }
 
-    const storageKey = `evaluaciones/${input.solicitudId}.json`;
+    const storageKey = `evaluaciones/${input.solicitudId}/${randomUUID()}.json`;
 
     try {
       await this.dependencies.objectStorage.uploadObject({

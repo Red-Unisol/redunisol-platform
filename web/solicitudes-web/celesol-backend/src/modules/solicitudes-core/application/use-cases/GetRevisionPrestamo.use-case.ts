@@ -1,3 +1,6 @@
+import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
+import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
+import { LegacyLineaPrestamoUnavailableError } from "../../domain/solicitudes-core-errors";
 import type { CreatePrestamoLegacyInput } from "../dtos/CreatePrestamoLegacy.dto";
 import { FindSolicitudTitularSocio } from "../services/FindSolicitudTitularSocio";
 import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
@@ -9,7 +12,11 @@ import {
 } from "../../domain/solicitudes-core-errors";
 
 type Dependencies = {
-  repository: Pick<SolicitudesCoreRepository, "findById">;
+  lineasPrestamoCatalog: LineasPrestamoCatalog;
+  repository: Pick<
+    SolicitudesCoreRepository,
+    "findById" | "findVendedorLegacyUser"
+  >;
   sociosRepository: SocioRepository;
   gateway: Pick<PrestamosSimulacionGateway, "simularRevision">;
 };
@@ -50,10 +57,20 @@ export class GetRevisionPrestamoUseCase {
     } catch {
       errorTitular = "No se pudo consultar el socio para la generación.";
     }
+    const vendedor = await repository.findVendedorLegacyUser?.(solicitud.id);
+    if (!vendedor) throw new LegacyLineaPrestamoUnavailableError();
+    const limites =
+      await this.dependencies.lineasPrestamoCatalog.findByLegacyUserAndOid(
+        vendedor,
+        solicitud.lineaPrestamoLegacyOid,
+      );
+    if (!limites || !limites.vigente)
+      throw new LegacyLineaPrestamoUnavailableError();
+    const efectivos = ajustarMaximosLinea(limites, solicitud);
     const condiciones = {
       lineaDescripcion: solicitud.lineaPrestamoDescripcion,
-      montoAFinanciar: solicitud.montoAFinanciar,
-      cuotas: solicitud.cuotas,
+      montoAFinanciar: efectivos.montoAFinanciar as number,
+      cuotas: efectivos.cuotas,
     };
     if (solicitud.montoAFinanciar === null || solicitud.cuotas === null) {
       return {
@@ -81,8 +98,8 @@ export class GetRevisionPrestamoUseCase {
       const calculo = await gateway.simularRevision({
         capitalPuro: false,
         lineaId: oid,
-        montoAFinanciar: solicitud.montoAFinanciar,
-        cuotas: solicitud.cuotas,
+        montoAFinanciar: efectivos.montoAFinanciar as number,
+        cuotas: efectivos.cuotas as number,
         // La fecha y tasa de la solicitud/línea se muestran, pero no se imponen.
       });
       return {

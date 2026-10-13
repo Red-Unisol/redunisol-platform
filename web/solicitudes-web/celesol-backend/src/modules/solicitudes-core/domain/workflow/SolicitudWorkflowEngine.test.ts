@@ -79,10 +79,14 @@ describe("SolicitudWorkflowEngine", () => {
       transitionPolicy: new PolicySpy(),
     });
 
-    const result = await engine.execute(command);
+    const result = await engine.execute(command, async () => {calls.push("archive");});
 
     assert.equal(result, executionResult);
-    assert.deepEqual(calls, ["policy", "builder", "executor", "decorator"]);
+    assert.deepEqual(calls, ["policy", "builder", "archive", "executor", "decorator"]);
+    calls.length = 0;
+    await assert.rejects(() => engine.execute(command, async () => {calls.push("archive-failed"); throw new Error("archivo falló");}), /archivo falló/);
+    assert.deepEqual(calls, ["policy", "builder", "archive-failed"]);
+
   });
 
   it("stops execution when policy validation fails", async () => {
