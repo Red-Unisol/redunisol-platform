@@ -61,6 +61,7 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
 }
 
 export function StaticMoneyInput({
+  "aria-label": ariaLabel,
   className,
   defaultValue = "",
   disabled = false,
@@ -68,6 +69,7 @@ export function StaticMoneyInput({
   style,
   value: controlledValue,
 }: {
+  "aria-label"?: string;
   className?: string;
   defaultValue?: string;
   disabled?: boolean;
@@ -82,6 +84,7 @@ export function StaticMoneyInput({
 
   return (
     <Input
+      aria-label={ariaLabel}
       className={className}
       disabled={disabled}
       inputMode="decimal"

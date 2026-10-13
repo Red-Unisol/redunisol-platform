@@ -1219,6 +1219,7 @@ function EditableMoneyInput({
       appearanceStyle={appearanceStyle}
       editor={
         <StaticMoneyInput
+          aria-label={label}
           disabled={disabled}
           onChange={onChange}
           style={disabled ? appearanceStyle : undefined}
@@ -1321,6 +1322,7 @@ function LineaField({
 }
 
 function SolicitudSection({
+  cuotaCalculoMensaje,
   assignmentOptions,
   assignmentValue,
   assignmentValueLabel,
@@ -1337,6 +1339,7 @@ function SolicitudSection({
   ultimaNovedad,
   values,
 }: {
+  cuotaCalculoMensaje?: string;
   assignmentOptions: StyledSelectOption[];
   assignmentValue: string;
   assignmentValueLabel: string;
@@ -1428,7 +1431,18 @@ function SolicitudSection({
           type="number"
           value={values.cuotas}
         />
-        <ReadOnlyField label="Cuota resultante" value={values.cuotaResultante || "Cálculo no disponible"} />
+        <div>
+          <EditableMoneyInput
+            {...getReadonlyProps("solicitud.montoAFinanciar")}
+            disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+            isEditing={isEditing}
+            label="Cuota resultante"
+            onChange={value => onChange("cuotaResultante", value)}
+            readOnlyValue={values.cuotaResultante || "Cálculo no disponible"}
+            value={values.cuotaResultante}
+          />
+          {isEditing && cuotaCalculoMensaje ? <p role="status" className="mt-1 text-xs text-foreground-secondary">{cuotaCalculoMensaje}</p> : null}
+        </div>
         <EditableTextInput
           {...getReadonlyProps("solicitud.motivo")}
           disabled={!isFieldEditableByKey("solicitud.motivo")}
@@ -3207,14 +3221,16 @@ export function SolicitudesActualDetallePage() {
     return latestComment || PLACEHOLDER;
   }, [workflowHistory]);
 
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(null);
   const condicionesEdicion = editableValues?.solicitud;
   const lineaEdicion = lineasSimulador.find(linea => linea.oid === condicionesEdicion?.lineaPrestamoLegacyOid);
   const cuotaEdicion = useCuotaCalculada({
+    ...(cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) > 0 ? { cuotaObjetivo: parseMoneyValue(cuotaObjetivoTexto) } : {}),
     solicitudId, capitalPuro: false, lineaId: Number(condicionesEdicion?.lineaPrestamoLegacyOid),
-    montoAFinanciar: parseMoneyValue(ajustarMontoTexto(condicionesEdicion?.montoAFinanciar ?? "", lineaEdicion)),
+    montoAFinanciar: parseMoneyValue(cuotaObjetivoTexto !== null ? condicionesEdicion?.montoAFinanciar ?? "" : ajustarMontoTexto(condicionesEdicion?.montoAFinanciar ?? "", lineaEdicion)),
     cuotas: Number(ajustarCuotasTexto(condicionesEdicion?.cuotas ?? "", lineaEdicion)),
     ...(condicionesEdicion?.fechaPrimerVencimiento ? { fechaPrimerVencimiento: condicionesEdicion.fechaPrimerVencimiento } : {}),
-  }, Boolean(isEditing && lineaEdicion && condicionesEdicion && Number(condicionesEdicion.cuotas) > 0 && parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0), result => {
+  }, Boolean(isEditing && (cuotaObjetivoTexto === null || parseMoneyValue(cuotaObjetivoTexto) > 0) && lineaEdicion && condicionesEdicion && Number(condicionesEdicion.cuotas) > 0 && parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0), result => {
     if (parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !== result.montoAFinanciar || Number(condicionesEdicion?.cuotas) !== result.cuotas) void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) });
     setEditableValues(current => current ? { ...current, solicitud: { ...current.solicitud,
       montoAFinanciar: parseMoneyValue(current.solicitud.montoAFinanciar) === result.montoAFinanciar ? current.solicitud.montoAFinanciar : formatMoneyAmount(result.montoAFinanciar),
@@ -3296,6 +3312,7 @@ export function SolicitudesActualDetallePage() {
   );
 
   function handleStartEditing() {
+    setCuotaObjetivoTexto(null);
     if (!canEnterEditMode) {
       return;
     }
@@ -3326,6 +3343,8 @@ export function SolicitudesActualDetallePage() {
   }
 
   function updateSolicitudField(field: keyof EditableSolicitudCoreValues["solicitud"], value: string) {
+    if (field === "cuotaResultante") { setCuotaObjetivoTexto(value); return; }
+    if (["montoAFinanciar", "cuotas", "lineaPrestamoLegacyOid", "fechaPrimerVencimiento"].includes(field)) setCuotaObjetivoTexto(null);
     setEditableValues(current => {
       if (!current) return current;
       const draft = { ...current.solicitud, [field]: value };
@@ -3468,6 +3487,10 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handleSaveChanges() {
+    if (cuotaObjetivoTexto !== null && !cuotaEdicion.data) {
+      toast.error(cuotaEdicion.error?.message ?? "Esperá a que termine el cálculo de la cuota deseada.");
+      return;
+    }
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
 
@@ -4079,6 +4102,7 @@ export function SolicitudesActualDetallePage() {
         isEditing={isEditing}
         isSaveDisabled={
           patchSolicitudCoreMutation.isPending ||
+          (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
           (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
         }
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
@@ -4197,7 +4221,7 @@ export function SolicitudesActualDetallePage() {
                 Cancelar
               </Button>
               <Button
-                disabled={patchSolicitudCoreMutation.isPending}
+                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data)}
                 onClick={() => void handleSaveChanges()}
                 type="button"
               >
@@ -4207,6 +4231,7 @@ export function SolicitudesActualDetallePage() {
             </div>
           ) : null}
           <SolicitudSection
+            cuotaCalculoMensaje={cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) <= 0 ? "Ingresá una cuota mayor a cero." : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error?.message}
             assignmentOptions={assignmentAgentOptions}
             assignmentValue={selectedAssignmentValue}
             assignmentValueLabel={assignmentValueLabel}
@@ -4221,7 +4246,7 @@ export function SolicitudesActualDetallePage() {
             readonlyAppearanceStyle={readonlyAppearanceStyle}
             solicitud={resolvedSolicitud}
             ultimaNovedad={ultimaNovedad}
-            values={{ ...currentValues.solicitud, montoAFinanciar: ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error ? "No se pudo calcular" : "" : currentValues.solicitud.cuotaResultante }}
+            values={{ ...currentValues.solicitud, montoAFinanciar: cuotaObjetivoTexto !== null ? currentValues.solicitud.montoAFinanciar : ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaObjetivoTexto ?? "" : currentValues.solicitud.cuotaResultante }}
           />
           {solicitanteTab === "adjuntos" && !isEditing && canEnterEditMode && canManageAdjuntos ? (
             <p className="px-4 text-sm text-foreground-secondary">
@@ -4362,6 +4387,7 @@ export function SolicitudesActualDetallePage() {
                       handleStartEditing();
                     }
 
+                    setCuotaObjetivoTexto(null);
                     setEditableValues((current) => {
                       const base =
                         current ??

@@ -1,3 +1,4 @@
+import { calcularMontoPorCuota } from "../services/CalcularMontoPorCuota";
 import { CalculoConValoresEfectivosError } from "../../domain/solicitudes-core-errors";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
@@ -11,6 +12,7 @@ import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamo
 
 export type SimularPrestamoUseCaseInput = {
   solicitudId?: string;
+  cuotaObjetivo?: number;
   capitalPuro: boolean;
   cuotas: number;
   fechaPrimerVencimiento?: string;
@@ -64,36 +66,48 @@ export class SimularPrestamoUseCase {
     }
 
     const efectivos = ajustarMaximosLinea(lineaPrestamo, input);
-    let result: SimulacionPrestamo;
-    try {
-      result = await this.gateway.simular({
-        capitalPuro: input.capitalPuro,
-        cuotas: efectivos.cuotas as number,
-        fechaPrimerVencimiento: input.fechaPrimerVencimiento,
-        lineaId: input.lineaId,
-        montoAFinanciar: efectivos.montoAFinanciar as number,
-        tasa: input.tasa,
+    const simular = async (montoAFinanciar: number) => {
+      let result: SimulacionPrestamo;
+      try {
+        result = await this.gateway.simular({
+          capitalPuro: input.capitalPuro,
+          cuotas: efectivos.cuotas as number,
+          fechaPrimerVencimiento: input.fechaPrimerVencimiento,
+          lineaId: input.lineaId,
+          montoAFinanciar,
+          tasa: input.tasa,
+        });
+      } catch (error) {
+        const domainError = error as { message?: string; statusCode?: number };
+        throw new CalculoConValoresEfectivosError(
+          efectivos as { montoAFinanciar: number; cuotas: number },
+          domainError.statusCode
+            ? domainError.message
+            : "No se pudo obtener el cálculo del legacy.",
+          domainError.statusCode ?? 503,
+        );
+      }
+      if (
+        !Number.isFinite(result.cuotaResultante) ||
+        result.cuotas !== efectivos.cuotas ||
+        result.montoAFinanciar !== montoAFinanciar ||
+        result.lineaId !== input.lineaId
+      ) {
+        throw new CalculoConValoresEfectivosError(
+          efectivos as { montoAFinanciar: number; cuotas: number },
+        );
+      }
+      return result;
+    };
+    if (input.cuotaObjetivo !== undefined) {
+      return calcularMontoPorCuota({
+        cuotaObjetivo: input.cuotaObjetivo,
+        montoMinimo: Math.max(0.01, lineaPrestamo.montoMinimo ?? 0.01),
+        montoMaximo: lineaPrestamo.montoMaximo as number,
+        simular,
       });
-    } catch (error) {
-      const domainError = error as { message?: string; statusCode?: number };
-      throw new CalculoConValoresEfectivosError(
-        efectivos as { montoAFinanciar: number; cuotas: number },
-        domainError.statusCode
-          ? domainError.message
-          : "No se pudo obtener el cálculo del legacy.",
-        domainError.statusCode ?? 503,
-      );
     }
-    if (
-      !Number.isFinite(result.cuotaResultante) ||
-      result.cuotas !== efectivos.cuotas ||
-      result.montoAFinanciar !== efectivos.montoAFinanciar ||
-      result.lineaId !== input.lineaId
-    ) {
-      throw new CalculoConValoresEfectivosError(
-        efectivos as { montoAFinanciar: number; cuotas: number },
-      );
-    }
+    const result = await simular(efectivos.montoAFinanciar as number);
     return result;
   }
 }
