@@ -43,6 +43,21 @@ function fakeGateway(
 }
 
 describe("SimularPrestamoUseCase", () => {
+  it("calcula monto por cuota con máximos y catálogo del vendedor de la solicitud", async () => {
+    const calls: Array<{ montoAFinanciar: number; cuotas: number; lineaId: number }> = [];
+    const useCase = new SimularPrestamoUseCase({
+      repository: { findById: async () => ({ id: "sol-1" }), findVendedorLegacyUser: async () => "VENDEDOR" } as never,
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async (user, oid) => { assert.equal(user, "VENDEDOR"); assert.equal(oid, "2519"); return { vigente: true, descripcion: "Linea", legacyOid: oid, montoMinimo: 100, montoMaximo: 20000, cantidadMaximaCuotas: 12 }; } },
+      gateway: { simular: async (input: { montoAFinanciar: number; cuotas: number; lineaId: number }) => { calls.push(input); return { ...input, cuotaResultante: input.montoAFinanciar / 10 + 100 }; } } as unknown as PrestamosSimulacionGateway,
+    });
+    const result = await useCase.execute({ solicitudId: "sol-1", legacyUser: "EDITOR", capitalPuro: false, lineaId: 2519, montoAFinanciar: 1000, cuotas: 20, cuotaObjetivo: 1100 });
+    assert.equal(result.montoAFinanciar, 10000);
+    assert.equal(result.cuotaResultante, 1100);
+    assert.equal(result.cuotas, 12);
+    assert(calls.every(call => call.cuotas === 12 && call.montoAFinanciar >= 100 && call.montoAFinanciar <= 20000));
+    assert(calls.every(call => !("cuotaObjetivo" in call)));
+  });
+
   it("calls the gateway when the line belongs to the authenticated agent", async () => {
     let receivedInput: unknown;
     const gateway = {

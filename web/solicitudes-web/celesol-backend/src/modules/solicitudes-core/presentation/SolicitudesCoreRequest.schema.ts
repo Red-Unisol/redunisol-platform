@@ -328,6 +328,7 @@ export const patchSolicitudBodySchema = z.object({
 }).strict();
 
 export const simularPrestamoBodySchema = z.object({
+  cuotaObjetivo: z.coerce.number().finite().positive().optional(),
   capitalPuro: z.boolean().optional(),
   cuotas: z.coerce.number().int().positive(),
   fechaPrimerVencimiento: z.string().trim().min(1).optional(),

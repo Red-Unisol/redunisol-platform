@@ -726,6 +726,7 @@ export class SolicitudesCoreController {
       const solicitudId = req.params.id ? this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params).id : undefined;
       const simulacion = await this.simularPrestamoUseCase.execute({
         solicitudId,
+        cuotaObjetivo: body.cuotaObjetivo,
         capitalPuro: body.capitalPuro ?? false,
         cuotas: body.cuotas,
         fechaPrimerVencimiento: body.fechaPrimerVencimiento,
