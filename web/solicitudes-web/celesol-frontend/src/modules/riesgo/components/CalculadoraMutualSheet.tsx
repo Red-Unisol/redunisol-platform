@@ -26,6 +26,7 @@ import {
   resolveCalculadoraSheetZoom,
   resolveInitialCalculadoraSheetName,
 } from "../pages/calculadora-riesgo-view-config";
+import { instalarPegadoNumerico } from "../utils/calculadora-pegado-numerico";
 import { stripLuckyExcelSpuriousBorders } from "../pages/calculadora-riesgo-workbook-fixes";
 import {
   getCalculadoraMutualDatos,
@@ -118,6 +119,7 @@ export function CalculadoraMutualSheet({
     let isMounted = true;
     let univerInstance: Univer | null = null;
     let objectUrl: string | null = null;
+    let disposePegado: (() => void) | undefined;
 
     async function load() {
       try {
@@ -187,6 +189,7 @@ export function CalculadoraMutualSheet({
 
           univerInstance = univer;
           univerAPI.createWorkbook(workbookData);
+          disposePegado = instalarPegadoNumerico(univer, univerAPI);
 
           const workbook = univerAPI.getActiveWorkbook();
           workbookRef.current = workbook ?? null;
@@ -281,6 +284,7 @@ export function CalculadoraMutualSheet({
 
     return () => {
       isMounted = false;
+      disposePegado?.();
       workbookRef.current = null;
       univerApiRef.current = null;
       cambiosListenerRef.current?.dispose();
