@@ -489,7 +489,7 @@ describe("ListSolicitudesUseCase", () => {
     assert.equal(result.length, 2);
     assert.deepEqual(result[0]?.capabilities, {
       canChangeState: true,
-      canDeleteAdjuntos: true,
+      canDeleteAdjuntos: false,
       canDownloadAdjuntos: true,
       canEdit: true,
       canManageCancelaciones: true,

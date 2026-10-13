@@ -21,7 +21,7 @@ describe("GetSolicitudByIdUseCase", () => {
     const result = await useCase.execute({ id: "sol-1", currentUser: { id: "risk", workflowOwnerId: "riesgo" } });
     assert.equal(result.capabilities.canEdit, true);
     assert.equal(result.capabilities.canChangeState, false);
-    assert.equal(result.capabilities.canUploadAdjuntos, false);
+    assert.equal(result.capabilities.canUploadAdjuntos, true);
     assert.deepEqual(result.capabilities.fieldAccess.editableFields, ["solicitud.observaciones"]);
   });
 

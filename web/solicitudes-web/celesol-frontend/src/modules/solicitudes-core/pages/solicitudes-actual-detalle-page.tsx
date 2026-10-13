@@ -4248,17 +4248,12 @@ export function SolicitudesActualDetallePage() {
             ultimaNovedad={ultimaNovedad}
             values={{ ...currentValues.solicitud, montoAFinanciar: cuotaObjetivoTexto !== null ? currentValues.solicitud.montoAFinanciar : ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaObjetivoTexto ?? "" : currentValues.solicitud.cuotaResultante }}
           />
-          {solicitanteTab === "adjuntos" && !isEditing && canEnterEditMode && canManageAdjuntos ? (
-            <p className="px-4 text-sm text-foreground-secondary">
-              Podés consultar los archivos guardados. Para agregar o eliminar adjuntos, seleccioná «Editar» en la barra de acciones.
-            </p>
-          ) : null}
           <SolicitanteSection
             key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
             activeTab={solicitanteTab}
             adjuntos={adjuntos}
             canCreateAdicional={isEditing && canUploadAdjuntos}
-            canCreateAdjunto={isEditing && canUploadAdjuntos}
+            canCreateAdjunto={canUploadAdjuntos}
             canDeleteAdjunto={isEditing && canDeleteAdjuntos}
             canDownloadAdjunto={canDownloadAdjuntos}
             canManageCancelaciones={canManageCancelaciones}
@@ -4283,7 +4278,7 @@ export function SolicitudesActualDetallePage() {
             onDatosPersonalesTabChange={setDatosPersonalesTab}
             onDeleteAdjunto={handleDeleteAdjunto}
             onDownloadAdjunto={handleDownloadAdjunto}
-            onEditAdjunto={handleOpenEditAdjunto}
+            onEditAdjunto={isEditing && canDeleteAdjuntos ? handleOpenEditAdjunto : undefined}
             onGarantiaCreate={handleGarantiaCreate}
             onNewAdjuntosLote={handleAddAdjuntosLote}
             onPreviewAdjunto={handlePreviewAdjunto}
