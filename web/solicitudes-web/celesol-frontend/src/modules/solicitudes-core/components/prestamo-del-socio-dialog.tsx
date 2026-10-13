@@ -8,6 +8,7 @@ import {
   diaLegacy,
   ETIQUETAS_COBRO,
   vistaCuotas,
+  resaltadoCuota,
 } from "@/modules/solicitudes-core/utils/cuotas-cobro";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { Button } from "@/shared/components/ui/button";
@@ -143,11 +144,8 @@ const ROW_STYLES = {
 function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
   const [expandida, setExpandida] = useState(false);
   const tableId = useId();
-  const { filas, cantidadOcultas } = vistaCuotas(
-    cuotas,
-    expandida,
-    diaDeNegocio(),
-  );
+  const hoy = diaDeNegocio();
+  const { filas, cantidadOcultas } = vistaCuotas(cuotas, expandida, hoy);
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1000px] border-collapse text-sm">
@@ -189,7 +187,7 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
           {filas.length ? (
             filas.map(({ cuota, estado, ultimaCobrada }, index) => (
               <tr
-                className={`border-t border-border ${ROW_STYLES[estado]}`}
+                className={`border-t border-border ${ROW_STYLES[estado]} ${resaltadoCuota(cuota, hoy).noVencida ? "font-bold" : ""}`}
                 key={`${cuota.nroCuota}-${index}`}
               >
                 <td className="border-r border-border px-3 py-2">
@@ -200,7 +198,14 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
                     ? formatLegacyDate(diaLegacy(cuota.fecha))
                     : "No disponible"}
                 </td>
-                <td className="border-r border-border px-3 py-2 whitespace-nowrap">
+                <td
+                  className={`border-r border-border px-3 py-2 whitespace-nowrap ${resaltadoCuota(cuota, hoy).cobroEnOtroDia ? "bg-warning text-warning-foreground font-bold" : ""}`}
+                  title={
+                    resaltadoCuota(cuota, hoy).cobroEnOtroDia
+                      ? "Fecha de cobro distinta del vencimiento"
+                      : undefined
+                  }
+                >
                   {estado === "cobrada"
                     ? formatLegacyDate(cuota.fechaCobro!.trim())
                     : estado === "desconocido"
