@@ -58,6 +58,7 @@ model User {
   evaluacionesRiesgo            SolicitudEvaluacionRiesgo[] @relation("EvaluacionRiesgoGuardadaPor")
   createdSolicitudParticipants  SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
   workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
+  documentReviewDecisions        SolicitudDocumentDecision[]
 
   @@index([workflowOwnerId])
   @@map("users")
@@ -179,6 +180,8 @@ model Solicitud {
   participants             SolicitudParticipant[]
   desembolso               TransferenciaDesembolso?
   bankIdentifiers          TransferenciaIdentificador[]
+  documentReviews          SolicitudDocumentReview[]
+  documentReviewJob         SolicitudDocumentReviewJob?
 
   @@index([estadoActualId])
   @@index([createdBy])
@@ -186,6 +189,69 @@ model Solicitud {
   @@index([vendedorId])
   @@index([createdAt])
   @@map("solicitudes")
+}
+
+// Immutable system observations. A new signature/contract version produces a
+// new observation; human decisions never replace the machine's recommendation.
+model SolicitudDocumentReview {
+  id                     String   @id @default(uuid()) @db.Uuid
+  solicitudId            String   @map("solicitud_id") @db.Uuid
+  evaluationKey          String   @unique @map("evaluation_key")
+  policyVersion          String   @map("policy_version")
+  sourceFingerprint      String   @map("source_fingerprint")
+  providerFingerprint    String   @map("provider_fingerprint")
+  sourceSnapshot         Json     @map("source_snapshot")
+  assessment             Json
+  systemDecision         String   @map("system_decision")
+  selectedVerificationId String?  @map("selected_verification_id")
+  evidencePath           String?  @map("evidence_path")
+  legajoAdjuntoId         String?  @map("legajo_adjunto_id") @db.Uuid
+  artifactError          String?  @map("artifact_error")
+  evaluatedAt            DateTime @default(now()) @map("evaluated_at")
+  solicitud              Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
+  decisions              SolicitudDocumentDecision[]
+  legajo                 SolicitudAdjunto? @relation("DocumentReviewLegajo", fields: [legajoAdjuntoId], references: [id], onDelete: Restrict, map: "solicitud_document_reviews_legajo_fkey")
+
+  @@index([solicitudId, evaluatedAt])
+  @@index([solicitudId, sourceFingerprint, providerFingerprint], map: "document_review_fingerprint_idx")
+  @@map("solicitud_document_reviews")
+}
+
+model SolicitudDocumentDecision {
+  id                    String   @id @default(uuid()) @db.Uuid
+  reviewId              String   @map("review_id") @db.Uuid
+  requestId             String   @unique @map("request_id") @db.Uuid
+  humanDecision         String   @map("human_decision")
+  systemDecision        String   @map("system_decision")
+  verificationId        String?  @map("verification_id")
+  attemptSystemDecision String?  @map("attempt_system_decision")
+  disagreesWithSystem   Boolean  @map("disagrees_with_system")
+  overridesAttempt      Boolean  @map("overrides_attempt")
+  reason                String
+  decidedBy             String   @map("decided_by") @db.Uuid
+  actorName             String   @map("actor_name")
+  actingAudit           Json     @map("acting_audit")
+  legajoAdjuntoId        String?  @map("legajo_adjunto_id") @db.Uuid
+  decidedAt             DateTime @default(now()) @map("decided_at")
+  review                SolicitudDocumentReview @relation(fields: [reviewId], references: [id], onDelete: Restrict)
+  actor                 User @relation(fields: [decidedBy], references: [id], onDelete: Restrict, map: "solicitud_document_decisions_decided_by_fkey")
+  legajo                SolicitudAdjunto? @relation("DocumentDecisionLegajo", fields: [legajoAdjuntoId], references: [id], onDelete: Restrict, map: "solicitud_document_decisions_legajo_fkey")
+
+  @@index([reviewId, decidedAt])
+  @@index([disagreesWithSystem, decidedAt], map: "document_decision_disparity_idx")
+  @@map("solicitud_document_decisions")
+}
+
+model SolicitudDocumentReviewJob {
+  solicitudId String    @id @map("solicitud_id") @db.Uuid
+  leaseToken  String?   @map("lease_token") @db.Uuid
+  leaseUntil  DateTime? @map("lease_until")
+  nextCheckAt DateTime  @default(now()) @map("next_check_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  solicitud   Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@index([nextCheckAt])
+  @@map("solicitud_document_review_jobs")
 }
 
 model SolicitudParticipant {
@@ -408,6 +474,8 @@ model SolicitudAdjunto {
   uploadedByUser   User?     @relation("SolicitudAdjuntoUploadedByUser", fields: [uploadedBy], references: [id], onDelete: SetNull)
   desembolso       TransferenciaDesembolso?
   deletedByUser    User?     @relation("SolicitudAdjuntoDeletedByUser", fields: [deletedBy], references: [id], onDelete: SetNull)
+  documentReviews SolicitudDocumentReview[] @relation("DocumentReviewLegajo")
+  documentDecisions SolicitudDocumentDecision[] @relation("DocumentDecisionLegajo")
 
   @@index([solicitudId])
   @@index([legacyOid])

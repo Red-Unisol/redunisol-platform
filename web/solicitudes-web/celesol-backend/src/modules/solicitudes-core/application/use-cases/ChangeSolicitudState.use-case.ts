@@ -17,6 +17,7 @@ type Dependencies = {
   now: () => Date;
   sociosRepository: SocioRepository;
   solicitudesRepository: SolicitudesCoreRepository;
+  authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
 };
 
 // La transicion "pagar" (Transferir -> Pagada) puede ejecutarla, ademas del
@@ -34,9 +35,11 @@ export class ChangeSolicitudStateUseCase {
   private readonly engine: SolicitudWorkflowEngine;
   private readonly now: () => Date;
   private readonly solicitudesRepository: SolicitudesCoreRepository;
+  private readonly authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
 
   constructor(dependencies: Dependencies) {
     this.archivarEvaluacion = dependencies.archivarEvaluacion;
+    this.authorizeDocumentReview = dependencies.authorizeDocumentReview;
     this.solicitudesRepository = dependencies.solicitudesRepository;
     this.annotateSolicitudTransitionsBlockedReason =
       new AnnotateSolicitudTransitionsBlockedReason({
@@ -62,6 +65,9 @@ export class ChangeSolicitudStateUseCase {
   }
 
   async execute(input: ChangeSolicitudStateInput) {
+    if (["transferir", "devolver_a_liquidada"].includes(input.actionCode)) {
+      await this.authorizeDocumentReview?.(input);
+    }
     // Architectural guard-rail:
     // Productive workflow state changes must go through this use case and then
     // through SolicitudWorkflowEngine (policy + execution plan).
