@@ -23,6 +23,17 @@ import { WorkflowTransitionAdminPrismaDatasource } from "./WorkflowTransitionAdm
 
 const SHOULD_RUN_BOOTSTRAP_TESTS = getBootstrapTestDatabaseUrl() !== null;
 
+// The consolidated init migration predates these configurable fields. Adding
+// a field to the application catalog does not grant it in persisted rules.
+const FIELDS_NOT_IN_BOOTSTRAP = new Set<string>([
+  "solicitud.lineaPrestamoLegacyOid",
+  "titular.cbuNoHabitual",
+  "titular.fechaNacimiento",
+]);
+const BOOTSTRAP_EDITABLE_FIELDS = EDITABLE_FIELDS.filter(
+  (field) => !FIELDS_NOT_IN_BOOTSTRAP.has(field),
+);
+
 const REVISAR_BOOTSTRAP_FIELDS = [
   ...SOLICITUD_EDITABLE_FIELDS.filter(
     (field) =>
@@ -32,7 +43,7 @@ const REVISAR_BOOTSTRAP_FIELDS = [
   ...TITULAR_EDITABLE_FIELDS,
   ...CONYUGE_EDITABLE_FIELDS,
   ...DATOS_LABORALES_EDITABLE_FIELDS,
-];
+].filter((field) => !FIELDS_NOT_IN_BOOTSTRAP.has(field));
 
 describe("Solicitud workflow metadata bootstrap", () => {
   if (!SHOULD_RUN_BOOTSTRAP_TESTS) {
@@ -162,7 +173,7 @@ describe("Solicitud workflow metadata bootstrap", () => {
       active: true,
       backgroundColor: null,
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: BOOTSTRAP_EDITABLE_FIELDS,
       editableGroups: [],
       readonlyReason: null,
       textColor: null,
@@ -182,17 +193,9 @@ describe("Solicitud workflow metadata bootstrap", () => {
       active: true,
       backgroundColor: null,
       defaultMode: "readonly",
-      editableFields: [
-        "solicitud.cupoTitular",
-        "solicitud.cuotaResultante",
-        "solicitud.cuotas",
-        "solicitud.fechaPrimerVencimiento",
-        "solicitud.montoAFinanciar",
-        "solicitud.observaciones",
-        "solicitud.vendedorSolicitud",
-      ],
+      editableFields: BOOTSTRAP_EDITABLE_FIELDS,
       editableGroups: [],
-      readonlyReason: READONLY_REASON,
+      readonlyReason: null,
       textColor: null,
       version: 2,
     });
@@ -210,22 +213,13 @@ describe("Solicitud workflow metadata bootstrap", () => {
       active: true,
       backgroundColor: "#FFC0FF",
       defaultMode: "readonly",
-      editableFields: ["solicitud.observaciones"],
+      editableFields: BOOTSTRAP_EDITABLE_FIELDS,
       editableGroups: [],
-      readonlyReason: READONLY_REASON,
+      readonlyReason: null,
       textColor: "#000000",
       version: 2,
     });
-    assert.deepEqual(rulesByState.get("VerificacionDocumentacion"), {
-      active: false,
-      backgroundColor: "#FFC0FF",
-      defaultMode: "readonly",
-      editableFields: ["solicitud.observaciones"],
-      editableGroups: [],
-      readonlyReason: READONLY_REASON,
-      textColor: "#000000",
-      version: 2,
-    });
+    assert.equal(rulesByState.has("VerificacionDocumentacion"), false);
     assert.deepEqual(rulesByState.get("Desestimada"), {
       active: true,
       backgroundColor: "#FF7F7F",
