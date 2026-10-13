@@ -29,10 +29,7 @@ export type SolicitudCapabilities = {
   canViewHistory: boolean;
 };
 
-type SolicitudPermissionTarget = Pick<
-  SolicitudCore,
-  "estadoActual"
->;
+type SolicitudPermissionTarget = Pick<SolicitudCore, "estadoActual">;
 
 export function canViewSolicitud(
   _user: SolicitudPermissionUser,
@@ -54,15 +51,23 @@ export function canEditSolicitud(
     return true;
   }
 
+  if (action === "DELETE_ATTACHMENT") {
+    return false;
+  }
+
+  if (
+    action === "UPLOAD_ATTACHMENT" &&
+    user.workflowOwnerId &&
+    ["RIESGO", "VENDEDORES", "TESORERIA"].includes(user.workflowOwnerCode ?? "")
+  ) {
+    return canViewSolicitud(user, solicitud);
+  }
+
   if (action === "VIEW_HISTORY" || action === "DOWNLOAD_ATTACHMENT") {
     return true;
   }
 
-  if (
-    action === "UPLOAD_ATTACHMENT" ||
-    action === "DELETE_ATTACHMENT" ||
-    action === "MANAGE_CANCELACIONES"
-  ) {
+  if (action === "UPLOAD_ATTACHMENT" || action === "MANAGE_CANCELACIONES") {
     return canManageSolicitudAttachments({
       fieldAccess,
       solicitud,
@@ -151,9 +156,9 @@ export function canManageSolicitudAttachments(input: {
 
   return Boolean(
     isCurrentOwnerUser(input.user, input.solicitud) &&
-      input.fieldAccess &&
-      input.fieldAccess.active &&
-      input.fieldAccess.canManageAttachments,
+    input.fieldAccess &&
+    input.fieldAccess.active &&
+    input.fieldAccess.canManageAttachments,
   );
 }
 
@@ -163,7 +168,7 @@ function isCurrentOwnerUser(
 ) {
   return Boolean(
     user.workflowOwnerId &&
-      solicitud.estadoActual.ownerId &&
-      user.workflowOwnerId === solicitud.estadoActual.ownerId,
+    solicitud.estadoActual.ownerId &&
+    user.workflowOwnerId === solicitud.estadoActual.ownerId,
   );
 }

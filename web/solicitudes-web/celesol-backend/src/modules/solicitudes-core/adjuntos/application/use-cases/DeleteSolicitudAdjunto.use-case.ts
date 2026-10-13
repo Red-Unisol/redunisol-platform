@@ -3,7 +3,7 @@ import type { SolicitudAdjunto } from "../../domain/entities/SolicitudAdjunto.en
 import type { SolicitudAdjuntoRepository } from "../../domain/repositories/SolicitudAdjuntoRepository";
 import type { SolicitudFieldAccessRulesRepository } from "../../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type { SolicitudesCoreRepository } from "../../../domain/repositories/SolicitudesCoreRepository";
-import { canManageSolicitudAttachments } from "../../../application/services/SolicitudPermissions";
+import { canEditSolicitud } from "../../../application/services/SolicitudPermissions";
 import {
   ForbiddenSolicitudAdjuntoAccessError,
   SolicitudAdjuntoNotFoundError,
@@ -36,16 +36,19 @@ export class DeleteSolicitudAdjuntoUseCase {
       );
 
     if (
-      !canManageSolicitudAttachments({
-        fieldAccess: fieldAccessRule,
+      !canEditSolicitud(
+        input.currentUser,
         solicitud,
-        user: input.currentUser,
-      })
+        "DELETE_ATTACHMENT",
+        fieldAccessRule,
+      )
     ) {
       throw new ForbiddenSolicitudAdjuntoAccessError();
     }
 
-    const adjunto = await this.dependencies.repository.findById(input.adjuntoId);
+    const adjunto = await this.dependencies.repository.findById(
+      input.adjuntoId,
+    );
 
     if (
       !adjunto ||
