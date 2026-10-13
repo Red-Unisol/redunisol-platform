@@ -5,7 +5,7 @@ import type { SolicitudCancelacion } from "../../domain/entities/SolicitudCancel
 import type { SolicitudCancelacionRepository } from "../../domain/repositories/SolicitudCancelacionRepository";
 import type { SolicitudFieldAccessRulesRepository } from "../../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type { SolicitudesCoreRepository } from "../../../domain/repositories/SolicitudesCoreRepository";
-import { canManageSolicitudAttachments } from "../../../application/services/SolicitudPermissions";
+import { canEditSolicitud } from "../../../application/services/SolicitudPermissions";
 import {
   ForbiddenSolicitudCancelacionAccessError,
   SolicitudCancelacionNotFoundError,
@@ -33,17 +33,26 @@ export class CreateSolicitudCancelacionUseCase {
       throw new SolicitudCancelacionNotFoundError();
     }
 
+    const workflowOwnerCode =
+      input.currentUser.workflowOwnerId &&
+      this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
+        ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(
+            input.currentUser.workflowOwnerId,
+          )
+        : null;
+
     const fieldAccessRule =
       await this.dependencies.fieldAccessRulesRepository.findByWorkflowStateId(
         solicitud.estadoActual.id,
       );
 
     if (
-      !canManageSolicitudAttachments({
-        fieldAccess: fieldAccessRule,
+      !canEditSolicitud(
+        { ...input.currentUser, workflowOwnerCode },
         solicitud,
-        user: input.currentUser,
-      })
+        "CREATE_CANCELACION",
+        fieldAccessRule,
+      )
     ) {
       throw new ForbiddenSolicitudCancelacionAccessError();
     }

@@ -400,6 +400,7 @@ describe("SolicitudPermissions", () => {
         canDeleteAdjuntos: false,
         canDownloadAdjuntos: true,
         canEdit: false,
+        canCreateCancelaciones: false,
         canManageCancelaciones: false,
         canUploadAdjuntos: false,
         canView: true,
@@ -568,6 +569,7 @@ describe("SolicitudPermissions", () => {
         canDeleteAdjuntos: false,
         canDownloadAdjuntos: true,
         canEdit: true,
+        canCreateCancelaciones: false,
         canManageCancelaciones: false,
         canUploadAdjuntos: false,
         canView: true,
@@ -615,6 +617,7 @@ describe("SolicitudPermissions", () => {
         canDeleteAdjuntos: true,
         canDownloadAdjuntos: true,
         canEdit: true,
+        canCreateCancelaciones: true,
         canManageCancelaciones: true,
         canUploadAdjuntos: true,
         canView: true,
@@ -693,3 +696,12 @@ function solicitud(
     vendedorSolicitud: null,
   };
 }
+
+it("Riesgo puede agregar cancelaciones a su cargo sin ampliar edición o borrado",()=>{
+ const target=solicitud({ownerId:"owner-riesgo"});
+ const actor={id:"riesgo",workflowOwnerId:"owner-riesgo",workflowOwnerCode:"RIESGO"};
+ const capabilities=buildSolicitudCapabilities(actor,target,null);
+ assert.equal(capabilities.canCreateCancelaciones,true);
+ assert.equal(capabilities.canManageCancelaciones,false);
+ assert.equal(canEditSolicitud(actor,solicitud({ownerId:"owner-vendedor"}),"CREATE_CANCELACION"),false);
+});
