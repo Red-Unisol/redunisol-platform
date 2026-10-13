@@ -80,7 +80,7 @@ BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
 BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
 BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
 WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
-COMMERCIAL_RULE_VERSION = "2026-09-14-policia-federal-caba-v1"
+COMMERCIAL_RULE_VERSION = "2026-10-13-caja-morosos-23321-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
@@ -1425,7 +1425,9 @@ def _evaluate_cordoba(
     vimarx = _vimarx_payload(config, lead)
 
     if employment in {"jubilado_provincial", "jubilado_municipal"}:
-        return _evaluate_caja(config, lead, entities, vimarx, payment_bank)
+        return _evaluate_caja(
+            config, lead, entities, vimarx, payment_bank, employment=employment
+        )
     if employment == "daspu":
         return _manual(config, "daspu_form_691_or_limit_not_available")
     if employment == "empleado_de_la_unc":
@@ -1471,6 +1473,8 @@ def _evaluate_caja(
     entities: list[dict[str, Any]],
     vimarx: dict[str, Any] | None,
     payment_bank: str,
+    *,
+    employment: str,
 ) -> CommercialDecision:
     age = _age_from_lead(lead, vimarx)
     if age is None:
@@ -1492,6 +1496,8 @@ def _evaluate_caja(
     if any(value in {4, 5} for value in situations):
         if payment_situation > 1:
             return _bcra_rejected(config, "caja_morosos_payment_bank_above_one")
+        if not recurrent and employment == "jubilado_provincial" and len(entities) > 8:
+            return _bcra_rejected(config, "caja_morosos_new_more_than_eight_entities")
         if _has_excluded_caja_entity(entities):
             return _manual(config, "caja_morosos_excluded_entity")
         if recurrent_credits and min(_paid_installments(recurrent_credits)) < 4:

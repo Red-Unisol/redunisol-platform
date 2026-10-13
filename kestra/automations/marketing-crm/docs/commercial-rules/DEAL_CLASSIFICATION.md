@@ -1,6 +1,6 @@
 # Clasificación Comercial de Negociaciones
 
-Versión: `2026-08-26`
+Versión: `2026-10-13`
 
 ## Alcance
 
@@ -163,8 +163,22 @@ Fecha de nacimiento faltante produce revisión manual.
 | 460 | `COR-CAJA-GENERAL-010` | Recurrente; solo situaciones 0/1 o sin entidades informadas | Aprobado | PRESENTACIÓN | Caja General |
 | 470 | `COR-CAJA-IRREG-REC-010` | Recurrente; todas las entidades hasta 3 y al menos una en 2/3, incluido banco de cobro | Aprobado | PRESENTACIÓN | Caja Irregulares |
 | 480 | `COR-CAJA-MORA-BANK-010` | Nuevo o recurrente; alguna situación 4/5 y banco de cobro mayor que 1 | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica |
+| 485 | `COR-CAJA-MORA-NEW-LIMIT-010` | Jubilado Provincial nuevo; alguna situación 4/5; más de 8 entidades totales en el período BCRA más reciente | Rechazo BCRA | SIT. NEG. EN BCRA | No aplica |
 | 490 | `COR-CAJA-MORA-REVIEW-010` | Alguna situación 4/5 en una entidad excluyente | Revisión manual exhaustiva | REVISIÓN MANUAL KESTRA | No aplica |
 | 500 | `COR-CAJA-MORA-010` | Nuevo o recurrente; alguna situación 4/5; banco de cobro hasta 1; sin entidad excluyente | Aprobado | PRESENTACIÓN | Caja Morosos |
+
+Para Jubilado Provincial nuevo en Caja Morosos se admiten hasta 8 entidades
+**totales**, incluido el banco de cobro si está informado, independientemente de
+su situación. El tope no cuenta únicamente las entidades en 4/5. Se utiliza el
+período más reciente del snapshot BCRA, sin sumar períodos anteriores. El rechazo
+por banco de cobro irregular mantiene prioridad sobre el nuevo motivo.
+
+Este cambio de la tarea `23321` está implementado y probado, pendiente de deploy.
+Conserva la definición actual de nuevo: sin créditos activos de la familia Caja
+(`linea_superior_id=2756`). No modifica Caja Nuevo, Caja Irregulares, los recurrentes
+ni Jubilado Municipal. La categoría genérica Pensionado conserva CBU hasta que se
+distinga Caja Córdoba de ANSES en la tarea `23333`.
+Contrato y aprobación: [`CAJA_MOROSOS_23321.md`](CAJA_MOROSOS_23321.md).
 
 Entidades que fuerzan revisión exhaustiva en Caja Morosos:
 

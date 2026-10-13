@@ -1,6 +1,6 @@
 # Casos de Aceptación Comercial
 
-Versión: `2026-08-26`
+Versión: `2026-10-13`
 
 Cada caso expresa una expectativa verificable en formato Dado / Cuando / Entonces.
 Un caso no reemplaza la tabla normativa de clasificación.
@@ -133,6 +133,36 @@ Un caso no reemplaza la tabla normativa de clasificación.
 - **Dado** un Jubilado Provincial de 79 años con una entidad en situación 4, banco de
   cobro en situación 1 y ninguna entidad excluyente.
 - **Entonces** aplica `COR-CAJA-MORA-010` y queda en `Caja Morosos`.
+
+### `COR-CASE-014A` — Caja Morosos nueva con 8 entidades
+
+- **Dado** un Jubilado Provincial nuevo menor de 80, datos Vimarx disponibles,
+  banco de cobro en situación 1 y exactamente 8 entidades totales en el período
+  BCRA más reciente, con alguna entidad en situación 4 o 5.
+- **Entonces** puede aprobar por `COR-CAJA-MORA-010`, en **PRESENTACIÓN**, línea
+  `Caja Morosos`, si cumple las restantes condiciones.
+
+### `COR-CASE-014B` — Caja Morosos nueva con 9 entidades
+
+- **Dado** el mismo perfil con 9 entidades totales, aunque solo una esté en 4/5.
+- **Entonces** aplica `COR-CAJA-MORA-NEW-LIMIT-010`, con rechazo BCRA, sin buscar
+  vendedor, ingresar a cola ni transferir chat.
+- **Pero dado** el banco de cobro en situación mayor que 1, ese motivo de rechazo
+  conserva prioridad, tanto con 8 como con 9 entidades.
+
+### `COR-CASE-014C` — Alcance y período del tope de Caja Morosos
+
+- **Dado** un período anterior con 9 entidades y el más reciente con 8.
+- **Entonces** el período anterior no impide la aprobación de Caja Morosos.
+- **Dado** un recurrente Caja con al menos cuatro cuotas pagadas, o un Jubilado
+  Municipal, con 9 entidades y alguna en 4/5.
+- **Entonces** conserva las reglas previas de Caja Morosos, sin el nuevo tope.
+- **Dado** un nuevo con 9 entidades, solo situaciones 1 o con alguna 2/3.
+- **Entonces** conserva Caja Nuevo o Caja Irregulares respectivamente.
+- **Dado** Jubilado Nacional o Pensionado con 9 entidades.
+- **Entonces** conserva el rechazo CBU por más de cinco entidades.
+
+Estos casos de la tarea `23321` están implementados y probados, pendientes de deploy.
 
 ### `COR-CASE-015` — Caja Morosos con entidad excluyente
 
