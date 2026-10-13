@@ -126,6 +126,14 @@ jobs:
           # variable y Docker lo tomaria como parte del contenido.
           sed -i 's/\r$//' "$RUNNER_TEMP/solicitudes-web.env"
 
+          # Reutiliza únicamente Mistral del runtime cifrado existente.
+          # Conserva una clave propia de Solicitudes si ya está configurada.
+          python web/solicitudes-web/deploy/prepare_mistral_env.py \
+            --env-file "$RUNNER_TEMP/solicitudes-web.env" \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --kestra-env kestra/platform/infra/kestra-runtime.env.enc \
+            --check-connection
+
           # Si el archivo no termina en salto de linea, las variables que
           # agregamos abajo se pegarian a la ultima linea.
           if [ -n "$(tail -c 1 "$RUNNER_TEMP/solicitudes-web.env")" ]; then
@@ -261,4 +269,5 @@ jobs:
         shell: bash
         run: |
           rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f "$RUNNER_TEMP/solicitudes-web.env"
           rm -f web/solicitudes-web/deploy/solicitudes-web.dev.env

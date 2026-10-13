@@ -1,6 +1,6 @@
 # Reconocimiento de recibos con Mistral
 
-Cambio sobre dev `28280592018c3530b809a5ffcf58bd6c18acbcb1`. No desplegado. El relevamiento aportado es del 13/10/2026; las dos copias del PDF recibido contienen el mismo informe. Se conserva la integración OCR de CUAD en Kestra, que ya usa `MISTRAL_API_KEY`.
+Cambio sobre dev `28280592018c3530b809a5ffcf58bd6c18acbcb1`. Despliegue en dev autorizado por el usuario. El relevamiento aportado es del 13/10/2026; las dos copias del PDF recibido contienen el mismo informe. Se conserva la integración OCR de CUAD en Kestra, que ya usa `MISTRAL_API_KEY`.
 
 ## Funcionamiento
 
@@ -24,7 +24,7 @@ Variables privadas del backend:
 - `MISTRAL_OCR_MODEL`: por defecto `mistral-ocr-latest` (alias del proveedor).
 - `MISTRAL_OCR_TIMEOUT_MS`: por defecto 45000.
 
-Compose transmite estas variables. El despliegue existente consume el archivo de entorno cifrado: su credencial deberá incorporarse mediante el procedimiento de configuración segura existente antes de un despliegue autorizado. No se cambió ese archivo cifrado ni la cuenta de Mistral, incluido su ajuste de entrenamiento. La ausencia de credencial mantiene el interruptor habilitado y produce un error explícito; la selección manual sigue funcionando.
+Compose transmite estas variables. El despliegue de dev conserva una clave propia de Solicitudes si existe; si falta, descifra únicamente `SECRET_MISTRAL_API_KEY` del runtime cifrado de Kestra con el tooling existente. No reemplaza ni rota esa credencial. Antes de actualizar el servidor verifica modelos, OCR y anotación con un PDF sintético sin datos personales; si falla, detiene el despliegue. El helper es `deploy/prepare_mistral_env.py` y limpia el archivo temporal privado del runner. No se cambió ese archivo cifrado ni la cuenta de Mistral, incluido su ajuste de entrenamiento. La ausencia de credencial mantiene el interruptor habilitado y produce un error explícito; la selección manual sigue funcionando.
 
 ## API y permisos
 
@@ -63,14 +63,15 @@ Anotación validada: clasificación enum y cinco booleanos `periodo`, `agente`, 
 - Base PostgreSQL local aislada: aplicación de todas las migraciones, valor inicial habilitado, desactivación conservada al recrear Prisma/conexión y al repetir `migrate deploy`.
 - Navegador Chromium con API simulada: selección/arrastre, individual/lote, estados positivo/negativo/indeterminado/error, guardado durante análisis, CUPO manual conservado, límite de 10, controles a 640 px y configuración guardada tras recargar. También se verificó la ruta con ID de solicitud existente y el cambio de solicitud durante un análisis, sin mezclar archivos ni respuestas.
 - Compilaciones frontend/backend, lint de archivos funcionales modificados y typecheck de scripts.
+- 7 pruebas Python de preparación segura del despliegue: reutilización cifrada, preservación de clave propia, ausencia de copia de otros secretos, repetición, formato seguro y preflight del proveedor.
 
-Las 41 pruebas automatizadas y las comprobaciones de navegador utilizan proveedor/API simulados. Después de configurar la credencial privada en `.env`, se verificó realmente `GET /v1/models`: la clave autentica y tiene disponible `mistral-ocr-latest`, con alias OCR 4/4.1. También se ejecutó el gateway implementado contra Mistral con dos PDF sintéticos sin datos personales: un recibo con los cinco indicadores dio `recibo` y un inventario de oficina dio `no_recibo`. Estas dos pruebas sí ejecutaron OCR y anotación del proveedor; no sustituyen la validación de los cinco recibos aportados.
+Las 48 pruebas automatizadas y las comprobaciones de navegador utilizan proveedor/API simulados. Después de configurar la credencial privada en `.env`, se verificó realmente `GET /v1/models`: la clave autentica y tiene disponible `mistral-ocr-latest`, con alias OCR 4/4.1. También se ejecutó el gateway implementado contra Mistral con dos PDF sintéticos sin datos personales: un recibo con los cinco indicadores dio `recibo` y un inventario de oficina dio `no_recibo`. Estas dos pruebas sí ejecutaron OCR y anotación del proveedor; no sustituyen la validación de los cinco recibos aportados.
 
-No se generaron préstamos, no se guardaron adjuntos ni solicitudes en dev y no se desplegó.
+Se identificaron como `recibo` los dos PDF de sueldo nuevos aportados por el usuario contra Mistral real; también se comprobó el formato imagen rasterizando una página de uno de esos PDF. No se generaron préstamos ni se guardaron adjuntos o solicitudes como parte de estas pruebas.
 
 ## Prueba real pendiente y comienzo de pruebas
 
-La credencial privada ya está configurada y se comprobó el modelo y la anotación real con documentos sintéticos. Las cinco imágenes visibles en el mensaje todavía no están disponibles como archivos descargables; las rutas `C:/Users/...` pertenecen a la computadora del usuario. Los dos PDF técnicos sí se descargaron. Falta contrastar el criterio con las cinco muestras originales: no se declara terminada esa validación hasta hacerlo.
+La credencial privada ya está configurada y se comprobó el modelo y la anotación real con documentos sintéticos. Las cinco imágenes visibles en el mensaje todavía no están disponibles como archivos descargables; las rutas `C:/Users/...` pertenecen a la computadora del usuario. Los dos PDF técnicos sí se descargaron. Los dos PDF nuevos sí se probaron con resultado positivo. La ampliación de pruebas a las imágenes originales queda pendiente de archivos descargables; no se afirma haber probado las cinco imágenes originales ni las tres nuevas visibles en el mensaje.
 
 Para ejecutar la prueba real sin guardar solicitudes ni adjuntos, configurar la credencial como secreto privado y aportar los cinco archivos originales. Desde `celesol-backend`:
 
