@@ -225,11 +225,19 @@ describe("PrestamosSimulacionGateway", () => {
       tasa: 0.165,
     });
 
-    assert.equal(String(capturedUrl), "https://legacy.example.com/api/prestamos/simulacion");
-    assert.equal(capturedInit?.method, "POST");
-    assert.deepEqual(capturedInit?.headers, { "Content-Type": "application/json" });
     assert.equal(
-      Object.prototype.hasOwnProperty.call(capturedInit?.headers ?? {}, "Authorization"),
+      String(capturedUrl),
+      "https://legacy.example.com/api/prestamos/simulacion",
+    );
+    assert.equal(capturedInit?.method, "POST");
+    assert.deepEqual(capturedInit?.headers, {
+      "Content-Type": "application/json",
+    });
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(
+        capturedInit?.headers ?? {},
+        "Authorization",
+      ),
       false,
     );
     assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
@@ -240,4 +248,85 @@ describe("PrestamosSimulacionGateway", () => {
       tasa: 0.165,
     });
   });
+});
+
+it("preview keeps absent values null and only sends the system calculation inputs", async () => {
+  let sent: unknown;
+  const gateway = new PrestamosSimulacionGateway(
+    { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },
+    async (_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          Capital: null,
+          Tasa: 0.165,
+          Gastos: 0,
+          FechaPrimerVencimiento: "2026-11-30T00:00:00",
+          FechaUltimaCuota: null,
+          CuotasDetalle: [
+            {
+              NumeroCuota: 1,
+              Capital: null,
+              Interes: "",
+              Gastos: 0,
+              Total: 1500,
+              FechaVencimiento: "2026-11-30",
+            },
+          ],
+        }),
+      };
+    },
+  );
+  const result = await gateway.simularRevision({
+    capitalPuro: false,
+    cuotas: 1,
+    lineaId: 2519,
+    montoAFinanciar: 1500,
+  });
+  assert.deepEqual(sent, {
+    capitalPuro: false,
+    cuotas: 1,
+    lineaId: 2519,
+    montoAFinanciar: 1500,
+  });
+  assert.equal(result.capital, null);
+  assert.equal(result.cuotaResultante, null);
+  assert.equal(result.fechaUltimaCuota, null);
+  assert.equal(result.tasa, 0.165);
+  assert.deepEqual(result.cuotasDetalle?.[0], {
+    numeroCuota: 1,
+    capital: null,
+    interes: null,
+    gastos: 0,
+    total: 1500,
+    fechaVencimiento: "2026-11-30",
+  });
+});
+
+it("preview rejects a calculation for different conditions without creating a loan", async () => {
+  const gateway = new PrestamosSimulacionGateway(
+    { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },
+    async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ LineaId: 2552, Cuotas: 6, MontoAFinanciar: 10000 }),
+    }),
+  );
+  await assert.rejects(
+    gateway.simularRevision({
+      capitalPuro: false,
+      cuotas: 6,
+      lineaId: 2519,
+      montoAFinanciar: 10000,
+    }),
+    PrestamoSimulacionRechazadaError,
+  );
+});
+
+it("does not turn a missing installment calculation into zero", async () => {
+  const gateway = new PrestamosSimulacionGateway({ baseUrl: "https://legacy.example.com", timeoutMs: 1000 }, async () => ({ ok: true, status: 200, json: async () => ({ LineaId: 2519, Cuotas: 6, MontoAFinanciar: 100000, CuotaResultante: null }) }));
+  const result = await gateway.simular({ capitalPuro: false, lineaId: 2519, cuotas: 6, montoAFinanciar: 100000 });
+  assert.ok(Number.isNaN(result.cuotaResultante));
 });

@@ -1,3 +1,7 @@
+import { GetRevisionPrestamoUseCase } from "./application/use-cases/GetRevisionPrestamo.use-case";
+import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSolicitudesDelTitular.use-case";
+import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
+import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
@@ -252,7 +256,13 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
     sociosRepository,
   });
+  const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
+    lineasPrestamoCatalog,
+    repository: solicitudesCoreRepository, sociosRepository,
+    lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
+  });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
+    lineasPrestamoCatalog, simularCuotaSolicitud,
     authRepository,
     cancelacionesRepository: solicitudCancelacionRepository,
     gateway: crearPrestamoGateway,
@@ -288,6 +298,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
   });
   const simularPrestamoUseCase = new SimularPrestamoUseCase({
+    repository: solicitudesCoreRepository,
     gateway: prestamosSimulacionGateway,
     lineasPrestamoCatalog,
   });
@@ -383,11 +394,13 @@ export function createSolicitudesCoreRouter(
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
     listLineasPrestamoDeSolicitudUseCase,
+    listSolicitudesDelTitularUseCase: new ListSolicitudesDelTitularUseCase({ repository: solicitudesCoreRepository, legacyGateway: solicitudesLegacyGateway }),
     listPrestamosDelSocioUseCase,
     assignSolicitudToSelfUseCase,
     assignSolicitudToUserUseCase,
     changeSolicitudStateUseCase,
     createPrestamoLegacyUseCase,
+    getRevisionPrestamoUseCase,
     createSolicitudUseCase,
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     getSolicitudByIdUseCase,
@@ -419,7 +432,7 @@ export function createSolicitudesCoreRouter(
     updateSolicitudCancelacionUseCase,
   });
 
-  return SolicitudesCoreRoutes.create(
+  const router = SolicitudesCoreRoutes.create(
     solicitudesCoreController,
     solicitudAdjuntosController,
     solicitudCancelacionesController,
@@ -429,6 +442,11 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
+  return addDatosRapidosRoutes(router, {
+    getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+    getSolicitudByIdUseCase,
+    datosRapidos: new GetDatosRapidosUseCase(solicitudesLegacyGateway),
+  });
 }
 
 export function createSolicitudesCoreAdminRouter(

@@ -8,7 +8,6 @@ import {
   LineaPrestamoNoDisponibleParaSolicitudError,
   SolicitudFieldNotEditableInCurrentStateError,
   SolicitudCoreNotFoundError,
-  SolicitudFueraDeLimitesDeLineaError,
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type {
@@ -20,6 +19,44 @@ import { EDITABLE_FIELDS } from "../services/SolicitudFieldAccess";
 import { UpdateSolicitudUseCase } from "./UpdateSolicitud.use-case";
 
 describe("UpdateSolicitudUseCase", () => {
+  it("permite correcciones de Riesgo en Vendedores respetando campos y asignación", async () => {
+    const target = solicitudCore();
+    target.estadoActual = { ...target.estadoActual, code: "PreAprobada", owner: { id: "owner-1", code: "VENDEDORES", name: "Vendedores" } };
+    const useCase = buildUseCase({
+      findById: async () => target,
+      findWorkflowOwnerCodeById: async id => { assert.equal(id, "owner-riesgo"); return "RIESGO"; },
+      fieldAccessRulesRepository: reglaSinLinea(),
+    });
+    const actor = { id: "analyst", workflowOwnerId: "owner-riesgo" };
+    const result = await useCase.execute(updateInput({ currentUser: actor, solicitud: { observaciones: "Corrección de riesgo" } }));
+    assert.equal(result.observaciones, "Corrección de riesgo");
+    await assert.rejects(useCase.execute(updateInput({ currentUser: actor, solicitud: { lineaPrestamoLegacyOid: "LP-2" } })), SolicitudFieldNotEditableInCurrentStateError);
+    await assert.rejects(useCase.execute(updateInput({ currentUser: actor, solicitud: { vendedorSolicitud: "Otro vendedor" } })), SolicitudFieldNotEditableInCurrentStateError);
+    await assert.rejects(useCase.execute(updateInput({ currentUser: actor, solicitud: { cuotaResultante: "1" } })), SolicitudFieldNotEditableInCurrentStateError);
+    const treasury = buildUseCase({ findById: async () => target, findWorkflowOwnerCodeById: async () => "TESORERIA" });
+    await assert.rejects(treasury.execute(updateInput({ currentUser: actor, solicitud: { observaciones: "No autorizado" } })), ForbiddenSolicitudAccessError);
+  });
+
+  for (const isSystemAdmin of [false, true]) {
+    it(`rechaza cambiar o borrar el vendedor (admin=${isSystemAdmin})`, async () => {
+      let updated = false;
+      const useCase = buildUseCase({
+        findById: async () => solicitudCore(),
+        update: async () => { updated = true; return solicitudCore(); },
+      });
+      for (const vendedorSolicitud of ["Otro vendedor", null]) {
+        await assert.rejects(
+          () => useCase.execute(updateInput({
+            currentUser: { id: "operator-1", workflowOwnerId: "owner-1", isSystemAdmin },
+            solicitud: { vendedorSolicitud },
+          })),
+          SolicitudFieldNotEditableInCurrentStateError,
+        );
+      }
+      assert.equal(updated, false);
+    });
+  }
+
   it("allows update for current owner even when user is not creator and not participant", async () => {
     let receivedPatch: UpdateSolicitudCorePatch | null = null;
     const useCase = buildUseCase({
@@ -620,6 +657,7 @@ describe("UpdateSolicitudUseCase", () => {
         solicitud: {
           lineaPrestamoDescripcion: "CRUZ DEL EJE -Cancel-Prem",
           lineaPrestamoLegacyOid: "2703",
+          montoAFinanciar: 100000, cuotas: 12, cuotaResultante: null,
         },
       });
     });
@@ -660,27 +698,17 @@ describe("UpdateSolicitudUseCase", () => {
       );
     });
 
-    it("rechaza el cambio si las cuotas no entran en la nueva linea", async () => {
+    it("ajusta automáticamente las cuotas al máximo de la nueva línea", async () => {
+      let patch: UpdateSolicitudCorePatch | undefined;
       const useCase = buildUseCase({
         findById: async () => solicitudCore({ ...enRiesgo, cuotas: 36 }),
         findVendedorLegacyUser: async () => "vendedor-cruz",
-        lineasPrestamoCatalog: {
-          findByLegacyUserAndOid: async () => lineaCancel,
-        },
+        lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => lineaCancel },
+        update: async (_id, p) => { patch = p; return solicitudCore(); },
       });
-
-      await assert.rejects(
-        () =>
-          useCase.execute(
-            updateInput({
-              currentUser: analistaRiesgo,
-              solicitud: { lineaPrestamoLegacyOid: "2703" },
-            }),
-          ),
-        (error: unknown) =>
-          error instanceof SolicitudFueraDeLimitesDeLineaError &&
-          error.message === "La línea permite hasta 24 cuotas.",
-      );
+      await useCase.execute(updateInput({ currentUser: analistaRiesgo, solicitud: { lineaPrestamoLegacyOid: "2703" } }));
+      assert.equal(patch?.solicitud?.cuotas, 24);
+      assert.equal(patch?.solicitud?.cuotaResultante, null);
     });
 
     it("acepta el cambio si en el mismo guardado se ajustan las cuotas", async () => {
@@ -760,6 +788,7 @@ describe("UpdateSolicitudUseCase", () => {
 function buildUseCase(overrides?: {
   fieldAccessRulesRepository?: SolicitudFieldAccessRulesRepository;
   findById?: SolicitudesCoreRepository["findById"];
+  findWorkflowOwnerCodeById?: SolicitudesCoreRepository["findWorkflowOwnerCodeById"];
   findVendedorLegacyUser?: SolicitudesCoreRepository["findVendedorLegacyUser"];
   lineasPrestamoCatalog?: LineasPrestamoCatalog;
   update?: SolicitudesCoreRepository["update"];
@@ -769,7 +798,8 @@ function buildUseCase(overrides?: {
       throw new Error("not used");
     },
     findById: overrides?.findById ?? (async () => solicitudCore()),
-    findVendedorLegacyUser: overrides?.findVendedorLegacyUser,
+    findWorkflowOwnerCodeById: overrides?.findWorkflowOwnerCodeById ?? (async () => null),
+    findVendedorLegacyUser: overrides?.findVendedorLegacyUser ?? (async () => "seller-legacy"),
     listByOwner: async () => [],
     update:
       overrides?.update ??
@@ -799,7 +829,7 @@ function buildUseCase(overrides?: {
       overrides?.lineasPrestamoCatalog ??
       ({
         findByLegacyUserAndOid: async () => {
-          throw new Error("not used");
+          return { descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 };
         },
       } as LineasPrestamoCatalog),
     repository,
@@ -949,3 +979,24 @@ function solicitudCore(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
     ...overrides,
   };
 }
+
+it("adjusts API changes on the same line with the seller catalog and clears failed calculations", async () => {
+  let patch: UpdateSolicitudCorePatch | undefined;
+  let catalogUser: string | undefined;
+  const useCase = buildUseCase({
+    findVendedorLegacyUser: async () => "seller-area",
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async (user, oid) => {
+      catalogUser = user;
+      return { descripcion: "Personal", legacyOid: oid, vigente: true, montoMaximo: 50000, cantidadMaximaCuotas: 6 };
+    } },
+    update: async (_id, p) => { patch = p; return solicitudCore(); },
+  });
+  await useCase.execute(updateInput({ solicitud: { montoAFinanciar: 1000000, cuotas: 48 } }));
+  assert.equal(catalogUser, "seller-area");
+  assert.equal(patch?.solicitud?.montoAFinanciar, 50000);
+  assert.equal(patch?.solicitud?.cuotas, 6);
+  assert.equal(patch?.solicitud?.cuotaResultante, null);
+});
+it("rejects manual installment changes even for system administrators", async () => {
+  await assert.rejects(buildUseCase().execute(updateInput({ currentUser: { id: "admin", isSystemAdmin: true, workflowOwnerId: null }, solicitud: { cuotaResultante: "12345" } })), SolicitudFieldNotEditableInCurrentStateError);
+});

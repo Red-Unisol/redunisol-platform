@@ -70,7 +70,34 @@ export class PrestamosSimulacionGateway {
     this.timeoutMs = config.timeoutMs;
   }
 
-  async simular(input: SimularPrestamoGatewayInput): Promise<SimulacionPrestamo> {
+  async simular(
+    input: SimularPrestamoGatewayInput,
+  ): Promise<SimulacionPrestamo> {
+    return this.mapResponse(await this.request(input));
+  }
+
+  async simularRevision(
+    input: SimularPrestamoGatewayInput,
+  ): Promise<RevisionSimulacion> {
+    const body = await this.request(input);
+    if (body && typeof body === "object") {
+      const row = body as Record<string, unknown>;
+      for (const [key, expected] of [
+        ["LineaId", input.lineaId],
+        ["MontoAFinanciar", input.montoAFinanciar],
+        ["Cuotas", input.cuotas],
+      ] as const) {
+        if (row[key] != null && Number(row[key]) !== expected) {
+          throw new PrestamoSimulacionRechazadaError(
+            "El cálculo recibido no corresponde a las condiciones actuales de la solicitud.",
+          );
+        }
+      }
+    }
+    return mapRevisionSimulacion(body);
+  }
+
+  private async request(input: SimularPrestamoGatewayInput): Promise<unknown> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
     let response: Awaited<ReturnType<Fetcher>>;
@@ -114,10 +141,12 @@ export class PrestamosSimulacionGateway {
     }
 
     if (!response.ok) {
-      throw new PrestamoSimulacionRechazadaError(this.extractErrorMessage(body));
+      throw new PrestamoSimulacionRechazadaError(
+        this.extractErrorMessage(body),
+      );
     }
 
-    return this.mapResponse(body);
+    return body;
   }
 
   private extractErrorMessage(body: unknown): string {
@@ -157,11 +186,13 @@ export class PrestamosSimulacionGateway {
     return {
       capital: Number(row.Capital),
       capitalPuro: Boolean(row.CapitalPuro),
-      cuotaResultante: Number(row.CuotaResultante),
+      cuotaResultante: row.CuotaResultante === null || row.CuotaResultante === undefined || (typeof row.CuotaResultante === "string" && !row.CuotaResultante.trim())
+        ? Number.NaN : Number(row.CuotaResultante),
       cuotas: Number(row.Cuotas),
       cuotasDetalle,
       fechaPrimerVencimiento:
-        row.FechaPrimerVencimiento === null || row.FechaPrimerVencimiento === undefined
+        row.FechaPrimerVencimiento === null ||
+        row.FechaPrimerVencimiento === undefined
           ? null
           : String(row.FechaPrimerVencimiento),
       fechaUltimaCuota: String(row.FechaUltimaCuota),
@@ -181,4 +212,75 @@ export class PrestamosSimulacionGateway {
       total: Number(row.Total),
     };
   }
+}
+
+// La revisión conserva los datos ausentes, sin convertir null en un importe cero.
+export type RevisionSimulacion = {
+  capital: number | null;
+  cuotaResultante: number | null;
+  cuotas: number | null;
+  gastos: number | null;
+  tasa: number | null;
+  total: number | null;
+  fechaPrimerVencimiento: string | null;
+  fechaUltimaCuota: string | null;
+  cuotasDetalle:
+    | {
+        capital: number | null;
+        fechaVencimiento: string | null;
+        gastos: number | null;
+        interes: number | null;
+        numeroCuota: number | null;
+        total: number | null;
+      }[]
+    | null;
+};
+
+function mapRevisionSimulacion(body: unknown): RevisionSimulacion {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new LegacySolicitudesUnavailableError();
+  }
+  const row = body as Record<string, unknown>;
+  const number = (value: unknown): number | null => {
+    if (
+      value === null ||
+      value === undefined ||
+      (typeof value === "string" && !value.trim()) ||
+      (typeof value !== "number" && typeof value !== "string")
+    )
+      return null;
+    return Number.isFinite(Number(value)) ? Number(value) : null;
+  };
+  const date = (value: unknown): string | null =>
+    typeof value === "string" &&
+    value.trim() &&
+    Number.isFinite(Date.parse(value))
+      ? value
+      : null;
+  return {
+    capital: number(row.Capital),
+    cuotaResultante: number(row.CuotaResultante),
+    cuotas: number(row.Cuotas),
+    gastos: number(row.Gastos),
+    tasa: number(row.Tasa),
+    total: number(row.Total),
+    fechaPrimerVencimiento: date(row.FechaPrimerVencimiento),
+    fechaUltimaCuota: date(row.FechaUltimaCuota),
+    cuotasDetalle: Array.isArray(row.CuotasDetalle)
+      ? row.CuotasDetalle.map((item) => {
+          const cuota =
+            item && typeof item === "object"
+              ? (item as Record<string, unknown>)
+              : {};
+          return {
+            capital: number(cuota.Capital),
+            fechaVencimiento: date(cuota.FechaVencimiento),
+            gastos: number(cuota.Gastos),
+            interes: number(cuota.Interes),
+            numeroCuota: number(cuota.NumeroCuota),
+            total: number(cuota.Total),
+          };
+        })
+      : null,
+  };
 }

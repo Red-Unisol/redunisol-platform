@@ -103,6 +103,7 @@ function prestamo() {
     saldo: -1234703.98,
     vencimiento: "2027-11-01T00:00:00",
     vigente: true,
+    estado: 0,
   };
 }
 

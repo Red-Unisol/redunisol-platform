@@ -17,17 +17,19 @@ import {
 import type { StyledSelectOption, TabItem } from "../../types";
 
 export function Section({
+  id,
   children,
   title,
 }: {
   children: ReactNode;
+  id?: string;
   title: string;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const contentId = useId();
 
   return (
-    <section className="overflow-hidden rounded-md border border-border bg-surface">
+    <section id={id} tabIndex={id ? -1 : undefined} className="overflow-hidden rounded-md border border-border bg-surface">
       <header
         className={`bg-background ${
           isExpanded ? "border-b border-border" : ""

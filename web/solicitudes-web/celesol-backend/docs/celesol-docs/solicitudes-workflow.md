@@ -62,7 +62,7 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `Confirmada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
 | `Confirmada` | `liquidar` | `Liquidada` | `Liquidada` | no |
 | `Liquidada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
-| `Liquidada` | `verificar_firma` | `Verificar Firma y Documentación` | `VerificarFirmaYDocumentacion` | yes |
+| `Liquidada` | `verificar_firma` | `Verificar Firma y Documentación` | `VerificarFirmaYDocumentacion` | no |
 | `VerificarFirmaYDocumentacion` | `devolver_a_liquidada` | `Devolver a Liquidada` | `Liquidada` | yes |
 | `VerificarFirmaYDocumentacion` | `transferir` | `Para Transferir` | `Transferir` | no |
 | `Transferir` | `pagar` | `Pagada` | `Pagada` | no |

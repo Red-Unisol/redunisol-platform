@@ -10,6 +10,10 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
+import type { AuthUser } from "@/modules/auth/services/auth-api";
+import { Button } from "@/shared/components/ui/button";
+
 import { SolicitudesCoreListFooter } from "@/modules/solicitudes-core/components/solicitudes-core-list-footer";
 import { useSolicitudesCoreRecientesQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-recientes-query";
 import {
@@ -186,6 +190,29 @@ function getRowAppearanceStyle(row: SolicitudesTableRow, isSelected: boolean) {
 }
 
 export function SolicitudesCoreRecientesPage() {
+  const session = useAuthSessionQuery();
+  if (!session.data) return <SolicitudesContentLoader />;
+  return (
+    <RecientesList
+      key={`${session.data.id}:${session.data.workflowOwnerId}:${session.data.isSystemAdmin}`}
+      user={session.data}
+    />
+  );
+}
+
+function RecientesList({ user }: { user: AuthUser }) {
+  const areaLabel = user.workflowOwner?.code === "RIESGO"
+    ? "Riesgo"
+    : user.workflowOwner?.code === "VENDEDORES"
+      ? "Vendedores"
+      : user.workflowOwner?.name ?? "Sin área asignada";
+  const [vista, setVista] = useState<"mi-area" | "todas">(() =>
+    !user.isSystemAdmin &&
+    user.workflowOwnerId &&
+    ["VENDEDORES", "RIESGO"].includes(user.workflowOwner?.code ?? "")
+      ? "mi-area"
+      : "todas",
+  );
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -198,7 +225,10 @@ export function SolicitudesCoreRecientesPage() {
   const isRefreshPendingRef = useRef(false);
   const { data, error, isFetching, isLoading, refetch } =
     useSolicitudesCoreRecientesQuery({
-      nroDocumento: searchTerm,
+      vista,
+      userId: user.id,
+      workflowOwnerId: user.workflowOwnerId,
+      search: searchTerm,
       page,
       pageSize,
     });
@@ -275,6 +305,36 @@ export function SolicitudesCoreRecientesPage() {
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm"
     >
       <SolicitudesToolbar
+        searchPlaceholder="Buscar por DNI, nombre o apellido"
+        viewControl={user.workflowOwner?.code !== "TESORERIA" && (
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Vista por área"
+          >
+            <span className="text-sm text-foreground-secondary">
+              Área: {areaLabel}
+            </span>
+            {(["mi-area", "todas"] as const).map((value) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={vista === value ? "default" : "outline"}
+                aria-pressed={vista === value}
+                disabled={value === "mi-area" && !user.workflowOwnerId}
+                onClick={() => {
+                  if (vista === value) return;
+                  setVista(value);
+                  setPage(1);
+                  setSelectedIds([]);
+                }}
+              >
+                {value === "mi-area" ? areaLabel : "Ver todas"}
+              </Button>
+            ))}
+          </div>
+        )}
         leftActions={CORE_RECIENTES_LEFT_ACTIONS}
         onAction={(actionId) => {
           if (actionId === "refresh") {
@@ -284,11 +344,17 @@ export function SolicitudesCoreRecientesPage() {
         onSearchChange={(value) => {
           setSearchTerm(value);
           setPage(1);
+          setSelectedIds([]);
         }}
         rightActions={rightActions}
         searchTerm={searchTerm}
       />
 
+      {!refreshState.isInitialLoading && !error && vista === "mi-area" && filteredRows.length === 0 && (
+        <p role="status" className="shrink-0 border-b border-border px-3 py-3 text-sm text-foreground-secondary">
+          No hay solicitudes para tu área dentro de los criterios de búsqueda aplicados.
+        </p>
+      )}
       <div className="min-h-0 flex-1">
         {refreshState.isInitialLoading ? (
           <SolicitudesContentLoader />
@@ -297,7 +363,11 @@ export function SolicitudesCoreRecientesPage() {
             columnFilters={columnFilters}
             columns={CORE_RECIENTES_COLUMNS}
             emptyMessage={
-              error ? "No se pudieron cargar las solicitudes." : undefined
+              error
+                ? "No se pudieron cargar las solicitudes."
+                : vista === "mi-area"
+                  ? null
+                  : undefined
             }
             filterOptions={filterOptions}
             onApplyColumnFilter={(columnKey, selectedValues) => {

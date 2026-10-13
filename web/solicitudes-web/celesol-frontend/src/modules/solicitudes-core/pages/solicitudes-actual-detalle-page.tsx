@@ -1,3 +1,11 @@
+import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
+import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
+import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
+import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
+import { LinkFirmaDigital } from "../components/link-firma-digital";
+import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
+import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
+import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
 import {
   ArrowLeft,
   CircleAlert,
@@ -19,7 +27,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -135,6 +143,7 @@ import type {
 import { StaticMoneyInput } from "@/shared/components/forms/money-input-field";
 import {
   formatMoneyAmount,
+  formatDecimalMoneyValue,
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
@@ -239,18 +248,17 @@ type SolicitanteTab =
   | "adjuntos"
   | "cancelaciones"
   | "prestamos"
-  | "solicitante";
+  | "solicitante"
+  | "solicitudes";
 type SolicitanteContentTab =
   | DatosPersonalesTab
   | "adjuntos"
   | "cancelaciones"
-  | "prestamos";
+  | "prestamos"
+  | "solicitudes";
 
 const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Datos Personales", value: "datosPersonales" },
-  { label: "Cónyuge", value: "conyuge" },
-  { label: "Económicos/Laborales", value: "economicosLaborales" },
-  { label: "Adicionales", value: "adicionales" },
   { label: "Cancelaciones", value: "cancelaciones" },
   { label: "Adjuntos", value: "adjuntos" },
 ];
@@ -297,13 +305,38 @@ function PrestamosDelSocioSection({
     isActive,
   );
   const prestamos = data?.prestamos ?? [];
+  const [filtro, setFiltro] = useState<"activos" | "otros" | "desconocidos" | "todos">("activos");
+  const activos = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "activos");
+  const otros = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "otros");
+  const desconocidos = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "desconocidos");
+  const prestamosVisibles = filtro === "activos" ? activos : filtro === "otros" ? otros : filtro === "desconocidos" ? desconocidos : [...activos, ...otros, ...desconocidos];
   // Id en Vimarx del prestamo abierto en el modal; null con el modal cerrado.
   const [prestamoAbiertoId, setPrestamoAbiertoId] = useState<string | null>(
     null,
   );
 
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-3">
+      <div aria-label="Filtrar préstamos por estado" className="flex flex-wrap gap-2" role="group">
+        {([
+          ["activos", "Activos", activos.length],
+          ["otros", "Otros estados", otros.length],
+          ["desconocidos", "Sin verificar", desconocidos.length],
+          ["todos", "Todos", prestamos.length],
+        ] as const).map(([value, label, count]) => (
+          <Button
+            aria-pressed={filtro === value}
+            key={value}
+            onClick={() => setFiltro(value)}
+            size="sm"
+            type="button"
+            variant={filtro === value ? "default" : "outline"}
+          >
+            {label}{!isLoading && !error ? ` (${count})` : ""}
+          </Button>
+        ))}
+      </div>
+      <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] border-collapse text-sm">
         <thead className="bg-background text-left text-xs text-foreground-secondary">
           <tr>
@@ -336,14 +369,13 @@ function PrestamosDelSocioSection({
                 No se pudieron consultar los préstamos del socio.
               </td>
             </tr>
-          ) : prestamos.length > 0 ? (
-            prestamos.map((prestamo) => (
+          ) : prestamosVisibles.length > 0 ? (
+            prestamosVisibles.map((prestamo) => (
               <tr
-                // Los no vigentes van atenuados: siguen siendo utiles como
-                // historial, pero no son la informacion principal.
+                // Otros estados no equivalen a créditos pagados ni libres de mora.
                 className={[
                   "border-t border-border",
-                  prestamo.vigente ? "" : "text-foreground-secondary",
+                  clasificarEstadoPrestamo(prestamo) === "otros" ? "text-foreground-secondary" : "",
                   prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
                 ]
                   .filter(Boolean)
@@ -388,12 +420,17 @@ function PrestamosDelSocioSection({
                 className="px-3 py-4 text-foreground-secondary"
                 colSpan={PRESTAMOS_TABLE_COLUMNS.length}
               >
-                El socio no tiene préstamos registrados.
+                {prestamos.length === 0
+                  ? "El socio no tiene préstamos registrados."
+                  : filtro === "activos"
+                    ? "No hay préstamos activos. Podés consultar los otros estados o los pendientes de verificación."
+                    : "No hay préstamos en este filtro."}
               </td>
             </tr>
           )}
         </tbody>
       </table>
+      </div>
       <PrestamoDelSocioDialog
         onOpenChange={(open) => {
           if (!open) {
@@ -645,6 +682,7 @@ type EditableFieldProps = {
 };
 
 type EditableTextInputProps = {
+  inputMode?: "decimal";
   appearanceStyle?: CSSProperties;
   disabled?: boolean;
   highlightReadOnly?: boolean;
@@ -970,6 +1008,7 @@ function EditableField({
 }
 
 function EditableTextInput({
+  inputMode,
   appearanceStyle,
   disabled = false,
   highlightReadOnly = false,
@@ -993,6 +1032,7 @@ function EditableTextInput({
           onChange={(event) => onChange(event.target.value)}
           style={disabled ? appearanceStyle : undefined}
           type={type}
+          inputMode={inputMode}
           value={value}
         />
       }
@@ -1179,6 +1219,7 @@ function EditableMoneyInput({
       appearanceStyle={appearanceStyle}
       editor={
         <StaticMoneyInput
+          aria-label={label}
           disabled={disabled}
           onChange={onChange}
           style={disabled ? appearanceStyle : undefined}
@@ -1194,13 +1235,15 @@ function EditableMoneyInput({
 }
 
 function DetailCard({
+  id,
   children,
   title,
 }: {
+  id?: string;
   children: ReactNode;
   title: string;
 }) {
-  return <Section title={title}>{children}</Section>;
+  return <Section id={id} title={title}>{children}</Section>;
 }
 
 // La linea se cambia donde la regla del estado lo habilita (pensado para que
@@ -1279,6 +1322,7 @@ function LineaField({
 }
 
 function SolicitudSection({
+  cuotaCalculoMensaje,
   assignmentOptions,
   assignmentValue,
   assignmentValueLabel,
@@ -1295,6 +1339,7 @@ function SolicitudSection({
   ultimaNovedad,
   values,
 }: {
+  cuotaCalculoMensaje?: string;
   assignmentOptions: StyledSelectOption[];
   assignmentValue: string;
   assignmentValueLabel: string;
@@ -1386,15 +1431,18 @@ function SolicitudSection({
           type="number"
           value={values.cuotas}
         />
-        <EditableTextInput
-          {...getReadonlyProps("solicitud.cuotaResultante")}
-          disabled={!isFieldEditableByKey("solicitud.cuotaResultante")}
-          isEditing={isEditing}
-          label="Cuota resultante"
-          onChange={(value) => onChange("cuotaResultante", value)}
-          readOnlyValue={formatText(solicitud.cuotaResultante)}
-          value={values.cuotaResultante}
-        />
+        <div>
+          <EditableMoneyInput
+            {...getReadonlyProps("solicitud.montoAFinanciar")}
+            disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+            isEditing={isEditing}
+            label="Cuota resultante"
+            onChange={value => onChange("cuotaResultante", value)}
+            readOnlyValue={values.cuotaResultante || "Cálculo no disponible"}
+            value={values.cuotaResultante}
+          />
+          {isEditing && cuotaCalculoMensaje ? <p role="status" className="mt-1 text-xs text-foreground-secondary">{cuotaCalculoMensaje}</p> : null}
+        </div>
         <EditableTextInput
           {...getReadonlyProps("solicitud.motivo")}
           disabled={!isFieldEditableByKey("solicitud.motivo")}
@@ -1420,14 +1468,12 @@ function SolicitudSection({
             value={assignmentValueLabel}
           />
         ) : null}
-        <EditableTextInput
-          {...getReadonlyProps("solicitud.vendedorSolicitud")}
-          disabled={!isFieldEditableByKey("solicitud.vendedorSolicitud")}
-          isEditing={isEditing}
+        <EditableField
+          appearanceStyle={readonlyAppearanceStyle}
+          isEditing={false}
+          editor={null}
           label="Vendedor solicitud"
-          onChange={(value) => onChange("vendedorSolicitud", value)}
-          readOnlyValue={formatText(solicitud.vendedorSolicitud)}
-          value={values.vendedorSolicitud}
+          value={formatText(solicitud.vendedorSolicitud)}
         />
         <EditableField
           appearanceStyle={readonlyAppearanceStyle}
@@ -1471,14 +1517,7 @@ function SolicitudSection({
           label="Link firma digital"
           value={
             solicitud.linkFirmaDigital ? (
-              <a
-                className="break-all text-primary underline underline-offset-2"
-                href={solicitud.linkFirmaDigital}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {solicitud.linkFirmaDigital}
-              </a>
+              <LinkFirmaDigital url={solicitud.linkFirmaDigital} />
             ) : (
               "El link estará disponible al generar préstamo"
             )
@@ -2180,7 +2219,7 @@ function AdjuntosSection({
   }
 
   const content = (
-    <div className="space-y-3">
+    <div id="solicitud-adjuntos" tabIndex={-1} className="space-y-3 scroll-mt-36">
       {canCreateAdjunto || canDownloadAdjunto || canDeleteAdjunto ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -2551,7 +2590,8 @@ function SolicitanteSection({
   const activeContentTab: SolicitanteContentTab =
     activeTab === "adjuntos" ||
     activeTab === "cancelaciones" ||
-    activeTab === "prestamos"
+    activeTab === "prestamos" ||
+    activeTab === "solicitudes"
       ? activeTab
       : datosPersonalesTab;
   const [selectedGarantiaIndexes, setSelectedGarantiaIndexes] = useState<
@@ -2618,14 +2658,15 @@ function SolicitanteSection({
   }
 
   return (
-    <DetailCard title="Solicitante">
+    <DetailCard id="solicitante-prestamos" title="Solicitante">
       <SectionTabs<SolicitanteContentTab>
         activeTab={activeContentTab}
         onTabChange={(tab) => {
           if (
             tab === "adjuntos" ||
             tab === "cancelaciones" ||
-            tab === "prestamos"
+            tab === "prestamos" ||
+            tab === "solicitudes"
           ) {
             onTabChange(tab);
             return;
@@ -2636,11 +2677,13 @@ function SolicitanteSection({
         }}
         tabs={
           canViewPrestamos
-            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB]
+            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB, { label: "Solicitudes", value: "solicitudes" }]
             : SOLICITANTE_CONTENT_TABS
         }
       />
-      {activeContentTab === "prestamos" ? (
+      {activeContentTab === "solicitudes" && canViewPrestamos ? (
+        <SolicitudesDelTitularSection solicitudId={solicitudId} documento={titular.nroDocumento} />
+      ) : activeContentTab === "prestamos" ? (
         <PrestamosDelSocioSection
           isActive={activeContentTab === "prestamos"}
           solicitudId={solicitudId}
@@ -2914,6 +2957,7 @@ function ErrorState({
 
 export function SolicitudesActualDetallePage() {
   const queryClient = useQueryClient();
+  const { closeSidebar } = useOutletContext<{ closeSidebar: () => void }>();
   const navigate = useNavigate();
   const params = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -2936,6 +2980,8 @@ export function SolicitudesActualDetallePage() {
   const canGuardarEvaluacion =
     currentUser?.isSystemAdmin === true ||
     (currentUser?.workflowOwner?.code === "RIESGO" &&
+      Boolean(currentUser.workflowOwnerId) &&
+      currentUser.workflowOwnerId === solicitud?.estadoActual.ownerId &&
       (solicitudCapabilities?.canEdit ?? false));
   const {
     data: adjuntos = [],
@@ -3007,10 +3053,14 @@ export function SolicitudesActualDetallePage() {
   const { data: lineasSimulador = [] } = useLineasPrestamoQuery(solicitudId);
   const [datosPersonalesTab, setDatosPersonalesTab] =
     useState<DatosPersonalesTab>("datosPersonales");
+  const [solicitanteNavigation, setSolicitanteNavigation] = useState(0);
   const [solicitanteTab, setSolicitanteTab] =
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
     useState<SolicitudDetailVistaTab>("solicitud");
+  const [reciboView, setReciboView] = useState<{ solicitudId: string; selectedId: string | null } | null>(null);
+  const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
+  const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
@@ -3023,14 +3073,17 @@ export function SolicitudesActualDetallePage() {
         "Hay cambios sin guardar en la evaluación. Si cambiás de pestaña se pierden. ¿Continuar?",
       )
     ) {
-      return;
+      return false;
     }
 
     if (tab !== "evaluacion") {
+      setReciboView(null);
       setEvaluacionConCambios(false);
     }
 
+    if (tab === "evaluacion" && canViewCalculadora) closeSidebar();
     setVistaTab(tab);
+    return true;
   }
   const [editableGarantias, setEditableGarantias] = useState<
     CreateSolicitudCoreGarantiaRequest[] | null
@@ -3168,6 +3221,21 @@ export function SolicitudesActualDetallePage() {
     return latestComment || PLACEHOLDER;
   }, [workflowHistory]);
 
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(null);
+  const condicionesEdicion = editableValues?.solicitud;
+  const lineaEdicion = lineasSimulador.find(linea => linea.oid === condicionesEdicion?.lineaPrestamoLegacyOid);
+  const cuotaEdicion = useCuotaCalculada({
+    ...(cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) > 0 ? { cuotaObjetivo: parseMoneyValue(cuotaObjetivoTexto) } : {}),
+    solicitudId, capitalPuro: false, lineaId: Number(condicionesEdicion?.lineaPrestamoLegacyOid),
+    montoAFinanciar: parseMoneyValue(cuotaObjetivoTexto !== null ? condicionesEdicion?.montoAFinanciar ?? "" : ajustarMontoTexto(condicionesEdicion?.montoAFinanciar ?? "", lineaEdicion)),
+    cuotas: Number(ajustarCuotasTexto(condicionesEdicion?.cuotas ?? "", lineaEdicion)),
+    ...(condicionesEdicion?.fechaPrimerVencimiento ? { fechaPrimerVencimiento: condicionesEdicion.fechaPrimerVencimiento } : {}),
+  }, Boolean(isEditing && (cuotaObjetivoTexto === null || parseMoneyValue(cuotaObjetivoTexto) > 0) && lineaEdicion && condicionesEdicion && Number(condicionesEdicion.cuotas) > 0 && parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0), result => {
+    if (parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !== result.montoAFinanciar || Number(condicionesEdicion?.cuotas) !== result.cuotas) void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) });
+    setEditableValues(current => current ? { ...current, solicitud: { ...current.solicitud,
+      montoAFinanciar: parseMoneyValue(current.solicitud.montoAFinanciar) === result.montoAFinanciar ? current.solicitud.montoAFinanciar : formatMoneyAmount(result.montoAFinanciar),
+      cuotas: String(result.cuotas) } } : current);
+  });
   if (!solicitudId) {
     return (
       <ErrorState
@@ -3217,6 +3285,10 @@ export function SolicitudesActualDetallePage() {
         : workflowTransitionOptions.length > 0
           ? "Enviar a..."
           : "Sin acciones disponibles";
+  const submissionTransition =
+    resolvedSolicitud.estadoActual.code === "CargaVendedor"
+      ? workflowTransitions.find((transition) => transition.toState.code === "Motor")
+      : undefined;
   const workflowHistoryErrorMessage =
     workflowHistoryError instanceof ApiError &&
     workflowHistoryError.status === 403
@@ -3240,11 +3312,16 @@ export function SolicitudesActualDetallePage() {
   );
 
   function handleStartEditing() {
+    setCuotaObjetivoTexto(null);
     if (!canEnterEditMode) {
       return;
     }
 
-    setEditableValues(mapSolicitudCoreToEditableValues(resolvedSolicitud));
+    const editValues = mapSolicitudCoreToEditableValues(resolvedSolicitud);
+    const linea = lineasSimulador.find(linea => linea.oid === editValues.solicitud.lineaPrestamoLegacyOid);
+    editValues.solicitud.montoAFinanciar = ajustarMontoTexto(editValues.solicitud.montoAFinanciar, linea);
+    editValues.solicitud.cuotas = ajustarCuotasTexto(editValues.solicitud.cuotas, linea);
+    setEditableValues(editValues);
     setEditableGarantias(null);
     setEditingGarantiaIndex(null);
     setGarantiasDirty(false);
@@ -3265,21 +3342,17 @@ export function SolicitudesActualDetallePage() {
     setIsEditing(false);
   }
 
-  function updateSolicitudField(
-    field: keyof EditableSolicitudCoreValues["solicitud"],
-    value: string,
-  ) {
-    setEditableValues((current) =>
-      current
-        ? {
-            ...current,
-            solicitud: {
-              ...current.solicitud,
-              [field]: value,
-            },
-          }
-        : current,
-    );
+  function updateSolicitudField(field: keyof EditableSolicitudCoreValues["solicitud"], value: string) {
+    if (field === "cuotaResultante") { setCuotaObjetivoTexto(value); return; }
+    if (["montoAFinanciar", "cuotas", "lineaPrestamoLegacyOid", "fechaPrimerVencimiento"].includes(field)) setCuotaObjetivoTexto(null);
+    setEditableValues(current => {
+      if (!current) return current;
+      const draft = { ...current.solicitud, [field]: value };
+      const linea = lineasSimulador.find(linea => linea.oid === draft.lineaPrestamoLegacyOid);
+      draft.montoAFinanciar = ajustarMontoTexto(draft.montoAFinanciar, linea);
+      draft.cuotas = ajustarCuotasTexto(draft.cuotas, linea);
+      return { ...current, solicitud: draft };
+    });
   }
 
   function updateSolicitudBooleanField(
@@ -3414,6 +3487,10 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handleSaveChanges() {
+    if (cuotaObjetivoTexto !== null && !cuotaEdicion.data) {
+      toast.error(cuotaEdicion.error?.message ?? "Esperá a que termine el cálculo de la cuota deseada.");
+      return;
+    }
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
 
@@ -3666,6 +3743,11 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handlePreviewAdjunto(adjunto: SolicitudCoreAdjuntoResponse) {
+    if (canViewCalculadora && adjunto.tipoAdjunto === "Recibo de Sueldo" && adjunto.solicitudId === solicitudId) {
+      if (!cambiarVistaTab("evaluacion")) return;
+      setReciboView({ solicitudId, selectedId: adjunto.id });
+      return;
+    }
     toast.dismiss(PREVIEW_ADJUNTO_ERROR_TOAST_ID);
     setPreviewingAdjuntoId(adjunto.id);
 
@@ -3992,12 +4074,35 @@ export function SolicitudesActualDetallePage() {
         </div>
       </header>
 
+      <DatosRapidosSolicitante
+        key={resolvedSolicitud.id}
+        solicitudId={resolvedSolicitud.id}
+        titular={resolvedSolicitud.titular}
+        revision={JSON.stringify([
+          resolvedSolicitud.titular.nroDocumento,
+          resolvedSolicitud.titular.tipoDocumento,
+          resolvedSolicitud.lineaPrestamoLegacyOid,
+        ])}
+        canViewDetalle={Boolean(currentUser) && canViewPrestamosDelSocio(currentUser)}
+        onVerDetalle={() => {
+          if (!cambiarVistaTab("solicitud")) return;
+          setSolicitanteTab("prestamos");
+          setSolicitanteNavigation((value) => value + 1);
+          requestAnimationFrame(() => {
+            const target = document.getElementById("solicitante-prestamos");
+            target?.scrollIntoView({ behavior: "smooth", block: "start" });
+            target?.focus({ preventScroll: true });
+          });
+        }}
+      />
+
       <SolicitudDetailToolbar
         canEdit={canEnterEditMode}
         isCreatePrestamoLegacyPending={createPrestamoLegacyMutation.isPending}
         isEditing={isEditing}
         isSaveDisabled={
           patchSolicitudCoreMutation.isPending ||
+          (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
           (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
         }
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
@@ -4016,6 +4121,32 @@ export function SolicitudesActualDetallePage() {
         onRefresh={handleRefresh}
         onSave={handleSaveToolbarAction}
         onStartEdit={handleStartEditing}
+        submitAction={
+          canChangeState && submissionTransition
+            ? {
+                onClick: () => handleWorkflowTransitionChange(submissionTransition.id),
+                disabled:
+                  isLoadingWorkflowTransitions ||
+                  workflowTransitionSelectorErrorMessage !== null ||
+                  executeWorkflowTransitionMutation.isPending ||
+                  submissionTransition.blockedReason !== null,
+                disabledReason: submissionTransition.blockedReason ?? undefined,
+              }
+            : undefined
+        }
+        attachmentsAction={{
+          count: isLoadingAdjuntos || adjuntosError ? undefined : adjuntos.length,
+          onClick: () => {
+            if (!cambiarVistaTab("solicitud")) return;
+            setSolicitanteTab("adjuntos");
+            setSolicitanteNavigation((value) => value + 1);
+            requestAnimationFrame(() => {
+              const target = document.getElementById("solicitud-adjuntos");
+              target?.scrollIntoView({ behavior: "smooth", block: "start" });
+              target?.focus({ preventScroll: true });
+            });
+          },
+        }}
         transitionControl={
           <StyledSelect
             className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
@@ -4090,7 +4221,7 @@ export function SolicitudesActualDetallePage() {
                 Cancelar
               </Button>
               <Button
-                disabled={patchSolicitudCoreMutation.isPending}
+                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data)}
                 onClick={() => void handleSaveChanges()}
                 type="button"
               >
@@ -4100,6 +4231,7 @@ export function SolicitudesActualDetallePage() {
             </div>
           ) : null}
           <SolicitudSection
+            cuotaCalculoMensaje={cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) <= 0 ? "Ingresá una cuota mayor a cero." : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error?.message}
             assignmentOptions={assignmentAgentOptions}
             assignmentValue={selectedAssignmentValue}
             assignmentValueLabel={assignmentValueLabel}
@@ -4114,9 +4246,15 @@ export function SolicitudesActualDetallePage() {
             readonlyAppearanceStyle={readonlyAppearanceStyle}
             solicitud={resolvedSolicitud}
             ultimaNovedad={ultimaNovedad}
-            values={currentValues.solicitud}
+            values={{ ...currentValues.solicitud, montoAFinanciar: cuotaObjetivoTexto !== null ? currentValues.solicitud.montoAFinanciar : ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaObjetivoTexto ?? "" : currentValues.solicitud.cuotaResultante }}
           />
+          {solicitanteTab === "adjuntos" && !isEditing && canEnterEditMode && canManageAdjuntos ? (
+            <p className="px-4 text-sm text-foreground-secondary">
+              Podés consultar los archivos guardados. Para agregar o eliminar adjuntos, seleccioná «Editar» en la barra de acciones.
+            </p>
+          ) : null}
           <SolicitanteSection
+            key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
             activeTab={solicitanteTab}
             adjuntos={adjuntos}
             canCreateAdicional={isEditing && canUploadAdjuntos}
@@ -4183,20 +4321,27 @@ export function SolicitudesActualDetallePage() {
       ) : null}
 
       {canViewCalculadora && vistaTab === "evaluacion" ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <Suspense
-            fallback={
-              <SolicitudesContentLoader label="Cargando calculadora..." />
-            }
-          >
+        <EvaluacionRecibosView
+          key={solicitudId}
+          solicitudId={solicitudId}
+          recibos={recibos}
+          open={visorRecibosOpen}
+          selectedId={visorRecibosOpen ? reciboView.selectedId : null}
+          onOpen={() => setReciboView({ solicitudId, selectedId: recibos[0]?.id ?? null })}
+          onClose={() => setReciboView(null)}
+          onSelect={selectedId => setReciboView({ solicitudId, selectedId })}
+          loading={isLoadingAdjuntos}
+          error={adjuntosError ? "No se pudo obtener el listado de recibos de sueldo." : null}
+        >
+          <Suspense fallback={<SolicitudesContentLoader label="Cargando calculadora..." />}>
             <CalculadoraMutualSheet
-              className="flex-1"
+              className="flex-1 min-w-0"
               onCambiosSinGuardarChange={setEvaluacionConCambios}
               puedeGuardar={canGuardarEvaluacion}
               source={{ kind: "embedded", solicitudId }}
             />
           </Suspense>
-        </div>
+        </EvaluacionRecibosView>
       ) : null}
 
       <NuevaGarantiaModal
@@ -4225,6 +4370,8 @@ export function SolicitudesActualDetallePage() {
           fallback={<ModalLoadingOverlay label="Cargando simulador..." />}
         >
           <SimuladorPrestamoModal
+            solicitudId={solicitudId}
+            onLimitsAdjusted={() => { void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) }); }}
             defaultLineaOid={
               resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
             }
@@ -4240,6 +4387,7 @@ export function SolicitudesActualDetallePage() {
                       handleStartEditing();
                     }
 
+                    setCuotaObjetivoTexto(null);
                     setEditableValues((current) => {
                       const base =
                         current ??
@@ -4303,6 +4451,7 @@ export function SolicitudesActualDetallePage() {
         socio={null}
       />
       <GenerarPrestamoDialog
+        condicionesKey={JSON.stringify([resolvedSolicitud.lineaPrestamoLegacyOid, resolvedSolicitud.montoAFinanciar, resolvedSolicitud.cuotas, resolvedSolicitud.titular])}
         cuotas={resolvedSolicitud.cuotas}
         isPending={createPrestamoLegacyMutation.isPending}
         lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}

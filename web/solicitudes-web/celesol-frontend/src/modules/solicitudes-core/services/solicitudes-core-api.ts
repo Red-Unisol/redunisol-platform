@@ -258,6 +258,7 @@ export function getCredixsaSolicitud(solicitudId: string) {
 }
 
 export type PrestamoDelSocioResponse = {
+  estado: number | null;
   capital: number | null;
   fechaEmision: string | null;
   legacyId: string | null;
@@ -277,6 +278,7 @@ export function listPrestamosDelSocio(solicitudId: string) {
 }
 
 export type PrestamoDelSocioDetalleResponse = {
+  cuotas: number | null;
   asiento: string | null;
   cobrador: string | null;
   destino: string | null;
@@ -291,6 +293,8 @@ export type PrestamoDelSocioDetalleResponse = {
 export type CuotaPrestamoResponse = {
   capital: number | null;
   fecha: string | null;
+  /** null/vacío: sin cobro; ausente: dato no disponible. */
+  fechaCobro?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
   saldoCuota: number | null;
@@ -371,6 +375,7 @@ function decodeContentDispositionFileName(value: string) {
 export async function downloadSolicitudCoreAdjunto(
   solicitudId: string,
   adjuntoId: string,
+  signal?: AbortSignal,
 ): Promise<DownloadSolicitudCoreAdjuntoResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(
@@ -383,7 +388,7 @@ export async function downloadSolicitudCoreAdjunto(
       `/solicitudes/${solicitudId}/adjuntos/${adjuntoId}/download`,
       {
         method: "GET",
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       },
     );
 
@@ -550,11 +555,59 @@ export async function uploadSolicitudCoreAdjuntosLote(
   }
 }
 
-export function simularPrestamo(payload: SimularPrestamoRequest) {
+export function simularPrestamo(input: SimularPrestamoRequest) {
+  const { solicitudId, ...payload } = input;
   return withAreaForbiddenMessage(
     apiClient.post<SimulacionPrestamoResponse>(
-      "/solicitudes/simulacion",
+      solicitudId ? `/solicitudes/${solicitudId}/simulacion` : "/solicitudes/simulacion",
       payload,
     ),
   );
+}
+
+export type SolicitudDelTitular = {
+  nroSolicitud: string | null;
+  fecha: string | null;
+  estado: string | null;
+  vendedor: string | null;
+  usuarioCreador: string | null;
+  linea: string | null;
+  montoAFinanciar: number | null;
+  montoADesembolsar: number | null;
+  cuotas: number | null;
+  cuotaResultante: number | null;
+  nroCuentaPrestamo: string | null;
+  nroSocio: string | null;
+  nroDocumento: string | null;
+  nombreCompleto: string | null;
+};
+
+
+export type HistorialSolicitudesResponse = {
+ status: "ok" | "documento_invalido";
+ solicitudes: SolicitudDelTitular[];
+ limit: 50;
+};
+export function listSolicitudesDelTitular(id: string) {
+ return apiClient.get<HistorialSolicitudesResponse>(`/solicitudes/${id}/solicitudes-titular`);
+}
+
+export type RevisionPrestamoResponse = {
+  titular: { nombreCompleto: string | null; nroSocio: string | null };
+  condiciones: { lineaDescripcion: string; montoAFinanciar: number | null; cuotas: number | null };
+  calculo: {
+    capital: number | null; cuotaResultante: number | null; cuotas: number | null;
+    gastos: number | null; tasa: number | null; total: number | null;
+    fechaPrimerVencimiento: string | null; fechaUltimaCuota: string | null;
+    cuotasDetalle: {
+      capital: number | null; fechaVencimiento: string | null; gastos: number | null;
+      interes: number | null; numeroCuota: number | null; total: number | null;
+    }[] | null;
+  } | null;
+};
+
+export function getRevisionPrestamo(solicitudId: string) {
+  return withAreaForbiddenMessage(apiClient.get<RevisionPrestamoResponse>(
+    `/solicitudes/${solicitudId}/revision-prestamo`,
+  ));
 }

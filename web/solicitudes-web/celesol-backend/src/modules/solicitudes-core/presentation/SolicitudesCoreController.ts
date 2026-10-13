@@ -1,3 +1,6 @@
+import { CalculoConValoresEfectivosError } from "../domain/solicitudes-core-errors";
+import type { GetRevisionPrestamoUseCase } from "../application/use-cases/GetRevisionPrestamo.use-case";
+import type { ListSolicitudesDelTitularUseCase } from "../application/use-cases/ListSolicitudesDelTitular.use-case";
 import type { NextFunction, Request, Response } from "express";
 import type { ZodSchema } from "zod";
 
@@ -68,6 +71,7 @@ type Dependencies = {
   assignSolicitudToUserUseCase: AssignSolicitudToUserUseCase;
   listAssignableSolicitudAgentsUseCase: ListAssignableSolicitudAgentsUseCase;
   changeSolicitudStateUseCase: ChangeSolicitudStateUseCase;
+  getRevisionPrestamoUseCase: GetRevisionPrestamoUseCase;
   createPrestamoLegacyUseCase: CreatePrestamoLegacyUseCase;
   createSolicitudUseCase: CreateSolicitudUseCase;
   getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -81,6 +85,7 @@ type Dependencies = {
   getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
+  listSolicitudesDelTitularUseCase: ListSolicitudesDelTitularUseCase;
   listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
@@ -93,6 +98,7 @@ export class SolicitudesCoreController {
   private readonly assignSolicitudToUserUseCase: AssignSolicitudToUserUseCase;
   private readonly listAssignableSolicitudAgentsUseCase: ListAssignableSolicitudAgentsUseCase;
   private readonly changeSolicitudStateUseCase: ChangeSolicitudStateUseCase;
+  private readonly getRevisionPrestamoUseCase: GetRevisionPrestamoUseCase;
   private readonly createPrestamoLegacyUseCase: CreatePrestamoLegacyUseCase;
   private readonly createSolicitudUseCase: CreateSolicitudUseCase;
   private readonly getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -106,6 +112,7 @@ export class SolicitudesCoreController {
   private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
   private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
   private readonly listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
+  private readonly listSolicitudesDelTitularUseCase: ListSolicitudesDelTitularUseCase;
   private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
   private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
@@ -118,6 +125,7 @@ export class SolicitudesCoreController {
     this.listAssignableSolicitudAgentsUseCase =
       dependencies.listAssignableSolicitudAgentsUseCase;
     this.changeSolicitudStateUseCase = dependencies.changeSolicitudStateUseCase;
+    this.getRevisionPrestamoUseCase = dependencies.getRevisionPrestamoUseCase;
     this.createPrestamoLegacyUseCase = dependencies.createPrestamoLegacyUseCase;
     this.createSolicitudUseCase = dependencies.createSolicitudUseCase;
     this.getCurrentUserUseCase = dependencies.getCurrentUserUseCase;
@@ -136,6 +144,7 @@ export class SolicitudesCoreController {
     this.getPrestamoDelSocioUseCase = dependencies.getPrestamoDelSocioUseCase;
     this.listLineasPrestamoDeSolicitudUseCase =
       dependencies.listLineasPrestamoDeSolicitudUseCase;
+    this.listSolicitudesDelTitularUseCase = dependencies.listSolicitudesDelTitularUseCase;
     this.listPrestamosDelSocioUseCase =
       dependencies.listPrestamosDelSocioUseCase;
     this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
@@ -327,6 +336,15 @@ export class SolicitudesCoreController {
   // es informacion para analizar, no para cargar. Mismo criterio que la
   // calculadora de riesgo, que tambien se restringe por area en el backend --
   // ocultar la pestaña en el frontend no alcanza.
+  listSolicitudesDelTitular = async (req: CookieRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = await this.getCurrentUser(req);
+      const params = this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params);
+      const result = await this.listSolicitudesDelTitularUseCase.execute({ solicitudId: params.id, currentUser: user });
+      res.status(200).json(result);
+    } catch (error) { next(error); }
+  };
+
   listPrestamosDelSocio = async (
     req: CookieRequest,
     res: Response,
@@ -486,6 +504,35 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getRevisionPrestamo = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+      const workflowOwnerId = user.isSystemAdmin
+        ? user.workflowOwnerId ?? ""
+        : this.requireWorkflowOwnerId(user.workflowOwnerId);
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const solicitud = await this.getRevisionPrestamoUseCase.execute({
+        currentUser: {
+          id: user.id,
+          workflowOwnerId,
+          ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+        },
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(solicitud);
     } catch (error) {
       next(error);
     }
@@ -676,7 +723,10 @@ export class SolicitudesCoreController {
         simularPrestamoBodySchema,
         req.body,
       );
+      const solicitudId = req.params.id ? this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params).id : undefined;
       const simulacion = await this.simularPrestamoUseCase.execute({
+        solicitudId,
+        cuotaObjetivo: body.cuotaObjetivo,
         capitalPuro: body.capitalPuro ?? false,
         cuotas: body.cuotas,
         fechaPrimerVencimiento: body.fechaPrimerVencimiento,
@@ -688,6 +738,10 @@ export class SolicitudesCoreController {
 
       res.status(200).json(simulacion);
     } catch (error) {
+      if (error instanceof CalculoConValoresEfectivosError) {
+        res.status(error.statusCode).json({ error: { code: "CALCULO_CON_VALORES_EFECTIVOS", message: error.message }, effectiveValues: error.effectiveValues });
+        return;
+      }
       next(error);
     }
   };

@@ -76,7 +76,7 @@ export class SimularCuotaSolicitud {
           : {}),
       });
 
-      if (!Number.isFinite(simulacion.cuotaResultante)) {
+      if (simulacion.cuotas !== input.cuotas || simulacion.montoAFinanciar !== input.montoAFinanciar || simulacion.lineaId !== lineaId || !Number.isFinite(simulacion.cuotaResultante)) {
         return null;
       }
 

@@ -147,6 +147,16 @@ export function buildSolicitudFieldAccess(
   isSystemAdmin?: boolean,
   isAnalista?: boolean,
 ): SolicitudFieldAccess {
+  const access = buildSolicitudFieldAccessRaw(solicitud, ruleRecord, isSystemAdmin, isAnalista);
+  return { ...access, editableFields: access.editableFields.filter(field => field !== "solicitud.cuotaResultante") };
+}
+
+function buildSolicitudFieldAccessRaw(
+  solicitud: Pick<SolicitudCore, "estadoActual">,
+  ruleRecord?: SolicitudFieldAccessRuleRecord | null,
+  isSystemAdmin?: boolean,
+  isAnalista?: boolean,
+): SolicitudFieldAccess {
   if (isSystemAdmin || isAnalista) {
     return {
       defaultMode: "readonly",
