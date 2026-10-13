@@ -4,6 +4,7 @@ import type {
   CheckCuitResponse,
   CheckDocumentoResponse,
   CreateSocioRequest,
+  Localidad,
   LookupSocioResponse,
   Socio,
   UpdateSocioRequest,
@@ -68,6 +69,18 @@ export function checkDocumentoDuplicate(
 
   return apiClient.get<CheckDocumentoResponse>(
     `/api/socios/check-documento?${searchParams.toString()}`,
+  );
+}
+
+export function getLocalidades(
+  params: { ids: string[] } | { search: string },
+) {
+  const searchParams = new URLSearchParams(
+    "ids" in params ? { ids: params.ids.join(",") } : { search: params.search },
+  );
+
+  return apiClient.get<{ items: Localidad[] }>(
+    `/api/socios/localidades?${searchParams.toString()}`,
   );
 }
 

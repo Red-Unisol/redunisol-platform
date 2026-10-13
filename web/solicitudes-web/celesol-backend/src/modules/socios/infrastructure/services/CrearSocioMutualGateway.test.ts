@@ -119,6 +119,38 @@ describe("CrearSocioMutualGateway", () => {
     });
   });
 
+  it("omits NroPuerta and CodigoPostal when they were not loaded", async () => {
+    let capturedBody: { campos: { Domicilio: unknown } } | undefined;
+    const gateway = new CrearSocioMutualGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        capturedBody = JSON.parse(String(init?.body));
+
+        return {
+          json: async () => ({ Error: null, ID: 43, Ok: true }),
+          ok: true,
+        };
+      },
+    );
+
+    await gateway.crear({
+      tipoPersona: "JURIDICA",
+      cuit: "30712345671",
+      domicilio: {
+        calle: "Artigas 143 Alberdi",
+        codigoPostal: null,
+        localidad: "2715",
+        nroPuerta: null,
+      },
+      razonSocial: "ACME SA",
+    });
+
+    assert.deepEqual(capturedBody?.campos.Domicilio, {
+      Calle: "Artigas 143 Alberdi",
+      Localidad: 2715,
+    });
+  });
+
   it("throws SocioMutualLegacyRechazadoError with the legacy message when Ok is false", async () => {
     const gateway = new CrearSocioMutualGateway(
       { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },

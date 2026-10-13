@@ -6,12 +6,14 @@ import { CheckSocioDocumentoDuplicateUseCase } from "./application/use-cases/Che
 import { CreateSocioUseCase } from "./application/use-cases/CreateSocio.use-case";
 import { DeleteSocioUseCase } from "./application/use-cases/DeleteSocio.use-case";
 import { GetSocioByIdUseCase } from "./application/use-cases/GetSocioById.use-case";
+import { ListLocalidadesUseCase } from "./application/use-cases/ListLocalidades.use-case";
 import { ListSociosUseCase } from "./application/use-cases/ListSocios.use-case";
 import { LookupSocioByDocumentoUseCase } from "./application/use-cases/LookupSocioByDocumento.use-case";
 import { PullSociosVimaxUseCase } from "./application/use-cases/PullSociosVimax.use-case";
 import { SyncSociosFromVimaxUseCase } from "./application/use-cases/SyncSociosFromVimax.use-case";
 import { UpdateSocioUseCase } from "./application/use-cases/UpdateSocio.use-case";
 import { CrearSocioMutualGateway } from "./infrastructure/services/CrearSocioMutualGateway";
+import { EvaluateListLocalidadesGateway } from "./infrastructure/services/EvaluateListLocalidadesGateway";
 import { EvaluateListSociosMutualGateway } from "./infrastructure/services/EvaluateListSociosMutualGateway";
 import { SociosPrismaDatasource } from "./infrastructure/datasources/SociosPrismaDatasource";
 import { SocioRepositoryImpl } from "./infrastructure/repositories/SocioRepositoryImpl";
@@ -35,6 +37,10 @@ export function createSociosRouter(
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
+  const evaluateListLocalidadesGateway = new EvaluateListLocalidadesGateway({
+    baseUrl: env.LEGACY_API_BASE_URL,
+    timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
   const checkSocioCuitDuplicateUseCase = new CheckSocioCuitDuplicateUseCase({
     repository: sociosRepository,
   });
@@ -51,6 +57,9 @@ export function createSociosRouter(
   });
   const getSocioByIdUseCase = new GetSocioByIdUseCase({
     repository: sociosRepository,
+  });
+  const listLocalidadesUseCase = new ListLocalidadesUseCase({
+    gateway: evaluateListLocalidadesGateway,
   });
   const listSociosUseCase = new ListSociosUseCase({
     repository: sociosRepository,
@@ -75,6 +84,7 @@ export function createSociosRouter(
     deleteSocioUseCase,
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     getSocioByIdUseCase,
+    listLocalidadesUseCase,
     listSociosUseCase,
     lookupSocioByDocumentoUseCase,
     syncSociosFromVimaxUseCase,

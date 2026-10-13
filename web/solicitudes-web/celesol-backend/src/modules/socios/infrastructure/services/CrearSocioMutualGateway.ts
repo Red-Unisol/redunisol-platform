@@ -16,11 +16,13 @@ type CrearSocioMutualGatewayConfig = {
   timeoutMs: number;
 };
 
+// Como en InsCreditB, solo calle y localidad son obligatorios: el numero de
+// puerta y el codigo postal viajan solo si se cargaron.
 export type CrearSocioMutualDomicilio = {
   calle: string;
-  codigoPostal: string;
+  codigoPostal: string | null;
   localidad: string;
-  nroPuerta: string;
+  nroPuerta: string | null;
 };
 
 export type CrearSocioMutualInput =
@@ -139,9 +141,9 @@ export class CrearSocioMutualGateway {
   ): Record<string, unknown> {
     return {
       Calle: domicilio.calle,
-      CodigoPostal: domicilio.codigoPostal,
+      CodigoPostal: domicilio.codigoPostal ?? undefined,
       Localidad: Number(domicilio.localidad),
-      NroPuerta: domicilio.nroPuerta,
+      NroPuerta: domicilio.nroPuerta ?? undefined,
     };
   }
 
