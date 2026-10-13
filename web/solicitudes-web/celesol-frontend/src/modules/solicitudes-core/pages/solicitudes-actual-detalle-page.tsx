@@ -445,12 +445,14 @@ function PrestamosDelSocioSection({
 }
 
 type CancelacionesSectionProps = {
+  canCreateCancelaciones: boolean;
   canManageCancelaciones: boolean;
   isEditing: boolean;
   solicitudId: string;
 };
 
 function CancelacionesSection({
+  canCreateCancelaciones,
   canManageCancelaciones,
   isEditing,
   solicitudId,
@@ -540,7 +542,7 @@ function CancelacionesSection({
 
   return (
     <div className="space-y-2">
-      {canManageRows ? (
+      {canCreateCancelaciones ? (
         <div className="flex items-center justify-end">
           <Button onClick={handleAdd} size="sm" type="button" variant="outline">
             <Plus className="size-4" />
@@ -627,7 +629,7 @@ function CancelacionesSection({
           </tbody>
         </table>
       </div>
-      {canManageRows ? (
+      {canCreateCancelaciones || canManageRows ? (
         <NuevaCancelacionModal
           defaultValues={modalDefaultValues}
           onOpenChange={setIsModalOpen}
@@ -2490,6 +2492,7 @@ function SolicitanteSection({
   canCreateAdjunto,
   canDeleteAdjunto,
   canDownloadAdjunto,
+  canCreateCancelaciones,
   canManageCancelaciones,
   datosPersonalesTab,
   datosLaborales,
@@ -2534,6 +2537,7 @@ function SolicitanteSection({
   canCreateAdjunto: boolean;
   canDeleteAdjunto: boolean;
   canDownloadAdjunto: boolean;
+  canCreateCancelaciones: boolean;
   canManageCancelaciones: boolean;
   datosPersonalesTab: DatosPersonalesTab;
   datosLaborales: SolicitudCoreDatosLaboralesResponse;
@@ -2690,6 +2694,7 @@ function SolicitanteSection({
         />
       ) : activeContentTab === "cancelaciones" ? (
         <CancelacionesSection
+          canCreateCancelaciones={canCreateCancelaciones}
           canManageCancelaciones={canManageCancelaciones}
           isEditing={isEditing}
           solicitudId={solicitudId}
@@ -3127,6 +3132,9 @@ export function SolicitudesActualDetallePage() {
   const canDeleteAdjuntos = solicitudCapabilities?.canDeleteAdjuntos ?? false;
   const canDownloadAdjuntos =
     solicitudCapabilities?.canDownloadAdjuntos ?? false;
+  const canCreateCancelaciones =
+    solicitudCapabilities?.canCreateCancelaciones ??
+    solicitudCapabilities?.canManageCancelaciones ?? false;
   const canManageCancelaciones =
     solicitudCapabilities?.canManageCancelaciones ?? false;
   const canManageAdjuntos = canUploadAdjuntos || canDeleteAdjuntos;
@@ -4256,6 +4264,7 @@ export function SolicitudesActualDetallePage() {
             canCreateAdjunto={canUploadAdjuntos}
             canDeleteAdjunto={isEditing && canDeleteAdjuntos}
             canDownloadAdjunto={canDownloadAdjuntos}
+            canCreateCancelaciones={canCreateCancelaciones}
             canManageCancelaciones={canManageCancelaciones}
             datosLaborales={resolvedSolicitud.datosLaborales}
             datosPersonalesTab={datosPersonalesTab}

@@ -15,6 +15,7 @@ export type SolicitudPermissionAction =
   | "DOWNLOAD_ATTACHMENT"
   | "UPLOAD_ATTACHMENT"
   | "DELETE_ATTACHMENT"
+  | "CREATE_CANCELACION"
   | "MANAGE_CANCELACIONES"
   | "CHANGE_STATE";
 
@@ -24,6 +25,7 @@ export type SolicitudCapabilities = {
   canUploadAdjuntos: boolean;
   canDeleteAdjuntos: boolean;
   canDownloadAdjuntos: boolean;
+  canCreateCancelaciones: boolean;
   canManageCancelaciones: boolean;
   canChangeState: boolean;
   canViewHistory: boolean;
@@ -51,6 +53,14 @@ export function canEditSolicitud(
     return true;
   }
 
+  if (
+    action === "CREATE_CANCELACION" &&
+    user.workflowOwnerCode === "RIESGO" &&
+    isCurrentOwnerUser(user, solicitud)
+  ) {
+    return true;
+  }
+
   if (action === "DELETE_ATTACHMENT") {
     return false;
   }
@@ -67,7 +77,11 @@ export function canEditSolicitud(
     return true;
   }
 
-  if (action === "UPLOAD_ATTACHMENT" || action === "MANAGE_CANCELACIONES") {
+  if (
+    action === "UPLOAD_ATTACHMENT" ||
+    action === "MANAGE_CANCELACIONES" ||
+    action === "CREATE_CANCELACION"
+  ) {
     return canManageSolicitudAttachments({
       fieldAccess,
       solicitud,
@@ -125,6 +139,12 @@ export function buildSolicitudCapabilities(
       "DOWNLOAD_ATTACHMENT",
     ),
     canEdit: canEditSolicitud(user, solicitud, "EDIT_DATA"),
+    canCreateCancelaciones: canEditSolicitud(
+      user,
+      solicitud,
+      "CREATE_CANCELACION",
+      fieldAccess,
+    ),
     canManageCancelaciones: canEditSolicitud(
       user,
       solicitud,

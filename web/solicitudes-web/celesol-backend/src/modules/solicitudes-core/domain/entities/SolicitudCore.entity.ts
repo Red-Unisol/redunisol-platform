@@ -120,6 +120,7 @@ export type SolicitudAppearance = {
 export type SolicitudCoreCapabilities = {
   canView: boolean;
   canEdit: boolean;
+  canCreateCancelaciones?: boolean;
   canUploadAdjuntos: boolean;
   canDeleteAdjuntos: boolean;
   canDownloadAdjuntos: boolean;
