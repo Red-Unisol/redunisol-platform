@@ -838,3 +838,31 @@ function solicitudesRepository(
     ...overrides,
   };
 }
+
+it("archiva la evaluación al liquidar mediante el motor, y no en otras transiciones", async () => {
+  const archives: unknown[] = [];
+  let fail = false;
+  let executed = 0;
+  const engine = {
+    execute: async (_command: Parameters<SolicitudWorkflowEngine["execute"]>[0], before?: () => Promise<void>) => {
+      await before?.();
+      executed++;
+      return {solicitud: solicitud({legacyOid:"555000"}),transitions:[]};
+    },
+  } as unknown as SolicitudWorkflowEngine;
+  const useCase = new ChangeSolicitudStateUseCase({
+    adjuntoRepository: adjuntoRepository(), engine,
+    now: () => new Date(), sociosRepository: socioRepository(),
+    solicitudesRepository: solicitudesRepository({findById:async()=>solicitud({legacyOid:"555000"})}),
+    archivarEvaluacion: {execute:async input=>{if(fail)throw new Error("archivo falló");archives.push(input);}},
+  });
+  const input={solicitudId:"sol-1",currentUser:{id:"user-1",workflowOwnerId:"owner-1"}};
+  await useCase.execute({...input,actionCode:"liquidar"});
+  assert.deepEqual(archives,[{solicitudId:"sol-1",actorId:"user-1",etapa:"liquidacion"}]);
+  await useCase.execute({...input,actionCode:"revisar"});
+  assert.equal(archives.length,1);
+  assert.equal(executed,2);
+  fail=true;
+  await assert.rejects(()=>useCase.execute({...input,actionCode:"liquidar"}), /archivo falló/);
+  assert.equal(executed,2);
+});

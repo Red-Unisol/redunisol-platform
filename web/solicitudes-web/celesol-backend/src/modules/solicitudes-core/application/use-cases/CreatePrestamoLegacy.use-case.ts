@@ -1,3 +1,4 @@
+import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
@@ -33,6 +34,7 @@ import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/servi
 const MAX_CANCELACIONES_CENTAVOS = 2147483647;
 
 type Dependencies = {
+  archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   authRepository: Pick<AuthRepository, "findById">;
@@ -53,6 +55,7 @@ type Dependencies = {
 };
 
 export class CreatePrestamoLegacyUseCase {
+  private readonly archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly simularCuotaSolicitud: Pick<
     SimularCuotaSolicitud,
@@ -76,6 +79,7 @@ export class CreatePrestamoLegacyUseCase {
   private readonly today: () => string;
 
   constructor(dependencies: Dependencies) {
+    this.archivarEvaluacion = dependencies.archivarEvaluacion;
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.authRepository = dependencies.authRepository;
@@ -212,16 +216,16 @@ export class CreatePrestamoLegacyUseCase {
         },
       });
     }
+    const nroLote = await this.buildNroLoteCancelaciones(input.solicitudId,
+      huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
+    await this.archivarEvaluacion?.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "generacion"});
     const result = await this.gateway.crear({
       cuotas: efectivos.cuotas as number,
       fechaEmision: this.today(),
       integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" }],
       lineaPrestamo: lineaPrestamo.id,
       montoDeseado: efectivos.montoAFinanciar as number,
-      ...(await this.buildNroLoteCancelaciones(
-        input.solicitudId,
-        huboAjuste ? (efectivos.montoAFinanciar as number) : undefined,
-      )),
+      ...nroLote,
       vendedor: String(vendedorLegacyId),
     });
 

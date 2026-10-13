@@ -88,12 +88,13 @@ describe("GuardarEvaluacionRiesgoUseCase", () => {
       solicitudId: "sol-1",
     });
 
+    assert.match(subidos[0].key, /^evaluaciones\/sol-1\/[0-9a-f-]{36}\.json$/);
     assert.deepEqual(subidos, [
       {
         body: JSON.stringify(SNAPSHOT),
         bucket: "solicitudes",
         contentType: "application/json",
-        key: "evaluaciones/sol-1.json",
+        key: subidos[0].key,
       },
     ]);
     assert.deepEqual(guardados, [
@@ -103,7 +104,7 @@ describe("GuardarEvaluacionRiesgoUseCase", () => {
           guardadaPorId: "analista-1",
           nivelRiesgo: 3,
           storageBucket: "solicitudes",
-          storageKey: "evaluaciones/sol-1.json",
+          storageKey: subidos[0].key,
         },
         solicitudId: "sol-1",
       },
