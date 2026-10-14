@@ -593,6 +593,8 @@ export function listSolicitudesDelTitular(id: string) {
 }
 
 export type RevisionPrestamoResponse = {
+  errorTitular: string | null;
+  errorCalculo: string | null;
   titular: { nombreCompleto: string | null; nroSocio: string | null };
   condiciones: { lineaDescripcion: string; montoAFinanciar: number | null; cuotas: number | null };
   calculo: {
