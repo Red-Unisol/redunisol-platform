@@ -1,5 +1,6 @@
 import base64
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -30,7 +31,8 @@ class PrepareMistralTests(unittest.TestCase):
         self.assertIn(b"MISTRAL_API_KEY=fixture-key\n", self.env.read_bytes())
         self.assertNotIn(b"must-not-copy", self.env.read_bytes())
         self.assertNotIn(b"SECRET_OTHER", self.env.read_bytes())
-        self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
+        if os.name == "posix":
+            self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
 
     def test_existing_key_is_preserved_without_reading_kestra(self):
         content = b"MISTRAL_API_KEY=own-key\nOTHER=value\n"

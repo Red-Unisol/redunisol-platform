@@ -47,14 +47,20 @@ export class ReconocimientoRecibosDraft {
     this.onStatus(id, "manual");
   }
   async refreshConfig() {
-    if (!this.jobs.size) return;
+    const jobs = [...this.jobs];
+    if (!jobs.length) return;
     try {
       const config = await this.service.config();
-      for (const [id, job] of this.jobs) {
+      for (const [id, job] of jobs) {
+        // Una consulta atrasada no alcanza tareas nuevas ni versiones posteriores.
+        // start valida la configuración de las tareas que todavía no tienen versión.
         if (
-          !config.habilitado ||
-          (job.version !== undefined && job.version !== config.version)
-        ) {
+          this.jobs.get(id) !== job ||
+          job.version === undefined ||
+          config.version < job.version
+        )
+          continue;
+        if (!config.habilitado || job.version !== config.version) {
           this.cancel(id);
           this.onStatus(id, "deshabilitado");
         }

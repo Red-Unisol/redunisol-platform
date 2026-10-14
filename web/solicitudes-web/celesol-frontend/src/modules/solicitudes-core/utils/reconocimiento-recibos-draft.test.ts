@@ -118,3 +118,115 @@ it("replaced file cannot populate the new file", async () => {
   await flush();
   assert.equal(detected, 0);
 });
+
+for (const nextId of ["one", "two"])
+  it(`late polling does not cancel a new analysis with id ${nextId}`, async () => {
+    let config = { habilitado: true, version: 1 };
+    const pollConfig = deferred<typeof config>();
+    const oldResult = deferred<{ resultado: "recibo"; version: number }>();
+    const newResult = deferred<{ resultado: "recibo"; version: number }>();
+    const signals: AbortSignal[] = [];
+    const detections: string[] = [];
+    let configReads = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () =>
+          ++configReads === 2 ? pollConfig.promise : { ...config },
+        analyze: async (_file, signal) => {
+          signals.push(signal);
+          return signals.length === 1 ? oldResult.promise : newResult.promise;
+        },
+      },
+      () => {},
+    );
+    draft.start("one", file, () => detections.push("old"));
+    await flush();
+    const poll = draft.refreshConfig();
+    config = { habilitado: true, version: 3 };
+    draft.start(nextId, file, () => detections.push("new"));
+    await flush();
+    pollConfig.resolve({ habilitado: false, version: 2 });
+    await poll;
+    assert.equal(signals[0].aborted, true);
+    assert.equal(signals[1].aborted, false);
+    oldResult.resolve({ resultado: "recibo", version: 1 });
+    newResult.resolve({ resultado: "recibo", version: 3 });
+    await flush();
+    assert.deepEqual(detections, ["new"]);
+  });
+
+for (const habilitado of [false, true])
+  it(`polling ignores an older configuration with habilitado=${habilitado}`, async () => {
+    const initialConfig = deferred<{ habilitado: boolean; version: number }>();
+    const pollConfig = deferred<{ habilitado: boolean; version: number }>();
+    const result = deferred<{ resultado: "recibo"; version: number }>();
+    let configReads = 0;
+    let signal!: AbortSignal;
+    let detections = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => {
+          if (++configReads === 1) return initialConfig.promise;
+          if (configReads === 2) return pollConfig.promise;
+          return { habilitado: true, version: 3 };
+        },
+        analyze: async (_file, receivedSignal) => {
+          signal = receivedSignal;
+          return result.promise;
+        },
+      },
+      () => {},
+    );
+    draft.start("one", file, () => detections++);
+    const poll = draft.refreshConfig();
+    initialConfig.resolve({ habilitado: true, version: 3 });
+    await flush();
+    pollConfig.resolve({ habilitado, version: 2 });
+    await poll;
+    assert.equal(signal.aborted, false);
+    result.resolve({ resultado: "recibo", version: 3 });
+    await flush();
+    assert.equal(detections, 1);
+  });
+
+it("polling leaves initial configuration validation to the pending job", async () => {
+  const initialConfig = deferred<{ habilitado: boolean; version: number }>();
+  const result = deferred<{ resultado: "recibo"; version: number }>();
+  let configReads = 0;
+  let calls = 0;
+  let detections = 0;
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => {
+        if (++configReads === 1) return initialConfig.promise;
+        if (configReads === 2) return { habilitado: false, version: 2 };
+        return { habilitado: true, version: 3 };
+      },
+      analyze: async () => {
+        calls++;
+        return result.promise;
+      },
+    },
+    () => {},
+  );
+  draft.start("one", file, () => detections++);
+  await draft.refreshConfig();
+  initialConfig.resolve({ habilitado: true, version: 3 });
+  await flush();
+  assert.equal(calls, 1);
+  result.resolve({ resultado: "recibo", version: 3 });
+  await flush();
+  assert.equal(detections, 1);
+});
+
+it("polling still cancels a job after disabling and reactivating", async () => {
+  const s = setup();
+  s.draft.start("one", file, s.detect);
+  await flush();
+  s.change({ habilitado: true, version: 3 });
+  await s.draft.refreshConfig();
+  s.pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(s.counts().detections, 0);
+  assert.equal(s.statuses.at(-1), "deshabilitado");
+});

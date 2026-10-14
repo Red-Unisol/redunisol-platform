@@ -28,12 +28,12 @@ import { Input } from "@/shared/components/ui/input";
 
 import {
   LegacyIconButton,
-  StyledSelect,
   ModalField,
   ModalSection,
   legacyFieldClassName,
 } from "./fields/base";
 import { cn } from "@/shared/utils/cn";
+import { TipoAdjuntoSelect } from "./TipoAdjuntoSelect";
 
 type NuevaAdjuntoModalInitialValues = Omit<
   UploadSolicitudCoreAdjuntoRequest,
@@ -396,10 +396,9 @@ function NuevaAdjuntoModalContent({
               </ModalField>
               <ModalField label="Tipo Adjunto">
                 <div className="flex min-w-0 gap-1">
-                  <StyledSelect
-                    ariaLabel="Tipo de adjunto"
+                  <TipoAdjuntoSelect
+                    initialValue={initialValues?.tipoAdjunto}
                     options={tiposAdjunto}
-                    placeholder="Seleccionar tipo"
                     onChange={(value) => {
                       manualTipo.current = true;
                       draft.manual("single");
