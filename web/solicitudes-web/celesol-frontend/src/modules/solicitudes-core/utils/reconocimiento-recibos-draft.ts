@@ -1,4 +1,22 @@
+export class ReconocimientoRequestError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super("Recognition request failed");
+    this.status = status;
+  }
+}
 export type EstadoAnalisis =
+  | "error_sesion"
+  | "error_permisos"
+  | "error_archivo"
+  | "error_conexion_solicitudes"
+  | "limite_proveedor"
+  | "autenticacion_proveedor"
+  | "timeout_proveedor"
+  | "modelo_no_disponible"
+  | "respuesta_invalida"
+  | "conexion_proveedor"
+  | "servicio_proveedor"
   | "analizando"
   | "recibo"
   | "manual"
@@ -15,6 +33,7 @@ type Result = {
     | "deshabilitado";
   version: number;
   motivo?: string;
+  codigoError?: string;
 };
 type Job = { controller: AbortController; version?: number };
 /** Cada selección crea una tarea propia. Ningún resultado escribe fuera de ella. */
@@ -108,18 +127,70 @@ export class ReconocimientoRecibosDraft {
             result.resultado === "error"
               ? result.motivo === "credencial"
                 ? "error_credencial"
-                : "error"
+                : esCodigoProveedor(result.codigoError)
+                  ? result.codigoError
+                  : "error"
               : "manual",
           );
-      } catch {
-        if (current()) this.onStatus(id, "error");
+      } catch (error) {
+        if (current())
+          this.onStatus(
+            id,
+            error instanceof ReconocimientoRequestError
+              ? error.status === 0
+                ? "error_conexion_solicitudes"
+                : error.status === 401
+                  ? "error_sesion"
+                  : error.status === 403
+                    ? "error_permisos"
+                    : [400, 413, 415].includes(error.status)
+                      ? "error_archivo"
+                      : "error"
+              : "error",
+          );
       } finally {
         if (current()) this.jobs.delete(id);
       }
     })();
   }
 }
+const codigosProveedor = [
+  "limite_proveedor",
+  "autenticacion_proveedor",
+  "timeout_proveedor",
+  "modelo_no_disponible",
+  "respuesta_invalida",
+  "conexion_proveedor",
+  "servicio_proveedor",
+] as const;
+function esCodigoProveedor(
+  value?: string,
+): value is (typeof codigosProveedor)[number] {
+  return codigosProveedor.some((code) => code === value);
+}
 export const mensajesAnalisis: Record<EstadoAnalisis, string> = {
+  error_conexion_solicitudes:
+    "No se pudo contactar con Solicitudes para analizar. Revisá la conexión e intentá nuevamente.",
+  error_sesion:
+    "La sesión venció. Volvé a ingresar para analizar el documento.",
+  error_permisos:
+    "Tu cuenta no tiene permiso para analizar adjuntos en este contexto.",
+  error_archivo:
+    "No se pudo enviar el archivo para analizar. Revisá su formato y tamaño.",
+  limite_proveedor:
+    "Mistral alcanzó un límite de uso. Podés seleccionar el tipo manualmente.",
+  autenticacion_proveedor:
+    "Mistral rechazó la conexión configurada. Podés seleccionar el tipo manualmente.",
+  timeout_proveedor:
+    "El reconocimiento tardó demasiado. Podés seleccionar el tipo manualmente.",
+  modelo_no_disponible:
+    "El modelo de reconocimiento no está disponible. Podés seleccionar el tipo manualmente.",
+  respuesta_invalida:
+    "No se pudo interpretar la respuesta del reconocimiento. Podés seleccionar el tipo manualmente.",
+  conexion_proveedor:
+    "No se pudo conectar con Mistral. Podés seleccionar el tipo manualmente.",
+  servicio_proveedor:
+    "El servicio de reconocimiento no está disponible. Podés seleccionar el tipo manualmente.",
   analizando: "Analizando documento…",
   recibo: "Recibo de sueldo detectado",
   manual: "Seleccioná el tipo de adjunto manualmente",

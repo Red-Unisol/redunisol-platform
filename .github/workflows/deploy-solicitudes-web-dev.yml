@@ -117,6 +117,8 @@ jobs:
             --force
 
       - name: Prepare deployment files
+        env:
+          SOLICITUDES_MISTRAL_API_KEY: ${{ secrets.SOLICITUDES_MISTRAL_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail

@@ -2,6 +2,7 @@
 import argparse
 import base64
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -24,6 +25,9 @@ def prepare(env_file: Path, key_file: Path, kestra_env: Path) -> tuple[str, str]
     content = env_file.read_bytes()
     key = env_value(content, "MISTRAL_API_KEY")
     source = "configuración existente de Solicitudes"
+    if not key and os.environ.get("SOLICITUDES_MISTRAL_API_KEY", "").strip():
+        key = os.environ["SOLICITUDES_MISTRAL_API_KEY"].strip()
+        source = "secreto dedicado de Solicitudes"
     if not key:
         # Decrypt only this optional secret; a missing/unreadable OCR credential
         # must not prevent updating the rest of Solicitudes.

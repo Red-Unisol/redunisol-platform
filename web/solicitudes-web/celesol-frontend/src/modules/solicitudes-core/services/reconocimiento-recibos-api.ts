@@ -1,3 +1,5 @@
+import { ApiError } from "@/shared/services/http/api-error";
+import { ReconocimientoRequestError } from "../utils/reconocimiento-recibos-draft";
 import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 export type ConfiguracionReconocimiento = {
   habilitado: boolean;
@@ -11,11 +13,18 @@ export type ResultadoReconocimiento = {
     | "error"
     | "deshabilitado";
   version: number;
+  codigoError?: string;
   motivo?: "credencial" | "proveedor" | "formato" | "procesamiento";
 };
 const base = "/solicitudes/reconocimiento-recibos";
 export const getConfiguracionReconocimiento = () =>
-  apiClient.get<ConfiguracionReconocimiento>(`${base}/configuracion`);
+  apiClient
+    .get<ConfiguracionReconocimiento>(`${base}/configuracion`)
+    .catch((error) => {
+      if (error instanceof ApiError)
+        throw new ReconocimientoRequestError(error.status ?? 0);
+      throw error;
+    });
 export const updateConfiguracionReconocimiento = (habilitado: boolean) =>
   apiClient.patch<ConfiguracionReconocimiento>(`${base}/configuracion`, {
     habilitado,
@@ -32,8 +41,11 @@ export async function analizarRecibo(
       ? `${base}/${encodeURIComponent(solicitudId)}/analizar`
       : `${base}/alta`,
     { method: "POST", body, signal },
-  );
-  if (!response.ok) throw new Error("No se pudo analizar el documento");
+  ).catch((error) => {
+    if (error instanceof TypeError) throw new ReconocimientoRequestError(0);
+    throw error;
+  });
+  if (!response.ok) throw new ReconocimientoRequestError(response.status);
   const result = (await response.json()) as ResultadoReconocimiento;
   if (
     ![

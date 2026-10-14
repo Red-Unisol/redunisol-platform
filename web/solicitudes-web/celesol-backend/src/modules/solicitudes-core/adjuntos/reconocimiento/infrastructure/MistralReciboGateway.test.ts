@@ -150,7 +150,11 @@ it("malformed annotations and provider errors never become negatives", async () 
     );
   assert.deepEqual(
     await setup(annotation, { status: 429 }).gateway.reconocer(file),
-    { resultado: "error", motivo: "proveedor" },
+    {
+      resultado: "error",
+      motivo: "proveedor",
+      codigoError: "limite_proveedor",
+    },
   );
 });
 it("abort/timeout return sanitized errors", async () => {
@@ -217,11 +221,23 @@ for (const status of [401, 403, 429, 500, 503])
     assert.deepEqual(await gateway.reconocer(file), {
       resultado: "error",
       motivo: "proveedor",
+      codigoError:
+        status === 429
+          ? "limite_proveedor"
+          : [401, 403].includes(status)
+            ? "autenticacion_proveedor"
+            : "servicio_proveedor",
     });
     const failedCalls = calls;
     assert.deepEqual(await gateway.reconocer(file), {
       resultado: "error",
       motivo: "proveedor",
+      codigoError:
+        status === 429
+          ? "limite_proveedor"
+          : [401, 403].includes(status)
+            ? "autenticacion_proveedor"
+            : "servicio_proveedor",
     });
     assert.equal(calls, failedCalls);
     fail = false;
@@ -238,16 +254,18 @@ it("network failure is contained and subsequent files fail fast", async () => {
     timeoutMs: 1000,
     fetch: (async () => {
       calls++;
-      throw new Error("private-network-error");
+      throw new TypeError("private-network-error");
     }) as typeof fetch,
   });
   assert.deepEqual(await gateway.reconocer(file), {
     resultado: "error",
     motivo: "proveedor",
+    codigoError: "conexion_proveedor",
   });
   assert.deepEqual(await gateway.reconocer(file), {
     resultado: "error",
     motivo: "proveedor",
+    codigoError: "conexion_proveedor",
   });
   assert.equal(calls, 1);
 });
@@ -261,4 +279,28 @@ it("manual cancellation does not pause a healthy provider", async () => {
   );
   assert.equal(calls.length, 0);
   assert.equal((await gateway.reconocer(file)).resultado, "recibo");
+});
+
+it("model and malformed response diagnostics never contain provider text", async () => {
+  const model = await setup(annotation, { model: "other" }).gateway.reconocer(
+    file,
+  );
+  assert.equal(model.codigoError, "modelo_no_disponible");
+  const malformed = await setup("private-invalid-response").gateway.reconocer(
+    file,
+  );
+  assert.equal(malformed.codigoError, "respuesta_invalida");
+  assert.ok(!JSON.stringify(malformed).includes("private-invalid-response"));
+});
+it("timeout has a distinct safe diagnostic", async () => {
+  const keepAlive = setTimeout(() => {}, 200);
+  try {
+    assert.equal(
+      (await setup(annotation, { timeout: true }).gateway.reconocer(file))
+        .codigoError,
+      "timeout_proveedor",
+    );
+  } finally {
+    clearTimeout(keepAlive);
+  }
 });

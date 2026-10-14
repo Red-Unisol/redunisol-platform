@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { ReconocimientoRecibosDraft } from "./reconocimiento-recibos-draft";
+import {
+  ReconocimientoRecibosDraft,
+  ReconocimientoRequestError,
+} from "./reconocimiento-recibos-draft";
 const file = {} as File;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 function deferred<T>() {
@@ -295,4 +298,75 @@ it("operator can proceed manually while the recognition request is stuck", async
   pending.resolve({ resultado: "recibo", version: 1 });
   await flush();
   assert.equal(detections, 0);
+});
+
+for (const code of [
+  "limite_proveedor",
+  "autenticacion_proveedor",
+  "timeout_proveedor",
+  "conexion_proveedor",
+  "modelo_no_disponible",
+  "respuesta_invalida",
+  "servicio_proveedor",
+])
+  it(`shows safe provider diagnostic ${code} without changing category`, async () => {
+    const states: string[] = [];
+    let detections = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => ({ habilitado: true, version: 1 }),
+        analyze: async () => ({
+          resultado: "error",
+          motivo: "proveedor",
+          codigoError: code,
+          version: 1,
+        }),
+      },
+      (_id, state) => states.push(state),
+    );
+    draft.start("file", file, () => {
+      detections++;
+    });
+    await flush();
+    assert.equal(states.at(-1), code);
+    assert.equal(detections, 0);
+  });
+for (const [status, expected] of [
+  [0, "error_conexion_solicitudes"],
+  [401, "error_sesion"],
+  [403, "error_permisos"],
+  [413, "error_archivo"],
+  [503, "error"],
+] as const)
+  it(`separates application HTTP ${status} from Mistral errors`, async () => {
+    const states: string[] = [];
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => ({ habilitado: true, version: 1 }),
+        analyze: async () => {
+          throw new ReconocimientoRequestError(status);
+        },
+      },
+      (_id, state) => states.push(state),
+    );
+    draft.start("file", file, () => assert.fail("must not classify"));
+    await flush();
+    assert.equal(states.at(-1), expected);
+  });
+it("ignores unknown diagnostic strings instead of rendering provider messages", async () => {
+  const states: string[] = [];
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => ({ habilitado: true, version: 1 }),
+      analyze: async () => ({
+        resultado: "error",
+        codigoError: "private-provider-text",
+        version: 1,
+      }),
+    },
+    (_id, state) => states.push(state),
+  );
+  draft.start("file", file, () => assert.fail());
+  await flush();
+  assert.equal(states.at(-1), "error");
 });

@@ -8,6 +8,13 @@ for (const estadoAnalisis of [
   "error",
   "error_credencial",
   "analizando",
+  "limite_proveedor",
+  "autenticacion_proveedor",
+  "timeout_proveedor",
+  "modelo_no_disponible",
+  "respuesta_invalida",
+  "conexion_proveedor",
+  "servicio_proveedor",
 ] as const)
   it(`manual controls and the selected category stay available while ${estadoAnalisis}`, () => {
     const html = renderToStaticMarkup(
