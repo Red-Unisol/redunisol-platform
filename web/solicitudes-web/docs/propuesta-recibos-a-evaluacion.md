@@ -94,7 +94,22 @@ Backend:
 - Tratar instrucciones escritas dentro de documentos como contenido no confiable. Validar el JSON extraído y resolver destinos mediante la lista de entradas permitidas de la plantilla, nunca mediante coordenadas o código sugerido libremente por el proveedor.
 - Distinguir documento ilegible, extracción parcial, error del proveedor y respuesta inválida. Mantener la carga manual disponible.
 
-Decisión pendiente: cómo habilitar esta segunda etapa y si requiere una configuración propia. El interruptor actual de reconocimiento automático al adjuntar no habilita esta propuesta de extracción y aplicación a Evaluación.
+## Configuración administrativa acordada
+
+Administrar esta segunda etapa desde el mismo punto que el reconocimiento actual: Administración → Reconocimiento de recibos (`/admin/solicitudes/reconocimiento-recibos`). Incorporar allí una opción independiente denominada «Extracción de descuentos y carga asistida en Evaluación». No crear un segundo lugar de administración ni reutilizar el interruptor de clasificación como autorización implícita para escribir en la planilla.
+
+- Alcance global, sin excepciones por usuario, área, convenio, línea o calculadora.
+- Modificación exclusiva de administradores del sistema, comprobada también por la API mediante el permiso vigente `isSystemAdmin`. Habilitar la función no concede acceso a solicitudes, documentos ni edición/guardado de Evaluación.
+- Persistencia en backend y migración compatibles con la configuración existente. Conservar la elección guardada entre sesiones y reinicios; no sobrescribirla al desplegar ni modificar la opción actual de reconocimiento.
+- Propuesta para el alta inicial de esta nueva opción: deshabilitada hasta que el administrador dé su OK. Ese valor corresponde únicamente a la creación de la configuración; no constituye una orden de cambiar la configuración actual.
+- Separar activación funcional de disponibilidad de Mistral. Una credencial ausente o un error no cambia el interruptor; mostrar el problema y conservar el trabajo manual.
+- Al estar deshabilitada, no iniciar extracciones ni permitir aplicar propuestas de esta función. Conservar la calculadora manual, el visor de recibos y el reconocimiento al adjuntar conforme a su propio interruptor.
+- Comprobar el interruptor en backend antes de llamar al proveedor y al aceptar el resultado. Usar una versión de configuración para invalidar operaciones iniciadas antes de una desactivación, incluso si luego se vuelve a activar.
+- Si se desactiva durante una extracción o con el pop-up abierto, descartar respuestas pendientes y bloquear la aplicación del borrador. Avisar dentro del pop-up y permitir cerrarlo; no borrar cambios de Evaluación ni revertir importes ya aplicados.
+- Revalidar configuración vigente y versión de la propuesta antes de aplicar; no confiar únicamente en un estado del frontend obtenido al abrir la pantalla. Definir el contrato de autorización de la aplicación durante el desarrollo, sin persistir ni guardar Evaluación como efecto de esa comprobación.
+- La activación habilita la herramienta; el operativo sigue eligiendo el recibo, revisando el pop-up y confirmando «Cargar en calculadora». No activa cargas automáticas ni reclasifica documentos históricos.
+
+La pantalla actual ya persiste una configuración global versionada y restringe su modificación en backend a administradores. Reutilizar ese patrón sin alterar la configuración ni el comportamiento del reconocimiento existente. Esta propuesta solo documenta la ampliación: todavía no agrega campos, migración, controles ni rutas ejecutables.
 
 ## Validación propuesta para el piloto
 
@@ -107,6 +122,15 @@ Decisión pendiente: cómo habilitar esta segunda etapa y si requiere una config
 - Revisar permisos, ausencia de datos de otra solicitud, pantalla dividida y legibilidad en distintos tamaños.
 
 No se afirma precisión ni se da por implementada ninguna de estas verificaciones: son el plan de aceptación del futuro desarrollo.
+
+## Validación de la configuración propuesta
+
+- Verificar acceso desde la misma pantalla administrativa y modificación denegada por API a no administradores.
+- Verificar persistencia de ambos interruptores independientes entre reinicios y despliegues.
+- Con la nueva función deshabilitada, verificar ausencia de llamados de extracción y de aplicación de propuestas, manteniendo reconocimiento y operación manual según sus permisos.
+- Desactivar mientras se extrae o revisa y comprobar descarte de respuestas, bloqueo de propuestas anteriores y conservación del libro. Probar también desactivar y volver a activar antes de llegar una respuesta.
+- Simular configuración desactualizada en el cliente y comprobar validación del backend y revalidación previa a aplicar.
+- Comprobar que habilitar no ejecuta por sí solo extracciones, escrituras ni guardados, y que un fallo de Mistral no cambia la configuración.
 
 ## Próxima definición
 
