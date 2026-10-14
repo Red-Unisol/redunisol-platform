@@ -263,6 +263,7 @@ export default function Page() {
             />
 
             <Navbar
+                reserveMobileSpace={hasForm}
                 sections={sectionDescriptors}
                 activeId={activeId}
                 onNavigate={(id: string) => {
@@ -380,7 +381,7 @@ export default function Page() {
                                             id={id}
                                             data-section-id={id}
                                             key={key}
-                                            className={`${sectionClass} block bg-[#1c273b] md:hidden`}
+                                            className="block bg-[#1c273b] md:hidden"
                                         >
                                             <FormSection
                                                 config={s.data as any}

@@ -66,10 +66,12 @@ export default function NavTabs({
     sections = [],
     activeId = null,
     onNavigate,
+    reserveMobileSpace = false,
 }: {
     sections?: { id: string; type: string; data?: Record<string, unknown> }[];
     activeId?: string | null;
     onNavigate?: (id: string) => void;
+    reserveMobileSpace?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const navigationSections = sections.filter((section) =>
@@ -84,7 +86,9 @@ export default function NavTabs({
     return (
         <>
             {/* ── Barra principal ── */}
-            <nav className="fixed z-30 flex w-full items-center justify-between bg-transparent px-6 py-4 text-xs md:absolute md:px-8">
+            <nav
+                className={`z-30 flex w-full items-center justify-between px-6 py-4 text-xs md:absolute md:px-8 ${reserveMobileSpace ? 'sticky top-0 h-18 bg-[#1c273b] md:h-auto md:bg-transparent' : 'fixed bg-transparent'}`}
+            >
                 {/* Logo */}
                 <Link href="/" className="rounded-2xl bg-[#1c273b] pt-0.5">
                     <img
