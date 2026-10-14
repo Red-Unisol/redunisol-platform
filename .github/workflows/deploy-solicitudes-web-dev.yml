@@ -128,11 +128,11 @@ jobs:
 
           # Reutiliza únicamente Mistral del runtime cifrado existente.
           # Conserva una clave propia de Solicitudes si ya está configurada.
+          # OCR es opcional: no llama al proveedor ni condiciona el deploy a su disponibilidad.
           python web/solicitudes-web/deploy/prepare_mistral_env.py \
             --env-file "$RUNNER_TEMP/solicitudes-web.env" \
             --key-file "$RUNNER_TEMP/runtime-env.key" \
-            --kestra-env kestra/platform/infra/kestra-runtime.env.enc \
-            --check-connection
+            --kestra-env kestra/platform/infra/kestra-runtime.env.enc
 
           # Si el archivo no termina en salto de linea, las variables que
           # agregamos abajo se pegarian a la ultima linea.

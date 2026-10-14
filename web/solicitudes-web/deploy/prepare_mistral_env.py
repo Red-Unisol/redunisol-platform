@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import urllib.error
 import urllib.request
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -24,18 +25,26 @@ def prepare(env_file: Path, key_file: Path, kestra_env: Path) -> tuple[str, str]
     key = env_value(content, "MISTRAL_API_KEY")
     source = "configuración existente de Solicitudes"
     if not key:
-        # Decrypt only this secret, never dump/copy Kestra's complete runtime.
-        selected = [line for line in parse_env_lines(kestra_env.read_bytes()) if line.key == "SECRET_MISTRAL_API_KEY"]
-        if len(selected) != 1:
-            raise ValueError("Falta la credencial cifrada de Mistral")
-        decrypted = decrypt_env_lines(load_aessiv(key_file), serialize_env_lines(selected))
-        key = env_value(decrypted, "SECRET_MISTRAL_API_KEY")
-        source = "credencial cifrada existente de Kestra"
+        # Decrypt only this optional secret; a missing/unreadable OCR credential
+        # must not prevent updating the rest of Solicitudes.
+        try:
+            selected = [line for line in parse_env_lines(kestra_env.read_bytes()) if line.key == "SECRET_MISTRAL_API_KEY"]
+            if len(selected) != 1:
+                raise ValueError("Credencial OCR no disponible")
+            decrypted = decrypt_env_lines(load_aessiv(key_file), serialize_env_lines(selected))
+            key = env_value(decrypted, "SECRET_MISTRAL_API_KEY")
+            source = "credencial cifrada existente de Kestra"
+        except Exception:
+            key = ""
+            source = "sin credencial OCR disponible; clasificación manual habilitada"
     # The workflow sources the env in Bash. Never inject shell metacharacters.
-    if not key or not re.fullmatch(r"[A-Za-z0-9_.-]+", key):
-        raise ValueError("Credencial Mistral ausente o formato no admitido")
-    if not env_value(content, "MISTRAL_API_KEY"):
-        lines = [line for line in parse_env_lines(content) if line.key != "MISTRAL_API_KEY"]
+    if key and not re.fullmatch(r"[A-Za-z0-9_.-]+", key):
+        key = ""
+        source = "credencial OCR de formato inválido; clasificación manual habilitada"
+    lines = parse_env_lines(content)
+    configured = [line for line in lines if line.key == "MISTRAL_API_KEY"]
+    if env_value(content, "MISTRAL_API_KEY") != key or len(configured) != 1:
+        lines = [line for line in lines if line.key != "MISTRAL_API_KEY"]
         env_file.write_bytes(serialize_env_lines(lines) + b"\nMISTRAL_API_KEY=" + key.encode() + b"\n")
     env_file.chmod(0o600)
     return key, source
@@ -82,13 +91,22 @@ def main() -> int:
     try:
         key, source = prepare(args.env_file, args.key_file, args.kestra_env)
         if args.check_connection:
+            if not key:
+                raise ValueError("Credencial OCR no disponible")
             model = env_value(args.env_file.read_bytes(), "MISTRAL_OCR_MODEL") or "mistral-ocr-latest"
             check_connection(key, model)
-        print("Mistral preparado desde " + source + "; sin reemplazar ni rotar credenciales.")
+        print("Configuración OCR preparada desde " + source + ".")
+        if args.check_connection:
+            print("Comprobación manual de Mistral completada.")
         return 0
-    except Exception:
-        # No raw exceptions, provider bodies, secret contents, or token in logs.
-        print("No se pudo preparar/verificar Mistral. Revisar configuración privada y acceso OCR.", file=sys.stderr)
+    except Exception as error:
+        # Only fixed messages and HTTP status; never expose provider bodies/secrets.
+        message = (
+            f"Comprobación manual de Mistral fallida (HTTP {error.code})."
+            if isinstance(error, urllib.error.HTTPError)
+            else "No se pudo preparar/verificar la configuración privada de OCR."
+        )
+        print(message, file=sys.stderr)
         return 1
 
 if __name__ == "__main__":

@@ -59,3 +59,31 @@ it("validates upload limits before OCR, without persistent side effects", async 
     /tamaño máximo/,
   );
 });
+
+it("unexpected provider exceptions become optional analysis errors", async () => {
+  const uc = new AnalizarReciboUseCase({
+    configuracion: {
+      get: async () => ({ habilitado: true, version: 1 }),
+      update: async () => {
+        throw new Error("must not change activation");
+      },
+    },
+    gateway: {
+      reconocer: async () => {
+        throw new Error("private-provider-details");
+      },
+    },
+    allowedExtensions: [".png"],
+    allowedMimeTypes: ["image/png"],
+    maxFileSizeBytes: 100,
+  });
+  assert.deepEqual(
+    await uc.execute({
+      fileName: "a.png",
+      mimeType: "image/png",
+      size: 8,
+      buffer: Buffer.alloc(8),
+    }),
+    { resultado: "error", motivo: "proveedor", version: 1 },
+  );
+});

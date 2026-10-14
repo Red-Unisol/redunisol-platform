@@ -191,3 +191,74 @@ it("corrupt/encrypted PDFs return a processing error, not a negative", async () 
   );
   assert.equal(calls.length, 0);
 });
+
+for (const status of [401, 403, 429, 500, 503])
+  it(`HTTP ${status} preserves manual fallback, pauses calls and recovers later`, async () => {
+    let now = 1000;
+    let fail = true;
+    let calls = 0;
+    const gateway = new MistralReciboGateway({
+      apiKey: "fixture-key",
+      model: "mistral-ocr-latest",
+      timeoutMs: 1000,
+      now: () => now,
+      fetch: (async (url) => {
+        calls++;
+        if (String(url).endsWith("models"))
+          return Response.json({ data: [{ id: "mistral-ocr-latest" }] });
+        if (fail)
+          return Response.json({ error: "private-provider-body" }, { status });
+        return Response.json({
+          pages: [{ markdown: "Recibo" }],
+          document_annotation: annotation,
+        });
+      }) as typeof fetch,
+    });
+    assert.deepEqual(await gateway.reconocer(file), {
+      resultado: "error",
+      motivo: "proveedor",
+    });
+    const failedCalls = calls;
+    assert.deepEqual(await gateway.reconocer(file), {
+      resultado: "error",
+      motivo: "proveedor",
+    });
+    assert.equal(calls, failedCalls);
+    fail = false;
+    now += 30_000;
+    assert.equal((await gateway.reconocer(file)).resultado, "recibo");
+    assert.equal(calls, failedCalls + 1);
+  });
+
+it("network failure is contained and subsequent files fail fast", async () => {
+  let calls = 0;
+  const gateway = new MistralReciboGateway({
+    apiKey: "fixture-key",
+    model: "mistral-ocr-latest",
+    timeoutMs: 1000,
+    fetch: (async () => {
+      calls++;
+      throw new Error("private-network-error");
+    }) as typeof fetch,
+  });
+  assert.deepEqual(await gateway.reconocer(file), {
+    resultado: "error",
+    motivo: "proveedor",
+  });
+  assert.deepEqual(await gateway.reconocer(file), {
+    resultado: "error",
+    motivo: "proveedor",
+  });
+  assert.equal(calls, 1);
+});
+it("manual cancellation does not pause a healthy provider", async () => {
+  const { gateway, calls } = setup(annotation);
+  const controller = new AbortController();
+  controller.abort();
+  assert.equal(
+    (await gateway.reconocer(file, controller.signal)).resultado,
+    "error",
+  );
+  assert.equal(calls.length, 0);
+  assert.equal((await gateway.reconocer(file)).resultado, "recibo");
+});

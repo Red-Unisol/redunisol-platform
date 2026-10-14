@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mistralEnvSchema } from "./mistral-env";
 import { integrationConfigSchema } from "../modules/transferencias-integration/config";
 
 const normalizeCommaSeparatedList = (value: string) =>
@@ -13,9 +14,7 @@ const FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO =
   "https://redunisol.com.ar/finalizar.php";
 
 const envSchema = z.object({
-  MISTRAL_API_KEY: z.string().trim().default(""),
-  MISTRAL_OCR_MODEL: z.string().trim().min(1).default("mistral-ocr-latest"),
-  MISTRAL_OCR_TIMEOUT_MS: z.coerce.number().int().positive().default(45000),
+  ...mistralEnvSchema.shape,
   ACCESS_TOKEN_SECRET: z
     .string()
     .min(32, "ACCESS_TOKEN_SECRET must be at least 32 characters"),

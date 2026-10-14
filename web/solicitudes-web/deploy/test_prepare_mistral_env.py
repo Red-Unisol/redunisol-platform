@@ -41,17 +41,21 @@ class PrepareMistralTests(unittest.TestCase):
         self.assertEqual(key, "own-key")
         self.assertEqual(self.env.read_bytes(), content)
 
-    def test_invalid_secret_is_rejected_without_shell_injection(self):
-        self.env.write_bytes(b"MISTRAL_API_KEY=unsafe;echo-token\n")
-        with self.assertRaises(ValueError):
-            m.prepare(self.env, self.key, self.source)
+    def test_invalid_optional_secret_is_removed_without_shell_injection(self):
+        self.env.write_bytes(b"MISTRAL_API_KEY=unsafe;echo-token\nOTHER=value\n")
+        key, _ = m.prepare(self.env, self.key, self.source)
+        self.assertEqual(key, "")
+        self.assertNotIn(b"unsafe", self.env.read_bytes())
+        self.assertEqual(m.env_value(self.env.read_bytes(), "MISTRAL_API_KEY"), "")
+        self.assertIn(b"OTHER=value", self.env.read_bytes())
 
-    def test_missing_ciphered_secret_does_not_create_an_empty_credential(self):
+    def test_missing_ciphered_secret_keeps_manual_operation_available(self):
         self.env.write_bytes(b"APP_ORIGIN=https://example.test\n")
         self.source.write_bytes(encrypt_env_lines(load_aessiv(self.key), b"SECRET_OTHER=value\n"))
-        with self.assertRaises(ValueError):
-            m.prepare(self.env, self.key, self.source)
-        self.assertNotIn(b"MISTRAL_API_KEY", self.env.read_bytes())
+        key, _ = m.prepare(self.env, self.key, self.source)
+        self.assertEqual(key, "")
+        self.assertIn(b"MISTRAL_API_KEY=", self.env.read_bytes())
+        self.assertIn(b"APP_ORIGIN=https://example.test", self.env.read_bytes())
 
     def test_repeated_preparation_preserves_key(self):
         self.env.write_bytes(b"MISTRAL_API_KEY=\n")
@@ -71,13 +75,64 @@ class PrepareMistralTests(unittest.TestCase):
             self.assertEqual(body["document"]["type"], "document_url")
             self.assertNotIn("fixture-key", json.dumps(body))
 
-    def test_ocr_annotation_failure_prevents_deploy(self):
+    def test_explicit_manual_check_still_reports_annotation_failure(self):
         import io, json
         responses = [io.BytesIO(json.dumps({"data": [{"id": "mistral-ocr-latest"}]}).encode()),
                      io.BytesIO(json.dumps({"pages": [], "document_annotation": None}).encode())]
         with patch.object(m.urllib.request, "urlopen", side_effect=responses):
             with self.assertRaises(ValueError):
                 m.check_connection("fixture-key", "mistral-ocr-latest")
+
+    def test_default_preparation_never_calls_provider(self):
+        self.env.write_bytes(b"MISTRAL_API_KEY=own-key\nOTHER=value\n")
+        args = ["prepare_mistral_env.py", "--env-file", str(self.env),
+                "--key-file", str(self.key), "--kestra-env", str(self.source)]
+        with patch.object(m.sys, "argv", args), patch.object(m.urllib.request, "urlopen") as request:
+            self.assertEqual(m.main(), 0)
+            request.assert_not_called()
+
+    def test_missing_optional_files_do_not_prevent_preparation(self):
+        self.env.write_bytes(b"OTHER=value\n")
+        key, _ = m.prepare(self.env, Path("missing-key"), Path("missing-source"))
+        self.assertEqual(key, "")
+        self.assertIn(b"OTHER=value", self.env.read_bytes())
+
+    def test_invalid_ciphered_optional_secret_does_not_prevent_preparation(self):
+        self.env.write_bytes(b"OTHER=value\n")
+        self.source.write_bytes(b"SECRET_MISTRAL_API_KEY=invalid-ciphertext\n")
+        key, _ = m.prepare(self.env, self.key, self.source)
+        self.assertEqual(key, "")
+        self.assertIn(b"OTHER=value", self.env.read_bytes())
+
+    def test_dev_workflow_does_not_request_live_provider_check(self):
+        workflow = m.REPO_ROOT / ".github/workflows/deploy-solicitudes-web-dev.yml"
+        content = workflow.read_text(encoding="utf-8")
+        self.assertIn("prepare_mistral_env.py", content)
+        self.assertNotIn("--check-connection", content)
+
+
+    def test_unreadable_required_application_env_still_fails(self):
+        import contextlib, io
+        args = ["prepare_mistral_env.py", "--env-file", str(self.folder / "missing-app.env"),
+                "--key-file", str(self.key), "--kestra-env", str(self.source)]
+        with patch.object(m.sys, "argv", args), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(m.main(), 1)
+
+    def test_manual_check_is_explicit_and_reports_only_safe_http_status(self):
+        import contextlib, io
+        self.env.write_bytes(b"MISTRAL_API_KEY=own-key\n")
+        args = ["prepare_mistral_env.py", "--env-file", str(self.env),
+                "--key-file", str(self.key), "--kestra-env", str(self.source), "--check-connection"]
+        error = m.urllib.error.HTTPError("https://api.mistral.ai/v1/ocr", 429,
+                                        "private-provider-details", {}, None)
+        output = io.StringIO()
+        with patch.object(m.sys, "argv", args), patch.object(m, "check_connection", side_effect=error) as check, contextlib.redirect_stderr(output):
+            self.assertEqual(m.main(), 1)
+            check.assert_called_once_with("own-key", "mistral-ocr-latest")
+        self.assertIn("HTTP 429", output.getvalue())
+        self.assertNotIn("private-provider-details", output.getvalue())
+        self.assertNotIn("own-key", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
