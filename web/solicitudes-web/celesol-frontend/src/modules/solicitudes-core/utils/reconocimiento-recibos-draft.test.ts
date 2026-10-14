@@ -230,3 +230,69 @@ it("polling still cancels a job after disabling and reactivating", async () => {
   assert.equal(s.counts().detections, 0);
   assert.equal(s.statuses.at(-1), "deshabilitado");
 });
+
+for (const failure of ["credential", "provider", "request", "configuration"])
+  it(`operator can classify manually after ${failure} failure`, async () => {
+    let tipoAdjunto = "";
+    const statuses: string[] = [];
+    let providerCalls = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => {
+          if (failure === "configuration")
+            throw new Error("settings unavailable");
+          return { habilitado: true, version: 1 };
+        },
+        analyze: async () => {
+          providerCalls++;
+          if (failure === "request") throw new Error("analysis HTTP failure");
+          return {
+            resultado: "error",
+            motivo: failure === "credential" ? "credencial" : "proveedor",
+            version: 1,
+          };
+        },
+      },
+      (_id, state) => statuses.push(state),
+    );
+    draft.start("one", file, () => {
+      tipoAdjunto = "Recibo de Sueldo";
+    });
+    await flush();
+    assert.equal(tipoAdjunto, "");
+    assert.equal(
+      statuses.at(-1),
+      failure === "credential" ? "error_credencial" : "error",
+    );
+    assert.equal(providerCalls, failure === "configuration" ? 0 : 1);
+    draft.manual("one");
+    tipoAdjunto = "CUPO";
+    draft.cancelAll(true);
+    assert.equal(tipoAdjunto, "CUPO");
+    assert.equal(statuses.at(-1), "manual");
+  });
+it("operator can proceed manually while the recognition request is stuck", async () => {
+  const pending = deferred<{ resultado: "recibo"; version: number }>();
+  let signal!: AbortSignal;
+  let detections = 0;
+  const statuses: string[] = [];
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => ({ habilitado: true, version: 1 }),
+      analyze: async (_file, receivedSignal) => {
+        signal = receivedSignal;
+        return pending.promise;
+      },
+    },
+    (_id, state) => statuses.push(state),
+  );
+  draft.start("one", file, () => detections++);
+  await flush();
+  draft.manual("one");
+  draft.cancelAll(true);
+  assert.equal(signal.aborted, true);
+  assert.equal(statuses.at(-1), "manual");
+  pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(detections, 0);
+});

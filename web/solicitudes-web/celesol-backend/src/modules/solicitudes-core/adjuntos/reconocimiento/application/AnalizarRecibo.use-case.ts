@@ -24,7 +24,13 @@ export class AnalizarReciboUseCase {
     if (!config.habilitado)
       return { resultado: "deshabilitado", version: config.version };
     signal?.throwIfAborted();
-    const result = await this.dependencies.gateway.reconocer(file, signal);
+    let result: Omit<ResultadoReconocimiento, "version">;
+    try {
+      result = await this.dependencies.gateway.reconocer(file, signal);
+    } catch {
+      // Un fallo del proveedor solo afecta esta sugerencia opcional.
+      result = { resultado: "error", motivo: "proveedor" };
+    }
     const actual = await this.dependencies.configuracion.get();
     if (!actual.habilitado || actual.version !== config.version)
       return { resultado: "deshabilitado", version: actual.version };

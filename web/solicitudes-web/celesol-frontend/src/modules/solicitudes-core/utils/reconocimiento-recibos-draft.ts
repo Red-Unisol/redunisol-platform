@@ -123,8 +123,9 @@ export const mensajesAnalisis: Record<EstadoAnalisis, string> = {
   analizando: "Analizando documento…",
   recibo: "Recibo de sueldo detectado",
   manual: "Seleccioná el tipo de adjunto manualmente",
-  error: "No se pudo analizar el documento",
+  error:
+    "No se pudo reconocer automáticamente. Seleccioná el tipo manualmente para continuar.",
   error_credencial:
-    "No se pudo analizar el documento. Falta configurar la conexión con Mistral.",
+    "Reconocimiento automático no disponible. Podés clasificar y guardar el adjunto manualmente.",
   deshabilitado: "Reconocimiento desactivado. Seleccioná el tipo manualmente",
 };

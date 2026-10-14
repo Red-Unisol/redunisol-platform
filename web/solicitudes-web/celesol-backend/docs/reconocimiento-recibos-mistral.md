@@ -24,7 +24,7 @@ Variables privadas del backend:
 - `MISTRAL_OCR_MODEL`: por defecto `mistral-ocr-latest` (alias del proveedor).
 - `MISTRAL_OCR_TIMEOUT_MS`: por defecto 45000.
 
-Compose transmite estas variables. El despliegue de dev conserva una clave propia de Solicitudes si existe; si falta, descifra únicamente `SECRET_MISTRAL_API_KEY` del runtime cifrado de Kestra con el tooling existente. No reemplaza ni rota esa credencial. Antes de actualizar el servidor verifica modelos, OCR y anotación con un PDF sintético sin datos personales; si falla, detiene el despliegue. El helper es `deploy/prepare_mistral_env.py` y limpia el archivo temporal privado del runner. No se cambió ese archivo cifrado ni la cuenta de Mistral, incluido su ajuste de entrenamiento. La ausencia de credencial mantiene el interruptor habilitado y produce un error explícito; la selección manual sigue funcionando.
+Compose transmite estas variables. El despliegue de dev conserva una clave propia de Solicitudes si existe; si falta, descifra únicamente `SECRET_MISTRAL_API_KEY` del runtime cifrado de Kestra con el tooling existente. No reemplaza ni rota esa credencial. El despliegue no llama a Mistral ni ejecuta inferencias. La preparación de la clave es opcional: si falta, no puede descifrarse o tiene un formato inseguro, se deja vacía y la clasificación manual sigue disponible. La verificación real de modelos, OCR y anotación queda como diagnóstico manual mediante `--check-connection`; no es una condición del despliegue. El helper es `deploy/prepare_mistral_env.py` y limpia el archivo temporal privado del runner. No se cambió ese archivo cifrado ni la cuenta de Mistral, incluido su ajuste de entrenamiento. La ausencia de credencial mantiene el interruptor habilitado y produce una respuesta de reconocimiento no disponible; la selección manual sigue funcionando. Las variables opcionales vacías o inválidas usan valores seguros y no impiden arrancar el backend.
 
 ## API y permisos
 
@@ -56,7 +56,7 @@ Se habilitan para reconocimiento PDF, PNG, JPEG y WebP con firma compatible, den
 
 Anotación validada: clasificación enum y cinco booleanos `periodo`, `agente`, `haberes`, `descuentos`, `neto`. Se acepta positivo solamente con clasificación `recibo`, texto OCR legible y todos los indicadores presentes. Si el modelo propone positivo sin esa combinación, se devuelve indeterminado. Un documento legible de otra clase puede resultar negativo. JSON inválido, errores HTTP y tiempos de espera son errores, nunca negativos. No hay porcentaje de confianza ni precisión medida. El prompt trata todo el documento como contenido no confiable e ignora instrucciones en él; no existen herramientas o acciones que pueda ejecutar el proveedor.
 
-## Validaciones realizadas
+## Validaciones originales (13/10/2026)
 
 - 31 pruebas backend: contrato con proveedor simulado, resultados y errores, límites PDF, autorización HTTP antes del análisis, administración, estado desactivado y regresiones de permisos/catálogo/validación de adjuntos.
 - 10 pruebas frontend de tareas: positivos, desactivación, elecciones manuales, guardado, cierre, eliminación, sustitución y cambios de contexto.
@@ -82,3 +82,12 @@ npx tsx --env-file=.env scripts/probar-reconocimiento-recibos.ts /ruta/recibo1.p
 El script verifica que haya cinco archivos y credencial antes de llamar al proveedor. Procesa las cinco muestras reales, imprime únicamente archivo/modelo solicitado/resultado y termina con código no cero si alguna no resulta positiva. No contiene respuestas simuladas ni envía archivos por su nombre como criterio.
 
 Para pruebas de interfaz local, tras migración y configuración del backend, iniciar las aplicaciones con sus comandos habituales (`npm run dev`), abrir una solicitud accesible o el alta y agregar los archivos. Verificar el mensaje por archivo, corregir el tipo si corresponde y guardar con el circuito habitual. Desactivar desde Administración y repetir: no debe haber OCR. Probar también un documento que no sea un recibo y uno ilegible, sin confundir indeterminación con fallos del proveedor. Dev público no incorpora este cambio hasta una instrucción expresa de despliegue.
+
+
+## Degradación ante fallos del proveedor
+
+El reconocimiento es una sugerencia opcional. Credencial ausente, HTTP 401/403/429/5xx, problemas de red, timeout y respuestas inválidas producen una respuesta de error limitada al análisis. No cambian permisos, archivos, solicitudes ni el interruptor global; tampoco convierten un error en una clasificación negativa.
+
+Después de un fallo se evitan nuevas llamadas al proveedor durante 30 segundos. Al terminar la pausa, el siguiente archivo puede volver a probar el reconocimiento. Cancelar un análisis manualmente no activa esa pausa. No se realizan inferencias al arrancar la aplicación ni durante el despliegue.
+
+Los controles de selección manual y guardado no dependen de la disponibilidad de OCR ni esperan su respuesta. Elegir un tipo o guardar cancela el análisis pendiente y protege la categoría elegida. Si el proveedor falla, el mensaje indica cómo continuar manualmente; el límite de diez archivos y la categoría obligatoria de cada archivo permanecen vigentes.
