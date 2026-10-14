@@ -134,5 +134,27 @@ class PrepareMistralTests(unittest.TestCase):
         self.assertNotIn("own-key", output.getvalue())
 
 
+    def test_dedicated_secret_avoids_kestra_and_is_written_privately(self):
+        self.env.write_bytes(b"MISTRAL_API_KEY=\n")
+        with patch.dict(m.os.environ, {"SOLICITUDES_MISTRAL_API_KEY": "dedicated-fixture-key"}):
+            key, source = m.prepare(self.env, Path("missing"), Path("missing"))
+        self.assertEqual(key, "dedicated-fixture-key")
+        self.assertEqual(source, "secreto dedicado de Solicitudes")
+        self.assertEqual(m.env_value(self.env.read_bytes(), "MISTRAL_API_KEY"), key)
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
+
+    def test_explicit_application_key_is_not_overwritten_by_dedicated_secret(self):
+        self.env.write_bytes(b"MISTRAL_API_KEY=existing-fixture-key\n")
+        with patch.dict(m.os.environ, {"SOLICITUDES_MISTRAL_API_KEY": "dedicated-fixture-key"}):
+            key, _ = m.prepare(self.env, Path("missing"), Path("missing"))
+        self.assertEqual(key, "existing-fixture-key")
+
+    def test_invalid_dedicated_secret_preserves_manual_fallback(self):
+        self.env.write_bytes(b"MISTRAL_API_KEY=\n")
+        with patch.dict(m.os.environ, {"SOLICITUDES_MISTRAL_API_KEY": "invalid;command"}):
+            key, _ = m.prepare(self.env, self.key, self.source)
+        self.assertEqual(key, "")
+        self.assertNotIn(b"invalid;command", self.env.read_bytes())
+
 if __name__ == "__main__":
     unittest.main()

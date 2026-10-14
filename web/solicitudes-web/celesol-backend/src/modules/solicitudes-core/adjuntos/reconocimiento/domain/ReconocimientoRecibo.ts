@@ -1,3 +1,11 @@
+export type CodigoErrorReconocimiento =
+  | "limite_proveedor"
+  | "autenticacion_proveedor"
+  | "timeout_proveedor"
+  | "modelo_no_disponible"
+  | "respuesta_invalida"
+  | "conexion_proveedor"
+  | "servicio_proveedor";
 export type ConfiguracionReconocimiento = {
   habilitado: boolean;
   version: number;
@@ -10,6 +18,7 @@ export type ResultadoReconocimiento = {
     | "error"
     | "deshabilitado";
   version: number;
+  codigoError?: CodigoErrorReconocimiento;
   motivo?: "credencial" | "proveedor" | "formato" | "procesamiento";
 };
 export type ArchivoReconocimiento = {
