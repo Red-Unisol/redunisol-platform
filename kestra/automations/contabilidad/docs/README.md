@@ -2,6 +2,12 @@
 
 Dominio para automatizaciones especificas de contabilidad.
 
+## BCRA Celesol
+
+El flujo manual `bcra_deudores_generate` genera presentaciones desde la nueva
+pantalla `/bcra` de Herramientas. Ver [BCRA deudores](bcra-deudores.md) para las
+reglas, la fuente temporal de los saldos y la operación por ambiente.
+
 ## Transfer Vimarx
 
 Flow principal:
