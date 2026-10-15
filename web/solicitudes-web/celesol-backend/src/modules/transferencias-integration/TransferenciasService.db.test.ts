@@ -73,7 +73,6 @@ test(
       loan: async (id) => ({
         loanId: id,
         lineId: "12",
-        cbu: memberCbu,
         cmf: "0",
         coinag: "1000.01",
         cashInHand: "-1000.01",
@@ -178,6 +177,53 @@ test(
       cuit: memberCuit,
       confirmedAt: "2026-01-01T00:00:00Z",
     });
+
+    await t.test(
+      "BEEX destination changes invalidate old plans and freeze the reserved CBU",
+      async () => {
+        const { source, service, plan, input } = await fixture();
+        const nonHabitualCbu = "0000000000000000000002";
+        await db.solicitudTitular.update({
+          where: { solicitudId: source.id },
+          data: { cbuNoHabitual: nonHabitualCbu },
+        });
+        const updatedPlan = await service.plan(source.id);
+        assert.equal(updatedPlan.payments[0]!.cbu, nonHabitualCbu);
+        assert.equal(updatedPlan.payments[0]!.bankNumber, plan.payments[0]!.bankNumber);
+        assert.notEqual(updatedPlan.version, plan.version);
+        await assert.rejects(
+          service.reserve(source.id, input, actor),
+          (error: unknown) =>
+            error instanceof IntegrationError && error.code === "PLAN_CHANGED",
+        );
+        const order = await service.reserve(
+          source.id,
+          { ...input, planVersion: updatedPlan.version },
+          actor,
+        );
+        assert.deepEqual(order.plan, updatedPlan);
+        assert.equal((await service.revalidate(order.id, actor)).valid, true);
+        await assert.rejects(
+          db.solicitudTitular.update({
+            where: { solicitudId: source.id },
+            data: { cbuNoHabitual: memberCbu },
+          }),
+          /BEEX_TRANSFERENCIAS_LOCKED/,
+        );
+        const confirmation = evidence(updatedPlan, input.payments[0]!.bankTransactionId);
+        await assert.rejects(
+          service.confirm(order.id, "member", confirmation, actor),
+          IntegrationError,
+        );
+        const confirmed = await service.confirm(
+          order.id,
+          "member",
+          { ...confirmation, cbu: nonHabitualCbu },
+          actor,
+        );
+        assert.equal(confirmed.status, "BANK_CONFIRMED_PENDING_SYNC");
+      },
+    );
 
     await t.test(
       "concurrent identical reservations and lost-response lookup return same order",

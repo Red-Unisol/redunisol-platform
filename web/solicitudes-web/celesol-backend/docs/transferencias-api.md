@@ -107,14 +107,23 @@ producen siempre el mismo ID. Los desembolsos reservados con formatos anteriores
 conservan sus IDs; no se reemplazan automáticamente.
 
 El plan lee el préstamo por ID, restringido al socio vinculado al CUIT del
-titular BEEX. Consulta los campos `LineaPrestamo.ID`, `[CBU transferencia]`,
-`[Bco CMF]`, `[Bco Coinag Cba]` y `[Monto En Mano]`. Los CUIT de socio y
-acreedores se resuelven por sus IDs en `F.Module.SocioMutual`. Se rechazan
-respuestas inesperadas, préstamos ajenos y datos incompletos.
+titular BEEX. Consulta los campos `LineaPrestamo.ID`, `[Bco CMF]`,
+`[Bco Coinag Cba]` y `[Monto En Mano]`. Los CUIT de socio y acreedores se
+resuelven por sus IDs en `F.Module.SocioMutual`. Se rechazan respuestas
+inesperadas, préstamos ajenos y datos financieros incompletos.
 
-El CBU no habitual tiene prioridad sobre el habitual y debe coincidir con el
-préstamo. Los acreedores deben tener CUIT de persona jurídica; los controles
-bancarios definitivos siguen en la app. Solo puede haber un monto bancario
+BEEX es la fuente del CBU de destino del titular: `cbuNoHabitual` tiene
+prioridad sobre `cbu`, y el destino elegido debe contener 22 dígitos.
+El plan no consulta ni compara `Prestamo.[CBU transferencia]`: ese campo
+calculado y de solo lectura depende de la solicitud antigua de Vimarx, que no
+existe para el origen BEEX. Tampoco exige una cuenta habitual del socio en el
+core para definir el destino. La app conserva la validación bancaria de
+titularidad, CUIT y tipo de cuenta. El CBU forma parte de la versión del plan
+y del snapshot reservado; cambiarlo invalida un plan anterior, y la reserva
+bloquea modificaciones posteriores de los datos del titular.
+
+Los acreedores deben tener CUIT de persona jurídica; los controles bancarios
+definitivos siguen en la app. Solo puede haber un monto bancario
 distinto de cero; se toma su valor absoluto. Sin cancelaciones, ese importe es
 el pago al socio. Si es menor al solicitado, `requiresRenewalReview=true`;
 si lo supera, se bloquea.
