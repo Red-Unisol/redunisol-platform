@@ -77,7 +77,6 @@ export type Actor = { id: string; workflowOwnerId: string; clientId: string };
 export type LoanFinancials = {
   loanId: string;
   lineId: string;
-  cbu: string;
   cmf: string;
   coinag: string;
   cashInHand: string;
@@ -226,13 +225,12 @@ export function buildPlan(
       "El socio del préstamo no coincide con el titular BEEX.",
     );
   if (net.gt(0)) {
+    // BEEX owns the destination; the legacy alias requires a PreSolicitud.
     const cbu = digits(
       source.titular.cbuNoHabitual || source.titular.cbu,
       22,
       "CBU del titular",
     );
-    if (cbu !== digits(loan.cbu, 22, "CBU del préstamo"))
-      fail("ACCOUNT_MISMATCH", "El CBU de BEEX no coincide con el préstamo.");
     payments.unshift({
       paymentKey: "member",
       kind: "member",
