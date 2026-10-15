@@ -10,6 +10,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use RuntimeException;
 use Throwable;
 
@@ -71,8 +72,13 @@ class ReceiveEdnaInKestra implements ShouldQueue
                 }
                 DB::table('edna_incoming_events')->where('id', $this->eventId)->update([
                     'status' => 'delivered', 'outcome' => $result['kind'],
+                    'out_of_hours_candidate' => $result['kind'] === 'ignored' && ($result['out_of_hours_candidate'] ?? false) === true,
                     'delivered_at' => now(), 'updated_at' => now(),
                 ]);
+                if (config('edna.out_of_hours_enabled') && $result['kind'] === 'ignored'
+                    && ($result['out_of_hours_candidate'] ?? false) === true) {
+                    Queue::connection('edna')->later(10, new EvaluateEdnaOutOfHours($event->id), '', 'edna');
+                }
             });
         } catch (Throwable) {
             // Do not chain the original HTTP exception: it may contain the secret webhook URL.

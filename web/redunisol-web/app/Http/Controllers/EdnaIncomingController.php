@@ -85,15 +85,20 @@ class EdnaIncomingController extends Controller
 
                         continue;
                     }
-                    if (! in_array($content['type'], ['TEXT', 'FLOW'], true)) {
+                    $types = ['TEXT', 'FLOW'];
+                    if (config('edna.out_of_hours_enabled')) {
+                        $types = array_merge($types, ['IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER']);
+                    }
+                    if (! in_array($content['type'], $types, true)) {
                         $counts['ignored']++;
 
                         continue;
                     }
+                    $text = $content['text'] ?? (in_array($content['type'], ['TEXT', 'FLOW'], true) ? null : '');
                     $subscriber = $event['subscriber'] ?? null;
                     if (! is_array($subscriber) || ! is_string($subscriber['identifier'] ?? null)
                         || $subscriber['identifier'] === '' || strlen($subscriber['identifier']) > 128
-                        || ! is_string($content['text'] ?? null) || strlen($content['text']) > 32768
+                        || ! is_string($text) || strlen($text) > 32768
                         || ! is_string($event['receivedAt'] ?? null) || strlen($event['receivedAt']) > 64) {
                         $counts['invalid']++;
 
@@ -104,8 +109,11 @@ class EdnaIncomingController extends Controller
                         'subjectId' => $subjectId,
                         'subscriber' => ['identifier' => $subscriber['identifier']],
                         'receivedAt' => $event['receivedAt'],
-                        'messageContent' => ['type' => $content['type'], 'text' => $content['text']],
+                        'messageContent' => ['type' => $content['type'], 'text' => $text],
                     ];
+                    if (isset($content['payload']) && is_string($content['payload']) && strlen($content['payload']) <= 256) {
+                        $payload['messageContent']['payload'] = $content['payload'];
+                    }
                     // Edna links FLOW replies to the outgoing message and our requestId.
                     // Keep these references for correlation; they are not proof of a Flow ID.
                     $replyId = $event['replyOutMessageId'] ?? null;

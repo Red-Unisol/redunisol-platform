@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'out_of_hours_enabled' => (bool) env('EDNA_OUT_OF_HOURS_ENABLED', false),
+    'out_of_hours_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_OUT_OF_HOURS_RECIPIENTS', ''))))),
     'form_links_enabled' => (bool) env('EDNA_FORM_LINKS_ENABLED', false),
     'form_link_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_FORM_LINK_RECIPIENTS', ''))))),
     'form_link_send_enabled' => (bool) env('EDNA_FORM_LINK_SEND_ENABLED', false),

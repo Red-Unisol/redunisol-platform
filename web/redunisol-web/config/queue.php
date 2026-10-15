@@ -37,7 +37,7 @@ return [
             'connection' => null,
             'table' => 'jobs',
             'queue' => 'edna',
-            'retry_after' => 90,
+            'retry_after' => 120,
             'after_commit' => false,
         ],
 

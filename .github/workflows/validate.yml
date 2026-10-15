@@ -125,6 +125,9 @@ jobs:
         working-directory: web/redunisol-web
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
@@ -137,4 +140,4 @@ jobs:
           printf 'APP_URL=http://localhost\n' > .env
           php artisan package:discover
       - name: Test Edna HTTP inbox and delivery worker
-        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/WhatsAppSalesContextTest.php

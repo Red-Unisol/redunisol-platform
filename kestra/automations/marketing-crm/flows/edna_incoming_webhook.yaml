@@ -1,7 +1,7 @@
 id: edna_incoming_webhook
 namespace: redunisol
 
-description: Recibe eventos desde el inbox web de Edna y clasifica entradas al router y respuestas FLOW sin enviar mensajes ni escribir en Bitrix.
+description: Clasifica eventos de Edna y decide calendario, elegibilidad y texto de los avisos de Ventas; el adaptador ejecuta los envíos.
 
 labels:
   env: prod
@@ -28,6 +28,36 @@ tasks:
       - python -m edna_incoming.entrypoint
 
 outputs:
+  - id: policy_version
+    type: STRING
+    value: "{{ outputs.recibir.vars.policy_version ?? '' }}"
+  - id: request_id
+    type: STRING
+    value: "{{ outputs.recibir.vars.request_id ?? '' }}"
+  - id: decision
+    type: STRING
+    value: "{{ outputs.recibir.vars.decision ?? '' }}"
+  - id: window_start
+    type: STRING
+    value: "{{ outputs.recibir.vars.window_start ?? '' }}"
+  - id: window_end
+    type: STRING
+    value: "{{ outputs.recibir.vars.window_end ?? '' }}"
+  - id: notice_type
+    type: STRING
+    value: "{{ outputs.recibir.vars.notice_type ?? '' }}"
+  - id: message_template
+    type: STRING
+    value: "{{ outputs.recibir.vars.message_template ?? '' }}"
+  - id: context_requirements
+    type: STRING
+    value: "{{ outputs.recibir.vars.context_requirements ?? '' }}"
+  - id: calendar
+    type: STRING
+    value: "{{ outputs.recibir.vars.calendar ?? '' }}"
+  - id: out_of_hours_candidate
+    type: BOOL
+    value: "{{ outputs.recibir.vars.out_of_hours_candidate ?? false }}"
   - id: ok
     type: BOOL
     value: "{{ outputs.recibir.vars.ok }}"
@@ -42,7 +72,7 @@ outputs:
     value: "{{ outputs.recibir.vars.reason }}"
   - id: flow_id_verified
     type: BOOL
-    value: "{{ outputs.recibir.vars.flow_id_verified }}"
+    value: "{{ outputs.recibir.vars.flow_id_verified ?? false }}"
 
 triggers:
   - id: webhook
