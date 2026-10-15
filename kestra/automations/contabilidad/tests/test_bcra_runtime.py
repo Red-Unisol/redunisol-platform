@@ -33,6 +33,21 @@ def row(account="P1", cuit="20123456789", balance=100000, **changes):
 
 
 class BcraRuntimeTest(unittest.TestCase):
+    def test_unnamed_catalog_lines_keep_their_ids_selection_and_source_description(self):
+        config = process.ProcessConfig(fecha_corte=date(2026, 7, 31))
+        with patch.object(process, "fetch_api_payload", return_value=[
+            [10, "   ", 1, "COMUN"], [11, None, None, " "], [12, "0", None, None],
+        ]):
+            lines = runtime.catalog(config)
+        self.assertEqual(set(lines), {"10", "11", "12"})
+        self.assertEqual(lines["10"]["name"], "Sin descripción (#10)")
+        self.assertEqual(lines["10"]["source_name"], "")
+        self.assertEqual(lines["10"]["superior_name"], "COMUN")
+        self.assertEqual(lines["11"]["superior_name"], "Sin descripción (#11)")
+        self.assertEqual(lines["12"]["name"], "0")
+        prepared = runtime.prepare_rows([row()], runtime.validate_request(request()), lines)
+        self.assertEqual(prepared[0][2], "Sin descripción (#10)")
+
     def test_inputs_require_closed_month_ids_rate_and_exclusion_reasons(self):
         self.assertEqual(runtime.validate_request(request(), date(2026, 8, 1))["cutoff"], "2026-07-31")
         for changes in [{"period": "2026-08"}, {"period": "2026-13"}, {"run_id": "../../bad"},

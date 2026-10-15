@@ -52,20 +52,23 @@ class BcraPresentations
             $medica = array_map($this->normal(...), config('bcra.excluded_cuad_products'));
             $lines = [];
             foreach ($rows as $row) {
-                if (! is_array($row) || count($row) !== 4 || ! ctype_digit((string) $row[0]) || ! trim((string) $row[1])) {
+                if (! is_array($row) || count($row) !== 4 || ! ctype_digit((string) $row[0])
+                    || (! is_string($row[1]) && $row[1] !== null)) {
                     throw new RuntimeException('Invalid BCRA catalog row.');
                 }
                 $id = (string) $row[0];
                 if (isset($lines[$id])) {
                     throw new RuntimeException('Duplicate BCRA catalog ID.');
                 }
-                $name = trim($row[1]);
-                $superior = trim((string) ($row[3] ?? '')) ?: $name;
+                $sourceName = trim((string) $row[1]);
+                $name = $sourceName !== '' ? $sourceName : "Sin descripción (#{$id})";
+                $superior = trim((string) ($row[3] ?? ''));
+                $superior = $superior !== '' ? $superior : $name;
                 $isExcluded = in_array($this->normal($superior), $excluded, true)
                     || in_array($this->normal($name), $excluded, true)
                     || ($this->normal($superior) === 'HABERES CUAD SANTA FE'
                         && in_array($this->normal($name), $medica, true));
-                $lines[$id] = ['id' => $id, 'name' => $name,
+                $lines[$id] = ['id' => $id, 'name' => $name, 'source_name' => $sourceName,
                     'superior_id' => (string) ($row[2] ?? $id), 'superior_name' => $superior,
                     'included_by_default' => ! $isExcluded,
                     'normal_until_66_by_default' => $this->normal($superior) === 'HABERES DESCUENTO POLICIA CBA'];

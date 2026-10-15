@@ -59,6 +59,11 @@ la selección de IDs, el mes cerrado, la tasa y los motivos de las exclusiones.
 El navegador nunca recibe credenciales, URL de Vimarx ni permisos para enviar
 expresiones de consulta, rutas o configuración de servidor.
 
+Las líneas sin descripción en Vimarx se conservan por ID y se muestran como
+`Sin descripción (#ID)`, con las mismas reglas de selección. No se descartan
+préstamos por ese motivo. La configuración guarda también `source_name` para
+distinguir la descripción fuente de la etiqueta visible.
+
 ```text
 /srv/redunisol-reports/contabilidad/bcra/<namespace>/<uuid>/
   metadata.json
