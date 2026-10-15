@@ -1,3 +1,7 @@
+import {
+  ajustarMontoTexto,
+  ajustarCuotasTexto,
+} from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { Controller } from "react-hook-form";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
@@ -31,6 +35,17 @@ export function SolicitudMainSection({
   register,
   selectedLinea,
 }: SolicitudMainSectionProps) {
+  const lineaOptions = lineas.flatMap((linea) => {
+    const descripcion = linea.descripcion?.trim() ?? "";
+    const oid = linea.oid?.trim() ?? "";
+
+    if (!descripcion) {
+      return [];
+    }
+
+    return [{ label: descripcion, value: oid || descripcion }];
+  });
+
   return (
     <Section title="Solicitud">
       <div className="grid gap-3 md:grid-cols-2">
@@ -43,13 +58,7 @@ export function SolicitudMainSection({
                 <StyledSelect
                   disabled={isLoadingLineas}
                   onChange={field.onChange}
-                  options={lineas.flatMap((linea) => {
-                    const descripcion = linea.descripcion ?? "";
-
-                    return descripcion
-                      ? [{ label: descripcion, value: descripcion }]
-                      : [];
-                  })}
+                  options={lineaOptions}
                   placeholder={
                     isLoadingLineas
                       ? "Cargando líneas..."
@@ -67,33 +76,33 @@ export function SolicitudMainSection({
             ) : null}
           </Field>
           <Field label="Cuotas">
-            <Input
-              {...register("cuotas", {
+            <Controller
+              control={control}
+              name="cuotas"
+              rules={{
                 validate: (value) => {
-                  if (!value || !selectedLinea) {
-                    return true;
-                  }
-
-                  const cuotas = Number(value);
-
-                  if (Number.isNaN(cuotas)) {
-                    return "Ingrese un número válido.";
-                  }
-
-                  const min = selectedLinea.cantidadMinimaCuotas;
-                  const max = selectedLinea.cantidadMaximaCuotas;
-
-                  if (min !== null && cuotas < min) {
-                    return `La línea requiere al menos ${min} cuotas.`;
-                  }
-
-                  if (max !== null && cuotas > max) {
-                    return `La línea permite hasta ${max} cuotas.`;
-                  }
-
+                  if (!value || !selectedLinea) return true;
+                  const n = Number(value);
+                  if (Number.isNaN(n)) return "Ingrese un número válido.";
+                  if (
+                    selectedLinea.cantidadMinimaCuotas !== null &&
+                    n < selectedLinea.cantidadMinimaCuotas
+                  )
+                    return `La línea requiere al menos ${selectedLinea.cantidadMinimaCuotas} cuotas.`;
                   return true;
                 },
-              })}
+              }}
+              render={({ field }) => (
+                <Input
+                  {...field}
+                  type="number"
+                  onChange={(event) =>
+                    field.onChange(
+                      ajustarCuotasTexto(event.target.value, selectedLinea),
+                    )
+                  }
+                />
+              )}
             />
             {errors.cuotas ? (
               <span className="text-xs text-danger">
@@ -131,6 +140,7 @@ export function SolicitudMainSection({
               className={fieldClassName}
               control={control}
               name="montoAFinanciar"
+              transform={(value) => ajustarMontoTexto(value, selectedLinea)}
               validate={(value) => {
                 if (!value || !selectedLinea) {
                   return true;
@@ -138,14 +148,9 @@ export function SolicitudMainSection({
 
                 const monto = parseMoneyValue(value);
                 const min = selectedLinea.montoMinimo;
-                const max = selectedLinea.montoMaximo;
 
                 if (min !== null && monto < min) {
                   return `El monto mínimo para la línea es ${min}.`;
-                }
-
-                if (max !== null && monto > max) {
-                  return `El monto máximo para la línea es ${max}.`;
                 }
 
                 return true;
@@ -157,11 +162,22 @@ export function SolicitudMainSection({
               </span>
             ) : null}
           </Field>
+          {/*
+            Solo lectura: la cuota la calcula el legado al guardar, a partir de
+            monto, cuotas, linea, tasa y fecha de primer vencimiento. No hay
+            caso donde se escriba a mano.
+
+            Ademas no puede ser un MoneyInputField: ese componente reformatea
+            con formatMoneyValue en cada render, que borra todo lo que no sea
+            digito. Una cuota de 677.916,20 se mostraba como $67.791.620.
+          */}
           <Field label="Cuota Resultante">
-            <MoneyInputField
-              className={fieldClassName}
-              control={control}
-              name="cuotaResultante"
+            <Input
+              className="bg-disabled-background text-disabled-foreground"
+              placeholder="Cálculo no disponible"
+              readOnly
+              tabIndex={-1}
+              {...register("cuotaResultante")}
             />
           </Field>
           <Field label="Nro Operación">

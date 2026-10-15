@@ -1,3 +1,4 @@
+import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import type { ChangeSolicitudStateInput } from "../dtos/ChangeSolicitudState.dto";
 import { AnnotateSolicitudTransitionsBlockedReason } from "../services/AnnotateSolicitudTransitionsBlockedReason";
 import { EnsureSolicitudHasPrestamoLegacy } from "../services/EnsureSolicitudHasPrestamoLegacy";
@@ -10,11 +11,13 @@ import type { SocioRepository } from "../../../socios/domain/repositories/SocioR
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 
 type Dependencies = {
+  archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   adjuntoRepository: SolicitudAdjuntoRepository;
   engine: SolicitudWorkflowEngine;
   now: () => Date;
   sociosRepository: SocioRepository;
   solicitudesRepository: SolicitudesCoreRepository;
+  authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
 };
 
 // La transicion "pagar" (Transferir -> Pagada) puede ejecutarla, ademas del
@@ -23,6 +26,7 @@ type Dependencies = {
 const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
 
 export class ChangeSolicitudStateUseCase {
+  private readonly archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   private readonly annotateSolicitudTransitionsBlockedReason: AnnotateSolicitudTransitionsBlockedReason;
   private readonly ensureSolicitudHasReciboSueldoAdjunto: EnsureSolicitudHasReciboSueldoAdjunto;
   private readonly ensureSolicitudHasPrestamoLegacy: EnsureSolicitudHasPrestamoLegacy;
@@ -31,8 +35,11 @@ export class ChangeSolicitudStateUseCase {
   private readonly engine: SolicitudWorkflowEngine;
   private readonly now: () => Date;
   private readonly solicitudesRepository: SolicitudesCoreRepository;
+  private readonly authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
 
   constructor(dependencies: Dependencies) {
+    this.archivarEvaluacion = dependencies.archivarEvaluacion;
+    this.authorizeDocumentReview = dependencies.authorizeDocumentReview;
     this.solicitudesRepository = dependencies.solicitudesRepository;
     this.annotateSolicitudTransitionsBlockedReason =
       new AnnotateSolicitudTransitionsBlockedReason({
@@ -58,6 +65,9 @@ export class ChangeSolicitudStateUseCase {
   }
 
   async execute(input: ChangeSolicitudStateInput) {
+    if (["transferir", "devolver_a_liquidada"].includes(input.actionCode)) {
+      await this.authorizeDocumentReview?.(input);
+    }
     // Architectural guard-rail:
     // Productive workflow state changes must go through this use case and then
     // through SolicitudWorkflowEngine (policy + execution plan).
@@ -73,9 +83,7 @@ export class ChangeSolicitudStateUseCase {
       await this.ensureSolicitudHasPrestamoLegacy.execute(input.solicitudId);
     }
 
-    // The recibo-de-sueldo guard only applies to "enviar" (CargaVendedor -> Motor,
-    // the first submission to Riesgo): a solicitud can't be sent for risk review
-    // without at least one non-deleted "Recibo de Sueldo" adjunto attached.
+    // El envío a Riesgo requiere el recibo adjunto, pero no cargar su monto.
     if (input.actionCode === "enviar") {
       await this.ensureSolicitudHasReciboSueldoAdjunto.execute(input.solicitudId);
     }
@@ -110,7 +118,9 @@ export class ChangeSolicitudStateUseCase {
       workflowOwnerId: input.currentUser.workflowOwnerId,
       ...(workflowOwnerCode ? { workflowOwnerCode } : {}),
       ...(input.currentUser.isSystemAdmin ? { isSystemAdmin: true } : {}),
-    });
+    }, input.actionCode === "liquidar" && this.archivarEvaluacion
+      ? () => this.archivarEvaluacion!.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "liquidacion"})
+      : undefined);
 
     return {
       ...result,

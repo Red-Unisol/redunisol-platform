@@ -268,6 +268,15 @@ class CommercialDistributionReportTests(unittest.TestCase):
         self.assertEqual(row["business_decision"], "Rechazado")
         self.assertEqual(row["business_reason"], "La persona tiene 80 años o más.")
 
+    def test_explains_caja_new_entity_limit_rejection_in_plain_language(self):
+        raw = execution(action="rejected", strategy="rejection_without_distribution")
+        raw["outputs"]["reason"] = "caja_morosos_new_more_than_eight_entities"
+        raw["outputs"]["stage_id"] = "C1:5"
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+
+        self.assertEqual(row["business_decision"], "Rechazado")
+        self.assertIn("más de ocho entidades informadas en BCRA", row["business_reason"])
+
     def test_consolidates_cases_and_orders_newest_first(self):
         older = REPORT.normalized(execution())
         newer_execution = execution(action="manual_review", strategy="outside_hours_manual")

@@ -513,6 +513,68 @@ describe("ChangeSolicitudStateUseCase", () => {
     );
   });
 
+  for (const isSystemAdmin of [false, true]) {
+    for (const montoRecibo of [null, 0]) {
+      it(`envía sin monto de recibo (${montoRecibo}, admin=${isSystemAdmin})`, async () => {
+        let executed = false;
+        const useCase = new ChangeSolicitudStateUseCase({
+          adjuntoRepository: adjuntoRepository(),
+          engine: {
+            execute: async (input: Parameters<SolicitudWorkflowEngine["execute"]>[0]) => {
+              assert.equal(input.actionCode, "enviar");
+              executed = true;
+              return { solicitud: solicitud(), transitions: [] };
+            },
+          } as unknown as SolicitudWorkflowEngine,
+          now: () => new Date("2026-05-18T12:00:00.000Z"),
+          sociosRepository: socioRepository(),
+          solicitudesRepository: solicitudesRepository({
+            findById: async () => solicitudConMontoRecibo(montoRecibo),
+          }),
+        });
+        await useCase.execute({
+          actionCode: "enviar",
+          currentUser: { id: "user-1", workflowOwnerId: "owner-1", isSystemAdmin },
+          solicitudId: "sol-1",
+        });
+        assert.equal(executed, true);
+      });
+    }
+  }
+
+  it("sends when there is a recibo de sueldo adjunto and the monto del recibo", async () => {
+    let received: Parameters<SolicitudWorkflowEngine["execute"]>[0] | null = null;
+    const useCase = new ChangeSolicitudStateUseCase({
+      adjuntoRepository: adjuntoRepository(),
+      engine: {
+        execute: async (input: Parameters<SolicitudWorkflowEngine["execute"]>[0]) => {
+          received = input;
+
+          return {
+            solicitud: solicitud(),
+            transitions: [],
+          };
+        },
+      } as unknown as SolicitudWorkflowEngine,
+      now: () => new Date("2026-05-18T12:00:00.000Z"),
+      sociosRepository: socioRepository(),
+      solicitudesRepository: solicitudesRepository({
+        findById: async () => solicitudConMontoRecibo(850000),
+      }),
+    });
+
+    await useCase.execute({
+      actionCode: "enviar",
+      currentUser: {
+        id: "user-1",
+        workflowOwnerId: "owner-1",
+      },
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(received?.["actionCode"], "enviar");
+  });
+
   it("annotates liquidar with blockedReason on the transitions returned after executing a transition", async () => {
     const engineStub = {
       execute: async () => ({
@@ -592,6 +654,18 @@ function solicitud(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
   };
 }
 
+function solicitudConMontoRecibo(montoRecibo: number | null): SolicitudCore {
+  const base = baseSolicitud();
+
+  return {
+    ...base,
+    datosLaborales: {
+      ...base.datosLaborales,
+      montoRecibo,
+    },
+  } as SolicitudCore;
+}
+
 function baseSolicitud(): SolicitudCore {
   return {
     id: "sol-1",
@@ -634,7 +708,8 @@ function baseSolicitud(): SolicitudCore {
     },
     titular: {
       apellidoDenominacion: "Perez",
-      cbu: null,
+      cbu: "2850590940090418135201",
+      cbuNoHabitual: null,
       celular: "1199999999",
       cuit: "20-33344455-9",
       domicilioCalle: null,
@@ -763,3 +838,31 @@ function solicitudesRepository(
     ...overrides,
   };
 }
+
+it("archiva la evaluación al liquidar mediante el motor, y no en otras transiciones", async () => {
+  const archives: unknown[] = [];
+  let fail = false;
+  let executed = 0;
+  const engine = {
+    execute: async (_command: Parameters<SolicitudWorkflowEngine["execute"]>[0], before?: () => Promise<void>) => {
+      await before?.();
+      executed++;
+      return {solicitud: solicitud({legacyOid:"555000"}),transitions:[]};
+    },
+  } as unknown as SolicitudWorkflowEngine;
+  const useCase = new ChangeSolicitudStateUseCase({
+    adjuntoRepository: adjuntoRepository(), engine,
+    now: () => new Date(), sociosRepository: socioRepository(),
+    solicitudesRepository: solicitudesRepository({findById:async()=>solicitud({legacyOid:"555000"})}),
+    archivarEvaluacion: {execute:async input=>{if(fail)throw new Error("archivo falló");archives.push(input);}},
+  });
+  const input={solicitudId:"sol-1",currentUser:{id:"user-1",workflowOwnerId:"owner-1"}};
+  await useCase.execute({...input,actionCode:"liquidar"});
+  assert.deepEqual(archives,[{solicitudId:"sol-1",actorId:"user-1",etapa:"liquidacion"}]);
+  await useCase.execute({...input,actionCode:"revisar"});
+  assert.equal(archives.length,1);
+  assert.equal(executed,2);
+  fail=true;
+  await assert.rejects(()=>useCase.execute({...input,actionCode:"liquidar"}), /archivo falló/);
+  assert.equal(executed,2);
+});

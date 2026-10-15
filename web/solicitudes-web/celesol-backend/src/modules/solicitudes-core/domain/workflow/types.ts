@@ -6,6 +6,7 @@ export type {
   WorkflowExecutionPlan,
   WorkflowExecutionStep,
   WorkflowTechnicalExecutionStep,
+  WorkflowAutoAssignmentExecutionStep,
 } from "./contracts";
 import type {
   ExecuteSolicitudTransitionInput,

@@ -42,6 +42,7 @@ export const ownedSolicitud = (overrides?: Record<string, unknown>) => ({
   titular: {
     apellidoDenominacion: "Perez",
     cbu: null,
+    cbuNoHabitual: null,
     celular: null,
     cuit: null,
     domicilioCalle: null,

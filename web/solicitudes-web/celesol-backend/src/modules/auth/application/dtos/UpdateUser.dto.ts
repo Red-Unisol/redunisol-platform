@@ -6,5 +6,6 @@ export type UpdateUserInput = {
   isSystemAdmin?: boolean;
   lastName?: string;
   legacyUser?: string;
+  recibeAsignacionAutomatica?: boolean;
   state?: 0 | 1;
 };

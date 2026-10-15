@@ -32,6 +32,16 @@ export type WorkflowTechnicalExecutionStep = {
   technical: true;
 };
 
+// Paso de reparto automatico. No mueve el estado de la solicitud: solo asigna
+// un ejecutivo cuando la solicitud entra a un owner que reparte por turno.
+// Igual que el paso "motor", es declarativo: el "a quien" se resuelve y
+// revalida contra la base dentro de la transaccion, no aca.
+export type WorkflowAutoAssignmentExecutionStep = {
+  kind: "auto-assignment";
+  actionCode: string;
+  technical: true;
+};
+
 export type WorkflowExecutionPlan = {
   command: ExecuteSolicitudTransitionInput;
   // In 2C.1.x, null is allowed only for non-executable plans built without
@@ -40,7 +50,11 @@ export type WorkflowExecutionPlan = {
   expectedState: {
     fromStateId: string | null;
   };
-  steps: Array<WorkflowExecutionStep | WorkflowTechnicalExecutionStep>;
+  steps: Array<
+    | WorkflowExecutionStep
+    | WorkflowTechnicalExecutionStep
+    | WorkflowAutoAssignmentExecutionStep
+  >;
 };
 
 export type ExecuteSolicitudWorkflowPlanInput = {

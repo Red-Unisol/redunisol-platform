@@ -1,6 +1,7 @@
 export type CreateSolicitudCoreTitularRequest = {
   apellidoDenominacion: string;
   cbu?: string;
+  cbuNoHabitual?: string;
   celular?: string;
   cuit?: string;
   domicilioCalle?: string;
@@ -146,6 +147,7 @@ export type SolicitudCoreCapabilitiesResponse = {
   canUploadAdjuntos: boolean;
   canDeleteAdjuntos: boolean;
   canDownloadAdjuntos: boolean;
+  canCreateCancelaciones?: boolean;
   canManageCancelaciones: boolean;
   canChangeState: boolean;
   canViewHistory: boolean;
@@ -163,6 +165,7 @@ export type SolicitudFieldKey =
   | "solicitud.cuotas"
   | "solicitud.fechaPrimerVencimiento"
   | "solicitud.firmaDigitalmente"
+  | "solicitud.lineaPrestamoLegacyOid"
   | "solicitud.linkFirmaDigital"
   | "solicitud.montoAFinanciar"
   | "solicitud.motivo"
@@ -171,6 +174,7 @@ export type SolicitudFieldKey =
   | "solicitud.vendedorSolicitud"
   | "titular.apellidoDenominacion"
   | "titular.cbu"
+  | "titular.cbuNoHabitual"
   | "titular.celular"
   | "titular.cuit"
   | "titular.domicilioCalle"
@@ -329,6 +333,7 @@ export type SolicitudCoreAssignableAgent = {
 export type SolicitudCoreTitularResponse = {
   apellidoDenominacion: string | null;
   cbu: string | null;
+  cbuNoHabitual: string | null;
   celular: string | null;
   cuit: string | null;
   domicilioCalle: string | null;
@@ -438,6 +443,8 @@ export type SolicitudCoreResponse = {
 };
 
 export type ListSolicitudesCoreQuery = {
+  search?: string;
+  vista?: "mi-area" | "todas";
   createdFrom?: string;
   createdTo?: string;
   excludeEstado?: string;
@@ -534,6 +541,8 @@ export type TipoAdjuntoCatalogItem = {
 };
 
 export type SimularPrestamoRequest = {
+  cuotaObjetivo?: number;
+  solicitudId?: string;
   capitalPuro: boolean;
   cuotas: number;
   fechaPrimerVencimiento?: string;

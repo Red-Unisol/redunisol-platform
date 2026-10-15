@@ -10,7 +10,101 @@ import {
 } from "./SolicitudPermissions";
 
 describe("SolicitudPermissions", () => {
-  it("allows a current owner user to operate edit, upload and delete actions", () => {
+  it("permite cargar en cualquier estado a las tres áreas y solo borrar a administradores", () => {
+    for (const code of ["RIESGO", "VENDEDORES", "TESORERIA"]) {
+      for (const stateCode of [
+        "CargaVendedor",
+        "RevisionRiesgo",
+        "PreAprobada",
+        "Transferir",
+        "Pagada",
+        "Desestimada",
+      ]) {
+        const target = solicitud({ stateCode, ownerId: "otra-area" });
+        const actor = {
+          id: "operador",
+          workflowOwnerId: "area",
+          workflowOwnerCode: code,
+        };
+        for (const rule of [
+          null,
+          {
+            active: false,
+            canManageAttachments: false,
+            workflowStateId: "state-1",
+          },
+        ]) {
+          assert.equal(
+            canEditSolicitud(actor, target, "UPLOAD_ATTACHMENT", rule),
+            true,
+          );
+          assert.equal(
+            canEditSolicitud(actor, target, "DELETE_ATTACHMENT", rule),
+            false,
+          );
+          assert.equal(
+            canEditSolicitud(
+              { ...actor, isSystemAdmin: true },
+              target,
+              "DELETE_ATTACHMENT",
+              rule,
+            ),
+            true,
+          );
+          assert.equal(
+            canEditSolicitud(actor, target, "MANAGE_CANCELACIONES", rule),
+            false,
+          );
+        }
+      }
+    }
+    assert.equal(
+      canEditSolicitud(
+        { id: "sin-area", workflowOwnerId: null, workflowOwnerCode: "RIESGO" },
+        solicitud({ ownerId: "otra-area" }),
+        "UPLOAD_ATTACHMENT",
+      ),
+      false,
+    );
+  });
+
+  it("permite a Riesgo editar datos en Vendedores y cargar adjuntos sin cambiar estado ni borrar", () => {
+    const target = solicitud({
+      stateCode: "PreAprobada",
+      ownerId: "owner-vendedor",
+    });
+    target.estadoActual.owner = {
+      id: "owner-vendedor",
+      code: "VENDEDORES",
+      name: "Vendedores",
+    };
+    const actor = {
+      id: "risk-user",
+      workflowOwnerId: "owner-riesgo",
+      workflowOwnerCode: "RIESGO",
+    };
+    const capabilities = buildSolicitudCapabilities(actor, target);
+    assert.equal(capabilities.canEdit, true);
+    assert.equal(capabilities.canChangeState, false);
+    assert.equal(capabilities.canUploadAdjuntos, true);
+    assert.equal(capabilities.canDeleteAdjuntos, false);
+    assert.equal(capabilities.canManageCancelaciones, false);
+    for (const code of ["TESORERIA", "SISTEMA"]) {
+      target.estadoActual.owner.code = code;
+      assert.equal(canEditSolicitud(actor, target, "EDIT_DATA"), false);
+    }
+    target.estadoActual.owner.code = "VENDEDORES";
+    assert.equal(
+      canEditSolicitud(
+        { ...actor, workflowOwnerCode: "TESORERIA" },
+        target,
+        "EDIT_DATA",
+      ),
+      false,
+    );
+  });
+
+  it("allows current owner edit and upload, but restricts delete to administrators", () => {
     const currentOwnerSolicitud = solicitud({
       createdBy: "creator-1",
       ownerId: "owner-riesgo",
@@ -21,7 +115,10 @@ describe("SolicitudPermissions", () => {
       workflowOwnerId: "owner-riesgo",
     };
 
-    assert.equal(canViewSolicitud(currentOwnerUser, currentOwnerSolicitud), true);
+    assert.equal(
+      canViewSolicitud(currentOwnerUser, currentOwnerSolicitud),
+      true,
+    );
     assert.equal(
       canEditSolicitud(currentOwnerUser, currentOwnerSolicitud, "CHANGE_STATE"),
       true,
@@ -54,7 +151,7 @@ describe("SolicitudPermissions", () => {
           workflowStateId: "state-1",
         },
       ),
-      true,
+      false,
     );
   });
 
@@ -169,10 +266,7 @@ describe("SolicitudPermissions", () => {
       ownerId: "owner-analista",
     });
 
-    assert.equal(
-      canViewSolicitud(unrelatedUser, riesgoSolicitud),
-      true,
-    );
+    assert.equal(canViewSolicitud(unrelatedUser, riesgoSolicitud), true);
     assert.equal(
       canEditSolicitud(unrelatedUser, riesgoSolicitud, "CHANGE_STATE"),
       false,
@@ -306,6 +400,7 @@ describe("SolicitudPermissions", () => {
         canDeleteAdjuntos: false,
         canDownloadAdjuntos: true,
         canEdit: false,
+        canCreateCancelaciones: false,
         canManageCancelaciones: false,
         canUploadAdjuntos: false,
         canView: true,
@@ -343,7 +438,11 @@ describe("SolicitudPermissions", () => {
   });
 
   it("allows a system admin to operate regardless of ownership", () => {
-    const adminUser = { id: "admin-1", isSystemAdmin: true, workflowOwnerId: null };
+    const adminUser = {
+      id: "admin-1",
+      isSystemAdmin: true,
+      workflowOwnerId: null,
+    };
     const outsideOwnerSolicitud = solicitud({
       createdBy: "creator-1",
       ownerId: "owner-riesgo",
@@ -370,7 +469,11 @@ describe("SolicitudPermissions", () => {
   });
 
   it("allows an analista to edit data outside their current owner but not to change state or manage attachments", () => {
-    const analistaUser = { id: "riesgo-1", isAnalista: true, workflowOwnerId: "owner-riesgo" };
+    const analistaUser = {
+      id: "riesgo-1",
+      isAnalista: true,
+      workflowOwnerId: "owner-riesgo",
+    };
     const outsideOwnerSolicitud = solicitud({
       createdBy: "creator-1",
       ownerId: "owner-vendedor",
@@ -387,11 +490,19 @@ describe("SolicitudPermissions", () => {
       false,
     );
     assert.equal(
-      canEditSolicitud(analistaUser, outsideOwnerSolicitud, "UPLOAD_ATTACHMENT"),
+      canEditSolicitud(
+        analistaUser,
+        outsideOwnerSolicitud,
+        "UPLOAD_ATTACHMENT",
+      ),
       false,
     );
     assert.equal(
-      canEditSolicitud(analistaUser, outsideOwnerSolicitud, "DELETE_ATTACHMENT"),
+      canEditSolicitud(
+        analistaUser,
+        outsideOwnerSolicitud,
+        "DELETE_ATTACHMENT",
+      ),
       false,
     );
   });
@@ -442,7 +553,11 @@ describe("SolicitudPermissions", () => {
   });
 
   it("builds partial capabilities for an analista outside the current owner", () => {
-    const analistaUser = { id: "riesgo-1", isAnalista: true, workflowOwnerId: "owner-riesgo" };
+    const analistaUser = {
+      id: "riesgo-1",
+      isAnalista: true,
+      workflowOwnerId: "owner-riesgo",
+    };
 
     assert.deepEqual(
       buildSolicitudCapabilities(
@@ -454,6 +569,7 @@ describe("SolicitudPermissions", () => {
         canDeleteAdjuntos: false,
         canDownloadAdjuntos: true,
         canEdit: true,
+        canCreateCancelaciones: false,
         canManageCancelaciones: false,
         canUploadAdjuntos: false,
         canView: true,
@@ -463,7 +579,11 @@ describe("SolicitudPermissions", () => {
   });
 
   it("allows a system admin to manage attachments without a field access rule", () => {
-    const adminUser = { id: "admin-1", isSystemAdmin: true, workflowOwnerId: null };
+    const adminUser = {
+      id: "admin-1",
+      isSystemAdmin: true,
+      workflowOwnerId: null,
+    };
     const outsideOwnerSolicitud = solicitud({
       createdBy: "creator-1",
       ownerId: "owner-riesgo",
@@ -481,7 +601,11 @@ describe("SolicitudPermissions", () => {
   });
 
   it("builds full capabilities for a system admin outside the current owner", () => {
-    const adminUser = { id: "admin-1", isSystemAdmin: true, workflowOwnerId: null };
+    const adminUser = {
+      id: "admin-1",
+      isSystemAdmin: true,
+      workflowOwnerId: null,
+    };
 
     assert.deepEqual(
       buildSolicitudCapabilities(
@@ -493,6 +617,7 @@ describe("SolicitudPermissions", () => {
         canDeleteAdjuntos: true,
         canDownloadAdjuntos: true,
         canEdit: true,
+        canCreateCancelaciones: true,
         canManageCancelaciones: true,
         canUploadAdjuntos: true,
         canView: true,
@@ -555,6 +680,7 @@ function solicitud(
     titular: {
       apellidoDenominacion: null,
       cbu: null,
+      cbuNoHabitual: null,
       celular: null,
       cuit: null,
       domicilioCalle: null,
@@ -570,3 +696,12 @@ function solicitud(
     vendedorSolicitud: null,
   };
 }
+
+it("Riesgo puede agregar cancelaciones a su cargo sin ampliar edición o borrado",()=>{
+ const target=solicitud({ownerId:"owner-riesgo"});
+ const actor={id:"riesgo",workflowOwnerId:"owner-riesgo",workflowOwnerCode:"RIESGO"};
+ const capabilities=buildSolicitudCapabilities(actor,target,null);
+ assert.equal(capabilities.canCreateCancelaciones,true);
+ assert.equal(capabilities.canManageCancelaciones,false);
+ assert.equal(canEditSolicitud(actor,solicitud({ownerId:"owner-vendedor"}),"CREATE_CANCELACION"),false);
+});

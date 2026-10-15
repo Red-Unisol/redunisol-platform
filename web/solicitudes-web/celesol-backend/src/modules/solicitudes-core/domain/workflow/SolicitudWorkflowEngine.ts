@@ -76,11 +76,12 @@ export class SolicitudWorkflowEngine {
       dependencies.transitionPolicy ?? new SolicitudTransitionPolicy();
   }
 
-  async execute(command: WorkflowCommand) {
+  async execute(command: WorkflowCommand, beforeExecute?: () => Promise<void>) {
     const validationContext = await this.getValidationContext(command);
 
     this.transitionPolicy.validate(validationContext);
     const plan = this.planBuilder.build(command, validationContext);
+    await beforeExecute?.();
     const result = await this.planExecutor.execute(plan);
 
     return this.capabilitiesService.decorate(result);

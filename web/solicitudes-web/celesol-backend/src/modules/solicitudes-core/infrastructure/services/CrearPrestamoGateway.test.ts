@@ -10,12 +10,14 @@ import { CrearPrestamoGateway } from "./CrearPrestamoGateway";
 describe("CrearPrestamoGateway", () => {
   it("sends the expected body and returns the id on success", async () => {
     let capturedUrl: string | undefined;
+    let capturedRawBody: string | undefined;
     let capturedBody: unknown;
     const gateway = new CrearPrestamoGateway(
       { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
       async (input, init) => {
         capturedUrl = String(input);
-        capturedBody = JSON.parse(String(init?.body));
+        capturedRawBody = String(init?.body);
+        capturedBody = JSON.parse(capturedRawBody);
 
         return {
           json: async () => ({ Error: null, ID: 42, Ok: true }),
@@ -29,7 +31,7 @@ describe("CrearPrestamoGateway", () => {
       fechaEmision: "2026-07-22",
       integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
       lineaPrestamo: "2519",
-      montoDeseado: "10000",
+      montoDeseado: 10000,
       vendedor: "347",
     });
 
@@ -44,11 +46,89 @@ describe("CrearPrestamoGateway", () => {
         FechaEmision: "2026-07-22",
         Integrantes: [{ Socio: "143471", TipoRelacion: "Titular" }],
         LineaPrestamo: "2519",
-        MontoDeseado: "10000",
+        // Numero, no string: como texto el legado lo descarta y deja 0,00.
+        MontoDeseado: 10000,
         Vendedor: "347",
       },
       validar: false,
     });
+  });
+
+  // El legado aplica `campos` en el orden en que llega, y asignar LineaPrestamo
+  // resetea Cuotas al minimo de la linea. deepEqual sobre el body parseado NO
+  // detecta un reordenamiento (JSON.parse pierde el orden), asi que esto se
+  // verifica sobre el JSON crudo. Si alguien reordena las claves
+  // alfabeticamente, este test falla.
+  it("serializes Cuotas after LineaPrestamo", async () => {
+    let capturedRawBody = "";
+    const gateway = new CrearPrestamoGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        capturedRawBody = String(init?.body);
+
+        return {
+          json: async () => ({ Error: null, ID: 42, Ok: true }),
+          ok: true,
+        };
+      },
+    );
+
+    await gateway.crear({
+      cuotas: 36,
+      fechaEmision: "2026-09-03",
+      integrantes: [{ socio: "147393", tipoRelacion: "Titular" }],
+      lineaPrestamo: "2674",
+      montoDeseado: 6000000,
+      vendedor: "351",
+    });
+
+    assert.ok(
+      capturedRawBody.indexOf('"LineaPrestamo"') <
+        capturedRawBody.indexOf('"Cuotas"'),
+      "Cuotas tiene que ir despues de LineaPrestamo en el JSON enviado",
+    );
+  });
+
+  // Las cancelaciones viajan en NroLote, en centavos, y el legado evalua la
+  // novedad CAN3RO al armar las cuotas: por eso va antes de LineaPrestamo.
+  // Sin cancelaciones la clave no se envia, para no pisar el campo.
+  it("serializes NroLote before LineaPrestamo and omits it when there are none", async () => {
+    const cuerpos: string[] = [];
+    const gateway = new CrearPrestamoGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        cuerpos.push(String(init?.body));
+
+        return {
+          json: async () => ({ Error: null, ID: 42, Ok: true }),
+          ok: true,
+        };
+      },
+    );
+    const base = {
+      cuotas: 12,
+      fechaEmision: "2026-09-19",
+      integrantes: [{ socio: "147393", tipoRelacion: "Titular" as const }],
+      lineaPrestamo: "2708",
+      montoDeseado: 100000,
+      vendedor: "351",
+    };
+
+    await gateway.crear({ ...base, nroLote: 3000000 });
+    await gateway.crear(base);
+
+    const [conCancelaciones, sinCancelaciones] = cuerpos;
+    assert.equal(
+      JSON.parse(conCancelaciones).campos.NroLote,
+      3000000,
+      "el total de cancelaciones viaja en centavos",
+    );
+    assert.ok(
+      conCancelaciones.indexOf('"NroLote"') <
+        conCancelaciones.indexOf('"LineaPrestamo"'),
+      "NroLote tiene que ir antes de LineaPrestamo en el JSON enviado",
+    );
+    assert.ok(!sinCancelaciones.includes('"NroLote"'));
   });
 
   it("throws PrestamoLegacyRechazadoError with the legacy message when Ok is false", async () => {
@@ -71,7 +151,7 @@ describe("CrearPrestamoGateway", () => {
           fechaEmision: "2026-07-22",
           integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
           lineaPrestamo: "2519",
-          montoDeseado: "10000",
+          montoDeseado: 10000,
           vendedor: "347",
         }),
       (error: unknown) => {
@@ -101,7 +181,7 @@ describe("CrearPrestamoGateway", () => {
           fechaEmision: "2026-07-22",
           integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
           lineaPrestamo: "2519",
-          montoDeseado: "10000",
+          montoDeseado: 10000,
           vendedor: "347",
         }),
       (error: unknown) => {
@@ -130,7 +210,7 @@ describe("CrearPrestamoGateway", () => {
           fechaEmision: "2026-07-22",
           integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
           lineaPrestamo: "2519",
-          montoDeseado: "10000",
+          montoDeseado: 10000,
           vendedor: "347",
         }),
       PrestamoLegacyUnavailableError,
@@ -155,7 +235,7 @@ describe("CrearPrestamoGateway", () => {
           fechaEmision: "2026-07-22",
           integrantes: [{ socio: "143471", tipoRelacion: "Titular" }],
           lineaPrestamo: "2519",
-          montoDeseado: "10000",
+          montoDeseado: 10000,
           vendedor: "347",
         }),
       PrestamoLegacyUnavailableError,

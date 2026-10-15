@@ -6,6 +6,7 @@ import { InvalidSessionError } from "../../auth/domain/auth-errors";
 import { ACCESS_TOKEN_COOKIE } from "../../auth/presentation/AuthCookies";
 import {
   ForbiddenCalculadoraAccessError,
+  InvalidEvaluacionRequestError,
   InvalidSolicitudOidError,
 } from "../domain/riesgo-errors";
 import { RiesgoController } from "./RiesgoController";
@@ -241,12 +242,67 @@ describe("RiesgoController", () => {
 
     assert.ok(nextError instanceof ForbiddenCalculadoraAccessError);
   });
+
+  it("rejects saving an evaluacion with an invalid body before calling the use case", async () => {
+    let llamado = false;
+    const controller = buildController({
+      guardarEvaluacionRiesgoUseCase: {
+        execute: async () => {
+          llamado = true;
+        },
+      },
+    });
+    let nextError: unknown;
+
+    await controller.guardarEvaluacion(
+      {
+        ...(request({
+          solicitudId: "b3b3b3b3-1111-4222-8333-444444444444",
+        }) as object),
+        body: { nivelRiesgo: 9, snapshot: { sheets: {} } },
+      } as never,
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.ok(nextError instanceof InvalidEvaluacionRequestError);
+    assert.equal(llamado, false);
+  });
+
+  it("rejects saving an evaluacion for a vendedor", async () => {
+    const controller = buildController({
+      getCurrentUserUseCase: {
+        execute: async () => ({
+          ...authenticatedUser(),
+          workflowOwner: {
+            code: "VENDEDORES",
+            id: "owner-vendedores",
+            name: "Vendedores",
+          },
+        }),
+      },
+    });
+    let nextError: unknown;
+
+    await controller.guardarEvaluacion(
+      request({ solicitudId: "b3b3b3b3-1111-4222-8333-444444444444" }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.ok(nextError instanceof ForbiddenCalculadoraAccessError);
+  });
 });
 
 function buildController(
   overrides?: Partial<{
     calculadoraMutualDatosProvider: unknown;
     getCurrentUserUseCase: unknown;
+    guardarEvaluacionRiesgoUseCase: unknown;
   }>,
 ) {
   return new RiesgoController({
@@ -258,6 +314,13 @@ function buildController(
     getCurrentUserUseCase: ({
       execute: async () => authenticatedUser(),
       ...(overrides?.getCurrentUserUseCase ?? {}),
+    } as never),
+    getEvaluacionRiesgoUseCase: {
+      execute: async () => null,
+    } as never,
+    guardarEvaluacionRiesgoUseCase: ({
+      execute: async () => ({}),
+      ...(overrides?.guardarEvaluacionRiesgoUseCase ?? {}),
     } as never),
   } as never);
 }

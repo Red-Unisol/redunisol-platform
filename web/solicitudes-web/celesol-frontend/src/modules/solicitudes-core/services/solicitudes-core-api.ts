@@ -1,6 +1,7 @@
-import { apiClient } from "@/shared/services/http/api-client";
+import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
+import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
 
 import type {
   CreateSolicitudCoreCancelacionRequest,
@@ -27,7 +28,6 @@ import type {
   WorkflowTransition,
 } from "@/modules/solicitudes/types/solicitudes-core";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const AREA_ASSIGNMENT_REQUIRED_MESSAGE =
   "Tu cuenta no tiene un área asignada. Contactá a un administrador.";
 
@@ -87,6 +87,16 @@ export function listSolicitudesCore(query: ListSolicitudesCoreQuery) {
 
 export function getSolicitudCoreById(solicitudId: string) {
   return apiClient.get<SolicitudCoreResponse>(`/solicitudes/${solicitudId}`);
+}
+
+// Lineas del agente del vendedor de la solicitud: las que se le pueden
+// asignar, sin importar quien la este mirando.
+export function getSolicitudCoreLineasPrestamo(solicitudId: string) {
+  return withAreaForbiddenMessage(
+    apiClient.get<LineaPrestamoPresolicitud[]>(
+      `/solicitudes/${solicitudId}/lineas-prestamo`,
+    ),
+  );
 }
 
 export function patchSolicitudCore(
@@ -221,6 +231,83 @@ export function patchSolicitudCoreAdjunto(
   );
 }
 
+export type CredixsaInformeResponse = {
+  cachedAt: string;
+  cacheHit: boolean;
+  cuit: string;
+  error: string;
+  /** El informe normalizado: persona, bcra, previsional, aportes, quiebras, alertas. */
+  informe: unknown;
+  nombre: string;
+  ok: boolean;
+  status: string;
+};
+
+// El timeout por defecto del cliente son 15 segundos y esta consulta no entra
+// ahi: Kestra levanta un contenedor por tarea, asi que tarda entre 15 y 120
+// segundos incluso con el informe cacheado. Con el default, el navegador
+// cortaba antes de que respondiera y la pestaña mostraba "no se pudo
+// consultar" mientras la ejecucion terminaba bien en Kestra.
+const CREDIXSA_TIMEOUT_MS = 180000;
+
+export function getCredixsaSolicitud(solicitudId: string) {
+  return apiClient.get<{ credixsa: CredixsaInformeResponse | null }>(
+    `/solicitudes/${solicitudId}/credixsa`,
+    CREDIXSA_TIMEOUT_MS,
+  );
+}
+
+export type PrestamoDelSocioResponse = {
+  estado: number | null;
+  capital: number | null;
+  fechaEmision: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  montoPrestamo: number | null;
+  nroCuenta: string | null;
+  primerVencimiento: string | null;
+  saldo: number | null;
+  vencimiento: string | null;
+  vigente: boolean | null;
+};
+
+export function listPrestamosDelSocio(solicitudId: string) {
+  return apiClient.get<{ prestamos: PrestamoDelSocioResponse[] }>(
+    `/solicitudes/${solicitudId}/prestamos-socio`,
+  );
+}
+
+export type PrestamoDelSocioDetalleResponse = {
+  cuotas: number | null;
+  asiento: string | null;
+  cobrador: string | null;
+  destino: string | null;
+  legacyId: string | null;
+  lineaPrestamoDescripcion: string | null;
+  nroCuenta: string | null;
+  ordenCompra: string | null;
+  /** Fraccion (0.1135), no porcentaje. */
+  tasaInicial: number | null;
+};
+
+export type CuotaPrestamoResponse = {
+  capital: number | null;
+  fecha: string | null;
+  /** null/vacío: sin cobro; ausente: dato no disponible. */
+  fechaCobro?: string | null;
+  montoTotal: number | null;
+  nroCuota: number | null;
+  saldoCuota: number | null;
+  saldoCuotaConPunitorios: number | null;
+};
+
+export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
+  return apiClient.get<{
+    cuotas: CuotaPrestamoResponse[];
+    prestamo: PrestamoDelSocioDetalleResponse;
+  }>(`/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}`);
+}
+
 export function listSolicitudCoreCancelaciones(solicitudId: string) {
   return apiClient.get<SolicitudCoreCancelacionResponse[]>(
     `/solicitudes/${solicitudId}/cancelaciones`,
@@ -288,6 +375,7 @@ function decodeContentDispositionFileName(value: string) {
 export async function downloadSolicitudCoreAdjunto(
   solicitudId: string,
   adjuntoId: string,
+  signal?: AbortSignal,
 ): Promise<DownloadSolicitudCoreAdjuntoResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(
@@ -296,15 +384,11 @@ export async function downloadSolicitudCoreAdjunto(
   );
 
   try {
-    const response = await fetch(
-      new URL(
-        `/solicitudes/${solicitudId}/adjuntos/${adjuntoId}/download`,
-        API_BASE_URL,
-      ),
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/adjuntos/${adjuntoId}/download`,
       {
-        credentials: "include",
         method: "GET",
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       },
     );
 
@@ -369,11 +453,10 @@ export async function uploadSolicitudCoreAdjunto(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(
-      new URL(`/solicitudes/${solicitudId}/adjuntos`, API_BASE_URL),
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/adjuntos`,
       {
         body: formData,
-        credentials: "include",
         method: "POST",
         signal: controller.signal,
       },
@@ -435,11 +518,10 @@ export async function uploadSolicitudCoreAdjuntosLote(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(
-      new URL(`/solicitudes/${solicitudId}/adjuntos/batch`, API_BASE_URL),
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/adjuntos/batch`,
       {
         body: formData,
-        credentials: "include",
         method: "POST",
         signal: controller.signal,
       },
@@ -473,11 +555,59 @@ export async function uploadSolicitudCoreAdjuntosLote(
   }
 }
 
-export function simularPrestamo(payload: SimularPrestamoRequest) {
+export function simularPrestamo(input: SimularPrestamoRequest) {
+  const { solicitudId, ...payload } = input;
   return withAreaForbiddenMessage(
     apiClient.post<SimulacionPrestamoResponse>(
-      "/solicitudes/simulacion",
+      solicitudId ? `/solicitudes/${solicitudId}/simulacion` : "/solicitudes/simulacion",
       payload,
     ),
   );
+}
+
+export type SolicitudDelTitular = {
+  nroSolicitud: string | null;
+  fecha: string | null;
+  estado: string | null;
+  vendedor: string | null;
+  usuarioCreador: string | null;
+  linea: string | null;
+  montoAFinanciar: number | null;
+  montoADesembolsar: number | null;
+  cuotas: number | null;
+  cuotaResultante: number | null;
+  nroCuentaPrestamo: string | null;
+  nroSocio: string | null;
+  nroDocumento: string | null;
+  nombreCompleto: string | null;
+};
+
+
+export type HistorialSolicitudesResponse = {
+ status: "ok" | "documento_invalido";
+ solicitudes: SolicitudDelTitular[];
+ limit: 50;
+};
+export function listSolicitudesDelTitular(id: string) {
+ return apiClient.get<HistorialSolicitudesResponse>(`/solicitudes/${id}/solicitudes-titular`);
+}
+
+export type RevisionPrestamoResponse = {
+  titular: { nombreCompleto: string | null; nroSocio: string | null };
+  condiciones: { lineaDescripcion: string; montoAFinanciar: number | null; cuotas: number | null };
+  calculo: {
+    capital: number | null; cuotaResultante: number | null; cuotas: number | null;
+    gastos: number | null; tasa: number | null; total: number | null;
+    fechaPrimerVencimiento: string | null; fechaUltimaCuota: string | null;
+    cuotasDetalle: {
+      capital: number | null; fechaVencimiento: string | null; gastos: number | null;
+      interes: number | null; numeroCuota: number | null; total: number | null;
+    }[] | null;
+  } | null;
+};
+
+export function getRevisionPrestamo(solicitudId: string) {
+  return withAreaForbiddenMessage(apiClient.get<RevisionPrestamoResponse>(
+    `/solicitudes/${solicitudId}/revision-prestamo`,
+  ));
 }

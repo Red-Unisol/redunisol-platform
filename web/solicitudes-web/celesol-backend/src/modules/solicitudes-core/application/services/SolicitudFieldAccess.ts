@@ -21,6 +21,9 @@ export const SOLICITUD_EDITABLE_FIELDS = [
   "solicitud.cuotas",
   "solicitud.fechaPrimerVencimiento",
   "solicitud.firmaDigitalmente",
+  // Se habilita por estado desde la configuracion: la cambia RIESGO al
+  // analizar, entre las lineas del agente del vendedor.
+  "solicitud.lineaPrestamoLegacyOid",
   "solicitud.linkFirmaDigital",
   "solicitud.montoAFinanciar",
   "solicitud.motivo",
@@ -32,6 +35,7 @@ export const SOLICITUD_EDITABLE_FIELDS = [
 export const TITULAR_EDITABLE_FIELDS = [
   "titular.apellidoDenominacion",
   "titular.cbu",
+  "titular.cbuNoHabitual",
   "titular.celular",
   "titular.cuit",
   "titular.domicilioCalle",
@@ -123,7 +127,6 @@ export const LEGACY_EDITABLE_GROUPS = [
 ] as const satisfies readonly SolicitudFieldGroup[];
 
 export const BLOCKED_FIELD_KEYS = [
-  "solicitud.lineaPrestamoLegacyOid",
   "solicitud.ejecutivoSolicitud",
 ] as const;
 
@@ -139,6 +142,16 @@ type PatchAccessTargets = {
 };
 
 export function buildSolicitudFieldAccess(
+  solicitud: Pick<SolicitudCore, "estadoActual">,
+  ruleRecord?: SolicitudFieldAccessRuleRecord | null,
+  isSystemAdmin?: boolean,
+  isAnalista?: boolean,
+): SolicitudFieldAccess {
+  const access = buildSolicitudFieldAccessRaw(solicitud, ruleRecord, isSystemAdmin, isAnalista);
+  return { ...access, editableFields: access.editableFields.filter(field => field !== "solicitud.cuotaResultante") };
+}
+
+function buildSolicitudFieldAccessRaw(
   solicitud: Pick<SolicitudCore, "estadoActual">,
   ruleRecord?: SolicitudFieldAccessRuleRecord | null,
   isSystemAdmin?: boolean,
@@ -162,9 +175,13 @@ export function buildSolicitudFieldAccess(
     return buildReadonlyFieldAccess();
   }
 
+  // Sin regla no se habilita la linea: solo se cambia si la configuracion
+  // del estado lo permite.
   return {
     defaultMode: "readonly",
-    editableFields: [...EDITABLE_FIELDS],
+    editableFields: EDITABLE_FIELDS.filter(
+      (field) => field !== "solicitud.lineaPrestamoLegacyOid",
+    ),
     editableGroups: [...EDITABLE_GROUPS],
   };
 }

@@ -19,6 +19,7 @@ const FIELD_LABELS: Record<string, string> = {
   "solicitud.firmaDigitalmente": "Firma digital",
   "titular.apellidoDenominacion": "Apellido o denominación",
   "titular.cbu": "CBU",
+  "titular.cbuNoHabitual": "CBU Transferencias Cuenta No Habitual",
   "titular.celular": "Celular",
   "titular.cuit": "CUIT",
   "titular.domicilioCalle": "Calle",

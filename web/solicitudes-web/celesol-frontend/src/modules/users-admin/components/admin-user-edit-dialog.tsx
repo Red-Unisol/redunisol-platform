@@ -33,6 +33,8 @@ type AdminUserEditDialogProps = {
   onSubmit: (submission: AdminUserEditSubmission) => Promise<void>;
   open: boolean;
   user: UsersAdminUser | null;
+  /** Id del area Riesgo: solo ahi tiene sentido el reparto por turno. */
+  riesgoWorkflowOwnerId: string | null;
   workflowOwnerOptions: StyledSelectOption[];
 };
 
@@ -50,6 +52,7 @@ export function AdminUserEditDialog({
   onSubmit,
   open,
   user,
+  riesgoWorkflowOwnerId,
   workflowOwnerOptions,
 }: AdminUserEditDialogProps) {
   return (
@@ -61,6 +64,7 @@ export function AdminUserEditDialog({
           onOpenChange={onOpenChange}
           onSubmit={onSubmit}
           user={user}
+          riesgoWorkflowOwnerId={riesgoWorkflowOwnerId}
           workflowOwnerOptions={workflowOwnerOptions}
         />
       ) : null}
@@ -73,12 +77,15 @@ function AdminUserEditForm({
   onOpenChange,
   onSubmit,
   user,
+  riesgoWorkflowOwnerId,
   workflowOwnerOptions,
 }: {
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (submission: AdminUserEditSubmission) => Promise<void>;
   user: UsersAdminUser;
+  /** Id del area Riesgo: solo ahi tiene sentido el reparto por turno. */
+  riesgoWorkflowOwnerId: string | null;
   workflowOwnerOptions: StyledSelectOption[];
 }) {
   const stateOptions = useMemo<StyledSelectOption[]>(
@@ -93,6 +100,9 @@ function AdminUserEditForm({
   const [lastName, setLastName] = useState(user.lastName ?? "");
   const [legacyUser, setLegacyUser] = useState(user.legacyUser ?? "");
   const [isSystemAdmin, setIsSystemAdmin] = useState(user.isSystemAdmin);
+  const [recibeAsignacionAutomatica, setRecibeAsignacionAutomatica] = useState(
+    user.recibeAsignacionAutomatica,
+  );
   const [state, setState] = useState<0 | 1>(user.state === 0 ? 0 : 1);
   const [stateTouched, setStateTouched] = useState(false);
   const [workflowOwnerId, setWorkflowOwnerId] = useState(
@@ -110,6 +120,14 @@ function AdminUserEditForm({
   const lastNameChanged = lastNameTrimmed !== (user.lastName ?? "");
   const legacyUserChanged = legacyUserTrimmed !== user.legacyUser;
   const adminChanged = isSystemAdmin !== user.isSystemAdmin;
+  // El reparto por turno solo toma usuarios del area a la que le toca la
+  // solicitud, y solo Riesgo reparte asi: fuera de Riesgo no se ofrece y,
+  // si el usuario sale de Riesgo, se apaga.
+  const esAreaRiesgo =
+    riesgoWorkflowOwnerId !== null && workflowOwnerId === riesgoWorkflowOwnerId;
+  const recibeAsignacionEfectiva = esAreaRiesgo && recibeAsignacionAutomatica;
+  const asignacionAutomaticaChanged =
+    recibeAsignacionEfectiva !== user.recibeAsignacionAutomatica;
 
   const canCompareStateDirectly = user.state !== 2;
   const stateChanged = canCompareStateDirectly
@@ -126,6 +144,7 @@ function AdminUserEditForm({
     lastNameChanged ||
     legacyUserChanged ||
     adminChanged ||
+    asignacionAutomaticaChanged ||
     stateChanged ||
     areaChanged;
 
@@ -181,6 +200,10 @@ function AdminUserEditForm({
 
     if (adminChanged) {
       userPayload.isSystemAdmin = isSystemAdmin;
+    }
+
+    if (asignacionAutomaticaChanged) {
+      userPayload.recibeAsignacionAutomatica = recibeAsignacionEfectiva;
     }
 
     if (stateChanged) {
@@ -343,6 +366,21 @@ function AdminUserEditForm({
                 Admin de sistema
               </label>
             </ModalField>
+
+            {esAreaRiesgo ? (
+              <ModalField label="Asignación automática">
+                <label className="flex h-10 items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={recibeAsignacionAutomatica}
+                    disabled={isSubmitting}
+                    onCheckedChange={(checked) =>
+                      setRecibeAsignacionAutomatica(checked === true)
+                    }
+                  />
+                  Recibe solicitudes por turno
+                </label>
+              </ModalField>
+            ) : null}
           </div>
 
           {submitError ? (

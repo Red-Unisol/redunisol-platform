@@ -6,11 +6,13 @@ use serde::Serialize;
 #[serde(rename_all = "snake_case")]
 pub enum WarningKind {
     MissingMetamap,
+    InvalidMetamap,
     MultipleMetamapValidations,
     Renewal,
     ThirdPartyDestination,
     KnownCreditorNewCbu,
     NewCreditor,
+    BeexManualReview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -26,10 +28,12 @@ impl WarningKind {
         match self {
             Self::ThirdPartyDestination => ConfirmationRequirement::TypeWord("TRANSFERIR"),
             Self::MissingMetamap
+            | Self::InvalidMetamap
             | Self::MultipleMetamapValidations
             | Self::Renewal
             | Self::KnownCreditorNewCbu
-            | Self::NewCreditor => ConfirmationRequirement::Simple,
+            | Self::NewCreditor
+            | Self::BeexManualReview => ConfirmationRequirement::Simple,
         }
     }
 }
@@ -97,10 +101,12 @@ mod tests {
     fn existing_warning_kinds_keep_simple_confirmation() {
         for kind in [
             WarningKind::MissingMetamap,
+            WarningKind::InvalidMetamap,
             WarningKind::MultipleMetamapValidations,
             WarningKind::Renewal,
             WarningKind::KnownCreditorNewCbu,
             WarningKind::NewCreditor,
+            WarningKind::BeexManualReview,
         ] {
             assert_eq!(kind.confirmation(), ConfirmationRequirement::Simple);
             let policy = ConfirmationPolicy::new(&[ValidationWarning::new(kind, "Aviso")]);

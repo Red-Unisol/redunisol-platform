@@ -3,6 +3,8 @@ export const TIPO_ADJUNTO_VALUES = [
   "Recibo de Sueldo",
   "Constancia de CBU",
   "Documentación Adicional",
+  "Comprobante de transferencia",
+  "CUPO",
 ] as const;
 
 export type TipoAdjuntoValue = (typeof TIPO_ADJUNTO_VALUES)[number];

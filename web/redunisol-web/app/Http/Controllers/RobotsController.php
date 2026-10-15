@@ -14,6 +14,7 @@ class RobotsController extends Controller
         $robots .= "Disallow: /api/\n";
         $robots .= "Disallow: /storage/\n";
         $robots .= "Disallow: /finalizar.php\n";
+        $robots .= "Disallow: /finalizar-nvo\n";
         $robots .= "Disallow: /*.php$\n";
         $robots .= "\n";
         $robots .= "User-agent: *\n";

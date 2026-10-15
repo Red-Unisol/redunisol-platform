@@ -19,6 +19,7 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
   name,
   placeholder,
   validate,
+  transform,
 }: {
   className?: string;
   control: Control<TFieldValues>;
@@ -26,6 +27,7 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
   name: Path<TFieldValues>;
   placeholder?: string;
   validate?: (value: string) => string | true;
+  transform?: (value: string) => string;
 }) {
   return (
     <Controller
@@ -36,12 +38,20 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
         <input
           aria-invalid={invalid || undefined}
           className={className ?? defaultMoneyInputClassName}
-          inputMode="numeric"
+          inputMode="decimal"
           name={field.name}
           onBlur={field.onBlur}
-          onChange={(event) =>
-            field.onChange(formatMoneyValue(event.target.value))
-          }
+          onChange={(event) => {
+            const input = event.target;
+            const raw = input.value;
+            const caret = input.selectionStart;
+            field.onChange(
+              transform
+                ? transform(formatMoneyValue(raw))
+                : formatMoneyValue(raw),
+            );
+            preserveMoneyCaret(input, raw, caret);
+          }}
           placeholder={placeholder}
           value={formatMoneyValue(field.value)}
         />
@@ -51,6 +61,7 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
 }
 
 export function StaticMoneyInput({
+  "aria-label": ariaLabel,
   className,
   defaultValue = "",
   disabled = false,
@@ -58,6 +69,7 @@ export function StaticMoneyInput({
   style,
   value: controlledValue,
 }: {
+  "aria-label"?: string;
   className?: string;
   defaultValue?: string;
   disabled?: boolean;
@@ -72,18 +84,48 @@ export function StaticMoneyInput({
 
   return (
     <Input
+      aria-label={ariaLabel}
       className={className}
       disabled={disabled}
-      inputMode="numeric"
+      inputMode="decimal"
       onChange={(event) => {
-        const formattedValue = formatMoneyValue(event.target.value);
+        const input = event.target;
+        const raw = input.value;
+        const caret = input.selectionStart;
+        const formattedValue = formatMoneyValue(raw);
         if (controlledValue === undefined) {
           setUncontrolledValue(formattedValue);
         }
         onChange?.(formattedValue);
+        preserveMoneyCaret(input, raw, caret);
       }}
       style={style}
       value={value}
     />
   );
+}
+
+// Ancla el cursor a los dígitos/decimales editados cuando cambian los separadores.
+function preserveMoneyCaret(
+  input: HTMLInputElement,
+  raw: string,
+  caret: number | null,
+) {
+  if (caret === null) return;
+  const count = raw.slice(0, caret).replace(/[^\d,]/g, "").length;
+  requestAnimationFrame(() => {
+    if (document.activeElement !== input) return;
+    let seen = 0;
+    let target = input.value.length;
+    for (let index = 0; index < input.value.length; index++) {
+      if (/^[\d,]$/.test(input.value[index])) {
+        seen++;
+        if (seen >= count) {
+          target = count === 0 ? index : index + 1;
+          break;
+        }
+      }
+    }
+    input.setSelectionRange(target, target);
+  });
 }

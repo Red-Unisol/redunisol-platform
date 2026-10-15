@@ -3,11 +3,13 @@ import { useEffect, useRef } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
-import type {
-  SimulacionPrestamoResponse,
-  SimularPrestamoRequest,
-} from "@/modules/solicitudes/types/solicitudes-core";
-import { useSimularPrestamoMutation } from "@/modules/solicitudes-core/hooks/use-simular-prestamo-mutation";
+import type { SimulacionPrestamoResponse } from "@/modules/solicitudes/types/solicitudes-core";
+import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
+import {
+  ajustarMontoTexto,
+  ajustarCuotasTexto,
+} from "@/modules/solicitudes-shared/utils/maximos-linea";
+import { StyledSelect } from "@/modules/solicitudes-editor/components/fields/base";
 import { MoneyInputField } from "@/shared/components/forms/money-input-field";
 import { Button } from "@/shared/components/ui/button";
 import { DateInput } from "@/shared/components/ui/date-input";
@@ -18,9 +20,13 @@ import {
   DialogTitle,
 } from "@/shared/components/ui/dialog";
 import { Input } from "@/shared/components/ui/input";
-import { StyledSelect } from "@/shared/components/ui/styled-select";
 import { TableLoader } from "@/shared/components/ui/table-loader";
-import { formatMoneyValue, parseMoneyValue } from "@/shared/utils/money-format";
+import {
+  formatDecimalMoneyValue,
+  formatMoneyAmount,
+  parseMoneyValue,
+} from "@/shared/utils/money-format";
+import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 
 type SimuladorPrestamoFormValues = {
   capitalFinanciado: string;
@@ -40,20 +46,21 @@ export type SimulacionAplicada = {
   cuotaResultante: string;
   cuotas: string;
   fechaPrimerVencimiento: string;
-  linea: string;
+  lineaOid: string;
   montoAFinanciar: string;
 };
 
 type SimuladorPrestamoModalProps = {
   lineas?: LineaPrestamoPresolicitud[];
   defaultLineaOid?: string;
+  solicitudId?: string;
+  onLimitsAdjusted?: () => void;
   onApply?: (valores: SimulacionAplicada) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 };
 
 const CAPITAL_PURO_DEFAULT = false;
-const AUTO_RECALCULAR_DEBOUNCE_MS = 400;
 
 const FIELD_CLASSNAME =
   "flex h-8 w-full min-w-0 rounded-sm border border-input-border bg-input-background px-2.5 py-1 text-xs text-foreground shadow-xs transition outline-none placeholder:text-foreground-muted focus-visible:border-input-focus focus-visible:ring-2 focus-visible:ring-input-focus/20 disabled:cursor-not-allowed disabled:bg-disabled-background disabled:text-disabled-foreground";
@@ -67,7 +74,7 @@ function getLineaDefaults(linea?: LineaPrestamoPresolicitud | null) {
         : "",
     montoAFinanciar:
       linea?.montoMaximo !== null && linea?.montoMaximo !== undefined
-        ? formatMoneyValue(String(linea.montoMaximo))
+        ? formatMoneyAmount(linea.montoMaximo)
         : "",
     tasa:
       linea?.tasa !== null && linea?.tasa !== undefined
@@ -79,6 +86,8 @@ function getLineaDefaults(linea?: LineaPrestamoPresolicitud | null) {
 export function SimuladorPrestamoModal({
   lineas = [],
   defaultLineaOid,
+  solicitudId,
+  onLimitsAdjusted,
   onApply,
   onOpenChange,
   open,
@@ -86,30 +95,23 @@ export function SimuladorPrestamoModal({
   const { control, register, reset, setValue } =
     useForm<SimuladorPrestamoFormValues>({
       defaultValues: {
-        capitalFinanciado: "0,00",
+        capitalFinanciado: "",
         condiciones: "",
-        cuotaResultante: "0,00",
+        cuotaResultante: "",
         cuotas: "",
         fechaPrimerVencimiento: "",
         fechaUltimaCuota: "",
-        gastosAdministrativos: "0,00",
+        gastosAdministrativos: "",
         lineaOid: "",
         montoAFinanciar: "",
         tasa: "",
-        total: "0,00",
+        total: "",
       },
     });
-  const [lineaOid, montoAFinanciar, cuotas, fechaPrimerVencimiento, tasa] =
-    useWatch({
-      control,
-      name: [
-        "lineaOid",
-        "montoAFinanciar",
-        "cuotas",
-        "fechaPrimerVencimiento",
-        "tasa",
-      ],
-    });
+  const [lineaOid, montoAFinanciar, cuotas, fechaPrimerVencimiento] = useWatch({
+    control,
+    name: ["lineaOid", "montoAFinanciar", "cuotas", "fechaPrimerVencimiento"],
+  });
   const eligibleLineas = lineas.filter(
     (linea) => linea.vigente !== false && linea.oid,
   );
@@ -118,35 +120,70 @@ export function SimuladorPrestamoModal({
     eligibleLineas[0] ??
     null;
   const selectedLinea = eligibleLineas.find((linea) => linea.oid === lineaOid);
-  const simularPrestamoMutation = useSimularPrestamoMutation();
-  const resetSimulacion = simularPrestamoMutation.reset;
+  const cuotasError = getCuotasFueraDeLineaError(cuotas, selectedLinea);
+  const simularPrestamoMutation = useCuotaCalculada(
+    {
+      ...(solicitudId ? { solicitudId } : {}),
+      capitalPuro: CAPITAL_PURO_DEFAULT,
+      lineaId: Number(selectedLinea?.oid),
+      montoAFinanciar: parseMoneyValue(
+        ajustarMontoTexto(montoAFinanciar, selectedLinea),
+      ),
+      cuotas: Number(ajustarCuotasTexto(cuotas, selectedLinea)),
+      ...(fechaPrimerVencimiento ? { fechaPrimerVencimiento } : {}),
+    },
+    Boolean(
+      open &&
+        selectedLinea?.oid &&
+        !cuotasError &&
+        Number(cuotas) > 0 &&
+        parseMoneyValue(montoAFinanciar) > 0,
+    ),
+    (result) => {
+      if (parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar || Number(cuotas) !== result.cuotas) onLimitsAdjusted?.();
+      if (parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar)
+        setValue("montoAFinanciar", formatMoneyAmount(result.montoAFinanciar));
+      if (Number(cuotas) !== result.cuotas)
+        setValue("cuotas", String(result.cuotas));
+    },
+  );
   const simulacion: SimulacionPrestamoResponse | undefined =
     simularPrestamoMutation.data;
-  const requestSeqRef = useRef(0);
-  const skipNextAutoRecalcRef = useRef(false);
 
+  const initialized = useRef(false);
   useEffect(() => {
     if (!open) {
+      initialized.current = false;
       return;
     }
+    if (!initialLinea || initialized.current) return;
+    initialized.current = true;
 
     const lineaDefaults = getLineaDefaults(initialLinea);
 
     reset({
-      capitalFinanciado: "0,00",
+      capitalFinanciado: "",
       condiciones: "",
-      cuotaResultante: "0,00",
+      cuotaResultante: "",
       cuotas: lineaDefaults.cuotas,
       fechaPrimerVencimiento: "",
       fechaUltimaCuota: "",
-      gastosAdministrativos: "0,00",
+      gastosAdministrativos: "",
       lineaOid: initialLinea?.oid ?? "",
       montoAFinanciar: lineaDefaults.montoAFinanciar,
       tasa: lineaDefaults.tasa,
-      total: "0,00",
+      total: "",
     });
-    resetSimulacion();
-  }, [open, initialLinea, reset, resetSimulacion]);
+  }, [open, initialLinea, reset]);
+
+  useEffect(() => {
+    if (!open || !selectedLinea) return;
+    const montoAjustado = ajustarMontoTexto(montoAFinanciar, selectedLinea);
+    const cuotasAjustadas = ajustarCuotasTexto(cuotas, selectedLinea);
+    if (montoAjustado !== montoAFinanciar)
+      setValue("montoAFinanciar", montoAjustado);
+    if (cuotasAjustadas !== cuotas) setValue("cuotas", cuotasAjustadas);
+  }, [open, selectedLinea, montoAFinanciar, cuotas, setValue]);
 
   function handleLineaChange(
     nextLineaOid: string,
@@ -157,129 +194,56 @@ export function SimuladorPrestamoModal({
     const nextLinea = eligibleLineas.find(
       (linea) => linea.oid === nextLineaOid,
     );
-    const lineaDefaults = getLineaDefaults(nextLinea);
 
-    setValue("montoAFinanciar", lineaDefaults.montoAFinanciar);
-    setValue("cuotas", lineaDefaults.cuotas);
-    setValue("tasa", lineaDefaults.tasa);
+    setValue("montoAFinanciar", ajustarMontoTexto(montoAFinanciar, nextLinea));
+    setValue("cuotas", ajustarCuotasTexto(cuotas, nextLinea));
+    setValue("tasa", "");
     setValue("fechaUltimaCuota", "");
-    setValue("capitalFinanciado", "0,00");
-    setValue("cuotaResultante", "0,00");
-    setValue("gastosAdministrativos", "0,00");
-    setValue("total", "0,00");
+    setValue("capitalFinanciado", "");
+    setValue("cuotaResultante", "");
+    setValue("gastosAdministrativos", "");
+    setValue("total", "");
   }
 
-  async function handleRecalcular() {
-    if (!selectedLinea?.oid) {
-      return;
-    }
-
-    const parsedLineaId = Number(selectedLinea.oid);
-    const parsedMontoAFinanciar = parseMoneyValue(montoAFinanciar);
-    const parsedCuotas = Number(cuotas);
-    const parsedTasa = tasa.trim() ? Number(tasa) : undefined;
-
-    if (
-      !Number.isFinite(parsedLineaId) ||
-      !Number.isFinite(parsedMontoAFinanciar) ||
-      !Number.isFinite(parsedCuotas)
-    ) {
-      return;
-    }
-
-    const payload: SimularPrestamoRequest = {
-      capitalPuro: CAPITAL_PURO_DEFAULT,
-      cuotas: parsedCuotas,
-      lineaId: parsedLineaId,
-      montoAFinanciar: parsedMontoAFinanciar,
-      tasa: parsedTasa,
-      ...(fechaPrimerVencimiento
-        ? {
-            fechaPrimerVencimiento: new Date(
-              fechaPrimerVencimiento,
-            ).toISOString(),
-          }
-        : {}),
-    };
-
-    const requestId = ++requestSeqRef.current;
-    const result = await simularPrestamoMutation.mutateAsync(payload);
-
-    if (requestId !== requestSeqRef.current) {
-      // Una recalculación más nueva (disparada por un cambio posterior)
-      // ya está en curso o ya resolvió; este resultado quedó viejo.
-      return;
-    }
-
-    setValue("capitalFinanciado", formatMoneyValue(String(result.capital)));
-    setValue(
-      "cuotaResultante",
-      formatMoneyValue(String(result.cuotaResultante)),
-    );
-    setValue("gastosAdministrativos", formatMoneyValue(String(result.gastos)));
-    setValue("tasa", String(result.tasa));
-    setValue("total", formatMoneyValue(String(result.total)));
-
-    const nextFechaPrimerVencimiento = result.fechaPrimerVencimiento
-      ? result.fechaPrimerVencimiento.slice(0, 10)
-      : "";
-
-    if (nextFechaPrimerVencimiento !== fechaPrimerVencimiento) {
-      // El legacy puede devolver una fecha (auto-calculada) distinta a la
-      // que había en el campo (p.ej. estaba vacío). Ese setValue cambia el
-      // valor observado por el efecto de auto-recálculo de abajo — sin este
-      // flag, dispararía una segunda simulación automática apenas se llena
-      // el campo, duplicando el cálculo.
-      skipNextAutoRecalcRef.current = true;
-    }
-
-    setValue("fechaPrimerVencimiento", nextFechaPrimerVencimiento);
-    setValue(
-      "fechaUltimaCuota",
-      result.fechaUltimaCuota ? result.fechaUltimaCuota.slice(0, 10) : "",
-    );
+  function handleRecalcular() {
+    simularPrestamoMutation.recalculate();
   }
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    if (skipNextAutoRecalcRef.current) {
-      // Este cambio de fechaPrimerVencimiento vino del propio resultado
-      // (ver handleRecalcular), no de una edición del usuario: se ignora
-      // para no disparar una segunda simulación automática.
-      skipNextAutoRecalcRef.current = false;
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void handleRecalcular();
-    }, AUTO_RECALCULAR_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-    // Se dispara solo, sin necesidad de apretar "Calcular", cuando el
-    // usuario deja de tocar línea/monto/cuotas/fecha por un instante.
-    // "tasa" queda afuera a propósito: es de solo lectura acá (se
-    // autocompleta desde la línea o desde el propio resultado), incluirla
-    // generaría un loop con el setValue("tasa", ...) de handleRecalcular.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, lineaOid, montoAFinanciar, cuotas, fechaPrimerVencimiento]);
+    setValue(
+      "capitalFinanciado",
+      simulacion ? formatMoneyAmount(simulacion.capital) : "",
+    );
+    setValue(
+      "cuotaResultante",
+      simulacion ? formatDecimalMoneyValue(simulacion.cuotaResultante) : "",
+    );
+    setValue(
+      "gastosAdministrativos",
+      simulacion ? formatMoneyAmount(simulacion.gastos) : "",
+    );
+    setValue("total", simulacion ? formatMoneyAmount(simulacion.total) : "");
+    setValue("tasa", simulacion ? String(simulacion.tasa) : "");
+    setValue(
+      "fechaUltimaCuota",
+      simulacion?.fechaUltimaCuota?.slice(0, 10) ?? "",
+    );
+  }, [simulacion, setValue]);
 
   function handleAplicar() {
-    if (!simulacion || !selectedLinea?.descripcion) {
+    if (!simulacion || !selectedLinea?.oid || cuotasError) {
       return;
     }
 
     onApply?.({
-      cuotaResultante: formatMoneyValue(String(simulacion.cuotaResultante)),
+      cuotaResultante: formatDecimalMoneyValue(simulacion.cuotaResultante),
       cuotas: String(simulacion.cuotas),
       fechaPrimerVencimiento:
         fechaPrimerVencimiento ||
         simulacion.fechaPrimerVencimiento?.slice(0, 10) ||
         "",
-      linea: selectedLinea.descripcion,
-      montoAFinanciar: formatMoneyValue(String(simulacion.montoAFinanciar)),
+      lineaOid: selectedLinea.oid,
+      montoAFinanciar: formatMoneyAmount(simulacion.montoAFinanciar),
     });
   }
 
@@ -339,6 +303,8 @@ export function SimuladorPrestamoModal({
                           value: linea.oid ?? "",
                         }))}
                         placeholder="Seleccione una línea"
+                        // Mismo buscador que al cargar la linea en la solicitud.
+                        searchable
                         value={field.value}
                       />
                     )}
@@ -368,6 +334,7 @@ export function SimuladorPrestamoModal({
                   className="h-8 text-xs"
                   control={control}
                   name="montoAFinanciar"
+                  transform={(value) => ajustarMontoTexto(value, selectedLinea)}
                 />
               </label>
               <label className="grid gap-1 md:col-span-1">
@@ -403,7 +370,22 @@ export function SimuladorPrestamoModal({
                 <span className="text-[0.68rem] font-medium text-foreground-secondary">
                   Cuotas<span className="text-destructive"> *</span>
                 </span>
-                <Input className="h-8 text-xs" {...register("cuotas")} />
+                <Input
+                  aria-invalid={cuotasError ? true : undefined}
+                  className="h-8 text-xs"
+                  {...register("cuotas", {
+                    onChange: (event) =>
+                      setValue(
+                        "cuotas",
+                        ajustarCuotasTexto(event.target.value, selectedLinea),
+                      ),
+                  })}
+                />
+                {cuotasError ? (
+                  <span className="text-[0.68rem] text-destructive">
+                    {cuotasError}
+                  </span>
+                ) : null}
               </label>
               <label className="grid gap-1">
                 <span className="text-[0.68rem] font-medium text-foreground-secondary">
@@ -441,7 +423,11 @@ export function SimuladorPrestamoModal({
                         name={field.name}
                         onBlur={field.onBlur}
                         onChange={field.onChange}
-                        value={field.value}
+                        value={
+                          field.value ||
+                          simulacion?.fechaPrimerVencimiento?.slice(0, 10) ||
+                          ""
+                        }
                       />
                     )}
                   />
@@ -493,16 +479,16 @@ export function SimuladorPrestamoModal({
                           {cuota.fechaVencimiento.slice(0, 10)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.capital))}
+                          {formatMoneyAmount(cuota.capital)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.interes))}
+                          {formatMoneyAmount(cuota.interes)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.gastos))}
+                          {formatMoneyAmount(cuota.gastos)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {formatMoneyValue(String(cuota.total))}
+                          {formatMoneyAmount(cuota.total)}
                         </td>
                       </tr>
                     ))}
@@ -540,14 +526,19 @@ export function SimuladorPrestamoModal({
           >
             {simularPrestamoMutation.isPending ? "Calculando..." : "Calcular"}
           </Button>
-          <Button
-            disabled={!simulacion}
-            onClick={handleAplicar}
-            size="sm"
-            type="button"
-          >
-            Aplicar a Solicitud
-          </Button>
+          {/* Sin onApply no hay a donde aplicar (por ejemplo, alguien que no
+              puede editar la solicitud): mejor no mostrar un boton que no
+              hace nada. */}
+          {onApply ? (
+            <Button
+              disabled={!simulacion || cuotasError !== null}
+              onClick={handleAplicar}
+              size="sm"
+              type="button"
+            >
+              Aplicar a Solicitud
+            </Button>
+          ) : null}
         </footer>
       </DialogContent>
     </DialogRoot>

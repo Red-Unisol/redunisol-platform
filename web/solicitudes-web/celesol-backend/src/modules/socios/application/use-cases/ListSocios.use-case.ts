@@ -24,7 +24,10 @@ export class ListSociosUseCase {
   async execute(input: ListSociosDto): Promise<ListSociosResult> {
     const [items, total] = await Promise.all([
       this.repository.list(input),
-      this.repository.count({ search: input.search }),
+      this.repository.count({
+        documentoExacto: input.documentoExacto,
+        search: input.search,
+      }),
     ]);
 
     return { items, total };

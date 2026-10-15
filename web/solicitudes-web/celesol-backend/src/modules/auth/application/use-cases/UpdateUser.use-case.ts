@@ -116,6 +116,7 @@ export class UpdateUserUseCase {
       isSystemAdmin: input.isSystemAdmin,
       lastName: normalizedLastName,
       legacyUser: normalizedLegacyUser,
+      recibeAsignacionAutomatica: input.recibeAsignacionAutomatica,
       state: input.state,
     });
   }

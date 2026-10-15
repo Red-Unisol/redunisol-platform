@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import AnalisisPage from './AnalisisPage.jsx';
 import PadronesPage, { PadronesResults } from './PadronesPage.jsx';
 import { credixPrefill } from './analisis-state.js';
-import { prepareCredixBcra } from './credix-bcra.js';
+import { prepareCredixBcra, bcraSituation, formatBcraSituation } from './credix-bcra.js';
 import '../css/app.css';
 
 const rootElement = document.getElementById('app');
@@ -856,8 +856,11 @@ function CredixBcraPanel({ bcra }) {
                         row.entidad || 'Sin dato',
                         row.periodo || 'Sin dato',
                         row.monto || 'Sin dato',
-                        row.situacion || 'Sin dato',
+                        formatBcraSituation(row.situacion),
                     ])}
+                    cellClassName={(value, index) => index === 3
+                        ? `credix-bcra-history__status credix-bcra-history__status--${getBcraSituationClass(value)}`
+                        : undefined}
                 />
             )}
 
@@ -923,7 +926,7 @@ function CredixBcraHistoryPanel({ bcra }) {
                                     <th scope="row">{row.entidad || 'Sin dato'}</th>
                                     {(Array.isArray(row.situaciones) ? row.situaciones : []).map((value, valueIndex) => (
                                         <td className={`credix-bcra-history__status credix-bcra-history__status--${getBcraSituationClass(value)}`} key={`${rowIndex}-${valueIndex}`}>
-                                            {value || '-'}
+                                            {formatBcraSituation(value)}
                                         </td>
                                     ))}
                                     <td className="credix-bcra-history__amount">{row.ultimo_monto_informado || '-'}</td>
@@ -1181,7 +1184,7 @@ function CredixAportesPanel({ aportes }) {
     );
 }
 
-function CredixSimpleTable({ columns, rows }) {
+function CredixSimpleTable({ columns, rows, cellClassName }) {
     return (
         <div className="result__tableWrap">
             <table className="result__table">
@@ -1193,7 +1196,9 @@ function CredixSimpleTable({ columns, rows }) {
                 <tbody>
                     {rows.map((row, rowIndex) => (
                         <tr key={rowIndex}>
-                            {row.map((cell, cellIndex) => <td key={cellIndex}>{cell || 'Sin dato'}</td>)}
+                            {row.map((cell, cellIndex) => (
+                                <td key={cellIndex} className={cellClassName?.(cell, cellIndex)}>{cell || 'Sin dato'}</td>
+                            ))}
                         </tr>
                     ))}
                 </tbody>
@@ -1204,7 +1209,7 @@ function CredixSimpleTable({ columns, rows }) {
 
 function CredixNormalizedSummary({ normalized }) {
     const persona = normalized?.persona || {};
-    const bcra = normalized?.bcra || {};
+    const bcra = prepareCredixBcra(normalized?.bcra);
     const previsional = normalized?.previsional || {};
     const aportes = normalized?.aportes || {};
     const quiebras = normalized?.quiebras || {};
@@ -1266,7 +1271,9 @@ function CredixNormalizedSummary({ normalized }) {
                                         <td>{row.entidad || 'Sin dato'}</td>
                                         <td>{row.periodo || 'Sin dato'}</td>
                                         <td>{row.monto || 'Sin dato'}</td>
-                                        <td>{row.situacion || row.porcentaje || 'Sin dato'}</td>
+                                        <td className={`credix-bcra-history__status credix-bcra-history__status--${getBcraSituationClass(row.situacion)}`}>
+                                            {formatBcraSituation(row.situacion)}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -1682,8 +1689,7 @@ function formatCurrencyValue(rawValue) {
 }
 
 function getBcraSituationClass(value) {
-    const normalized = String(value || '').trim();
-    return /^[1-6]$/.test(normalized) ? normalized : 'na';
+    return bcraSituation(value) ?? 'na';
 }
 
 function formatCuit(value) {

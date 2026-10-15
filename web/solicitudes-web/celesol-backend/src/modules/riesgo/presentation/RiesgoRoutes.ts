@@ -11,6 +11,14 @@ export class RiesgoRoutes {
       "/calculadora/core/:solicitudId/datos",
       controller.getCalculadoraDatosByCoreId,
     );
+    router.get(
+      "/calculadora/core/:solicitudId/evaluacion",
+      controller.getEvaluacion,
+    );
+    router.put(
+      "/calculadora/core/:solicitudId/evaluacion",
+      controller.guardarEvaluacion,
+    );
     router.get("/calculadora/:oid/datos", controller.getCalculadoraDatos);
 
     return router;

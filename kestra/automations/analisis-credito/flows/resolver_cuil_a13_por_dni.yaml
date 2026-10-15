@@ -48,7 +48,7 @@ tasks:
   ttl: '{{ outputs.consultar_padron.vars.ta_cache_ttl }}'
 outputs:
 - id: ok
-  type: BOOLEAN
+  type: BOOL
   value: '{{ outputs.consultar_padron.vars.ok }}'
 - id: status
   type: STRING

@@ -951,7 +951,7 @@
  * /solicitudes/simulacion:
  *   post:
  *     summary: Simulate a loan (cuotas, intereses, gastos)
- *     description: No persiste nada -- corre la simulacion contra el motor de calculo del legado para el usuario autenticado.
+ *     description: No persiste nada. Simula por monto o, con cuotaObjetivo, calcula el monto utilizando el motor del legado y los límites de la línea.
  *     tags:
  *       - Solicitudes Core
  *     security:
@@ -967,6 +967,9 @@
  *               - montoAFinanciar
  *               - cuotas
  *             properties:
+ *               cuotaObjetivo:
+ *                 type: number
+ *                 description: Cuota deseada positiva. Recalcula el monto sin cambiar la línea ni las cuotas efectivas y devuelve la cuota real del sistema.
  *               lineaId:
  *                 type: integer
  *               montoAFinanciar:

@@ -63,7 +63,6 @@ export function mapNuevaSolicitudFormToCreateSolicitudCoreRequest(
 
   return {
     conyuge: hasEffectiveData(conyuge) ? conyuge : undefined,
-    cuotaResultante: toTrimmedString(values.cuotaResultante),
     cuotas: toOptionalNumber(values.cuotas),
     cupoTitular: toOptionalMoneyNumber(values.cupoTitular),
     datosLaborales: {
@@ -101,6 +100,7 @@ export function mapNuevaSolicitudFormToCreateSolicitudCoreRequest(
         values.apellidoDenominacion,
       ),
       cbu: toTrimmedString(values.cbu),
+      cbuNoHabitual: toTrimmedString(values.cbuNoHabitual),
       celular: toTrimmedString(values.celular),
       cuit: toTrimmedString(values.cuit),
       domicilioCalle: toTrimmedString(values.domicilioCalle),

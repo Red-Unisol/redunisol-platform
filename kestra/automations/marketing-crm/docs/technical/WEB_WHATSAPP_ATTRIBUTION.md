@@ -155,3 +155,82 @@ Probar Córdoba/Jubilados, Catamarca/Empleado público y CABA/PFA:
 
 La suite local simula Edna, Kestra y Bitrix. No acredita entrega real de WhatsApp,
 recepción de eventos publicitarios ni activación de flags en producción.
+
+## Complemento acotado para 22321 (2026-10-08)
+
+### Evaluación y conservación de IDs GA4
+
+La propiedad publicada en GTM es `G-RENEBND2BG`. La API oficial
+[`gtag('get')`](https://developers.google.com/tag-platform/gtagjs/reference#get)
+permite consultar `client_id` y `session_id` del Google tag existente. Es
+técnicamente viable: se implementa su lectura asíncrona, sin interpretar el formato
+interno de las cookies de GA4 ni configurar otra etiqueta.
+
+El complemento guarda `ga_client_id` y, si está disponible, `ga_session_id`
+como claves opcionales de la raíz del snapshot cifrado. Representan los primeros
+identificadores de Analytics disponibles para ese journey; no se reconstruyen
+retroactivamente ni se presentan como IDs de una visita anterior si la lectura
+recién estuvo disponible al regresar. No cambian `first`, `last`, el origen
+comercial ni la decisión de asistencia WA.
+
+- `POST /api/attribution/analytics` selecciona únicamente la cookie propia
+  cifrada. No acepta una referencia ni un snapshot del navegador.
+- Valida los IDs y el origen de la solicitud, limita peticiones y actualiza el
+  snapshot bajo bloqueo. Conserva IDs ya capturados; no mezcla el cliente anterior
+  con la sesión de otro navegador.
+- La lectura tiene un límite de cuatro segundos y se reintenta al navegar con
+  Inertia. El formulario y el clic nativo de WhatsApp no esperan su resultado.
+  Si no hay Google tag, respuesta válida o journey vigente, no inventa datos.
+- Un cambio de campaña y la copia independiente para WhatsApp conservan esos
+  metadatos. No se agregan IDs al texto de WhatsApp.
+- El contrato web→Kestra y `UF_CRM_ATTR_JSON` ya transportan el snapshot completo.
+  Los tests verifican su herencia al lead y al deal. No requiere migración,
+  campos CRM adicionales ni modificación del procesamiento productivo de Kestra.
+- El ID público está en `config/attribution.php` y debe mantenerse alineado con
+  la propiedad configurada en GTM. Se mantiene la bandera `ATTRIBUTION_ENABLED`.
+
+En la revisión del sitio/GTM no se identificó una regla de consentimiento
+aplicable existente. Este complemento consulta el estado que entrega la biblioteca
+ya instalada, sin agregar una CMP ni modificar su configuración.
+
+Estado: implementación preparada en Git, pendiente de merge y despliegue de la
+web. Los tests con callbacks simulados no prueban captura real de estos nuevos
+campos en producción. Después del deploy, verificar que una respuesta válida del
+Google tag llegue al snapshot de un journey nuevo; si la biblioteca no devuelve
+IDs, su ausencia es el comportamiento esperado.
+
+### Evidencia A con UTM → B sin UTM → resolución del formulario
+
+Verificación del runtime productivo el **2026-10-08 a las 15:19:35 UTC** con
+una sesión HTTP nueva:
+
+| Paso | Evidencia |
+| --- | --- |
+| Landing A | `/prestamos-para-jubilados?utm_source=google&utm_medium=cpc&utm_campaign=uat22321_20261008`, HTTP 200 |
+| Landing B | `/prestamos-para-jubilados/jubilados-cordoba`, sin query, HTTP 200 |
+| Continuidad | Las dos cookies cifradas resuelven al mismo journey: `GpySPK87EE` |
+| Primer y último origen | Ambos conservan `google / cpc / uat22321_20261008` y la URL de A |
+| Resolución del formulario de B | El servicio productivo `resolveForm`, invocado en lectura con la cookie de B, devuelve `status=resolved`, el mismo journey y las UTM de A |
+
+No se envió el formulario productivo ni se crearon registros de Bitrix. La lectura
+de producción acredita conservación A→B y resolución del payload. La prueba
+HTTP local complementaria sí recorre GET A, cookie cifrada, GET B, POST del
+formulario y cola; verifica landing actual B, origen A, gclid y ambos IDs GA4,
+y confirma el payload del envío a Kestra simulado. La prueba Python verifica
+normalización y JSON del lead/deal con Bitrix simulado. Esto distingue la evidencia
+real del runtime de la validación simulada de los destinos externos.
+
+Comandos de validación desde la raíz del repositorio:
+
+```sh
+cd web/redunisol-web
+php vendor/pestphp/pest/bin/pest tests/Feature/AttributionJourneyTest.php tests/Feature/AnalyticsAttributionTest.php
+node --test tests/Frontend/analyticsAttribution.test.mjs
+npm run build
+cd ../..
+python -m unittest discover -s kestra/automations/marketing-crm/files/bitrix24_form_flow/tests -p test_attribution.py
+python kestra/tools/validate_kestra.py
+```
+
+En Windows, las pruebas PHP necesitan PDO SQLite y SQLite3 habilitados
+(por ejemplo, `php -d extension=pdo_sqlite -d extension=sqlite3 -d extension=gd ...`).

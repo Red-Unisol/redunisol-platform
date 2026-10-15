@@ -28,48 +28,63 @@ enum TipoPersona {
 }
 
 model User {
-  id                           String                     @id @default(uuid()) @map("usr_id") @db.Uuid
-  email                        String                     @unique @map("usr_email")
-  legacyUser                   String                     @unique @map("usr_legacy_user")
-  passwordHash                 String                     @map("usr_password_hash")
-  firstName                    String?                    @map("usr_first_name")
-  lastName                     String?                    @map("usr_last_name")
-  emailVerified                Boolean                    @default(false) @map("usr_email_verified")
-  isSystemAdmin                Boolean                    @default(false) @map("usr_is_system_admin")
-  state                        Int                        @default(1) @map("usr_state")
-  createdAt                    DateTime                   @default(now()) @map("usr_created_at")
-  updatedAt                    DateTime                   @updatedAt @map("usr_updated_at")
-  deletedAt                    DateTime?                  @map("usr_deleted_at")
-  workflowOwnerId              String?                    @map("workflow_owner_id") @db.Uuid
-  emailTokens                  EmailVerificationToken[]
-  passwordTokens               PasswordResetToken[]
-  refreshTokens                RefreshToken[]
-  createdSolicitudes           Solicitud[]
-  assignedSolicitudes          Solicitud[]                @relation("SolicitudAssignedToUser")
-  vendedorSolicitudes          Solicitud[]                @relation("SolicitudVendedor")
-  uploadedSolicitudAdjuntos    SolicitudAdjunto[]         @relation("SolicitudAdjuntoUploadedByUser")
-  deletedSolicitudAdjuntos     SolicitudAdjunto[]         @relation("SolicitudAdjuntoDeletedByUser")
-  createdSolicitudCancelaciones SolicitudCancelacion[]    @relation("SolicitudCancelacionCreatedByUser")
-  deletedSolicitudCancelaciones SolicitudCancelacion[]    @relation("SolicitudCancelacionDeletedByUser")
-  changedSolicitudEstados      SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
-  solicitudParticipants        SolicitudParticipant[]     @relation("SolicitudParticipantUser")
-  createdSolicitudParticipants SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
-  workflowOwner                WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
+  id                            String                     @id @default(uuid()) @map("usr_id") @db.Uuid
+  email                         String                     @unique @map("usr_email")
+  legacyUser                    String                     @unique @map("usr_legacy_user")
+  passwordHash                  String                     @map("usr_password_hash")
+  firstName                     String?                    @map("usr_first_name")
+  lastName                      String?                    @map("usr_last_name")
+  emailVerified                 Boolean                    @default(false) @map("usr_email_verified")
+  isSystemAdmin                 Boolean                    @default(false) @map("usr_is_system_admin")
+  recibeAsignacionAutomatica    Boolean                    @default(false) @map("usr_recibe_asignacion_automatica")
+  state                         Int                        @default(1) @map("usr_state")
+  createdAt                     DateTime                   @default(now()) @map("usr_created_at")
+  updatedAt                     DateTime                   @updatedAt @map("usr_updated_at")
+  deletedAt                     DateTime?                  @map("usr_deleted_at")
+  workflowOwnerId               String?                    @map("workflow_owner_id") @db.Uuid
+  emailTokens                   EmailVerificationToken[]
+  passwordTokens                PasswordResetToken[]
+  refreshTokens                 RefreshToken[]
+  createdSolicitudes            Solicitud[]
+  assignmentCursors             WorkflowAssignmentCursor[] @relation("AssignmentCursorLastUser")
+  assignedSolicitudes           Solicitud[]                @relation("SolicitudAssignedToUser")
+  vendedorSolicitudes           Solicitud[]                @relation("SolicitudVendedor")
+  uploadedSolicitudAdjuntos     SolicitudAdjunto[]         @relation("SolicitudAdjuntoUploadedByUser")
+  deletedSolicitudAdjuntos      SolicitudAdjunto[]         @relation("SolicitudAdjuntoDeletedByUser")
+  createdSolicitudCancelaciones SolicitudCancelacion[]     @relation("SolicitudCancelacionCreatedByUser")
+  deletedSolicitudCancelaciones SolicitudCancelacion[]     @relation("SolicitudCancelacionDeletedByUser")
+  changedSolicitudEstados       SolicitudEstadoHistorial[] @relation("SolicitudHistoryChangedByUser")
+  solicitudParticipants         SolicitudParticipant[]     @relation("SolicitudParticipantUser")
+  evaluacionesRiesgo            SolicitudEvaluacionRiesgo[] @relation("EvaluacionRiesgoGuardadaPor")
+  createdSolicitudParticipants  SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
+  workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
+  documentReviewDecisions        SolicitudDocumentDecision[]
 
   @@index([workflowOwnerId])
   @@map("users")
 }
 
 model WorkflowOwner {
-  id        String          @id @default(uuid()) @db.Uuid
-  code      String          @unique
-  name      String
-  sortOrder Int             @default(0) @map("sort_order")
-  isActive  Boolean         @default(true) @map("is_active")
-  states    WorkflowState[]
-  users     User[]
+  id               String                    @id @default(uuid()) @db.Uuid
+  code             String                    @unique
+  name             String
+  sortOrder        Int                       @default(0) @map("sort_order")
+  isActive         Boolean                   @default(true) @map("is_active")
+  states           WorkflowState[]
+  users            User[]
+  assignmentCursor WorkflowAssignmentCursor?
 
   @@map("workflow_owners")
+}
+
+model WorkflowAssignmentCursor {
+  workflowOwnerId    String        @id @map("workflow_owner_id") @db.Uuid
+  lastAssignedUserId String?       @map("last_assigned_user_id") @db.Uuid
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  workflowOwner      WorkflowOwner @relation(fields: [workflowOwnerId], references: [id], onDelete: Cascade)
+  lastAssignedUser   User?         @relation("AssignmentCursorLastUser", fields: [lastAssignedUserId], references: [id], onDelete: SetNull)
+
+  @@map("workflow_assignment_cursors")
 }
 
 model WorkflowState {
@@ -139,6 +154,7 @@ model Solicitud {
   cupoTitular              Decimal?                   @map("cupo_titular") @db.Decimal(18, 2)
   firmaDigitalmente        Boolean                    @default(false) @map("firma_digitalmente")
   linkFirmaDigital         String?                    @map("link_firma_digital")
+  lineaPrestamoCodigoMutual String?                   @map("linea_prestamo_codigo_mutual")
   ejecutivoSolicitud       String?                    @map("ejecutivo_solicitud")
   vendedorSolicitud        String?                    @map("vendedor_solicitud")
   vendedorId               String?                    @map("vendedor_id") @db.Uuid
@@ -158,8 +174,14 @@ model Solicitud {
   garantias                SolicitudGarantia[]
   adjuntos                 SolicitudAdjunto[]
   cancelaciones            SolicitudCancelacion[]
+  credixsaInforme          SolicitudCredixsaInforme?
+  evaluacionRiesgo         SolicitudEvaluacionRiesgo?
   estadoHistorial          SolicitudEstadoHistorial[]
   participants             SolicitudParticipant[]
+  desembolso               TransferenciaDesembolso?
+  bankIdentifiers          TransferenciaIdentificador[]
+  documentReviews          SolicitudDocumentReview[]
+  documentReviewJob         SolicitudDocumentReviewJob?
 
   @@index([estadoActualId])
   @@index([createdBy])
@@ -167,6 +189,69 @@ model Solicitud {
   @@index([vendedorId])
   @@index([createdAt])
   @@map("solicitudes")
+}
+
+// Immutable system observations. A new signature/contract version produces a
+// new observation; human decisions never replace the machine's recommendation.
+model SolicitudDocumentReview {
+  id                     String   @id @default(uuid()) @db.Uuid
+  solicitudId            String   @map("solicitud_id") @db.Uuid
+  evaluationKey          String   @unique @map("evaluation_key")
+  policyVersion          String   @map("policy_version")
+  sourceFingerprint      String   @map("source_fingerprint")
+  providerFingerprint    String   @map("provider_fingerprint")
+  sourceSnapshot         Json     @map("source_snapshot")
+  assessment             Json
+  systemDecision         String   @map("system_decision")
+  selectedVerificationId String?  @map("selected_verification_id")
+  evidencePath           String?  @map("evidence_path")
+  legajoAdjuntoId         String?  @map("legajo_adjunto_id") @db.Uuid
+  artifactError          String?  @map("artifact_error")
+  evaluatedAt            DateTime @default(now()) @map("evaluated_at")
+  solicitud              Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
+  decisions              SolicitudDocumentDecision[]
+  legajo                 SolicitudAdjunto? @relation("DocumentReviewLegajo", fields: [legajoAdjuntoId], references: [id], onDelete: Restrict, map: "solicitud_document_reviews_legajo_fkey")
+
+  @@index([solicitudId, evaluatedAt])
+  @@index([solicitudId, sourceFingerprint, providerFingerprint], map: "document_review_fingerprint_idx")
+  @@map("solicitud_document_reviews")
+}
+
+model SolicitudDocumentDecision {
+  id                    String   @id @default(uuid()) @db.Uuid
+  reviewId              String   @map("review_id") @db.Uuid
+  requestId             String   @unique @map("request_id") @db.Uuid
+  humanDecision         String   @map("human_decision")
+  systemDecision        String   @map("system_decision")
+  verificationId        String?  @map("verification_id")
+  attemptSystemDecision String?  @map("attempt_system_decision")
+  disagreesWithSystem   Boolean  @map("disagrees_with_system")
+  overridesAttempt      Boolean  @map("overrides_attempt")
+  reason                String
+  decidedBy             String   @map("decided_by") @db.Uuid
+  actorName             String   @map("actor_name")
+  actingAudit           Json     @map("acting_audit")
+  legajoAdjuntoId        String?  @map("legajo_adjunto_id") @db.Uuid
+  decidedAt             DateTime @default(now()) @map("decided_at")
+  review                SolicitudDocumentReview @relation(fields: [reviewId], references: [id], onDelete: Restrict)
+  actor                 User @relation(fields: [decidedBy], references: [id], onDelete: Restrict, map: "solicitud_document_decisions_decided_by_fkey")
+  legajo                SolicitudAdjunto? @relation("DocumentDecisionLegajo", fields: [legajoAdjuntoId], references: [id], onDelete: Restrict, map: "solicitud_document_decisions_legajo_fkey")
+
+  @@index([reviewId, decidedAt])
+  @@index([disagreesWithSystem, decidedAt], map: "document_decision_disparity_idx")
+  @@map("solicitud_document_decisions")
+}
+
+model SolicitudDocumentReviewJob {
+  solicitudId String    @id @map("solicitud_id") @db.Uuid
+  leaseToken  String?   @map("lease_token") @db.Uuid
+  leaseUntil  DateTime? @map("lease_until")
+  nextCheckAt DateTime  @default(now()) @map("next_check_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  solicitud   Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@index([nextCheckAt])
+  @@map("solicitud_document_review_jobs")
 }
 
 model SolicitudParticipant {
@@ -189,22 +274,22 @@ model SolicitudParticipant {
 }
 
 model WorkflowTransition {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  fromStateId           String                     @map("from_state_id") @db.Uuid
-  toStateId             String                     @map("to_state_id") @db.Uuid
-  actionCode            String                     @map("action_code")
-  actionLabel           String                     @map("action_label")
-  defaultComment        String?                    @map("default_comment")
-  description           String?
-  sortOrder             Int                        @map("sort_order")
-  saveAndExit           Boolean                    @default(false) @map("save_and_exit")
-  requiresComment       Boolean                    @default(false) @map("requires_comment")
-  isActive              Boolean                    @default(true) @map("is_active")
-  createdAt             DateTime                   @default(now()) @map("created_at")
-  updatedAt             DateTime                   @updatedAt @map("updated_at")
-  fromState             WorkflowState              @relation("WorkflowTransitionFromState", fields: [fromStateId], references: [id])
-  toState               WorkflowState              @relation("WorkflowTransitionToState", fields: [toStateId], references: [id])
-  history               SolicitudEstadoHistorial[]
+  id              String                     @id @default(uuid()) @db.Uuid
+  fromStateId     String                     @map("from_state_id") @db.Uuid
+  toStateId       String                     @map("to_state_id") @db.Uuid
+  actionCode      String                     @map("action_code")
+  actionLabel     String                     @map("action_label")
+  defaultComment  String?                    @map("default_comment")
+  description     String?
+  sortOrder       Int                        @map("sort_order")
+  saveAndExit     Boolean                    @default(false) @map("save_and_exit")
+  requiresComment Boolean                    @default(false) @map("requires_comment")
+  isActive        Boolean                    @default(true) @map("is_active")
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+  fromState       WorkflowState              @relation("WorkflowTransitionFromState", fields: [fromStateId], references: [id])
+  toState         WorkflowState              @relation("WorkflowTransitionToState", fields: [toStateId], references: [id])
+  history         SolicitudEstadoHistorial[]
 
   @@unique([fromStateId, actionCode])
   @@unique([fromStateId, toStateId, actionCode])
@@ -216,6 +301,9 @@ model WorkflowTransition {
 }
 
 model SolicitudEstadoHistorial {
+  realActorUserId        String? @map("real_actor_user_id") @db.Uuid
+  impersonationSessionId String? @map("impersonation_session_id") @db.Uuid
+  operationAuditId       String? @map("operation_audit_id") @db.Uuid
   id                    String              @id @default(uuid()) @db.Uuid
   solicitudId           String              @map("solicitud_id") @db.Uuid
   transitionId          String?             @map("transition_id") @db.Uuid
@@ -270,6 +358,7 @@ model SolicitudTitular {
   nroPuerta                    String?   @map("nro_puerta")
   localidad                    String?
   cbu                          String?
+  cbuNoHabitual                String?   @map("cbu_no_habitual")
   personaExpuestaPoliticamente Boolean?  @map("persona_expuesta_politicamente")
   sexo                         String?
   nacionalidad                 String?
@@ -383,7 +472,10 @@ model SolicitudAdjunto {
   deleteReason     String?   @map("delete_reason")
   solicitud        Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
   uploadedByUser   User?     @relation("SolicitudAdjuntoUploadedByUser", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  desembolso       TransferenciaDesembolso?
   deletedByUser    User?     @relation("SolicitudAdjuntoDeletedByUser", fields: [deletedBy], references: [id], onDelete: SetNull)
+  documentReviews SolicitudDocumentReview[] @relation("DocumentReviewLegajo")
+  documentDecisions SolicitudDocumentDecision[] @relation("DocumentDecisionLegajo")
 
   @@index([solicitudId])
   @@index([legacyOid])
@@ -416,6 +508,43 @@ model SolicitudCancelacion {
   @@index([solicitudId])
   @@index([createdBy])
   @@map("solicitud_cancelaciones")
+}
+
+// Informe de CredixSA de la solicitud, para que la pestaña no espere a Kestra.
+// Se borra al pasar a Desestimada, Rechazada o Vencida.
+model SolicitudCredixsaInforme {
+  id           String    @id @default(uuid()) @db.Uuid
+  solicitudId  String    @unique @map("solicitud_id") @db.Uuid
+  cuit         String
+  nombre       String
+  status       String
+  informe      Json
+  consultadoEn DateTime  @map("consultado_en")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  solicitud    Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@map("solicitud_credixsa_informes")
+}
+
+// Calculadora de riesgo guardada por solicitud (pestaña Evaluacion). La
+// planilla (snapshot de Univer en JSON) va al almacenamiento de archivos
+// -- MinIO en dev, S3 en prod --; aca queda donde esta, el nivel de riesgo
+// que dio y quien la guardo. Una fila por solicitud: cada guardado la pisa.
+model SolicitudEvaluacionRiesgo {
+  id            String    @id @default(uuid()) @db.Uuid
+  solicitudId   String    @unique @map("solicitud_id") @db.Uuid
+  storageBucket String    @map("storage_bucket")
+  storageKey    String    @map("storage_key")
+  nivelRiesgo   Int?      @map("nivel_riesgo")
+  guardadaPorId String?   @map("guardada_por_id") @db.Uuid
+  guardadaEn    DateTime  @map("guardada_en")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  solicitud     Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  guardadaPor   User?     @relation("EvaluacionRiesgoGuardadaPor", fields: [guardadaPorId], references: [id], onDelete: SetNull)
+
+  @@map("solicitud_evaluaciones_riesgo")
 }
 
 model SolicitudFieldAccessRule {
@@ -494,4 +623,81 @@ model PasswordResetToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_tokens")
+}
+
+model TransferenciaDesembolso {
+  id               String              @id @default(uuid()) @db.Uuid
+  solicitudId      String              @unique @map("solicitud_id") @db.Uuid
+  prestamoLegacyId String              @unique @map("prestamo_legacy_id")
+  idempotencyKey   String              @unique @map("idempotency_key")
+  reservationHash  String              @map("reservation_hash")
+  planVersion      String              @map("plan_version")
+  plan             Json
+  clientId         String              @map("client_id")
+  installationId   String              @map("installation_id")
+  operator         String
+  verificationId   String?             @map("verification_id")
+  receiptSha256    String?             @map("receipt_sha256")
+  receiptAdjuntoId String?             @unique @map("receipt_adjunto_id") @db.Uuid
+  receiptAdjunto   SolicitudAdjunto?    @relation(fields: [receiptAdjuntoId], references: [id], onDelete: Restrict)
+  completedAt      DateTime?           @map("completed_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  solicitud        Solicitud           @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
+  pagos            TransferenciaPago[]
+
+  @@map("transferencia_desembolsos")
+}
+
+model TransferenciaPago {
+  id                String                  @id @default(uuid()) @db.Uuid
+  desembolsoId      String                  @map("desembolso_id") @db.Uuid
+  paymentKey        String                  @map("payment_key")
+  bankTransactionId String                  @unique @map("bank_transaction_id")
+  bankOperationId   String?                 @unique @map("bank_operation_id")
+  confirmedPayload  Json?                   @map("confirmed_payload")
+  confirmedAt       DateTime?               @map("confirmed_at")
+  desembolso        TransferenciaDesembolso @relation(fields: [desembolsoId], references: [id], onDelete: Restrict)
+
+  @@unique([desembolsoId, paymentKey])
+  @@map("transferencia_pagos")
+}
+
+// Permanent UUID/payment-key -> sequential bank number, separate from display IDs.
+model TransferenciaIdentificador {
+  numero      BigInt @id @default(autoincrement())
+  solicitudId String @map("solicitud_id") @db.Uuid
+  paymentKey  String @map("payment_key")
+  solicitud   Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([solicitudId, paymentKey])
+  @@map("transferencia_identificadores")
+}
+
+// Snapshots remain available when an account is subsequently changed/deleted.
+model ImpersonationSession {
+  id String @id @default(uuid()) @db.Uuid
+  administratorId String @map("administrator_id") @db.Uuid
+  selectedUserId String @map("selected_user_id") @db.Uuid
+  administratorLabel String @map("administrator_label")
+  selectedUserLabel String @map("selected_user_label")
+  startedAt DateTime @default(now()) @map("started_at")
+  expiresAt DateTime @map("expires_at")
+  endedAt DateTime? @map("ended_at")
+  endReason String? @map("end_reason")
+  @@index([administratorId])
+  @@map("impersonation_sessions")
+}
+
+model ImpersonationOperation {
+  id String @id @default(uuid()) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  administratorId String @map("administrator_id") @db.Uuid
+  selectedUserId String @map("selected_user_id") @db.Uuid
+  action String
+  startedAt DateTime @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  statusCode Int? @map("status_code")
+  @@index([sessionId, startedAt])
+  @@map("impersonation_operations")
 }

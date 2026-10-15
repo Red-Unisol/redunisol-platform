@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { integrationConfigSchema } from "../modules/transferencias-integration/config";
+import { documentReviewConfigSchema } from "../modules/document-review/config";
 
 const normalizeCommaSeparatedList = (value: string) =>
   value
@@ -6,7 +8,20 @@ const normalizeCommaSeparatedList = (value: string) =>
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
 
+// El finalizar de siempre. Sirve de default para no cambiar el comportamiento
+// de produccion mientras dev apunta a su propia ruta.
+const FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO =
+  "https://redunisol.com.ar/finalizar.php";
+
 const envSchema = z.object({
+  DOCUMENT_REVIEW_ENABLED: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
+  DOCUMENT_REVIEW_SERVER_BASE_URL: z.string().trim().default(""),
+  DOCUMENT_REVIEW_SERVER_CLIENT_ID: z.string().trim().default(""),
+  DOCUMENT_REVIEW_SERVER_CLIENT_SECRET: z.string().trim().default(""),
+  DOCUMENT_REVIEW_METAMAP_CLIENT_ID: z.string().trim().default(""),
+  DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET: z.string().trim().default(""),
+  DOCUMENT_REVIEW_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
+  DOCUMENT_REVIEW_MAX_PDF_BYTES: z.coerce.number().int().positive().max(100 * 1024 * 1024).default(64 * 1024 * 1024),
   ACCESS_TOKEN_SECRET: z
     .string()
     .min(32, "ACCESS_TOKEN_SECRET must be at least 32 characters"),
@@ -53,9 +68,67 @@ const envSchema = z.object({
     .int("EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES must be an integer")
     .positive("EMAIL_SEND_RATE_LIMIT_WINDOW_MINUTES must be greater than 0")
     .default(15),
-  LEGACY_API_BASE_URL: z
+  // URL completa de la pagina de firma digital, incluido el path: en el link
+  // que se le manda al socio se le agregan linea, ntrans y sol. Cambia por
+  // ambiente porque dev tiene su propio sitio y su propia ruta.
+  //
+  // El preprocess es a proposito y no decorativo: docker compose pasa la
+  // variable como cadena vacia cuando el env no la define, y una cadena vacia
+  // no dispara el default de zod -- haria fallar la validacion y el server no
+  // arrancaria. Vacia o ausente caen las dos en el valor por defecto.
+  FINALIZAR_FIRMA_DIGITAL_BASE_URL: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() !== ""
+        ? value.trim()
+        : FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO,
+    z.string().url("FINALIZAR_FIRMA_DIGITAL_BASE_URL must be a valid URL"),
+  ),
+  // URL completa del webhook de Kestra que consulta CredixSA al crear una
+  // solicitud (el envoltorio consulta_credixsa_por_solicitud), con la clave
+  // incluida -- se guarda entera para que la clave no quede en el codigo,
+  // igual que hace redunisol-web. El informe que devuelve queda guardado en
+  // la base para la pestaña.
+  //
+  // Vacia o ausente deshabilita la consulta: la app arranca igual y la
+  // pestaña consulta CredixSA en el momento.
+  CREDIXSA_CONSULTA_WEBHOOK_URL: z
     .string()
-    .url("LEGACY_API_BASE_URL must be a valid URL"),
+    .trim()
+    .default(""),
+  // Webhook que consulta la pestaña. Apunta directo a consulta_quiebra_credix,
+  // el mismo flow que usan los analistas a mano, y NO al envoltorio que dispara
+  // la consulta al crear la solicitud.
+  //
+  // La diferencia importa: el envoltorio tiene concurrency 1 para que los
+  // disparos automaticos no se pisen entre si, y eso deja a la pestaña
+  // encolada detras de ellos. Lo que espera una persona no puede compartir
+  // cola con lo que corre en background.
+  //
+  // Las dos vias comparten la misma cache, asi que la consulta al crear la
+  // solicitud le sigue sirviendo a esta.
+  CREDIXSA_INFORME_WEBHOOK_URL: z.string().trim().default(""),
+  // Alto a proposito: con la cache fria hay que esperar el scraping, que en el
+  // ambiente real tardo entre 1 y 2 minutos.
+  CREDIXSA_INFORME_TIMEOUT_MS: z.coerce
+    .number()
+    .int("CREDIXSA_INFORME_TIMEOUT_MS must be an integer")
+    .positive("CREDIXSA_INFORME_TIMEOUT_MS must be greater than 0")
+    .default(180000),
+  // Cuanto espera el alta de una solicitud la respuesta de Kestra para
+  // guardar el informe. Corre en segundo plano, sin nadie esperando del otro
+  // lado, asi que es alto: tiene que cubrir la cola del envoltorio
+  // (concurrency 1) mas el scraping.
+  //
+  // Subirlo de 5 minutos no sirve: el fetch de Node (undici) corta solo si la
+  // respuesta no empezo a llegar en ese tiempo, y el webhook de Kestra no
+  // manda nada hasta terminar. Si se corta no se pierde la consulta: el flow
+  // termina igual, deja la cache de Kestra lista y la pestaña la aprovecha.
+  CREDIXSA_CONSULTA_TIMEOUT_MS: z.coerce
+    .number()
+    .int("CREDIXSA_CONSULTA_TIMEOUT_MS must be an integer")
+    .positive("CREDIXSA_CONSULTA_TIMEOUT_MS must be greater than 0")
+    .default(300000),
+  LEGACY_API_BASE_URL: z.string().url("LEGACY_API_BASE_URL must be a valid URL"),
   LEGACY_API_TIMEOUT_MS: z.coerce
     .number()
     .int("LEGACY_API_TIMEOUT_MS must be an integer")
@@ -107,6 +180,9 @@ const envSchema = z.object({
     .default(587),
   SMTP_USER: z.string().min(1, "SMTP_USER is required"),
   APP_NAME: z.string().min(1, "APP_NAME is required").default("Celesol"),
+  TRANSFERENCIAS_API_TOKEN_SHA256: z.string().default(""),
+  TRANSFERENCIAS_API_USER_ID: z.string().default(""),
+  TRANSFERENCIAS_API_CLIENT_ID: z.string().default("transferencias"),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -120,3 +196,12 @@ if (!parsedEnv.success) {
 }
 
 export const env = parsedEnv.data;
+documentReviewConfigSchema.parse({ enabled: env.DOCUMENT_REVIEW_ENABLED,
+  serverBaseUrl: env.DOCUMENT_REVIEW_SERVER_BASE_URL, serverClientId: env.DOCUMENT_REVIEW_SERVER_CLIENT_ID,
+  serverClientSecret: env.DOCUMENT_REVIEW_SERVER_CLIENT_SECRET,
+  clientId: env.DOCUMENT_REVIEW_METAMAP_CLIENT_ID, clientSecret: env.DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET });
+integrationConfigSchema.parse({
+  tokenSha256: env.TRANSFERENCIAS_API_TOKEN_SHA256,
+  userId: env.TRANSFERENCIAS_API_USER_ID,
+  clientId: env.TRANSFERENCIAS_API_CLIENT_ID,
+});

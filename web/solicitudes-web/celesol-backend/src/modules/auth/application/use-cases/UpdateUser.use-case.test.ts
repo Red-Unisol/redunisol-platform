@@ -184,6 +184,7 @@ function toAuthUser(user: InMemoryUser): AuthUser {
     isSystemAdmin: user.isSystemAdmin,
     lastName: user.lastName,
     legacyUser: user.legacyUser,
+    recibeAsignacionAutomatica: user.recibeAsignacionAutomatica,
     state: user.state,
     workflowOwnerId: user.workflowOwnerId,
   };
@@ -199,6 +200,7 @@ function createUser(overrides: Partial<InMemoryUser>): InMemoryUser {
     isSystemAdmin: false,
     lastName: "User",
     legacyUser: "UUSER",
+    recibeAsignacionAutomatica: false,
     state: USER_STATE.ACTIVE,
     workflowOwnerId: "owner-1",
     ...overrides,

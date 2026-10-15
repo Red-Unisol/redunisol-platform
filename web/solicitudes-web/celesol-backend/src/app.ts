@@ -10,10 +10,12 @@ import { errorHandler } from "./middleware/error-handler";
 import { notFoundHandler } from "./middleware/not-found-handler";
 import {
   authRouter,
+  impersonation,
   getCurrentUserUseCase,
   usersRouter,
 } from "./modules/auth/auth-module";
 import { createRiesgoRouter } from "./modules/riesgo/riesgo-module";
+import { createDocumentReviewRouter } from "./modules/document-review/document-review-module";
 import { createSociosRouter } from "./modules/socios/socios-module";
 import {
   createFinSolicitudRouter,
@@ -21,6 +23,7 @@ import {
   createSolicitudesCoreRouter,
 } from "./modules/solicitudes-core/solicitudes-core-module";
 import { createSolicitudesLegacyRouter } from "./modules/solicitudes/solicitudes-module";
+import { createTransferenciasIntegrationRouter } from "./modules/transferencias-integration/transferencias-module";
 
 export const app = express();
 
@@ -31,7 +34,17 @@ app.use(
   }),
 );
 app.use(cookieParser());
+// La evaluacion de riesgo manda la planilla entera (snapshot de Univer): no
+// entra en los 100 KB por defecto. El limite mayor vale solo para esa ruta;
+// el parser general la saltea porque el cuerpo ya viene leido.
+app.use(
+  "/api/riesgo/calculadora/core/:solicitudId/evaluacion",
+  express.json({ limit: "10mb" }),
+);
 app.use(express.json());
+app.use("/auth/impersonation", impersonation.router());
+app.use(impersonation.middleware);
+app.use("/integrations/transferencias/v1", createTransferenciasIntegrationRouter());
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/auth", authRouter);
 app.use("/auth/users", usersRouter);
@@ -55,6 +68,7 @@ app.use(
 );
 app.use(
   "/solicitudes",
+  createDocumentReviewRouter(getCurrentUserUseCase),
   createSolicitudesCoreRouter({
     getCurrentUserUseCase,
   }),

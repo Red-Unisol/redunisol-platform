@@ -21,6 +21,7 @@ export type SolicitudFieldKey =
   | "solicitud.cuotaResultante"
   | "solicitud.cuotas"
   | "solicitud.fechaPrimerVencimiento"
+  | "solicitud.lineaPrestamoLegacyOid"
   | "solicitud.firmaDigitalmente"
   | "solicitud.linkFirmaDigital"
   | "solicitud.montoAFinanciar"
@@ -30,6 +31,7 @@ export type SolicitudFieldKey =
   | "solicitud.vendedorSolicitud"
   | "titular.apellidoDenominacion"
   | "titular.cbu"
+  | "titular.cbuNoHabitual"
   | "titular.celular"
   | "titular.cuit"
   | "titular.domicilioCalle"
@@ -118,6 +120,7 @@ export type SolicitudAppearance = {
 export type SolicitudCoreCapabilities = {
   canView: boolean;
   canEdit: boolean;
+  canCreateCancelaciones?: boolean;
   canUploadAdjuntos: boolean;
   canDeleteAdjuntos: boolean;
   canDownloadAdjuntos: boolean;
@@ -129,6 +132,7 @@ export type SolicitudCoreCapabilities = {
 export type SolicitudCoreTitular = {
   apellidoDenominacion: string | null;
   cbu: string | null;
+  cbuNoHabitual: string | null;
   celular: string | null;
   cuit: string | null;
   domicilioCalle: string | null;
@@ -225,6 +229,10 @@ export type SolicitudCore = {
   id: string;
   garantias: SolicitudCoreGarantia[];
   legacyOid: string | null;
+  // Codigo de la mutual de la linea, de [Terminos y condiciones] en el legado.
+  // Se resuelve y se guarda al crear el prestamo: es lo que decide que
+  // documento de Metamap firma el socio.
+  lineaPrestamoCodigoMutual?: string | null;
   lineaPrestamoDescripcion: string;
   lineaPrestamoLegacyOid: string;
   nroOperacion?: string | null;

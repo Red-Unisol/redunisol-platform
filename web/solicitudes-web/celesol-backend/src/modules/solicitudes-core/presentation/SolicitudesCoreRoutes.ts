@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 
 import type { SolicitudAdjuntosController } from "../adjuntos/presentation/SolicitudAdjuntosController";
 import { SolicitudAdjuntosRoutes } from "../adjuntos/presentation/SolicitudAdjuntosRoutes";
@@ -11,8 +11,15 @@ export class SolicitudesCoreRoutes {
     controller: SolicitudesCoreController,
     solicitudAdjuntosController: SolicitudAdjuntosController,
     solicitudCancelacionesController: SolicitudCancelacionesController,
+    visibilidadVendedorGuard?: RequestHandler<{ id?: string }>,
   ) {
     const router = Router();
+
+    // Antes que todo: cualquier ruta de una solicitud (y lo que cuelga de
+    // ella) pasa por la visibilidad de Vendedores.
+    if (visibilidadVendedorGuard) {
+      router.use("/:id", visibilidadVendedorGuard);
+    }
 
     router.post("/", controller.create);
     router.get("/", controller.list);
@@ -23,9 +30,19 @@ export class SolicitudesCoreRoutes {
     router.post("/simulacion", controller.simular);
     router.get("/tipos-adjunto", solicitudAdjuntosController.listTiposAdjunto);
 
+    router.post("/:id/simulacion", controller.simular);
     router.get("/:id/transitions", controller.listTransitions);
     router.post("/:id/transitions", controller.changeState);
+    router.get("/:id/revision-prestamo", controller.getRevisionPrestamo);
     router.post("/:id/prestamo-legacy", controller.createPrestamoLegacy);
+    router.get("/:id/solicitudes-titular", controller.listSolicitudesDelTitular);
+    router.get("/:id/prestamos-socio", controller.listPrestamosDelSocio);
+    router.get(
+      "/:id/prestamos-socio/:prestamoId",
+      controller.getPrestamoDelSocio,
+    );
+    router.get("/:id/credixsa", controller.getCredixsa);
+    router.get("/:id/lineas-prestamo", controller.listLineasPrestamo);
     router.get("/:id/assignment/agents", controller.listAssignableAgents);
     router.post("/:id/assignment/self", controller.assignToSelf);
     router.post("/:id/assignment", controller.assignToUser);

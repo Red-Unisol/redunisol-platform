@@ -29,12 +29,28 @@ export function canEditSocio(user: AuthUser | null | undefined) {
   return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
 }
 
+// Borrar un socio queda solo para admin. El backend hace el mismo chequeo.
 export function canDeleteSocio(user: AuthUser | null | undefined) {
-  return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
+  return user?.isSystemAdmin === true;
+}
+
+export function isVendedor(user: AuthUser | null | undefined) {
+  return (
+    user?.isSystemAdmin !== true && user?.workflowOwner?.code === "VENDEDORES"
+  );
 }
 
 export function canAccessRiesgoTools(user: AuthUser | null | undefined) {
   return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
+}
+
+// Los prestamos que el socio ya tiene con la mutual son informacion para
+// analizar, no para cargar: Vendedores no los ve. El backend hace el mismo
+// chequeo, esto solo evita mostrar una pestaña que va a dar 403.
+export function canViewPrestamosDelSocio(user: AuthUser | null | undefined) {
+  return (
+    user?.isSystemAdmin === true || user?.workflowOwner?.code !== "VENDEDORES"
+  );
 }
 
 export function canCreateSolicitud(user: AuthUser | null | undefined) {

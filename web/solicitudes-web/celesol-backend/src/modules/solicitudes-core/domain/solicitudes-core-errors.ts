@@ -42,6 +42,13 @@ export class SolicitudCoreNotFoundError extends SolicitudesError {
   }
 }
 
+export class PrestamoDelSocioNotFoundError extends SolicitudesError {
+  constructor() {
+    super("Prestamo del socio not found.", 404);
+    this.name = "PrestamoDelSocioNotFoundError";
+  }
+}
+
 export class SolicitudPrestamoNoGeneradoError extends SolicitudesError {
   constructor() {
     super("El préstamo de esta solicitud todavía no fue generado.", 400);
@@ -192,6 +199,32 @@ export class SolicitudPrestamoDataIncompleteError extends SolicitudesError {
   }
 }
 
+export class SolicitudCancelacionesFueraDeRangoError extends SolicitudesError {
+  readonly maximo: number;
+
+  constructor(maximo: number) {
+    super(
+      `Las cancelaciones superan el máximo que acepta el legado (${maximo.toLocaleString("es-AR")}). Generá el préstamo desde el sistema anterior.`,
+      409,
+    );
+    this.name = "SolicitudCancelacionesFueraDeRangoError";
+    this.maximo = maximo;
+  }
+}
+
+export class SolicitudLineaPrestamoLegacyIdUnresolvedError extends SolicitudesError {
+  readonly lineaDescripcion: string;
+
+  constructor(lineaDescripcion: string) {
+    super(
+      `No se pudo determinar la línea "${lineaDescripcion}" en el sistema legado. No se creó el préstamo: crearlo sin resolverla lo daría de alta con otra línea y otra tasa.`,
+      409,
+    );
+    this.name = "SolicitudLineaPrestamoLegacyIdUnresolvedError";
+    this.lineaDescripcion = lineaDescripcion;
+  }
+}
+
 export class SolicitudTitularSocioLegacyRequiredError extends SolicitudesError {
   constructor() {
     super(
@@ -310,5 +343,39 @@ export class WorkflowTransitionVersionConflictError extends SolicitudesError {
   constructor() {
     super("WORKFLOW_TRANSITION_VERSION_CONFLICT", 409);
     this.name = "WorkflowTransitionVersionConflictError";
+  }
+}
+
+export class LineaPrestamoNoDisponibleParaSolicitudError extends SolicitudesError {
+  constructor() {
+    super(
+      "La línea elegida no está disponible para el convenio de esta solicitud.",
+      422,
+    );
+    this.name = "LineaPrestamoNoDisponibleParaSolicitudError";
+  }
+}
+
+// El mensaje dice que ajustar: lo ve el analista al cambiar la linea.
+export class SolicitudFueraDeLimitesDeLineaError extends SolicitudesError {
+  constructor(message: string) {
+    super(message, 422);
+    this.name = "SolicitudFueraDeLimitesDeLineaError";
+  }
+}
+
+export class ConfiguracionMaximosLineaInvalidaError extends SolicitudesError {
+  constructor() {
+    super("La línea tiene máximos ausentes o inválidos. Corregí su configuración en el legacy.", 503);
+    this.name = "ConfiguracionMaximosLineaInvalidaError";
+  }
+}
+
+export class CalculoConValoresEfectivosError extends SolicitudesError {
+  readonly effectiveValues: { montoAFinanciar: number; cuotas: number };
+  constructor(values: { montoAFinanciar: number; cuotas: number }, message = "El cálculo del legacy no coincide con las condiciones solicitadas.", status = 502) {
+    super(message, status);
+    this.name = "CalculoConValoresEfectivosError";
+    this.effectiveValues = values;
   }
 }

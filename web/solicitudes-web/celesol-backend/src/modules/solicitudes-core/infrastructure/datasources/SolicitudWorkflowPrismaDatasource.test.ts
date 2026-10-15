@@ -113,6 +113,8 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     });
 
     assert.equal(prisma.transactionCount, 1);
+    // Pasar a riesgo no toca el informe de CredixSA: es cuando mas se usa.
+    assert.equal(prisma.credixsaInformeDeleteCalls.length, 0);
     assert.equal(prisma.solicitudUpdateCalls[0]?.where.id, "sol-1");
     assert.deepEqual(prisma.solicitudUpdateCalls[0]?.data, {
       estadoActual: {
@@ -180,6 +182,37 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     assert.equal(result.solicitud.assignedToUserId, null);
     assert.deepEqual(result.transitions.map((transition) => transition.actionCode), [
       "preaprobar",
+    ]);
+  });
+
+  it("borra el informe de CredixSA dentro de la transaccion al desestimar", async () => {
+    const prisma = new FakeWorkflowPrisma({
+      activeTransition: transitionRecord({
+        actionCode: "desestimar",
+        actionLabel: "Desestimar",
+        defaultComment: null,
+        id: "tr-desestimar",
+        requiresComment: true,
+        toState: resolveStateById("state-desestimada"),
+        toStateId: "state-desestimada",
+      }),
+    });
+    const datasource = new SolicitudWorkflowPrismaDatasource(prisma.client());
+
+    const result = await executeDomainStepPlan(datasource, {
+      actionCode: "desestimar",
+      changedBy: "user-1",
+      comment: "No califica",
+      expectedToStateId: "state-desestimada",
+      now: new Date("2026-05-18T12:00:00.000Z"),
+      solicitudId: "sol-1",
+      workflowOwnerId: "owner-vendedor",
+    });
+
+    assert.equal(result.solicitud.estadoActual.code, "Desestimada");
+    assert.equal(prisma.transactionCount, 1);
+    assert.deepEqual(prisma.credixsaInformeDeleteCalls, [
+      { where: { solicitudId: "sol-1" } },
     ]);
   });
 
@@ -1082,6 +1115,7 @@ type FakeWorkflowPrismaOptions = {
 };
 
 class FakeWorkflowPrisma {
+  credixsaInformeDeleteCalls: Array<{ where: { solicitudId: string } }> = [];
   historyCreateCalls: Array<{ data: unknown }> = [];
   historyFindManyCalls: Array<{ include?: unknown; orderBy: { changedAt: string } }> = [];
   solicitudFindUniqueCalls: Array<{ where: { id: string } }> = [];
@@ -1153,6 +1187,13 @@ class FakeWorkflowPrisma {
             estadoActual: toState,
             estadoActualId: toState.id,
           });
+        },
+      },
+      solicitudCredixsaInforme: {
+        deleteMany: async (args: { where: { solicitudId: string } }) => {
+          this.credixsaInformeDeleteCalls.push(args);
+
+          return { count: 1 };
         },
       },
       solicitudEstadoHistorial: {

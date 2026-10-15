@@ -36,6 +36,7 @@ class FakePasswordResetRepository implements PasswordResetRepository {
       isSystemAdmin: false,
       lastName: "User",
       legacyUser: "legacy.user",
+      recibeAsignacionAutomatica: false,
       state: 1,
       workflowOwnerId: "owner-1",
       workflowOwner: {

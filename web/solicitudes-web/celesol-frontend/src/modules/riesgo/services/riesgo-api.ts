@@ -1,7 +1,6 @@
+import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function resolveErrorMessage(responseText: string) {
   if (!responseText) {
@@ -53,8 +52,7 @@ async function fetchCalculadoraMutualDatos(
   );
 
   try {
-    const response = await fetch(new URL(path, API_BASE_URL), {
-      credentials: "include",
+    const response = await fetchConSesion(path, {
       method: "GET",
       signal: controller.signal,
     });
@@ -108,14 +106,10 @@ export async function getCalculadoraRiesgoFile(): Promise<Blob> {
   );
 
   try {
-    const response = await fetch(
-      new URL("/api/riesgo/calculadora", API_BASE_URL),
-      {
-        credentials: "include",
-        method: "GET",
-        signal: controller.signal,
-      },
-    );
+    const response = await fetchConSesion("/api/riesgo/calculadora", {
+      method: "GET",
+      signal: controller.signal,
+    });
 
     if (!response.ok) {
       const responseText = await response.text();
@@ -140,4 +134,31 @@ export async function getCalculadoraRiesgoFile(): Promise<Blob> {
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+export type EvaluacionRiesgo = {
+  guardadaEn: string;
+  guardadaPor: { id: string; nombre: string } | null;
+  nivelRiesgo: number | null;
+  /** Snapshot de la planilla de Univer (IWorkbookData). */
+  snapshot: unknown;
+};
+
+// Planilla guardada de la pestana Evaluacion; null si todavia no se guardo.
+export async function getEvaluacionRiesgo(solicitudId: string) {
+  const response = await apiClient.get<{ evaluacion: EvaluacionRiesgo | null }>(
+    `/api/riesgo/calculadora/core/${encodeURIComponent(solicitudId)}/evaluacion`,
+  );
+
+  return response.evaluacion;
+}
+
+export function guardarEvaluacionRiesgo(
+  solicitudId: string,
+  payload: { nivelRiesgo: number | null; snapshot: unknown },
+) {
+  return apiClient.put<Omit<EvaluacionRiesgo, "snapshot">>(
+    `/api/riesgo/calculadora/core/${encodeURIComponent(solicitudId)}/evaluacion`,
+    payload,
+  );
 }

@@ -8,14 +8,17 @@ type Dependencies = {
   repository: SolicitudWorkflowRepository;
   sociosRepository: SocioRepository;
   solicitudesRepository: SolicitudesCoreRepository;
+  documentReviewRequired?: boolean;
 };
 
 export class ListSolicitudTransitionsUseCase {
   private readonly annotateSolicitudTransitionsBlockedReason: AnnotateSolicitudTransitionsBlockedReason;
   private readonly repository: SolicitudWorkflowRepository;
   private readonly solicitudesRepository: SolicitudesCoreRepository;
+  private readonly documentReviewRequired: boolean;
 
   constructor(dependencies: Dependencies) {
+    this.documentReviewRequired = dependencies.documentReviewRequired ?? false;
     this.annotateSolicitudTransitionsBlockedReason =
       new AnnotateSolicitudTransitionsBlockedReason({
         sociosRepository: dependencies.sociosRepository,
@@ -41,7 +44,8 @@ export class ListSolicitudTransitionsUseCase {
     });
 
     return this.annotateSolicitudTransitionsBlockedReason.execute(
-      transitions,
+      this.documentReviewRequired ? transitions.map(t => ["transferir", "devolver_a_liquidada"].includes(t.actionCode)
+        ? { ...t, blockedReason: "Registrá la aprobación o desaprobación humana en Revisión de firma." } : t) : transitions,
       input.solicitudId,
     );
   }

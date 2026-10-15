@@ -12,6 +12,7 @@ export type AuthUser = {
   isSystemAdmin: boolean;
   lastName: string | null;
   legacyUser: string;
+  recibeAsignacionAutomatica: boolean;
   state: number;
   workflowOwnerId: string | null;
   workflowOwner?: AuthWorkflowOwner | null;
@@ -30,8 +31,10 @@ export function toAuthUser(user: PersistedAuthUser): AuthUser {
     isSystemAdmin: user.isSystemAdmin,
     lastName: user.lastName,
     legacyUser: user.legacyUser,
+    recibeAsignacionAutomatica: user.recibeAsignacionAutomatica,
     state: user.state,
     workflowOwnerId: user.workflowOwnerId,
     workflowOwner: user.workflowOwner ?? null,
   };
 }
+

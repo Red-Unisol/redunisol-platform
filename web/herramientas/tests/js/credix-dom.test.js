@@ -74,22 +74,29 @@ for (const source of ['BCRA', 'CredixSA']) {
     });
 }
 
-test('DOM: situación cero de BCRA conserva el valor y el monto con color neutro', async () => {
+test('DOM: situación cero se muestra N/D en historial y vigentes sin fabricar un subtotal completo', async () => {
     const report = credix();
     const normalized = JSON.parse(report.normalized_json);
     normalized.bcra.deudas_24_meses.filas[0].situaciones = ['0'];
     normalized.bcra.evolucion_deuda_por_entidad.filas[0].celdas[0].situacion = '0';
+    normalized.bcra.deudas_vigentes[0].situacion = 0;
     report.normalized_json = JSON.stringify(normalized);
     const app = mount(async () => response(report));
     try {
-        await until(() => app.document.querySelector('.credix-bcra-history__status'));
-        const cell = app.document.querySelector('.credix-bcra-history__status');
-        assert.equal(cell.textContent, '0');
+        await until(() => app.document.querySelector('.credix-bcra-history__table .credix-bcra-history__status'));
+        const cell = app.document.querySelector('.credix-bcra-history__table .credix-bcra-history__status');
+        assert.equal(cell.textContent, 'N/D');
         assert.ok(cell.classList.contains('credix-bcra-history__status--na'));
         const amount = app.document.querySelector('.credix-bcra-evolution__cell');
         assert.match(amount.textContent, /1\.000/);
         assert.ok(amount.classList.contains('credix-bcra-evolution__cell--na'));
         assert.match(app.document.body.textContent, /Fuente: BCRA/);
+        const debts = app.document.querySelector('[aria-label="Deudas vigentes"]');
+        const situation = debts.querySelector('tbody tr td:last-child');
+        assert.equal(situation.textContent, 'N/D');
+        assert.ok(situation.classList.contains('credix-bcra-history__status--na'));
+        assert.match(debts.textContent, /Total en situación ≥ 2Sin datos/);
+        assert.match(debts.textContent, /Deuda vigente total\$ 1\.000/);
     } finally { app.dom.window.close(); }
 });
 
@@ -124,5 +131,53 @@ test('DOM: cache anterior sin fuente sigue siendo CredixSA y no dispara consulta
         assert.match(app.document.querySelector('[aria-label="Deudas vigentes"]').textContent, /Fuente: CredixSA/);
         await pause();
         assert.deepEqual(requests, ['/credix']);
+    } finally { app.dom.window.close(); }
+});
+
+test('DOM: caso Ariel muestra las dos entidades correctas y colorea situación 1 y 5 en deudas vigentes', async () => {
+    const report = credix();
+    const normalized = JSON.parse(report.normalized_json);
+    normalized.bcra = { fuente: 'BCRA', deuda_vigente_total: '$ 587.000', deuda_situacion_negativa_total: '$ 92.000',
+        deudas_vigentes: [
+            { entidad: 'Celesol', periodo: '07/2026', situacion: '1', monto: '$ 495.000' },
+            { entidad: 'Videgar', periodo: '08/2026', situacion: '5', monto: '$ 92.000' },
+        ], deudas_24_meses: { anios: [{ anio: '2026', span: 2 }], meses: ['Ago', 'Jul'], filas: [
+            { entidad: 'Celesol', situaciones: ['0', '1'] },
+            { entidad: 'Banco Nación', situaciones: ['0', '1'] },
+            { entidad: 'Videgar', situaciones: ['5', '5'] },
+        ] },
+    };
+    report.normalized_json = JSON.stringify(normalized);
+    const app = mount(async () => response(report));
+    try {
+        await until(() => app.document.querySelector('[aria-label="Deudas vigentes"]'));
+        assert.equal(app.document.querySelector('[aria-label="Últimas situaciones por entidad"]'), null);
+        const debts = app.document.querySelector('[aria-label="Deudas vigentes"]');
+        assert.deepEqual([...debts.querySelectorAll('tbody tr')].map((row) =>
+            [...row.children].map((cell) => cell.textContent)), [
+            ['Celesol', '07/2026', '$ 495.000', '1'], ['Videgar', '08/2026', '$ 92.000', '5'],
+        ]);
+        assert.match(app.document.querySelector('.credix-bcra-history__table').textContent, /Banco Nación/);
+        const cells = [...debts.querySelectorAll('tbody tr td:last-child')];
+        assert.ok(cells[0].classList.contains('credix-bcra-history__status--1'));
+        assert.ok(cells[1].classList.contains('credix-bcra-history__status--5'));
+        assert.match(debts.textContent, /Total en situación ≥ 2\$ 92\.000/);
+        assert.deepEqual(app.errors, []);
+    } finally { app.dom.window.close(); }
+});
+
+test('DOM: informe sin deudas conserva el total cero sin presentar una tabla vacía', async () => {
+    const report = credix();
+    const normalized = JSON.parse(report.normalized_json);
+    normalized.bcra = { fuente: 'BCRA', deudas_vigentes: [], deuda_vigente_total: '$ 0' };
+    report.normalized_json = JSON.stringify(normalized);
+    const app = mount(async () => response(report));
+    try {
+        await until(() => app.document.querySelector('[aria-label="Deudas vigentes"]'));
+        const panel = app.document.querySelector('[aria-label="Deudas vigentes"]');
+        assert.match(panel.textContent, /Deuda vigente total\$ 0/);
+        assert.match(panel.textContent, /Entidades informadas0/);
+        assert.equal(panel.querySelector('table'), null);
+        assert.doesNotMatch(panel.textContent, /null|undefined/);
     } finally { app.dom.window.close(); }
 });

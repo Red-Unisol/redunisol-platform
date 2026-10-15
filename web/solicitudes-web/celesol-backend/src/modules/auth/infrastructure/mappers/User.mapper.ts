@@ -8,6 +8,7 @@ export type PrismaUserShape = {
   isSystemAdmin: boolean;
   lastName: string | null;
   legacyUser: string;
+  recibeAsignacionAutomatica: boolean;
   state: number;
   workflowOwnerId: string | null;
   workflowOwner?: {
@@ -27,6 +28,7 @@ export class UserMapper {
       isSystemAdmin: user.isSystemAdmin,
       lastName: user.lastName,
       legacyUser: user.legacyUser,
+      recibeAsignacionAutomatica: user.recibeAsignacionAutomatica,
       state: user.state,
       workflowOwnerId: user.workflowOwnerId,
       workflowOwner: user.workflowOwner
@@ -48,6 +50,7 @@ export class UserMapper {
       isSystemAdmin: true,
       lastName: true,
       legacyUser: true,
+      recibeAsignacionAutomatica: true,
       state: true,
       workflowOwnerId: true,
       workflowOwner: {

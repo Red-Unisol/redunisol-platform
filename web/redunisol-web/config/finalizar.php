@@ -15,6 +15,12 @@ return [
         'fiat' => [
             'base_url' => env('FINALIZAR_FIAT_API_BASE_URL'),
         ],
+        // Backend del sistema nuevo de solicitudes. Expone el mismo contrato
+        // que Vimarx en /api/redunisol/finSolicitud/{ntrans}/{sol}, asi que
+        // solo cambia a quien se le pregunta. Lo usa la ruta /finalizar-nvo.
+        'solicitudes' => [
+            'base_url' => env('FINALIZAR_SOLICITUDES_API_BASE_URL'),
+        ],
         'timeout_seconds' => (int) env('FINALIZAR_API_TIMEOUT_SECONDS', 30),
     ],
 

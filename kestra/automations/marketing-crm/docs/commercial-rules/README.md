@@ -1,6 +1,6 @@
 # Reglas Comerciales Compartidas
 
-Versión documental: `2026-08-26`
+Versión documental: `2026-10-13`
 
 ## Propósito
 
@@ -107,6 +107,7 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
+| 2026-10-13 | Caja Morosos: máximo 8 entidades para Jubilado Provincial nuevo | Implementado, pendiente de deploy | Tarea Bitrix24 `23321` y autorización de Santiago en la sesión del 13/10/2026 | [Contrato y pruebas](CAJA_MOROSOS_23321.md) |
 | 2026-08-26 | Córdoba: Policía y Público Provincial a CBU | Acordado e implementado | Tarea Bitrix24 `22895` y definición comercial complementaria | PR de tarea `22895` |
 | 2026-08-11 | Catamarca | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218; producción conserva la versión anterior |
 | 2026-08-11 | Córdoba | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218 |

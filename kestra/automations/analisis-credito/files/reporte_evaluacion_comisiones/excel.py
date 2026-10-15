@@ -17,6 +17,7 @@ from reporte_evaluacion_report.core import MonthlyReport
 
 from .comparison import build_monthly_comparison
 from .calendar import CALENDAR_DESCRIPTION, CALENDAR_VERSION, SOURCES
+from .exclusions import EXCLUDED_TEST_MEMBERS
 from .core import EXCLUDED_SELLERS, MANUAL_RULES, MANUAL_WEIGHT, METRICS, RULE_VERSION, Loan, previous_months
 
 MONEY = '"$" #,##0.00'
@@ -321,7 +322,8 @@ def enrich_workbook(
         ["Extracción iniciada (Buenos Aires)", extracted_at.isoformat()],
         ["Base monetaria", "MontoADesembolsar de préstamos emitidos en el mes con Solicitud.Estado.Descripcion = Pagada."],
         ["Vendedores excluidos", "; ".join(EXCLUDED_SELLERS)],
-        ["Separación de universos", "Las métricas conservan las exclusiones de líneas del reporte original. La colocación aplica los filtros de vendedores del Core."],
+        ["Separación de universos", "Las métricas conservan las exclusiones de líneas del reporte original. La colocación aplica los filtros de vendedores del Core. Ambos excluyen los socios de prueba."],
+        ["Socios de prueba excluidos", "; ".join(f"{number}: {reason}" for number, reason in sorted(EXCLUDED_TEST_MEMBERS.items()))],
         ["Histórico", "Cada ejecución conserva la base consultada. Una consulta posterior puede cambiar importes o estados de meses cerrados."],
         *[["Fuente del calendario", url] for url in SOURCES],
     ]

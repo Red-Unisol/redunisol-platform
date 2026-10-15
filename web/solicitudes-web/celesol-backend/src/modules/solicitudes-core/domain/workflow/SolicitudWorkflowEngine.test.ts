@@ -79,10 +79,14 @@ describe("SolicitudWorkflowEngine", () => {
       transitionPolicy: new PolicySpy(),
     });
 
-    const result = await engine.execute(command);
+    const result = await engine.execute(command, async () => {calls.push("archive");});
 
     assert.equal(result, executionResult);
-    assert.deepEqual(calls, ["policy", "builder", "executor", "decorator"]);
+    assert.deepEqual(calls, ["policy", "builder", "archive", "executor", "decorator"]);
+    calls.length = 0;
+    await assert.rejects(() => engine.execute(command, async () => {calls.push("archive-failed"); throw new Error("archivo falló");}), /archivo falló/);
+    assert.deepEqual(calls, ["policy", "builder", "archive-failed"]);
+
   });
 
   it("stops execution when policy validation fails", async () => {
@@ -220,7 +224,7 @@ describe("SolicitudWorkflowEngine", () => {
     assert.equal(result.transitions.length, 0);
     assert.ok(capturedPlan);
     const plan = capturedPlan as WorkflowExecutionPlan;
-    assert.equal(plan.steps.length, 2);
+    assert.equal(plan.steps.length, 3);
     assert.equal(plan.steps[0]?.kind, "domain-transition");
     assert.equal(plan.steps[1]?.kind, "technical-transition");
   });
@@ -345,6 +349,7 @@ function workflowExecutionResult() {
       titular: {
         apellidoDenominacion: null,
         cbu: null,
+        cbuNoHabitual: null,
         celular: null,
         cuit: null,
         domicilioCalle: null,

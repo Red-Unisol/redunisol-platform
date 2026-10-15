@@ -531,14 +531,21 @@ def find_cached_result_in_payloads(
     cache_by_name: dict[str, Any] | None,
     max_age_days: int = CACHE_MAX_AGE_DAYS,
 ) -> dict[str, Any] | None:
+    from .sqlite_cache import preferred_cache_payload, read_cache_payload
+
+    db_path = os.getenv("CREDIX_CACHE_SQLITE_PATH", "").strip()
     for cache_payload, cache_source in (
         (cache_by_cuil, "cuil"),
         (cache_by_name, "name"),
     ):
+        key = cache_key_for_cuil(request.cuit) if cache_source == "cuil" else cache_key_for_name(request.nombre)
+        shared = read_cache_payload(db_path, key)
+        if shared is not None and int(shared.get("version") or 0) == CACHE_VERSION:
+            cache_payload = preferred_cache_payload(cache_payload, shared)
         result = cached_result_if_fresh(cache_payload, max_age_days)
         if result is None:
             continue
-        if cache_source == "name" and request.cuit:
+        if request.cuit:
             cached_cuil = normalize_cuit(result.get("cuit"))
             if cached_cuil and cached_cuil != request.cuit:
                 continue
@@ -601,7 +608,9 @@ def build_cache_entry(result: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc).replace(microsecond=0)
+    # Preserve precision so two new reports created in the same second remain
+    # ordered when KV publication races with a BCRA recovery.
+    return datetime.now(timezone.utc)
 
 
 def parse_datetime(value: Any) -> datetime | None:

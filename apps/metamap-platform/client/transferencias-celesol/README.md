@@ -1,5 +1,63 @@
 # Transferencias Celesol
 
+## Beex y Vimarx en paralelo (2.3.0)
+
+Implementa la [tarea Bitrix 23291](https://redunisol.bitrix24.es/workgroups/group/253/tasks/task/view/23291/).
+
+- La lista muestra ambos origenes. Las solicitudes Beex usan UUID; su prestamo
+  Vimarx vinculado se usa para la validacion digital, nunca como OID de solicitud.
+  Los IDs bancarios y el registro de Pagada de Vimarx conservan su comportamiento.
+- Por el momento, todas las solicitudes Beex muestran una advertencia obligatoria
+  de revision manual, incluidos los pagos a acreedores y los casos con neto cero.
+  Quedan excluidas de automaticas aunque su linea este configurada como Automatica.
+  El cartel manual muestra el aviso y exige confirmarlo con el mecanismo existente;
+  el worker vuelve a verificar esa autorizacion antes de enviar. La recuperacion
+  de confirmaciones y comprobantes sigue funcionando sin iniciar pagos nuevos.
+- Beex entrega el plan financiero y numeros bancarios permanentes por pago. Se
+  reutilizan las reglas de lineas, titularidad, moneda, MetaMap, advertencias y
+  acreedores. En Beex la titularidad debe coincidir con su plan reservado; cambiar
+  ese destino requiere corregirlo en Beex antes de reservar.
+- Antes de enviar se guarda localmente la reserva y Beex confirma sus IDs. Cada
+  pago pendiente revalida el plan; las cancelaciones admiten varios acreedores y
+  neto cero. Un error detiene las patas restantes.
+- Un cierre o timeout conserva la reserva y los intentos en `beex-state/`. La
+  recuperacion por polling consulta el banco y sincroniza confirmaciones/PDF;
+  **no inicia transferencias**. Si el resultado es incierto, bloquea el reenvio.
+  Una reserva parcial confirmada requiere revision y reanudacion manual.
+- Cuando todos los pagos estan confirmados, envia un unico PDF a Beex y verifica
+  `COMPLETED`/Pagada. Los reintentos usan exactamente el mismo PDF, incluso tras
+  reiniciar o si la solicitud ya salio de Transferir. No llama a marcar-pagada
+  legacy para solicitudes Beex.
+- La consulta bancaria acepta el OID Vimarx o `beex:<UUID>` y muestra cada pago.
+  Una reserva creada en otra instalacion, un diario corrupto o un plan reservado
+  anterior sin numeracion requieren revision; no se crea una reserva alternativa.
+
+Para habilitar Beex, desplegar primero su migracion de numeracion y configurar la
+identidad de servicio de [su API](../../../../web/solicitudes-web/celesol-backend/docs/transferencias-api.md).
+En la configuracion cifrada del cliente agregar `TRANSFERENCIAS_BEEX_BASE_URL`
+(URL HTTPS del backend, sin el sufijo de integracion) y
+`TRANSFERENCIAS_BEEX_API_TOKEN` (Bearer de la integracion). `TRANSFERENCIAS_COINAG_ID_EMPRESA`
+debe ser numerico. `TRANSFERENCIAS_BEEX_STATE_DIR` permite cambiar la carpeta del
+diario, relativa al archivo de configuracion. Conservarla junto a la instalacion;
+no empaquetarla ni versionarla. No contiene el token.
+
+Ambas variables Beex vacias mantienen el modo Vimarx. Una configuracion parcial
+es invalida. Beex exige TLS valido y no sigue redirects; no hereda la excepcion
+de certificados del core legacy. Las automaticas siguen iniciando pausadas.
+Un build debug genera payloads smoke; nunca reserva ni registra resultados
+simulados en Beex. La recuperacion de reservas reales conserva sus controles.
+
+El ID Beex conserva el sufijo numerico de 15 digitos: ocho digitos altos del
+numero persistente, tipo `3`, cinco digitos bajos y final `9`, precedidos por
+`ID_EMPRESA`. Se separa del legacy normal (final `0`) y de cancelaciones legacy
+(tipos `1`/`2`). El UUID, el numero visible y el ID del prestamo no generan IDs
+bancarios. La numeracion puede tener huecos; no se recicla.
+
+Las pruebas Beex usan HTTP local sintetico y ninguna llamada bancaria real.
+Incluyen reserva durable, timeout, diario corrupto, plan/evidencia incompatible,
+cancelaciones sin neto, confirmacion pendiente, fallo de PDF y recuperacion tras
+reiniciar conservando sus bytes.
+
 ## Transferencias a terceros (2.2.0)
 
 Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/22097/).
@@ -15,7 +73,7 @@ Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/persona
   CBU, linea, importe o plan de cancelacion autorizado, se exige confirmar de nuevo.
   El payload bancario usa el CUIT del titular del CBU consultado en Coinag.
 - La excepcion solo resuelve la diferencia de titularidad. Una consulta fallida,
-  titular desconocido, moneda incompatible, inconsistencia documental o de importes,
+  titular desconocido, moneda incompatible, inconsistencia de CUIL en el core o de importes bancarios,
   linea inhabilitada y controles contra reenvios siguen bloqueando la operacion.
 - En cancelaciones aplica al destino del Monto En Mano; las verificaciones y la
   whitelist de las entidades acreedoras conservan sus reglas.
@@ -26,8 +84,8 @@ Implementa la [tarea Bitrix 22097](https://redunisol.bitrix24.es/company/persona
 ### Modelo comun de advertencias y confirmacion
 
 `ValidationReport.warnings` contiene `ValidationWarning` con `WarningKind` y mensaje.
-`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante,
-validaciones multiples, renovaciones y acreedores nuevos o con CBU nuevo;
+`warnings.rs` define una unica politica por tipo: `Simple` para MetaMap faltante o incorrecto,
+validaciones multiples, renovaciones, revision manual Beex y acreedores nuevos o con CBU nuevo;
 `TypeWord("TRANSFERIR")` para una cuenta de terceros. El texto visible no determina
 la politica. Los productores asignan el tipo al detectar la condicion.
 
@@ -183,9 +241,17 @@ Cliente desktop en Rust para operar solicitudes del core financiero en estado `A
 - whitelist dinamica por CUIT juridico + CBU, con validacion Coinag en cada operacion
 - transferencia automatica habilitada/pausada para lineas marcadas como automaticas
 - validacion MetaMap faltante tratada como advertencia con confirmacion explicita al transferir
-- si existe validacion MetaMap `completed`, siguen aplicando los cruces bloqueantes de:
-  - documento MetaMap vs core
-  - monto exacto MetaMap vs core
+- se consultan todas las paginas de validaciones MetaMap `completed` y se elige la mas
+  reciente por fecha de finalizacion que coincida con solicitud, DNI e importe solicitado
+- una validacion posterior incompleta o con datos distintos no reemplaza una anterior
+  que cumple; cada intento se evalua con sus propios datos, sin completar campos con otro
+- si existen validaciones pero ninguna cumple, se muestra una advertencia de MetaMap
+  incorrecto con los IDs y motivos; permite continuar manualmente tras confirmacion
+  si los demas controles pasan. Se conserva el ultimo intento para mostrarlo y auditarlo
+- la existencia de varios intentos conserva la advertencia de revision manual y muestra
+  la validacion elegida y los motivos de descarte; todas las advertencias impiden automaticas
+- la seleccion se repite contra el core actualizado antes de transferir. Esta regla
+  conserva el criterio `completed`; no incorpora un requisito nuevo de identidad `verified`
 - barrera local anti reenvio por `request_oid` en archivo persistido
 - envio a Coinag si el runtime esta configurado
 - generacion de comprobante PDF simple

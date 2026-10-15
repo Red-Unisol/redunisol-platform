@@ -12,7 +12,7 @@ export const NUEVA_SOLICITUD_DEFAULT_VALUES: NuevaSolicitudFormValues = {
   apellidoDenominacion: "",
 
   cbu: "",
-  cbuTransferenciasCuentaNoHabitual: "",
+  cbuNoHabitual: "",
   celular: "",
   clit: "",
 
@@ -38,7 +38,7 @@ export const NUEVA_SOLICITUD_DEFAULT_VALUES: NuevaSolicitudFormValues = {
 
   fechaPrimerVencimiento: "",
 
-  firmaDigitalmente: false,
+  firmaDigitalmente: true,
 
   ingresosConyuge: "",
 

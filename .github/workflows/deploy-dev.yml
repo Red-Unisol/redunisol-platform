@@ -47,6 +47,8 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # Incluye los cambios incorporados por merges desde main al comparar cada push de dev.
+          base: ${{ github.ref }}
           filters: |
             marketing-crm:
               - 'kestra/automations/marketing-crm/**'

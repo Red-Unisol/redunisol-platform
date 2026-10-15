@@ -264,3 +264,172 @@ it('keeps the finalizar visual and identity verification contract', function () 
         ->not->toContain('RED UNISOL proporciona la infraestructura tecnológica')
         ->not->toContain('Entidad otorgante');
 });
+
+it('resolves loan data from the solicitudes-web api on the /finalizar-nvo route', function () {
+    // El sistema nuevo guarda la solicitud en su propia base y solo crea el
+    // prestamo en Vimarx, asi que ahi no queda solicitud para consultar. Por eso
+    // esta ruta le pregunta al backend de solicitudes-web, que expone el mismo
+    // contrato en la misma ruta.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'nombreSocio' => 'Ana Gomez',
+            'cuotas' => '6',
+            'prestamoCFT' => '3.20',
+            'prestamoTEM' => '0.10',
+            'prestamoTNA' => '2.95',
+            'prestamoTEA' => '18.30',
+            'NumeroPrestamo' => '440327',
+            'CapitalOriginal' => '250000.00',
+            'MontoPrestamo' => '312000.00',
+            'PrimerVencimiento' => '2026-10-10T00:00:00',
+            'Vencimiento' => '2027-03-10T00:00:00',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=amejuca')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.loan.solicitud', '440327')
+            ->where('finalizar.loan.nombre', 'Ana Gomez')
+            ->where('finalizar.loan.monto_total_display', '$ 250.000,00')
+            ->where('finalizar.loan.cuotas', '6')
+            // El documento a firmar se sigue eligiendo por la linea, igual que
+            // en el circuito de siempre: la ruta nueva no lo toca.
+            ->where('finalizar.metamap.flow_id', '6453eb1ed9e6ce001d5b3858')
+        );
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327');
+});
+
+it('keeps the legacy routes pointing at vimarx', function () {
+    // Lo que protege al circuito diario: los links que ya circulan no pasan por
+    // /finalizar-nvo, asi que siguen preguntandole a Vimarx aunque la API nueva
+    // este configurada.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/249405' => Http::response([
+            'nombreSocio' => 'Juan Perez',
+            'montoAfinanciar' => '$ 100.000,00',
+            'cuotaResultante' => '25000,00',
+            'cuotas' => '6',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=249405&ntrans=0&linea=amejuca')->assertOk();
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://caja.example.test/api/redunisol/finSolicitud/0/249405');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'solicitudes.example.test'));
+});
+
+it('ignores the linea in the url and uses the one that comes with the loan', function () {
+    // El nucleo del asunto: la linea decide que documento de Metamap firma el
+    // socio. Mientras salga de la query, cualquiera que edite el link elige que
+    // contrato firma y nada lo delata. En la ruta nueva la linea viaja con el
+    // prestamo, asi que el parametro deja de importar.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => 'amejuca',
+        ], 200),
+    ]);
+
+    // Se pide MUDON en la URL, pero el prestamo es de amejuca.
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'amejuca')
+            ->where('finalizar.metamap.flow_id', '6453eb1ed9e6ce001d5b3858')
+            ->where('finalizar.metamap.doc_id', '4f4a8d2a-f361-49b5-9532-0528a83516e2')
+        );
+});
+
+it('falls back to the url linea when the loan does not carry one', function () {
+    // Prestamos creados antes de que se guardara el codigo, y lineas de Vimarx
+    // sin el campo cargado. Ahi el link que armo el sistema es la unica fuente.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440327' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => null,
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440327&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'mudon')
+            ->where('finalizar.metamap.flow_id', '63906e4db76a55001cb05858')
+        );
+});
+
+it('keeps honouring the url linea on the legacy route', function () {
+    // Vimarx no devuelve la linea, asi que el circuito de siempre no cambia.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+
+    Http::fake([
+        'https://caja.example.test/api/redunisol/finSolicitud/0/249405' => Http::response([
+            'nombreSocio' => 'Juan Perez',
+            'montoAfinanciar' => '$ 100.000,00',
+            'cuotaResultante' => '25000,00',
+            'cuotas' => '6',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar.php?sol=249405&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'mudon')
+            ->where('finalizar.metamap.flow_id', '63906e4db76a55001cb05858')
+        );
+});
+
+it('uses the default document when the loan codigo has no config entry', function () {
+    // Celesol no esta en el array lines. Antes se volvia al parametro de la
+    // URL, asi que justo para el grupo mas grande fuera del config se podia
+    // elegir el documento editando el link. Ahora manda el codigo del prestamo
+    // y, sin entrada propia, va el documento por defecto -- lo mismo que hace
+    // el legado con ?linea=Celesol.
+    config()->set('finalizar.metamap.client_id', 'public-client-id');
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+
+    Http::fake([
+        'https://solicitudes.example.test/api/redunisol/finSolicitud/0/440408' => Http::response([
+            'nombreSocio' => 'Ana Gomez',
+            'montoAfinanciar' => '$ 250.000,00',
+            'cuotaResultante' => '52000,00',
+            'cuotas' => '6',
+            'linea' => 'Celesol',
+        ], 200),
+    ]);
+
+    $this->get('/finalizar-nvo?sol=440408&ntrans=0&linea=mudon')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('finalizar.linea', 'caja')
+            ->where('finalizar.metamap.flow_id', '6453e19ef6fa8c001c7af03e')
+            ->where('finalizar.metamap.doc_id', 'e51bc831-5b64-417b-9f9d-ac9167317590')
+            ->where('finalizar.codigo_mutual', 'Celesol')
+        );
+});

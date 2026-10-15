@@ -1,3 +1,4 @@
+import { actingContext } from "../../impersonation/context";
 import { InvalidSessionError } from "../../domain/auth-errors";
 import type { AuthUser } from "../../domain/entities/User.entity";
 import type { AuthRepository } from "../../domain/repositories/AuthRepository";
@@ -29,6 +30,11 @@ export class GetCurrentUserUseCase {
       throw new InvalidSessionError();
     }
 
+    const context = actingContext.getStore();
+    if (context) {
+      if (user.id !== context.administrator.id || !user.isSystemAdmin) throw new InvalidSessionError();
+      return context.selectedUser;
+    }
     return user;
   }
 }

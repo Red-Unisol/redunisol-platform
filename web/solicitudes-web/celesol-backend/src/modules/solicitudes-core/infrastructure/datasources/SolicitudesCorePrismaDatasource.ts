@@ -1,3 +1,4 @@
+import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { DbClient } from "../../../../db/prisma";
 import type { Prisma } from "@prisma/client";
 
@@ -7,6 +8,7 @@ import type {
   CreateSolicitudCoreRecord,
   GetAnalistaStatsInput,
   GetSolicitudesStatsInput,
+  ListSolicitudesHistoricasInput,
   ListSolicitudesRecientesInput,
   ListSolicitudesByOwnerInput,
   ListSolicitudesTrackingInput,
@@ -218,6 +220,7 @@ export class SolicitudesCorePrismaDatasource {
         create: {
           apellidoDenominacion: input.titular.apellidoDenominacion,
           cbu: input.titular.cbu,
+          cbuNoHabitual: input.titular.cbuNoHabitual,
           celular: input.titular.celular,
           cuit: input.titular.cuit,
           domicilioCalle: input.titular.domicilioCalle,
@@ -433,6 +436,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: SolicitudesCorePrismaDatasource.buildWorkflowStateFilter({
           ownerId: input.workflowOwnerId,
           estado: input.estado,
@@ -483,6 +487,15 @@ export class SolicitudesCorePrismaDatasource {
     });
   }
 
+  async findCreadorById(id: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      select: { createdBy: true },
+      where: { id },
+    });
+
+    return solicitud?.createdBy ?? null;
+  }
+
   async findWorkflowOwnerCodeById(id: string) {
     const owner = await this.prisma.workflowOwner.findUnique({
       where: { id },
@@ -490,6 +503,26 @@ export class SolicitudesCorePrismaDatasource {
     });
 
     return owner?.code ?? null;
+  }
+
+  async findVendedorLegacyUser(solicitudId: string) {
+    const solicitud = await this.prisma.solicitud.findUnique({
+      where: { id: solicitudId },
+      select: {
+        creator: { select: { legacyUser: true } },
+        vendedor: { select: { legacyUser: true } },
+      },
+    });
+
+    if (!solicitud) {
+      return null;
+    }
+
+    return (
+      solicitud.vendedor?.legacyUser.trim() ||
+      solicitud.creator.legacyUser.trim() ||
+      null
+    );
   }
 
   async listUsersByWorkflowOwnerId(workflowOwnerId?: string) {
@@ -569,6 +602,7 @@ export class SolicitudesCorePrismaDatasource {
 
       await tx.solicitudEstadoHistorial.create({
         data: {
+          ...actingHistoryFields(),
           actionCode: "ASSIGNMENT_SET",
           actionLabel: "Asignación registrada",
           changedBy: input.actorUserId,
@@ -664,10 +698,24 @@ export class SolicitudesCorePrismaDatasource {
   }
 
   async listRecientes(input: ListSolicitudesRecientesInput) {
+    // Cada palabra debe coincidir con algún dato del titular, sin depender del
+    // orden nombre/apellido. Escapar comodines para buscar texto literal.
+    const terms = input.search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    const searchConditions: Prisma.SolicitudWhereInput[] = terms.map((term) => {
+      const contains = term.replace(/[\\%_]/g, "\\$&");
+      return { titular: { OR: [
+        { nombre: { contains, mode: "insensitive" } },
+        { apellidoDenominacion: { contains, mode: "insensitive" } },
+        { nroDocumento: { contains, mode: "insensitive" } },
+      ] } };
+    });
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(searchConditions.length ? { AND: searchConditions } : {}),
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: {
+          ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),
           code: {
             notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
             ...(input.estado ? { equals: input.estado } : {}),
@@ -708,7 +756,7 @@ export class SolicitudesCorePrismaDatasource {
     }));
   }
 
-  async listHistoricas(input: { limit: number; nroDocumento?: string; offset: number }) {
+  async listHistoricas(input: ListSolicitudesHistoricasInput) {
     const recientesDateRangeStart = new Date();
     recientesDateRangeStart.setDate(
       recientesDateRangeStart.getDate() - RECIENTES_WINDOW_DAYS,
@@ -726,6 +774,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         OR: [
           {
             estadoActual: {
@@ -790,6 +839,7 @@ export class SolicitudesCorePrismaDatasource {
         legacyOid: patch.solicitud?.legacyOid,
         linkFirmaDigital: patch.solicitud?.linkFirmaDigital,
         firmaDigitalmente: patch.solicitud?.firmaDigitalmente,
+        lineaPrestamoCodigoMutual: patch.solicitud?.lineaPrestamoCodigoMutual,
         lineaPrestamoDescripcion: patch.solicitud?.lineaPrestamoDescripcion,
         lineaPrestamoLegacyOid: patch.solicitud?.lineaPrestamoLegacyOid,
         montoAFinanciar: patch.solicitud?.montoAFinanciar,
@@ -802,6 +852,7 @@ export class SolicitudesCorePrismaDatasource {
               update: {
                 apellidoDenominacion: patch.titular.apellidoDenominacion,
                 cbu: patch.titular.cbu,
+                cbuNoHabitual: patch.titular.cbuNoHabitual,
                 celular: patch.titular.celular,
                 cuit: patch.titular.cuit,
                 domicilioCalle: patch.titular.domicilioCalle,

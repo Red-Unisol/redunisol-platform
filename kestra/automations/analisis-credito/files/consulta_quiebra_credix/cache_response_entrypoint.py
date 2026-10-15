@@ -22,7 +22,7 @@ from .service import (
     find_cached_result_in_payloads,
     parse_search_request,
 )
-from .sqlite_cache import write_cache_entries
+from .sqlite_cache import preferred_cache_payload, read_cache_payload, write_cache_entries
 
 
 def main() -> int:
@@ -63,6 +63,7 @@ def _mirror_cache_hit(result, cache_by_cuil, cache_by_name) -> None:
     if not db_path or not result.get("cache_hit"):
         return
     payload = cache_by_cuil if result.get("cache_source") == "cuil" else cache_by_name
+    payload = preferred_cache_payload(payload, read_cache_payload(db_path, cache_key_for_cuil(result.get("cuit"))))
     if not isinstance(payload, dict):
         return
     value = json.dumps(payload, ensure_ascii=True)

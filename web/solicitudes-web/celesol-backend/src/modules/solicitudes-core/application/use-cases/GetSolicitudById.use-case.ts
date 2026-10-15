@@ -41,11 +41,9 @@ export class GetSolicitudByIdUseCase {
         solicitud.estadoActual.id,
       );
 
-    // Solo se necesita el codigo de owner del usuario para la excepcion de
-    // RIESGO en "Transferir" (ver SolicitudPermissions.canEditSolicitud).
+    // El área autenticada determina las excepciones de edición y workflow.
     const workflowOwnerCode =
       !input.currentUser.isSystemAdmin &&
-      solicitud.estadoActual.code === "Transferir" &&
       input.currentUser.workflowOwnerId &&
       this.repository.findWorkflowOwnerCodeById
         ? await this.repository.findWorkflowOwnerCodeById(

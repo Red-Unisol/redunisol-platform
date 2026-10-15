@@ -1,3 +1,6 @@
+import { CalculoConValoresEfectivosError } from "../domain/solicitudes-core-errors";
+import type { GetRevisionPrestamoUseCase } from "../application/use-cases/GetRevisionPrestamo.use-case";
+import type { ListSolicitudesDelTitularUseCase } from "../application/use-cases/ListSolicitudesDelTitular.use-case";
 import type { NextFunction, Request, Response } from "express";
 import type { ZodSchema } from "zod";
 
@@ -16,6 +19,14 @@ import type { AssignSolicitudToUserUseCase } from "../application/use-cases/Assi
 import type { ListAssignableSolicitudAgentsUseCase } from "../application/use-cases/ListAssignableSolicitudAgents.use-case";
 import type { ListSolicitudHistoryUseCase } from "../application/use-cases/ListSolicitudHistory.use-case";
 import type { ListSolicitudTransitionsUseCase } from "../application/use-cases/ListSolicitudTransitions.use-case";
+import { GetCredixsaSolicitudUseCase } from "../application/use-cases/GetCredixsaSolicitud.use-case";
+import { ListLineasPrestamoDeSolicitudUseCase } from "../application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
+import { ListPrestamosDelSocioUseCase } from "../application/use-cases/ListPrestamosDelSocio.use-case";
+import {
+  esUsuarioVendedor,
+  type VisibilidadVendedorResolver,
+} from "../domain/services/VisibilidadVendedorResolver";
+import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
@@ -32,6 +43,7 @@ import {
   getSolicitudesStatsQuerySchema,
   listSolicitudesQuerySchema,
   patchSolicitudBodySchema,
+  prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
   solicitudByIdParamsSchema,
   type AssignSolicitudToSelfBody,
@@ -41,6 +53,7 @@ import {
   type GetSolicitudesStatsQuery,
   type ListSolicitudesQuery,
   type PatchSolicitudBody,
+  type PrestamoDelSocioParams,
   type SimularPrestamoBody,
   type SolicitudByIdParams,
 } from "./SolicitudesCoreRequest.schema";
@@ -58,6 +71,7 @@ type Dependencies = {
   assignSolicitudToUserUseCase: AssignSolicitudToUserUseCase;
   listAssignableSolicitudAgentsUseCase: ListAssignableSolicitudAgentsUseCase;
   changeSolicitudStateUseCase: ChangeSolicitudStateUseCase;
+  getRevisionPrestamoUseCase: GetRevisionPrestamoUseCase;
   createPrestamoLegacyUseCase: CreatePrestamoLegacyUseCase;
   createSolicitudUseCase: CreateSolicitudUseCase;
   getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -68,6 +82,12 @@ type Dependencies = {
   getAnalistaDashboardStatsV2UseCase?: GetAnalistaDashboardStatsV2UseCase;
   listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
+  getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
+  getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
+  listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
+  listSolicitudesDelTitularUseCase: ListSolicitudesDelTitularUseCase;
+  listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
+  visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -78,6 +98,7 @@ export class SolicitudesCoreController {
   private readonly assignSolicitudToUserUseCase: AssignSolicitudToUserUseCase;
   private readonly listAssignableSolicitudAgentsUseCase: ListAssignableSolicitudAgentsUseCase;
   private readonly changeSolicitudStateUseCase: ChangeSolicitudStateUseCase;
+  private readonly getRevisionPrestamoUseCase: GetRevisionPrestamoUseCase;
   private readonly createPrestamoLegacyUseCase: CreatePrestamoLegacyUseCase;
   private readonly createSolicitudUseCase: CreateSolicitudUseCase;
   private readonly getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -88,6 +109,12 @@ export class SolicitudesCoreController {
   private readonly getAnalistaDashboardStatsV2UseCase?: GetAnalistaDashboardStatsV2UseCase;
   private readonly listSolicitudHistoryUseCase: ListSolicitudHistoryUseCase;
   private readonly listSolicitudTransitionsUseCase: ListSolicitudTransitionsUseCase;
+  private readonly getCredixsaSolicitudUseCase: GetCredixsaSolicitudUseCase;
+  private readonly getPrestamoDelSocioUseCase: GetPrestamoDelSocioUseCase;
+  private readonly listLineasPrestamoDeSolicitudUseCase: ListLineasPrestamoDeSolicitudUseCase;
+  private readonly listSolicitudesDelTitularUseCase: ListSolicitudesDelTitularUseCase;
+  private readonly listPrestamosDelSocioUseCase: ListPrestamosDelSocioUseCase;
+  private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -98,6 +125,7 @@ export class SolicitudesCoreController {
     this.listAssignableSolicitudAgentsUseCase =
       dependencies.listAssignableSolicitudAgentsUseCase;
     this.changeSolicitudStateUseCase = dependencies.changeSolicitudStateUseCase;
+    this.getRevisionPrestamoUseCase = dependencies.getRevisionPrestamoUseCase;
     this.createPrestamoLegacyUseCase = dependencies.createPrestamoLegacyUseCase;
     this.createSolicitudUseCase = dependencies.createSolicitudUseCase;
     this.getCurrentUserUseCase = dependencies.getCurrentUserUseCase;
@@ -112,6 +140,14 @@ export class SolicitudesCoreController {
     this.listSolicitudHistoryUseCase = dependencies.listSolicitudHistoryUseCase;
     this.listSolicitudTransitionsUseCase =
       dependencies.listSolicitudTransitionsUseCase;
+    this.getCredixsaSolicitudUseCase = dependencies.getCredixsaSolicitudUseCase;
+    this.getPrestamoDelSocioUseCase = dependencies.getPrestamoDelSocioUseCase;
+    this.listLineasPrestamoDeSolicitudUseCase =
+      dependencies.listLineasPrestamoDeSolicitudUseCase;
+    this.listSolicitudesDelTitularUseCase = dependencies.listSolicitudesDelTitularUseCase;
+    this.listPrestamosDelSocioUseCase =
+      dependencies.listPrestamosDelSocioUseCase;
+    this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
@@ -243,8 +279,14 @@ export class SolicitudesCoreController {
         query.scope === "work" && !user.isSystemAdmin
           ? this.requireWorkflowOwnerId(user.workflowOwnerId)
           : undefined;
+      // Un vendedor ve lo suyo y, si es dueño de un agente, lo de sus
+      // vendedores. Las demas areas ven todo.
+      const creadoresVisibles = esUsuarioVendedor(user)
+        ? await this.visibilidadVendedorResolver.creadoresVisibles(user)
+        : undefined;
       const solicitudes = await this.listSolicitudesUseCase.execute({
         ...query,
+        ...(creadoresVisibles ? { creadoresVisibles } : {}),
         currentUser: {
           id: user.id,
           workflowOwnerId: user.workflowOwnerId,
@@ -254,6 +296,129 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(solicitudes);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // El informe de CredixSA de la persona. Mismo criterio de acceso que los
+  // prestamos: es informacion para analizar, no para cargar.
+  //
+  // La consulta la hace el backend y no el navegador porque la URL del webhook
+  // lleva la clave adentro.
+  getCredixsa = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const informe = await this.getCredixsaSolicitudUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json({ credixsa: informe });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Los prestamos que el socio ya tiene con la mutual. No los ve Vendedores:
+  // es informacion para analizar, no para cargar. Mismo criterio que la
+  // calculadora de riesgo, que tambien se restringe por area en el backend --
+  // ocultar la pestaña en el frontend no alcanza.
+  listSolicitudesDelTitular = async (req: CookieRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = await this.getCurrentUser(req);
+      const params = this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params);
+      const result = await this.listSolicitudesDelTitularUseCase.execute({ solicitudId: params.id, currentUser: user });
+      res.status(200).json(result);
+    } catch (error) { next(error); }
+  };
+
+  listPrestamosDelSocio = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const prestamos = await this.listPrestamosDelSocioUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json({ prestamos });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Lineas que se le pueden asignar a la solicitud (las del agente de su
+  // vendedor). Las usa el detalle para cambiar la linea y para el simulador.
+  listLineasPrestamo = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      await this.getCurrentUser(req);
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const lineas = await this.listLineasPrestamoDeSolicitudUseCase.execute({
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(lineas);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Detalle de un prestamo del socio, para el modal de la pestaña. Mismo
+  // criterio de acceso que la lista.
+  getPrestamoDelSocio = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<PrestamoDelSocioParams>(
+        prestamoDelSocioParamsSchema,
+        req.params,
+      );
+      const detalle = await this.getPrestamoDelSocioUseCase.execute({
+        prestamoId: params.prestamoId,
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(detalle);
     } catch (error) {
       next(error);
     }
@@ -339,6 +504,35 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getRevisionPrestamo = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+      const workflowOwnerId = user.isSystemAdmin
+        ? user.workflowOwnerId ?? ""
+        : this.requireWorkflowOwnerId(user.workflowOwnerId);
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const solicitud = await this.getRevisionPrestamoUseCase.execute({
+        currentUser: {
+          id: user.id,
+          workflowOwnerId,
+          ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+        },
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(solicitud);
     } catch (error) {
       next(error);
     }
@@ -529,7 +723,10 @@ export class SolicitudesCoreController {
         simularPrestamoBodySchema,
         req.body,
       );
+      const solicitudId = req.params.id ? this.parseRequest<SolicitudByIdParams>(solicitudByIdParamsSchema, req.params).id : undefined;
       const simulacion = await this.simularPrestamoUseCase.execute({
+        solicitudId,
+        cuotaObjetivo: body.cuotaObjetivo,
         capitalPuro: body.capitalPuro ?? false,
         cuotas: body.cuotas,
         fechaPrimerVencimiento: body.fechaPrimerVencimiento,
@@ -541,6 +738,10 @@ export class SolicitudesCoreController {
 
       res.status(200).json(simulacion);
     } catch (error) {
+      if (error instanceof CalculoConValoresEfectivosError) {
+        res.status(error.statusCode).json({ error: { code: "CALCULO_CON_VALORES_EFECTIVOS", message: error.message }, effectiveValues: error.effectiveValues });
+        return;
+      }
       next(error);
     }
   };

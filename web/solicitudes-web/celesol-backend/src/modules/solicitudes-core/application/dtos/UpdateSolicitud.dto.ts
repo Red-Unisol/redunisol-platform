@@ -83,6 +83,7 @@ export type UpdateSolicitudInput = {
   titular?: {
     apellidoDenominacion?: string;
     cbu?: string | null;
+    cbuNoHabitual?: string | null;
     celular?: string | null;
     cuit?: string | null;
     domicilioCalle?: string | null;

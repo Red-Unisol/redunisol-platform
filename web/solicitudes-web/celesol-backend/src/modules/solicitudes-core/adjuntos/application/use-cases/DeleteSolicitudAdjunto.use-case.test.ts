@@ -18,6 +18,7 @@ const deleteInput = (): DeleteSolicitudAdjuntoInput => ({
   deletedBy: "user-1",
   currentUser: {
     id: "user-1",
+    isSystemAdmin: true,
     workflowOwnerId: "owner-1",
   },
   workflowOwnerId: "owner-1",
@@ -82,7 +83,7 @@ describe("DeleteSolicitudAdjuntoUseCase", () => {
     });
   });
 
-  it("allows delete when current owner matches even outside CargaVendedor", async () => {
+  it("rejects delete for a non-admin even when current owner matches", async () => {
     const useCase = new DeleteSolicitudAdjuntoUseCase({
       fieldAccessRulesRepository: createFieldAccessRulesRepository(),
       now: () => new Date("2026-05-13T10:00:00.000Z"),
@@ -127,18 +128,20 @@ describe("DeleteSolicitudAdjuntoUseCase", () => {
       },
     });
 
-    const result = await useCase.execute({
-      adjuntoId: "adj-1",
-      currentUser: {
-        id: "operator-riesgo",
-        workflowOwnerId: "owner-riesgo",
-      },
-      deletedBy: "operator-riesgo",
-      solicitudId: "sol-1",
-      workflowOwnerId: "owner-riesgo",
-    });
-
-    assert.equal(result.deletedBy, "operator-riesgo");
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          adjuntoId: "adj-1",
+          currentUser: {
+            id: "operator-riesgo",
+            workflowOwnerId: "owner-riesgo",
+          },
+          deletedBy: "operator-riesgo",
+          solicitudId: "sol-1",
+          workflowOwnerId: "owner-riesgo",
+        }),
+      ForbiddenSolicitudAdjuntoAccessError,
+    );
   });
 
   it("does not allow a participant outside the current owner to delete adjuntos", async () => {
@@ -264,7 +267,15 @@ describe("DeleteSolicitudAdjuntoUseCase", () => {
         create: async () => {
           throw new Error("not used");
         },
-        findById: async () => ownedSolicitud({ estadoActual: { code: "CargaVendedor", id: "state-1", name: "Carga vendedor", ownerId: "owner-2" } }),
+        findById: async () =>
+          ownedSolicitud({
+            estadoActual: {
+              code: "CargaVendedor",
+              id: "state-1",
+              name: "Carga vendedor",
+              ownerId: "owner-2",
+            },
+          }),
         listByOwner: async () => [],
         update: async () => {
           throw new Error("not used");
@@ -273,7 +284,11 @@ describe("DeleteSolicitudAdjuntoUseCase", () => {
     });
 
     await assert.rejects(
-      () => useCase.execute(deleteInput()),
+      () =>
+        useCase.execute({
+          ...deleteInput(),
+          currentUser: { ...deleteInput().currentUser, isSystemAdmin: false },
+        }),
       ForbiddenSolicitudAdjuntoAccessError,
     );
   });
@@ -354,7 +369,11 @@ describe("DeleteSolicitudAdjuntoUseCase", () => {
       });
 
       await assert.rejects(
-        () => useCase.execute(deleteInput()),
+        () =>
+          useCase.execute({
+            ...deleteInput(),
+            currentUser: { ...deleteInput().currentUser, isSystemAdmin: false },
+          }),
         ForbiddenSolicitudAdjuntoAccessError,
       );
     }

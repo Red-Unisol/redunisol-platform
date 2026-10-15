@@ -1,6 +1,7 @@
 export type CreateSolicitudTitularInput = {
   apellidoDenominacion: string;
   cbu?: string;
+  cbuNoHabitual?: string;
   celular?: string;
   cuit?: string;
   domicilioCalle?: string;

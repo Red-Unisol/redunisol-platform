@@ -18,6 +18,7 @@ export type UsersAdminUser = {
   isSystemAdmin: boolean;
   lastName: string;
   legacyUser: string;
+  recibeAsignacionAutomatica: boolean;
   state: number;
   workflowOwnerId: string | null;
 };
@@ -34,6 +35,7 @@ export type UpdateAdminUserRequest = {
   isSystemAdmin?: boolean;
   lastName?: string;
   legacyUser?: string;
+  recibeAsignacionAutomatica?: boolean;
   state?: 0 | 1;
 };
 
@@ -75,4 +77,8 @@ export function updateUser(userId: string, payload: UpdateAdminUserRequest) {
     `/auth/users/${userId}`,
     payload,
   );
+}
+
+export function enterUser(userId: string) {
+  return apiClient.post("/auth/impersonation/start", { userId });
 }

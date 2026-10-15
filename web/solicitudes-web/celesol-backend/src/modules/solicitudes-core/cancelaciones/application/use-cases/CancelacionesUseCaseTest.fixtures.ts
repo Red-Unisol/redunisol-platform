@@ -42,6 +42,7 @@ export const ownedSolicitud = (overrides?: Record<string, unknown>) => ({
   titular: {
     apellidoDenominacion: "Perez",
     cbu: null,
+    cbuNoHabitual: null,
     celular: null,
     cuit: null,
     domicilioCalle: null,
@@ -64,7 +65,7 @@ export const storedCancelacion = (
   id: "canc-1",
   solicitudId: "sol-1",
   cuentaADebitar: "1234567890",
-  cbu: "0000003100012345678901",
+  cbu: "0000003100012345678907",
   cuentaBancaria: "Caja de Ahorro",
   socio: "Juan Perez",
   socioLegacyId: "SOC-1",

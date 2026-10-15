@@ -8,6 +8,21 @@ import {
 import type { CreateSolicitudCoreRecord } from "../../domain/repositories/SolicitudesCoreRepository";
 
 describe("SolicitudesCorePrismaDatasource", () => {
+  it("aplica área del estado antes de paginar sin filtrar por ejecutivo", async () => {
+    const prisma = new FakeSolicitudesCorePrisma();
+    const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
+    await datasource.listRecientes({ estadoOwnerId: "riesgo", creadoPorIn: ["visible"], limit: 10, offset: 20, nroDocumento: "123" });
+    const query = prisma.solicitudFindManyCalls[0]!;
+    assert.deepEqual(query.where.estadoActual, { ownerId: "riesgo", code: { notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"] } });
+    assert.equal(query.skip, 20);
+    assert.equal(query.take, 10);
+    assert.deepEqual(query.where.createdBy, { in: ["visible"] });
+    assert.deepEqual(query.where.titular, { nroDocumento: "123" });
+    assert.equal(query.where.archivedAt, null);
+    assert.equal("assignedToUserId" in query.where, false);
+    assert.equal("participants" in query.where, false);
+  });
+
   it("creates the creator participant in the same transaction as the solicitud", async () => {
     const prisma = new FakeSolicitudesCorePrisma();
     const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
@@ -945,6 +960,7 @@ function createSolicitudRecord(): CreateSolicitudCoreRecord {
     titular: {
       apellidoDenominacion: "Perez",
       cbu: null,
+      cbuNoHabitual: null,
       celular: null,
       cuit: null,
       domicilioCalle: null,
@@ -1226,6 +1242,7 @@ function solicitudPrismaRecord(overrides: Record<string, unknown> = {}) {
     titular: {
       apellidoDenominacion: "Perez",
       cbu: null,
+      cbuNoHabitual: null,
       celular: null,
       cuit: null,
       domicilioCalle: null,

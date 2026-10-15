@@ -2,6 +2,7 @@ import type { Socio } from "../entities/Socio.entity";
 import type { CreateSocioData, UpdateSocioData } from "../types/SocioRepositoryData";
 
 export type ListSociosInput = {
+  documentoExacto?: string;
   limit: number;
   offset: number;
   search?: string;

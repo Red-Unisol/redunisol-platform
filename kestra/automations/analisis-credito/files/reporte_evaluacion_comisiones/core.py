@@ -6,8 +6,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Sequence
 
 from reporte_evaluacion_report.core import EvaluateApiClient, MonthlyReport, month_start_end
+from .exclusions import EXCLUDED_TEST_MEMBERS
 
-RULE_VERSION = "comisiones-2026-09-09-legajos-ultimo-mes"
+RULE_VERSION = "comisiones-2026-10-08-exclusion-socio-pruebas"
 MANUAL_RULES = {"sample_size": 30, "high_min": 28, "medium_min": 26, "high_rate": "0.005", "medium_rate": "0.003", "low_rate": "0.001", "require_complete_review": True}
 EXCLUDED_SELLERS = (
     "Alvaro Pajon", "Gabriela Acosta", "Jorgelina Marin", "Karina Altamirano", "Martin Rodriguez",
@@ -64,10 +65,13 @@ def commission_rate(result: Decimal, reference: Decimal) -> Decimal | None:
 def loan_filter(month: str) -> str:
     start, end = month_start_end(month)
     sellers = ",".join("'" + seller.replace("'", "''") + "'" for seller in EXCLUDED_SELLERS)
+    members = ",".join(str(number) for number in sorted(EXCLUDED_TEST_MEMBERS))
     return (
         f"[FechaEmision] >= #{start}# AND [FechaEmision] < #{end}# "
         f"AND Not ([Vendedor.Nombre] In ({sellers})) "
-        "AND [Solicitud.Estado.Descripcion] = 'Pagada'"
+        "AND [Solicitud.Estado.Descripcion] = 'Pagada' "
+        f"AND ([Solicitud.Socio.NroSocio] Is Null OR Not ([Solicitud.Socio.NroSocio] In ({members}))) "
+        f"AND ([Solicitud.NroSocio] Is Null OR Not ([Solicitud.NroSocio] In ({members})))"
     )
 
 

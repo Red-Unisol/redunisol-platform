@@ -7,6 +7,7 @@ import { ACCESS_TOKEN_COOKIE } from "../../auth/presentation/AuthCookies";
 import {
   ForbiddenSocioCreationError,
   ForbiddenSocioDeleteError,
+  ForbiddenSocioSyncError,
   ForbiddenSocioUpdateError,
   InvalidSocioRequestError,
 } from "../domain/socios-errors";
@@ -622,8 +623,103 @@ describe("SociosController", () => {
     assert.ok(nextError instanceof ForbiddenSocioDeleteError);
   });
 
+  it("rejects socio deletion for riesgo: only admins delete", async () => {
+    let useCaseCalled = false;
+    const controller = buildController({
+      deleteSocioUseCase: {
+        execute: async () => {
+          useCaseCalled = true;
+        },
+      },
+    });
+    let nextError: unknown;
+
+    await controller.delete(
+      request({ params: { id: SOCIO_ID } }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(useCaseCalled, false);
+    assert.ok(nextError instanceof ForbiddenSocioDeleteError);
+  });
+
+  it("muestra a un vendedor solo el socio del documento exacto que busca", async () => {
+    const recibidos: unknown[] = [];
+    const controller = buildController({
+      getCurrentUserUseCase: {
+        execute: async () => ({
+          ...authenticatedUser(),
+          workflowOwner: {
+            code: "VENDEDORES",
+            id: "owner-vendedores",
+            name: "Vendedores",
+          },
+        }),
+      },
+      listSociosUseCase: {
+        execute: async (input: unknown) => {
+          recibidos.push(input);
+          return { items: [buildFisicaSocio()], total: 1 };
+        },
+      },
+    });
+
+    for (const search of [undefined, "Garc", "1234", "30.123.456"]) {
+      const response = createResponse();
+      await controller.list(
+        request(search ? { query: { search } } : undefined),
+        response,
+        captureNextError(() => undefined),
+      );
+
+      if (search === "30.123.456") {
+        assert.equal((response.body as { total: number }).total, 1);
+      } else {
+        assert.deepEqual(response.body, { items: [], total: 0 });
+      }
+    }
+
+    // Solo la busqueda con un DNI completo llega al caso de uso, y exacta.
+    assert.deepEqual(recibidos, [
+      { documentoExacto: "30123456", limit: 20, offset: 0 },
+    ]);
+  });
+
+  it("no deja a un vendedor actualizar el padron desde Vimarx", async () => {
+    const controller = buildController({
+      getCurrentUserUseCase: {
+        execute: async () => ({
+          ...authenticatedUser(),
+          workflowOwner: {
+            code: "VENDEDORES",
+            id: "owner-vendedores",
+            name: "Vendedores",
+          },
+        }),
+      },
+    });
+    let nextError: unknown;
+
+    await controller.syncFromLegacy(
+      request(),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.ok(nextError instanceof ForbiddenSocioSyncError);
+  });
+
   it("deletes one socio and returns 204", async () => {
-    const controller = buildController();
+    const controller = buildController({
+      getCurrentUserUseCase: {
+        execute: async () => ({ ...authenticatedUser(), isSystemAdmin: true }),
+      },
+    });
     const response = createResponse();
     let nextError: unknown;
 

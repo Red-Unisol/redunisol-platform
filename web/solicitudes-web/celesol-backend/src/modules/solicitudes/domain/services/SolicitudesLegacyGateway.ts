@@ -1,5 +1,8 @@
 import type {
+  CuotaPrestamoLegacy,
   LineaPrestamoPresolicitud,
+  PrestamoDelSocioDetalleLegacy,
+  PrestamoDelSocioLegacy,
   PrestamoOtorgadoLegacy,
   SocioMutualCancelacionDetalle,
   SocioMutualCancelacionListItem,
@@ -27,6 +30,10 @@ export type SolicitudesLegacyGateway = {
     legacyUser: string,
     max: number,
   ): Promise<SolicitudPrecargaItem[]>;
+  getPrestamoDelSocio(
+    socioLegacyId: string,
+    prestamoLegacyId: string,
+  ): Promise<PrestamoDelSocioDetalleLegacy | null>;
   getPrestamoOtorgadoByLegacyOid(
     legacyOid: string,
   ): Promise<PrestamoOtorgadoLegacy | null>;
@@ -39,5 +46,7 @@ export type SolicitudesLegacyGateway = {
     id: string,
   ): Promise<SocioMutualCancelacionDetalle | null>;
   getVendedorLegacyId(legacyUser: string): Promise<number | null>;
+  listCuotasDelPrestamo(prestamoLegacyId: string): Promise<CuotaPrestamoLegacy[]>;
+  listPrestamosDelSocio(socioLegacyId: string): Promise<PrestamoDelSocioLegacy[]>;
   listSociosCancelaciones(): Promise<SocioMutualCancelacionListItem[]>;
 };

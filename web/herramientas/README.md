@@ -161,10 +161,13 @@ sin rescatar deudas viejas de CredixSA. Los datos incompletos no se convierten e
 La fecha de consulta no implica que el periodo de informacion sea el mes actual.
 
 La API tambien devuelve situacion `0`, observada en historiales reales aunque el
-manual no define su significado. Se conserva literalmente, junto con el monto,
-y se muestra con color neutro. No se transforma en situacion 1 ni en deuda cero.
-El subtotal sigue sumando exclusivamente situaciones >=2. Valores ausentes o
-fuera de 0..6 siguen provocando respaldo para evitar una interpretacion inventada.
+manual no la define como clasificacion crediticia. El informe original conserva
+ese valor y su monto para trazabilidad; la pantalla lo muestra como **N/D**, con
+color neutro. No se transforma en situacion 1 ni en deuda cero. Si una deuda vigente
+tiene situacion desconocida, el subtotal de situaciones >=2 es `null` (Sin datos),
+porque no puede afirmarse que este completo. Esto tambien se aplica al leer caches
+anteriores. El total de montos conocidos se conserva. Valores ausentes o fuera de
+0..6 en la respuesta de la API siguen provocando respaldo.
 
 El respaldo CredixSA calcula el mismo subtotal y contempla las situaciones
 compartidas entre filas de una misma tabla en los informes cacheados. Primero se
@@ -172,6 +175,15 @@ muestra el historial de situaciones de 24 meses y luego las deudas vigentes y su
 
 Contrato oficial: [Manual de Central de Deudores BCRA](https://www.bcra.gob.ar/archivos/Catalogo/Content/files/pdf/central-deudores-v1.pdf).
 Relacion funcional: tarea Bitrix **22961**, extendida con consulta directa y respaldo.
+
+## Presentación de situaciones BCRA (tarea 23223)
+
+El informe muestra el historial de situaciones de 24 meses y luego una única
+sección de deudas vigentes, con entidad, período, monto y situación. Esa tabla
+conserva el período informado por cada entidad y usa los mismos colores que el
+historial para las situaciones 1 a 6. Los valores sin clasificación se muestran
+como N/D, con color neutro. No se presenta otro resumen de las mismas entidades.
+La fuente BCRA o el respaldo CredixSA y las reglas del cache se conservan.
 
 ## Dashboard de objetivos
 

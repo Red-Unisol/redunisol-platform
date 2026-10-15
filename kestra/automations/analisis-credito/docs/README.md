@@ -376,6 +376,14 @@ Configuracion inline en el flow:
 
 - `kestra/automations/analisis-credito/files/consulta_quiebra_credix/**`
 
+## recuperar_bcra_cache
+
+Recupera los informes vigentes que quedaron con respaldo de CredixSA por un
+fallo de BCRA. Corre cada dos minutos, con lotes acotados, cuatro oportunidades
+por version, backoff persistido y proteccion contra escrituras concurrentes.
+Actualiza solamente BCRA, conserva la antiguedad del informe y sincroniza KV
+mediante una outbox. Ver [contrato y operacion](bcra-recovery.md).
+
 ## precalentar_cache_credixsa_v2_sondeo
 
 Sondea solicitudes nuevas de CredixSA y solo ejecuta el worker pesado cuando hay candidatos.
@@ -412,10 +420,15 @@ Un 404 documentado sin registros es una respuesta valida sin deuda; una respuest
 invalida no se interpreta como cero. La API de cache y Herramientas leen el mismo
 contrato, con **Fuente: BCRA** o **Fuente: CredixSA** y las mismas tablas.
 
-La situacion `0` devuelta por la API se conserva sin interpretacion, con su monto
-original convertido a pesos y color neutro en la pantalla. No invalida el historial
-ni se transforma en situacion 1 o en monto cero. Se siguen rechazando situaciones
-ausentes o fuera de 0..6, importes invalidos e identidades que no coincidan.
+La situacion `0` devuelta por la API se conserva en el informe original para
+trazabilidad, con su monto convertido a pesos; no es una clasificacion crediticia
+valida. Herramientas la muestra como **N/D**, con color neutro, y la omite al buscar
+la ultima situacion valida de cada entidad. No invalida el historial ni se transforma
+en situacion 1 o monto cero. Si una deuda vigente tiene situacion `0`, el subtotal
+negativo es `null` porque su clasificacion es desconocida; el total de montos se
+conserva. Un 404 documentado sin registros sigue dando totales cero. Se siguen
+rechazando situaciones ausentes o fuera de 0..6, importes invalidos e identidades
+que no coincidan.
 
 `consulta_directa_intentos` guarda por endpoint el numero de intento, HTTP cuando
 se recibio una respuesta y resultado (`ok`, `http_error`, `transport_error` o
@@ -732,8 +745,13 @@ Filtra por `FechaEmision` del mes, `Solicitud.Estado.Descripcion = 'Pagada'` y
 excluye vendedores Alvaro Pajon, Gabriela Acosta, Jorgelina Marin,
 Karina Altamirano y Martin Rodriguez, reproduciendo el procedimiento del operador.
 La base monetaria es `MontoADesembolsar` (Monto Deseado), no `Capital`.
-Las métricas conservan el universo y las exclusiones de líneas del evaluatorio;
-los filtros de colocación se aplican por separado.
+Las métricas conservan las exclusiones de líneas del evaluatorio; los filtros de
+colocación se aplican por separado. V2 excluye además las solicitudes del socio
+`110380` (Nicolás Sallito, casos de prueba) en todos los meses y referencias:
+métricas, base histórica visible, análisis de tiempos, muestreo y colocación.
+Se excluye la solicitud completa por socio, no toda intervención del usuario
+`nsallitto` sobre solicitudes reales. La evidencia SQLite conserva los eventos
+originales; el manifiesto registra la regla y los OID excluidos por mes.
 
 Comprueba cantidad antes/después, filas únicas y filtros. Si se alcanza el límite
 de extracción o hay inconsistencias, falla sin reemplazar `ultimo.xlsx`.

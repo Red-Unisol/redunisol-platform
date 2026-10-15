@@ -63,9 +63,41 @@ class AttributionJourney
         if ($previous && ! $touch['tagged']) {
             return $previous;
         }
-        $first = $previous ? $this->snapshot($previous)['first'] : $touch;
+        $snapshot = $previous ? $this->snapshot($previous) : [];
+        $first = $snapshot['first'] ?? $touch;
 
-        return $this->create(['version' => 1, 'first' => $first, 'last' => $touch]);
+        return $this->create(['version' => 1, 'first' => $first, 'last' => $touch]
+            + array_intersect_key($snapshot, array_flip(['ga_client_id', 'ga_session_id'])));
+    }
+
+    public function recordAnalytics(mixed $id, array $input): void
+    {
+        if (! is_string($id) || ! preg_match('/^'.self::REFERENCE_PATTERN.'$/D', $id)) {
+            return;
+        }
+
+        DB::transaction(function () use ($id, $input) {
+            $journey = DB::table('attribution_journeys')->where('id', $id)
+                ->where('expires_at', '>', now())->lockForUpdate()->first();
+            if (! $journey) {
+                return;
+            }
+            $snapshot = $this->snapshot($journey);
+            // Preserve the first observed analytics identity across returns and campaigns.
+            // Never combine an older client ID with another browser's session ID.
+            if (isset($snapshot['ga_client_id']) && $snapshot['ga_client_id'] !== $input['ga_client_id']) {
+                return;
+            }
+            $enriched = $snapshot + array_filter($input, static fn ($value) => $value !== null);
+            if ($enriched === $snapshot) {
+                return;
+            }
+            $snapshot = $enriched;
+            DB::table('attribution_journeys')->where('id', $id)->update([
+                'snapshot' => Crypt::encryptString(json_encode($snapshot, JSON_THROW_ON_ERROR)),
+                'updated_at' => now(),
+            ]);
+        });
     }
 
     public function acquisition(array $input, string $url): array

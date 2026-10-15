@@ -49,7 +49,7 @@ describe("field-access-admin-form", () => {
     const issues = validateFieldAccessRuleDraft(
       {
         ...draft(),
-        editableFields: ["solicitud.lineaPrestamoLegacyOid"],
+        editableFields: ["solicitud.ejecutivoSolicitud"],
       },
       catalog(),
     );
@@ -339,7 +339,7 @@ describe("field-access-admin-form", () => {
 
     assert.equal(
       getFieldAccessAdminErrorMessage(error),
-      "Otra persona modific\\u00f3 esta configuraci\\u00f3n mientras la estabas editando. Recarga la regla antes de guardar nuevamente.",
+      "Otra persona modificó esta configuración mientras la estabas editando. Recarga la regla antes de guardar nuevamente.",
     );
   });
 });
@@ -361,10 +361,7 @@ function draft(): FieldAccessRuleDraft {
 function catalog(): FieldAccessFieldsResponse {
   return {
     allowedDefaultModes: ["readonly"],
-    blockedFields: [
-      "solicitud.lineaPrestamoLegacyOid",
-      "solicitud.ejecutivoSolicitud",
-    ],
+    blockedFields: ["solicitud.ejecutivoSolicitud"],
     defaultReadonlyReason:
       "La solicitud no admite edici\\u00f3n de datos en su estado actual.",
     fieldCatalog: {

@@ -19,6 +19,7 @@ export type SolicitudTransitionValidationContext = {
     requiresComment: boolean;
     transitionId?: string | null;
     toStateCode?: string | null;
+    toStateOwnerCode?: string | null;
     toStateId?: string | null;
     toStateIsActive: boolean;
   } | null;

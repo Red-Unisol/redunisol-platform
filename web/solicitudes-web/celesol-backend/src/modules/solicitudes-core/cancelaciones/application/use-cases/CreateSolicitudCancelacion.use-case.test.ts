@@ -21,7 +21,7 @@ const createInput = (): CreateSolicitudCancelacionInput => ({
   },
   workflowOwnerId: "owner-1",
   cuentaADebitar: "1234567890",
-  cbu: "0000003100012345678901",
+  cbu: "0000003100012345678907",
   cuentaBancaria: "Caja de Ahorro",
   socio: "Juan Perez",
   socioLegacyId: "SOC-1",
@@ -61,7 +61,7 @@ describe("CreateSolicitudCancelacionUseCase", () => {
 
     assert.equal(result.id, "canc-1");
     assert.equal(receivedRecord?.solicitudId, "sol-1");
-    assert.equal(receivedRecord?.cbu, "0000003100012345678901");
+    assert.equal(receivedRecord?.cbu, "0000003100012345678907");
     assert.equal(receivedRecord?.createdBy, "user-1");
     assert.equal(receivedRecord?.socioLegacyId, "SOC-1");
     assert.equal(typeof receivedRecord?.cancelacionId, "string");
@@ -278,4 +278,31 @@ function fieldAccessRule(overrides?: {
     textColor: null,
     workflowStateId: "state-1",
   };
+}
+
+for (const [areaCode, ownerId, allowed] of [
+  ["RIESGO", "owner-1", true],
+  ["RIESGO", "owner-vendedores", false],
+  ["VENDEDORES", "owner-1", false],
+  [null, "owner-1", false],
+] as const) {
+  it(`valida creación por área real ${areaCode} y owner del estado ${ownerId}`, async () => {
+    let writes=0;
+    const useCase=new CreateSolicitudCancelacionUseCase({
+      repository: {
+        create: async record => {writes++;assert.equal(record.createdBy,"user-1");return storedCancelacion();},
+        findById:async()=>null,listBySolicitudId:async()=>[],
+        softDelete:async()=>{throw new Error('not used')},update:async()=>{throw new Error('not used')},
+      },
+      fieldAccessRulesRepository:{findByWorkflowStateId:async()=>null,findByWorkflowStateIds:async()=>[]},
+      solicitudesRepository:{
+        create:async()=>{throw new Error('not used')},update:async()=>{throw new Error('not used')},listByOwner:async()=>[],
+        findById:async()=>ownedSolicitud({estadoActual:{id:'state',code:'RevisionRiesgo',name:'Revisión',ownerId}}),
+        findWorkflowOwnerCodeById:async id=>{assert.equal(id,'owner-1');return areaCode},
+      },
+    });
+    if(allowed)await useCase.execute(createInput());
+    else await assert.rejects(()=>useCase.execute(createInput()),ForbiddenSolicitudCancelacionAccessError);
+    assert.equal(writes,allowed?1:0);
+  });
 }

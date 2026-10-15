@@ -1,0 +1,55 @@
+id: recuperar_bcra_cache
+namespace: redunisol
+description: Recupera fallos de BCRA en informes CredixSA vigentes sin repetir RPA ni renovar su antiguedad.
+
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  kind: scheduled
+  schedule_scope: prod_only
+  domain: analisis-credito
+  integration: bcra
+
+tasks:
+  - id: recuperar
+    type: io.kestra.plugin.scripts.python.Commands
+    timeout: PT3M
+    namespaceFiles:
+      enabled: true
+      include:
+        - consulta_quiebra_credix/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+      volumes:
+        - /opt/kestra/data/credixsa-cache:/data/credixsa-cache
+    containerImage: ghcr.io/kestra-io/kestrapy:latest
+    env:
+      CREDIX_CACHE_SQLITE_PATH: /data/credixsa-cache/credixsa.sqlite
+      BCRA_RECOVERY_MAX_PER_RUN: "{{ envs.bcra_recovery_max_per_run ?? '5' }}"
+      KESTRA_URL: "{{ envs.reports_kestra_url }}"
+      KESTRA_TENANT: "{{ envs.reports_kestra_tenant ?? 'main' }}"
+      KESTRA_USERNAME: "{{ secret('REPORTS_KESTRA_USERNAME') }}"
+      KESTRA_PASSWORD: "{{ secret('REPORTS_KESTRA_PASSWORD') }}"
+      KV_NAMESPACE: "{{ flow.namespace }}"
+    commands:
+      - python -m consulta_quiebra_credix.bcra_recovery_entrypoint
+
+outputs:
+  - id: recuperados
+    type: INT
+    value: "{{ outputs.recuperar.vars.recovered }}"
+  - id: pendientes
+    type: INT
+    value: "{{ outputs.recuperar.vars.remaining_due }}"
+
+triggers:
+  - id: cada_dos_minutos
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/2 * * * *"
+    allowConcurrent: false
+    timezone: America/Argentina/Buenos_Aires

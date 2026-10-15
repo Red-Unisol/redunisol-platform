@@ -17,6 +17,7 @@ const existingUser: PersistedAuthUser = {
   isSystemAdmin: false,
   lastName: "User",
   legacyUser: "UUSER",
+  recibeAsignacionAutomatica: false,
   passwordHash: "hashed:CurrentPass1!",
   state: 1,
   workflowOwnerId: null,

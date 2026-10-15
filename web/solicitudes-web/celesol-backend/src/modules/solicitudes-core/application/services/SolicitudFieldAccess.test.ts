@@ -27,7 +27,13 @@ describe("SolicitudFieldAccess", () => {
     );
 
     assert.equal(fieldAccess.defaultMode, "readonly");
-    assert.deepEqual(fieldAccess.editableFields, [...EDITABLE_FIELDS]);
+    // Sin regla persistida, todo menos la linea (solo la habilita la regla).
+    assert.deepEqual(
+      fieldAccess.editableFields,
+      EDITABLE_FIELDS.filter(
+        (field) => field !== "solicitud.lineaPrestamoLegacyOid" && field !== "solicitud.cuotaResultante",
+      ),
+    );
     assert.deepEqual(fieldAccess.editableGroups, []);
     assert.equal(fieldAccess.readonlyReason, undefined);
   });
@@ -37,7 +43,13 @@ describe("SolicitudFieldAccess", () => {
       solicitudCore({ estadoActual: state("Revisar") }),
     );
 
-    assert.deepEqual(fieldAccess.editableFields, [...EDITABLE_FIELDS]);
+    // Sin regla persistida, todo menos la linea (solo la habilita la regla).
+    assert.deepEqual(
+      fieldAccess.editableFields,
+      EDITABLE_FIELDS.filter(
+        (field) => field !== "solicitud.lineaPrestamoLegacyOid" && field !== "solicitud.cuotaResultante",
+      ),
+    );
     assert.deepEqual(fieldAccess.editableGroups, []);
   });
 
@@ -78,7 +90,7 @@ describe("SolicitudFieldAccess", () => {
 
       assert.deepEqual(fieldAccess, {
         defaultMode: "readonly",
-        editableFields: [...EDITABLE_FIELDS],
+        editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
         editableGroups: [...EDITABLE_GROUPS, ...LEGACY_EDITABLE_GROUPS],
       });
     }
@@ -95,7 +107,7 @@ describe("SolicitudFieldAccess", () => {
 
       assert.deepEqual(fieldAccess, {
         defaultMode: "readonly",
-        editableFields: [...EDITABLE_FIELDS],
+        editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
         editableGroups: [...EDITABLE_GROUPS, ...LEGACY_EDITABLE_GROUPS],
       });
     }
@@ -121,7 +133,7 @@ describe("SolicitudFieldAccess", () => {
 
     assert.deepEqual(fieldAccess, {
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...EDITABLE_GROUPS, ...LEGACY_EDITABLE_GROUPS],
     });
   });
@@ -176,7 +188,7 @@ describe("SolicitudFieldAccess", () => {
 
     assert.deepEqual(fieldAccess, {
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...EDITABLE_GROUPS, ...LEGACY_EDITABLE_GROUPS],
     });
   });
@@ -272,7 +284,7 @@ describe("SolicitudFieldAccess", () => {
       backgroundColor: "#FF7F7F",
       canManageAttachments: true,
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...LEGACY_EDITABLE_GROUPS],
       readonlyReason: null,
       textColor: "#000000",
@@ -281,7 +293,7 @@ describe("SolicitudFieldAccess", () => {
 
     assert.deepEqual(fieldAccess, {
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...LEGACY_EDITABLE_GROUPS],
     });
   });
@@ -303,7 +315,7 @@ describe("SolicitudFieldAccess", () => {
       backgroundColor: "#FF7F7F",
       canManageAttachments: true,
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [...LEGACY_EDITABLE_GROUPS],
       readonlyReason: null,
       textColor: "#000000",
@@ -359,7 +371,7 @@ describe("SolicitudFieldAccess", () => {
       backgroundColor: "#FF7F7F",
       canManageAttachments: true,
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: ["garantias", "garantias"],
       readonlyReason: null,
       textColor: "#000000",
@@ -440,7 +452,7 @@ describe("SolicitudFieldAccess", () => {
       backgroundColor: "#FF7F7F",
       canManageAttachments: true,
       defaultMode: "readonly",
-      editableFields: [...EDITABLE_FIELDS],
+      editableFields: EDITABLE_FIELDS.filter(field => field !== "solicitud.cuotaResultante"),
       editableGroups: [],
       readonlyReason: null,
       textColor: "#000000",
@@ -561,6 +573,7 @@ function solicitudCore(overrides: Partial<SolicitudCore> = {}): SolicitudCore {
     titular: {
       apellidoDenominacion: "Perez",
       cbu: "2850590940090418135201",
+      cbuNoHabitual: null,
       celular: "1122334455",
       cuit: "20333444559",
       domicilioCalle: "Siempre Viva",

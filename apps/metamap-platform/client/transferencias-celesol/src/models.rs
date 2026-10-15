@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     cancellations::CancellationPayment,
@@ -9,6 +9,18 @@ use crate::{
 #[derive(Clone, Debug, Deserialize)]
 pub struct ValidationSearchResponse {
     pub items: Vec<ValidationSnapshot>,
+    pub pagination: ValidationPagination,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ValidationPagination {
+    pub total: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ValidationRejection {
+    pub verification_id: Option<String>,
+    pub reasons: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -34,14 +46,20 @@ pub struct ValidationSnapshot {
     pub requested_amount_value: Option<String>,
     pub applicant_name: Option<String>,
     pub document_number: Option<String>,
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub latest_event_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pub first_received_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub event_count: u64,
     #[serde(skip)]
     pub match_count: usize,
+    #[serde(skip)]
+    pub selection_rejections: Vec<ValidationRejection>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct CoreSnapshot {
+    pub beex: Option<crate::beex_client::BeexPlan>,
     pub request_oid: String,
     pub request_name: Option<String>,
     pub credit_line_id: Option<u64>,
@@ -327,6 +345,23 @@ impl HydratedCase {
 }
 
 impl CoreSnapshot {
+    pub fn verification_request_number(&self) -> &str {
+        self.beex
+            .as_ref()
+            .map(|p| p.verification.request_number.as_str())
+            .unwrap_or(&self.request_oid)
+    }
+    pub fn request_display(&self) -> String {
+        self.beex
+            .as_ref()
+            .map(|p| {
+                format!(
+                    "Beex {}",
+                    p.nro_solicitud.as_deref().unwrap_or(&p.solicitud_id)
+                )
+            })
+            .unwrap_or_else(|| self.request_oid.clone())
+    }
     pub fn coinag_account_type_display(&self) -> Option<String> {
         match (
             self.coinag_account_type_code.as_deref(),

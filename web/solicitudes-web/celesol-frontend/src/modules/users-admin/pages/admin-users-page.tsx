@@ -1,4 +1,7 @@
-﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
+import { getImpersonationContext } from "@/modules/auth/services/auth-api";
+import { reloadIdentity } from "@/modules/auth/utils/reload-identity";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleCheckBig } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -8,6 +11,7 @@ import {
   type AdminUserEditSubmission,
 } from "@/modules/users-admin/components/admin-user-edit-dialog";
 import {
+  enterUser,
   assignWorkflowOwner,
   getUsers,
   getWorkflowOwners,
@@ -38,6 +42,17 @@ function getUserStateLabel(state: number) {
 
 export function AdminUsersPage() {
   const queryClient = useQueryClient();
+  const session = useAuthSessionQuery();
+  const acting = useQuery({ queryKey: ["auth", "impersonation"], queryFn: getImpersonationContext, retry: false });
+  const enter = useMutation({
+    mutationFn: enterUser,
+    onSuccess: async () => {
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      reloadIdentity("/dashboard");
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const [editingUser, setEditingUser] = useState<UsersAdminUser | null>(null);
   const usersQuery = useQuery({
     queryFn: getUsers,
@@ -77,6 +92,8 @@ export function AdminUsersPage() {
     label: owner.name,
     value: owner.id,
   }));
+  const riesgoWorkflowOwnerId =
+    workflowOwners.find((owner) => owner.code === "RIESGO")?.id ?? null;
   const isLoading = usersQuery.isLoading || workflowOwnersQuery.isLoading;
   const hasLoadError = usersQuery.isError || workflowOwnersQuery.isError;
 
@@ -181,6 +198,8 @@ export function AdminUsersPage() {
     }
   }
 
+  if (enter.isPending) return <p role="status" className="p-4">Ingresando al usuario…</p>;
+
   return (
     <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
       <header className="border-b border-border px-4 py-3">
@@ -269,6 +288,13 @@ export function AdminUsersPage() {
                       >
                         Editar
                       </Button>
+                      {session.data?.isSystemAdmin && !acting.data?.context && (
+                        <Button className="ml-2" size="sm" type="button" variant="outline"
+                          disabled={enter.isPending || !acting.isSuccess || user.state !== 1 || !user.workflowOwnerId || user.id === session.data.id}
+                          onClick={() => enter.mutate(user.id)}>
+                          Ingresar usuario
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -289,6 +315,7 @@ export function AdminUsersPage() {
         }}
         onSubmit={handleSubmitUserUpdate}
         open={editingUser !== null}
+        riesgoWorkflowOwnerId={riesgoWorkflowOwnerId}
         user={editingUser}
         workflowOwnerOptions={workflowOwnerOptions}
       />

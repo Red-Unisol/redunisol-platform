@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AnalyticsAttributionController;
 use App\Http\Controllers\BitrixRoutingConfigController;
 use App\Http\Controllers\BitrixVolumeAllocationController;
 use App\Http\Controllers\EdnaIncomingController;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
 Route::post('/pdf/search', PdfSearchController::class)->name('api.pdf.search');
+Route::post('/attribution/analytics', AnalyticsAttributionController::class)
+    ->middleware([DecryptAttributionCookie::class, 'throttle:60,1'])->name('api.attribution.analytics');
 Route::post('/form-submissions', FormSubmissionController::class)
     ->middleware(DecryptAttributionCookie::class)->name('api.form-submissions.store');
 Route::match(['HEAD', 'POST'], '/webhooks/edna/incoming', EdnaIncomingController::class)

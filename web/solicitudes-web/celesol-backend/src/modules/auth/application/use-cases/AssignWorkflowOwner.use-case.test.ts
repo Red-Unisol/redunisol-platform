@@ -18,6 +18,7 @@ describe("AssignWorkflowOwnerUseCase", () => {
         isSystemAdmin: false,
         lastName: "One",
         legacyUser: "UONE",
+        recibeAsignacionAutomatica: false,
         state: USER_STATE.ACTIVE,
         workflowOwnerId: "owner-1",
       }),
@@ -117,6 +118,7 @@ describe("AssignWorkflowOwnerUseCase", () => {
           isSystemAdmin: false,
           lastName: "One",
           legacyUser: "UONE",
+          recibeAsignacionAutomatica: false,
           state: USER_STATE.PENDING_AREA_ASSIGNMENT,
           workflowOwnerId: null,
         };

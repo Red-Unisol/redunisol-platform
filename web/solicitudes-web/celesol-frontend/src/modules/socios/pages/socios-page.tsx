@@ -17,6 +17,7 @@ import {
   canCreateSocio,
   canDeleteSocio,
   canEditSocio,
+  isVendedor,
 } from "@/modules/auth/utils/auth-user";
 import { SocioFormDialog } from "@/modules/socios/components/socio-form-dialog";
 import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
@@ -66,6 +67,13 @@ function getSocioTypeLabel(socio: Socio) {
   return socio.tipoPersona === "FISICA" ? "Persona física" : "Persona jurídica";
 }
 
+// DNI (7 u 8 digitos) o CUIL/CUIT (11), sin separadores; null si no lo es.
+function documentoCompleto(valor: string) {
+  const digitos = valor.replace(/[.\-\s]/g, "");
+
+  return /^(\d{7,8}|\d{11})$/.test(digitos) ? digitos : null;
+}
+
 function formatElapsedTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -105,8 +113,21 @@ export function SociosPage() {
   const canCreateNewSocio = canCreateSocio(sessionQuery.data);
   const canEditExistingSocio = canEditSocio(sessionQuery.data);
   const canDeleteExistingSocio = canDeleteSocio(sessionQuery.data);
+  // Un vendedor no ve el padron: busca un socio por DNI o CUIL/CUIT y ve
+  // solo ese. El backend aplica la misma regla.
+  const esVendedor = isVendedor(sessionQuery.data);
+  const [documentoBuscado, setDocumentoBuscado] = useState<string | null>(null);
+  const [documentoError, setDocumentoError] = useState<string | null>(null);
 
-  const sociosQuery = useSociosQuery({ page, pageSize, search: searchTerm });
+  const sociosQuery = useSociosQuery({
+    // Hasta saber quien es el usuario no se pide nada: un vendedor nunca
+    // tiene que llegar a pedir la lista completa.
+    enabled:
+      sessionQuery.isSuccess && (!esVendedor || documentoBuscado !== null),
+    page,
+    pageSize,
+    search: esVendedor ? (documentoBuscado ?? undefined) : searchTerm,
+  });
   const createSocioMutation = useMutation({
     mutationFn: (payload: CreateSocioRequest) => createSocio(payload),
   });
@@ -153,6 +174,24 @@ export function SociosPage() {
 
   function handleSearchChange(value: string) {
     setSearchTerm(value);
+
+    if (!esVendedor) {
+      setPage(1);
+    }
+  }
+
+  function buscarDocumento() {
+    const documento = documentoCompleto(searchTerm);
+
+    if (!documento) {
+      setDocumentoError(
+        "Ingresá un DNI de 7 u 8 dígitos o un CUIL/CUIT de 11 dígitos.",
+      );
+      return;
+    }
+
+    setDocumentoError(null);
+    setDocumentoBuscado(documento);
     setPage(1);
   }
 
@@ -264,23 +303,27 @@ export function SociosPage() {
                 Socios
               </h1>
               <p className="max-w-2xl text-sm leading-6 text-foreground-secondary">
-                Administra personas físicas y jurídicas desde esta pantalla.
+                {esVendedor
+                  ? "Buscá un socio por su DNI o CUIL/CUIT."
+                  : "Administra personas físicas y jurídicas desde esta pantalla."}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              disabled={isLoading || isMutating}
-              onClick={() => setConfirmState({ type: "sync-vimax" })}
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw className="size-4" />
-              {syncSociosMutation.isPending
-                ? "Actualizando... (puede tardar unos minutos)"
-                : "Actualizar desde Vimax"}
-            </Button>
+            {esVendedor ? null : (
+              <Button
+                disabled={isLoading || isMutating}
+                onClick={() => setConfirmState({ type: "sync-vimax" })}
+                type="button"
+                variant="outline"
+              >
+                <RefreshCw className="size-4" />
+                {syncSociosMutation.isPending
+                  ? "Actualizando... (puede tardar unos minutos)"
+                  : "Actualizar desde Vimax"}
+              </Button>
+            )}
             {canCreateNewSocio ? (
               <Button
                 disabled={isLoading || isMutating}
@@ -294,19 +337,50 @@ export function SociosPage() {
           </div>
         </div>
 
-        <div className="relative mt-3 max-w-sm">
-          <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-muted" />
-          <Input
-            className="pl-8"
-            onChange={(event) => handleSearchChange(event.target.value)}
-            placeholder="Buscar por nombre, razón social o DNI/CUIT..."
-            value={searchTerm}
-          />
-        </div>
+        {esVendedor ? (
+          <form
+            className="mt-3 flex max-w-md flex-col gap-1.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              buscarDocumento();
+            }}
+          >
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-muted" />
+                <Input
+                  className="pl-8"
+                  inputMode="numeric"
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                  placeholder="DNI o CUIL/CUIT del socio"
+                  value={searchTerm}
+                />
+              </div>
+              <Button disabled={!searchTerm.trim()} type="submit">
+                Buscar
+              </Button>
+            </div>
+            {documentoError ? (
+              <p className="text-xs text-destructive">{documentoError}</p>
+            ) : null}
+          </form>
+        ) : (
+          <div className="relative mt-3 max-w-sm">
+            <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-muted" />
+            <Input
+              className="pl-8"
+              onChange={(event) => handleSearchChange(event.target.value)}
+              placeholder="Buscar por nombre, razón social o DNI/CUIT..."
+              value={searchTerm}
+            />
+          </div>
+        )}
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
-        {isLoading ? (
+        {esVendedor && documentoBuscado === null ? (
+          <TableEmptyState message="Ingresá el DNI o CUIL/CUIT del socio para ver sus datos." />
+        ) : isLoading ? (
           <TableLoader className="min-h-[240px]" label="Cargando socios..." />
         ) : hasLoadError ? (
           <div className="flex flex-col items-start gap-3 rounded-md border border-border bg-background p-4">
@@ -323,7 +397,13 @@ export function SociosPage() {
             </Button>
           </div>
         ) : socios.length === 0 ? (
-          <TableEmptyState message="No hay socios para mostrar." />
+          <TableEmptyState
+            message={
+              esVendedor
+                ? "No encontramos un socio con ese DNI o CUIL/CUIT."
+                : "No hay socios para mostrar."
+            }
+          />
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="min-w-full divide-y divide-border text-sm">
@@ -419,19 +499,21 @@ export function SociosPage() {
         )}
       </div>
 
-      <SolicitudesTablePagination
-        currentPage={page}
-        itemLabel="socios"
-        onPageChange={setPage}
-        onPageSizeChange={(nextPageSize) => {
-          setPageSize(nextPageSize);
-          setPage(1);
-        }}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        totalItems={totalItems}
-      />
+      {esVendedor ? null : (
+        <SolicitudesTablePagination
+          currentPage={page}
+          itemLabel="socios"
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          totalItems={totalItems}
+        />
+      )}
 
       <SocioFormDialog
         isSaving={

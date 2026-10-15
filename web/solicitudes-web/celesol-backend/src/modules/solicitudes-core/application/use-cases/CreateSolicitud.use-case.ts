@@ -1,3 +1,5 @@
+import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
+import { SolicitudFieldNotEditableInCurrentStateError } from "../../domain/solicitudes-core-errors";
 import type { CreateSolicitudInput } from "../dtos/CreateSolicitud.dto";
 import {
   LegacyLineaPrestamoUnavailableError,
@@ -8,25 +10,47 @@ import {
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type { WorkflowStateCatalog } from "../../domain/services/WorkflowStateCatalog";
+import type { ConsultarCredixsaAlCrearSolicitud } from "../services/ConsultarCredixsaAlCrearSolicitud";
+import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
 
 type Dependencies = {
   lineasPrestamoCatalog: LineasPrestamoCatalog;
+  consultarCredixsaAlCrearSolicitud: Pick<
+    ConsultarCredixsaAlCrearSolicitud,
+    "execute"
+  >;
   repository: SolicitudesCoreRepository;
+  simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
   workflowStateCatalog: WorkflowStateCatalog;
 };
 
 export class CreateSolicitudUseCase {
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
+  private readonly consultarCredixsaAlCrearSolicitud: Pick<
+    ConsultarCredixsaAlCrearSolicitud,
+    "execute"
+  >;
   private readonly repository: SolicitudesCoreRepository;
+  private readonly simularCuotaSolicitud: Pick<
+    SimularCuotaSolicitud,
+    "execute"
+  >;
   private readonly workflowStateCatalog: WorkflowStateCatalog;
 
   constructor(dependencies: Dependencies) {
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
+    this.consultarCredixsaAlCrearSolicitud =
+      dependencies.consultarCredixsaAlCrearSolicitud;
     this.repository = dependencies.repository;
+    this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.workflowStateCatalog = dependencies.workflowStateCatalog;
   }
 
   async execute(input: CreateSolicitudInput) {
+    if (input.cuotaResultante !== undefined)
+      throw new SolicitudFieldNotEditableInCurrentStateError(
+        "solicitud.cuotaResultante",
+      );
     const createdByLegacyUser = input.createdByLegacyUser.trim();
     const authenticatedSellerName = formatAuthenticatedSellerName(
       input.authenticatedSellerName,
@@ -40,22 +64,37 @@ export class CreateSolicitudUseCase {
       throw new MissingAuthenticatedSellerNameError();
     }
 
-    const lineaPrestamo = await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
-      createdByLegacyUser,
-      input.lineaPrestamoLegacyOid,
-    );
+    const lineaPrestamo =
+      await this.lineasPrestamoCatalog.findByLegacyUserAndOid(
+        createdByLegacyUser,
+        input.lineaPrestamoLegacyOid,
+      );
 
     if (!lineaPrestamo || !lineaPrestamo.vigente) {
       throw new LegacyLineaPrestamoUnavailableError();
     }
 
+    const efectivos = ajustarMaximosLinea(lineaPrestamo, {
+      montoAFinanciar: input.montoAFinanciar ?? null,
+      cuotas: input.cuotas ?? null,
+    });
     const initialState = await this.workflowStateCatalog.getInitialState();
 
     if (!initialState) {
       throw new WorkflowInitialStateNotConfiguredError();
     }
 
-    return this.repository.create({
+    // La cuota y la fecha del primer vencimiento las calcula el legado, igual
+    // que hace Vimarx al guardar. Si falla el cálculo, la cuota queda en null;
+    // nunca se toma un importe de cuota enviado por el cliente.
+    const simulacion = await this.simularCuotaSolicitud.execute({
+      cuotas: efectivos.cuotas,
+      fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
+      lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
+      montoAFinanciar: efectivos.montoAFinanciar,
+    });
+
+    const solicitud = await this.repository.create({
       createdBy: input.createdBy,
       conyuge: input.conyuge
         ? {
@@ -99,9 +138,12 @@ export class CreateSolicitudUseCase {
         tipoGarantia: garantia.tipoGarantia ?? null,
         tipoRelacion: garantia.tipoRelacion ?? null,
       })),
-      cuotaResultante: input.cuotaResultante ?? null,
-      cuotas: input.cuotas ?? null,
-      fechaPrimerVencimiento: input.fechaPrimerVencimiento ?? null,
+      cuotaResultante: simulacion?.cuotaResultante ?? null,
+      cuotas: efectivos.cuotas,
+      fechaPrimerVencimiento:
+        simulacion?.fechaPrimerVencimiento ??
+        input.fechaPrimerVencimiento ??
+        null,
       datosLaborales: {
         actividadLaboral: input.datosLaborales.actividadLaboral ?? null,
         antiguedadLaboralMeses:
@@ -126,16 +168,17 @@ export class CreateSolicitudUseCase {
       ejecutivoSolicitud: input.ejecutivoSolicitud ?? null,
       linkFirmaDigital: input.linkFirmaDigital ?? null,
       estadoActual: initialState,
-      firmaDigitalmente: input.firmaDigitalmente ?? false,
+      firmaDigitalmente: input.firmaDigitalmente ?? true,
       lineaPrestamoDescripcion: lineaPrestamo.descripcion,
       lineaPrestamoLegacyOid: lineaPrestamo.legacyOid,
-      montoAFinanciar: input.montoAFinanciar ?? null,
+      montoAFinanciar: efectivos.montoAFinanciar,
       motivo: input.motivo ?? null,
       nroOperacion: input.nroOperacion ?? null,
       observaciones: input.observaciones ?? null,
       titular: {
         apellidoDenominacion: input.titular.apellidoDenominacion,
         cbu: input.titular.cbu ?? null,
+        cbuNoHabitual: input.titular.cbuNoHabitual ?? null,
         celular: input.titular.celular ?? null,
         cuit: input.titular.cuit ?? null,
         domicilioCalle: input.titular.domicilioCalle ?? null,
@@ -156,6 +199,22 @@ export class CreateSolicitudUseCase {
       },
       vendedorSolicitud: authenticatedSellerName,
     });
+
+    // Sin await a proposito: la consulta a CredixSA puede tardar minutos entre
+    // la cola de Kestra y el scraping, y el vendedor esta esperando que la
+    // solicitud se guarde. El catch no es opcional -- una promesa rechazada
+    // sin manejar tumba el proceso en Node. Si falla, la pestaña consulta en
+    // el momento.
+    void this.consultarCredixsaAlCrearSolicitud
+      .execute(solicitud.id, input.titular)
+      .catch((error: unknown) => {
+        console.error("credixsa_consulta_al_crear_failed", {
+          message: error instanceof Error ? error.message : String(error),
+          solicitudId: solicitud.id,
+        });
+      });
+
+    return solicitud;
   }
 }
 
@@ -167,9 +226,7 @@ function formatAuthenticatedSellerName(value: string): string {
     .map((word) => {
       const normalizedWord = word.toLowerCase();
 
-      return (
-        normalizedWord.charAt(0).toUpperCase() + normalizedWord.slice(1)
-      );
+      return normalizedWord.charAt(0).toUpperCase() + normalizedWord.slice(1);
     })
     .join(" ");
 }
