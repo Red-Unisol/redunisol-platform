@@ -148,6 +148,15 @@ Mientras el aviso de Bitrix siga activo, la entrega falla cerrada y no compite c
 
 ## Despliegue y activación coordinada
 
+El estado deseado del corte está en
+`web/redunisol-web/deploy/whatsapp-out-of-hours-sales.json` y el control de entorno
+en el `.prod.env.enc` versionado. El JSON se aplica una vez al realizar el corte,
+combinándolo con los textos actuales para preservar lo editado por Marketing.
+No se reaplica en cada deploy. Incluye los próximos feriados obligatorios de
+Argentina/Córdoba hasta Año Nuevo 2027, según las fuentes oficiales enlazadas en
+el archivo; no presupone cierre en días no laborables optativos. Marketing puede
+editar y ampliar el calendario desde el panel.
+
 1. Integrar y desplegar por los workflows habituales tanto marketing-crm como web.
    Aplicar la migración aditiva y verificar worker/scheduler. Un parser anterior
    de Kestra no habilita candidatos: se conserva compatibilidad y no salen avisos.
