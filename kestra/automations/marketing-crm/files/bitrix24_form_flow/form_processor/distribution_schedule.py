@@ -41,4 +41,3 @@ def is_within_business_hours(
     if weekday == workdays[-1]:
         return local_time < ends_at
     return True
-
