@@ -103,6 +103,24 @@ class BcraTest extends TestCase
         $this->getJson('/api/bcra/catalog')->assertOk()->assertJsonCount(14, 'lines');
     }
 
+    public function test_unnamed_lines_remain_selectable_and_do_not_block_the_catalog_or_generation(): void
+    {
+        $this->login();
+        Http::fake([
+            'core.test/*' => Http::response([...$this->lines(), [50, '   ', 20, 'Haberes CUAD SANTA FE'],
+                [51, null, null, null], [52, '0', null, null]]),
+            'kestra.test/*' => Http::response(['id' => 'execution-unnamed-123456']),
+        ]);
+        $lines = collect($this->getJson('/api/bcra/catalog')->assertOk()->json('lines'))->keyBy('id');
+        $this->assertSame('Sin descripción (#50)', $lines['50']['name']);
+        $this->assertSame('', $lines['50']['source_name']);
+        $this->assertSame('Haberes CUAD SANTA FE', $lines['50']['superior_name']);
+        $this->assertTrue($lines['50']['included_by_default']);
+        $this->assertSame('Sin descripción (#51)', $lines['51']['superior_name']);
+        $this->assertSame('0', $lines['52']['name']);
+        $this->postJson('/api/bcra/runs', array_replace($this->inputs(), ['selected_line_ids' => ['50', '51']]))->assertStatus(202);
+    }
+
     public function test_generation_uses_server_credentials_and_passes_only_validated_parameters(): void
     {
         $this->login();

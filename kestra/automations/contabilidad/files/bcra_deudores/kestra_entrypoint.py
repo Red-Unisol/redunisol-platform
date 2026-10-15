@@ -103,14 +103,16 @@ def catalog(config: process.ProcessConfig) -> dict[str, dict]:
         raise ValueError("El catálogo de líneas está vacío o incompleto.")
     result = {}
     for row in rows:
-        if not isinstance(row, list) or len(row) != 4 or not str(row[0]).isdigit() or not row[1]:
+        if not isinstance(row, list) or len(row) != 4 or not str(row[0]).isdigit() or not isinstance(row[1], (str, type(None))):
             raise ValueError("El catálogo contiene una línea inválida.")
         line_id = str(row[0])
         if line_id in result:
             raise ValueError("El catálogo contiene identificadores duplicados.")
-        result[line_id] = {"id": line_id, "name": str(row[1]).strip(),
+        source_name = str(row[1] or "").strip()
+        name = source_name or f"Sin descripción (#{line_id})"
+        result[line_id] = {"id": line_id, "name": name, "source_name": source_name,
             "superior_id": str(row[2]) if row[2] is not None else line_id,
-            "superior_name": str(row[3] or row[1]).strip()}
+            "superior_name": str(row[3] or "").strip() or name}
     return result
 
 
