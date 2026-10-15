@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AnalisisController;
+use App\Http\Controllers\BcraController;
 use App\Http\Controllers\ContabilidadTransferController;
 use App\Http\Controllers\HerramientasController;
 use App\Http\Controllers\ObjectivesDashboardController;
@@ -10,6 +11,14 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/analisis', [AnalisisController::class, 'index'])->name('analisis');
+Route::get('/bcra', [BcraController::class, 'index'])->name('bcra');
+Route::middleware(AnalisisAccess::class)->prefix('/api/bcra')->group(function () {
+    Route::get('/catalog', [BcraController::class, 'catalog'])->middleware('throttle:30,1');
+    Route::get('/runs', [BcraController::class, 'history']);
+    Route::post('/runs', [BcraController::class, 'start'])->middleware('throttle:3,1');
+    Route::get('/executions/{execution}', [BcraController::class, 'status'])->middleware('throttle:120,1');
+    Route::get('/runs/{run}/download/{artifact}', [BcraController::class, 'download'])->name('bcra.download');
+});
 Route::get('/padrones', [PadronesController::class, 'index'])->name('padrones');
 Route::post('/padrones/login', [PadronesController::class, 'login']);
 Route::middleware(AnalisisAccess::class)->prefix('/api/padrones')->group(function () {

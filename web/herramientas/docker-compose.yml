@@ -16,11 +16,19 @@ services:
       ANALISIS_CORE_URL: ${ANALISIS_CORE_URL:-}
       ANALISIS_CORE_TOKEN: ${ANALISIS_CORE_TOKEN:-}
       ANALISIS_CORE_VERIFY_TLS: ${ANALISIS_CORE_VERIFY_TLS:-true}
+      BCRA_KESTRA_URL: ${BCRA_KESTRA_URL:-}
+      BCRA_KESTRA_USERNAME: ${BCRA_KESTRA_USERNAME:-}
+      BCRA_KESTRA_PASSWORD: ${BCRA_KESTRA_PASSWORD:-}
+      BCRA_KESTRA_TENANT: ${BCRA_KESTRA_TENANT:-main}
+      BCRA_KESTRA_NAMESPACE: ${BCRA_KESTRA_NAMESPACE:-redunisol.dev.contabilidad}
+      BCRA_OUTPUT_ROOT: ${BCRA_OUTPUT_ROOT:-/data/bcra/redunisol.dev.contabilidad}
+      BCRA_DEFAULT_EXCLUDED_CUITS: ${BCRA_DEFAULT_EXCLUDED_CUITS:-[]}
       ANALISIS_CREDITO_WEBHOOK_URL: ${ANALISIS_CREDITO_WEBHOOK_URL}
       ANALISIS_CREDITO_TIMEOUT_SECONDS: ${ANALISIS_CREDITO_TIMEOUT_SECONDS:-30}
       LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
     volumes:
       - padrones:/var/www/html/storage/app/private/padrones
+      - ${BCRA_REPORTS_HOST_PATH:-./storage/app/private/bcra}:/data/bcra:ro
     restart: unless-stopped
 
 volumes:

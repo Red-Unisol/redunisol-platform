@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AnalisisPage from './AnalisisPage.jsx';
+import BcraPage from './BcraPage.jsx';
 import PadronesPage, { PadronesResults } from './PadronesPage.jsx';
 import { credixPrefill } from './analisis-state.js';
 import { prepareCredixBcra, bcraSituation, formatBcraSituation } from './credix-bcra.js';
@@ -66,6 +67,11 @@ function App({ branding, tools }) {
 
     const openTool = (tool) => {
         if (tool.isPlaceholder || tool.status !== 'active') {
+            return;
+        }
+
+        if (tool.id === 'bcra') {
+            window.location.assign('/bcra');
             return;
         }
 
@@ -2134,7 +2140,9 @@ function formatDateTime(value) {
 if (rootElement) {
     let component = <App branding={initialPayload.branding || {}} tools={initialPayload.tools || []} />;
 
-    if (initialPayload.page === 'padrones') {
+    if (initialPayload.page === 'bcra') {
+        component = <BcraPage config={initialPayload.bcra || {}} />;
+    } else if (initialPayload.page === 'padrones') {
         component = <PadronesPage config={initialPayload.padrones || {}} />;
     } else if (initialPayload.page === 'analisis') {
         component = <AnalisisPage config={initialPayload.analisis || {}} />;

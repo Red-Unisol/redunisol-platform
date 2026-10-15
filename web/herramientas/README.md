@@ -4,6 +4,21 @@ Aplicacion interna para concentrar herramientas operativas de Red Unisol en un s
 
 La primera herramienta implementada es Consulta Renovacion Cruz del Eje. El frontend esta hecho con React y la capa servidor con Laravel. El catalogo de herramientas y la configuracion viven en archivos de configuracion. Los padrones usan una base SQLite privada y archivos originales en almacenamiento persistente.
 
+## Generador BCRA Celesol
+
+`/bcra` permite seleccionar mes cerrado, líneas, TNA, tipo de presentación,
+reglas de mora y exclusiones por CUIT o número de préstamo con motivo. Usa el
+acceso interno de Análisis y ejecuta `bcra_deudores_generate` en Kestra. Cada
+corrida conserva configuración, controles, hashes y ZIP propios; el historial
+permite descargarlos posteriormente. Las credenciales y consultas quedan en el
+servidor.
+
+Los importes son saldos vigentes de Vimarx **al generar**; el motor recibido no
+reconstruye saldos históricos. El período fija el corte de mora y de emisión.
+Esta diferencia se informa en la pantalla y en los archivos de auditoría.
+
+Ver [operación y configuración BCRA](../../kestra/automations/contabilidad/docs/bcra-deudores.md).
+
 ## Objetivo
 
 Para cargar y mantener fuentes complementarias de CredixSA, ver [Padrones](docs/padrones.md).

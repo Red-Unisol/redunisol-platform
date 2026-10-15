@@ -17,6 +17,13 @@ services:
       ANALISIS_CORE_URL: ${ANALISIS_CORE_URL:-}
       ANALISIS_CORE_TOKEN: ${ANALISIS_CORE_TOKEN:-}
       ANALISIS_CORE_VERIFY_TLS: ${ANALISIS_CORE_VERIFY_TLS:-true}
+      BCRA_KESTRA_URL: ${BCRA_KESTRA_URL:-}
+      BCRA_KESTRA_USERNAME: ${BCRA_KESTRA_USERNAME:-}
+      BCRA_KESTRA_PASSWORD: ${BCRA_KESTRA_PASSWORD:-}
+      BCRA_KESTRA_TENANT: ${BCRA_KESTRA_TENANT:-main}
+      BCRA_KESTRA_NAMESPACE: ${BCRA_KESTRA_NAMESPACE:-redunisol.dev.contabilidad}
+      BCRA_OUTPUT_ROOT: ${BCRA_OUTPUT_ROOT:-/data/bcra/redunisol.dev.contabilidad}
+      BCRA_DEFAULT_EXCLUDED_CUITS: ${BCRA_DEFAULT_EXCLUDED_CUITS:-[]}
       ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL: ${ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL}
       ANALISIS_CREDITO_CONSULTA_CAJA: ${ANALISIS_CREDITO_CONSULTA_CAJA}
       ANALISIS_CREDITO_QUIEBRA_CREDIX_CACHE_URL: http://credixsa-cache-api:8000/credixsa/cache
@@ -34,6 +41,7 @@ services:
     volumes:
       - padrones:/var/www/html/storage/app/private/padrones
       - /opt/kestra/data/contabilidad-transfer:/data/contabilidad-transfer:ro
+      - /srv/redunisol-reports/contabilidad/bcra:/data/bcra:ro
       - /opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion:ro
     restart: unless-stopped
 
