@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 import json
 import os
 import unicodedata
+from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,6 +18,7 @@ from .bcra_service import (
     sync_lead_bcra,
 )
 from .bitrix_client import BitrixClient
+from .distribution_schedule import is_within_business_hours as _is_within_business_hours
 from .config import AppConfig, load_config
 from .commercial_trace import (
     TRACE_SCHEMA_VERSION,
@@ -76,10 +78,6 @@ class BcraSnapshotResolution:
 
 BUSINESS_HOURS_ONLY_ENV = "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY"
 BUSINESS_HOURS_TIMEZONE_ENV = "BITRIX24_DISTRIBUTION_TIMEZONE"
-BUSINESS_HOURS_WORKDAYS_ENV = "BITRIX24_DISTRIBUTION_WORKDAYS"
-BUSINESS_HOURS_FROM_ENV = "BITRIX24_DISTRIBUTION_FROM"
-BUSINESS_HOURS_TO_ENV = "BITRIX24_DISTRIBUTION_TO"
-WEEKDAY_CODES = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
 COMMERCIAL_RULE_VERSION = "2026-10-13-caja-morosos-23321-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
@@ -99,6 +97,73 @@ def select_next_pending_catamarca_deal(
     logger: Logger | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
+    selected = _select_pending_catamarca_deals(
+        env=env, bitrix_client=bitrix_client, logger=logger, now=now,
+    )
+    return selected[0] if selected else _result(
+        action="no_pending", has_pending=False,
+        message="No hay negociaciones pendientes de clasificación comercial.",
+    )
+
+
+def process_pending_catamarca_deals(
+    *,
+    env: dict[str, str] | None = None,
+    bitrix_client: Any | None = None,
+    bcra_client: Any | None = None,
+    logger: Logger | None = None,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Process a bounded batch serially under the flow's concurrency limit."""
+    active_logger = logger or create_logger()
+    source = dict(os.environ if env is None else env)
+    limit = max(1, min(20, int(source.get("BITRIX24_DEAL_QUALIFICATION_BATCH_SIZE", "5"))))
+    client = bitrix_client or BitrixClient(load_config(env), active_logger)
+    deadline = monotonic() + 50
+    # Materialize before changing stages: offset pagination would otherwise skip
+    # deals when an earlier page shrinks during processing.
+    selected = _select_pending_catamarca_deals(
+        limit=limit, env=env, bitrix_client=client, logger=active_logger, now=now,
+    )
+    events: list[dict[str, object]] = []
+    for candidate in selected:
+        if events and monotonic() >= deadline:
+            break
+        deal_id = candidate["deal_id"]
+        try:
+            event = qualify_catamarca_deal(
+                deal_id, env=env, bitrix_client=client, bcra_client=bcra_client,
+                logger=active_logger, now=now,
+            )
+        except Exception as exc:
+            event = technical_deal_trace(
+                deal_id, exc, env=env, bitrix_client=client, logger=active_logger, now=now,
+            )
+        events.append(event)
+        # Respect provider throttling for the rest of this batch too.
+        if event.get("bcra_refresh_outcome") == "rate_limited":
+            break
+    legacy = events[-1] if events else _result(
+        action="no_pending", has_pending=False,
+        message="No hay negociaciones pendientes de clasificación comercial.",
+    )
+    return {
+        **legacy,
+        "ok": all(bool(event.get("ok")) for event in events),
+        "event_count": len(events),
+        "deferred_count": len(selected) - len(events),
+        "events_json": json.dumps(events, ensure_ascii=False),
+    }
+
+
+def _select_pending_catamarca_deals(
+    *,
+    limit: int = 1,
+    env: dict[str, str] | None = None,
+    bitrix_client: Any | None = None,
+    logger: Logger | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, object]]:
     active_logger = logger or create_logger()
     config = load_config(env)
     client = bitrix_client or BitrixClient(config, active_logger)
@@ -106,6 +171,8 @@ def select_next_pending_catamarca_deal(
         dict(os.environ if env is None else env),
         now,
     )
+    selected: list[dict[str, object]] = []
+    seen: set[int] = set()
     start = 0
     while True:
         response = client.call_full(
@@ -132,8 +199,9 @@ def select_next_pending_catamarca_deal(
         for deal in items:
             deal_id = _optional_int(deal.get("id") or deal.get("ID"))
             lead_id = _optional_int(deal.get("leadId") or deal.get("LEAD_ID"))
-            if deal_id is None or lead_id is None:
+            if deal_id is None or lead_id is None or deal_id in seen:
                 continue
+            seen.add(deal_id)
             lead = get_lead(client, lead_id, active_logger)
             if vimarx_retry_waiting(deal, lead, config, now=current_time):
                 continue
@@ -147,13 +215,15 @@ def select_next_pending_catamarca_deal(
                     "la consulta BCRA tiene un reintento programado."
                 )
                 continue
-            return _result(
+            selected.append(_result(
                 action="selected",
                 has_pending=True,
                 deal_id=deal_id,
                 lead_id=lead_id,
                 message=f"Negociacion {deal_id} seleccionada para clasificación comercial.",
-            )
+            ))
+            if len(selected) >= limit:
+                return selected
 
         next_page = response.get("next")
         if next_page is None and isinstance(result, dict):
@@ -162,11 +232,7 @@ def select_next_pending_catamarca_deal(
             break
         start = int(next_page)
 
-    return _result(
-        action="no_pending",
-        has_pending=False,
-        message="No hay negociaciones pendientes de clasificación comercial.",
-    )
+    return selected
 
 
 def qualify_catamarca_deal(
@@ -1851,38 +1917,6 @@ def _business_hours_gate_enabled(source: dict[str, str]) -> bool:
         "s",
     }
 
-
-def _is_within_business_hours(
-    source: dict[str, str],
-    now: datetime | None = None,
-) -> bool:
-    timezone = ZoneInfo(
-        str(source.get(BUSINESS_HOURS_TIMEZONE_ENV, "America/Argentina/Cordoba")).strip()
-    )
-    local_now = now.astimezone(timezone) if now is not None else datetime.now(timezone)
-    workdays = list(
-        dict.fromkeys(
-            WEEKDAY_CODES[code.strip()]
-            for code in str(source.get(BUSINESS_HOURS_WORKDAYS_ENV, "MO,TU,WE,TH,FR"))
-            .upper()
-            .split(",")
-            if code.strip() in WEEKDAY_CODES
-        )
-    )
-    starts_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_FROM_ENV, "00:00")))
-    ends_at = time.fromisoformat(str(source.get(BUSINESS_HOURS_TO_ENV, "17:00")))
-    local_time = local_now.time().replace(tzinfo=None)
-    weekday = local_now.weekday()
-
-    if weekday not in workdays:
-        return False
-    if len(workdays) == 1:
-        return starts_at <= local_time < ends_at
-    if weekday == workdays[0]:
-        return local_time >= starts_at
-    if weekday == workdays[-1]:
-        return local_time < ends_at
-    return True
 
 
 def _local_datetime(
