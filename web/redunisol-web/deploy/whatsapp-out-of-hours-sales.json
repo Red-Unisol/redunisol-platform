@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "task_id": 23233,
+  "settings": {
+    "enabled": true,
+    "timezone": "America/Argentina/Cordoba",
+    "open": "09:00",
+    "close": "17:00",
+    "weekdays": [1, 2, 3, 4, 5],
+    "holidays": [
+      "2026-11-09",
+      "2026-11-10",
+      "2026-11-23",
+      "2026-12-08",
+      "2026-12-25",
+      "2027-01-01"
+    ]
+  },
+  "bitrix": {
+    "CONFIG_ID": 1,
+    "PARAMS": {
+      "WORKTIME_DAYOFF_RULE": "none"
+    }
+  },
+  "calendar_sources": [
+    "https://www.argentina.gob.ar/normativa/nacional/ley-27399-281835/texto",
+    "https://www.argentina.gob.ar/normativa/nacional/norma-430580/texto"
+  ],
+  "calendar_notes": "Cierres obligatorios nacionales y de Cordoba posteriores al corte del 15/10/2026, incluido Ano Nuevo 2027. Los dias no laborables optativos y el resto de 2027 requieren definicion de Marketing."
+}
