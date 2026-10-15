@@ -131,6 +131,18 @@ la cola no reemplaza el motivo comercial original.
 ## Operacion
 
 El flow conserva el ID historico `bitrix24_catamarca_deal_qualification` para evitar
-migrar el scheduler. Procesa una negociacion interna pendiente por minuto. Es
-idempotente por etapa: si ya salio de `C1:KESTRA_PENDING`, no vuelve a decidir ni
+migrar el scheduler. Procesa hasta cinco negociaciones internas pendientes por
+ejecución, una por vez. Es idempotente por etapa: si ya salio de `C1:KESTRA_PENDING`, no vuelve a decidir ni
 reasignar.
+
+El clasificador selecciona el lote antes de modificar etapas, para no saltar casos
+al paginar. Cada ejecución usa un contenedor y conserva `concurrency.limit: 1`.
+`BITRIX24_DEAL_QUALIFICATION_BATCH_SIZE` permite ajustar el tamaño (predeterminado
+5, entre 1 y 20). Tras 50 segundos no inicia otro caso; termina el caso que ya está
+en curso y deja los restantes para el próximo ciclo. El presupuesto es un límite
+entre casos, no una cancelación de consultas o transferencias en curso.
+
+Los casos esperando BCRA o Vimarx no consumen lugares del lote. Un error de un caso
+se registra y permite continuar con los demás. HTTP 429 difiere el resto del lote.
+La salida `events_json` conserva cada decisión individual para el informe diario;
+los campos escalares anteriores conservan el último evento por compatibilidad.

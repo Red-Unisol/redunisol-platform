@@ -13,7 +13,7 @@ conserva la clasificación Catamarca anterior y no ejecuta esta ampliación Cór
 | `bitrix24_form_webhook` | Job asíncrono del backend web | Crea o actualiza el contacto y crea el lead en INGRESO. No precalifica. |
 | `bitrix24_lead_prefill` | Scheduler, una vez por minuto | Enriquece un lead en INGRESO mediante ARCA, CredixSA, Vimarx y BCRA; luego lo mueve a PRECLASIFICACIÓN. |
 | `bitrix24_lead_won_deal_webhook` | `ONCRMLEADUPDATE` de Bitrix24 | Precalifica leads en PRECLASIFICACIÓN y crea o reutiliza la negociación al recibir RESULTADO GANADO. |
-| `bitrix24_catamarca_deal_qualification` | Scheduler, una vez por minuto | Clasifica una negociación interna Catamarca o Córdoba pendiente, determina etapa y línea, y ejecuta su distribución cuando corresponde. Conserva el ID histórico. |
+| `bitrix24_catamarca_deal_qualification` | Scheduler, una vez por minuto | Clasifica un lote de hasta cinco negociaciones internas pendientes, determina etapa y línea, y ejecuta su distribución cuando corresponde. Conserva el ID histórico. |
 
 ## Secuencia actual
 

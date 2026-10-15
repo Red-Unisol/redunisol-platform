@@ -4752,7 +4752,7 @@ class BusinessLogicTests(unittest.TestCase):
             SilentLogger(),
             bcra_client=waiting_client,
             lead=client.leads[950],
-            now=datetime.fromisoformat("2026-08-12T11:04:00-03:00"),
+            now=datetime.fromisoformat("2026-08-12T11:00:30-03:00"),
         )
         recovered_result = sync_lead_bcra(
             client,
@@ -4808,7 +4808,7 @@ class BusinessLogicTests(unittest.TestCase):
             env=self.env,
             bitrix_client=client,
             logger=SilentLogger(),
-            now=datetime.fromisoformat("2026-08-12T11:01:00-03:00"),
+            now=datetime.fromisoformat("2026-08-12T11:00:30-03:00"),
         )
 
         self.assertEqual(selected["deal_id"], 952)
