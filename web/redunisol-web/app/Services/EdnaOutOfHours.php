@@ -14,26 +14,30 @@ class EdnaOutOfHours
 {
     public function eligible(object $event, array $payload, array $settings): ?array
     {
-        if (! config('edna.enabled') || ! config('edna.out_of_hours_enabled') || ! $settings['enabled']
-            || ! $settings['enabled_since'] || ! $event->out_of_hours_candidate
-            || (string) $event->subject_id !== (string) config('edna.subject_id')) {
-            return null;
-        }
-        $received = CarbonImmutable::parse($payload['receivedAt']);
-        $phone = $payload['subscriber']['identifier'];
-        $allowed = config('edna.out_of_hours_recipients', []);
-        if (! preg_match('/^[0-9]{10,15}$/D', $phone) || ($allowed && ! in_array($phone, $allowed, true))
-            || $received->lt(CarbonImmutable::parse($settings['enabled_since']))
-            || $received->lt(now()->subHours(23)) || $received->gt(now()->addMinutes(5))) {
-            return null;
-        }
-        $window = (new WhatsAppOutOfHoursSettings)->window($received, $settings);
-        $current = (new WhatsAppOutOfHoursSettings)->window(CarbonImmutable::now(), $settings);
-        if (! $window || ! $current || ! $window['end']->equalTo($current['end']) || $this->automaticRoute($event, $payload)) {
+        if (! $this->transportReady($event, $payload, $settings)) {
             return null;
         }
 
-        return $window;
+        return (new EdnaOutOfHoursPolicy)->window((new EdnaOutOfHoursPolicy)->decide($event, $payload, $settings));
+    }
+
+    public function transportReady(object $event, array $payload, array $settings): bool
+    {
+        $phone = $payload['subscriber']['identifier'];
+        $allowed = config('edna.out_of_hours_recipients', []);
+
+        return config('edna.enabled') && config('edna.out_of_hours_enabled') && $settings['enabled']
+            && $event->out_of_hours_candidate && (string) $event->subject_id === (string) config('edna.subject_id')
+            && preg_match('/^[0-9]{10,15}$/D', $phone) && (! $allowed || in_array($phone, $allowed, true));
+    }
+
+    // Transport checks under the person lock; no HTTP call may hold that lock.
+    public function stillReady(object $event, array $payload, array $settings, array $window): bool
+    {
+        return $settings === (new WhatsAppOutOfHoursSettings)->get()
+            && $this->transportReady($event, $payload, $settings)
+            && $window['start']->lte(now()) && $window['end']->gt(now())
+            && ! $this->automaticRoute($event, $payload);
     }
 
     public function automaticRoute(object $event, array $payload): bool
@@ -83,26 +87,38 @@ class EdnaOutOfHours
 
     public function reserve(object $event, array $payload, array $context, array $settings): ?int
     {
-        return DB::transaction(function () use ($event, $payload, $context, $settings): ?int {
+        if (! $this->transportReady($event, $payload, $settings)) {
+            return null;
+        }
+        $policy = new EdnaOutOfHoursPolicy;
+        $decision = $policy->decide($event, $payload, $settings, $context);
+        $window = $policy->window($decision);
+        if ($decision['decision'] !== 'send' || ! $window) {
+            return null;
+        }
+        if (! in_array($decision['notice_type'], ['general', 'managed'], true)) {
+            throw new \RuntimeException('Invalid Kestra notice type.');
+        }
+
+        return DB::transaction(function () use ($event, $payload, $context, $settings, $window, $decision): ?int {
             $phone = $payload['subscriber']['identifier'];
             $scope = (new EdnaFlowRouter)->scope((string) $event->subject_id, $phone);
             DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
             DB::table('edna_router_contacts')->where('scope', $scope)->lockForUpdate()->first();
-            $window = $this->eligible($event, $payload, $settings);
-            if (! $window || EdnaOutOfHoursSend::where('event_id', $event->id)->exists()
+            if (! $this->stillReady($event, $payload, $settings, $window) || EdnaOutOfHoursSend::where('event_id', $event->id)->exists()
                 || EdnaOutOfHoursSend::where('scope', $scope)->where('window_start', '<', $window['end'])
                     ->where('window_end', '>', $window['start'])->exists()) {
                 return null;
             }
-            $type = $context['managed'] ? 'managed' : 'general';
             $send = EdnaOutOfHoursSend::create([
                 'event_id' => $event->id, 'scope' => $scope, 'request_id' => (string) Str::uuid(),
                 'subject_id' => $event->subject_id, 'cascade_id' => (string) config('edna.cascade_id'),
                 'received_at' => CarbonImmutable::parse($payload['receivedAt'])->utc(),
                 'window_start' => $window['start'], 'window_end' => $window['end'],
-                'recipient' => $phone, 'notice_type' => $type, 'advisor_id' => $context['advisor_id'] ?? null,
+                'recipient' => $phone, 'notice_type' => $decision['notice_type'], 'advisor_id' => $context['advisor_id'] ?? null,
                 'crm_entity' => $context['entity'] ?? null, 'crm_id' => $context['id'] ?? null,
-                'message_text' => (new WhatsAppOutOfHoursSettings)->render($type, $context, $window, $settings),
+                'policy_version' => $decision['policy_version'], 'policy_reason' => $decision['reason'],
+                'message_text' => (new WhatsAppOutOfHoursSettings)->personalize($decision['message_template'], $context),
             ]);
             Queue::connection('edna')->push(new SendEdnaOutOfHours($send->id), '', 'edna');
 

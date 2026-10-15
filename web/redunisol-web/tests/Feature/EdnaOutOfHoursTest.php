@@ -10,6 +10,7 @@ use App\Models\EdnaOutOfHoursSend;
 use App\Models\User;
 use App\Services\AttributionJourney;
 use App\Services\EdnaOutOfHours;
+use App\Services\EdnaOutOfHoursPolicy;
 use App\Services\WhatsAppSalesContext;
 use App\Support\WhatsAppOutOfHoursSettings;
 use Carbon\CarbonImmutable;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Symfony\Component\Process\Process;
 
 beforeEach(function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-05T22:00:00-03:00')->utc());
@@ -30,6 +32,18 @@ beforeEach(function () {
     $settings = new WhatsAppOutOfHoursSettings;
     $settings->save(array_replace($settings->defaults(), ['enabled' => true]));
     Http::preventStrayRequests();
+    Http::fake(['kestra.example.test/*' => function ($request) {
+        if (($request->data()['operation'] ?? null) !== 'out_of_hours') {
+            return null;
+        }
+        // Exercise the real Python policy with the exact JSON sent by the PHP adapter.
+        $python = getenv('POLICY_TEST_PYTHON') ?: (PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3');
+        $process = new Process([$python, base_path('../../kestra/automations/marketing-crm/tests/test_out_of_hours_policy.py'), '--json']);
+        $process->setInput(json_encode($request->data(), JSON_THROW_ON_ERROR))->mustRun();
+        $result = json_decode($process->getOutput(), true, 32, JSON_THROW_ON_ERROR);
+
+        return Http::response(array_replace($result, config('testing.policy_response_overrides', [])));
+    }]);
 });
 
 function offHoursEvent(array $overrides = [], bool $candidate = true): array
@@ -48,7 +62,7 @@ function offHoursReserve(array $overrides = []): EdnaOutOfHoursSend
 {
     [$event, $payload] = offHoursEvent($overrides);
     (new EdnaOutOfHours)->reserve($event, $payload,
-        ['managed' => true, 'name' => 'Ana', 'advisor_name' => 'Maru', 'advisor_id' => 57],
+        ['evidence' => [['kind' => 'open_deal', 'category_id' => 1]], 'name' => 'Ana', 'advisor_name' => 'Maru', 'advisor_id' => 57],
         (new WhatsAppOutOfHoursSettings)->get());
 
     return EdnaOutOfHoursSend::latest('id')->first();
@@ -99,7 +113,7 @@ test('three messages reserve one notice in the continuous closed interval', func
     $service = new EdnaOutOfHours;
     foreach (range(1, 3) as $i) {
         [$event, $payload] = offHoursEvent();
-        $service->reserve($event, $payload, ['managed' => false], (new WhatsAppOutOfHoursSettings)->get());
+        $service->reserve($event, $payload, ['evidence' => []], (new WhatsAppOutOfHoursSettings)->get());
     }
     expect(EdnaOutOfHoursSend::count())->toBe(1)->and(DB::table('jobs')->count())->toBe(1);
     $raw = DB::table('edna_out_of_hours_sends')->first();
@@ -155,11 +169,15 @@ test('missing names use grammatical defaults and configured texts apply without 
     $settings = new WhatsAppOutOfHoursSettings;
     $data = $settings->get();
     $window = $settings->window(CarbonImmutable::now());
-    $text = $settings->render('managed', [], $window, $data);
+    [$event, $payload] = offHoursEvent();
+    $decision = (new EdnaOutOfHoursPolicy)->decide($event, $payload, $data,
+        ['evidence' => [['kind' => 'open_deal', 'category_id' => 1]]]);
+    $text = $settings->personalize($decision['message_template'], []);
     expect($text)->toContain('Un asesor', '06/10', '09:00')->not->toContain('{', 'www.', 'http');
     $data['general_text'] = 'Mensaje recibido. Respondemos {proxima_apertura}.';
     $settings->save($data);
-    expect($settings->render('general', [], $window, $settings->get()))->toStartWith('Mensaje recibido.');
+    $decision = (new EdnaOutOfHoursPolicy)->decide($event, $payload, $settings->get(), ['evidence' => []]);
+    expect($settings->personalize($decision['message_template'], []))->toStartWith('Mensaje recibido.');
 });
 
 test('links and unknown placeholders are rejected before persistence', function (string $text) {
@@ -298,7 +316,7 @@ test('Marketing can save settings and inspect masked notice records in the exist
 test('evaluation is idempotent and reserves the correct managed notice', function () {
     [$event] = offHoursEvent();
     $this->mock(WhatsAppSalesContext::class)->shouldReceive('resolve')->once()->andReturn([
-        'managed' => true, 'name' => 'Ana', 'advisor_name' => 'Maru', 'advisor_id' => 57,
+        'evidence' => [['kind' => 'open_deal', 'category_id' => 1]], 'name' => 'Ana', 'advisor_name' => 'Maru', 'advisor_id' => 57,
     ]);
     $job = new EvaluateEdnaOutOfHours($event->id);
     $job->handle();
@@ -333,4 +351,25 @@ test('reply to an advisor-sent form link suppresses the informational notice', f
 test('report exposes counts without customer identity data', function () {
     offHoursReserve();
     $this->artisan('edna:out-of-hours report')->expectsOutputToContain('managed')->assertSuccessful();
+});
+
+test('missing or foreign Kestra policy acknowledgement cannot reserve or send a notice', function (array $overrides) {
+    config()->set('testing.policy_response_overrides', $overrides);
+    [$event, $payload] = offHoursEvent();
+    expect(fn () => (new EdnaOutOfHours)->eligible($event, $payload, (new WhatsAppOutOfHoursSettings)->get()))
+        ->toThrow(RuntimeException::class, 'Kestra out of hours policy failed; retry using the event ID.');
+    expect(EdnaOutOfHoursSend::count())->toBe(0);
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'cascade/schedule'));
+})->with([[['policy_version' => 'old-parser']], [['request_id' => 'another-request']], [['ok' => false]], [['decision' => 'unknown']]]);
+
+test('policy request contains facts without customer names phone numbers or message text', function () {
+    offHoursReserve();
+    Http::assertSent(function ($request) {
+        $json = json_encode($request->data());
+
+        return $request['operation'] === 'out_of_hours' && str_contains($json, 'open_deal')
+            && ! str_contains($json, '5493511234567') && ! str_contains($json, 'Ana')
+            && ! str_contains($json, 'Maru') && ! str_contains($json, 'messageContent');
+    });
+    expect(EdnaOutOfHoursSend::first()->policy_version)->toBe(EdnaOutOfHoursPolicy::VERSION);
 });

@@ -23,6 +23,8 @@ return new class extends Migration
             $table->timestampTz('window_start');
             $table->timestampTz('window_end');
             $table->string('notice_type', 16);
+            $table->string('policy_version', 64);
+            $table->string('policy_reason', 64);
             $table->string('crm_entity')->nullable();
             $table->string('crm_id')->nullable();
             $table->unsignedBigInteger('advisor_id')->nullable();

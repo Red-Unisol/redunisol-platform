@@ -5,7 +5,9 @@
 Se reutilizan el receptor autenticado de Edna, el inbox cifrado, la cola dedicada,
 la clasificación de Kestra y el adaptador de envíos. Solo cubre WhatsApp de Ventas:
 subject configurado en `EDNA_INCOMING_SUBJECT_ID`, cascada configurada y canal
-abierto Bitrix 1. La gestión comercial abierta se consulta en la categoría 1.
+abierto Bitrix 1. La gestión comercial abierta se consulta en las categorías 1
+(VENTAS) y 5 (ATENCIÓN AL SOCIO), verificadas por API el 15/10/2026. La mensajería
+cubierta sigue siendo exclusivamente el canal WhatsApp de Ventas.
 No amplía el receptor a otros canales ni cambia los recorridos automáticos.
 
 La entrega está **desactivada por defecto**. No modifica la configuración de
@@ -16,6 +18,29 @@ un piloto; vacío habilita cualquier destinatario elegible una vez activos ambos
 controles. La lista se vuelve a comprobar inmediatamente antes del envío.
 
 ## Decisión y calendario
+
+La política de negocio vive en `files/edna_incoming/out_of_hours.py`, ejecutada
+por el flow `edna_incoming_webhook`. El adaptador usa el mismo trigger autenticado
+con `operation=out_of_hours`; el intake público reconstruye el envelope y nunca
+acepta esa operación desde un callback externo.
+
+El protocolo tiene dos pasos. `screen` decide elegibilidad y devuelve los límites
+de consulta CRM (60 días de formularios, 30 días de mensajes humanos y categorías
+de negociaciones). El adaptador reúne hechos verificados. `evaluate` determina
+aviso general/en gestión, franja y texto con la próxima apertura. Cada respuesta
+debe confirmar versión de política, requestId y evento; un parser antiguo,
+un error o una respuesta ajena se reintentan y nunca habilitan un envío.
+
+Teléfono, nombres y contenido del mensaje entrante no se envían en las consultas
+de política. Kestra devuelve una plantilla con `{saludo}`/`{asesor}`; el adaptador
+solo inserta nombres previamente verificados. El registro conserva versión y
+motivo de la decisión junto al texto cifrado. Los informes por franja consultan
+el mismo calendario de Kestra, en lotes de hasta 500 fechas.
+
+Las llamadas HTTP de política/CRM se hacen fuera de las transacciones que bloquean
+a la persona. Al reservar o reclamar el envío se revalidan dentro del bloqueo los
+controles operativos, la vigencia de la decisión y las rutas automáticas. La
+evaluación tiene timeout de 90 s; la reserva de la cola Edna es de 120 s.
 
 Kestra devuelve `out_of_hours_candidate=true` para texto ordinario y los tipos
 IMAGE, AUDIO, DOCUMENT y VIDEO. La web solo captura estos tipos adicionales cuando
@@ -40,7 +65,7 @@ repetidos, jobs duplicados o cambios de calendario con intervalos superpuestos.
 
 El aviso distingue **en gestión** y **general**. En gestión significa cualquiera de:
 
-- Negociación abierta de Ventas ligada al contacto o lead verificado.
+- Negociación abierta de Ventas o Atención al Socio ligada al contacto o lead verificado.
 - Lead del formulario creado en los últimos 60 días, sin resultado perdido.
   Se reconocen el snapshot de atribución y los marcadores que ya escribe el intake
   (responsable comercial, CUIL, situación y provincia), excluyendo Finguru del
@@ -64,6 +89,15 @@ procesan mensajes previos a la activación, de más de 23 horas, futuros o de un
 franja que ya terminó.
 
 ## Configuración de Marketing e informes
+
+Diagnóstico del 15/10/2026: Bitrix confirmó `WORKTIME_DAYOFF_RULE=text` en el canal
+1 y horario 09:00–17:00 de lunes a viernes. El texto actual ya no contiene enlaces
+a la web; sí dice «Escribinos mañana». El historial completo de Edna del 14/10 a
+las 17:00 al 15/10 a las 09:00 ART contiene 88 avisos y 12 envíos del Router; hubo
+12 pares aviso/Router al mismo destinatario con menos de tres minutos de diferencia.
+Un caso recibió el aviso a las 08:53:16 y el Router a las 08:53:21 del 15/10.
+La política nueva calcula la apertura de ese mismo día a las 09:00. Son datos
+previos al cambio, no evidencia de activación.
 
 Panel existente, con una cuenta autorizada:
 
@@ -151,3 +185,6 @@ trazabilidad; no reintentar un POST incierto.
 
 El despliegue, habilitación y UAT real quedan pendientes del merge y del cambio
 coordinado. Las pruebas locales usan APIs simuladas y no envían WhatsApp reales.
+La suite PHP de esta integración requiere Python 3.11+: ejecuta la política real
+en un proceso local en lugar del transporte HTTP, para verificar ambos lados del
+contrato. Producción no necesita Python en Laravel: el código corre en Kestra.

@@ -92,6 +92,14 @@ test('callback deduplicates in the database and stores encrypted minimal data', 
     expect(DB::table('jobs')->first()->payload)->not->toContain('inbound-test-key', '5493510000000');
 });
 
+test('external callbacks cannot inject the internal Kestra policy operation', function () {
+    sendEdna([ednaMessage(['operation' => 'out_of_hours', 'action' => 'evaluate',
+        'context' => ['evidence' => [['kind' => 'open_deal', 'category_id' => 1]]]])])
+        ->assertOk()->assertJsonPath('accepted', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->first()->payload), true);
+    expect($payload)->not->toHaveKey('operation')->not->toHaveKey('action')->not->toHaveKey('context');
+});
+
 test('mixed batches isolate other channels and unsupported or malformed events', function () {
     sendEdna([
         ednaMessage(), ednaMessage(['id' => 102, 'subjectId' => 2580]),

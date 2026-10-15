@@ -21,7 +21,7 @@ class SendEdnaOutOfHours implements ShouldQueue
 
     public int $tries = 8;
 
-    public int $timeout = 40;
+    public int $timeout = 55;
 
     public function __construct(public readonly int $sendId) {}
 
@@ -58,13 +58,11 @@ class SendEdnaOutOfHours implements ShouldQueue
                 // Fail closed until the old automatic reply is explicitly disabled.
                 throw new RuntimeException('The Bitrix out of hours reply is still active.');
             }
-            $claimed = DB::transaction(function () use ($send): bool {
+            $claimed = DB::transaction(function () use ($send, $settings, $window): bool {
                 DB::table('edna_router_contacts')->where('scope', $send->scope)->lockForUpdate()->first();
                 $event = DB::table('edna_incoming_events')->find($send->event_id);
-                $settings = (new WhatsAppOutOfHoursSettings)->get();
                 $payload = $event && $event->payload ? json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR) : null;
-                $window = $payload ? (new EdnaOutOfHours)->eligible($event, $payload, $settings) : null;
-                if (! $window || ! $window['end']->equalTo($send->window_end)
+                if (! $payload || ! (new EdnaOutOfHours)->stillReady($event, $payload, $settings, $window)
                     || (string) config('edna.cascade_id') !== $send->cascade_id) {
                     $this->cancel('preflight_changed');
 

@@ -13,11 +13,14 @@ class WhatsAppSalesContext
 
     private array $users = [];
 
-    public function resolve(string $phone): array
+    public function resolve(string $phone, array $requirements): array
     {
         $this->crm = new EdnaBitrix;
         $this->deadline = microtime(true) + 45;
         $this->users = [];
+        $formSince = CarbonImmutable::parse($requirements['form_since']);
+        $advisorSince = CarbonImmutable::parse($requirements['advisor_since']);
+        $categories = array_map('intval', $requirements['deal_categories']);
         $hash = (new AttributionJourney)->phoneHash($phone);
         if (! $hash) {
             throw new RuntimeException('Unsupported sales identity.');
@@ -45,7 +48,7 @@ class WhatsAppSalesContext
         $leadIds = array_map('strval', array_keys($records['lead']));
         $identity = count($contacts) === 1 ? array_values($records['contact'])[0]
             : (! $contacts && count($leadIds) === 1 ? array_values($records['lead'])[0] : null);
-        $base = ['managed' => false, 'name' => $identity ? $this->safeName($identity['NAME'] ?? '') : null,
+        $base = ['evidence' => [], 'name' => $identity ? $this->safeName($identity['NAME'] ?? '') : null,
             'entity' => $identity ? ($contacts ? 'contact' : 'lead') : null, 'id' => $identity['ID'] ?? null];
         $deals = [];
         // This portal ignores nested OR groups in crm.deal.list. Query each binding
@@ -55,22 +58,22 @@ class WhatsAppSalesContext
                 continue;
             }
             $rows = $this->list('crm.deal.list', [
-                '=CATEGORY_ID' => 1, '=STAGE_SEMANTIC_ID' => 'P', '@'.$field => $ids,
+                '@CATEGORY_ID' => $categories, '=STAGE_SEMANTIC_ID' => 'P', '@'.$field => $ids,
             ], ['ID', 'ASSIGNED_BY_ID', 'CONTACT_ID', 'LEAD_ID', 'CATEGORY_ID', 'STAGE_SEMANTIC_ID']);
             foreach ($rows as $deal) {
                 if (! in_array((string) ($deal[$field] ?? ''), array_map('strval', $ids), true)
-                    || (string) ($deal['CATEGORY_ID'] ?? '') !== '1' || ($deal['STAGE_SEMANTIC_ID'] ?? '') !== 'P') {
+                    || ! in_array((int) ($deal['CATEGORY_ID'] ?? -1), $categories, true) || ($deal['STAGE_SEMANTIC_ID'] ?? '') !== 'P') {
                     throw new RuntimeException('CRM deal ownership does not match the requested Sales identity.');
                 }
                 $deals[(string) $deal['ID']] = $deal;
             }
         }
         if ($deals) {
-            return $this->managed($base, $deals, $identity !== null);
+            return $this->withEvidence($base, $deals, $identity !== null, 'open_deal');
         }
         $leads = $records['lead'];
         if ($contacts) {
-            foreach ($this->list('crm.lead.list', ['@CONTACT_ID' => $contacts, '>=DATE_CREATE' => now()->subDays(60)->toIso8601String()], ['*']) as $lead) {
+            foreach ($this->list('crm.lead.list', ['@CONTACT_ID' => $contacts, '>=DATE_CREATE' => $formSince->toIso8601String()], ['*']) as $lead) {
                 if (! in_array((string) ($lead['CONTACT_ID'] ?? ''), array_map('strval', $contacts), true)) {
                     throw new RuntimeException('CRM lead ownership does not match the requested Sales identity.');
                 }
@@ -78,10 +81,10 @@ class WhatsAppSalesContext
             }
         }
         $forms = array_filter($leads, fn ($lead) => ($lead['STATUS_SEMANTIC_ID'] ?? '') !== 'F'
-            && CarbonImmutable::parse($lead['DATE_CREATE'])->gte(now()->subDays(60))
+            && CarbonImmutable::parse($lead['DATE_CREATE'])->gte($formSince)
             && $this->isForm($lead));
         if ($forms) {
-            return $this->managed($base, $forms, $identity !== null);
+            return $this->withEvidence($base, $forms, $identity !== null, 'form');
         }
         $seen = [];
         foreach ($records as $entity => $items) {
@@ -99,9 +102,9 @@ class WhatsAppSalesContext
                     if (count($parts) < 2 || $parts[0] !== 'whatsappbyedna' || $parts[1] !== '1') {
                         continue;
                     }
-                    $advisor = $this->recentAdvisor($chatId);
+                    $advisor = $this->recentAdvisor($chatId, $advisorSince);
                     if ($advisor) {
-                        return $this->managed($base, [['ASSIGNED_BY_ID' => $advisor]], $identity !== null);
+                        return $this->withEvidence($base, [$advisor], $identity !== null, 'advisor_message');
                     }
                 }
             }
@@ -113,14 +116,20 @@ class WhatsAppSalesContext
     private function isForm(array $lead): bool
     {
         // Markers written by the existing web intake, including pre-attribution submissions.
-        return ! empty($lead['UF_CRM_ATTR_JSON']) || (! empty($lead['UF_CRM_COMM_OWNER'])
+        // Router/assisted leads also receive ATTR_JSON. Attribution alone is not a form.
+        return ! empty($lead['UF_CRM_COMM_OWNER'])
             && ! empty($lead['UF_CRM_1693840106704']) && ! empty($lead['UF_CRM_1714071903'])
-            && ! empty($lead['UF_CRM_64E65D2B2136C']) && ($lead['UF_CRM_1722365051'] ?? '') !== '3729');
+            && ! empty($lead['UF_CRM_64E65D2B2136C'])
+            && (! empty($lead['UF_CRM_ATTR_JSON']) || ($lead['UF_CRM_1722365051'] ?? '') !== '3729');
     }
 
-    private function managed(array $base, array $records, bool $personalize): array
+    private function withEvidence(array $base, array $records, bool $personalize, string $kind): array
     {
-        $base['managed'] = true;
+        $base['evidence'] = array_values(array_map(fn ($record) => match ($kind) {
+            'open_deal' => ['kind' => $kind, 'category_id' => (int) $record['CATEGORY_ID']],
+            'form' => ['kind' => $kind, 'observed_at' => $record['DATE_CREATE'], 'status_semantic' => $record['STATUS_SEMANTIC_ID'] ?? ''],
+            'advisor_message' => ['kind' => $kind, 'observed_at' => $record['OBSERVED_AT'], 'verified_human' => true],
+        }, $records));
         $ids = array_values(array_unique(array_filter(array_column(array_values($records), 'ASSIGNED_BY_ID'))));
         if (count($ids) === 1) {
             $user = $this->employee((int) $ids[0]);
@@ -135,10 +144,9 @@ class WhatsAppSalesContext
         return $base;
     }
 
-    private function recentAdvisor(int $chatId): ?int
+    private function recentAdvisor(int $chatId, CarbonImmutable $cutoff): ?array
     {
         $last = null;
-        $cutoff = CarbonImmutable::now()->subDays(30);
         for ($page = 0; $page < 20; $page++) {
             $params = ['DIALOG_ID' => 'chat'.$chatId, 'LIMIT' => 50];
             if ($last) {
@@ -163,7 +171,7 @@ class WhatsAppSalesContext
                     }
                 }
                 if ($this->employee((int) $message['author_id'])) {
-                    return (int) $message['author_id'];
+                    return ['ASSIGNED_BY_ID' => (int) $message['author_id'], 'OBSERVED_AT' => $date->toIso8601String()];
                 }
             }
             if (count($messages) < 50 || ($oldest && $oldest->lt($cutoff))) {

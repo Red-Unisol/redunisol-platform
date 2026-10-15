@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\SiteSetting;
+use App\Services\EdnaOutOfHoursPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -58,50 +59,27 @@ class WhatsAppOutOfHoursSettings
         }
     }
 
+    // Historical reports use the same Kestra calendar as live decisions.
     public function window(CarbonImmutable $instant, ?array $settings = null): ?array
     {
-        $s = $settings ?? $this->get();
-        $local = $instant->setTimezone($s['timezone']);
-        if ($this->workingDay($local, $s) && $local->format('H:i') >= $s['open'] && $local->format('H:i') < $s['close']) {
-            return null;
-        }
-        $start = $end = null;
-        for ($i = 0; $i <= 370 && (! $start || ! $end); $i++) {
-            $past = $local->startOfDay()->subDays($i);
-            $future = $local->startOfDay()->addDays($i);
-            if (! $start && $this->workingDay($past, $s) && $past->setTimeFromTimeString($s['close'])->lte($local)) {
-                $start = $past->setTimeFromTimeString($s['close']);
-            }
-            if (! $end && $this->workingDay($future, $s) && $future->setTimeFromTimeString($s['open'])->gt($local)) {
-                $end = $future->setTimeFromTimeString($s['open']);
-            }
-        }
-        if (! $start || ! $end) {
-            throw new \RuntimeException('No opening could be calculated from the configured calendar.');
-        }
+        $row = (new EdnaOutOfHoursPolicy)->calendar([$instant->toIso8601String()], $settings ?? $this->get())[0];
+        $window = $row['window'];
 
-        return ['start' => $start->utc(), 'end' => $end->utc()];
+        return $window ? ['start' => CarbonImmutable::parse($window['window_start']),
+            'end' => CarbonImmutable::parse($window['window_end'])] : null;
     }
 
-    private function workingDay(CarbonImmutable $day, array $settings): bool
+    // Only presentation of verified names stays in the transport adapter.
+    public function personalize(string $template, array $context): string
     {
-        return in_array($day->isoWeekday(), array_map('intval', $settings['weekdays']), true)
-            && ! in_array($day->format('Y-m-d'), $settings['holidays'], true);
-    }
-
-    public function render(string $type, array $context, array $window, array $settings): string
-    {
-        $opening = $window['end']->setTimezone($settings['timezone'])->locale('es');
-        $days = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
-        $labels = array_map(fn ($day) => $days[(int) $day], $settings['weekdays']);
-        $template = $settings[$type === 'managed' ? 'managed_text' : 'general_text'];
         $text = strtr($template, [
             '{saludo}' => empty($context['name']) ? '¡Hola!' : '¡Hola, '.$context['name'].'!',
             '{asesor}' => $context['advisor_name'] ?? 'Un asesor',
-            '{proxima_apertura}' => 'el '.$opening->isoFormat('dddd DD/MM').' a partir de las '.$opening->format('H:i').' hs',
-            '{horario}' => implode(', ', $labels).', de '.$settings['open'].' a '.$settings['close'].' hs',
         ]);
         $this->assertText($text);
+        if (preg_match('/[{}]/u', $text)) {
+            throw new \RuntimeException('Unresolved Kestra notice template.');
+        }
 
         return $text;
     }

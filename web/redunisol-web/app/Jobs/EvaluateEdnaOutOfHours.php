@@ -18,7 +18,7 @@ class EvaluateEdnaOutOfHours implements ShouldQueue
 
     public int $tries = 8;
 
-    public int $timeout = 60;
+    public int $timeout = 90;
 
     public function __construct(public readonly int $eventId) {}
 
@@ -37,16 +37,15 @@ class EvaluateEdnaOutOfHours implements ShouldQueue
             $payload = json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR);
             $settings = (new WhatsAppOutOfHoursSettings)->get();
             $service = new EdnaOutOfHours;
-            if (! $service->eligible($event, $payload, $settings)) {
+            $window = $service->eligible($event, $payload, $settings);
+            if (! $window) {
                 DB::table('edna_incoming_events')->where('id', $event->id)->update(['out_of_hours_evaluated_at' => now()]);
 
                 return;
             }
-            $context = app(WhatsAppSalesContext::class)->resolve($payload['subscriber']['identifier']);
-            DB::transaction(function () use ($service, $event, $payload, $context): void {
-                $service->reserve($event, $payload, $context, (new WhatsAppOutOfHoursSettings)->get());
-                DB::table('edna_incoming_events')->where('id', $event->id)->update(['out_of_hours_evaluated_at' => now()]);
-            });
+            $context = app(WhatsAppSalesContext::class)->resolve($payload['subscriber']['identifier'], $window['requirements']);
+            $service->reserve($event, $payload, $context, (new WhatsAppOutOfHoursSettings)->get());
+            DB::table('edna_incoming_events')->where('id', $event->id)->update(['out_of_hours_evaluated_at' => now()]);
         } catch (Throwable) {
             throw new RuntimeException('Out of hours evaluation failed; inspect the event ID.');
         }

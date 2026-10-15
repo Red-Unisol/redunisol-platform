@@ -6,6 +6,7 @@ use App\Jobs\EvaluateEdnaOutOfHours;
 use App\Jobs\ReconcileEdnaOutOfHours;
 use App\Jobs\SendEdnaOutOfHours;
 use App\Models\EdnaOutOfHoursSend;
+use App\Services\EdnaOutOfHoursPolicy;
 use App\Support\WhatsAppOutOfHoursSettings;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -26,17 +27,20 @@ class EdnaOutOfHoursCommand extends Command
             $this->table(['Type', 'State', 'Count'], $rows->map(fn ($r) => [$r->notice_type, $r->state, $r->total]));
             $settings = (new WhatsAppOutOfHoursSettings)->get();
             $groups = [];
-            foreach (DB::table('edna_flow_sends')->where('entry_received_at', '>=', now()->subDays(30))
-                ->cursor(['entry_received_at', 'state']) as $flow) {
-                $received = CarbonImmutable::parse($flow->entry_received_at, 'UTC');
-                $local = $received->setTimezone($settings['timezone']);
-                $phase = $settings['enabled_since'] && $received->gte(CarbonImmutable::parse($settings['enabled_since'])) ? 'after' : 'before';
-                $band = $local->isWeekend() ? 'weekend' : ((new WhatsAppOutOfHoursSettings)->window($received, $settings) ? 'out_of_hours' : 'business_hours');
-                $key = $phase.':'.$band;
-                $groups[$key] ??= [0, 0];
-                $groups[$key][0]++;
-                $groups[$key][1] += $flow->state === 'completed' ? 1 : 0;
-            }
+            DB::table('edna_flow_sends')->where('entry_received_at', '>=', now()->subDays(30))
+                ->orderBy('id')->chunk(500, function ($flows) use (&$groups, $settings): void {
+                    $instants = $flows->map(fn ($flow) => CarbonImmutable::parse($flow->entry_received_at, 'UTC')->toIso8601String())->all();
+                    $bands = (new EdnaOutOfHoursPolicy)->calendar($instants, $settings);
+                    foreach ($flows as $index => $flow) {
+                        $received = CarbonImmutable::parse($flow->entry_received_at, 'UTC');
+                        $phase = $settings['enabled_since'] && $received->gte(CarbonImmutable::parse($settings['enabled_since'])) ? 'after' : 'before';
+                        $band = $bands[$index]['weekend'] ? 'weekend' : ($bands[$index]['window'] ? 'out_of_hours' : 'business_hours');
+                        $key = $phase.':'.$band;
+                        $groups[$key] ??= [0, 0];
+                        $groups[$key][0]++;
+                        $groups[$key][1] += $flow->state === 'completed' ? 1 : 0;
+                    }
+                }, ['entry_received_at', 'state']);
             $this->table(['Phase / band (last 30 days)', 'Router sends', 'Completed', 'Completion %'],
                 collect($groups)->map(fn ($n, $key) => [$key, $n[0], $n[1], round(100 * $n[1] / $n[0], 1)]));
 

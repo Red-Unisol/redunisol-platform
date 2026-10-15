@@ -34,16 +34,18 @@ function salesContextHttp(array $data): void
 function salesFormLead(array $overrides = []): array
 {
     return array_replace(['ID' => '456', 'CONTACT_ID' => '123', 'DATE_CREATE' => now()->subDays(20)->toIso8601String(),
-        'STATUS_SEMANTIC_ID' => 'P', 'ASSIGNED_BY_ID' => '57', 'UF_CRM_ATTR_JSON' => '{"version":1}'], $overrides);
+        'STATUS_SEMANTIC_ID' => 'P', 'ASSIGNED_BY_ID' => '57', 'UF_CRM_ATTR_JSON' => '{"version":1}',
+        'UF_CRM_COMM_OWNER' => 'Kestra', 'UF_CRM_1693840106704' => '20123456789',
+        'UF_CRM_1714071903' => '1', 'UF_CRM_64E65D2B2136C' => '2'], $overrides);
 }
 
 test('an open Sales deal identifies management and its assigned advisor', function () {
     salesContextHttp(['deals' => [['ID' => '1', 'ASSIGNED_BY_ID' => '57']]]);
-    $context = (new WhatsAppSalesContext)->resolve('5493511234567');
-    expect($context['managed'])->toBeTrue()->and($context['name'])->toBe('Ana')
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->not->toBeEmpty()->and($context['name'])->toBe('Ana')
         ->and($context['advisor_name'])->toBe('Maru')->and($context['advisor_id'])->toBe(57);
     Http::assertSent(fn ($r) => str_contains($r->url(), 'crm.deal.list')
-        && $r['filter']['=CATEGORY_ID'] === 1 && $r['filter']['=STAGE_SEMANTIC_ID'] === 'P'
+        && $r['filter']['@CATEGORY_ID'] === [1, 5] && $r['filter']['=STAGE_SEMANTIC_ID'] === 'P'
         && $r['filter']['@CONTACT_ID'] === ['123']);
 });
 
@@ -55,24 +57,24 @@ test('a recent form lead is management, including submissions before attribution
             'UF_CRM_1714071903' => '1', 'UF_CRM_64E65D2B2136C' => '2', 'UF_CRM_1722365051' => '2423'];
     }
     salesContextHttp(['leads' => [$lead]]);
-    expect((new WhatsAppSalesContext)->resolve('5493511234567')['managed'])->toBeTrue();
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->not->toBeEmpty();
 })->with([true, false]);
 
 test('lost, old and non-form leads do not establish management', function (string $case) {
     $lead = match ($case) {
         'lost' => salesFormLead(['STATUS_SEMANTIC_ID' => 'F']),
         'old' => salesFormLead(['DATE_CREATE' => now()->subDays(61)->toIso8601String()]),
-        default => salesFormLead(['UF_CRM_ATTR_JSON' => null]),
+        default => salesFormLead(['UF_CRM_COMM_OWNER' => null]),
     };
     salesContextHttp(['leads' => [$lead]]);
-    expect((new WhatsAppSalesContext)->resolve('5493511234567')['managed'])->toBeFalse();
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->toBeEmpty();
 })->with(['lost', 'old', 'non_form']);
 
 test('a verified employee message in a Sales chat in the last thirty days establishes management', function () {
     salesContextHttp(['chats' => [['CHAT_ID' => 789]], 'messages' => [[
         'id' => 1, 'author_id' => 57, 'date' => now()->subDays(29)->toIso8601String(), 'text' => 'Hola Ana',
     ]]]);
-    expect((new WhatsAppSalesContext)->resolve('5493511234567')['managed'])->toBeTrue();
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->not->toBeEmpty();
 });
 
 test('client, bot, system, old and other-line messages are not advisor evidence', function (string $case) {
@@ -95,38 +97,51 @@ test('client, bot, system, old and other-line messages are not advisor evidence'
         $data['chat_channel'] = 'whatsappbyedna|3|phone';
     }
     salesContextHttp($data);
-    expect((new WhatsAppSalesContext)->resolve('5493511234567')['managed'])->toBeFalse();
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->toBeEmpty();
 })->with(['client', 'bot', 'system', 'old', 'other_line']);
 
 test('duplicate contacts keep management but omit personalized names', function () {
     salesContextHttp(['contact_ids' => ['123', '124'], 'deals' => [['ID' => '1', 'ASSIGNED_BY_ID' => '57']]]);
-    $context = (new WhatsAppSalesContext)->resolve('5493511234567');
-    expect($context['managed'])->toBeTrue()->and($context['name'])->toBeNull()->and($context)->not->toHaveKey('advisor_name');
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->not->toBeEmpty()->and($context['name'])->toBeNull()->and($context)->not->toHaveKey('advisor_name');
 });
 
 test('different assigned advisors omit the advisor name', function () {
     salesContextHttp(['deals' => [['ID' => '1', 'ASSIGNED_BY_ID' => '57'], ['ID' => '2', 'ASSIGNED_BY_ID' => '58']]]);
-    expect((new WhatsAppSalesContext)->resolve('5493511234567'))->not->toHaveKey('advisor_name');
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements()))->not->toHaveKey('advisor_name');
 });
 
 test('a CRM phone mismatch cannot bind another persons context', function () {
     salesContextHttp(['record_phone' => '+54 351 9999999']);
-    $context = (new WhatsAppSalesContext)->resolve('5493511234567');
-    expect($context['managed'])->toBeFalse()->and($context['name'])->toBeNull();
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->toBeEmpty()->and($context['name'])->toBeNull();
     Http::assertNotSent(fn ($r) => str_contains($r->url(), 'crm.deal.list'));
 });
 
 test('no matching CRM records produces the general notice context', function () {
     salesContextHttp(['contact_ids' => []]);
-    expect((new WhatsAppSalesContext)->resolve('5493511234567')['managed'])->toBeFalse();
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->toBeEmpty();
 });
 
 test('CRM failure is retriable and never silently classifies the person as general', function () {
     Http::fake(['redunisol.bitrix24.es/*' => Http::response(['error' => 'insufficient_scope'], 200)]);
-    expect(fn () => (new WhatsAppSalesContext)->resolve('5493511234567'))->toThrow(RuntimeException::class);
+    expect(fn () => (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements()))->toThrow(RuntimeException::class);
 });
 
 test('a server response that ignores ownership filtering is rejected', function () {
     salesContextHttp(['deals' => [['ID' => '1', 'CONTACT_ID' => '999', 'ASSIGNED_BY_ID' => '57']]]);
-    expect(fn () => (new WhatsAppSalesContext)->resolve('5493511234567'))->toThrow(RuntimeException::class);
+    expect(fn () => (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements()))->toThrow(RuntimeException::class);
+});
+
+function salesRequirements(): array
+{
+    return ['deal_categories' => [1, 5], 'form_since' => now()->subDays(60)->toIso8601String(),
+        'advisor_since' => now()->subDays(30)->toIso8601String()];
+}
+
+test('an open Member Services deal is verified evidence for Kestra', function () {
+    salesContextHttp(['deals' => [['ID' => '5', 'CATEGORY_ID' => '5', 'ASSIGNED_BY_ID' => '57']]]);
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->toBe([['kind' => 'open_deal', 'category_id' => 5]])
+        ->and($context)->not->toHaveKey('managed');
 });
