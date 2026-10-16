@@ -1,0 +1,372 @@
+import assert from "node:assert/strict";
+import { it } from "node:test";
+import {
+  ReconocimientoRecibosDraft,
+  ReconocimientoRequestError,
+} from "./reconocimiento-recibos-draft";
+const file = {} as File;
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+function setup() {
+  let config = { habilitado: true, version: 1 };
+  let detections = 0;
+  let calls = 0;
+  const pending = deferred<{ resultado: "recibo"; version: number }>();
+  const statuses: string[] = [];
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => config,
+      analyze: async () => {
+        calls++;
+        return pending.promise;
+      },
+    },
+    (_id, state) => statuses.push(state),
+  );
+  return {
+    draft,
+    pending,
+    statuses,
+    change: (c: typeof config) => {
+      config = c;
+    },
+    detect: () => {
+      detections++;
+    },
+    counts: () => ({ detections, calls }),
+  };
+}
+it("disabled setting makes no recognition call", async () => {
+  const s = setup();
+  s.change({ habilitado: false, version: 1 });
+  s.draft.start("one", file, s.detect);
+  await flush();
+  assert.deepEqual(s.counts(), { calls: 0, detections: 0 });
+});
+it("only active file receives a positive result", async () => {
+  const s = setup();
+  s.draft.start("one", file, s.detect);
+  await flush();
+  s.pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(s.counts().detections, 1);
+  assert.equal(s.statuses.at(-1), "recibo");
+});
+for (const action of [
+  "manual",
+  "removed",
+  "closed",
+  "saved",
+  "contextChanged",
+] as const)
+  it(`late result cannot override ${action}`, async () => {
+    const s = setup();
+    s.draft.start("one", file, s.detect);
+    await flush();
+    if (action === "manual") s.draft.manual("one");
+    else if (action === "removed") s.draft.cancel("one");
+    else s.draft.cancelAll();
+    s.pending.resolve({ resultado: "recibo", version: 1 });
+    await flush();
+    assert.equal(s.counts().detections, 0);
+  });
+it("disabling then reactivating still discards old results", async () => {
+  const s = setup();
+  s.draft.start("one", file, s.detect);
+  await flush();
+  s.change({ habilitado: true, version: 3 });
+  s.pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(s.counts().detections, 0);
+});
+it("polling stops pending recognition after disabling", async () => {
+  const s = setup();
+  s.draft.start("one", file, s.detect);
+  await flush();
+  s.change({ habilitado: false, version: 2 });
+  await s.draft.refreshConfig();
+  s.pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(s.counts().detections, 0);
+  assert.equal(s.statuses.at(-1), "deshabilitado");
+});
+it("replaced file cannot populate the new file", async () => {
+  const first = deferred<{ resultado: "recibo"; version: number }>();
+  const second = deferred<{ resultado: "indeterminado"; version: number }>();
+  let calls = 0;
+  let detected = 0;
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => ({ habilitado: true, version: 1 }),
+      analyze: async () => (++calls === 1 ? first.promise : second.promise),
+    },
+    () => {},
+  );
+  draft.start("one", file, () => {
+    detected++;
+  });
+  await flush();
+  draft.start("one", file, () => {
+    detected++;
+  });
+  await flush();
+  first.resolve({ resultado: "recibo", version: 1 });
+  second.resolve({ resultado: "indeterminado", version: 1 });
+  await flush();
+  assert.equal(detected, 0);
+});
+
+for (const nextId of ["one", "two"])
+  it(`late polling does not cancel a new analysis with id ${nextId}`, async () => {
+    let config = { habilitado: true, version: 1 };
+    const pollConfig = deferred<typeof config>();
+    const oldResult = deferred<{ resultado: "recibo"; version: number }>();
+    const newResult = deferred<{ resultado: "recibo"; version: number }>();
+    const signals: AbortSignal[] = [];
+    const detections: string[] = [];
+    let configReads = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () =>
+          ++configReads === 2 ? pollConfig.promise : { ...config },
+        analyze: async (_file, signal) => {
+          signals.push(signal);
+          return signals.length === 1 ? oldResult.promise : newResult.promise;
+        },
+      },
+      () => {},
+    );
+    draft.start("one", file, () => detections.push("old"));
+    await flush();
+    const poll = draft.refreshConfig();
+    config = { habilitado: true, version: 3 };
+    draft.start(nextId, file, () => detections.push("new"));
+    await flush();
+    pollConfig.resolve({ habilitado: false, version: 2 });
+    await poll;
+    assert.equal(signals[0].aborted, true);
+    assert.equal(signals[1].aborted, false);
+    oldResult.resolve({ resultado: "recibo", version: 1 });
+    newResult.resolve({ resultado: "recibo", version: 3 });
+    await flush();
+    assert.deepEqual(detections, ["new"]);
+  });
+
+for (const habilitado of [false, true])
+  it(`polling ignores an older configuration with habilitado=${habilitado}`, async () => {
+    const initialConfig = deferred<{ habilitado: boolean; version: number }>();
+    const pollConfig = deferred<{ habilitado: boolean; version: number }>();
+    const result = deferred<{ resultado: "recibo"; version: number }>();
+    let configReads = 0;
+    let signal!: AbortSignal;
+    let detections = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => {
+          if (++configReads === 1) return initialConfig.promise;
+          if (configReads === 2) return pollConfig.promise;
+          return { habilitado: true, version: 3 };
+        },
+        analyze: async (_file, receivedSignal) => {
+          signal = receivedSignal;
+          return result.promise;
+        },
+      },
+      () => {},
+    );
+    draft.start("one", file, () => detections++);
+    const poll = draft.refreshConfig();
+    initialConfig.resolve({ habilitado: true, version: 3 });
+    await flush();
+    pollConfig.resolve({ habilitado, version: 2 });
+    await poll;
+    assert.equal(signal.aborted, false);
+    result.resolve({ resultado: "recibo", version: 3 });
+    await flush();
+    assert.equal(detections, 1);
+  });
+
+it("polling leaves initial configuration validation to the pending job", async () => {
+  const initialConfig = deferred<{ habilitado: boolean; version: number }>();
+  const result = deferred<{ resultado: "recibo"; version: number }>();
+  let configReads = 0;
+  let calls = 0;
+  let detections = 0;
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => {
+        if (++configReads === 1) return initialConfig.promise;
+        if (configReads === 2) return { habilitado: false, version: 2 };
+        return { habilitado: true, version: 3 };
+      },
+      analyze: async () => {
+        calls++;
+        return result.promise;
+      },
+    },
+    () => {},
+  );
+  draft.start("one", file, () => detections++);
+  await draft.refreshConfig();
+  initialConfig.resolve({ habilitado: true, version: 3 });
+  await flush();
+  assert.equal(calls, 1);
+  result.resolve({ resultado: "recibo", version: 3 });
+  await flush();
+  assert.equal(detections, 1);
+});
+
+it("polling still cancels a job after disabling and reactivating", async () => {
+  const s = setup();
+  s.draft.start("one", file, s.detect);
+  await flush();
+  s.change({ habilitado: true, version: 3 });
+  await s.draft.refreshConfig();
+  s.pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(s.counts().detections, 0);
+  assert.equal(s.statuses.at(-1), "deshabilitado");
+});
+
+for (const failure of ["credential", "provider", "request", "configuration"])
+  it(`operator can classify manually after ${failure} failure`, async () => {
+    let tipoAdjunto = "";
+    const statuses: string[] = [];
+    let providerCalls = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => {
+          if (failure === "configuration")
+            throw new Error("settings unavailable");
+          return { habilitado: true, version: 1 };
+        },
+        analyze: async () => {
+          providerCalls++;
+          if (failure === "request") throw new Error("analysis HTTP failure");
+          return {
+            resultado: "error",
+            motivo: failure === "credential" ? "credencial" : "proveedor",
+            version: 1,
+          };
+        },
+      },
+      (_id, state) => statuses.push(state),
+    );
+    draft.start("one", file, () => {
+      tipoAdjunto = "Recibo de Sueldo";
+    });
+    await flush();
+    assert.equal(tipoAdjunto, "");
+    assert.equal(
+      statuses.at(-1),
+      failure === "credential" ? "error_credencial" : "error",
+    );
+    assert.equal(providerCalls, failure === "configuration" ? 0 : 1);
+    draft.manual("one");
+    tipoAdjunto = "CUPO";
+    draft.cancelAll(true);
+    assert.equal(tipoAdjunto, "CUPO");
+    assert.equal(statuses.at(-1), "manual");
+  });
+it("operator can proceed manually while the recognition request is stuck", async () => {
+  const pending = deferred<{ resultado: "recibo"; version: number }>();
+  let signal!: AbortSignal;
+  let detections = 0;
+  const statuses: string[] = [];
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => ({ habilitado: true, version: 1 }),
+      analyze: async (_file, receivedSignal) => {
+        signal = receivedSignal;
+        return pending.promise;
+      },
+    },
+    (_id, state) => statuses.push(state),
+  );
+  draft.start("one", file, () => detections++);
+  await flush();
+  draft.manual("one");
+  draft.cancelAll(true);
+  assert.equal(signal.aborted, true);
+  assert.equal(statuses.at(-1), "manual");
+  pending.resolve({ resultado: "recibo", version: 1 });
+  await flush();
+  assert.equal(detections, 0);
+});
+
+for (const code of [
+  "limite_proveedor",
+  "autenticacion_proveedor",
+  "timeout_proveedor",
+  "conexion_proveedor",
+  "modelo_no_disponible",
+  "respuesta_invalida",
+  "servicio_proveedor",
+])
+  it(`shows safe provider diagnostic ${code} without changing category`, async () => {
+    const states: string[] = [];
+    let detections = 0;
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => ({ habilitado: true, version: 1 }),
+        analyze: async () => ({
+          resultado: "error",
+          motivo: "proveedor",
+          codigoError: code,
+          version: 1,
+        }),
+      },
+      (_id, state) => states.push(state),
+    );
+    draft.start("file", file, () => {
+      detections++;
+    });
+    await flush();
+    assert.equal(states.at(-1), code);
+    assert.equal(detections, 0);
+  });
+for (const [status, expected] of [
+  [0, "error_conexion_solicitudes"],
+  [401, "error_sesion"],
+  [403, "error_permisos"],
+  [413, "error_archivo"],
+  [503, "error"],
+] as const)
+  it(`separates application HTTP ${status} from Mistral errors`, async () => {
+    const states: string[] = [];
+    const draft = new ReconocimientoRecibosDraft(
+      {
+        config: async () => ({ habilitado: true, version: 1 }),
+        analyze: async () => {
+          throw new ReconocimientoRequestError(status);
+        },
+      },
+      (_id, state) => states.push(state),
+    );
+    draft.start("file", file, () => assert.fail("must not classify"));
+    await flush();
+    assert.equal(states.at(-1), expected);
+  });
+it("ignores unknown diagnostic strings instead of rendering provider messages", async () => {
+  const states: string[] = [];
+  const draft = new ReconocimientoRecibosDraft(
+    {
+      config: async () => ({ habilitado: true, version: 1 }),
+      analyze: async () => ({
+        resultado: "error",
+        codigoError: "private-provider-text",
+        version: 1,
+      }),
+    },
+    (_id, state) => states.push(state),
+  );
+  draft.start("file", file, () => assert.fail());
+  await flush();
+  assert.equal(states.at(-1), "error");
+});

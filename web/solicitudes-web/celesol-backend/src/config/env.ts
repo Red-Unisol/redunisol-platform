@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mistralEnvSchema } from "./mistral-env";
 import { integrationConfigSchema } from "../modules/transferencias-integration/config";
 import { documentReviewConfigSchema } from "../modules/document-review/config";
 
@@ -22,6 +23,8 @@ const envSchema = z.object({
   DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET: z.string().trim().default(""),
   DOCUMENT_REVIEW_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   DOCUMENT_REVIEW_MAX_PDF_BYTES: z.coerce.number().int().positive().max(100 * 1024 * 1024).default(64 * 1024 * 1024),
+
+  ...mistralEnvSchema.shape,
   ACCESS_TOKEN_SECRET: z
     .string()
     .min(32, "ACCESS_TOKEN_SECRET must be at least 32 characters"),

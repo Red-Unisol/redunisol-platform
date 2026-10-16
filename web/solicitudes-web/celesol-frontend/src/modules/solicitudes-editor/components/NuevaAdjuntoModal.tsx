@@ -1,6 +1,9 @@
+import { useParams } from "react-router-dom";
+import { useReconocimientoRecibos } from "@/modules/solicitudes-core/hooks/use-reconocimiento-recibos";
+import { mensajesAnalisis } from "@/modules/solicitudes-core/utils/reconocimiento-recibos-draft";
+import { useTiposAdjuntoQuery } from "@/modules/solicitudes-core/hooks/use-tipos-adjunto-query";
 import { ChevronDown, Paperclip, Plus, X } from "lucide-react";
 import {
-  useEffect,
   useId,
   useRef,
   useState,
@@ -30,6 +33,7 @@ import {
   legacyFieldClassName,
 } from "./fields/base";
 import { cn } from "@/shared/utils/cn";
+import { TipoAdjuntoSelect } from "./TipoAdjuntoSelect";
 
 type NuevaAdjuntoModalInitialValues = Omit<
   UploadSolicitudCoreAdjuntoRequest,
@@ -39,14 +43,7 @@ type NuevaAdjuntoModalInitialValues = Omit<
   file?: File;
 };
 
-export function NuevaAdjuntoModal({
-  initialValues,
-  isSaving = false,
-  onOpenChange,
-  onSave,
-  onSaveEdit,
-  open,
-}: {
+type NuevaAdjuntoModalProps = {
   initialValues?: NuevaAdjuntoModalInitialValues;
   isSaving?: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,30 +52,47 @@ export function NuevaAdjuntoModal({
     payload: PatchSolicitudCoreAdjuntoRequest & { file: File | null },
   ) => Promise<boolean>;
   open: boolean;
-}) {
+};
+export function NuevaAdjuntoModal(props: NuevaAdjuntoModalProps) {
+  const { id } = useParams<{ id: string }>();
+  return (
+    <NuevaAdjuntoModalContent
+      key={`${id ?? "alta"}:${props.open}`}
+      {...props}
+    />
+  );
+}
+function NuevaAdjuntoModalContent({
+  initialValues,
+  isSaving = false,
+  onOpenChange,
+  onSave,
+  onSaveEdit,
+  open,
+}: NuevaAdjuntoModalProps) {
+  const { draft, estados } = useReconocimientoRecibos(open);
+  const { data: tiposAdjunto = [] } = useTiposAdjuntoQuery();
+  const manualTipo = useRef(Boolean(initialValues?.tipoAdjunto));
   const isEditMode = Boolean(onSaveEdit);
   const inputFileRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
   const fileInputHintId = useId();
   const selectedFileNameId = useId();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [descripcion, setDescripcion] = useState("");
-  const [tipoAdjunto, setTipoAdjunto] = useState("");
-  const [comentario, setComentario] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(
+    isEditMode ? null : (initialValues?.file ?? null),
+  );
+  const [descripcion, setDescripcion] = useState(
+    initialValues?.descripcion ?? "",
+  );
+  const [tipoAdjunto, setTipoAdjunto] = useState(
+    initialValues?.tipoAdjunto ?? "",
+  );
+  const [comentario, setComentario] = useState(initialValues?.comentario ?? "");
   const [isDragActive, setIsDragActive] = useState(false);
 
-  useEffect(() => {
-    if (open && initialValues) {
-      setSelectedFile(isEditMode ? null : (initialValues.file ?? null));
-      setDescripcion(initialValues.descripcion ?? "");
-      setTipoAdjunto(initialValues.tipoAdjunto ?? "");
-      setComentario(initialValues.comentario ?? "");
-    }
-    // Only re-seed when the modal opens, not on every initialValues reference change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
   function resetDraft() {
+    draft.cancelAll();
+    manualTipo.current = false;
     dragDepthRef.current = 0;
     setIsDragActive(false);
     setSelectedFile(null);
@@ -102,6 +116,12 @@ export function NuevaAdjuntoModal({
     dragDepthRef.current = 0;
     setIsDragActive(false);
     setSelectedFile(file);
+    draft.cancel("single");
+    if (!manualTipo.current) setTipoAdjunto("");
+    if (file)
+      draft.start("single", file, () => {
+        if (!manualTipo.current) setTipoAdjunto("Recibo de Sueldo");
+      });
 
     if (!file && inputFileRef.current) {
       inputFileRef.current.value = "";
@@ -219,6 +239,7 @@ export function NuevaAdjuntoModal({
   }
 
   async function handleSave() {
+    draft.cancelAll(true);
     const metadata = {
       comentario: comentario.trim() || undefined,
       descripcion: descripcion.trim() || undefined,
@@ -375,8 +396,14 @@ export function NuevaAdjuntoModal({
               </ModalField>
               <ModalField label="Tipo Adjunto">
                 <div className="flex min-w-0 gap-1">
-                  <Input
-                    onChange={(event) => setTipoAdjunto(event.target.value)}
+                  <TipoAdjuntoSelect
+                    initialValue={initialValues?.tipoAdjunto}
+                    options={tiposAdjunto}
+                    onChange={(value) => {
+                      manualTipo.current = true;
+                      draft.manual("single");
+                      setTipoAdjunto(value);
+                    }}
                     value={tipoAdjunto}
                   />
                   <LegacyIconButton className="text-foreground-secondary">
@@ -393,6 +420,11 @@ export function NuevaAdjuntoModal({
             </div>
           </ModalSection>
 
+          {selectedFile && estados.single ? (
+            <p role="status" className="text-sm text-foreground-secondary">
+              {mensajesAnalisis[estados.single]}
+            </p>
+          ) : null}
           <ModalField label="Comentario">
             <textarea
               className={`${legacyFieldClassName} h-20 resize-none py-2`}

@@ -1,3 +1,7 @@
+import {
+  mensajesAnalisis,
+  type EstadoAnalisis,
+} from "@/modules/solicitudes-core/utils/reconocimiento-recibos-draft";
 import { FileText, Image, Paperclip, X } from "lucide-react";
 
 import { LegacyIconButton, StyledSelect } from "./fields/base";
@@ -71,12 +75,14 @@ function truncateFileNameMiddle(fileName: string, maxLength = 32): string {
 
 export function AdjuntoLoteItemRow({
   disabled,
+  estadoAnalisis,
   item,
   onRemove,
   onTipoAdjuntoChange,
   tiposAdjunto,
 }: {
   disabled: boolean;
+  estadoAnalisis?: EstadoAnalisis;
   item: PendingAdjuntoLoteItem;
   onRemove: () => void;
   onTipoAdjuntoChange: (tipoAdjunto: string) => void;
@@ -107,6 +113,11 @@ export function AdjuntoLoteItemRow({
             {getFileExtensionLabel(item.file.name)} ·{" "}
             {formatFileSize(item.file.size)}
           </p>
+          {estadoAnalisis ? (
+            <p role="status" className="text-xs text-foreground-secondary">
+              {mensajesAnalisis[estadoAnalisis]}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center gap-2 sm:shrink-0">

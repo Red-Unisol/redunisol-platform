@@ -79,23 +79,25 @@ describe("createSocioBodySchema", () => {
     );
   });
 
-  it("rejects persona fisica without domicilioNroPuerta", () => {
-    assert.equal(
-      createSocioBodySchema.safeParse({
-        apellido: "Perez",
-        cuit: "20123456783",
-        domicilioCalle: "San Martin",
-        domicilioCodigoPostal: "2300",
-        domicilioLocalidad: "12",
-        fechaDeNacimiento: "1990-02-28",
-        nombre: "Juan",
-        nroDocumento: "12345678",
-        sexo: "M",
-        tipoDocumento: "DNI",
-        tipoPersona: "FISICA",
-      }).success,
-      false,
-    );
+  it("accepts persona fisica with only calle and localidad as domicilio", () => {
+    const parsed = createSocioBodySchema.parse({
+      apellido: "Perez",
+      cuit: "20123456783",
+      domicilioCalle: "Artigas 143 Alberdi",
+      domicilioCodigoPostal: "  ",
+      domicilioLocalidad: "2715",
+      fechaDeNacimiento: "1990-02-28",
+      nombre: "Juan",
+      nroDocumento: "12345678",
+      sexo: "M",
+      tipoDocumento: "DNI",
+      tipoPersona: "FISICA",
+    });
+
+    assert.equal(parsed.domicilioCalle, "Artigas 143 Alberdi");
+    assert.equal(parsed.domicilioLocalidad, "2715");
+    assert.equal(parsed.domicilioNroPuerta, undefined);
+    assert.equal(parsed.domicilioCodigoPostal, undefined);
   });
 
   it("rejects persona fisica without domicilioLocalidad", () => {
@@ -117,14 +119,13 @@ describe("createSocioBodySchema", () => {
     );
   });
 
-  it("rejects persona fisica without domicilioCodigoPostal", () => {
+  it("rejects persona fisica with a localidad that is not a Vimarx ID", () => {
     assert.equal(
       createSocioBodySchema.safeParse({
         apellido: "Perez",
         cuit: "20123456783",
         domicilioCalle: "San Martin",
-        domicilioLocalidad: "12",
-        domicilioNroPuerta: "742",
+        domicilioLocalidad: "Cordoba",
         fechaDeNacimiento: "1990-02-28",
         nombre: "Juan",
         nroDocumento: "12345678",

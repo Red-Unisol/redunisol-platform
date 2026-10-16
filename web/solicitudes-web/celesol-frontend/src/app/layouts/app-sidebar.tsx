@@ -136,6 +136,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                 label: "Permisos de edición",
                 to: "/admin/solicitudes/field-access-rules",
               },
+              { label: "Reconocimiento de recibos", icon: Shield, to: "/admin/solicitudes/reconocimiento-recibos" },
               {
                 icon: Shield,
                 label: "Transiciones",

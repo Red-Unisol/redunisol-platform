@@ -5,9 +5,9 @@ export type CreateSocioData =
       celular?: string | null;
       cuit: string;
       domicilioCalle: string;
-      domicilioCodigoPostal: string;
+      domicilioCodigoPostal: string | null;
       domicilioLocalidad: string;
-      domicilioNroPuerta: string;
+      domicilioNroPuerta: string | null;
       email?: string | null;
       fechaDeNacimiento: Date;
       nombre: string;
@@ -23,9 +23,9 @@ export type CreateSocioData =
       celular?: string | null;
       cuit: string;
       domicilioCalle: string;
-      domicilioCodigoPostal: string;
+      domicilioCodigoPostal: string | null;
       domicilioLocalidad: string;
-      domicilioNroPuerta: string;
+      domicilioNroPuerta: string | null;
       email?: string | null;
       fechaDeNacimiento: null;
       nombre: null;
