@@ -51,6 +51,9 @@ class EdnaOutOfHours
             return true;
         }
         $request = $payload['replyOutMessageExternalRequestId'] ?? null;
+        // Other senders use opaque references rather than our UUIDs.
+        // PostgreSQL rejects those values even when the lookup would find no row.
+        $request = is_string($request) && Str::isUuid($request) ? $request : null;
         $outgoing = $payload['replyOutMessageId'] ?? null;
         if (($request && (clone $query)->where('request_id', $request)->exists())
             || ($outgoing && (clone $query)->where('outgoing_message_id', (string) $outgoing)->exists())) {

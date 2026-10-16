@@ -119,6 +119,7 @@ permisos. Los estados y cantidades pueden consultarse sin datos personales:
 php artisan edna:out-of-hours report
 php artisan edna:out-of-hours recover
 php artisan edna:out-of-hours recover --apply
+php artisan edna:out-of-hours recover --apply --retry-failed-evaluations
 php artisan edna:out-of-hours prune --apply
 ```
 
@@ -132,6 +133,26 @@ El scheduler recupera evaluaciones/envíos cada cinco minutos y limpia PII de
 avisos cerrados de más de 30 días. Conserva registros y claves de deduplicación;
 los envíos inciertos conservan datos cifrados para conciliar. Los jobs solo llevan
 IDs, sin teléfonos, nombres ni textos.
+
+Cada evaluación tiene un identificador de ejecución persistido en el inbox en la
+misma transacción que inserta su job. El recuperador solo encola eventos sin una
+ejecución asignada: respeta los ocho intentos y sus esperas, aunque el intervalo
+entre intentos supere cinco minutos. Las evaluaciones que agotan sus intentos se
+marcan con `out_of_hours_evaluation_failed_at` y aparecen como pendientes de
+revisión en `recover`. Tras resolver la causa, el operador puede usar
+`--retry-failed-evaluations` para asignarles una ejecución nueva dentro de las
+23 horas de vigencia. Los jobs antiguos o duplicados con otra ejecución se
+descartan sin consultas CRM ni envíos; los jobs anteriores al despliegue adoptan
+su UUID de cola estable al comenzar. Una caída del worker conserva el job durable
+y sus reintentos normales. Una eliminación manual de jobs requiere conciliación
+operativa, no un reinicio automático de la ejecución.
+
+Las referencias externas de respuestas Edna no necesariamente son UUID: otros
+emisores pueden usar valores de 23 caracteres con un punto. Solo se busca por
+`request_id` cuando la referencia tiene formato UUID. La búsqueda alternativa por
+`outgoing_message_id` sigue verificando persona/canal, incluso con una referencia
+externa de otro formato. La regresión de este caso corre también en PostgreSQL,
+porque SQLite no valida el tipo UUID de esas columnas.
 
 ## Entrega y conciliación
 
