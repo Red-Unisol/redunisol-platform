@@ -15,7 +15,9 @@ use Illuminate\Support\Facades\Queue;
 
 class EdnaOutOfHoursCommand extends Command
 {
-    protected $signature = 'edna:out-of-hours {operation : report, recover or prune} {--apply : Apply recovery or retention}';
+    protected $signature = 'edna:out-of-hours {operation : report, recover or prune}
+        {--apply : Apply recovery or retention}
+        {--retry-failed-evaluations : Explicitly retry evaluations that exhausted their attempts}';
 
     protected $description = 'Inspect and recover Sales notices without logging recipient data';
 
@@ -61,16 +63,23 @@ class EdnaOutOfHoursCommand extends Command
 
             return self::FAILURE;
         }
+        $retryFailed = (bool) $this->option('retry-failed-evaluations');
         $events = DB::table('edna_incoming_events')->where('status', 'delivered')->where('out_of_hours_candidate', true)
+            ->whereNotNull('payload')
             ->whereNull('out_of_hours_evaluated_at')->where('delivered_at', '>', now()->subHours(23))
-            ->where('updated_at', '<', now()->subMinutes(5));
+            ->where('updated_at', '<', now()->subMinutes(5))
+            ->where(function ($query) use ($retryFailed): void {
+                $query->whereNull('out_of_hours_evaluation_id');
+                if ($retryFailed) {
+                    $query->orWhereNotNull('out_of_hours_evaluation_failed_at');
+                }
+            });
+        $this->info('Evaluations requiring review: '.DB::table('edna_incoming_events')
+            ->whereNull('out_of_hours_evaluated_at')->whereNotNull('out_of_hours_evaluation_failed_at')->count());
         $this->info('Events eligible for evaluation recovery: '.$events->count());
         if ($this->option('apply')) {
-            $events->orderBy('id')->limit(100)->get(['id'])->each(function ($event): void {
-                DB::transaction(function () use ($event): void {
-                    Queue::connection('edna')->push(new EvaluateEdnaOutOfHours($event->id), '', 'edna');
-                    DB::table('edna_incoming_events')->where('id', $event->id)->update(['updated_at' => now()]);
-                });
+            $events->orderBy('id')->limit(100)->get(['id'])->each(function ($event) use ($retryFailed): void {
+                EvaluateEdnaOutOfHours::enqueue((int) $event->id, retryFailed: $retryFailed);
             });
         }
         $query = EdnaOutOfHoursSend::whereIn('state', ['pending', 'sending', 'accepted', 'unknown'])->where('updated_at', '<', now()->subMinutes(5));

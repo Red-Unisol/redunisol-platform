@@ -194,7 +194,7 @@ test('calendar validates closing time and holiday dates', function (array $inval
 
 test('pending automated Flow suppresses ordinary replies before any CRM query', function () {
     $send = offHoursReserve();
-    DB::table('edna_flow_sends')->insert(['scope' => $send->scope, 'request_id' => 'router-test', 'entry_event_id' => 999,
+    DB::table('edna_flow_sends')->insert(['scope' => $send->scope, 'request_id' => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'entry_event_id' => 999,
         'subject_id' => '2423', 'cascade_id' => '2557', 'flow_id' => '1850162769693486', 'recipient' => Crypt::encryptString($send->recipient),
         'state' => 'confirmed', 'entry_received_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
     $posts = 0;
@@ -338,10 +338,11 @@ test('scheduler can recover an evaluation that failed before reserving a notice'
 });
 
 test('reply to an advisor-sent form link suppresses the informational notice', function () {
-    [$event, $payload] = offHoursEvent(['replyOutMessageExternalRequestId' => 'form-request']);
+    $request = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    [$event, $payload] = offHoursEvent(['replyOutMessageExternalRequestId' => $request]);
     $hash = (new AttributionJourney)->phoneHash($payload['subscriber']['identifier']);
     DB::table('edna_form_link_sends')->insert(['scope' => hash('sha256', '2423:'.$hash),
-        'entry_event_id' => 888, 'request_id' => 'form-request', 'subject_id' => '2423', 'cascade_id' => '2557',
+        'entry_event_id' => 888, 'request_id' => $request, 'subject_id' => '2423', 'cascade_id' => '2557',
         'crm_entity' => 'contact', 'crm_id' => '123', 'state' => 'confirmed', 'created_at' => now(), 'updated_at' => now()]);
     expect((new EdnaOutOfHours)->automaticRoute($event, $payload))->toBeTrue();
     $payload['subscriber']['identifier'] = '5493519999999';

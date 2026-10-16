@@ -10,7 +10,6 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Queue;
 use RuntimeException;
 use Throwable;
 
@@ -77,7 +76,7 @@ class ReceiveEdnaInKestra implements ShouldQueue
                 ]);
                 if (config('edna.out_of_hours_enabled') && $result['kind'] === 'ignored'
                     && ($result['out_of_hours_candidate'] ?? false) === true) {
-                    Queue::connection('edna')->later(10, new EvaluateEdnaOutOfHours($event->id), '', 'edna');
+                    EvaluateEdnaOutOfHours::enqueue((int) $event->id, 10);
                 }
             });
         } catch (Throwable) {
