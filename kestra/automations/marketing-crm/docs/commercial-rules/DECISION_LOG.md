@@ -1,9 +1,22 @@
 # Registro de Decisiones Comerciales
 
-Versión: `2026-08-26`
+Versión: `2026-10-13`
 
 Este documento conserva decisiones funcionales cerradas para evitar que conceptos
 históricos vuelvan a incorporarse por error.
+
+## `COR-DEC-23321` — Límite de entidades para nuevos de Caja Morosos
+
+- **Fecha y aprobación:** 13/10/2026, Santiago, autorización de implementación tras
+  revisar la solicitud de Marketing de la tarea Bitrix24 `23321`.
+- **Decisión:** Jubilado Provincial nuevo con BCRA 4/5 admite hasta ocho entidades
+  totales del período más reciente; desde nueve, rechazo BCRA sin distribución.
+- **Prioridad:** mantiene el rechazo por banco de cobro mayor que 1 y los requisitos
+  previos de datos y edad. No modifica recurrentes, municipales ni otras líneas.
+- **Estado:** implementado y probado; pendiente de deploy y auditoría productiva.
+- **Dependencia separada:** distinguir pensionados de Caja Córdoba y ANSES mediante
+  evidencia verificable, evaluando CIDI/Caja, en la tarea `23333` de Santiago.
+- **Contrato, ejemplos y pruebas:** [`CAJA_MOROSOS_23321.md`](CAJA_MOROSOS_23321.md).
 
 ## `COR-DEC-001` — Unificar CBU Recurrente
 

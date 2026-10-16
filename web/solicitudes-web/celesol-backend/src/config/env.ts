@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { mistralEnvSchema } from "./mistral-env";
 import { integrationConfigSchema } from "../modules/transferencias-integration/config";
+import { documentReviewConfigSchema } from "../modules/document-review/config";
 
 const normalizeCommaSeparatedList = (value: string) =>
   value
@@ -14,6 +15,15 @@ const FINALIZAR_FIRMA_DIGITAL_BASE_URL_POR_DEFECTO =
   "https://redunisol.com.ar/finalizar.php";
 
 const envSchema = z.object({
+  DOCUMENT_REVIEW_ENABLED: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
+  DOCUMENT_REVIEW_SERVER_BASE_URL: z.string().trim().default(""),
+  DOCUMENT_REVIEW_SERVER_CLIENT_ID: z.string().trim().default(""),
+  DOCUMENT_REVIEW_SERVER_CLIENT_SECRET: z.string().trim().default(""),
+  DOCUMENT_REVIEW_METAMAP_CLIENT_ID: z.string().trim().default(""),
+  DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET: z.string().trim().default(""),
+  DOCUMENT_REVIEW_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
+  DOCUMENT_REVIEW_MAX_PDF_BYTES: z.coerce.number().int().positive().max(100 * 1024 * 1024).default(64 * 1024 * 1024),
+
   ...mistralEnvSchema.shape,
   ACCESS_TOKEN_SECRET: z
     .string()
@@ -189,6 +199,10 @@ if (!parsedEnv.success) {
 }
 
 export const env = parsedEnv.data;
+documentReviewConfigSchema.parse({ enabled: env.DOCUMENT_REVIEW_ENABLED,
+  serverBaseUrl: env.DOCUMENT_REVIEW_SERVER_BASE_URL, serverClientId: env.DOCUMENT_REVIEW_SERVER_CLIENT_ID,
+  serverClientSecret: env.DOCUMENT_REVIEW_SERVER_CLIENT_SECRET,
+  clientId: env.DOCUMENT_REVIEW_METAMAP_CLIENT_ID, clientSecret: env.DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET });
 integrationConfigSchema.parse({
   tokenSha256: env.TRANSFERENCIAS_API_TOKEN_SHA256,
   userId: env.TRANSFERENCIAS_API_USER_ID,

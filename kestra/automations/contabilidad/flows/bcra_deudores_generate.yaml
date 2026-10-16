@@ -1,0 +1,53 @@
+id: bcra_deudores_generate
+namespace: redunisol
+description: Genera una presentación BCRA Celesol a pedido desde Herramientas, con configuración e historial por corrida.
+labels:
+  env: prod
+  team: redunisol
+  kind: manual
+  domain: contabilidad
+inputs:
+  - id: request
+    type: JSON
+    required: true
+    description: Período, líneas elegidas, tasa y exclusiones. Las credenciales y consultas se resuelven en el servidor.
+concurrency:
+  limit: 1
+  behavior: QUEUE
+tasks:
+  - id: generate
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+      include:
+        - bcra_deudores/**
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/srv/redunisol-reports:/reports"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install --quiet kestra tzdata
+    env:
+      BCRA_REQUEST: "{{ inputs.request | toJson }}"
+      BCRA_EXECUTION_ID: "{{ execution.id }}"
+      BCRA_REPORTS_MOUNT: /reports
+      BCRA_OUTPUT_ROOT: "/reports/contabilidad/bcra/{{ flow.namespace }}"
+      BCRA_CORE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      BCRA_CORE_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
+      BCRA_CORE_VERIFY_TLS: "{{ envs.vimarx_verify_tls ?? 'true' }}"
+    commands:
+      - python -m bcra_deudores.kestra_entrypoint
+outputs:
+  - id: run_id
+    type: STRING
+    value: "{{ outputs.generate.vars.run_id }}"
+  - id: status
+    type: STRING
+    value: "{{ outputs.generate.vars.status }}"
+  - id: debtors
+    type: INT
+    value: "{{ outputs.generate.vars.debtors }}"
+  - id: loans
+    type: INT
+    value: "{{ outputs.generate.vars.loans }}"

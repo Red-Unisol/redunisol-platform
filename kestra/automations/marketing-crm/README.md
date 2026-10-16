@@ -6,6 +6,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- [WhatsApp fuera de horario de Ventas (23233)](../../../docs/whatsapp-out-of-hours.md): candidatos de Kestra, calendario, avisos sin enlaces y activación coordinada.
+
 - [Incidente 23271: grupos pausados](docs/technical/INCIDENT_23271_PAUSED_ROUTING_POOL.md): evita que un pool vacío bloquee la calificación y conserva sus casos en cola.
 
 - [Atribución web–WhatsApp (23229)](docs/technical/WEB_WHATSAPP_ATTRIBUTION.md): snapshots de origen, referencia en conversación/formulario y herencia al deal. Primera entrega apagada por defecto.
@@ -42,9 +44,10 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
 - El prefill no considera ownership. Reintenta hasta tres veces y luego mueve el lead a `PRECLASIFICACION (NEW)`, incluso si el enriquecimiento quedo parcial.
-- Las fallas temporales de BCRA se persisten y reintentan con backoff durante 24 horas. Una negociación pendiente de BCRA no se rechaza ni se distribuye, y tampoco bloquea la clasificación de otras negociaciones. La política detallada vive en `docs/technical/bcra-retry-policy.md`.
+- Las fallas temporales de BCRA se reintentan brevemente en la consulta y se persisten para recuperación durante 24 horas, con esperas de 1/5/15 minutos dentro de la ventana comercial. Una negociación pendiente de BCRA no se rechaza ni se distribuye, y tampoco bloquea la clasificación de otras negociaciones. La política detallada vive en `docs/technical/bcra-retry-policy.md`.
 - Antes de clasificar negociaciones internas pendientes se consulta Vimarx con el CUIL actual, independientemente de la antigüedad o etapa del lead. El resultado se copia al lead y a la negociación. Las fallas se reintentan sin decidir ni distribuir; véase `docs/technical/vimarx-deal-refresh.md` (implementado, pendiente de deploy).
 - Los demas origenes omiten CredixSA sin registrar errores ni reintentos por esa omision y conservan sus campos CredixSA historicos.
+- El clasificador procesa lotes secuenciales de hasta cinco negociaciones en un solo contenedor, con exclusión entre ejecuciones y traza individual por caso.
 - Finguru se identifica por `origenFormulario=3729`. Si DNI y CUIL contienen los mismos ocho digitos, A13 resuelve el CUIL filtrando claves CUIT/CUIL activas sin comparar nombres; si no hay una unica clave o falla, consulta CredixSA; solo se persiste cuando la respuesta es unica, contiene ese DNI y supera la validacion de checksum.
 - Una identidad Finguru ambigua o no encontrada no produce un CUIL inventado ni un rechazo comercial. Queda como enriquecimiento parcial bajo la politica normal de reintentos.
 - `ONCRMLEADUPDATE` precalifica cualquier lead en `PRECLASIFICACION (NEW)` creado desde

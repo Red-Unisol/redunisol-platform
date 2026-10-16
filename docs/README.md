@@ -17,6 +17,7 @@ Documentacion tecnica transversal de la repo.
 - `redunisol-web-deploy-runbook.md`: runbook operativo de `web/redunisol-web`, circuitos de `.env`, limites entre desarrollo e integracion y estado validado del deploy
 - `redunisol-web-overview.md`: guia de onboarding tecnico para entender como funciona `web/redunisol-web`, como se modifica y por donde ampliarla
 - `redunisol-web-production-cutover.md`: runbook de corte productivo de `redunisol.com.ar`, preservando mail en la VPS anterior
+- `whatsapp-out-of-hours.md`: aviso de Ventas fuera de horario, edición de Marketing, recuperación y activación coordinada con Bitrix
 
 ## Cuando agregar un documento nuevo
 

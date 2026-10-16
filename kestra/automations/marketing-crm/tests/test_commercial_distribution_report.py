@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 import sys
@@ -59,6 +60,18 @@ def execution(*, action="approved", strategy="round_robin", state="SUCCESS"):
 
 
 class CommercialDistributionReportTests(unittest.TestCase):
+    def test_qualification_batch_preserves_each_deal_in_report(self):
+        first = execution()["outputs"]
+        second = {**first, "deal_id": "931", "action": "bcra_pending",
+                  "commercial_action": "pending_data", "commercial_reason": "bcra_retry_scheduled",
+                  "distribution_action": "not_applicable", "assignment_strategy": "not_applicable"}
+        raw = execution()
+        raw["outputs"] = {**second, "event_count": 2, "events_json": json.dumps([first, second])}
+        rows = REPORT.normalized_events(raw)
+        self.assertEqual([row["deal_id"] for row in rows], ["930", "931"])
+        self.assertEqual(rows[0]["distribution_status"], "Distribuido")
+        self.assertEqual(rows[1]["commercial_reason"], "bcra_retry_scheduled")
+
     def test_keeps_only_events_at_or_after_audit_cutoff(self):
         before = REPORT.normalized(execution())
         before["processed_at"] = REPORT.datetime(2026, 8, 11, 12, 59, 59)
@@ -267,6 +280,15 @@ class CommercialDistributionReportTests(unittest.TestCase):
 
         self.assertEqual(row["business_decision"], "Rechazado")
         self.assertEqual(row["business_reason"], "La persona tiene 80 años o más.")
+
+    def test_explains_caja_new_entity_limit_rejection_in_plain_language(self):
+        raw = execution(action="rejected", strategy="rejection_without_distribution")
+        raw["outputs"]["reason"] = "caja_morosos_new_more_than_eight_entities"
+        raw["outputs"]["stage_id"] = "C1:5"
+        row = REPORT.add_business_fields([REPORT.normalized(raw)])[0]
+
+        self.assertEqual(row["business_decision"], "Rechazado")
+        self.assertIn("más de ocho entidades informadas en BCRA", row["business_reason"])
 
     def test_consolidates_cases_and_orders_newest_first(self):
         older = REPORT.normalized(execution())

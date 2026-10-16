@@ -4752,7 +4752,7 @@ class BusinessLogicTests(unittest.TestCase):
             SilentLogger(),
             bcra_client=waiting_client,
             lead=client.leads[950],
-            now=datetime.fromisoformat("2026-08-12T11:04:00-03:00"),
+            now=datetime.fromisoformat("2026-08-12T11:00:30-03:00"),
         )
         recovered_result = sync_lead_bcra(
             client,
@@ -4808,7 +4808,7 @@ class BusinessLogicTests(unittest.TestCase):
             env=self.env,
             bitrix_client=client,
             logger=SilentLogger(),
-            now=datetime.fromisoformat("2026-08-12T11:01:00-03:00"),
+            now=datetime.fromisoformat("2026-08-12T11:00:30-03:00"),
         )
 
         self.assertEqual(selected["deal_id"], 952)
@@ -5143,7 +5143,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-09-14-policia-federal-caba-v1",
+            "2026-10-13-caja-morosos-23321-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
@@ -6082,6 +6082,151 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["action"], "approved")
         self.assertEqual(result["reason"], "club_mutual_cbu")
         self.assertEqual(client.deals[947]["ufCrm_659EBB0445E8E"], "Club Mutual CBU")
+
+    def test_cordoba_caja_new_morosos_accepts_eight_total_entities(self) -> None:
+        for situation in (4, 5):
+            with self.subTest(situation=situation):
+                client = FakeBitrixClient()
+                client.leads[970] = self._cordoba_enriched_lead(
+                    970,
+                    employment_id="2565",
+                    birthdate="1960-01-01",
+                    bcra_entities=self._caja_morosos_entities(8, situation=situation),
+                )
+                client.deals[970] = self._pending_deal(970, 970)
+
+                result = qualify_catamarca_deal(
+                    970, env=self.env, bitrix_client=client, logger=SilentLogger()
+                )
+
+                self.assertEqual(result["action"], "approved")
+                self.assertEqual(result["commercial_reason"], "caja_morosos")
+                self.assertEqual(result["routing_bucket"], "cordoba_jubilados")
+                self.assertEqual(client.deals[970]["ufCrm_659EBB0445E8E"], "Caja Morosos")
+
+    def test_cordoba_caja_new_morosos_rejects_nine_total_entities_without_distribution(self) -> None:
+        for situation in (4, 5):
+            with self.subTest(situation=situation):
+                client = FakeBitrixClient()
+                client.online_user_ids.clear()
+                client.leads[970] = self._cordoba_enriched_lead(
+                    970,
+                    employment_id="2565",
+                    birthdate="1960-01-01",
+                    bcra_entities=self._caja_morosos_entities(9, situation=situation),
+                )
+                client.deals[970] = self._pending_deal(970, 970)
+                client.open_line_chats[("contact", 101)] = [9700]
+
+                result = qualify_catamarca_deal(
+                    970, env=self.env, bitrix_client=client, logger=SilentLogger()
+                )
+
+                self.assertEqual(result["action"], "rejected")
+                self.assertEqual(result["reason"], "caja_morosos_new_more_than_eight_entities")
+                self.assertEqual(result["commercial_reason"], result["reason"])
+                self.assertIn("más de ocho entidades", result["business_reason"])
+                self.assertEqual(result["assignment_strategy"], "rejection_without_distribution")
+                self.assertEqual(client.deals[970]["stageId"], "C1:5")
+                self.assertEqual(client.deals[970]["assignedById"], 57)
+                self.assertEqual(client.deals[970]["ufCrmKCommDecision"], "rejected")
+                self.assertEqual(client.deals[970]["ufCrmKqAction"], "")
+                self.assertEqual(client.chat_transfers, [])
+
+    def test_cordoba_caja_new_morosos_keeps_payment_bank_rejection_priority(self) -> None:
+        for total in (8, 9):
+            for bank_situation in (2, 4, 5):
+                with self.subTest(total=total, bank_situation=bank_situation):
+                    client = FakeBitrixClient()
+                    entities = self._caja_morosos_entities(total)
+                    entities[0]["situacion"] = bank_situation
+                    client.leads[970] = self._cordoba_enriched_lead(
+                        970, employment_id="2565", birthdate="1960-01-01",
+                        bcra_entities=entities,
+                    )
+                    client.deals[970] = self._pending_deal(970, 970)
+
+                    result = qualify_catamarca_deal(
+                        970, env=self.env, bitrix_client=client, logger=SilentLogger()
+                    )
+
+                    self.assertEqual(result["action"], "rejected")
+                    self.assertEqual(result["reason"], "caja_new_payment_bank_above_one")
+
+    def test_cordoba_caja_new_morosos_keeps_excluded_entity_review_within_limit(self) -> None:
+        client = FakeBitrixClient()
+        entities = self._caja_morosos_entities(8)
+        entities[1]["entidad"] = "BANCO DEL SOL S.A."
+        client.leads[970] = self._cordoba_enriched_lead(
+            970, employment_id="2565", birthdate="1960-01-01", bcra_entities=entities,
+        )
+        client.deals[970] = self._pending_deal(970, 970)
+
+        result = qualify_catamarca_deal(
+            970, env=self.env, bitrix_client=client, logger=SilentLogger()
+        )
+
+        self.assertEqual(result["action"], "manual_review")
+        self.assertEqual(result["commercial_reason"], "caja_morosos_excluded_entity")
+
+    def test_cordoba_caja_new_morosos_limit_preserves_other_profiles_and_lines(self) -> None:
+        recurrent = {
+            "ok": True, "es_socio": True, "socio": {},
+            "creditos": [{"linea_superior_id": "2756", "cuotas_pagas": 4}],
+        }
+        cases = (
+            ("municipal", "3129", None, 5, "approved", "caja_morosos", "Caja Morosos"),
+            ("recurrent", "2565", recurrent, 5, "approved", "caja_morosos", "Caja Morosos"),
+            ("nuevo_limpio", "2565", None, 1, "approved", "caja_nuevo", "Caja Nuevo"),
+            ("irregular", "2565", None, 2, "approved", "caja_irregulares", "Caja Irregulares"),
+            ("nacional", "2567", None, 5, "rejected", "cbu_more_than_five_entities", None),
+            ("pensionado", "2569", None, 5, "rejected", "cbu_more_than_five_entities", None),
+        )
+        for name, employment, vimarx, situation, action, reason, line in cases:
+            with self.subTest(profile=name):
+                client = FakeBitrixClient()
+                client.leads[970] = self._cordoba_enriched_lead(
+                    970, employment_id=employment, birthdate="1960-01-01", vimarx=vimarx,
+                    bcra_entities=self._caja_morosos_entities(9, situation=situation),
+                )
+                client.deals[970] = self._pending_deal(970, 970)
+
+                result = qualify_catamarca_deal(
+                    970, env=self.env, bitrix_client=client, logger=SilentLogger()
+                )
+
+                self.assertEqual(result["action"], action)
+                self.assertEqual(result["commercial_reason"], reason)
+                self.assertEqual(result["commercial_line"], line)
+
+    def test_cordoba_caja_new_morosos_counts_only_latest_bcra_period(self) -> None:
+        client = FakeBitrixClient()
+        lead = self._cordoba_enriched_lead(
+            970, employment_id="2565", birthdate="1960-01-01",
+            bcra_entities=self._caja_morosos_entities(8),
+        )
+        snapshot = json.loads(lead["UF_CRM_BCRA_DATA_RAW"])
+        snapshot["payload"]["results"]["periodos"].append({
+            "periodo": "202606", "entidades": self._caja_morosos_entities(9),
+        })
+        lead["UF_CRM_BCRA_DATA_RAW"] = json.dumps(snapshot)
+        client.leads[970] = lead
+        client.deals[970] = self._pending_deal(970, 970)
+
+        result = qualify_catamarca_deal(
+            970, env=self.env, bitrix_client=client, logger=SilentLogger()
+        )
+
+        self.assertEqual(result["action"], "approved")
+        self.assertEqual(result["commercial_reason"], "caja_morosos")
+
+    @staticmethod
+    def _caja_morosos_entities(total: int, *, situation: int = 5) -> list[dict]:
+        return [
+            {"entidad": "BANCO DE LA PROVINCIA DE CORDOBA S.A.", "situacion": 1},
+            {"entidad": "FINANCIERA DE PRUEBA", "situacion": situation},
+            *({"entidad": f"ENTIDAD {index}", "situacion": 1} for index in range(total - 2)),
+        ]
 
     def _pending_deal(self, deal_id: int, lead_id: int) -> dict:
         return {

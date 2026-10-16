@@ -140,5 +140,29 @@ class EdnaCorrelationTest(unittest.TestCase):
         self.assertFalse(receiver.classify(incoming, '2423')[0]['flow_id_verified'])
 
 
+class EdnaOutOfHoursCandidateTest(unittest.TestCase):
+    def test_ordinary_messages_are_candidates_but_entry_flow_and_buttons_are_not(self):
+        self.assertTrue(receiver.classify(event('TEXT', 'Hola'), '2423')[0]['out_of_hours_candidate'])
+        self.assertFalse(receiver.classify(event('TEXT', receiver.ENTRY_PHRASE), '2423')[0]['out_of_hours_candidate'])
+        self.assertFalse(receiver.classify(event(data={'provincia': 'otra'}), '2423')[0]['out_of_hours_candidate'])
+        incoming = event('TEXT', 'Quiero pedir un prestamo')
+        incoming['messageContent']['payload'] = 'loan-button'
+        self.assertFalse(receiver.classify(incoming, '2423')[0]['out_of_hours_candidate'])
+        self.assertTrue(receiver.classify(event('TEXT', 'Quiero pedir un prestamo'), '2423')[0]['out_of_hours_candidate'])
+
+    def test_media_are_candidates_and_interactive_replies_are_not(self):
+        for kind in ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT']:
+            self.assertTrue(receiver.classify(event(kind, ''), '2423')[0]['out_of_hours_candidate'])
+        self.assertFalse(receiver.classify(event('LIST_PICKER', ''), '2423')[0]['out_of_hours_candidate'])
+
+    def test_invalid_events_and_other_channels_never_trigger_notices(self):
+        incoming = event('TEXT', 'Hola')
+        incoming['subjectId'] = 1
+        self.assertFalse(receiver.classify(incoming, '2423')[0]['out_of_hours_candidate'])
+        incoming = event('TEXT', 'Hola')
+        incoming['receivedAt'] = 'not-a-date'
+        self.assertFalse(receiver.classify(incoming, '2423')[0]['out_of_hours_candidate'])
+
+
 if __name__ == '__main__':
     unittest.main()

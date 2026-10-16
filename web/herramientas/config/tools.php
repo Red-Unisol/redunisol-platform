@@ -13,6 +13,16 @@ return [
     ],
     'catalog' => [
         [
+            'id' => 'bcra',
+            'title' => 'Generar archivo BCRA',
+            'description' => 'Elegí período, líneas y exclusiones para generar la presentación de Celesol y sus controles.',
+            'category' => 'Contabilidad',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Generar presentación',
+            'helper' => 'Acceso interno protegido. Conserva el historial de cada generación.',
+        ],
+        [
             'id' => 'padrones',
             'title' => 'Administrar padrones',
             'description' => 'Cargá y publicá versiones de los padrones complementarios de Consulta CredixSA.',

@@ -10,6 +10,8 @@ import { useMemo, useRef, useState } from 'react';
 import { type SectionCta } from '@/components/section-cta';
 import { trackEvent, trackMetaLead } from '@/utils/tracking';
 
+import WhatsAppButton from '../WhatsAppButton';
+
 // ── Config interfaces ─────────────────────────────────────────────────────────
 
 export interface FormFieldConfig {
@@ -604,7 +606,7 @@ function Step3({
                 ¿En qué provincia trabajás?
             </h2>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid auto-rows-fr grid-cols-2 gap-3 md:grid-cols-3">
                 {provinciasPrincipales.map((prov) => {
                     const selected = formData.provincia === prov;
 
@@ -619,13 +621,15 @@ function Step3({
                                     provincia: prov,
                                 }));
                             }}
-                            className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                            className={`min-h-16 rounded-xl border px-3 py-3 text-sm font-semibold transition ${
                                 selected
                                     ? 'border-[#1e2d3d] bg-[#1e2d3d] text-white'
                                     : 'border-gray-200 text-[#1e2d3d] hover:border-[#1e2d3d] hover:bg-gray-50'
                             }`}
                         >
-                            {prov}
+                            {prov === 'Ciudad Autónoma de Buenos Aires'
+                                ? 'CABA'
+                                : prov}
                         </button>
                     );
                 })}
@@ -638,7 +642,7 @@ function Step3({
                             setFormData((p) => ({ ...p, provincia: '' }));
                         }
                     }}
-                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                    className={`min-h-16 rounded-xl border px-3 py-3 text-sm font-semibold transition ${
                         showOtherProvinces
                             ? 'border-[#1e2d3d] bg-[#1e2d3d] text-white'
                             : 'border-gray-200 text-[#1e2d3d] hover:border-[#1e2d3d] hover:bg-gray-50'
@@ -1367,7 +1371,7 @@ export default function FormSection({
     };
 
     return (
-        <section className="w-full py-4">
+        <section data-loan-form className="w-full py-4">
             <div className="mx-auto max-w-lg px-4">
                 <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     {/* Step header */}
@@ -1404,7 +1408,7 @@ export default function FormSection({
                     </div>
 
                     {/* Step content */}
-                    <div className="min-h-125 overflow-hidden px-6 py-8">
+                    <div className="overflow-hidden px-5 py-6 md:min-h-125 md:px-6 md:py-8">
                         <AnimatePresence mode="wait">
                             {step === 1 ? (
                                 <Step1
@@ -1448,16 +1452,16 @@ export default function FormSection({
                     </div>
 
                     {/* Navigation buttons */}
-                    <div className="px-6 pb-6">
+                    <div className="px-5 pb-6 md:px-6">
                         <div
-                            className={`flex items-center ${step > 1 ? 'justify-between' : 'justify-end'}`}
+                            className={`grid grid-cols-2 gap-3 md:flex md:items-center ${step > 1 ? 'md:justify-between' : 'md:justify-end'}`}
                         >
                             {step > 1 && (
                                 <button
                                     type="button"
                                     onClick={goBack}
                                     disabled={isSubmitting}
-                                    className="rounded-full border border-[#1e2d3d] px-6 py-2.5 text-sm font-semibold text-[#1e2d3d] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="min-h-11 rounded-full border border-[#1e2d3d] px-3 py-2.5 text-sm font-semibold text-[#1e2d3d] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 md:px-6"
                                 >
                                     Volver
                                 </button>
@@ -1474,7 +1478,7 @@ export default function FormSection({
                                                 !reciboUrl &&
                                                 !reciboUploadError)))
                                 }
-                                className="rounded-full bg-[#1e2d3d] px-7 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d3f54] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="col-start-2 min-h-11 rounded-full bg-[#1e2d3d] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d3f54] disabled:cursor-not-allowed disabled:opacity-60 md:px-7"
                             >
                                 {isLastStep
                                     ? isSubmitting
@@ -1484,6 +1488,9 @@ export default function FormSection({
                                           : 'Enviar'
                                     : 'Continuar'}
                             </button>
+                        </div>
+                        <div className="md:hidden">
+                            <WhatsAppButton variant="inline" />
                         </div>
                     </div>
                 </div>

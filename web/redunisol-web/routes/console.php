@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('edna:out-of-hours recover --apply')->everyFiveMinutes()->withoutOverlapping(5);
+Schedule::command('edna:out-of-hours prune --apply')->dailyAt('04:25')->withoutOverlapping();
+
 Schedule::command('edna:form-links poll')->everyMinute()->withoutOverlapping(5);
 Schedule::command('edna:form-links prune --apply')->dailyAt('04:20')->withoutOverlapping();
 

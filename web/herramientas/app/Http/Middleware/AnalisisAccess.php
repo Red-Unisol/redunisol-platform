@@ -24,6 +24,9 @@ class AnalisisAccess
             $response = $next($request);
         }
 
-        return $response->header('Cache-Control', 'no-store, private');
+        // Downloads return Symfony BinaryFileResponse, which has no Laravel header() helper.
+        $response->headers->set('Cache-Control', 'no-store, private');
+
+        return $response;
     }
 }

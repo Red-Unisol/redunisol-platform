@@ -120,15 +120,32 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_URL: http://localhost
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: edna_recovery_test
+          POSTGRES_USER: edna_test
+          POSTGRES_PASSWORD: edna_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U edna_test -d edna_recovery_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: web/redunisol-web
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, sqlite3, pdo_sqlite, intl, zip, bcmath
+          extensions: mbstring, sqlite3, pdo_sqlite, pdo_pgsql, intl, zip, bcmath
           coverage: none
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-scripts
@@ -137,4 +154,13 @@ jobs:
           printf 'APP_URL=http://localhost\n' > .env
           php artisan package:discover
       - name: Test Edna HTTP inbox and delivery worker
-        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php
+      - name: Test notice references and evaluation recovery on PostgreSQL
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: edna_recovery_test
+          DB_USERNAME: edna_test
+          DB_PASSWORD: edna_test
+        run: php vendor/bin/pest tests/Feature/EdnaOutOfHoursRecoveryTest.php

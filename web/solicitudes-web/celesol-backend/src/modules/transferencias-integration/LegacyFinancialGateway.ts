@@ -73,7 +73,6 @@ export class LegacyFinancialGateway implements FinancialGateway {
       [
         "ID",
         "LineaPrestamo.ID",
-        "[CBU transferencia]",
         "[Bco CMF]",
         "[Bco Coinag Cba]",
         "[Monto En Mano]",
@@ -82,7 +81,7 @@ export class LegacyFinancialGateway implements FinancialGateway {
     );
     // Above this conservative numeric bound JSON numbers may lose cent precision.
     // Large amounts must be serialized as decimal strings by the core.
-    for (const value of row.slice(3, 6)) {
+    for (const value of row.slice(2, 5)) {
       if (
         typeof value === "number" &&
         (!Number.isFinite(value) || Math.abs(value) > 1e12)
@@ -96,10 +95,9 @@ export class LegacyFinancialGateway implements FinancialGateway {
     return {
       loanId: String(row[0]),
       lineId: String(row[1] ?? ""),
-      cbu: String(row[2] ?? ""),
-      cmf: String(row[3] ?? ""),
-      coinag: String(row[4] ?? ""),
-      cashInHand: String(row[5] ?? ""),
+      cmf: String(row[2] ?? ""),
+      coinag: String(row[3] ?? ""),
+      cashInHand: String(row[4] ?? ""),
       memberCuit: member.cuit,
     };
   }

@@ -8,6 +8,10 @@ type HttpError = Error & {
 };
 
 export const errorHandler: ErrorRequestHandler = (error: HttpError, _req, res, _next) => {
+  if (error.message.includes("BEEX_DOCUMENT_REVIEW_IMMUTABLE")) {
+    res.status(409).json({ error: { code: "DOCUMENT_REVIEW_IMMUTABLE", message: "La revisión y sus legajos son evidencia histórica y no pueden editarse ni eliminarse.", statusCode: 409 } });
+    return;
+  }
   // A reservation freezes financial inputs and its receipt, including writes
   // from the regular UI. The database enforces this across concurrent requests.
   if (error.message.includes("BEEX_TRANSFERENCIAS_LOCKED")) {

@@ -10,6 +10,7 @@ import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSo
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
 import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
+import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
 import { AuthPrismaDatasource } from "../auth/infrastructure/datasources/AuthPrismaDatasource";
@@ -255,6 +256,9 @@ export function createSolicitudesCoreRouter(
     now: () => new Date(),
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
+    authorizeDocumentReview: env.DOCUMENT_REVIEW_ENABLED ? async () => {
+      throw new DocumentReviewError("Registrá la aprobación o desaprobación humana en Revisión de firma.");
+    } : undefined,
   });
   const listLineasPrestamoDeSolicitudUseCase =
     new ListLineasPrestamoDeSolicitudUseCase({
@@ -293,6 +297,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudWorkflowRepository,
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
+    documentReviewRequired: env.DOCUMENT_REVIEW_ENABLED,
   });
   const listSolicitudHistoryUseCase = new ListSolicitudHistoryUseCase({
     repository: solicitudWorkflowRepository,

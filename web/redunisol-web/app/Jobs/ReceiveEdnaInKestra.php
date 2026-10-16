@@ -71,8 +71,13 @@ class ReceiveEdnaInKestra implements ShouldQueue
                 }
                 DB::table('edna_incoming_events')->where('id', $this->eventId)->update([
                     'status' => 'delivered', 'outcome' => $result['kind'],
+                    'out_of_hours_candidate' => $result['kind'] === 'ignored' && ($result['out_of_hours_candidate'] ?? false) === true,
                     'delivered_at' => now(), 'updated_at' => now(),
                 ]);
+                if (config('edna.out_of_hours_enabled') && $result['kind'] === 'ignored'
+                    && ($result['out_of_hours_candidate'] ?? false) === true) {
+                    EvaluateEdnaOutOfHours::enqueue((int) $event->id, 10);
+                }
             });
         } catch (Throwable) {
             // Do not chain the original HTTP exception: it may contain the secret webhook URL.

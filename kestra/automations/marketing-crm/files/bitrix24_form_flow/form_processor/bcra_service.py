@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from typing import Any
 
 from .bcra_client import BcraClient, BcraConsultationResult
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
+from .distribution_schedule import is_within_business_hours
 from .lead_service import (
     lead_has_commercial_owner,
     get_lead,
@@ -32,6 +34,11 @@ BCRA_RETRY_DELAYS = (
     timedelta(hours=2),
 )
 BCRA_RETRY_LONG_DELAY = timedelta(hours=6)
+BCRA_BUSINESS_RETRY_DELAYS = (
+    timedelta(minutes=1),
+    timedelta(minutes=5),
+    timedelta(minutes=15),
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,7 @@ class BcraRetryState:
     next_retry_at: datetime | None
     expires_at: datetime | None
     message: str
+    not_before: datetime | None = None
 
     @property
     def is_pending(self) -> bool:
@@ -55,11 +63,18 @@ class BcraRetryState:
     def is_due(self, now: datetime) -> bool:
         if self.is_exhausted:
             return False
+        if self.not_before is not None and now < self.not_before:
+            return False
         if self.expires_at is not None and now >= self.expires_at:
             return True
         if not self.is_pending or self.next_retry_at is None:
             return True
-        return now >= self.next_retry_at
+        due_at = self.next_retry_at
+        if self.last_failed_at is not None and is_within_business_hours(os.environ, now):
+            # Also recover already-persisted 2h/6h waits after deploying the new
+            # policy. Provider Retry-After above always takes precedence.
+            due_at = min(due_at, self.last_failed_at + _retry_delay(self.attempts, now))
+        return now >= due_at
 
 
 def sync_lead_bcra(
@@ -140,6 +155,7 @@ def bcra_retry_state_from_lead(
         next_retry_at=_parse_datetime(retry_payload.get("next_retry_at")),
         expires_at=_parse_datetime(retry_payload.get("expires_at")),
         message=str(payload.get("message") or "").strip(),
+        not_before=_parse_datetime(retry_payload.get("not_before")),
     )
 
 
@@ -172,7 +188,10 @@ def _persist_retryable_failure(
     expires_at = first_failed_at + BCRA_RETRY_WINDOW
     exhausted = now >= expires_at
     outcome = BCRA_RETRY_EXHAUSTED_OUTCOME if exhausted else result.outcome
-    next_retry_at = None if exhausted else now + _retry_delay(attempts)
+    not_before = _parse_datetime(result.retry_not_before)
+    next_retry_at = None if exhausted else min(now + _retry_delay(attempts, now), expires_at)
+    if next_retry_at is not None and not_before is not None:
+        next_retry_at = max(next_retry_at, not_before)
     message = result.message or "BCRA no disponible temporalmente."
     raw_snapshot = {
         "source": "bcra_central_deudores_v1",
@@ -190,6 +209,7 @@ def _persist_retryable_failure(
             "last_failed_at": now.isoformat(),
             "next_retry_at": next_retry_at.isoformat() if next_retry_at else None,
             "expires_at": expires_at.isoformat(),
+            "not_before": not_before.isoformat() if not_before else None,
         },
     }
     status_label = "REVISIÓN MANUAL" if exhausted else "PENDIENTE"
@@ -233,6 +253,7 @@ def _persist_retryable_failure(
         negative_entity_count=0,
         negative_entities=(),
         message=message,
+        retry_not_before=not_before.isoformat() if not_before else "",
         denominacion=None,
     )
 
@@ -256,11 +277,14 @@ def _retry_state_result(
         negative_entity_count=0,
         negative_entities=(),
         message=state.message,
+        retry_not_before=state.not_before.isoformat() if state.not_before else "",
         denominacion=None,
     )
 
 
-def _retry_delay(attempts: int) -> timedelta:
+def _retry_delay(attempts: int, now: datetime) -> timedelta:
+    if is_within_business_hours(os.environ, now):
+        return BCRA_BUSINESS_RETRY_DELAYS[min(max(attempts, 1), 3) - 1]
     if attempts <= len(BCRA_RETRY_DELAYS):
         return BCRA_RETRY_DELAYS[attempts - 1]
     return BCRA_RETRY_LONG_DELAY

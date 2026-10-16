@@ -32,7 +32,6 @@ function fixture() {
   const loan: LoanFinancials = {
     loanId: "101",
     lineId: "12",
-    cbu: memberCbu,
     cmf: "0",
     coinag: "1000.01",
     cashInHand: "-1000.01",
@@ -98,16 +97,13 @@ test("cancellations reconcile exactly, keep UUID keys and allow zero member net"
   );
 });
 
-test("ambiguous bank source, loan/member/account mismatch and missing creditor block", () => {
+test("ambiguous bank source and loan/member mismatch block", () => {
   for (const mutate of [
     (loan: LoanFinancials) => {
       loan.loanId = "999";
     },
     (loan: LoanFinancials) => {
       loan.memberCuit = "20111111111";
-    },
-    (loan: LoanFinancials) => {
-      loan.cbu = "0000000000000000000009";
     },
     (loan: LoanFinancials) => {
       loan.cmf = "1";
@@ -119,14 +115,54 @@ test("ambiguous bank source, loan/member/account mismatch and missing creditor b
   }
 });
 
-test("non habitual CBU overrides usual CBU; renewal is explicit and changes version", () => {
+test("member destination comes from BEEX without a loan CBU", () => {
+  const { source, loan } = fixture();
+  const plan = buildPlan(source, loan, new Map());
+  assert.equal(plan.payments[0]?.cbu, memberCbu);
+  assert.equal(plan.payments[0]?.cuit, memberCuit);
+  assert.equal(plan.payments[0]?.amount, "1000.01");
+});
+
+test("BEEX non habitual CBU overrides usual CBU and changes only the destination", () => {
   const { source, loan } = fixture();
   const old = buildPlan(source, loan, new Map());
-  source.titular!.cbuNoHabitual = "0000000000000000000002";
-  loan.cbu = source.titular!.cbuNoHabitual;
+  const nonHabitualCbu = "0000000000000000000002";
+  source.titular!.cbuNoHabitual = nonHabitualCbu;
+  const plan = buildPlan(source, loan, new Map());
+  assert.equal(plan.payments[0]?.cbu, nonHabitualCbu);
+  assert.equal(plan.payments[0]?.amount, old.payments[0]?.amount);
+  assert.equal(plan.bank, old.bank);
+  assert.notEqual(plan.version, old.version);
+  assert.equal(plan.version, buildPlan(source, loan, new Map()).version);
+
+  // The selected destination is sufficient even if the usual account is absent.
+  source.titular!.cbu = null;
+  assert.equal(buildPlan(source, loan, new Map()).payments[0]?.cbu, nonHabitualCbu);
+});
+
+test("missing or invalid selected BEEX CBU blocks without falling back to another account", () => {
+  const invalidDestinations: [string | null, string | null][] = [
+    [null, null],
+    ["", null],
+    ["123", null],
+    ["000000000000000000000X", null],
+    [memberCbu, "123"],
+    [memberCbu, "   "],
+  ];
+  for (const [usual, nonHabitual] of invalidDestinations) {
+    const { source, loan } = fixture();
+    source.titular!.cbu = usual;
+    source.titular!.cbuNoHabitual = nonHabitual;
+    assert.throws(() => buildPlan(source, loan, new Map()), code("INCOMPLETE_PLAN"));
+  }
+});
+
+test("renewal remains explicit and changes the plan version", () => {
+  const { source, loan } = fixture();
+  const old = buildPlan(source, loan, new Map());
   loan.coinag = "800";
   const plan = buildPlan(source, loan, new Map());
   assert.equal(plan.requiresRenewalReview, true);
-  assert.equal(plan.payments[0]?.cbu, loan.cbu);
+  assert.equal(plan.payments[0]?.cbu, memberCbu);
   assert.notEqual(plan.version, old.version);
 });

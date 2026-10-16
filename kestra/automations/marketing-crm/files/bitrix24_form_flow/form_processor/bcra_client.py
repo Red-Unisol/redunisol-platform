@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from http.client import HTTPException
 import json
+from time import monotonic, sleep
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -13,6 +16,7 @@ from .logger import Logger
 BCRA_BASE_URL = "https://api.bcra.gob.ar"
 BCRA_CURRENT_SNAPSHOT_PATH = "/centraldedeudores/v1.0/Deudas/{identificacion}"
 BCRA_TIMEOUT_SECONDS = 20
+BCRA_HTTP_RETRY_DELAYS = (1, 3)
 BCRA_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
@@ -39,6 +43,7 @@ class BcraConsultationResult:
     negative_entities: tuple[str, ...]
     message: str | None = None
     denominacion: str | None = None
+    retry_not_before: str = ""
 
     @property
     def is_persistable(self) -> bool:
@@ -63,6 +68,7 @@ def serialize_bcra_result(result: BcraConsultationResult) -> dict[str, Any]:
         "negative_entities": list(result.negative_entities),
         "message": result.message,
         "denominacion": result.denominacion,
+        "retry_not_before": result.retry_not_before,
     }
 
 
@@ -84,6 +90,7 @@ def deserialize_bcra_result(payload: dict[str, Any]) -> BcraConsultationResult:
         ),
         message=_optional_str(payload.get("message")),
         denominacion=_optional_str(payload.get("denominacion")),
+        retry_not_before=str(payload.get("retry_not_before") or ""),
     )
 
 
@@ -92,6 +99,29 @@ class BcraClient:
         self.logger = logger
 
     def consult_snapshot(self, identification: str) -> BcraConsultationResult:
+        # All attempts share the original timeout budget; a slow provider must
+        # not turn one consultation into three full timeouts.
+        deadline = monotonic() + BCRA_TIMEOUT_SECONDS
+        result = self._consult_snapshot_once(identification, BCRA_TIMEOUT_SECONDS)
+        for delay in BCRA_HTTP_RETRY_DELAYS:
+            if (
+                result.outcome != "temporary_error"
+                or result.retry_not_before
+                or (result.http_status is not None and result.http_status < 500)
+                or monotonic() + delay >= deadline
+            ):
+                break
+            self._log_info(f"Reintentando consulta BCRA en {delay} segundos.")
+            sleep(delay)
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                break
+            result = self._consult_snapshot_once(identification, remaining)
+        return result
+
+    def _consult_snapshot_once(
+        self, identification: str, timeout_seconds: float
+    ) -> BcraConsultationResult:
         checked_at = _argentina_timestamp()
         identification = str(identification).strip()
         url = BCRA_BASE_URL + BCRA_CURRENT_SNAPSHOT_PATH.format(identificacion=identification)
@@ -107,16 +137,30 @@ class BcraClient:
         )
 
         try:
-            with urlopen(request, timeout=BCRA_TIMEOUT_SECONDS) as response:
+            with urlopen(request, timeout=timeout_seconds) as response:
                 payload = _decode_json(response.read())
         except HTTPError as exc:
-            payload = _decode_json_or_text(exc.read())
+            try:
+                payload = _decode_json_or_text(exc.read())
+            except (OSError, HTTPException):
+                # A truncated error body must still follow the HTTP status and
+                # Retry-After policy, rather than bypassing recovery entirely.
+                payload = None
+            finally:
+                exc.close()
             result = _result_from_http_error(
                 identification=identification,
                 checked_at=checked_at,
                 http_status=exc.code,
                 payload=payload,
             )
+            if exc.code == 429 or 500 <= exc.code < 600:
+                result = replace(
+                    result,
+                    retry_not_before=_retry_not_before(
+                        exc.headers.get("Retry-After") if exc.headers else None
+                    ),
+                )
             self._log_info(f"BCRA Deudas devolvio {result.outcome} para {identification}.")
             return result
         except URLError as exc:
@@ -151,6 +195,22 @@ class BcraClient:
     def _log_error(self, message: str) -> None:
         if self.logger is not None:
             self.logger.error(message)
+
+
+def _retry_not_before(value: str | None) -> str:
+    if not value:
+        return ""
+    now = datetime.now(timezone.utc)
+    try:
+        retry_at = now + timedelta(seconds=max(0, int(value)))
+    except (ValueError, OverflowError):
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError, OverflowError):
+            return ""
+    return max(now, retry_at).isoformat()
 
 
 def _success_result(
