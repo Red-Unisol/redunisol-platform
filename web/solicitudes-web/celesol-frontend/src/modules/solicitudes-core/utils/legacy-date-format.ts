@@ -3,7 +3,7 @@ const PLACEHOLDER = "-";
 // El legado devuelve las fechas con hora ("2024-11-14T00:00:00"). Se corta en
 // vez de parsear a Date a proposito: construir un Date corre la fecha un dia
 // segun la zona horaria.
-export function formatLegacyDate(value: string | null) {
+export function formatLegacyDate(value: string | null | undefined) {
   if (!value) {
     return PLACEHOLDER;
   }
