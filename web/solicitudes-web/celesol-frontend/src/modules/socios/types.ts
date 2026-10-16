@@ -58,15 +58,23 @@ export type LookupSocioResponse =
       socio: Socio;
     };
 
+// Localidad de Vimarx (ClasesBase.Localidad). El socio guarda el id.
+export type Localidad = {
+  codigoPostal: string | null;
+  id: string;
+  nombre: string;
+  provincia: string | null;
+};
+
 export type CreateSocioRequest =
   | {
       apellido: string;
       celular?: string;
       cuit: string;
       domicilioCalle: string;
-      domicilioCodigoPostal: string;
+      domicilioCodigoPostal?: string;
       domicilioLocalidad: string;
-      domicilioNroPuerta: string;
+      domicilioNroPuerta?: string;
       email?: string;
       fechaDeNacimiento: string;
       nombre: string;
@@ -81,9 +89,9 @@ export type CreateSocioRequest =
       celular?: string;
       cuit: string;
       domicilioCalle: string;
-      domicilioCodigoPostal: string;
+      domicilioCodigoPostal?: string;
       domicilioLocalidad: string;
-      domicilioNroPuerta: string;
+      domicilioNroPuerta?: string;
       email?: string;
       fechaDeNacimiento?: never;
       nombre?: never;

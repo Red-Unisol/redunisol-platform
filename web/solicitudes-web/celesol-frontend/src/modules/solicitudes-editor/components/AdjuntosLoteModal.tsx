@@ -1,3 +1,5 @@
+import { useParams } from "react-router-dom";
+import { useReconocimientoRecibos } from "@/modules/solicitudes-core/hooks/use-reconocimiento-recibos";
 import { CircleAlert, Paperclip, X } from "lucide-react";
 import {
   useRef,
@@ -29,17 +31,28 @@ export type AdjuntoLoteItem = {
   tipoAdjunto: string;
 };
 
-export function AdjuntosLoteModal({
-  isSaving = false,
-  onOpenChange,
-  onSave,
-  open,
-}: {
+type AdjuntosLoteModalProps = {
   isSaving?: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (items: AdjuntoLoteItem[]) => Promise<boolean>;
   open: boolean;
-}) {
+};
+export function AdjuntosLoteModal(props: AdjuntosLoteModalProps) {
+  const { id } = useParams<{ id: string }>();
+  return (
+    <AdjuntosLoteModalContent
+      key={`${id ?? "alta"}:${props.open}`}
+      {...props}
+    />
+  );
+}
+function AdjuntosLoteModalContent({
+  isSaving = false,
+  onOpenChange,
+  onSave,
+  open,
+}: AdjuntosLoteModalProps) {
+  const { draft, estados } = useReconocimientoRecibos(open);
   const [items, setItems] = useState<PendingAdjuntoLoteItem[]>([]);
   const [isDragActive, setIsDragActive] = useState(false);
   const [dropWarning, setDropWarning] = useState<string | null>(null);
@@ -48,6 +61,7 @@ export function AdjuntosLoteModal({
   const { data: tiposAdjunto = [] } = useTiposAdjuntoQuery();
 
   function resetDraft() {
+    draft.cancelAll();
     setItems([]);
     setIsDragActive(false);
     setDropWarning(null);
@@ -84,14 +98,22 @@ export function AdjuntosLoteModal({
       return;
     }
 
-    setItems((current) => [
-      ...current,
-      ...filesToAdd.map((file) => ({
-        file,
-        id: crypto.randomUUID(),
-        tipoAdjunto: "",
-      })),
-    ]);
+    const added = filesToAdd.map((file) => ({
+      file,
+      id: crypto.randomUUID(),
+      tipoAdjunto: "",
+    }));
+    setItems((current) => [...current, ...added]);
+    for (const item of added)
+      draft.start(item.id, item.file, () => {
+        setItems((current) =>
+          current.map((row) =>
+            row.id === item.id
+              ? { ...row, tipoAdjunto: "Recibo de Sueldo" }
+              : row,
+          ),
+        );
+      });
   }
 
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -156,6 +178,7 @@ export function AdjuntosLoteModal({
   }
 
   function handleRemoveItem(id: string) {
+    draft.cancel(id);
     if (isSaving) {
       return;
     }
@@ -166,6 +189,7 @@ export function AdjuntosLoteModal({
   }
 
   function handleTipoAdjuntoChange(id: string, tipoAdjunto: string) {
+    draft.manual(id);
     setSaveError(null);
     setItems((current) =>
       current.map((item) => (item.id === id ? { ...item, tipoAdjunto } : item)),
@@ -185,6 +209,7 @@ export function AdjuntosLoteModal({
 
     setSaveError(null);
 
+    draft.cancelAll(true);
     const saved = await onSave(
       items.map(({ file, tipoAdjunto }) => ({ file, tipoAdjunto })),
     );
@@ -298,6 +323,7 @@ export function AdjuntosLoteModal({
                     <AdjuntoLoteItemRow
                       disabled={isSaving}
                       item={item}
+                      estadoAnalisis={estados[item.id]}
                       key={item.id}
                       onRemove={() => handleRemoveItem(item.id)}
                       onTipoAdjuntoChange={(tipoAdjunto) =>

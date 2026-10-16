@@ -117,6 +117,8 @@ jobs:
             --force
 
       - name: Prepare deployment files
+        env:
+          SOLICITUDES_MISTRAL_API_KEY: ${{ secrets.SOLICITUDES_MISTRAL_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -125,6 +127,14 @@ jobs:
           # Finales de linea de Windows: el \r quedaria pegado al valor de cada
           # variable y Docker lo tomaria como parte del contenido.
           sed -i 's/\r$//' "$RUNNER_TEMP/solicitudes-web.env"
+
+          # Reutiliza únicamente Mistral del runtime cifrado existente.
+          # Conserva una clave propia de Solicitudes si ya está configurada.
+          # OCR es opcional: no llama al proveedor ni condiciona el deploy a su disponibilidad.
+          python web/solicitudes-web/deploy/prepare_mistral_env.py \
+            --env-file "$RUNNER_TEMP/solicitudes-web.env" \
+            --key-file "$RUNNER_TEMP/runtime-env.key" \
+            --kestra-env kestra/platform/infra/kestra-runtime.env.enc
 
           # Si el archivo no termina en salto de linea, las variables que
           # agregamos abajo se pegarian a la ultima linea.
@@ -261,4 +271,5 @@ jobs:
         shell: bash
         run: |
           rm -f "$RUNNER_TEMP/runtime-env.key"
+          rm -f "$RUNNER_TEMP/solicitudes-web.env"
           rm -f web/solicitudes-web/deploy/solicitudes-web.dev.env

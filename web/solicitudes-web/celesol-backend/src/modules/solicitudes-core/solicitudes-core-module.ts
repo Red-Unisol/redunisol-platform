@@ -1,3 +1,7 @@
+import { createReconocimientoRecibosRoutes } from "./adjuntos/reconocimiento/presentation/ReconocimientoRecibosRoutes";
+import { ConfiguracionReconocimientoPrisma } from "./adjuntos/reconocimiento/infrastructure/ConfiguracionReconocimientoPrisma";
+import { MistralReciboGateway } from "./adjuntos/reconocimiento/infrastructure/MistralReciboGateway";
+import { AnalizarReciboUseCase } from "./adjuntos/reconocimiento/application/AnalizarRecibo.use-case";
 import { ArchivarEvaluacionExcel } from "../riesgo/application/services/ArchivarEvaluacionExcel";
 import { EvaluacionRiesgoPrismaDatasource } from "../riesgo/infrastructure/datasources/EvaluacionRiesgoPrismaDatasource";
 import { exportarEvaluacionExcel } from "../riesgo/infrastructure/services/EvaluacionExcelExporter";
@@ -459,7 +463,22 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
-  return addDatosRapidosRoutes(router, {
+  const combined = Router();
+  const configuracion = new ConfiguracionReconocimientoPrisma(prisma);
+  combined.use("/reconocimiento-recibos", createReconocimientoRecibosRoutes({
+    getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+    solicitudesRepository: solicitudesCoreRepository,
+    fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
+    configuracion,
+    maxFileSizeBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
+    analizar: new AnalizarReciboUseCase({ configuracion,
+      gateway: new MistralReciboGateway({ apiKey: env.MISTRAL_API_KEY, model: env.MISTRAL_OCR_MODEL, timeoutMs: env.MISTRAL_OCR_TIMEOUT_MS }),
+      allowedExtensions: env.ADJUNTOS_ALLOWED_EXTENSIONS, allowedMimeTypes: env.ADJUNTOS_ALLOWED_MIME_TYPES, maxFileSizeBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
+    }),
+    visibilidadGuard: crearVisibilidadVendedorGuard({ getCurrentUserUseCase: dependencies.getCurrentUserUseCase, repository: solicitudesCoreRepository, visibilidadVendedorResolver }),
+  }));
+  combined.use(router);
+  return addDatosRapidosRoutes(combined, {
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
     getSolicitudByIdUseCase,
     datosRapidos: new GetDatosRapidosUseCase(solicitudesLegacyGateway),

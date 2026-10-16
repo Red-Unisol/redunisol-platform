@@ -111,6 +111,7 @@ const AdminUsersPage = lazy(() =>
     default: module.AdminUsersPage,
   })),
 );
+const AdminReconocimientoRecibosPage = lazy(() => import("@/modules/solicitudes-core/pages/admin-reconocimiento-recibos-page").then(m => ({ default: m.AdminReconocimientoRecibosPage })));
 const AdminFieldAccessRulesPage = lazy(() =>
   import("@/modules/solicitudes-core/pages/admin-field-access-rules-page").then(
     (module) => ({
@@ -399,6 +400,10 @@ export function AppRouter() {
               <LoaderPreviewPage />
             </Suspense>
           }
+        />
+        <Route
+          path="/admin/solicitudes/reconocimiento-recibos"
+          element={<AdminOnlyRoute><Suspense fallback={<RouteFallback />}><AdminReconocimientoRecibosPage /></Suspense></AdminOnlyRoute>}
         />
         <Route
           path="/admin/solicitudes/field-access-rules"
