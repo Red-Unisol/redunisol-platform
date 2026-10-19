@@ -19,7 +19,12 @@ function salesContextHttp(array $data): void
             'crm.contact.get' => ['ID' => (string) $r['id'], 'NAME' => 'Ana', 'PHONE' => [['VALUE' => $data['record_phone'] ?? '+54 351 1234567']]],
             'crm.lead.get' => $data['direct_lead'] ?? ['ID' => (string) $r['id'], 'NAME' => 'Ana', 'PHONE' => [['VALUE' => '+54 351 1234567']]],
             'crm.deal.list' => array_map(fn ($d) => $d + ['CONTACT_ID' => '123', 'CATEGORY_ID' => '1', 'STAGE_SEMANTIC_ID' => 'P'], $data['deals'] ?? []),
-            'crm.lead.list' => $data['leads'] ?? [],
+            'crm.lead.list' => isset($r['filter']['@ID'])
+                ? ($data['batch_leads'] ?? array_map(fn ($id) => array_replace([
+                    'ID' => (string) $id, 'NAME' => 'Ana', 'PHONE' => [['VALUE' => '+54 351 1234567']],
+                    'DATE_CREATE' => now()->subDays(90)->toIso8601String(), 'STATUS_SEMANTIC_ID' => 'F',
+                ], $data['direct_leads'][(string) $id] ?? $data['direct_lead'] ?? []), $r['filter']['@ID']))
+                : ($data['leads'] ?? []),
             'imopenlines.crm.chat.get' => $data['chats'] ?? [],
             'im.dialog.get' => ['entity_id' => $data['chat_channel'] ?? 'whatsappbyedna|1|phone'],
             'im.dialog.messages.get' => ['chat_id' => 789, 'messages' => $data['messages'] ?? [], 'users' => $data['chat_users'] ?? []],
@@ -145,3 +150,59 @@ test('an open Member Services deal is verified evidence for Kestra', function ()
     expect($context['evidence'])->toBe([['kind' => 'open_deal', 'category_id' => 5]])
         ->and($context)->not->toHaveKey('managed');
 });
+
+test('more than ten historical leads preserve verified deal evidence using bounded requests', function (int $count) {
+    $ids = array_map('strval', range(1001, 1000 + $count));
+    salesContextHttp(['contact_ids' => [], 'lead_ids' => $ids,
+        'deals' => [['ID' => '1', 'LEAD_ID' => end($ids), 'ASSIGNED_BY_ID' => '57']]]);
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->toBe([['kind' => 'open_deal', 'category_id' => 1]])
+        ->and($context['name'])->toBeNull()->and($context)->not->toHaveKey('advisor_name');
+    $batches = Http::recorded(fn ($request) => str_contains($request->url(), 'crm.lead.list')
+        && isset($request['filter']['@ID']));
+    expect($batches)->toHaveCount((int) ceil($count / 50));
+    expect($batches->flatMap(fn ($pair) => $pair[0]['filter']['@ID'])->all())->toBe($ids);
+    Http::assertSent(fn ($r) => str_contains($r->url(), 'crm.lead.list')
+        && $r['select'] === ['*', 'UF_*', 'PHONE'] && count($r['filter']['@ID']) <= 50);
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'crm.lead.get'));
+})->with([11, 18, 60]);
+
+test('a recent form in the last identity batch is still recognized', function () {
+    $ids = array_map('strval', range(1001, 1060));
+    salesContextHttp(['contact_ids' => [], 'lead_ids' => $ids,
+        'direct_leads' => ['1060' => salesFormLead(['ID' => '1060', 'CONTACT_ID' => null])]]);
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->toHaveCount(1)
+        ->and($context['evidence'][0]['kind'])->toBe('form');
+});
+
+test('many old lost leads do not establish management by themselves', function () {
+    salesContextHttp(['contact_ids' => [], 'lead_ids' => array_map('strval', range(1001, 1018))]);
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements());
+    expect($context['evidence'])->toBeEmpty()->and($context['name'])->toBeNull();
+});
+
+test('a mismatched phone in an identity batch is never used as management evidence', function () {
+    salesContextHttp(['contact_ids' => [], 'lead_ids' => ['456'], 'direct_leads' => [
+        '456' => salesFormLead(['PHONE' => [['VALUE' => '+54 351 9999999']]]),
+    ]]);
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->toBeEmpty();
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'crm.deal.list'));
+});
+
+test('missing duplicated or foreign records in a batch fail closed', function (array $rows) {
+    salesContextHttp(['contact_ids' => [], 'lead_ids' => ['456', '457'], 'batch_leads' => $rows]);
+    expect(fn () => (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements()))->toThrow(RuntimeException::class);
+})->with([
+    'missing' => [[['ID' => '456']]],
+    'duplicate' => [[['ID' => '456'], ['ID' => '456']]],
+    'foreign' => [[['ID' => '456'], ['ID' => '999']]],
+]);
+
+test('identity bounds still prevent unbounded CRM work', function (string $entity) {
+    salesContextHttp(array_replace(['contact_ids' => [], 'lead_ids' => []],
+        [$entity.'_ids' => array_map('strval', range(1, $entity === 'lead' ? 1001 : 11))]));
+    expect(fn () => (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements()))->toThrow(RuntimeException::class,
+        'Sales identity requires manual review.');
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'crm.lead.list') || str_contains($r->url(), 'crm.contact.get'));
+})->with(['lead', 'contact']);
