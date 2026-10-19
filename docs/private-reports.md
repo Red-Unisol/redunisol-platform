@@ -4,10 +4,14 @@
 
 - Kestra genera los archivos y escribe en `/srv/redunisol-reports`.
 - El contenedor Laravel monta esa carpeta en `/var/www/reports` como solo lectura.
-- Filament muestra los archivos en **Gestión > Reportes**.
+- Filament muestra solo los informes de gestión registrados en `App\Support\ReportCatalog`, con sus históricos, en **Gestión > Reportes**.
 - La descarga pasa por Laravel y exige una sesión autenticada; Apache no publica la carpeta.
 
-Formatos visibles: `.xlsx`, `.xls`, `.csv` y `.pdf`.
+Formatos visibles dentro de los informes registrados: `.xlsx`, `.xls`, `.csv` y `.pdf`.
+
+Los archivos internos de BCRA (`output/`, `control/` y sus CSV o Excel) no generan
+tarjetas en Reportes. Se conservan en sus rutas originales y siguen disponibles
+por el circuito de **Herramientas > BCRA**; este filtro no mueve ni borra archivos.
 
 ## Nombres y regeneración desde Admin
 
@@ -46,9 +50,9 @@ REPORTS_KESTRA_NAMESPACE_PREFIX=redunisol.prod
 
 Ambos sitios leen la carpeta compartida de informes de producción, por lo que
 ambos apuntan a sus generadores `redunisol.prod.*`. Las credenciales nunca se
-envían al navegador. Los archivos de carpetas nuevas se siguen mostrando con
-nombres derivados de la carpeta; para habilitar su regeneración hay que
-agregar su definición a `App\Support\ReportCatalog`.
+envían al navegador. Para incorporar un informe de gestión nuevo a la pantalla y
+habilitar su regeneración hay que agregar su definición a
+`App\Support\ReportCatalog`. Las carpetas sin registrar no aparecen como tarjetas.
 
 ## Estructura recomendada
 

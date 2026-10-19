@@ -19,23 +19,47 @@ test('it groups current and historical files into report cards', function () {
         ->and($groups->last()['history'])->toHaveCount(2);
 });
 
-test('it gives unknown report folders readable fallback metadata', function () {
-    $group = (new ReportCatalog)->groups(collect([
+test('it excludes folders that are not registered management reports', function () {
+    $groups = (new ReportCatalog)->groups(collect([
         fakeReport('operaciones/reporte-nuevo/ultimo.csv', 1000),
     ]))->first();
 
-    expect($group['area'])->toBe('Operaciones')
-        ->and($group['title'])->toBe('Reporte Nuevo')
-        ->and($group['description'])->toBe('Archivos disponibles para este reporte.');
+    expect($groups)->toBeNull();
 });
 
-test('it groups files from the reports root under general', function () {
-    $group = (new ReportCatalog)->groups(collect([
+test('it excludes uncatalogued files from the reports root', function () {
+    $groups = (new ReportCatalog)->groups(collect([
         fakeReport('resumen.pdf', 1000),
-    ]))->first();
+    ]));
 
-    expect($group['key'])->toBe('general')
-        ->and($group['area'])->toBe('General');
+    expect($groups)->toBeEmpty();
+});
+
+test('it excludes BCRA internals and keeps all management reports with their history', function () {
+    $keys = [
+        'analisis-credito/reporte-evaluacion',
+        'analisis-credito/reporte-evaluacion-comisiones',
+        'analisis-credito/tope-descuento-caja',
+        'cobranzas/mudon-jubilados',
+        'contabilidad/transferencias-app',
+        'marketing/distribucion-negociaciones',
+        'marketing/formulario-bitrix',
+    ];
+    $reports = collect($keys)->map(fn (string $key): array => fakeReport($key.'/ultimo.xlsx', 1000));
+    $reports->push(
+        fakeReport('marketing/formulario-bitrix/historico/2026-10-17.xlsx', 900),
+        fakeReport('contabilidad/bcra/redunisol.prod.contabilidad/run-id/output/errores.csv', 2000),
+        fakeReport('contabilidad/bcra/redunisol.prod.contabilidad/run-id/control/prestamos_tasa.csv', 2000),
+        fakeReport('contabilidad/bcra/redunisol.prod.contabilidad/run-id/control/deudores_por_superior.xlsx', 2000),
+        fakeReport('contabilidad/bcra/redunisol.dev.contabilidad/run-id/control/errores.csv', 2000),
+        fakeReport('marketing/formulario-bitrix/control/errores.csv', 2000),
+    );
+
+    $groups = (new ReportCatalog)->groups($reports)->keyBy('key');
+
+    expect($groups->keys()->all())->toBe($keys)
+        ->and($groups['marketing/formulario-bitrix']['history'])->toHaveCount(1)
+        ->and($groups['marketing/formulario-bitrix']['history']->first()['name'])->toBe('2026-10-17.xlsx');
 });
 
 function fakeReport(string $path, int $modifiedAt): array
