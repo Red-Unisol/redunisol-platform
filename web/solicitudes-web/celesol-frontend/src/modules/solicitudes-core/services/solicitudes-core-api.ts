@@ -263,6 +263,7 @@ export type PrestamoDelSocioResponse = {
   fechaEmision: string | null;
   legacyId: string | null;
   lineaPrestamoDescripcion: string | null;
+  montoADesembolsar: number | null;
   montoPrestamo: number | null;
   nroCuenta: string | null;
   primerVencimiento: string | null;

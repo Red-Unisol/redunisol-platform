@@ -61,7 +61,9 @@ export class CreateSocioUseCase {
         fechaDeNacimiento: input.fechaDeNacimiento,
         nombre: input.nombre,
         nroDocumento,
+        observaciones: input.observaciones ?? null,
         sexo: input.sexo,
+        socAux: input.socAux ?? null,
       });
 
       return this.repository.create({
@@ -90,7 +92,9 @@ export class CreateSocioUseCase {
       cuit,
       domicilio,
       email: input.email ?? null,
+      observaciones: input.observaciones ?? null,
       razonSocial: input.razonSocial,
+      socAux: input.socAux ?? null,
     });
 
     return this.repository.create({

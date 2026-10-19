@@ -66,6 +66,13 @@ export type Localidad = {
   provincia: string | null;
 };
 
+// Datos del convenio que Vimarx guarda en SocAux del socio.
+export type CreateSocioSocAux = {
+  beneficio?: string;
+  caja40?: number;
+  convAux?: number;
+};
+
 export type CreateSocioRequest =
   | {
       apellido: string;
@@ -79,8 +86,10 @@ export type CreateSocioRequest =
       fechaDeNacimiento: string;
       nombre: string;
       nroDocumento: string;
+      observaciones?: string;
       razonSocial?: never;
       sexo: string;
+      socAux?: CreateSocioSocAux;
       tipoDocumento: string;
       tipoPersona: "FISICA";
     }
@@ -96,8 +105,10 @@ export type CreateSocioRequest =
       fechaDeNacimiento?: never;
       nombre?: never;
       nroDocumento?: never;
+      observaciones?: string;
       razonSocial: string;
       sexo?: never;
+      socAux?: CreateSocioSocAux;
       tipoDocumento?: never;
       tipoPersona: "JURIDICA";
     };

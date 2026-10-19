@@ -288,7 +288,8 @@ const PRESTAMOS_TABLE_COLUMNS = [
   "Nº de préstamo",
   "Línea",
   "Fecha",
-  "Monto",
+  "Total cuotas",
+  "Monto a desembolsar",
   "Saldo",
   "Vencimiento",
 ] as const;
@@ -409,6 +410,11 @@ function PrestamosDelSocioSection({
                 </td>
                 <td className="border-r border-border px-3 py-2">
                   {formatNullableAmount(prestamo.montoPrestamo) || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {prestamo.montoADesembolsar
+                    ? formatNullableAmount(prestamo.montoADesembolsar)
+                    : PLACEHOLDER}
                 </td>
                 <td className="border-r border-border px-3 py-2">
                   {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
@@ -743,24 +749,6 @@ function formatAmount(value: number | null | undefined) {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,
   }).format(value)}`;
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) {
-    return PLACEHOLDER;
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -1395,7 +1383,7 @@ function SolicitudSection({
           isEditing={isEditing}
           label="Fecha primer vencimiento"
           onChange={(value) => onChange("fechaPrimerVencimiento", value)}
-          readOnlyValue={formatDate(solicitud.fechaPrimerVencimiento)}
+          readOnlyValue={formatLegacyDate(solicitud.fechaPrimerVencimiento)}
           value={values.fechaPrimerVencimiento}
         />
         <EditableTextInput
@@ -1643,7 +1631,7 @@ function TitularFields({
         isEditing={isEditing}
         label="Fecha nacimiento"
         onChange={(value) => onChange("fechaNacimiento", value)}
-        readOnlyValue={formatDate(titular.fechaNacimiento)}
+        readOnlyValue={formatLegacyDate(titular.fechaNacimiento)}
         required
         value={values.fechaNacimiento}
       />
@@ -1892,7 +1880,7 @@ function ConyugeFields({
         isEditing={isEditing}
         label="Fecha nacimiento"
         onChange={(value) => onChange("fechaNacimiento", value)}
-        readOnlyValue={formatDate(conyuge.fechaNacimiento)}
+        readOnlyValue={formatLegacyDate(conyuge.fechaNacimiento)}
         value={values.fechaNacimiento}
       />
       <EditableTextInput
@@ -2002,7 +1990,7 @@ function DatosLaboralesFields({
         isEditing={isEditing}
         label="Fecha ingreso laboral"
         onChange={(value) => onChange("fechaIngresoLaboral", value)}
-        readOnlyValue={formatDate(datosLaborales.fechaIngresoLaboral)}
+        readOnlyValue={formatLegacyDate(datosLaborales.fechaIngresoLaboral)}
         value={values.fechaIngresoLaboral}
       />
       <EditableMoneyInput

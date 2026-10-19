@@ -1,3 +1,10 @@
+// Datos del convenio que Vimarx guarda en SocAux del socio.
+export type CreateSocioSocAuxDto = {
+  beneficio?: string;
+  caja40?: number;
+  convAux?: number;
+};
+
 export type CreateSocioDto =
   | {
       tipoPersona: "FISICA";
@@ -12,7 +19,9 @@ export type CreateSocioDto =
       fechaDeNacimiento: string;
       nombre: string;
       nroDocumento: string;
+      observaciones?: string;
       sexo: string;
+      socAux?: CreateSocioSocAuxDto;
       tipoDocumento: string;
     }
   | {
@@ -24,5 +33,7 @@ export type CreateSocioDto =
       domicilioLocalidad: string;
       domicilioNroPuerta?: string;
       email?: string;
+      observaciones?: string;
       razonSocial: string;
+      socAux?: CreateSocioSocAuxDto;
     };
