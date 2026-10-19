@@ -212,6 +212,8 @@ const PRESTAMOS_DEL_SOCIO_FIELDS = [
   "FechaEmision",
   "MontoPrestamo",
   "Capital",
+  // Lo que se le entrego al socio. Vimarx lo muestra como "Monto a desembolsar".
+  "MontoADesembolsar",
   "Saldo",
   "PrimerVencimiento",
   "Vencimiento",
@@ -1954,6 +1956,11 @@ function mapPrestamoDelSocioRow(row: EvaluateListRow): PrestamoDelSocioLegacy {
       row,
       prestamosDelSocioFieldIndex,
       "LineaPrestamo.Descripcion",
+    ),
+    montoADesembolsar: getNumberValue(
+      row,
+      prestamosDelSocioFieldIndex,
+      "MontoADesembolsar",
     ),
     montoPrestamo: getNumberValue(
       row,
