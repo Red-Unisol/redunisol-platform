@@ -9,6 +9,7 @@ use App\Jobs\SendEdnaOutOfHours;
 use App\Models\EdnaOutOfHoursSend;
 use App\Models\User;
 use App\Services\AttributionJourney;
+use App\Services\EdnaFlowRouter;
 use App\Services\EdnaOutOfHours;
 use App\Services\EdnaOutOfHoursPolicy;
 use App\Services\WhatsAppSalesContext;
@@ -192,15 +193,29 @@ test('calendar validates closing time and holiday dates', function (array $inval
     expect(fn () => $settings->save(array_replace($settings->get(), $invalid)))->toThrow(ValidationException::class);
 })->with([[['open' => '17:00', 'close' => '09:00']], [['weekdays' => []]], [['holidays' => ['2026-02-30']]]]);
 
-test('pending automated Flow suppresses ordinary replies before any CRM query', function () {
+test('active and completed Flows cancel queued notices for ordinary replies', function (string $state) {
     $send = offHoursReserve();
     DB::table('edna_flow_sends')->insert(['scope' => $send->scope, 'request_id' => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'entry_event_id' => 999,
         'subject_id' => '2423', 'cascade_id' => '2557', 'flow_id' => '1850162769693486', 'recipient' => Crypt::encryptString($send->recipient),
-        'state' => 'confirmed', 'entry_received_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+        'state' => $state, 'entry_received_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
     $posts = 0;
     offHoursHttp($posts);
     (new SendEdnaOutOfHours($send->id))->handle();
     expect($send->fresh()->state)->toBe('cancelled')->and($posts)->toBe(0);
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'redunisol.bitrix24.es'));
+})->with(['confirmed', 'completed']);
+
+test('completed Flows suppress ordinary replies before resolving sales context', function () {
+    [$event, $payload] = offHoursEvent();
+    DB::table('edna_flow_sends')->insert(['scope' => (new EdnaFlowRouter)->scope('2423', $payload['subscriber']['identifier']),
+        'request_id' => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'entry_event_id' => 999,
+        'subject_id' => '2423', 'cascade_id' => '2557', 'flow_id' => '1850162769693486',
+        'state' => 'completed', 'completed_at' => now()->subMinute(), 'entry_received_at' => now()->subMinutes(2),
+        'created_at' => now()->subMinutes(2), 'updated_at' => now()]);
+    $this->mock(WhatsAppSalesContext::class)->shouldNotReceive('resolve');
+    (new EvaluateEdnaOutOfHours($event->id))->handle();
+    expect(DB::table('edna_incoming_events')->find($event->id)->out_of_hours_evaluated_at)->not->toBeNull()
+        ->and(EdnaOutOfHoursSend::count())->toBe(0);
 });
 
 test('sender performs one POST and verifies the exact notice in history', function () {

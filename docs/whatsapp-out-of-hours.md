@@ -51,10 +51,14 @@ pedir un préstamo", recibe el tratamiento general si no dispara un recorrido
 actual: no se presupone una automatización futura.
 
 El worker espera diez segundos tras la clasificación antes de evaluar. También
-excluye un Router pendiente/en curso y respuestas referidas a envíos registrados
-del Router, su landing o formularios enviados por asesores. La identidad/canal se
-comprueba en el registro; una referencia a un envío de otra persona no basta.
+excluye un Router pendiente/en curso o completado en la ventana de 24 horas desde
+su creación, incluso ante un texto ordinario sin referencia explícita al Flow.
+También excluye respuestas referidas a envíos registrados del Router, su landing
+o formularios enviados por asesores. La identidad/canal se comprueba en el
+registro; una referencia a un envío de otra persona no basta.
 Una nueva entrada y el envío del aviso comparten el bloqueo por persona/canal.
+Sigue pendiente el caso de una entrada del Router cuyo callback llega después de
+que el aviso ya se envió: no se amplía la espera ni se anticipa ese evento futuro.
 
 Horario inicial: lunes a viernes, 09:00 inclusive a 17:00 exclusive,
 `America/Argentina/Cordoba`. Horario, días y cierres excepcionales son editables.
@@ -78,6 +82,11 @@ El aviso distingue **en gestión** y **general**. En gestión significa cualquie
 Se verifica el teléfono contra las fichas encontradas. Ante fichas o asesores
 ambiguos se omite la personalización; errores de API, permisos o límites de
 consulta se reintentan y no se convierten silenciosamente en aviso general.
+La búsqueda admite hasta 1.000 leads por teléfono y obtiene sus fichas en lotes
+de hasta 50, incluyendo teléfonos y campos personalizados. Cada lote debe contener
+exactamente los IDs solicitados y se vuelve a verificar el teléfono de cada ficha.
+Los leads históricos no prueban gestión por sí solos. Se mantienen el límite de
+diez contactos y el presupuesto de consulta CRM de 45 segundos.
 Las consultas de negociaciones usan filtros planos: se verificó que este portal
 ignora grupos OR anidados de `crm.deal.list`. Se comprueba también que cada
 resultado pertenece a la persona, categoría y semántica solicitadas.
