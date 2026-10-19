@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\EdnaAssistance;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFormLink;
 use App\Services\EdnaRouterResult;
@@ -42,6 +43,14 @@ class ReceiveEdnaInKestra implements ShouldQueue
                     throw new RuntimeException('Edna receiver is not configured.');
                 }
                 $payload = json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR);
+                if (config('edna.assistance_enabled') && (new EdnaAssistance)->receive($event, $payload)) {
+                    DB::table('edna_incoming_events')->where('id', $event->id)->update([
+                        'status' => 'delivered', 'outcome' => 'jubilados_assistance',
+                        'delivered_at' => now(), 'updated_at' => now(),
+                    ]);
+
+                    return;
+                }
                 $router = new EdnaFlowRouter;
                 $context = $router->correlate($event, $payload);
                 // Only this trusted bridge can add context; public intake discards it.

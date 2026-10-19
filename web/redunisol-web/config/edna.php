@@ -1,6 +1,14 @@
 <?php
 
 return [
+    // Three independent gates. An empty pilot list always denies assistance.
+    'assistance_enabled' => (bool) env('EDNA_ASSISTANCE_ENABLED', false),
+    'assistance_send_enabled' => (bool) env('EDNA_ASSISTANCE_SEND_ENABLED', false),
+    'assistance_crm_enabled' => (bool) env('EDNA_ASSISTANCE_CRM_ENABLED', false),
+    'assistance_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_ASSISTANCE_RECIPIENTS', ''))))),
+    'assistance_start_at' => env('EDNA_ASSISTANCE_START_AT', ''),
+    'assistance_delay_minutes' => (int) env('EDNA_ASSISTANCE_DELAY_MINUTES', 30),
+    'assistance_processing_url' => env('KESTRA_EDNA_ASSISTANCE_WEBHOOK_URL', ''),
     'out_of_hours_enabled' => (bool) env('EDNA_OUT_OF_HOURS_ENABLED', false),
     'out_of_hours_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_OUT_OF_HOURS_RECIPIENTS', ''))))),
     'form_links_enabled' => (bool) env('EDNA_FORM_LINKS_ENABLED', false),

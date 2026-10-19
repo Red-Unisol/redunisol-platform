@@ -6,6 +6,7 @@ use App\Actions\PrequalifyFormWithKestra;
 use App\Http\Requests\FormSubmissionRequest;
 use App\Jobs\PersistFormSubmission;
 use App\Services\AttributionJourney;
+use App\Services\EdnaAssistance;
 use Illuminate\Http\JsonResponse;
 use Throwable;
 
@@ -61,6 +62,14 @@ class FormSubmissionController extends Controller
             return $this->loadFailure(503);
         }
 
+        if (config('edna.assistance_enabled')) {
+            try {
+                (new EdnaAssistance)->recordForm((string) ($input['celular'] ?? ''));
+            } catch (Throwable $exception) {
+                // Receipt tracking must not change the existing form response.
+                report($exception);
+            }
+        }
         if (! $prequalificationAvailable) {
             return response()->json([
                 'ok' => true,
