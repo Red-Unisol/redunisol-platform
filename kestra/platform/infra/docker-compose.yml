@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:${POSTGRES_VERSION}
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "checkpoint_timeout=15min", "-c", "max_wal_size=4GB", "-c", "wal_compression=lz4"]
     restart: unless-stopped
     logging:
       driver: json-file
