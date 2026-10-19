@@ -19,23 +19,47 @@ test('it groups current and historical files into report cards', function () {
         ->and($groups->last()['history'])->toHaveCount(2);
 });
 
-test('it gives unknown report folders readable fallback metadata', function () {
-    $group = (new ReportCatalog)->groups(collect([
+test('it excludes folders that are not registered management reports', function () {
+    $groups = (new ReportCatalog)->groups(collect([
         fakeReport('operaciones/reporte-nuevo/ultimo.csv', 1000),
     ]))->first();
 
-    expect($group['area'])->toBe('Operaciones')
-        ->and($group['title'])->toBe('Reporte Nuevo')
-        ->and($group['description'])->toBe('Archivos disponibles para este reporte.');
+    expect($groups)->toBeNull();
 });
 
-test('it groups files from the reports root under general', function () {
-    $group = (new ReportCatalog)->groups(collect([
+test('it excludes uncatalogued files from the reports root', function () {
+    $groups = (new ReportCatalog)->groups(collect([
         fakeReport('resumen.pdf', 1000),
-    ]))->first();
+    ]));
 
-    expect($group['key'])->toBe('general')
-        ->and($group['area'])->toBe('General');
+    expect($groups)->toBeEmpty();
+});
+
+test('it excludes BCRA internals and keeps all management reports with their history', function () {
+    $keys = [
+        'analisis-credito/reporte-evaluacion',
+        'analisis-credito/reporte-evaluacion-comisiones',
+        'analisis-credito/tope-descuento-caja',
+        'cobranzas/mudon-jubilados',
+        'contabilidad/transferencias-app',
+        'marketing/distribucion-negociaciones',
+        'marketing/formulario-bitrix',
+    ];
+    $reports = collect($keys)->map(fn (string $key): array => fakeReport($key.'/ultimo.xlsx', 1000));
+    $reports->push(
+        fakeReport('marketing/formulario-bitrix/historico/2026-10-17.xlsx', 900),
+        fakeReport('contabilidad/bcra/redunisol.prod.contabilidad/run-id/output/errores.csv', 2000),
+        fakeReport('contabilidad/bcra/redunisol.prod.contabilidad/run-id/control/prestamos_tasa.csv', 2000),
+        fakeReport('contabilidad/bcra/redunisol.prod.contabilidad/run-id/control/deudores_por_superior.xlsx', 2000),
+        fakeReport('contabilidad/bcra/redunisol.dev.contabilidad/run-id/control/errores.csv', 2000),
+        fakeReport('marketing/formulario-bitrix/control/errores.csv', 2000),
+    );
+
+    $groups = (new ReportCatalog)->groups($reports)->keyBy('key');
+
+    expect($groups->keys()->all())->toBe($keys)
+        ->and($groups['marketing/formulario-bitrix']['history'])->toHaveCount(1)
+        ->and($groups['marketing/formulario-bitrix']['history']->first()['name'])->toBe('2026-10-17.xlsx');
 });
 
 function fakeReport(string $path, int $modifiedAt): array
@@ -61,4 +85,25 @@ test('it keeps evaluation and commissions as separate report cards', function ()
         ->and($groups['analisis-credito/reporte-evaluacion']['history'])->toHaveCount(0)
         ->and($groups['analisis-credito/reporte-evaluacion-comisiones']['title'])->toBe('Evaluación y comisiones')
         ->and($groups['analisis-credito/reporte-evaluacion-comisiones']['history'])->toHaveCount(1);
+});
+
+test('download names identify the report and the generation date in Argentina', function () {
+    $report = fakeReport('analisis-credito/tope-descuento-caja/ultimo.xlsx', strtotime('2026-10-19T02:30:00Z'));
+    $catalog = new ReportCatalog;
+
+    expect($catalog->downloadName($report))->toBe('tope-de-descuento-de-caja-2026-10-18_233000.xlsx')
+        ->and($catalog->groups(collect([$report]))->first()['latest']['download_name'])
+        ->toBe($catalog->downloadName($report));
+});
+
+test('historical download names preserve the period and identify the report', function () {
+    expect((new ReportCatalog)->downloadName(fakeReport('marketing/formulario-bitrix/historico/2026-09-07.xlsx', 1000)))
+        ->toBe('formulario-bitrix-2026-09-07.xlsx');
+});
+
+test('only known reports can be regenerated', function () {
+    $catalog = new ReportCatalog;
+    expect($catalog->definition('analisis-credito/tope-descuento-caja')['flow'])->toBe('tope_descuento_caja_mensual')
+        ->and($catalog->definition('cobranzas/mudon-jubilados')['domain'])->toBe('analisis-credito')
+        ->and($catalog->definition('operaciones/desconocido'))->toBeNull();
 });

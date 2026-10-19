@@ -47,7 +47,7 @@ class EdnaOutOfHours
         }
         $scope = (new EdnaFlowRouter)->scope((string) $event->subject_id, $payload['subscriber']['identifier']);
         $query = DB::table('edna_flow_sends')->where('scope', $scope)->where('created_at', '>', now()->subHours(24));
-        if ((clone $query)->whereIn('state', ['pending', 'sending', 'accepted', 'unknown', 'confirmed'])->exists()) {
+        if ((clone $query)->whereIn('state', ['pending', 'sending', 'accepted', 'unknown', 'confirmed', 'completed'])->exists()) {
             return true;
         }
         $request = $payload['replyOutMessageExternalRequestId'] ?? null;

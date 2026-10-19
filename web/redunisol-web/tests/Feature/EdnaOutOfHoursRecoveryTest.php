@@ -55,7 +55,7 @@ function recoveryRoute(object $event, array $payload, string $route, string $req
     $flow = DB::table('edna_flow_sends')->insertGetId(['scope' => $scope, 'entry_event_id' => $event->id,
         'request_id' => $route === 'flow' ? $request : (string) Str::uuid(),
         'outgoing_message_id' => $route === 'flow' ? $message : null, 'subject_id' => '2423', 'cascade_id' => '2557',
-        'flow_id' => '1850162769693486', 'state' => 'completed', 'entry_received_at' => now(),
+        'flow_id' => '1850162769693486', 'state' => 'expired', 'entry_received_at' => now(),
         'created_at' => now(), 'updated_at' => now()]);
     if ($route === 'landing') {
         DB::table('edna_router_results')->insert(['flow_send_id' => $flow, 'response_event_id' => $event->id,
@@ -192,4 +192,24 @@ test('recovery leaves expired and already evaluated events alone', function () {
     DB::table('edna_incoming_events')->where('id', $done->id)->update(['out_of_hours_evaluated_at' => now()]);
     $this->artisan('edna:out-of-hours recover --apply')->assertSuccessful();
     expect(DB::table('jobs')->count())->toBe(0);
+});
+
+test('ordinary messages after completing a Flow remain excluded from notices', function () {
+    [$event, $payload] = recoveryEvent();
+    recoveryRoute($event, $payload, 'flow', (string) Str::uuid(), '987654321');
+    DB::table('edna_flow_sends')->update(['state' => 'completed', 'completed_at' => now()->subMinute()]);
+    // No reply reference: the completed Flow itself must suppress the new text.
+    expect((new EdnaOutOfHours)->automaticRoute($event, $payload))->toBeTrue();
+    $payload['subscriber']['identifier'] = '5493519999999';
+    expect((new EdnaOutOfHours)->automaticRoute($event, $payload))->toBeFalse();
+    $payload['subscriber']['identifier'] = '5493511234567';
+    $event->subject_id = 'other-channel';
+    expect((new EdnaOutOfHours)->automaticRoute($event, $payload))->toBeFalse();
+});
+
+test('completed Flows retain the existing twenty four hour exclusion limit', function () {
+    [$event, $payload] = recoveryEvent();
+    recoveryRoute($event, $payload, 'flow', (string) Str::uuid(), '987654321');
+    DB::table('edna_flow_sends')->update(['state' => 'completed', 'created_at' => now()->subHours(24)]);
+    expect((new EdnaOutOfHours)->automaticRoute($event, $payload))->toBeFalse();
 });

@@ -33,12 +33,13 @@ class WhatsAppSalesContext
             if (! is_array($matches) || ! is_array($matches[strtoupper($entity)] ?? [])) {
                 throw new RuntimeException('Invalid CRM identity response.');
             }
-            $ids = array_unique($matches[strtoupper($entity)] ?? []);
-            if (count($ids) > 10) {
+            $ids = array_values(array_unique(array_map('strval', $matches[strtoupper($entity)] ?? [])));
+            if (count($ids) > ($entity === 'lead' ? 1000 : 10)) {
                 throw new RuntimeException('Sales identity requires manual review.');
             }
-            foreach ($ids as $id) {
-                $record = $this->call('crm.'.$entity.'.get', ['id' => $id]);
+            $rows = $entity === 'lead' ? $this->leadRecords($ids)
+                : array_map(fn ($id) => $this->call('crm.contact.get', ['id' => $id]), $ids);
+            foreach ($rows as $record) {
                 if (collect($record['PHONE'] ?? [])->contains(fn ($p) => (new AttributionJourney)->phoneHash((string) ($p['VALUE'] ?? '')) === $hash)) {
                     $records[$entity][(string) $record['ID']] = $record;
                 }
@@ -111,6 +112,34 @@ class WhatsAppSalesContext
         }
 
         return $base;
+    }
+
+    private function leadRecords(array $ids): array
+    {
+        $records = [];
+        // The list endpoint returns at most 50 rows. Fetch every requested record
+        // in bounded batches instead of spending one HTTP request per old lead.
+        foreach (array_chunk($ids, 50) as $batch) {
+            $rows = $this->call('crm.lead.list', ['filter' => ['@ID' => $batch],
+                'select' => ['*', 'UF_*', 'PHONE'], 'order' => ['ID' => 'ASC'], 'start' => -1]);
+            if (! is_array($rows) || ! array_is_list($rows)) {
+                throw new RuntimeException('Invalid CRM identity response.');
+            }
+            $found = [];
+            foreach ($rows as $record) {
+                $id = (string) ($record['ID'] ?? '');
+                if (! in_array($id, $batch, true) || isset($found[$id])) {
+                    throw new RuntimeException('CRM lead identity does not match the requested records.');
+                }
+                $found[$id] = $record;
+            }
+            if (count($found) !== count($batch)) {
+                throw new RuntimeException('CRM lead identity response is incomplete.');
+            }
+            $records = array_merge($records, array_values($found));
+        }
+
+        return $records;
     }
 
     private function isForm(array $lead): bool

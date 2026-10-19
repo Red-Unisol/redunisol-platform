@@ -4,10 +4,55 @@
 
 - Kestra genera los archivos y escribe en `/srv/redunisol-reports`.
 - El contenedor Laravel monta esa carpeta en `/var/www/reports` como solo lectura.
-- Filament muestra los archivos en **Gestión > Reportes**.
+- Filament muestra solo los informes de gestión registrados en `App\Support\ReportCatalog`, con sus históricos, en **Gestión > Reportes**.
 - La descarga pasa por Laravel y exige una sesión autenticada; Apache no publica la carpeta.
 
-Formatos visibles: `.xlsx`, `.xls`, `.csv` y `.pdf`.
+Formatos visibles dentro de los informes registrados: `.xlsx`, `.xls`, `.csv` y `.pdf`.
+
+Los archivos internos de BCRA (`output/`, `control/` y sus CSV o Excel) no generan
+tarjetas en Reportes. Se conservan en sus rutas originales y siguen disponibles
+por el circuito de **Herramientas > BCRA**; este filtro no mueve ni borra archivos.
+
+## Nombres y regeneración desde Admin
+
+La tarjeta y la descarga usan un nombre descriptivo, por ejemplo
+`tope-de-descuento-de-caja-2026-10-19_091500.xlsx`. La fecha y hora de los
+archivos actuales corresponden a su última publicación en Buenos Aires; los
+históricos conservan su período o identificador original. Los generadores
+mantienen sus rutas internas (`ultimo.xlsx` e `historico/`) para preservar los
+contratos existentes.
+
+Cada uno de los siete informes del catálogo tiene un botón **Regenerar**. La
+acción exige acceso al panel Admin y crea una ejecución asíncrona del flow
+permitido para ese informe. Nunca acepta una URL ni un flow desde el cliente.
+Se usan los parámetros por defecto del generador: meses cerrados para
+Evaluación y comisiones, mes actual para Caja y día anterior para
+Transferencias. Caja y MUDON conservan sus checkpoints, cachés y procesamiento
+por lotes. Regenerar no fuerza una consulta nueva de todos los datos cacheados.
+
+La página consulta el estado cada 15 segundos, bloquea solicitudes repetidas
+del mismo informe y mantiene disponible la descarga anterior. Un proceso
+finalizado no garantiza una publicación nueva: MUDON puede requerir más lotes.
+La fecha de actualización identifica el archivo efectivamente publicado. Si se
+pierde la respuesta al iniciar, no se reintenta automáticamente y se bloquea
+el botón por dos minutos para evitar duplicados inmediatos.
+
+Configuración del backend Laravel (también declarada en Compose y en los
+runtime env cifrados de ambos ambientes):
+
+```env
+REPORTS_KESTRA_URL=
+REPORTS_KESTRA_TENANT=main
+REPORTS_KESTRA_USERNAME=
+REPORTS_KESTRA_PASSWORD=
+REPORTS_KESTRA_NAMESPACE_PREFIX=redunisol.prod
+```
+
+Ambos sitios leen la carpeta compartida de informes de producción, por lo que
+ambos apuntan a sus generadores `redunisol.prod.*`. Las credenciales nunca se
+envían al navegador. Para incorporar un informe de gestión nuevo a la pantalla y
+habilitar su regeneración hay que agregar su definición a
+`App\Support\ReportCatalog`. Las carpetas sin registrar no aparecen como tarjetas.
 
 ## Estructura recomendada
 
