@@ -383,4 +383,85 @@ describe("createSocioBodySchema", () => {
       false,
     );
   });
+
+  it("accepts socAux with numeric strings and drops empty fields", () => {
+    const parsed = createSocioBodySchema.parse({
+      cuit: "30123456789",
+      domicilioCalle: "Belgrano",
+      domicilioLocalidad: "12",
+      razonSocial: "ACME SA",
+      socAux: { beneficio: " 733767/0 ", caja40: " 50 ", convAux: "" },
+      tipoPersona: "JURIDICA",
+    });
+
+    assert.deepEqual(parsed.socAux, {
+      beneficio: "733767/0",
+      caja40: 50,
+      convAux: undefined,
+    });
+  });
+
+  it("rejects socAux with a non integer caja40 or convAux", () => {
+    for (const socAux of [
+      { caja40: "50,5" },
+      { caja40: "abc" },
+      { convAux: -1 },
+      { convAux: "2147483648" },
+    ]) {
+      assert.equal(
+        createSocioBodySchema.safeParse({
+          cuit: "30123456789",
+          domicilioCalle: "Belgrano",
+          domicilioLocalidad: "12",
+          razonSocial: "ACME SA",
+          socAux,
+          tipoPersona: "JURIDICA",
+        }).success,
+        false,
+        JSON.stringify(socAux),
+      );
+    }
+  });
+
+  it("trims observaciones and drops it when empty", () => {
+    const base = {
+      cuit: "30123456789",
+      domicilioCalle: "Belgrano",
+      domicilioLocalidad: "12",
+      razonSocial: "ACME SA",
+      tipoPersona: "JURIDICA",
+    };
+
+    assert.equal(
+      createSocioBodySchema.parse({ ...base, observaciones: " DEPOSITO MP " })
+        .observaciones,
+      "DEPOSITO MP",
+    );
+    assert.equal(
+      createSocioBodySchema.parse({ ...base, observaciones: "  " })
+        .observaciones,
+      undefined,
+    );
+    assert.equal(
+      createSocioBodySchema.safeParse({
+        ...base,
+        observaciones: "x".repeat(501),
+      }).success,
+      false,
+    );
+  });
+
+  it("rejects unknown socAux fields", () => {
+    assert.equal(
+      createSocioBodySchema.safeParse({
+        cuit: "30123456789",
+        domicilioCalle: "Belgrano",
+        domicilioLocalidad: "12",
+        razonSocial: "ACME SA",
+        socAux: { Sicon: 1 },
+        tipoPersona: "JURIDICA",
+      }).success,
+      false,
+    );
+  });
 });

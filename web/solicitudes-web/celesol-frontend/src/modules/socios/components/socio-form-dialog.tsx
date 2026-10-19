@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import type {
   CreateSocioRequest,
+  CreateSocioSocAux,
   Socio,
   SocioTipoPersona,
   UpdateSocioRequest,
@@ -85,6 +86,14 @@ function isValidCuit(value: string) {
   return checkDigit === Number(digits[10]);
 }
 
+// Caja 40 y AMEJUCA son enteros en Vimarx (SocAux.Caja40 y SocAux.ConvAux).
+function isValidOptionalInteger(value: string) {
+  return value.length === 0 || /^\d{1,9}$/.test(value);
+}
+
+const BENEFICIO_MAX_LENGTH = 50;
+const OBSERVACIONES_MAX_LENGTH = 500;
+
 // La localidad se guarda con su id de Vimarx (se elige del desplegable).
 function isValidLocalidadId(value: string) {
   return /^\d+$/.test(value);
@@ -131,8 +140,12 @@ export type SocioFormState = {
   fechaDeNacimiento: string;
   nombre: string;
   nroDocumento: string;
+  observaciones: string;
   razonSocial: string;
   sexo: string;
+  socAuxBeneficio: string;
+  socAuxCaja40: string;
+  socAuxConvAux: string;
   tipoDocumento: string;
   tipoPersona: SocioTipoPersona;
 };
@@ -154,8 +167,12 @@ function buildInitialState(
       socio?.tipoPersona === "FISICA" ? socio.fechaDeNacimiento : "",
     nombre: socio?.tipoPersona === "FISICA" ? socio.nombre : "",
     nroDocumento: socio?.tipoPersona === "FISICA" ? socio.nroDocumento : "",
+    observaciones: "",
     razonSocial: socio?.tipoPersona === "JURIDICA" ? socio.razonSocial : "",
     sexo: socio?.tipoPersona === "FISICA" ? socio.sexo : "",
+    socAuxBeneficio: "",
+    socAuxCaja40: "",
+    socAuxConvAux: "",
     tipoDocumento:
       socio?.tipoPersona === "FISICA" ? socio.tipoDocumento : "DNI",
     tipoPersona: socio?.tipoPersona ?? "FISICA",
@@ -166,6 +183,38 @@ function buildInitialState(
   }
 
   return { ...baseState, ...initialValues };
+}
+
+// Datos que solo viajan a Vimarx en el alta: SocAux (Mudon, AMEJUCA, Caja 40)
+// y las observaciones de la ficha del socio. Todos opcionales.
+function buildDatosConvenio(state: SocioFormState): {
+  observaciones?: string;
+  socAux?: CreateSocioSocAux;
+} | null {
+  const beneficio = toTrimmedValue(state.socAuxBeneficio);
+  const caja40 = state.socAuxCaja40.trim();
+  const convAux = state.socAuxConvAux.trim();
+  const observaciones = toTrimmedValue(state.observaciones);
+
+  if (
+    !isValidOptionalInteger(caja40) ||
+    !isValidOptionalInteger(convAux) ||
+    (beneficio?.length ?? 0) > BENEFICIO_MAX_LENGTH ||
+    (observaciones?.length ?? 0) > OBSERVACIONES_MAX_LENGTH
+  ) {
+    return null;
+  }
+
+  const socAux: CreateSocioSocAux = {
+    ...(beneficio ? { beneficio } : {}),
+    ...(caja40 ? { caja40: Number(caja40) } : {}),
+    ...(convAux ? { convAux: Number(convAux) } : {}),
+  };
+
+  return {
+    ...(observaciones ? { observaciones } : {}),
+    ...(Object.keys(socAux).length > 0 ? { socAux } : {}),
+  };
 }
 
 function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
@@ -185,12 +234,15 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
     ...(domicilioCodigoPostal ? { domicilioCodigoPostal } : {}),
   };
 
+  const datosConvenio = buildDatosConvenio(state);
+
   if (
     cuit.length === 0 ||
     !isValidCuit(cuit) ||
     !isValidEmail(state.email.trim()) ||
     domicilioCalle.length === 0 ||
-    !isValidLocalidadId(domicilioLocalidad)
+    !isValidLocalidadId(domicilioLocalidad) ||
+    datosConvenio === null
   ) {
     return null;
   }
@@ -219,6 +271,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
       ...(celular ? { celular } : {}),
       ...(email ? { email } : {}),
       ...domicilioOpcional,
+      ...datosConvenio,
       apellido,
       cuit,
       domicilioCalle,
@@ -242,6 +295,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
     ...(celular ? { celular } : {}),
     ...(email ? { email } : {}),
     ...domicilioOpcional,
+    ...datosConvenio,
     cuit,
     domicilioCalle,
     domicilioLocalidad,
@@ -554,6 +608,23 @@ function SocioFormDialogContent({
         : !isValidLocalidadId(formState.domicilioLocalidad.trim())
           ? "Elegí la localidad de la lista."
           : null,
+  };
+
+  const datosConvenioErrors = {
+    observaciones:
+      formState.observaciones.trim().length > OBSERVACIONES_MAX_LENGTH
+        ? `Máximo ${OBSERVACIONES_MAX_LENGTH} caracteres.`
+        : null,
+    socAuxBeneficio:
+      formState.socAuxBeneficio.trim().length > BENEFICIO_MAX_LENGTH
+        ? `Máximo ${BENEFICIO_MAX_LENGTH} caracteres.`
+        : null,
+    socAuxCaja40: !isValidOptionalInteger(formState.socAuxCaja40.trim())
+      ? "Solo números enteros."
+      : null,
+    socAuxConvAux: !isValidOptionalInteger(formState.socAuxConvAux.trim())
+      ? "Solo números enteros."
+      : null,
   };
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -974,6 +1045,99 @@ function SocioFormDialogContent({
               </ModalField>
             </div>
           </div>
+
+          {!isEditing ? (
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Datos del convenio
+                </h3>
+                <p className="mt-0.5 text-xs text-foreground-muted">
+                  Opcionales. Se guardan en Vimarx solo al dar de alta el socio.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <ModalField label="Mudon (beneficio)">
+                  <Input
+                    aria-invalid={Boolean(datosConvenioErrors.socAuxBeneficio)}
+                    autoComplete="new-password"
+                    disabled={isSaving}
+                    onChange={(event) =>
+                      setFormState((currentState) => ({
+                        ...currentState,
+                        socAuxBeneficio: event.target.value,
+                      }))
+                    }
+                    placeholder="733767/0"
+                    value={formState.socAuxBeneficio}
+                  />
+                  <span className="block min-h-[1rem] text-xs text-destructive">
+                    {datosConvenioErrors.socAuxBeneficio}
+                  </span>
+                </ModalField>
+
+                <ModalField label="AMEJUCA">
+                  <Input
+                    aria-invalid={Boolean(datosConvenioErrors.socAuxConvAux)}
+                    autoComplete="new-password"
+                    disabled={isSaving}
+                    inputMode="numeric"
+                    onChange={(event) =>
+                      setFormState((currentState) => ({
+                        ...currentState,
+                        socAuxConvAux: event.target.value,
+                      }))
+                    }
+                    value={formState.socAuxConvAux}
+                  />
+                  <span className="block min-h-[1rem] text-xs text-destructive">
+                    {datosConvenioErrors.socAuxConvAux}
+                  </span>
+                </ModalField>
+
+                <ModalField label="Caja 40">
+                  <Input
+                    aria-invalid={Boolean(datosConvenioErrors.socAuxCaja40)}
+                    autoComplete="new-password"
+                    disabled={isSaving}
+                    inputMode="numeric"
+                    onChange={(event) =>
+                      setFormState((currentState) => ({
+                        ...currentState,
+                        socAuxCaja40: event.target.value,
+                      }))
+                    }
+                    value={formState.socAuxCaja40}
+                  />
+                  <span className="block min-h-[1rem] text-xs text-destructive">
+                    {datosConvenioErrors.socAuxCaja40}
+                  </span>
+                </ModalField>
+
+                <ModalField
+                  className="md:col-span-3"
+                  label="Observaciones del socio"
+                >
+                  <Input
+                    aria-invalid={Boolean(datosConvenioErrors.observaciones)}
+                    autoComplete="new-password"
+                    disabled={isSaving}
+                    onChange={(event) =>
+                      setFormState((currentState) => ({
+                        ...currentState,
+                        observaciones: event.target.value,
+                      }))
+                    }
+                    placeholder="Ej.: DEPOSITO MP"
+                    value={formState.observaciones}
+                  />
+                  <span className="block min-h-[1rem] text-xs text-destructive">
+                    {datosConvenioErrors.observaciones}
+                  </span>
+                </ModalField>
+              </div>
+            </div>
+          ) : null}
 
           {submitError ? (
             <p className="text-sm text-destructive">{submitError}</p>

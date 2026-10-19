@@ -147,7 +147,9 @@ describe("CreateSocioUseCase", () => {
       fechaDeNacimiento: "1990-02-28",
       nombre: "Juan",
       nroDocumento: " 12.345.678 ",
+      observaciones: "DEPOSITO MP",
       sexo: "M",
+      socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
       tipoDocumento: "DNI",
       tipoPersona: "FISICA",
     });
@@ -175,7 +177,9 @@ describe("CreateSocioUseCase", () => {
       fechaDeNacimiento: "1990-02-28",
       nombre: "Juan",
       nroDocumento: "12345678",
+      observaciones: "DEPOSITO MP",
       sexo: "M",
+      socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
     });
   });
 
@@ -238,7 +242,9 @@ describe("CreateSocioUseCase", () => {
         nroPuerta: "742",
       },
       email: "contacto@elalba.com.ar",
+      observaciones: null,
       razonSocial: "Constructora El Alba S.A.",
+      socAux: null,
     });
   });
 

@@ -25,6 +25,14 @@ export type CrearSocioMutualDomicilio = {
   nroPuerta: string | null;
 };
 
+// Datos del convenio que Vimarx guarda en SocAux del socio (Caja 40, Mudon =
+// Beneficio, AMEJUCA = ConvAux). Solo viajan los que se cargaron.
+export type CrearSocioMutualSocAux = {
+  beneficio?: string;
+  caja40?: number;
+  convAux?: number;
+};
+
 export type CrearSocioMutualInput =
   | {
       tipoPersona: "FISICA";
@@ -36,7 +44,9 @@ export type CrearSocioMutualInput =
       fechaDeNacimiento: string;
       nombre: string;
       nroDocumento: string;
+      observaciones?: string | null;
       sexo: string;
+      socAux?: CrearSocioMutualSocAux | null;
     }
   | {
       tipoPersona: "JURIDICA";
@@ -44,7 +54,9 @@ export type CrearSocioMutualInput =
       cuit: string;
       domicilio: CrearSocioMutualDomicilio;
       email?: string | null;
+      observaciones?: string | null;
       razonSocial: string;
+      socAux?: CrearSocioMutualSocAux | null;
     };
 
 export type CrearSocioMutualResult = {
@@ -87,6 +99,8 @@ export class CrearSocioMutualGateway {
               Domicilio: this.buildDomicilio(input.domicilio),
               Email: input.email ?? undefined,
               HistoriaCategorias: HISTORIA_CATEGORIAS_FIJA,
+              Observaciones: input.observaciones ?? undefined,
+              SocAux: this.buildSocAux(input.socAux),
             },
             validar: false,
           }),
@@ -145,6 +159,20 @@ export class CrearSocioMutualGateway {
       Localidad: Number(domicilio.localidad),
       NroPuerta: domicilio.nroPuerta ?? undefined,
     };
+  }
+
+  private buildSocAux(
+    socAux: CrearSocioMutualSocAux | null | undefined,
+  ): Record<string, unknown> | undefined {
+    const campos = {
+      Beneficio: socAux?.beneficio,
+      Caja40: socAux?.caja40,
+      ConvAux: socAux?.convAux,
+    };
+
+    return Object.values(campos).some((value) => value !== undefined)
+      ? campos
+      : undefined;
   }
 
   private parseResponse(body: unknown): CrearSocioMutualResult {
