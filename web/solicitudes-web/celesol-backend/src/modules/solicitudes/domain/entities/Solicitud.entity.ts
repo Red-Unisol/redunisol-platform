@@ -220,6 +220,9 @@ export type PrestamoDelSocioLegacy = {
   fechaEmision: string | null;
   legacyId: string | null;
   lineaPrestamoDescripcion: string | null;
+  // Lo que se le entrego al socio ("Monto a desembolsar" en Vimarx).
+  montoADesembolsar: number | null;
+  // Total de las cuotas (cantidad x valor de la cuota).
   montoPrestamo: number | null;
   nroCuenta: string | null;
   primerVencimiento: string | null;

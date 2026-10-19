@@ -114,9 +114,11 @@ describe("Mora independiente de la vigencia del préstamo", () => {
 });
 
 it("preserva Estado=0 en el listado aun con Vigente=false",async()=>{
- const {gateway,calls}=setup([[[386586,130338,false,"COMER RECURRENTE CBU",null,20000,20000,-23979.88,null,null,0]]]);
+ const {gateway,calls}=setup([[[386586,130338,false,"COMER RECURRENTE CBU",null,20000,20000,18000,-23979.88,null,null,0]]]);
  const [prestamo]=await gateway.listPrestamosDelSocio("71");
  assert.equal(prestamo.estado,0);
+ assert.equal(prestamo.montoADesembolsar,18000);
+ assert.equal(prestamo.saldo,-23979.88);
  assert.equal(prestamo.vigente,false);
  assert.match(calls[0].campos,/;Estado$/);
 });

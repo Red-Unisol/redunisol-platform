@@ -97,6 +97,7 @@ function prestamo() {
     fechaEmision: "2024-11-14T00:00:00",
     legacyId: "416374",
     lineaPrestamoDescripcion: "LINEA MUCI 24-36",
+    montoADesembolsar: 800000,
     montoPrestamo: 3132021.7,
     nroCuenta: "998451",
     primerVencimiento: "2024-11-30T00:00:00",

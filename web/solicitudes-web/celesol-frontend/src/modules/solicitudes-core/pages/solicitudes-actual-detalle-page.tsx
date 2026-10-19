@@ -288,7 +288,8 @@ const PRESTAMOS_TABLE_COLUMNS = [
   "Nº de préstamo",
   "Línea",
   "Fecha",
-  "Monto",
+  "Total cuotas",
+  "Monto a desembolsar",
   "Saldo",
   "Vencimiento",
 ] as const;
@@ -409,6 +410,11 @@ function PrestamosDelSocioSection({
                 </td>
                 <td className="border-r border-border px-3 py-2">
                   {formatNullableAmount(prestamo.montoPrestamo) || PLACEHOLDER}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {prestamo.montoADesembolsar
+                    ? formatNullableAmount(prestamo.montoADesembolsar)
+                    : PLACEHOLDER}
                 </td>
                 <td className="border-r border-border px-3 py-2">
                   {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
