@@ -39,6 +39,7 @@ describe("CrearSocioMutualGateway", () => {
       fechaDeNacimiento: "1996-05-14",
       nombre: "Marina",
       nroDocumento: "39876543",
+      observaciones: "DEPOSITO MP",
       sexo: "Femenino",
     });
 
@@ -63,6 +64,7 @@ describe("CrearSocioMutualGateway", () => {
         HistoriaCategorias: [{ Categoria: 2, Fecha: "2020-01-01" }],
         Nombre: "Marina",
         NroDoc: "39876543",
+        Observaciones: "DEPOSITO MP",
         Sexo: "Femenino",
         TipoDoc: "96",
       },
@@ -149,6 +151,49 @@ describe("CrearSocioMutualGateway", () => {
       Calle: "Artigas 143 Alberdi",
       Localidad: 2715,
     });
+  });
+
+  it("sends SocAux with only the loaded fields", async () => {
+    const capturedBodies: { campos: Record<string, unknown> }[] = [];
+    const gateway = new CrearSocioMutualGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        capturedBodies.push(JSON.parse(String(init?.body)));
+
+        return {
+          json: async () => ({ Error: null, ID: 44, Ok: true }),
+          ok: true,
+        };
+      },
+    );
+    const base = {
+      tipoPersona: "JURIDICA" as const,
+      cuit: "30712345671",
+      domicilio: {
+        calle: "Belgrano",
+        codigoPostal: null,
+        localidad: "12",
+        nroPuerta: null,
+      },
+      razonSocial: "ACME SA",
+    };
+
+    await gateway.crear({
+      ...base,
+      socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
+    });
+    await gateway.crear({ ...base, socAux: { caja40: 0 } });
+    await gateway.crear({ ...base, socAux: {} });
+    await gateway.crear({ ...base, socAux: null });
+
+    assert.deepEqual(capturedBodies[0]?.campos.SocAux, {
+      Beneficio: "733767/0",
+      Caja40: 50,
+      ConvAux: 80,
+    });
+    assert.deepEqual(capturedBodies[1]?.campos.SocAux, { Caja40: 0 });
+    assert.equal("SocAux" in (capturedBodies[2]?.campos ?? {}), false);
+    assert.equal("SocAux" in (capturedBodies[3]?.campos ?? {}), false);
   });
 
   it("throws SocioMutualLegacyRechazadoError with the legacy message when Ok is false", async () => {

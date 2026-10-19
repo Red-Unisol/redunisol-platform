@@ -29,6 +29,35 @@ const normalizedOptionalEmail = z.preprocess((value) => {
   return trimmed.length > 0 ? trimmed.toLowerCase() : undefined;
 }, z.string().email().optional());
 
+// Enteros de SocAux (Int32 en Vimarx). El formulario los manda como texto.
+const normalizedOptionalInteger = z.preprocess((value) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? Number(trimmed) : undefined;
+}, z.number().int().min(0).max(2147483647).optional());
+
+// Datos del convenio que Vimarx guarda en SocAux del socio. Todos opcionales.
+const socAuxSchema = z
+  .object({
+    beneficio: normalizedOptionalString.pipe(z.string().max(50).optional()),
+    caja40: normalizedOptionalInteger,
+    convAux: normalizedOptionalInteger,
+  })
+  .strict()
+  .optional();
+
+// Observaciones de la ficha del socio en Vimarx (no las de la solicitud).
+const observacionesSchema = normalizedOptionalString.pipe(
+  z.string().max(500).optional(),
+);
+
 const personaFisicaSchema = z
   .object({
     apellido: trimmedRequiredString,
@@ -42,7 +71,9 @@ const personaFisicaSchema = z
     fechaDeNacimiento: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
     nombre: trimmedRequiredString,
     nroDocumento: trimmedRequiredString,
+    observaciones: observacionesSchema,
     sexo: trimmedRequiredString,
+    socAux: socAuxSchema,
     tipoDocumento: trimmedRequiredString,
     tipoPersona: z.literal("FISICA"),
   })
@@ -57,7 +88,9 @@ const personaJuridicaSchema = z
     domicilioLocalidad: localidadIdString,
     domicilioNroPuerta: normalizedOptionalString,
     email: normalizedOptionalEmail,
+    observaciones: observacionesSchema,
     razonSocial: trimmedRequiredString,
+    socAux: socAuxSchema,
     tipoPersona: z.literal("JURIDICA"),
   })
   .strict();
