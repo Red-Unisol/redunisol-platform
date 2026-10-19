@@ -9,6 +9,47 @@
 
 Formatos visibles: `.xlsx`, `.xls`, `.csv` y `.pdf`.
 
+## Nombres y regeneración desde Admin
+
+La tarjeta y la descarga usan un nombre descriptivo, por ejemplo
+`tope-de-descuento-de-caja-2026-10-19_091500.xlsx`. La fecha y hora de los
+archivos actuales corresponden a su última publicación en Buenos Aires; los
+históricos conservan su período o identificador original. Los generadores
+mantienen sus rutas internas (`ultimo.xlsx` e `historico/`) para preservar los
+contratos existentes.
+
+Cada uno de los siete informes del catálogo tiene un botón **Regenerar**. La
+acción exige acceso al panel Admin y crea una ejecución asíncrona del flow
+permitido para ese informe. Nunca acepta una URL ni un flow desde el cliente.
+Se usan los parámetros por defecto del generador: meses cerrados para
+Evaluación y comisiones, mes actual para Caja y día anterior para
+Transferencias. Caja y MUDON conservan sus checkpoints, cachés y procesamiento
+por lotes. Regenerar no fuerza una consulta nueva de todos los datos cacheados.
+
+La página consulta el estado cada 15 segundos, bloquea solicitudes repetidas
+del mismo informe y mantiene disponible la descarga anterior. Un proceso
+finalizado no garantiza una publicación nueva: MUDON puede requerir más lotes.
+La fecha de actualización identifica el archivo efectivamente publicado. Si se
+pierde la respuesta al iniciar, no se reintenta automáticamente y se bloquea
+el botón por dos minutos para evitar duplicados inmediatos.
+
+Configuración del backend Laravel (también declarada en Compose y en los
+runtime env cifrados de ambos ambientes):
+
+```env
+REPORTS_KESTRA_URL=
+REPORTS_KESTRA_TENANT=main
+REPORTS_KESTRA_USERNAME=
+REPORTS_KESTRA_PASSWORD=
+REPORTS_KESTRA_NAMESPACE_PREFIX=redunisol.prod
+```
+
+Ambos sitios leen la carpeta compartida de informes de producción, por lo que
+ambos apuntan a sus generadores `redunisol.prod.*`. Las credenciales nunca se
+envían al navegador. Los archivos de carpetas nuevas se siguen mostrando con
+nombres derivados de la carpeta; para habilitar su regeneración hay que
+agregar su definición a `App\Support\ReportCatalog`.
+
 ## Estructura recomendada
 
 ```text
