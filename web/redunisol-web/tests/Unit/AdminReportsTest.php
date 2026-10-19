@@ -51,6 +51,32 @@ test('the report card renders the regenerate action and descriptive filename', f
         ->assertDontSee('Descargar último');
 });
 
+test('the page hides BCRA cards without modifying their files', function () {
+    $this->actingAs((new User)->forceFill(['id' => 1, 'email' => 'admin@redunisol.local']));
+    $directory = config('filesystems.reports_path');
+    $files = [
+        'contabilidad/bcra/redunisol.prod.contabilidad/run-id/output/errores.csv',
+        'contabilidad/bcra/redunisol.prod.contabilidad/run-id/control/prestamos_tasa.csv',
+        'contabilidad/bcra/redunisol.prod.contabilidad/run-id/control/deudores_por_superior.xlsx',
+    ];
+    foreach ($files as $file) {
+        File::ensureDirectoryExists(dirname($directory.'/'.$file));
+        file_put_contents($directory.'/'.$file, 'BCRA artifact');
+    }
+
+    Livewire::test(ReportsPage::class)
+        ->assertSee('Formulario Bitrix')
+        ->assertDontSee('Output')
+        ->assertDontSee('Control')
+        ->assertDontSee('errores.csv')
+        ->assertDontSee('prestamos-tasa.csv')
+        ->assertDontSee('deudores-por-superior.xlsx');
+
+    foreach ($files as $file) {
+        expect(file_get_contents($directory.'/'.$file))->toBe('BCRA artifact');
+    }
+});
+
 test('non admin accounts cannot invoke regeneration through Livewire', function () {
     $this->actingAs((new User)->forceFill(['id' => 2, 'email' => 'visitor@example.test']));
     Http::fake();

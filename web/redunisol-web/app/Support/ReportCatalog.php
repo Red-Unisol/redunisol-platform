@@ -64,6 +64,7 @@ class ReportCatalog
     {
         return $reports
             ->groupBy(fn (array $report): string => $this->groupKey($report['path']))
+            ->only(array_keys(self::REPORTS))
             ->map(function (Collection $files, string $key): array {
                 $files = $files->map(fn (array $file): array => [
                     ...$file,
