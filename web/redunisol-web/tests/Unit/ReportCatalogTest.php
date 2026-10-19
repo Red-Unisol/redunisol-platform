@@ -62,3 +62,24 @@ test('it keeps evaluation and commissions as separate report cards', function ()
         ->and($groups['analisis-credito/reporte-evaluacion-comisiones']['title'])->toBe('Evaluación y comisiones')
         ->and($groups['analisis-credito/reporte-evaluacion-comisiones']['history'])->toHaveCount(1);
 });
+
+test('download names identify the report and the generation date in Argentina', function () {
+    $report = fakeReport('analisis-credito/tope-descuento-caja/ultimo.xlsx', strtotime('2026-10-19T02:30:00Z'));
+    $catalog = new ReportCatalog;
+
+    expect($catalog->downloadName($report))->toBe('tope-de-descuento-de-caja-2026-10-18_233000.xlsx')
+        ->and($catalog->groups(collect([$report]))->first()['latest']['download_name'])
+        ->toBe($catalog->downloadName($report));
+});
+
+test('historical download names preserve the period and identify the report', function () {
+    expect((new ReportCatalog)->downloadName(fakeReport('marketing/formulario-bitrix/historico/2026-09-07.xlsx', 1000)))
+        ->toBe('formulario-bitrix-2026-09-07.xlsx');
+});
+
+test('only known reports can be regenerated', function () {
+    $catalog = new ReportCatalog;
+    expect($catalog->definition('analisis-credito/tope-descuento-caja')['flow'])->toBe('tope_descuento_caja_mensual')
+        ->and($catalog->definition('cobranzas/mudon-jubilados')['domain'])->toBe('analisis-credito')
+        ->and($catalog->definition('operaciones/desconocido'))->toBeNull();
+});
