@@ -136,7 +136,11 @@ ejecución, una por vez. Es idempotente por etapa: si ya salio de `C1:KESTRA_PEN
 reasignar.
 
 El clasificador selecciona el lote antes de modificar etapas, para no saltar casos
-al paginar. Cada ejecución usa un contenedor y conserva `concurrency.limit: 1`.
+al paginar. Antes del clasificador, la tarea `hay_pendientes` consulta a Bitrix por HTTP,
+sin contenedor, si hay negociaciones en `C1:KESTRA_PENDING`; si no hay, el clasificador
+no corre y las salidas quedan en sus valores por defecto (`action: no_pending`,
+`events_json: []`). Cada ejecución con pendientes usa un contenedor y conserva
+`concurrency.limit: 1`.
 `BITRIX24_DEAL_QUALIFICATION_BATCH_SIZE` permite ajustar el tamaño (predeterminado
 5, entre 1 y 20). Tras 50 segundos no inicia otro caso; termina el caso que ya está
 en curso y deja los restantes para el próximo ciclo. El presupuesto es un límite
