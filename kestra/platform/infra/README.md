@@ -63,3 +63,17 @@ Cambiar estas opciones requiere recrear el contenedor de Kestra; `restart`
 no las aplica. Antes de recrearlo, exportar con `docker logs --timestamps`
 los registros necesarios para investigaciones, ya que pertenecen al contenedor
 anterior. La retencion local no sustituye la conservacion centralizada.
+
+## Ajuste de PostgreSQL
+
+El servicio `postgres` arranca con parametros propios (`command:` en
+`docker-compose.yml`), porque la configuracion de fabrica genera demasiada
+escritura para el disco de la VPS:
+
+- `shared_buffers=1GB` (fabrica 128MB): mas cache propio; el cache hit era 92,6%.
+- `checkpoint_timeout=15min` (fabrica 5min) y `max_wal_size=4GB` (fabrica 1GB):
+  menos checkpoints (eran 286 por dia) y menos paginas completas escritas al WAL.
+- `wal_compression=lz4` (fabrica off): comprime esas paginas antes de escribirlas.
+
+Aplicado en octubre de 2026. La medicion de antes y despues esta fuera del repo,
+en la documentacion del area de Run.
