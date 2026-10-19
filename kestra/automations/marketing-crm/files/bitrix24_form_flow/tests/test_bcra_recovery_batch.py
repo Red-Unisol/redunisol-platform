@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from email.message import Message
-from io import BytesIO
+from io import BytesIO, StringIO
 import json
 from pathlib import Path
 import sys
@@ -13,6 +14,7 @@ from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import test_business_logic as fixtures
+from bitrix24_form_flow import kestra_catamarca_deal_batch_entrypoint as batch_entrypoint
 from bitrix24_form_flow.form_processor.bcra_client import (
     BcraClient, deserialize_bcra_result, serialize_bcra_result,
 )
@@ -172,6 +174,31 @@ class DealBatchRecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.client.chat_transfers), 7)
         self.assertEqual(len({x["CHAT_ID"] for x in self.client.chat_transfers}), 7)
         self.assertEqual(self.batch()["event_count"], 0)
+
+    def test_empty_batch_publishes_valid_business_hours_output(self):
+        result = self.batch()
+        self.assertEqual(result["action"], "no_pending")
+        self.assertIsNone(result["within_business_hours"])
+        with patch.object(batch_entrypoint, "process_pending_catamarca_deals", return_value=result), patch.object(
+            batch_entrypoint, "Kestra"
+        ) as kestra, redirect_stdout(StringIO()):
+            self.assertEqual(batch_entrypoint.main(), 0)
+        outputs = kestra.outputs.call_args.args[0]
+        self.assertTrue(outputs["ok"])
+        self.assertEqual(outputs["within_business_hours"], "")
+        self.assertEqual(outputs["event_count"], 0)
+        self.assertEqual(json.loads(outputs["events_json"]), [])
+        self.assertFalse(self.client.chat_transfers)
+
+    def test_batch_output_preserves_business_hours_booleans(self):
+        for within_business_hours in (True, False):
+            with self.subTest(within_business_hours=within_business_hours):
+                result = {**self.batch(), "within_business_hours": within_business_hours}
+                with patch.object(batch_entrypoint, "process_pending_catamarca_deals", return_value=result), patch.object(
+                    batch_entrypoint, "Kestra"
+                ) as kestra, redirect_stdout(StringIO()):
+                    batch_entrypoint.main()
+                self.assertIs(kestra.outputs.call_args.args[0]["within_business_hours"], within_business_hours)
 
     def test_pending_bcra_case_is_attempted_once_and_does_not_block_batch(self):
         for deal_id in range(930, 933):

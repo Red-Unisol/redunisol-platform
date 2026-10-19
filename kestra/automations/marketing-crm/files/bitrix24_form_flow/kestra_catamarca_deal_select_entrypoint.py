@@ -52,6 +52,10 @@ def _kestra_outputs(result: dict[str, object]) -> dict[str, object]:
         "lead_id": "" if result.get("lead_id") is None else str(result["lead_id"]),
         "stage_id": str(result.get("stage_id") or ""),
         "reason": str(result.get("reason") or ""),
+        "within_business_hours": (
+            "" if result.get("within_business_hours") is None
+            else result["within_business_hours"]
+        ),
     }
 
 
