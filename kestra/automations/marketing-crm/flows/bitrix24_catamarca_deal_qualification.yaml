@@ -15,23 +15,36 @@ labels:
   integration: bitrix24
 
 tasks:
-  # Pregunta a Bitrix sin contenedor; el clasificador solo corre si hay negociaciones
-  # en la etapa pendiente. Es la misma consulta con la que empieza la selección en Python.
+  # Pregunta a Bitrix si hay negociaciones en la etapa pendiente; el clasificador solo
+  # corre si hay. Runner Process: sin contenedor. No es core.http.Request porque esa
+  # tarea guarda la URL (con el path secreto del webhook) en sus outputs.
   - id: hay_pendientes
-    type: io.kestra.plugin.core.http.Request
-    method: POST
-    contentType: application/json
-    timeout: PT15S
-    uri: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_WEBHOOK_PATH') }}/crm.item.list.json"
-    body: |
-      {"entityTypeId": 2,
-       "filter": {"=categoryId": "{{ envs.bitrix24_deal_category_id ?? '1' }}",
-                  "=stageId": "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"},
-       "select": ["id"]}
+    type: io.kestra.plugin.scripts.python.Script
+    timeout: PT1M
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    env:
+      BITRIX24_LIST_URL: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_WEBHOOK_PATH') }}/crm.item.list.json"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID: "{{ envs.bitrix24_deal_pending_qualification_stage_id ?? 'C1:KESTRA_PENDING' }}"
+    script: |
+      import json, os, urllib.request
+      body = json.dumps({
+          "entityTypeId": 2,
+          "filter": {"=categoryId": os.environ["BITRIX24_DEAL_CATEGORY_ID"],
+                     "=stageId": os.environ["BITRIX24_DEAL_PENDING_QUALIFICATION_STAGE_ID"]},
+          "select": ["id"],
+      }).encode()
+      request = urllib.request.Request(os.environ["BITRIX24_LIST_URL"], data=body,
+                                       headers={"Content-Type": "application/json"})
+      with urllib.request.urlopen(request, timeout=15) as response:
+          total = json.load(response).get("total")
+      # Sin total no se sabe: corre el clasificador, como antes de esta tarea.
+      print("::" + json.dumps({"outputs": {"total": total if isinstance(total, int) else 1}}) + "::")
 
   - id: calificar_negociacion
     type: io.kestra.plugin.scripts.python.Commands
-    runIf: "{{ (fromJson(outputs.hay_pendientes.body).total ?? 1) > 0 }}"
+    runIf: "{{ (outputs.hay_pendientes.vars.total ?? 1) > 0 }}"
     namespaceFiles:
       enabled: true
       include:
