@@ -126,6 +126,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
   const {
     clearErrors,
     control,
+    cuotaCalculo,
     currentEstado,
     errors,
     estadoCivilOptions,
@@ -577,6 +578,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
         defaultLineaOid={selectedLinea?.oid ?? undefined}
         lineas={lineas}
         onApply={(valores) => {
+          cuotaCalculo.onDatosChange();
           setValue("linea", valores.lineaOid, { shouldValidate: true });
           setValue("lineaPrestamoLegacyOid", valores.lineaOid);
           setValue("montoAFinanciar", valores.montoAFinanciar);
@@ -597,6 +599,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
         <NuevaSolicitudView
           adjuntos={adjuntos}
           control={control}
+          cuotaCalculo={cuotaCalculo}
           errors={errors}
           garantias={garantias}
           isLoadingLineas={isLoadingLineas}
