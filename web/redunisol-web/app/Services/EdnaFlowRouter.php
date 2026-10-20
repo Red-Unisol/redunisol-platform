@@ -60,7 +60,13 @@ class EdnaFlowRouter
         DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('edna_router_contacts')->where('scope', $scope)->lockForUpdate()->first();
         $previous = DB::table('edna_flow_sends')->where('scope', $scope)->where('created_at', '>', now()->subHours(24))->latest('id')->first();
-        if ($previous) {
+        $testStart = config('edna.assistance_start_at');
+        $firstTestEntry = $previous && config('edna.assistance_test_mode') && config('edna.assistance_send_enabled')
+            && (new EdnaAssistance)->allowed($phone) && $testStart
+            && $received->gte(CarbonImmutable::parse($testStart))
+            && CarbonImmutable::parse($previous->created_at)->lt(CarbonImmutable::parse($testStart))
+            && in_array($previous->state, ['confirmed', 'completed', 'rejected', 'cancelled', 'expired'], true);
+        if ($previous && ! $firstTestEntry) {
             $this->record($event->id, 'cooldown', $previous->id);
 
             return;

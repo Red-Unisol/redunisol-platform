@@ -116,6 +116,32 @@ test('repeated entry messages and worker retries produce only one Flow in a roll
     expect(DB::table('edna_flow_sends')->count())->toBe(2);
 });
 
+test('internal test cutover permits one new Router cycle without clearing history', function (string $gate, int $expected) {
+    $old = routerSendConfirmed();
+    DB::table('edna_flow_sends')->where('id', $old->id)->update(['created_at' => now()->subMinutes(30)]);
+    config()->set('edna.assistance_enabled', true);
+    config()->set('edna.assistance_send_enabled', true);
+    config()->set('edna.assistance_test_mode', true);
+    config()->set('edna.assistance_recipients', ['5493510000000']);
+    config()->set('edna.assistance_start_at', now()->subMinute()->toIso8601String());
+    match ($gate) {
+        'normal' => config()->set('edna.assistance_test_mode', false),
+        'outside_allowlist' => config()->set('edna.assistance_recipients', ['5493519999999']),
+        'disabled' => config()->set('edna.assistance_enabled', false),
+        'before_cutover' => config()->set('edna.assistance_start_at', now()->addMinute()->toIso8601String()),
+        'unknown' => DB::table('edna_flow_sends')->where('id', $old->id)->update(['state' => 'unknown']),
+        'test' => null,
+    };
+    $event = routerInbound();
+    (new ReceiveEdnaInKestra($event->id))->handle();
+    expect(DB::table('edna_flow_sends')->count())->toBe($expected);
+    expect(DB::table('edna_flow_sends')->where('id', $old->id)->exists())->toBeTrue();
+    $again = routerInbound();
+    (new ReceiveEdnaInKestra($again->id))->handle();
+    expect(DB::table('edna_flow_sends')->count())->toBe($expected);
+    expect(DB::table('edna_incoming_events')->find($again->id)->router_action)->toBe('cooldown');
+})->with([['test', 2], ['normal', 1], ['outside_allowlist', 1], ['disabled', 1], ['before_cutover', 1], ['unknown', 1]]);
+
 test('router gates exclude disabled, historical, stale, future, pilot and non-phone entries', function (string $gate, string $expected) {
     $overrides = [];
     match ($gate) {

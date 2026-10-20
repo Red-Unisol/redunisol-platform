@@ -10,9 +10,11 @@ email existente cuando la respuesta venga vacía.
 
 ## Estado de entrega y aislamiento
 
-- La configuración de ejecución queda apagada y la allowlist vacía. No se modifica
-  ningún entorno cifrado activo ni runtime de VPS. La preparación externa del
-  20/10/2026 se detalla más abajo; por sí sola no activa mensajes ni altas CRM.
+- Los valores por defecto quedan apagados y la allowlist vacía. La configuración
+  cifrada de producción prepara un piloto interno para exactamente dos teléfonos,
+  con mensajes y altas de leads de prueba habilitados. Sólo se aplica al merge y
+  despliegue de Web, Infra y namespace files/flows de Kestra. No se interviene la VPS
+  por SSH. La preparación externa, por sí sola, no activa mensajes ni altas CRM.
 - `EDNA_ASSISTANCE_ENABLED` habilita recepción/piloto; `EDNA_ASSISTANCE_SEND_ENABLED`
   permite mensajes; `EDNA_ASSISTANCE_CRM_ENABLED` permite solicitar persistencia.
   Los tres son `false` por defecto. La lista explícita de teléfonos es obligatoria:
@@ -23,6 +25,61 @@ email existente cuando la respuesta venga vacía.
   validaciones. Los nuevos trabajos usan `edna_assistance` / `edna-assistance`, con
   reserva de 180 s y timeout máximo de 120 s. El worker Compose pertenece al perfil
   optativo `whatsapp-assistance`; no arranca en el despliegue normal.
+
+## Piloto interno: 30 segundos y lead real de prueba
+
+La configuración cifrada activa `EDNA_ASSISTANCE_TEST_MODE=true` y
+`EDNA_ASSISTANCE_TEST_DELAY_SECONDS=30` exclusivamente para los dos teléfonos
+internos autorizados. Los números y la URL autenticada se conservan sólo en los
+entornos cifrados. El corte de activación es nuevo: no se rescatan entradas anteriores.
+`COMPOSE_PROFILES=whatsapp-assistance` levanta el worker mediante el deploy habitual;
+el workflow comprueba que esté ejecutándose.
+
+El tester entra por el botón web y responde Córdoba / Jubilado en el Router.
+Desde el envío confirmado del enlace se esperan 30 segundos. El scheduler consulta
+cada cinco segundos y encola el trabajo para la hora debida; la confirmación de Edna
+y la entrega pueden sumar algunos segundos. No completar el formulario para probar
+el rescate: hacerlo cancela tanto el mensaje pendiente como el alta CRM posterior.
+El mensaje de asistencia empieza con **[PRUEBA INTERNA]**. Se completa el Flow de
+ayuda con CUIL obligatorio y email opcional.
+
+Tras recibir una respuesta válida, el endpoint dedicado
+`bitrix24_whatsapp_assistance_pilot` crea un lead nuevo:
+
+- título **[PRUEBA WHATSAPP] Jubilados Cordoba - …**;
+- campo filtrable `UF_CRM_WA_TEST=SI` y `WA_ASSISTANCE_STATE=test`;
+- etapa **PRUEBAS WHATSAPP**, `UC_WA_ASSIST_TEST`;
+- responsable interno Santiago (`71283`), motor `Manual` y política `No procesar`;
+- CUIL/email declarados y metadatos de rama, caso y atribución para inspección.
+
+No vincula ni modifica contactos, leads o negociaciones previos. Todas las ramas
+de alta (incluido otro banco u organismo desconocido) quedan en la etapa de prueba.
+La rama «volver al formulario» devuelve el enlace y no crea un lead asistido.
+El prefill programado, la clasificación y el webhook lead→deal omiten la marca
+de prueba incluso si el lead fuera movido a otra etapa; no hay enriquecimiento,
+asignación de vendedor ni negociación automática por este recorrido.
+
+Ambos teléfonos ya tienen historial comercial. Sólo en este modo de prueba se
+omite el bloqueo por gestiones históricas de Bitrix para poder recorrer el piloto;
+los recibos nuevos de formulario, la allowlist, la ventana de conversación y la
+deduplicación siguen vigentes. El modo queda fijado en cada caso (`is_test`): cambiar
+la configuración no convierte un caso de prueba en intake real. Web exige el
+endpoint dedicado y éste exige la versión del contrato de prueba; un despliegue
+parcial no recurre al intake comercial anterior.
+
+Hay un único intento de asistencia por teléfono/canal. El Router conserva además
+su cooldown de 24 horas. Para estos teléfonos internos, permite un primer ingreso
+posterior al corte aunque haya un Router anterior al corte y confirmado o cerrado.
+No exceptúa envíos pendientes o inciertos ni habilita nuevos ciclos después de ese
+primer ingreso. No se borran historiales para repetir pruebas; ante otro
+recorrido, revisar primero estados y deduplicación. El formulario web continúa su
+procesamiento habitual: sus altas no son parte del intake aislado de prueba.
+
+Fuera de `TEST_MODE`, el plazo sigue siendo 30 minutos y vuelven los bloqueos
+comerciales normales. Para detener el piloto, apagar los tres flags Web y el flag
+CRM de Kestra por el circuito cifrado, retirar el perfil y desplegar. No basta con
+poner `TEST_MODE=false`: los casos anteriores quedan bloqueados, pero nuevos casos
+pasarían al recorrido comercial si se dejan las otras compuertas habilitadas.
 
 ## Recorrido implementado
 
@@ -106,12 +163,14 @@ El preview fuerza `dry_run=true`, aunque el archivo de entrada indique otra cosa
   Las condiciones simples anidadas evitan las expresiones anteriores que ocultaban
   campos en la vista previa. Los diez nombres del payload se conservan.
 - **Bitrix:** creados y releídos los siete campos de asistencia en lead/contacto/deal
-  (21 campos string, simples y no obligatorios). La etapa de lead
+  y `WA_TEST` (24 campos string, simples y no obligatorios). La etapa de lead
   `UC_WA_ASSIST_REVIEW` (ID `821`, «ASISTENCIA WHATSAPP - REVISION MANUAL») es abierta,
   con orden 25. No se movieron registros ni se agregaron robots. Responsable del
   intake manual: Maru `57`. Las opciones de motor `Kestra`/`Manual`, origen `Sin origen`
   y el esquema previo de atribución ya existían. CUIL y email siguen sin ser obligatorios
   en el esquema global CRM para conservar los demás ingresos.
+  Se creó además `UC_WA_ASSIST_TEST` (ID `823`, «PRUEBAS WHATSAPP», orden 26), abierta,
+  sin agregar robots. El piloto asigna los leads de prueba a Santiago `71283`.
 - **Edna:** canal Ventas `2423` y cascada `2557` activos y aprobados. El webhook
   «Red Unisol Main» ya recibe mensajes entrantes, exige autenticación y conserva
   Bitrix como destino principal y `https://redunisol.com.ar/api/webhooks/edna/incoming`
@@ -134,19 +193,23 @@ parte del piloto. No se enviaron mensajes ni se crearon leads de prueba.
    pruebas Python; el flow usa el fallback Maru (`57`).
 3. Comprobar el esquema habitual de atribución, opciones de motor comercial
    `Kestra`/`Manual` y origen `Sin origen`. `php artisan edna:assistance schema`
-   sólo inspecciona; `schema --apply` crea únicamente los siete campos faltantes
+   sólo inspecciona; `schema --apply` crea únicamente los ocho campos faltantes
    `WA_ASSISTANCE_ID`, `WA_ASSISTANCE_STATE`, `WA_SUBFLOW`, `WA_SUBFLOW_ID`,
-   `WA_ORGANISMO`, `WA_BANCO`, `WA_CONTINUIDAD` en lead/contacto/deal. No crea etapas
+   `WA_ORGANISMO`, `WA_BANCO`, `WA_CONTINUIDAD`, `WA_TEST` en lead/contacto/deal. No crea etapas
    ni altera definiciones o datos preexistentes.
 4. Desplegar primero migración aditiva, namespace files/flows y código con flags
    apagados. Para leer respuestas se extiende el mismo `edna_incoming_webhook`.
    El intake separado es `bitrix24_whatsapp_assistance`, con el secret de formulario
    ya existente. Su URL completa se configura en `KESTRA_EDNA_ASSISTANCE_WEBHOOK_URL`
    por el circuito de secretos; nunca poner la clave en docs o navegador.
-5. En un ambiente de prueba, configurar un corte nuevo y teléfonos internos en
+5. Para el piloto de leads aislados, seguir la sección de 30 segundos: usar el
+   endpoint `bitrix24_whatsapp_assistance_pilot`, activar `TEST_MODE` tanto en Web
+   como en Kestra y configurar `ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_TEST=UC_WA_ASSIST_TEST`
+   y `ENV_BITRIX24_ASSISTANCE_TEST_USER_ID=71283`. Configurar un corte nuevo y teléfonos internos en
    `EDNA_ASSISTANCE_RECIPIENTS` en formato internacional, sólo dígitos. En Kestra usar su equivalente
    `ENV_EDNA_ASSISTANCE_RECIPIENTS`. No usar números de clientes ni vaciar la lista.
-6. Encender recepción, mantener CRM apagado y habilitar envío sólo para esos teléfonos.
+6. Encender recepción y envío sólo para esos teléfonos. CRM puede quedar apagado
+   para preview o encendido en ambos sistemas para generar los leads de prueba.
    Levantar el worker optativo mediante el perfil Compose `whatsapp-assistance`.
    `php artisan edna:assistance poll` es preview; `poll --dispatch` reserva/encola
    sólo si los flags de piloto/envío lo permiten. El scheduler aplica la misma compuerta.

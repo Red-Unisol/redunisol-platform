@@ -10,7 +10,7 @@ class EdnaBitrix
 {
     public const ASSISTANCE_FIELDS = [
         'WA_ASSISTANCE_ID', 'WA_ASSISTANCE_STATE', 'WA_SUBFLOW', 'WA_SUBFLOW_ID',
-        'WA_ORGANISMO', 'WA_BANCO', 'WA_CONTINUIDAD',
+        'WA_ORGANISMO', 'WA_BANCO', 'WA_CONTINUIDAD', 'WA_TEST',
     ];
 
     public function assistanceSchema(string $entity, bool $apply = false): array

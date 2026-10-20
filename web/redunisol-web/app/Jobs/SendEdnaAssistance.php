@@ -45,7 +45,9 @@ class SendEdnaAssistance implements ShouldQueue
             $service = new EdnaAssistance;
             $phone = $case->recipient ? Crypt::decryptString($case->recipient) : '';
             $reason = null;
-            if (! config('edna.assistance_send_enabled') || ! $service->allowed($phone)
+            if (! $service->modeMatches($case)) {
+                $reason = 'pilot_mode_changed';
+            } elseif (! config('edna.assistance_send_enabled') || ! $service->allowed($phone)
                 || $case->subject_id !== (string) config('edna.subject_id')) {
                 $reason = 'disabled_or_outside_pilot';
             } elseif (CarbonImmutable::parse($case->entry_received_at)->lt(now()->subHours(23))) {
@@ -74,6 +76,9 @@ class SendEdnaAssistance implements ShouldQueue
                 : ['contentType' => 'FLOW', 'flowId' => (int) EdnaAssistance::FLOW_ID,
                     'action' => 'navigate', 'caption' => 'Continuar por acá',
                     'text' => '¿Pudiste completar tu solicitud? Si te resultó complicado, te ayudamos por acá. Para pedir ayuda necesitamos tu CUIL; el email es opcional.'];
+            if ($case->is_test) {
+                $content['text'] = '[PRUEBA INTERNA] '.$content['text'];
+            }
             $claimed = DB::transaction(function () use ($case, $key, $prefix) {
                 // Serialize distinct Router cycles for the same recipient, retaining suppressed attempts.
                 DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $case->scope, 'created_at' => now(), 'updated_at' => now()]);

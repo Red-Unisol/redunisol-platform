@@ -43,6 +43,9 @@ jobs:
             --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
             --allow-missing ENV_EDNA_ASSISTANCE_CRM_ENABLED \
             --allow-missing ENV_EDNA_ASSISTANCE_RECIPIENTS \
+            --allow-missing ENV_EDNA_ASSISTANCE_TEST_MODE \
+            --allow-missing ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_TEST \
+            --allow-missing ENV_BITRIX24_ASSISTANCE_TEST_USER_ID \
             --allow-missing ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW \
             --allow-missing SECRET_SMTP_PASSWORD
 

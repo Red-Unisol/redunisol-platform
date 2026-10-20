@@ -37,9 +37,9 @@ class Crm:
 
     def call(self, method, body):
         if method == "crm.status.list":
-            return [{"STATUS_ID": "ASSISTANCE_REVIEW", "SEMANTICS": "P"}]
+            return [{"STATUS_ID": s, "SEMANTICS": "P"} for s in ("ASSISTANCE_REVIEW", "ASSISTANCE_TEST")]
         if method == "crm.lead.fields":
-            names = (*CRM_FIELDS, *WA_FIELDS, *("UF_CRM_" + n for n in EXTRA_FIELDS))
+            names = (*CRM_FIELDS, *WA_FIELDS, "UF_CRM_WA_TEST", *("UF_CRM_" + n for n in EXTRA_FIELDS))
             return {n: {"type": "datetime" if n.endswith(("TIMESTAMP", "FECHA_ORIGEN")) else "string", "isMultiple": False} for n in names}
         if method == "crm.duplicate.findbycomm":
             store = self.contacts if body["entity_type"] == "CONTACT" else self.leads

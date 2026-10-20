@@ -261,3 +261,104 @@ test('the process command cannot promote a preview while the pilot is disabled',
     expect(DB::table('edna_assistance_cases')->find($case->id)->crm_state)->toBe('preview');
     Queue::assertNotPushed(ProcessEdnaAssistance::class);
 });
+
+test('the shorter delay only applies to pinned test cases', function () {
+    config()->set('edna.assistance_test_delay_seconds', 30);
+    assistanceRouterFixture(['send_started_at' => now()]);
+    (new EdnaAssistance)->poll(true);
+    $case = DB::table('edna_assistance_cases')->first();
+    expect((bool) $case->is_test)->toBeFalse();
+    expect($case->due_at)->toBe(now()->addMinutes(30)->toDateTimeString());
+});
+
+test('a test Flow waits thirty seconds and sends once despite real CRM history', function () {
+    config()->set('edna.assistance_test_mode', true);
+    config()->set('edna.assistance_test_delay_seconds', 30);
+    assistanceRouterFixture(['send_started_at' => now()]);
+    (new EdnaAssistance)->poll(true);
+    $case = DB::table('edna_assistance_cases')->first();
+    expect((bool) $case->is_test)->toBeTrue();
+    expect($case->due_at)->toBe(now()->addSeconds(30)->toDateTimeString());
+    Queue::assertPushed(SendEdnaAssistance::class, 1);
+    $this->mock(WhatsAppSalesContext::class)->shouldNotReceive('resolve');
+    assistanceHttp();
+    $this->travel(29)->seconds();
+    (new SendEdnaAssistance($case->id))->handle();
+    expect($this->sendAttempts)->toBe(0);
+    $this->travel(1)->seconds();
+    (new SendEdnaAssistance($case->id))->handle();
+    (new SendEdnaAssistance($case->id))->handle();
+    expect($this->sendAttempts)->toBe(1);
+    Http::assertSent(fn ($r) => str_contains($r->url(), 'cascade/schedule')
+        && str_starts_with($r['content']['whatsappContent']['text'], '[PRUEBA INTERNA]'));
+});
+
+test('test mode keeps the allowlist and new web form cancellation', function () {
+    config()->set('edna.assistance_test_mode', true);
+    config()->set('edna.assistance_recipients', ['5493519999999']);
+    assistanceRouterFixture();
+    (new EdnaAssistance)->poll(true);
+    expect(DB::table('edna_assistance_cases')->count())->toBe(0);
+    config()->set('edna.assistance_recipients', ['5493511234567']);
+    (new EdnaAssistance)->poll(true);
+    $case = DB::table('edna_assistance_cases')->first();
+    (new EdnaAssistance)->recordForm('3511234567');
+    (new SendEdnaAssistance($case->id))->handle();
+    expect(DB::table('edna_assistance_cases')->find($case->id)->reason)->toBe('form_queued_or_submitted');
+    Http::assertNothingSent();
+});
+
+test('changing pilot mode cannot promote a test case into real intake', function () {
+    config()->set('edna.assistance_test_mode', true);
+    $case = assistanceCaseFixture(['answer' => Crypt::encryptString('{"organismo":"ayuda"}'),
+        'decision' => json_encode(['action' => 'review'])]);
+    config()->set('edna.assistance_test_mode', false);
+    config()->set('edna.assistance_crm_enabled', true);
+    (new SendEdnaAssistance($case->id))->handle();
+    (new ProcessEdnaAssistance($case->id))->handle();
+    $case = DB::table('edna_assistance_cases')->find($case->id);
+    expect($case->state)->toBe('suppressed');
+    expect($case->crm_state)->toBe('review');
+    expect($case->reason)->toBe('pilot_mode_changed');
+    Http::assertNothingSent();
+});
+
+test('test CRM writes require the dedicated endpoint with no fallback', function () {
+    config()->set('edna.assistance_test_mode', true);
+    config()->set('edna.assistance_crm_enabled', true);
+    config()->set('edna.assistance_processing_url', 'https://kestra.example.test/bitrix24_whatsapp_assistance/key');
+    $case = assistanceCaseFixture(['state' => 'answered', 'answer' => Crypt::encryptString('{"organismo":"ayuda"}'),
+        'decision' => json_encode(['action' => 'review'])]);
+    (new ProcessEdnaAssistance($case->id))->handle();
+    expect(DB::table('edna_assistance_cases')->find($case->id)->reason)->toBe('test_endpoint_required');
+    Http::assertNothingSent();
+});
+
+test('test CRM response saves an isolated lead with its pinned test contract', function () {
+    config()->set('edna.assistance_test_mode', true);
+    config()->set('edna.assistance_crm_enabled', true);
+    config()->set('edna.assistance_processing_url', 'https://kestra.example.test/bitrix24_whatsapp_assistance_pilot/key');
+    $case = assistanceCaseFixture(['state' => 'answered', 'answer' => Crypt::encryptString('{"organismo":"ayuda"}'),
+        'decision' => json_encode(['action' => 'review'])]);
+    $this->mock(WhatsAppSalesContext::class)->shouldNotReceive('resolve');
+    Http::fake(['kestra.example.test/*' => Http::response(['ok' => true, 'case_id' => $case->request_id,
+        'action' => 'test_created', 'lead_id' => '123', 'contact_id' => '', 'reason' => 'isolated_test_lead'])]);
+    (new ProcessEdnaAssistance($case->id))->handle();
+    (new ProcessEdnaAssistance($case->id))->handle();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($r) => $r['test_mode'] === true && $r['case_id'] === $case->request_id && $r['dry_run'] === false);
+    $case = DB::table('edna_assistance_cases')->find($case->id);
+    expect($case->crm_state)->toBe('synced');
+    expect((string) $case->lead_id)->toBe('123');
+});
+
+test('a new form also cancels test CRM intake after the Flow', function () {
+    config()->set('edna.assistance_test_mode', true);
+    config()->set('edna.assistance_crm_enabled', true);
+    $case = assistanceCaseFixture(['state' => 'answered', 'answer' => Crypt::encryptString('{"organismo":"ayuda"}'),
+        'decision' => json_encode(['action' => 'review'])]);
+    (new EdnaAssistance)->recordForm('3511234567');
+    (new ProcessEdnaAssistance($case->id))->handle();
+    expect(DB::table('edna_assistance_cases')->find($case->id)->reason)->toBe('form_after_assistance');
+    Http::assertNothingSent();
+});
