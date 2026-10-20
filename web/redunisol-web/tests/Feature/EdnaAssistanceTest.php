@@ -131,8 +131,9 @@ test('the confirmed pilot schedules only one Flow and uses the assisted copy', f
     (new SendEdnaAssistance($case->id))->handle();
     Http::assertSentCount(2);
     Http::assertSent(fn ($r) => str_contains($r->url(), 'cascade/schedule')
-        && $r['content']['whatsappContent']['flowId'] === 1806329230567984
-        && str_contains($r['content']['whatsappContent']['text'], 'aunque no tengas'));
+        && $r['content']['whatsappContent']['flowId'] === 1993586314642842
+        && str_contains($r['content']['whatsappContent']['text'], 'necesitamos tu CUIL')
+        && str_contains($r['content']['whatsappContent']['text'], 'email es opcional'));
 });
 
 test('an ambiguous send acknowledgement is reconciled and never resent', function () {
