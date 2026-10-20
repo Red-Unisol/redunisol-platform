@@ -105,7 +105,10 @@ Cuando el unico impedimento dentro de la ventana es la falta de vendedores onlin
 la negociacion pasa a `C1:KESTRA_QUEUE`. El flow
 `bitrix24_deal_assignment_queue` procesa una vez por minuto el caso FIFO de cada
 bucket de manera independiente. No vuelve a ejecutar la clasificacion comercial ni
-las consultas BCRA: usa la decision persistida al encolar.
+las consultas BCRA: usa la decision persistida al encolar. Antes de procesar, la
+tarea `hay_pendientes` (script Python con runner Process) consulta a Bitrix si hay
+negociaciones en `C1:KESTRA_QUEUE`; si la cola esta vacia, `procesar_colas` no corre
+(sin contenedor) y las salidas quedan en cero con `events_json: []`.
 
 Las decisiones de rechazo BCRA o comercial no participan de la distribucion: Kestra
 aplica directamente la etapa correspondiente, conserva a Maru como responsable y no
