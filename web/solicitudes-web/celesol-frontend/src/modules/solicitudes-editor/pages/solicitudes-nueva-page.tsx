@@ -576,6 +576,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
       <SimuladorPrestamoModal
         onLimitsAdjusted={() => { void refreshLineas(); }}
         defaultLineaOid={selectedLinea?.oid ?? undefined}
+        isLoadingLineas={isLoadingLineas}
         lineas={lineas}
         onApply={(valores) => {
           cuotaCalculo.onDatosChange();
