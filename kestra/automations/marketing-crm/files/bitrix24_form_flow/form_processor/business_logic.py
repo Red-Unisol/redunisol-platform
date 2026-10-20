@@ -327,6 +327,10 @@ def classify_lead(
         contact_id = _optional_int(lead.get("CONTACT_ID"))
         lead_status = _optional_str(lead.get("STATUS_ID"))
 
+        if lead.get("UF_CRM_WA_TEST") == "SI":
+            return skipped_result(contact_id=contact_id, lead_id=lead_id_int, lead_status=lead_status,
+                                  reason="test_lead", message="Lead de prueba WhatsApp; sin precalificacion.")
+
         assigned_by_id = _optional_int(lead.get("ASSIGNED_BY_ID"))
         if not force_processing and assigned_by_id in PREQUALIFICATION_EXCLUDED_ASSIGNEE_IDS:
             active_logger.info(

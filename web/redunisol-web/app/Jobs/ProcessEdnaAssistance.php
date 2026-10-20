@@ -32,6 +32,11 @@ class ProcessEdnaAssistance implements ShouldQueue
             || ! $service->allowed(Crypt::decryptString($case->recipient))) {
             return;
         }
+        if (! $service->modeMatches($case)) {
+            $this->record(['crm_state' => 'review', 'reason' => 'pilot_mode_changed']);
+
+            return;
+        }
         $decision = json_decode($case->decision, true, 16, JSON_THROW_ON_ERROR);
         if ($decision['action'] === 'landing') {
             if (! config('edna.assistance_send_enabled')) {
@@ -71,7 +76,7 @@ class ProcessEdnaAssistance implements ShouldQueue
             return;
         }
         // A web form or advisor may have appeared after the assisted Flow was sent.
-        $context = app(WhatsAppSalesContext::class)->resolve(Crypt::decryptString($case->recipient), [
+        $context = $case->is_test ? ['evidence' => []] : app(WhatsAppSalesContext::class)->resolve(Crypt::decryptString($case->recipient), [
             'deal_categories' => [1, 5], 'form_since' => now()->subDays(60)->toIso8601String(),
             'advisor_since' => now()->subDays(30)->toIso8601String(), 'any_form_since' => now()->subDays(30)->toIso8601String(),
         ]);
@@ -81,6 +86,11 @@ class ProcessEdnaAssistance implements ShouldQueue
             return;
         }
         $url = (string) config('edna.assistance_processing_url');
+        if ($case->is_test && ! str_contains((string) parse_url($url, PHP_URL_PATH), '/bitrix24_whatsapp_assistance_pilot/')) {
+            $this->record(['crm_state' => 'review', 'reason' => 'test_endpoint_required']);
+
+            return;
+        }
         if (parse_url($url, PHP_URL_SCHEME) !== 'https' || ! parse_url($url, PHP_URL_HOST)) {
             $this->record(['crm_state' => 'review', 'reason' => 'processing_not_configured']);
 
@@ -94,6 +104,7 @@ class ProcessEdnaAssistance implements ShouldQueue
         try {
             $response = Http::asJson()->acceptJson()->connectTimeout(5)->timeout(90)->withoutRedirecting()->post($url, [
                 'case_id' => $case->request_id, 'phone' => Crypt::decryptString($case->recipient), 'dry_run' => false,
+                'test_mode' => (bool) $case->is_test,
                 'answer' => json_decode(Crypt::decryptString($case->answer), true, 16, JSON_THROW_ON_ERROR),
                 'received_at' => $case->response_received_at, 'attribution' => $service->attribution($case),
             ]);
@@ -102,7 +113,7 @@ class ProcessEdnaAssistance implements ShouldQueue
                 throw new \RuntimeException('Invalid assisted intake acknowledgement.');
             }
             $action = $result['action'] ?? '';
-            if (! in_array($action, ['disabled', 'review', 'dry_run', 'queued', 'manual_review', 'rejected', 'already_processed'], true)) {
+            if (! in_array($action, ['disabled', 'review', 'dry_run', 'queued', 'manual_review', 'rejected', 'already_processed', 'test_created'], true)) {
                 throw new \RuntimeException('Invalid assisted intake action.');
             }
             $state = in_array($action, ['disabled', 'review'], true) ? 'review' : ($action === 'dry_run' ? 'preview' : 'synced');

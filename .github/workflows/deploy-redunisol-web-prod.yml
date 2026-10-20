@@ -187,7 +187,11 @@ jobs:
 
           echo "Waiting for built assets and HTTP 200 from $app_host"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json
-          for worker_service in queue-worker edna-worker scheduler; do
+          worker_services=(queue-worker edna-worker scheduler)
+          if [[ ",${COMPOSE_PROFILES:-}," == *",whatsapp-assistance,"* ]]; then
+            worker_services+=(edna-assistance-worker)
+          fi
+          for worker_service in "${worker_services[@]}"; do
             worker_running="false"
             for attempt in $(seq 1 12); do
               if docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps --status running --services | grep -Fxq "$worker_service"; then

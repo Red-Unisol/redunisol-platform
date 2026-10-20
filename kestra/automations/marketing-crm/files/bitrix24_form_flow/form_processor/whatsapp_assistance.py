@@ -1,4 +1,4 @@
-"""Separate optional-identity intake; the existing web form contract stays strict."""
+"""Assisted intake with an isolated, explicitly marked test-lead path."""
 from __future__ import annotations
 
 import os
@@ -16,6 +16,7 @@ from .normalization import normalize_whatsapp
 
 EXTRA_FIELDS = ("WA_ASSISTANCE_ID", "WA_ASSISTANCE_STATE", "WA_SUBFLOW", "WA_SUBFLOW_ID",
                 "WA_ORGANISMO", "WA_BANCO", "WA_CONTINUIDAD")
+TEST_CONTRACT_VERSION = "isolated-test-v1"
 
 
 def process(payload, *, env=None, client=None):
@@ -33,9 +34,13 @@ def process(payload, *, env=None, client=None):
     pilot = [p.strip() for p in source.get("EDNA_ASSISTANCE_RECIPIENTS", "").split(",") if p.strip()]
     if source.get("EDNA_ASSISTANCE_CRM_ENABLED", "").lower() not in {"true", "1"} or phone.lstrip("+") not in pilot:
         return dict(result, action="disabled", reason="disabled_or_outside_pilot")
+    test_mode = source.get("EDNA_ASSISTANCE_TEST_MODE", "").lower() in {"true", "1"}
+    if not isinstance(payload.get("test_mode", False), bool) or payload.get("test_mode", False) != test_mode:
+        return dict(result, action="disabled", reason="pilot_mode_mismatch")
     if answer["action"] == "landing":
         return dict(result, action="not_applicable", reason="landing_sent_by_bridge")
-    review_status = source.get("BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW", "").strip()
+    review_key = "BITRIX24_LEAD_STATUS_ASSISTANCE_TEST" if test_mode else "BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW"
+    review_status = source.get(review_key, "").strip()
     if not review_status:
         raise ValueError("Configure the assisted review destination before enabling CRM writes.")
     config = load_config(source)
@@ -51,6 +56,9 @@ def process(payload, *, env=None, client=None):
     if any(schema.get("UF_CRM_" + name, {}).get("type") != "string"
            or schema["UF_CRM_" + name].get("isMultiple") for name in EXTRA_FIELDS):
         raise ValueError("Provision the assisted CRM fields first.")
+    if test_mode and (schema.get("UF_CRM_WA_TEST", {}).get("type") != "string"
+                      or schema["UF_CRM_WA_TEST"].get("isMultiple")):
+        raise ValueError("Provision the test marker field first.")
     existing = api.call("crm.lead.list", {"filter": {"=UF_CRM_WA_ASSISTANCE_ID": case_id}, "select": ["*", "UF_*", "PHONE", "EMAIL"]})
     existing = [row for row in existing if row.get("UF_CRM_WA_ASSISTANCE_ID") == case_id]
     if len(existing) > 1:
@@ -58,8 +66,13 @@ def process(payload, *, env=None, client=None):
     if existing:
         if not _same_phone(existing[0], phone):
             return dict(result, action="review", reason="case_identity_mismatch")
+        if (existing[0].get("UF_CRM_WA_TEST") == "SI") != test_mode:
+            return dict(result, action="review", reason="case_mode_mismatch")
         return dict(result, action="already_processed", reason="case_exists", lead_id=str(existing[0]["ID"]),
                     contact_id=str(existing[0].get("CONTACT_ID") or ""))
+
+    if test_mode:
+        return _create_test_lead(api, config, source, payload, answer, phone, case_id, review_status, result)
 
     records = {}
     for entity in ("contact", "lead"):
@@ -190,6 +203,49 @@ def process(payload, *, env=None, client=None):
         raise RuntimeError("Assisted lead write requires reconciliation.")
     return dict(result, action="queued" if automatic else "manual_review" if state != "bank_rejected" else "rejected",
                 reason=state, lead_id=lead_id, contact_id=str((contact or {}).get("ID") or ""))
+
+
+def _create_test_lead(api, config, source, payload, answer, phone, case_id, status, result):
+    """Create only a new test lead; never update identities or enter business stages."""
+    operator = source.get("BITRIX24_ASSISTANCE_TEST_USER_ID", "").strip()
+    if not operator.isdigit() or int(operator) <= 0:
+        raise ValueError("Configure the internal test owner before enabling test leads.")
+    source_id = _resolve_enum_id(api, config.fields.lead_source, "Sin origen")
+    attribution = normalize_attribution(payload.get("attribution")) or {
+        "version": 1, "first": {}, "last": {}, "status": "unknown", "wa_assisted": True, "wa": {}}
+    fields = {
+        "TITLE": "[PRUEBA WHATSAPP] Jubilados Cordoba - " + answer["organism"],
+        "COMMENTS": "PRUEBA INTERNA. No gestionar ni mover a INGRESO. Sin precalificacion ni negociacion automatica.",
+        "STATUS_ID": status, "ASSIGNED_BY_ID": int(operator),
+        "PHONE": [{"VALUE": phone, "VALUE_TYPE": "WORK"}],
+        "UF_CRM_WA_TEST": "SI", "UF_CRM_WA_ASSISTANCE_ID": case_id,
+        "UF_CRM_WA_ASSISTANCE_STATE": "test", "UF_CRM_WA_SUBFLOW": "jubilados_cordoba_continuidad",
+        "UF_CRM_WA_SUBFLOW_ID": FLOW_ID, "UF_CRM_WA_ORGANISMO": answer["organism"],
+        "UF_CRM_WA_BANCO": answer["bank"], "UF_CRM_WA_CONTINUIDAD": answer["continuity"],
+        "UF_CRM_WA_ASSISTED": "SI", "UF_CRM_WA_FLOW": "web_whatsapp_router", "UF_CRM_WA_FLOW_ID": "1850162769693486",
+        "UF_CRM_WA_PROVINCE": "cordoba", "UF_CRM_WA_SEGMENT": "cordoba_jubilado",
+        config.fields.lead_source: source_id,
+        config.fields.lead_province: PROVINCIAS.resolve("Cordoba", "province").bitrix_id,
+        config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(api, config, "manual"),
+        config.fields.lead_processing_policy: resolve_processing_policy_enum_id(api, config, "skip"),
+    }
+    fields.update(attribution_fields(api, attribution, source_label="Sin origen", source_id=source_id))
+    for key in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"):
+        fields[key.upper()] = str(attribution["last"].get(key) or "")
+    if answer["cuil"]:
+        fields[config.fields.lead_cuil] = answer["cuil"]
+    if answer["email"]:
+        fields["EMAIL"] = [{"VALUE": answer["email"], "VALUE_TYPE": "WORK"}]
+    if answer["employment_status"]:
+        fields[config.fields.lead_employment_status] = SITUACIONES_LABORALES.resolve(answer["employment_status"], "employment_status").bitrix_id
+    if answer["bank"] == "bancor":
+        fields[config.fields.lead_payment_bank] = [BANCOS.resolve("Banco de la Provincia de Cordoba S.A.", "bank").bitrix_id]
+    lead_id = str(api.call("crm.lead.add", {"fields": fields}))
+    verified = api.call("crm.lead.get", {"id": lead_id})
+    if (verified.get("UF_CRM_WA_TEST") != "SI" or str(verified.get("UF_CRM_WA_ASSISTANCE_ID")) != case_id
+            or str(verified.get("STATUS_ID")) != status or not _same_phone(verified, phone)):
+        raise RuntimeError("Test lead requires reconciliation.")
+    return dict(result, action="test_created", reason="isolated_test_lead", lead_id=lead_id)
 
 
 def _merge(existing, value):

@@ -5,6 +5,8 @@ return [
     'assistance_enabled' => (bool) env('EDNA_ASSISTANCE_ENABLED', false),
     'assistance_send_enabled' => (bool) env('EDNA_ASSISTANCE_SEND_ENABLED', false),
     'assistance_crm_enabled' => (bool) env('EDNA_ASSISTANCE_CRM_ENABLED', false),
+    'assistance_test_mode' => (bool) env('EDNA_ASSISTANCE_TEST_MODE', false),
+    'assistance_test_delay_seconds' => (int) env('EDNA_ASSISTANCE_TEST_DELAY_SECONDS', 30),
     'assistance_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_ASSISTANCE_RECIPIENTS', ''))))),
     'assistance_start_at' => env('EDNA_ASSISTANCE_START_AT', ''),
     'assistance_delay_minutes' => (int) env('EDNA_ASSISTANCE_DELAY_MINUTES', 30),

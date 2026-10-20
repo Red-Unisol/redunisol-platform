@@ -17,6 +17,11 @@ class EdnaAssistance
 {
     public const FLOW_ID = '1993586314642842';
 
+    public function modeMatches(object $case): bool
+    {
+        return (bool) ($case->is_test ?? false) === (bool) config('edna.assistance_test_mode');
+    }
+
     public function recordForm(string $phone): void
     {
         if (! config('edna.assistance_enabled') || ! config('edna.assistance_recipients')) {
@@ -81,16 +86,25 @@ class EdnaAssistance
             if (! $dispatch || ! config('edna.assistance_send_enabled')) {
                 continue;
             }
-            $delay = max(1, min(1440, (int) config('edna.assistance_delay_minutes', 30)));
+            $test = (bool) config('edna.assistance_test_mode');
+            $delay = $test ? max(30, min(300, (int) config('edna.assistance_test_delay_seconds', 30)))
+                : 60 * max(1, min(1440, (int) config('edna.assistance_delay_minutes', 30)));
+            $due = CarbonImmutable::parse($row->landing_sent_at)->addSeconds($delay);
             $scope = $row->scope;
-            $reserved += DB::table('edna_assistance_cases')->insertOrIgnore([
-                'router_result_id' => $row->result_id, 'scope' => $scope, 'request_id' => (string) Str::uuid(),
+            $requestId = (string) Str::uuid();
+            $inserted = DB::table('edna_assistance_cases')->insertOrIgnore([
+                'router_result_id' => $row->result_id, 'scope' => $scope, 'request_id' => $requestId,
                 'subject_id' => $row->subject_id, 'cascade_id' => $row->cascade_id, 'flow_id' => self::FLOW_ID,
                 'recipient' => $row->recipient, 'journey_id' => $row->journey_id,
                 'entry_received_at' => $row->entry_received_at,
-                'due_at' => CarbonImmutable::parse($row->landing_sent_at)->addMinutes($delay),
+                'due_at' => $due, 'is_test' => $test,
                 'state' => 'waiting', 'created_at' => now(), 'updated_at' => now(),
             ]);
+            $reserved += $inserted;
+            if ($inserted && $test) {
+                $caseId = DB::table('edna_assistance_cases')->where('request_id', $requestId)->value('id');
+                Queue::connection('edna_assistance')->later($due, new SendEdnaAssistance((int) $caseId), '', 'edna-assistance');
+            }
         }
         if ($dispatch && config('edna.assistance_send_enabled')) {
             // Re-dispatching a job is safe: the send ledger arbitrates the single POST.
@@ -104,6 +118,9 @@ class EdnaAssistance
 
     public function suppression(object $case): ?string
     {
+        if (! $this->modeMatches($case)) {
+            return 'pilot_mode_changed';
+        }
         $phone = $case->recipient ? Crypt::decryptString($case->recipient) : '';
         if (! $this->allowed($phone) || $case->subject_id !== (string) config('edna.subject_id')
             || ! config('edna.assistance_start_at')
@@ -118,6 +135,10 @@ class EdnaAssistance
         }
         if ($this->hasQueuedForm($phone)) {
             return 'form_queued_or_submitted';
+        }
+        if ($case->is_test) {
+            // Internal pilot numbers have real history; test intake only creates an isolated lead.
+            return null;
         }
         $context = app(WhatsAppSalesContext::class)->resolve($phone, [
             'deal_categories' => [1, 5], 'form_since' => now()->subDays(60)->toIso8601String(),
