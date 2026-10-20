@@ -140,3 +140,19 @@ GET /health/db
 - Keep API documentation updated.
 - Do not commit local `.env` files.
 - Run linting and type checking before opening a PR.
+
+## Cuenta QA de desarrollo
+
+El usuario técnico `qa-beex-dev` es administrador activo exclusivo de
+`https://solicitudes-dev.redunisol.com.ar`, con correo reservado `.invalid`, área
+VENDEDORES y asignación automática deshabilitada. Fue creado el 2026-10-16 con
+aprobación explícita para conservarlo y reutilizarlo en pruebas. Su clave generada
+está únicamente en el `credentials.txt` local ignorado por Git.
+
+`scripts/ensure-dev-qa-admin.mjs` conserva su estado deseado. Desde el directorio
+del backend compilado, ejecutarlo sin argumentos sólo verifica. `--create` requiere
+aprobación operacional y una clave generada privada en `BEEX_QA_ADMIN_PASSWORD`;
+no modifica identidades existentes ni rota claves. Comprueba tanto el origen dev
+como la base `solicitudes_web_dev` antes de consultar o modificar datos. No debe
+invocarse automáticamente al desplegar. La cuenta permite entrar por la interfaz
+y actuar como los usuarios de cada área para probar sus permisos efectivos.
