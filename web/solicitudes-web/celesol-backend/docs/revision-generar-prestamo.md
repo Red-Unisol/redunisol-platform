@@ -14,9 +14,10 @@ Si el socio o su número no están disponibles se indica en pantalla.
 El contrato existente de `/api/prestamos/simulacion` utiliza `lineaId` como OID de
 presolicitud: así lo consumen `SimularPrestamoUseCase` y `SimularCuotaSolicitud`.
 La revisión envía ese OID, monto y cuotas persistidos, y `capitalPuro: false`.
-Verifica previamente la relación mediante el mismo
-`LineaPrestamoLegacyIdResolver` utilizado al generar: el ID de préstamo resuelto
-es distinto y **no** sustituye al OID que recibe la simulación.
+No requiere resolver el ID de préstamo para mostrar o calcular la revisión:
+ese ID pertenece al circuito de generación, donde `LineaPrestamoLegacyIdResolver`
+y sus validaciones permanecen intactos. Un error de esa resolución no impide
+consultar el simulador por el OID de presolicitud.
 
 No envía `tasa` ni `fechaPrimerVencimiento`. Ambos valores y las fechas de las
 cuotas se toman de la respuesta. La tasa se presenta como el valor numérico del
@@ -71,3 +72,16 @@ de bloqueos de cancelaciones y cero escrituras al abrir/cancelar.
 No se generaron préstamos reales ni se desplegó. La comparación contra cálculos
 reales de Vimarx queda pendiente: las verificaciones de integración emplean
 respuestas controladas, no una sesión autenticada del entorno dev.
+
+## Datos registrados y fallos parciales
+
+La pantalla muestra nombre, documento, CUIT, número de socio registrado, primera
+fecha y cuota registrada desde la solicitud abierta, aunque falle toda la consulta
+de revisión. La tasa de la línea se toma del catálogo ya consultado por el detalle;
+la solicitud no persiste una tasa propia. Se identifica por separado de la tasa
+que devuelve el cálculo, sin usarla para sustituirlo.
+
+El socio resuelto para generar sigue separado del número registrado. Si falla su
+consulta no se inventa ese número. Un fallo de simulación conserva el titular y
+las condiciones consultadas; un fallo de socio no impide obtener el cálculo.
+La fecha registrada nunca se presenta como fecha calculada ni se envía como tal.

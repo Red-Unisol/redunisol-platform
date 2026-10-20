@@ -4486,6 +4486,15 @@ export function SolicitudesActualDetallePage() {
         socio={null}
       />
       <GenerarPrestamoDialog
+        datosSolicitud={{
+          nombreCompleto: [resolvedSolicitud.titular.apellidoDenominacion, resolvedSolicitud.titular.nombre].filter(Boolean).join(" "),
+          documento: resolvedSolicitud.titular.nroDocumento,
+          cuit: resolvedSolicitud.titular.cuit,
+          nroSocio: resolvedSolicitud.titular.nroSocio,
+          fechaPrimerVencimiento: resolvedSolicitud.fechaPrimerVencimiento ?? null,
+          cuotaResultante: resolvedSolicitud.cuotaResultante,
+          tasaLinea: lineasSimulador.find((linea) => linea.oid === resolvedSolicitud.lineaPrestamoLegacyOid)?.tasa ?? null,
+        }}
         condicionesKey={JSON.stringify([resolvedSolicitud.lineaPrestamoLegacyOid, resolvedSolicitud.montoAFinanciar, resolvedSolicitud.cuotas, resolvedSolicitud.titular])}
         cuotas={resolvedSolicitud.cuotas}
         isPending={createPrestamoLegacyMutation.isPending}
