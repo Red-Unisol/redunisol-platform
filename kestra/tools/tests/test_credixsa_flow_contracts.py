@@ -325,16 +325,26 @@ class CredixsaFlowContractsTests(unittest.TestCase):
         parent = yaml.safe_load((root / "bitrix24_lead_prefill.yaml").read_text())
         child = yaml.safe_load((root / "bitrix24_lead_prefill_one.yaml").read_text())
         self.assertEqual(parent["concurrency"]["limit"], 1)
-        parallel = parent["tasks"][1]
+        self.assertEqual([task["id"] for task in parent["tasks"]],
+                         ["hay_pendientes", "seleccionar_lote", "procesar_lote", "verificar_lote"])
+        # The pre-check asks Bitrix without a container and only publishes the count:
+        # core.http.Request would store the webhook URL (with its secret) in outputs.
+        precheck = parent["tasks"][0]
+        self.assertEqual(precheck["taskRunner"]["type"], "io.kestra.plugin.core.runner.Process")
+        self.assertNotIn("uri", precheck)
+        self.assertEqual(parent["tasks"][1]["runIf"], "{{ (outputs.hay_pendientes.vars.total ?? 1) > 0 }}")
+        # Kestra 2 publishes a skipped task without vars: every reader defaults to zero.
+        parallel = parent["tasks"][2]
         self.assertEqual(parallel["concurrent"], 2)
         self.assertEqual(len(parallel["tasks"]), 2)
         for i, task in enumerate(parallel["tasks"]):
-            self.assertEqual(task["runIf"], "{{ outputs.seleccionar_lote.vars.count > " + str(i) + " }}")
+            self.assertEqual(task["runIf"], "{{ (outputs.seleccionar_lote.vars.count ?? 0) > " + str(i) + " }}")
             self.assertTrue(task["wait"])
             self.assertFalse(task["transmitFailed"])
             self.assertEqual(task["flowId"], child["id"])
-        self.assertEqual(parent["tasks"][2]["id"], "verificar_lote")
-        self.assertEqual(len(parent["tasks"][2]["conditions"]), 2)
+        self.assertEqual(len(parent["tasks"][3]["conditions"]), 2)
+        for condition in parent["tasks"][3]["conditions"]:
+            self.assertIn("(outputs.seleccionar_lote.vars.count ?? 0)", condition)
         self.assertEqual(child["concurrency"]["limit"], 2)
         self.assertNotIn("triggers", child)
         for task in parent["tasks"] + child["tasks"]:
