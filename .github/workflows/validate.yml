@@ -41,6 +41,9 @@ jobs:
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
             --allow-missing ENV_EDNA_INCOMING_SUBJECT_ID \
             --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
+            --allow-missing ENV_EDNA_ASSISTANCE_CRM_ENABLED \
+            --allow-missing ENV_EDNA_ASSISTANCE_RECIPIENTS \
+            --allow-missing ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW \
             --allow-missing SECRET_SMTP_PASSWORD
 
       - name: Verify CI environment isolation
@@ -151,10 +154,11 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-scripts
       - name: Discover packages
         run: |
-          printf 'APP_URL=http://localhost\n' > .env
+          printf 'APP_URL=http://localhost\nAPP_KEY=\n' > .env
           php artisan package:discover
+          php artisan key:generate --force
       - name: Test Edna HTTP inbox and delivery worker
-        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaAssistanceTest.php tests/Feature/EdnaRouterTest.php tests/Feature/EdnaResultsTest.php tests/Feature/EdnaFormLinksTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php tests/Feature/FormSubmissionTest.php tests/Feature/AttributionJourneyTest.php
       - name: Test private report downloads and regeneration
         run: php vendor/bin/pest tests/Unit/ReportCatalogTest.php tests/Unit/ReportRepositoryTest.php tests/Unit/ReportRegeneratorTest.php tests/Unit/AdminReportsTest.php
       - name: Test notice references and evaluation recovery on PostgreSQL

@@ -28,6 +28,9 @@ tasks:
       - python -m edna_incoming.entrypoint
 
 outputs:
+  - id: assistance_result
+    type: STRING
+    value: "{{ outputs.recibir.vars.assistance_result ?? '' }}"
   - id: policy_version
     type: STRING
     value: "{{ outputs.recibir.vars.policy_version ?? '' }}"

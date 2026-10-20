@@ -30,6 +30,10 @@ return [
     */
 
     'connections' => [
+        'edna_assistance' => [
+            'driver' => 'database', 'connection' => null, 'table' => 'jobs',
+            'queue' => 'edna-assistance', 'retry_after' => 180, 'after_commit' => false,
+        ],
 
         // Keep inbox + job inserts atomic on the application's default database.
         'edna' => [

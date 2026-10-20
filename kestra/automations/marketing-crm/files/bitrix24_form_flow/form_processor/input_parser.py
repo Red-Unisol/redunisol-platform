@@ -35,7 +35,7 @@ class NormalizedInput:
 class PrequalificationInput:
     province: CatalogItem
     employment_status: CatalogItem
-    payment_bank: CatalogItem
+    payment_bank: CatalogItem | None
 
 
 @dataclass(frozen=True)

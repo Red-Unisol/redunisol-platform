@@ -8,6 +8,38 @@ use Throwable;
 
 class EdnaBitrix
 {
+    public const ASSISTANCE_FIELDS = [
+        'WA_ASSISTANCE_ID', 'WA_ASSISTANCE_STATE', 'WA_SUBFLOW', 'WA_SUBFLOW_ID',
+        'WA_ORGANISMO', 'WA_BANCO', 'WA_CONTINUIDAD',
+    ];
+
+    public function assistanceSchema(string $entity, bool $apply = false): array
+    {
+        if (! in_array($entity, ['contact', 'lead', 'deal'], true)) {
+            throw new RuntimeException('Unsupported assisted CRM entity.');
+        }
+        $schema = $this->call('crm.'.$entity.'.fields');
+        $missing = [];
+        foreach (self::ASSISTANCE_FIELDS as $name) {
+            $key = 'UF_CRM_'.$name;
+            if (isset($schema[$key])) {
+                if (($schema[$key]['type'] ?? '') !== 'string' || ($schema[$key]['isMultiple'] ?? false)) {
+                    throw new RuntimeException('Incompatible assisted CRM field.');
+                }
+            } else {
+                $missing[] = $key;
+                if ($apply) {
+                    $this->call('crm.'.$entity.'.userfield.add', ['fields' => [
+                        'FIELD_NAME' => $name, 'USER_TYPE_ID' => 'string', 'XML_ID' => 'redunisol_assistance_'.$name,
+                        'MULTIPLE' => 'N', 'MANDATORY' => 'N', 'EDIT_FORM_LABEL' => ['es' => $name],
+                    ]]);
+                }
+            }
+        }
+
+        return $missing;
+    }
+
     public const FIELDS = [
         'WA_ASSISTED' => 'string', 'WA_ENTRY' => 'string', 'WA_FLOW' => 'string',
         'WA_PROVINCE' => 'string', 'WA_SEGMENT' => 'string', 'WA_FLOW_ID' => 'string', 'WA_TIMESTAMP' => 'datetime',

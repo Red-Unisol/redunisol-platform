@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .receiver import classify
 from .out_of_hours import evaluate
+from .assistance import evaluate as evaluate_assistance
 
 
 def main():
@@ -11,7 +12,9 @@ def main():
 
     event = json.loads(Path("request.json").read_text(encoding="utf-8"))
     allowed_subject = os.environ.get("EDNA_INCOMING_SUBJECT_ID", "")
-    if isinstance(event, dict) and event.get("operation") == "out_of_hours":
+    if isinstance(event, dict) and event.get("operation") == "jubilados_assistance":
+        receipt, normalized = evaluate_assistance(event, allowed_subject)
+    elif isinstance(event, dict) and event.get("operation") == "out_of_hours":
         receipt, normalized = evaluate(event, allowed_subject), None
     else:
         receipt, normalized = classify(event, allowed_subject)

@@ -2,6 +2,8 @@
 
 Aplicación web desarrollada con **Laravel 12**, **FilamentPHP 4**, **React 19** e **Inertia.js 2**.
 
+El [piloto de asistencia de Jubilados por WhatsApp](../../docs/whatsapp-jubilados-assistance.md) está preparado con flags apagados, allowlist obligatoria y worker optativo.
+
 Para una guia de onboarding tecnico mas orientada a arquitectura y extension del sistema, ver `../../docs/redunisol-web-overview.md`.
 
 Para revisar el inventario y las propuestas de redirecciones de la tarea #23315 antes de su deploy, ver [el mapa SEO para Marketing](docs/seo-redirect-review-23315.md).
