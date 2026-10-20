@@ -1,10 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-
-import {
-  useAuthSessionQuery,
-  useRefreshSessionMutation,
-} from "@/modules/auth/hooks/use-auth-session";
+import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import {
   canAccessRiesgoTools,
   canCreateSolicitud,
@@ -13,201 +9,103 @@ import {
   isPendingAreaAssignment,
 } from "@/modules/auth/utils/auth-user";
 import { SolicitudesLoader } from "@/shared/components/ui/solicitudes-loader";
+import { Button } from "@/shared/components/ui/button";
 
-type AuthGuardProps = {
-  children: ReactNode;
-};
+type AuthGuardProps = { children: ReactNode };
 
-function FullPageAuthLoader() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
-      <SolicitudesLoader label="Cargando sesión" size="md" />
-    </main>
-  );
+function sessionStatus(query: ReturnType<typeof useAuthSessionQuery>) {
+  if (query.isPending) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
+        <SolicitudesLoader label="Cargando sesión" size="md" />
+      </main>
+    );
+  }
+  // A background connection failure retains the cached user and mounted form.
+  // Only a confirmed 401 becomes null and takes the user to login.
+  if (query.isError && !query.data) {
+    return (
+      <main
+        className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 py-10 text-center"
+        role="alert"
+      >
+        <p>
+          No pudimos comprobar tu sesión. Volvé a intentar en unos segundos.
+        </p>
+        <Button
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          {query.isFetching ? "Reconectando…" : "Volver a intentar"}
+        </Button>
+      </main>
+    );
+  }
+  return null;
 }
 
 export function ProtectedRoute({ children }: AuthGuardProps) {
-  const sessionQuery = useAuthSessionQuery();
-  const refreshMutation = useRefreshSessionMutation();
-
-  useEffect(() => {
-    if (
-      sessionQuery.isPending ||
-      sessionQuery.data !== null ||
-      refreshMutation.isPending ||
-      refreshMutation.isSuccess ||
-      refreshMutation.isError
-    ) {
-      return;
-    }
-
-    refreshMutation.mutate();
-  }, [refreshMutation, sessionQuery.data, sessionQuery.isPending]);
-
-  if (
-    sessionQuery.isPending ||
-    refreshMutation.isPending ||
-    (!sessionQuery.data && refreshMutation.isIdle)
-  ) {
-    return <FullPageAuthLoader />;
-  }
-
-  if (sessionQuery.data) {
-    if (isPendingAreaAssignment(sessionQuery.data)) {
-      return <Navigate replace to="/pending-area" />;
-    }
-
-    return <>{children}</>;
-  }
-
-  return <Navigate replace to="/login" />;
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (!query.data) return <Navigate replace to="/login" />;
+  if (isPendingAreaAssignment(query.data))
+    return <Navigate replace to="/pending-area" />;
+  return <>{children}</>;
 }
 
 export function PublicOnlyRoute({ children }: AuthGuardProps) {
-  const sessionQuery = useAuthSessionQuery();
-
-  if (sessionQuery.isPending) {
-    return <FullPageAuthLoader />;
-  }
-
-  if (sessionQuery.data) {
-    return (
-      <Navigate replace to={getDefaultAuthenticatedRoute(sessionQuery.data)} />
-    );
-  }
-
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (query.data)
+    return <Navigate replace to={getDefaultAuthenticatedRoute(query.data)} />;
   return <>{children}</>;
 }
 
 export function PendingAreaRoute({ children }: AuthGuardProps) {
-  const sessionQuery = useAuthSessionQuery();
-  const refreshMutation = useRefreshSessionMutation();
-
-  useEffect(() => {
-    if (
-      sessionQuery.isPending ||
-      sessionQuery.data !== null ||
-      refreshMutation.isPending ||
-      refreshMutation.isSuccess ||
-      refreshMutation.isError
-    ) {
-      return;
-    }
-
-    refreshMutation.mutate();
-  }, [refreshMutation, sessionQuery.data, sessionQuery.isPending]);
-
-  if (
-    sessionQuery.isPending ||
-    refreshMutation.isPending ||
-    (!sessionQuery.data && refreshMutation.isIdle)
-  ) {
-    return <FullPageAuthLoader />;
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (!query.data) return <Navigate replace to="/login" />;
+  if (!isPendingAreaAssignment(query.data)) {
+    return <Navigate replace to={getDefaultAuthenticatedRoute(query.data)} />;
   }
-
-  if (!sessionQuery.data) {
-    return <Navigate replace to="/login" />;
-  }
-
-  if (!isPendingAreaAssignment(sessionQuery.data)) {
-    return (
-      <Navigate replace to={getDefaultAuthenticatedRoute(sessionQuery.data)} />
-    );
-  }
-
   return <>{children}</>;
 }
 
 export function AdminOnlyRoute({ children }: AuthGuardProps) {
-  const sessionQuery = useAuthSessionQuery();
-  const refreshMutation = useRefreshSessionMutation();
-
-  useEffect(() => {
-    if (
-      sessionQuery.isPending ||
-      sessionQuery.data !== null ||
-      refreshMutation.isPending ||
-      refreshMutation.isSuccess ||
-      refreshMutation.isError
-    ) {
-      return;
-    }
-
-    refreshMutation.mutate();
-  }, [refreshMutation, sessionQuery.data, sessionQuery.isPending]);
-
-  if (
-    sessionQuery.isPending ||
-    refreshMutation.isPending ||
-    (!sessionQuery.data && refreshMutation.isIdle)
-  ) {
-    return <FullPageAuthLoader />;
-  }
-
-  if (!sessionQuery.data) {
-    return <Navigate replace to="/login" />;
-  }
-
-  if (isPendingAreaAssignment(sessionQuery.data)) {
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (!query.data) return <Navigate replace to="/login" />;
+  if (isPendingAreaAssignment(query.data))
     return <Navigate replace to="/pending-area" />;
+  if (!canManageUsers(query.data)) {
+    return <Navigate replace to={getDefaultAuthenticatedRoute(query.data)} />;
   }
-
-  if (!canManageUsers(sessionQuery.data)) {
-    return (
-      <Navigate replace to={getDefaultAuthenticatedRoute(sessionQuery.data)} />
-    );
-  }
-
   return <>{children}</>;
 }
 
 export function RiesgoOnlyRoute({ children }: AuthGuardProps) {
-  const sessionQuery = useAuthSessionQuery();
-  const refreshMutation = useRefreshSessionMutation();
-
-  useEffect(() => {
-    if (
-      sessionQuery.isPending ||
-      sessionQuery.data !== null ||
-      refreshMutation.isPending ||
-      refreshMutation.isSuccess ||
-      refreshMutation.isError
-    ) {
-      return;
-    }
-
-    refreshMutation.mutate();
-  }, [refreshMutation, sessionQuery.data, sessionQuery.isPending]);
-
-  if (
-    sessionQuery.isPending ||
-    refreshMutation.isPending ||
-    (!sessionQuery.data && refreshMutation.isIdle)
-  ) {
-    return <FullPageAuthLoader />;
-  }
-
-  if (!sessionQuery.data) {
-    return <Navigate replace to="/login" />;
-  }
-
-  if (isPendingAreaAssignment(sessionQuery.data)) {
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (!query.data) return <Navigate replace to="/login" />;
+  if (isPendingAreaAssignment(query.data))
     return <Navigate replace to="/pending-area" />;
+  if (!canAccessRiesgoTools(query.data)) {
+    return <Navigate replace to={getDefaultAuthenticatedRoute(query.data)} />;
   }
-
-  if (!canAccessRiesgoTools(sessionQuery.data)) {
-    return (
-      <Navigate replace to={getDefaultAuthenticatedRoute(sessionQuery.data)} />
-    );
-  }
-
   return <>{children}</>;
 }
 
 export function PrecargaRoute({ children }: AuthGuardProps) {
-  const { data: user, isPending } = useAuthSessionQuery();
-  if (isPending) return <FullPageAuthLoader />;
-  if (!user) return <Navigate replace to="/login" />;
-  if (!canCreateSolicitud(user)) return <Navigate replace to="/solicitudes/core/recientes" />;
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (!query.data) return <Navigate replace to="/login" />;
+  if (!canCreateSolicitud(query.data))
+    return <Navigate replace to="/solicitudes/core/recientes" />;
   return <>{children}</>;
 }

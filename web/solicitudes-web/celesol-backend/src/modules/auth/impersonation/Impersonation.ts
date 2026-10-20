@@ -5,7 +5,7 @@ import type { AuthRepository } from "../domain/repositories/AuthRepository";
 import type { AccessTokenService } from "../domain/services/AccessTokenService";
 import type { RefreshTokenRepository } from "../domain/repositories/RefreshTokenRepository";
 import type { RefreshTokenService } from "../domain/services/RefreshTokenService";
-import { isRefreshTokenActive } from "../domain/entities/RefreshToken.entity";
+import { resolveRefreshToken } from "../application/resolve-refresh-token";
 import type { AuthUser } from "../domain/entities/User.entity";
 import { actingContext } from "./context";
 
@@ -49,12 +49,13 @@ export class Impersonation {
     if (!userId && allowRefresh) {
       const raw = req.cookies?.refreshToken;
       if (!raw) fail(401, "Sesión inválida.");
-      const token = await this.deps.refreshTokens.findByHash(
-        this.deps.refreshService.hash(raw),
+      const token = await resolveRefreshToken(
+        raw,
+        this.deps.refreshTokens,
+        this.deps.refreshService,
       );
-      if (!token || !isRefreshTokenActive(token, new Date()))
-        fail(401, "Sesión inválida.");
-      userId = token.userId;
+      if (!token) fail(401, "Sesión inválida.");
+      userId = token.record.userId;
     }
     const user = userId
       ? await (requireAdmin
@@ -150,15 +151,13 @@ export class Impersonation {
           );
         const rawRefresh = req.cookies?.refreshToken;
         const refresh = rawRefresh
-          ? await this.deps.refreshTokens.findByHash(
-              this.deps.refreshService.hash(rawRefresh),
+          ? await resolveRefreshToken(
+              rawRefresh,
+              this.deps.refreshTokens,
+              this.deps.refreshService,
             )
           : null;
-        if (
-          !refresh ||
-          refresh.userId !== admin.id ||
-          !isRefreshTokenActive(refresh, new Date())
-        )
+        if (!refresh || refresh.record.userId !== admin.id)
           fail(401, "Sesión inválida.");
         const session = await this.deps.prisma.$transaction(async (tx) => {
           const created = await tx.impersonationSession.create({
@@ -167,7 +166,7 @@ export class Impersonation {
               selectedUserId: target.id,
               administratorLabel: label(admin),
               selectedUserLabel: label(target),
-              expiresAt: refresh.expiresAt,
+              expiresAt: refresh.record.expiresAt,
             },
           });
           await tx.impersonationOperation.create({
@@ -223,15 +222,13 @@ export class Impersonation {
       if (req.path === "/auth/refresh") {
         const raw = req.cookies?.refreshToken;
         const refresh = raw
-          ? await this.deps.refreshTokens.findByHash(
-              this.deps.refreshService.hash(raw),
+          ? await resolveRefreshToken(
+              raw,
+              this.deps.refreshTokens,
+              this.deps.refreshService,
             )
           : null;
-        if (
-          !refresh ||
-          refresh.userId !== admin.id ||
-          !isRefreshTokenActive(refresh, new Date())
-        )
+        if (!refresh || refresh.record.userId !== admin.id)
           fail(401, "Sesión inválida.");
       }
       if (isLogout) {

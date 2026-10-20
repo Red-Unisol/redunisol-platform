@@ -72,6 +72,8 @@ export class RefreshTokenPrismaDatasource {
         where: {
           revokedAt: null,
           tokenHash: input.currentTokenHash,
+          userId: input.userId,
+          expiresAt: { gt: new Date() },
         },
       });
 

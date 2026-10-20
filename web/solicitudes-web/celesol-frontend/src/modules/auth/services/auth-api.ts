@@ -69,10 +69,6 @@ export function getCurrentUser() {
   return apiClient.get<LoginResponse>("/auth/me");
 }
 
-export function refreshSession() {
-  return apiClient.post<LoginResponse>("/auth/refresh");
-}
-
 export function logout() {
   return apiClient.post<void>("/auth/logout");
 }

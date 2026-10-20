@@ -2,6 +2,11 @@
 
 Backend service for the Celesol loan management system.
 
+## Recuperación de sesión
+
+La tolerancia de 30 segundos para respuestas perdidas, las reglas de revocación
+y la validación local están en [docs/session-recovery.md](docs/session-recovery.md).
+
 ## Revisión documental y legajo digital
 
 El flujo de firma, propuesta automática y decisión humana obligatoria está en

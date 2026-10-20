@@ -61,7 +61,9 @@ const accessTokenService = new JwtTokenService({
   secret: env.ACCESS_TOKEN_SECRET,
   ttlMinutes: env.ACCESS_TOKEN_TTL_MINUTES,
 });
-const refreshTokenService = new OpaqueRefreshTokenService();
+const refreshTokenService = new OpaqueRefreshTokenService(
+  env.ACCESS_TOKEN_SECRET,
+);
 const passwordResetTokenService = new OpaquePasswordResetTokenService();
 const passwordHasher = new BcryptPasswordHasher();
 const emailVerificationCodeGenerator =

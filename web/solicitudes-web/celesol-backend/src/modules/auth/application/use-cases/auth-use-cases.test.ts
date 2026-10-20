@@ -370,6 +370,7 @@ class FakeRefreshTokenRepository implements RefreshTokenRepository {
       expiresAt: input.expiresAt,
       id: input.tokenHash,
       revokedAt: null,
+      replacedByTokenHash: null,
       tokenHash: input.tokenHash,
       user: toAuthUserView(activeUser),
       userId: input.userId,
@@ -384,9 +385,9 @@ class FakeRefreshTokenRepository implements RefreshTokenRepository {
     const token = this.tokens.get(tokenHash);
     this.revokedTokenHashes.push(tokenHash);
 
-    if (token) {
+    if (token && !token.revokedAt) {
       token.revokedAt = new Date();
-      token.tokenHash = replacedByTokenHash ?? token.tokenHash;
+      token.replacedByTokenHash = replacedByTokenHash ?? null;
     }
   }
 
@@ -397,11 +398,14 @@ class FakeRefreshTokenRepository implements RefreshTokenRepository {
     newTokenHash: string;
     userId: string;
   }) {
-    if (!this.tokens.has(input.currentTokenHash)) {
+    const current = this.tokens.get(input.currentTokenHash);
+    if (!current || current.revokedAt) {
       return false;
     }
 
-    await this.revoke(input.currentTokenHash, input.newTokenHash);
+    current.revokedAt = new Date();
+    current.replacedByTokenHash = input.newTokenHash;
+    this.revokedTokenHashes.push(input.currentTokenHash);
     await this.create({
       expiresAt: input.expiresAt,
       metadata: input.metadata,
@@ -428,9 +432,7 @@ class FakePasswordHasher implements PasswordHasher {
   }
 }
 
-class FakeAccountVerificationEmailSender
-  implements AccountVerificationEmailSender
-{
+class FakeAccountVerificationEmailSender implements AccountVerificationEmailSender {
   failure: Error | null = null;
   sentEmails: Array<{ code: string; to: string }> = [];
 
@@ -443,9 +445,7 @@ class FakeAccountVerificationEmailSender
   }
 }
 
-class FakeEmailVerificationCodeGenerator
-  implements EmailVerificationCodeGenerator
-{
+class FakeEmailVerificationCodeGenerator implements EmailVerificationCodeGenerator {
   code = "123456";
 
   generate() {
@@ -502,6 +502,9 @@ class FakeAccessTokenService implements AccessTokenService {
 }
 
 class FakeRefreshTokenService implements RefreshTokenService {
+  successor(token: string) {
+    return `successor:${token}`;
+  }
   private nextToken = 1;
 
   generate() {
@@ -523,10 +526,7 @@ function createService() {
   const refreshTokenService = new FakeRefreshTokenService();
   const userRepository = new FakeUserRepository();
   const usersById = new Map<string, AuthUser>(
-    userRepository.users.map((user) => [
-      user.id,
-      toAuthUserView(user),
-    ]),
+    userRepository.users.map((user) => [user.id, toAuthUserView(user)]),
   );
   userRepository.usersById = usersById;
   const emailVerificationRepository = new FakeEmailVerificationRepository(
@@ -679,11 +679,8 @@ describe("auth use cases", () => {
   });
 
   it("keeps registered user when verification token creation fails", async () => {
-    const {
-      emailVerificationRepository,
-      registerUserUseCase,
-      userRepository,
-    } = createService();
+    const { emailVerificationRepository, registerUserUseCase, userRepository } =
+      createService();
     emailVerificationRepository.failure = new Error("db failed");
 
     const result = await registerUserUseCase.execute({
@@ -1029,13 +1026,220 @@ describe("auth use cases", () => {
       refreshToken: loginSession.tokens.refreshToken,
     });
 
-    assert.equal(refreshedSession.tokens.refreshToken, "refresh-token-2");
+    assert.equal(
+      refreshedSession.tokens.refreshToken,
+      "successor:refresh-token-1",
+    );
     assert.deepEqual(refreshTokenRepository.revokedTokenHashes, [
       "hash:refresh-token-1",
     ]);
     assert.ok(
-      refreshTokenRepository.tokens.has("hash:refresh-token-2"),
+      refreshTokenRepository.tokens.has("hash:successor:refresh-token-1"),
       "new refresh token should be stored",
+    );
+  });
+
+  it("recovers a lost response without rotating or extending the replacement again", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, refreshTokenRepository } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const input = { refreshToken: login.tokens.refreshToken, metadata: {} };
+    const first = await refreshSessionUseCase.execute(input);
+    const recovered = await refreshSessionUseCase.execute(input);
+    assert.equal(recovered.tokens.refreshToken, first.tokens.refreshToken);
+    assert.deepEqual(
+      recovered.tokens.refreshTokenExpiresAt,
+      first.tokens.refreshTokenExpiresAt,
+    );
+    assert.equal(refreshTokenRepository.tokens.size, 2);
+  });
+
+  it("returns the same replacement to concurrent refresh requests", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, refreshTokenRepository } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const responses = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        refreshSessionUseCase.execute({
+          refreshToken: login.tokens.refreshToken,
+          metadata: {},
+        }),
+      ),
+    );
+    assert.equal(
+      new Set(responses.map((session) => session.tokens.refreshToken)).size,
+      1,
+    );
+    assert.equal(refreshTokenRepository.tokens.size, 2);
+  });
+
+  it("recovers a committed rotation whose acknowledgement fails", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, refreshTokenRepository } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const rotate = refreshTokenRepository.rotate.bind(refreshTokenRepository);
+    refreshTokenRepository.rotate = async (input) => {
+      await rotate(input);
+      throw new Error("commit acknowledgement lost");
+    };
+    const recovered = await refreshSessionUseCase.execute({
+      refreshToken: login.tokens.refreshToken,
+      metadata: {},
+    });
+    assert.equal(recovered.tokens.refreshToken, "successor:refresh-token-1");
+    assert.equal(refreshTokenRepository.tokens.size, 2);
+  });
+
+  it("preserves database errors when no committed replacement can be recovered", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, refreshTokenRepository } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const failure = new Error("database unavailable");
+    refreshTokenRepository.rotate = async () => {
+      throw failure;
+    };
+    await assert.rejects(
+      () =>
+        refreshSessionUseCase.execute({
+          refreshToken: login.tokens.refreshToken,
+          metadata: {},
+        }),
+      (error) => error === failure,
+    );
+    assert.equal(
+      refreshTokenRepository.tokens.get("hash:refresh-token-1")!.revokedAt,
+      null,
+    );
+  });
+
+  it("rejects predecessors after the grace period and after their successor rotates", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, refreshTokenRepository } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const input = { refreshToken: login.tokens.refreshToken, metadata: {} };
+    const next = await refreshSessionUseCase.execute(input);
+    const previous = refreshTokenRepository.tokens.get("hash:refresh-token-1")!;
+    previous.revokedAt = new Date(Date.now() - 30_001);
+    await assert.rejects(
+      () => refreshSessionUseCase.execute(input),
+      InvalidSessionError,
+    );
+    previous.revokedAt = new Date();
+    await refreshSessionUseCase.execute({
+      refreshToken: next.tokens.refreshToken,
+      metadata: {},
+    });
+    await assert.rejects(
+      () => refreshSessionUseCase.execute(input),
+      InvalidSessionError,
+    );
+  });
+
+  it("logout with the predecessor revokes its recoverable successor", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, logoutUserUseCase } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const next = await refreshSessionUseCase.execute({
+      refreshToken: login.tokens.refreshToken,
+      metadata: {},
+    });
+    await logoutUserUseCase.execute(login.tokens.refreshToken);
+    for (const refreshToken of [
+      login.tokens.refreshToken,
+      next.tokens.refreshToken,
+    ]) {
+      await assert.rejects(
+        () => refreshSessionUseCase.execute({ refreshToken, metadata: {} }),
+        InvalidSessionError,
+      );
+    }
+  });
+
+  it("cannot recover sessions revoked by a password reset", async () => {
+    const { loginUserUseCase, refreshSessionUseCase, refreshTokenRepository } =
+      createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    await refreshSessionUseCase.execute({
+      refreshToken: login.tokens.refreshToken,
+      metadata: {},
+    });
+    for (const token of refreshTokenRepository.tokens.values())
+      token.revokedAt ??= new Date();
+    await assert.rejects(
+      () =>
+        refreshSessionUseCase.execute({
+          refreshToken: login.tokens.refreshToken,
+          metadata: {},
+        }),
+      InvalidSessionError,
+    );
+  });
+
+  it("rejects recovery when the successor expires or the user becomes inactive", async () => {
+    const {
+      loginUserUseCase,
+      refreshSessionUseCase,
+      refreshTokenRepository,
+      userRepository,
+    } = createService();
+    const login = await loginUserUseCase.execute({
+      identifier: activeUser.email,
+      metadata: {},
+      password: "password",
+    });
+    const next = await refreshSessionUseCase.execute({
+      refreshToken: login.tokens.refreshToken,
+      metadata: {},
+    });
+    const successor = refreshTokenRepository.tokens.get(
+      `hash:${next.tokens.refreshToken}`,
+    )!;
+    successor.expiresAt = new Date(Date.now() - 1);
+    await assert.rejects(
+      () =>
+        refreshSessionUseCase.execute({
+          refreshToken: login.tokens.refreshToken,
+          metadata: {},
+        }),
+      InvalidSessionError,
+    );
+    successor.expiresAt = new Date(Date.now() + 60_000);
+    userRepository.users = [];
+    await assert.rejects(
+      () =>
+        refreshSessionUseCase.execute({
+          refreshToken: login.tokens.refreshToken,
+          metadata: {},
+        }),
+      InvalidSessionError,
     );
   });
 
@@ -1082,7 +1286,8 @@ describe("auth use cases", () => {
   });
 
   it("returns workflowOwner as null when the current user has no owner", async () => {
-    const { getCurrentUserUseCase, loginUserUseCase, userRepository } = createService();
+    const { getCurrentUserUseCase, loginUserUseCase, userRepository } =
+      createService();
     userRepository.users[0] = {
       ...activeUser,
       workflowOwnerId: null,

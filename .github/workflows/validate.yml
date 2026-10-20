@@ -5,6 +5,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  solicitudes-sessions:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/solicitudes-web/celesol-backend
+    env:
+      DATABASE_URL: postgresql://beex_test:test_only@127.0.0.1:5432/beex_session_test
+      BEEX_TEST_DATABASE_URL: postgresql://beex_test:test_only@127.0.0.1:5432/beex_session_test
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: beex_session_test
+          POSTGRES_USER: beex_test
+          POSTGRES_PASSWORD: test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beex_test -d beex_session_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/solicitudes-web/celesol-backend/package-lock.json
+            web/solicitudes-web/celesol-frontend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare isolated database
+        run: |
+          npm run prisma:generate
+          npx prisma migrate deploy
+      - name: Build backend
+        run: npm run build
+      - name: Test authentication and session recovery
+        run: npx tsx --test "src/modules/auth/**/*.test.ts"
+      - name: Test and build frontend
+        working-directory: web/solicitudes-web/celesol-frontend
+        env:
+          VITE_API_BASE_URL: https://api.example.test
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build
+
   validate:
     runs-on: ubuntu-latest
     steps:
