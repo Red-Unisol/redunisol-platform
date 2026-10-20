@@ -102,7 +102,9 @@ export class SimularPrestamoUseCase {
     if (input.cuotaObjetivo !== undefined) {
       return calcularMontoPorCuota({
         cuotaObjetivo: input.cuotaObjetivo,
-        montoMinimo: Math.max(0.01, lineaPrestamo.montoMinimo ?? 0.01),
+        // Vimarx rechaza montos menores a un peso ("Se requiere un Monto A
+        // Financiar"): con minimo 0 en la linea, arrancar en $1.
+        montoMinimo: Math.max(1, lineaPrestamo.montoMinimo ?? 0),
         montoMaximo: lineaPrestamo.montoMaximo as number,
         simular,
       });

@@ -1,5 +1,5 @@
 import { Calculator, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
@@ -10,7 +10,10 @@ import {
   ajustarCuotasTexto,
 } from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { StyledSelect } from "@/modules/solicitudes-editor/components/fields/base";
-import { MoneyInputField } from "@/shared/components/forms/money-input-field";
+import {
+  MoneyInputField,
+  StaticMoneyInput,
+} from "@/shared/components/forms/money-input-field";
 import { Button } from "@/shared/components/ui/button";
 import { DateInput } from "@/shared/components/ui/date-input";
 import {
@@ -121,14 +124,31 @@ export function SimuladorPrestamoModal({
     null;
   const selectedLinea = eligibleLineas.find((linea) => linea.oid === lineaOid);
   const cuotasError = getCuotasFueraDeLineaError(cuotas, selectedLinea);
+  // Cuota que escribio el usuario: con ella el legado calcula el monto (igual
+  // que en el detalle). Vuelve a null si se toca monto, cuotas, linea o fecha.
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(
+    null,
+  );
+  // Al cerrar, la proxima apertura arranca calculando por monto.
+  const [lastOpen, setLastOpen] = useState(open);
+  if (lastOpen !== open) {
+    setLastOpen(open);
+    if (!open) setCuotaObjetivoTexto(null);
+  }
+  const cuotaObjetivo =
+    cuotaObjetivoTexto !== null ? parseMoneyValue(cuotaObjetivoTexto) : null;
   const simularPrestamoMutation = useCuotaCalculada(
     {
       ...(solicitudId ? { solicitudId } : {}),
+      ...(cuotaObjetivo !== null && cuotaObjetivo > 0 ? { cuotaObjetivo } : {}),
       capitalPuro: CAPITAL_PURO_DEFAULT,
       lineaId: Number(selectedLinea?.oid),
-      montoAFinanciar: parseMoneyValue(
-        ajustarMontoTexto(montoAFinanciar, selectedLinea),
-      ),
+      // Con cuota objetivo el monto lo busca el legado; la API igual pide uno
+      // positivo, asi que sin monto cargado va el maximo de la linea.
+      montoAFinanciar:
+        cuotaObjetivo !== null
+          ? parseMoneyValue(montoAFinanciar) || (selectedLinea?.montoMaximo ?? 1)
+          : parseMoneyValue(ajustarMontoTexto(montoAFinanciar, selectedLinea)),
       cuotas: Number(ajustarCuotasTexto(cuotas, selectedLinea)),
       ...(fechaPrimerVencimiento ? { fechaPrimerVencimiento } : {}),
     },
@@ -137,10 +157,19 @@ export function SimuladorPrestamoModal({
         selectedLinea?.oid &&
         !cuotasError &&
         Number(cuotas) > 0 &&
-        parseMoneyValue(montoAFinanciar) > 0,
+        (cuotaObjetivo !== null
+          ? cuotaObjetivo > 0
+          : parseMoneyValue(montoAFinanciar) > 0),
     ),
     (result) => {
-      if (parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar || Number(cuotas) !== result.cuotas) onLimitsAdjusted?.();
+      // Con cuota objetivo, que cambie el monto es el resultado, no un ajuste
+      // por los maximos de la linea.
+      if (
+        (cuotaObjetivo === null &&
+          parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar) ||
+        Number(cuotas) !== result.cuotas
+      )
+        onLimitsAdjusted?.();
       if (parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar)
         setValue("montoAFinanciar", formatMoneyAmount(result.montoAFinanciar));
       if (Number(cuotas) !== result.cuotas)
@@ -190,6 +219,7 @@ export function SimuladorPrestamoModal({
     onFieldChange: (value: string) => void,
   ) {
     onFieldChange(nextLineaOid);
+    setCuotaObjetivoTexto(null);
 
     const nextLinea = eligibleLineas.find(
       (linea) => linea.oid === nextLineaOid,
@@ -325,7 +355,11 @@ export function SimuladorPrestamoModal({
                     className="h-8 text-xs"
                     control={control}
                     name="montoAFinanciar"
-                    transform={(value) => ajustarMontoTexto(value, selectedLinea)}
+                    transform={(value) => {
+                      // Solo corre cuando escribe el usuario.
+                      setCuotaObjetivoTexto(null);
+                      return ajustarMontoTexto(value, selectedLinea);
+                    }}
                   />
                 </label>
                 <label className="grid gap-1">
@@ -336,11 +370,13 @@ export function SimuladorPrestamoModal({
                     aria-invalid={cuotasError ? true : undefined}
                     className="h-8 text-xs"
                     {...register("cuotas", {
-                      onChange: (event) =>
+                      onChange: (event) => {
+                        setCuotaObjetivoTexto(null);
                         setValue(
                           "cuotas",
                           ajustarCuotasTexto(event.target.value, selectedLinea),
-                        ),
+                        );
+                      },
                     })}
                   />
                   {cuotasError ? (
@@ -361,7 +397,10 @@ export function SimuladorPrestamoModal({
                         className="h-8 text-xs"
                         name={field.name}
                         onBlur={field.onBlur}
-                        onChange={field.onChange}
+                        onChange={(value) => {
+                          setCuotaObjetivoTexto(null);
+                          field.onChange(value);
+                        }}
                         value={
                           field.value ||
                           simulacion?.fechaPrimerVencimiento?.slice(0, 10) ||
@@ -389,11 +428,32 @@ export function SimuladorPrestamoModal({
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
                     Cuota Resultante
                   </span>
-                  <Input
+                  {/* Editable: escribir una cuota calcula el monto. Muestra
+                      el calculo si lo hay y, mientras, lo que se escribe. */}
+                  <StaticMoneyInput
+                    aria-label="Cuota Resultante"
                     className="h-9 text-sm font-semibold"
-                    readOnly
-                    {...register("cuotaResultante")}
+                    onChange={setCuotaObjetivoTexto}
+                    value={
+                      simulacion
+                        ? formatDecimalMoneyValue(simulacion.cuotaResultante)
+                        : (cuotaObjetivoTexto ?? "")
+                    }
                   />
+                  {cuotaObjetivo !== null ? (
+                    <span
+                      className="text-[0.68rem] text-foreground-secondary"
+                      role="status"
+                    >
+                      {cuotaObjetivo <= 0
+                        ? "Ingresá una cuota mayor a cero."
+                        : simularPrestamoMutation.isPending
+                          ? "Calculando el monto..."
+                          : simulacion
+                            ? "Monto calculado a partir de la cuota."
+                            : null}
+                    </span>
+                  ) : null}
                 </label>
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">

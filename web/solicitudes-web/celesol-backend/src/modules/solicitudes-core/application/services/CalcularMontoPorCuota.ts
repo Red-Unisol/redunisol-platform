@@ -28,6 +28,24 @@ export async function calcularMontoPorCuota(input: {
       : await simular(input.montoMaximo);
   const matches = (result: SimulacionPrestamo) =>
     Math.abs(result.cuotaResultante - cuotaObjetivo) <= 0.01;
+  // Varios montos a centavos de distancia dan la misma cuota (280.000 y
+  // 280.000,02): si el entero mas cercano tambien coincide, se prefiere ese.
+  const preferirMontoEntero = async (result: SimulacionPrestamo) => {
+    const entero = Math.round(result.montoAFinanciar);
+    if (
+      entero === result.montoAFinanciar ||
+      entero < input.montoMinimo ||
+      entero > input.montoMaximo
+    )
+      return result;
+    try {
+      const redondeado = await simular(entero);
+      return matches(redondeado) ? redondeado : result;
+    } catch {
+      // El monto encontrado ya es valido: no perderlo por la prueba extra.
+      return result;
+    }
+  };
   if (matches(min)) return min;
   if (max.cuotaResultante < min.cuotaResultante) {
     throw new PrestamoSimulacionRechazadaError(
@@ -57,7 +75,7 @@ export async function calcularMontoPorCuota(input: {
     }
     if (amount <= min.montoAFinanciar || amount >= max.montoAFinanciar) break;
     const result = await simular(amount);
-    if (matches(result)) return result;
+    if (matches(result)) return preferirMontoEntero(result);
     if (
       result.cuotaResultante < min.cuotaResultante ||
       result.cuotaResultante > max.cuotaResultante
