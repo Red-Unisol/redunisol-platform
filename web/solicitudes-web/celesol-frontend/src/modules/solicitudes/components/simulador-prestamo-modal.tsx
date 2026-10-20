@@ -283,133 +283,72 @@ export function SimuladorPrestamoModal({
               </p>
             ) : null}
 
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="space-y-2">
+            {/* Primero lo que se carga, despues lo que calcula el legado. */}
+            <section aria-labelledby="simulador-datos" className="space-y-2">
+              <h3
+                className="text-[0.68rem] font-semibold uppercase tracking-wide text-foreground-muted"
+                id="simulador-datos"
+              >
+                Datos del crédito
+              </h3>
+              <label className="grid gap-1">
+                <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                  Línea<span className="text-destructive"> *</span>
+                </span>
+                <Controller
+                  control={control}
+                  name="lineaOid"
+                  render={({ field }) => (
+                    <StyledSelect
+                      className="text-xs"
+                      onChange={(value) =>
+                        handleLineaChange(value, field.onChange)
+                      }
+                      options={eligibleLineas.map((linea) => ({
+                        label: linea.descripcion ?? "",
+                        value: linea.oid ?? "",
+                      }))}
+                      placeholder="Seleccione una línea"
+                      // Mismo buscador que al cargar la linea en la solicitud.
+                      searchable
+                      value={field.value}
+                    />
+                  )}
+                />
+              </label>
+              <div className="grid gap-2 md:grid-cols-3">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                    Línea<span className="text-destructive"> *</span>
+                    Monto a Financiar<span className="text-destructive"> *</span>
                   </span>
-                  <Controller
+                  <MoneyInputField
+                    className="h-8 text-xs"
                     control={control}
-                    name="lineaOid"
-                    render={({ field }) => (
-                      <StyledSelect
-                        className="text-xs"
-                        onChange={(value) =>
-                          handleLineaChange(value, field.onChange)
-                        }
-                        options={eligibleLineas.map((linea) => ({
-                          label: linea.descripcion ?? "",
-                          value: linea.oid ?? "",
-                        }))}
-                        placeholder="Seleccione una línea"
-                        // Mismo buscador que al cargar la linea en la solicitud.
-                        searchable
-                        value={field.value}
-                      />
-                    )}
+                    name="montoAFinanciar"
+                    transform={(value) => ajustarMontoTexto(value, selectedLinea)}
                   />
                 </label>
-              </div>
-              <div className="space-y-2">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                    Cuota Resultante
+                    Cuotas<span className="text-destructive"> *</span>
                   </span>
                   <Input
+                    aria-invalid={cuotasError ? true : undefined}
                     className="h-8 text-xs"
-                    readOnly
-                    {...register("cuotaResultante")}
+                    {...register("cuotas", {
+                      onChange: (event) =>
+                        setValue(
+                          "cuotas",
+                          ajustarCuotasTexto(event.target.value, selectedLinea),
+                        ),
+                    })}
                   />
+                  {cuotasError ? (
+                    <span className="text-[0.68rem] text-destructive">
+                      {cuotasError}
+                    </span>
+                  ) : null}
                 </label>
-              </div>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-4">
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Monto a Financiar<span className="text-destructive"> *</span>
-                </span>
-                <MoneyInputField
-                  className="h-8 text-xs"
-                  control={control}
-                  name="montoAFinanciar"
-                  transform={(value) => ajustarMontoTexto(value, selectedLinea)}
-                />
-              </label>
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Tasa
-                </span>
-                <Input className="h-8 text-xs" readOnly {...register("tasa")} />
-              </label>
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Gastos Adm. (Liquidación)
-                </span>
-                <Input
-                  className="h-8 text-xs"
-                  readOnly
-                  {...register("gastosAdministrativos")}
-                />
-              </label>
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Capital Financiado
-                </span>
-                <Input
-                  className="h-8 text-xs"
-                  readOnly
-                  {...register("capitalFinanciado")}
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Cuotas<span className="text-destructive"> *</span>
-                </span>
-                <Input
-                  aria-invalid={cuotasError ? true : undefined}
-                  className="h-8 text-xs"
-                  {...register("cuotas", {
-                    onChange: (event) =>
-                      setValue(
-                        "cuotas",
-                        ajustarCuotasTexto(event.target.value, selectedLinea),
-                      ),
-                  })}
-                />
-                {cuotasError ? (
-                  <span className="text-[0.68rem] text-destructive">
-                    {cuotasError}
-                  </span>
-                ) : null}
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Total
-                </span>
-                <Input
-                  className="h-8 text-xs"
-                  readOnly
-                  {...register("total")}
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Condiciones
-                </span>
-                <textarea
-                  className={`${FIELD_CLASSNAME} h-[4.6rem] resize-none py-1.5`}
-                  {...register("condiciones")}
-                />
-              </label>
-              <div className="space-y-2">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
                     Fecha Primer Vencimiento
@@ -432,6 +371,68 @@ export function SimuladorPrestamoModal({
                     )}
                   />
                 </label>
+              </div>
+            </section>
+
+            <section
+              aria-labelledby="simulador-resultado"
+              className="space-y-2 rounded-sm border border-border bg-surface p-2.5"
+            >
+              <h3
+                className="text-[0.68rem] font-semibold uppercase tracking-wide text-foreground-muted"
+                id="simulador-resultado"
+              >
+                Resultado
+              </h3>
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Cuota Resultante
+                  </span>
+                  <Input
+                    className="h-9 text-sm font-semibold"
+                    readOnly
+                    {...register("cuotaResultante")}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Capital Financiado
+                  </span>
+                  <Input
+                    className="h-9 text-xs"
+                    readOnly
+                    {...register("capitalFinanciado")}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Total
+                  </span>
+                  <Input
+                    className="h-9 text-xs"
+                    readOnly
+                    {...register("total")}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Tasa
+                  </span>
+                  <Input className="h-8 text-xs" readOnly {...register("tasa")} />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Gastos Adm. (Liquidación)
+                  </span>
+                  <Input
+                    className="h-8 text-xs"
+                    readOnly
+                    {...register("gastosAdministrativos")}
+                  />
+                </label>
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
                     Fecha Última Cuota
@@ -443,7 +444,17 @@ export function SimuladorPrestamoModal({
                   />
                 </label>
               </div>
-            </div>
+            </section>
+
+            <label className="grid gap-1">
+              <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                Condiciones
+              </span>
+              <textarea
+                className={`${FIELD_CLASSNAME} h-14 resize-none py-1.5`}
+                {...register("condiciones")}
+              />
+            </label>
 
             <div className="h-[23rem] overflow-auto rounded-sm border border-border">
               {cuotasDetalle && cuotasDetalle.length > 0 ? (
