@@ -1,0 +1,78 @@
+{
+  "scope": "T24: separately authorized maximum one additional synthetic socio; rejected and no socio observed. Do not resend historical payload.",
+  "records": [
+    {
+      "label": "T24-preflight",
+      "at": "2026-09-15T14:07:07.976497+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T24' OR [CUIT] = '27990915240' OR [NroDoc] = 99091524",
+        "campos": "ID",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    },
+    {
+      "label": "T24-create",
+      "at": "2026-09-15T14:07:08.120399+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Simulador/CrearSocioMutual",
+      "request": {
+        "campos": {
+          "Apellido": "ZZZ PRUEBA API NO OPERAR 20260915 T24",
+          "FechaDeNacimiento": "1990-03-15",
+          "Nombre": "SOCIO FICTICIO",
+          "NroDoc": "99091524",
+          "Sexo": "Femenino",
+          "TipoDoc": "96",
+          "CUIT": "27990915240",
+          "Domicilio": {
+            "Calle": "CALLE FICTICIA PRUEBA API NO OPERAR",
+            "CodigoPostal": "0000",
+            "Localidad": 12,
+            "NroPuerta": "0"
+          },
+          "HistoriaCategorias": [
+            {
+              "Categoria": 2,
+              "Fecha": "2020-01-01"
+            }
+          ],
+          "Soc Aux": {
+            "Caja40": 50
+          }
+        },
+        "validar": false
+      },
+      "stage": "response",
+      "status": 200,
+      "response": {
+        "Ok": false,
+        "ID": null,
+        "Error": "La propiedad 'Soc Aux' no existe en el tipo 'SocioMutual'."
+      }
+    },
+    {
+      "label": "T24-readback",
+      "at": "2026-09-15T14:07:08.401187+00:00",
+      "method": "POST",
+      "base": "https://celesol.dyndns.org:5002",
+      "path": "/api/Empresa/EvaluateList",
+      "request": {
+        "tipo": "F.Module.SocioMutual",
+        "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T24' OR [CUIT] = '27990915240' OR [NroDoc] = 99091524",
+        "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count();SocAux.ID;SocAux.Caja40",
+        "max": 5
+      },
+      "stage": "response",
+      "status": 200,
+      "response": []
+    }
+  ]
+}

@@ -17,6 +17,9 @@ Este documento sirve para ubicar rapidamente el sistema correcto, su fuente de v
 
 ## Regla para elegir la fuente
 
+Para contratos de `celesol.dyndns.org`, empezar por [APIs de Celesol / Vimarx](apis/vimarx/README.md).
+La referencia distingue pruebas en vivo, Swagger y contratos observados en consumidores.
+
 Antes de consultar un informe, identificar que proceso lo genero. Cuando el pedido busca trazabilidad, casos actuales o datos completos, consultar la API, base, logs o exportacion fuente. Usar el Excel como fuente solo cuando el pedido sea especificamente sobre ese archivo.
 
 Orden recomendado:

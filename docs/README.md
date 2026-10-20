@@ -4,6 +4,7 @@ Documentacion tecnica transversal de la repo.
 
 ## Documentos actuales
 
+- [APIs de Celesol / Vimarx](apis/vimarx/README.md): referencia compartida de endpoints, campos y formatos, consultas de verificación y evidencia de pruebas de socios
 - `architecture.md`: arquitectura general, capas, carpetas y modelo dominio/namespace
 - `agent-systems.md`: mapa operativo para agentes, fuentes de verdad, accesos y limites entre sistemas
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes

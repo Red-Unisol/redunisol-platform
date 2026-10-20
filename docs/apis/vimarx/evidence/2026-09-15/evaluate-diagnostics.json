@@ -1,0 +1,56 @@
+[
+  {
+    "label": "T03-readback",
+    "at": "2026-09-15T13:13:43.185046+00:00",
+    "method": "POST",
+    "base": "https://celesol.dyndns.org:5002",
+    "path": "/api/Empresa/EvaluateList",
+    "request": {
+      "tipo": "F.Module.SocioMutual",
+      "cmd": "[Apellido] = 'ZZZ PRUEBA API NO OPERAR 20260915 T03' OR [CUIT] = '30990915039' OR [NroDoc] = 99091503",
+      "campos": "ID;Apellido;Nombre;NombreCompleto;NroDoc;CUIT;TipoDoc.ID;TipoDoc.Descripcion;Sexo;FechaDeNacimiento;Celular;Email;Domicilio.Calle;Domicilio.NroPuerta;Domicilio.CodigoPostal;Domicilio.Localidad.ID;Domicilio.Localidad.Nombre;HistoriaCategorias.Count()",
+      "max": 5
+    },
+    "stage": "response",
+    "status": 400,
+    "response": "El camino de la propiedad 'ID' no es correcto para el tipo 'ClasesBase.TiposDocumentos'."
+  },
+  {
+    "label": "category-readback",
+    "at": "2026-09-15T13:16:03.618310+00:00",
+    "method": "POST",
+    "base": "https://celesol.dyndns.org:5002",
+    "path": "/api/Empresa/EvaluateList",
+    "request": {
+      "tipo": "F.Module.SocioMutual",
+      "cmd": "[ID] = 152761",
+      "campos": "ID;HistoriaCategorias[Categoria.ID = 2].Count();HistoriaCategorias[Fecha = #2020-01-01#].Count()",
+      "max": 1
+    },
+    "stage": "response",
+    "status": 200,
+    "response": [
+      [
+        152761,
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "label": "doctype-readback",
+    "at": "2026-09-15T13:16:03.737245+00:00",
+    "method": "POST",
+    "base": "https://celesol.dyndns.org:5002",
+    "path": "/api/Empresa/EvaluateList",
+    "request": {
+      "tipo": "F.Module.SocioMutual",
+      "cmd": "[ID] = 152761",
+      "campos": "ID;TipoDoc.Codigo;TipoDoc.Descripcion",
+      "max": 1
+    },
+    "stage": "response",
+    "status": 400,
+    "response": "El camino de la propiedad 'Codigo' no es correcto para el tipo 'ClasesBase.TiposDocumentos'."
+  }
+]
