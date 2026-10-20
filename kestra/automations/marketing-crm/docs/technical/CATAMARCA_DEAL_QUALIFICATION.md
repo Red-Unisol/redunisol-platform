@@ -136,7 +136,7 @@ ejecución, una por vez. Es idempotente por etapa: si ya salio de `C1:KESTRA_PEN
 reasignar.
 
 El clasificador selecciona el lote antes de modificar etapas, para no saltar casos
-al paginar. Antes del clasificador, la tarea `hay_pendientes` consulta a Bitrix por HTTP,
+al paginar. Antes del clasificador, la tarea `hay_pendientes` (script Python con runner Process) consulta a Bitrix,
 sin contenedor, si hay negociaciones en `C1:KESTRA_PENDING`; si no hay, el clasificador
 no corre y las salidas quedan en sus valores por defecto (`action: no_pending`,
 `events_json: []`). Cada ejecución con pendientes usa un contenedor y conserva
