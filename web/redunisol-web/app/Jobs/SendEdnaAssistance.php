@@ -73,7 +73,7 @@ class SendEdnaAssistance implements ShouldQueue
             $content = $this->landing ? ['contentType' => 'TEXT', 'text' => Crypt::decryptString($case->link_text)]
                 : ['contentType' => 'FLOW', 'flowId' => (int) EdnaAssistance::FLOW_ID,
                     'action' => 'navigate', 'caption' => 'Continuar por acá',
-                    'text' => '¿Pudiste completar tu solicitud? Si te resultó complicado, te ayudamos por acá. Podés continuar aunque no tengas tu CUIL o email a mano.'];
+                    'text' => '¿Pudiste completar tu solicitud? Si te resultó complicado, te ayudamos por acá. Para pedir ayuda necesitamos tu CUIL; el email es opcional.'];
             $claimed = DB::transaction(function () use ($case, $key, $prefix) {
                 // Serialize distinct Router cycles for the same recipient, retaining suppressed attempts.
                 DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $case->scope, 'created_at' => now(), 'updated_at' => now()]);

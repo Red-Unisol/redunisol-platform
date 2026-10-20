@@ -1,0 +1,227 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "JUBILADOS_CORDOBA",
+      "title": "Jubilados Córdoba",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "jubilados_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Te ayudamos a continuar"
+              },
+              {
+                "type": "TextBody",
+                "text": "Contanos de dónde cobrás tus haberes y te indicamos el paso siguiente."
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "organismo",
+                "label": "Origen de tus haberes",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "caja_cordoba",
+                    "title": "Caja de Jubilaciones Córdoba"
+                  },
+                  {
+                    "id": "anses",
+                    "title": "ANSES"
+                  },
+                  {
+                    "id": "ayuda",
+                    "title": "Necesito ayuda"
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.organismo} == 'caja_cordoba'",
+                "then": [
+                  {
+                    "type": "TextBody",
+                    "text": "Podés completar tu solicitud online o pedirnos ayuda para continuar."
+                  },
+                  {
+                    "type": "RadioButtonsGroup",
+                    "name": "continuidad_caja",
+                    "label": "¿Cómo querés seguir?",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "formulario",
+                        "title": "Completar solicitud online"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "Ayuda para completarla"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "If",
+                    "condition": "${form.continuidad_caja} == 'ayuda'",
+                    "then": [
+                      {
+                        "type": "TextInput",
+                        "name": "cuil_caja",
+                        "label": "CUIL",
+                        "input-type": "text",
+                        "required": true,
+                        "helper-text": "Obligatorio. 11 dígitos, sin puntos ni guiones.",
+                        "pattern": "^[0-9]{11}$"
+                      },
+                      {
+                        "type": "TextInput",
+                        "name": "email_caja",
+                        "label": "Email",
+                        "input-type": "text",
+                        "required": false,
+                        "helper-text": "Opcional. Ej.: nombre@email.com. Podés continuar sin completarlo."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.organismo} == 'anses'",
+                "then": [
+                  {
+                    "type": "RadioButtonsGroup",
+                    "name": "banco_anses",
+                    "label": "Banco de cobro",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "bancor",
+                        "title": "Bancor"
+                      },
+                      {
+                        "id": "otro",
+                        "title": "Otro banco"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "If",
+                    "condition": "${form.banco_anses} == 'bancor'",
+                    "then": [
+                      {
+                        "type": "TextBody",
+                        "text": "Podés completar tu solicitud online o pedirnos ayuda para continuar."
+                      },
+                      {
+                        "type": "RadioButtonsGroup",
+                        "name": "continuidad_anses",
+                        "label": "¿Cómo querés seguir?",
+                        "required": true,
+                        "data-source": [
+                          {
+                            "id": "formulario",
+                            "title": "Completar solicitud online"
+                          },
+                          {
+                            "id": "ayuda",
+                            "title": "Ayuda para completarla"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "If",
+                        "condition": "${form.continuidad_anses} == 'ayuda'",
+                        "then": [
+                          {
+                            "type": "TextInput",
+                            "name": "cuil_anses",
+                            "label": "CUIL",
+                            "input-type": "text",
+                            "required": true,
+                            "helper-text": "Obligatorio. 11 dígitos, sin puntos ni guiones.",
+                            "pattern": "^[0-9]{11}$"
+                          },
+                          {
+                            "type": "TextInput",
+                            "name": "email_anses",
+                            "label": "Email",
+                            "input-type": "text",
+                            "required": false,
+                            "helper-text": "Opcional. Ej.: nombre@email.com. Podés continuar sin completarlo."
+                          }
+                        ]
+                      }
+                    ],
+                    "else": [
+                      {
+                        "type": "TextBody",
+                        "text": "Para continuar, necesitás cobrar tus haberes de ANSES por Bancor. Si cobrás por otro banco, por el momento no tenemos esta opción disponible."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.organismo} == 'ayuda'",
+                "then": [
+                  {
+                    "type": "TextBody",
+                    "text": "Dejanos tu CUIL y un asesor te ayuda a identificar la opción que te corresponde. El email es opcional."
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "cuil_ayuda",
+                    "label": "CUIL",
+                    "input-type": "text",
+                    "required": true,
+                    "helper-text": "Obligatorio. 11 dígitos, sin puntos ni guiones.",
+                    "pattern": "^[0-9]{11}$"
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "email_ayuda",
+                    "label": "Email",
+                    "input-type": "text",
+                    "required": false,
+                    "helper-text": "Opcional. Ej.: nombre@email.com. Podés continuar sin completarlo."
+                  }
+                ]
+              },
+              {
+                "type": "TextCaption",
+                "text": "Al enviar, aceptás que Red Unisol consulte tu situación crediticia y te contacte por este medio."
+              },
+              {
+                "type": "Footer",
+                "label": "Enviar",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "organismo": "${form.organismo}",
+                    "continuidad_caja": "${form.continuidad_caja}",
+                    "email_caja": "${form.email_caja}",
+                    "cuil_caja": "${form.cuil_caja}",
+                    "banco_anses": "${form.banco_anses}",
+                    "continuidad_anses": "${form.continuidad_anses}",
+                    "email_anses": "${form.email_anses}",
+                    "cuil_anses": "${form.cuil_anses}",
+                    "email_ayuda": "${form.email_ayuda}",
+                    "cuil_ayuda": "${form.cuil_ayuda}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

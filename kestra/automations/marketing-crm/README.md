@@ -6,7 +6,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
-- [Asistencia Jubilados Córdoba (23231 / 23081)](../../../docs/whatsapp-jubilados-assistance.md): rescate a 30 minutos, CUIL/email opcionales, simulación y piloto cerrado; apagado por defecto.
+- [Asistencia Jubilados Córdoba (23231 / 23081)](../../../docs/whatsapp-jubilados-assistance.md): rescate a 30 minutos, CUIL obligatorio y email opcional en el Flow, simulación y piloto cerrado; apagado por defecto.
 
 - [WhatsApp fuera de horario de Ventas (23233)](../../../docs/whatsapp-out-of-hours.md): candidatos de Kestra, calendario, avisos sin enlaces y activación coordinada.
 

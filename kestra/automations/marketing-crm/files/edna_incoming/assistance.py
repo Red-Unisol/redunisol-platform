@@ -1,10 +1,10 @@
-"""Jubilados continuation contract. Identity fields are optional, never fabricated."""
+"""Flow requires CUIL; incomplete/legacy callbacks safely retain manual review."""
 
 import json
 import re
 from datetime import datetime
 
-FLOW_ID = "1806329230567984"
+FLOW_ID = "1993586314642842"
 VERSION = "jubilados-assistance-v1"
 
 

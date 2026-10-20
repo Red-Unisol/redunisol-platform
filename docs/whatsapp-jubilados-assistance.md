@@ -1,14 +1,18 @@
 # Jubilados Córdoba: asistencia por WhatsApp (23231 / 23081)
 
-Implementación preparada para piloto. CUIL y email son **opcionales**, según la
-definición posterior del usuario. Una omisión o un formato inválido no constituye
-un rechazo comercial. No se inventan identidades ni correos y no se borra un email
-existente porque la respuesta venga vacía.
+Implementación preparada para piloto. Definición vigente del 20/10/2026: el
+**CUIL es obligatorio y el email es opcional** en las tres ramas de ayuda del Flow.
+El CUIL debe tener 11 dígitos; el backend además comprueba su dígito verificador.
+El backend tolera respuestas incompletas o inválidas recibidas fuera de la interfaz:
+si no recupera un CUIL válido de una identidad inequívoca, deriva a revisión manual.
+No inventa identidades ni rechaza comercialmente por falta de datos, y no borra un
+email existente cuando la respuesta venga vacía.
 
 ## Estado de entrega y aislamiento
 
-- La configuración nueva queda apagada y la allowlist vacía. No se modifica ningún
-  entorno cifrado activo, configuración de Meta/Edna/Bitrix ni runtime de VPS.
+- La configuración de ejecución queda apagada y la allowlist vacía. No se modifica
+  ningún entorno cifrado activo ni runtime de VPS. La preparación externa del
+  20/10/2026 se detalla más abajo; por sí sola no activa mensajes ni altas CRM.
 - `EDNA_ASSISTANCE_ENABLED` habilita recepción/piloto; `EDNA_ASSISTANCE_SEND_ENABLED`
   permite mensajes; `EDNA_ASSISTANCE_CRM_ENABLED` permite solicitar persistencia.
   Los tres son `false` por defecto. La lista explícita de teléfonos es obligatoria:
@@ -41,7 +45,7 @@ con hash del teléfono y fecha (sin CUIL/email). Así se cancela el rescate aunq
 el job del formulario todavía no haya creado el lead en Bitrix. Fuera del piloto
 y con la función apagada, el formulario no agrega esta escritura.
 
-La respuesta del Flow `1806329230567984` se valida contra canal, destinatario,
+La respuesta del Flow `1993586314642842` se valida contra canal, destinatario,
 requestId, mensaje saliente confirmado y ventana de conversación. Kestra interpreta
 únicamente la rama final; campos ocultos de otras ramas nunca aportan CUIL/email.
 
@@ -49,14 +53,15 @@ requestId, mensaje saliente confirmado y ventana de conversación. Kestra interp
 |---|---|
 | Caja + formulario | Landing con `cordoba_jubilado_caja` y referencia válida. |
 | ANSES/Bancor + formulario | Landing con `cordoba_jubilado_anses_bancor` y referencia válida. |
-| Caja + ayuda | CUIL/email opcionales; Jubilado Provincial, sin inventar banco. |
-| ANSES/Bancor + ayuda | CUIL/email opcionales; Jubilado Nacional, Bancor. |
+| Caja + ayuda | CUIL obligatorio, email opcional; Jubilado Provincial, sin inventar banco. |
+| ANSES/Bancor + ayuda | CUIL obligatorio, email opcional; Jubilado Nacional, Bancor. |
 | ANSES/otro banco | Perdido por OTRO BANCO, sin negociación elegible. |
 | Organismo desconocido | Revisión manual, incluso cuando informa CUIL. |
 
 Con CUIL válido, aportado o recuperado de una identidad inequívoca por teléfono,
 el lead entra al prefill existente (ARCA/Vimarx/BCRA) y su clasificación posterior.
-Sin CUIL queda en una etapa manual explícita, fuera de INGRESO/PRECLASIFICACIÓN;
+Como resguardo para respuestas incompletas o históricas, sin CUIL queda en una etapa
+manual explícita, fuera de INGRESO/PRECLASIFICACIÓN;
 la falta de datos no habilita la precalificación ni crea una negociación automática.
 Un asesor completa identidad/organismo y mueve el caso a INGRESO cuando corresponde.
 No se inventa un nombre: la denominación se completa por el enriquecimiento existente.
@@ -91,12 +96,40 @@ php vendor/bin/pest tests/Feature/EdnaAssistanceTest.php tests/Feature/WhatsAppS
 Las APIs se simulan y la base es SQLite en memoria. Las fixtures son sintéticas.
 El preview fuerza `dry_run=true`, aunque el archivo de entrada indique otra cosa.
 
-## Preparación externa para un piloto posterior
+## Plataformas verificadas el 20/10/2026
 
-1. Marketing verifica/publica el Flow con ambos campos opcionales y confirma su ID.
-   Si cambia, actualizar las constantes PHP/Python y las pruebas antes de habilitar.
-2. Definir una etapa de lead manual existente y responsable. Configurar
-   `ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW`; el intake rechaza destinos automáticos
+- **Meta:** publicado el Flow `1993586314642842`, en la cuenta WhatsApp Business
+  Red Unisol `823632237115803`. Se conservan el Router `1850162769693486` y la versión
+  de continuidad anterior `1806329230567984`. El JSON de la nueva versión está en
+  [whatsapp-jubilados-continuidad.flow.json](whatsapp-jubilados-continuidad.flow.json).
+  CUIL obligatorio y email opcional en Caja/ayuda, ANSES/Bancor/ayuda y ayuda general.
+  Las condiciones simples anidadas evitan las expresiones anteriores que ocultaban
+  campos en la vista previa. Los diez nombres del payload se conservan.
+- **Bitrix:** creados y releídos los siete campos de asistencia en lead/contacto/deal
+  (21 campos string, simples y no obligatorios). La etapa de lead
+  `UC_WA_ASSIST_REVIEW` (ID `821`, «ASISTENCIA WHATSAPP - REVISION MANUAL») es abierta,
+  con orden 25. No se movieron registros ni se agregaron robots. Responsable del
+  intake manual: Maru `57`. Las opciones de motor `Kestra`/`Manual`, origen `Sin origen`
+  y el esquema previo de atribución ya existían. CUIL y email siguen sin ser obligatorios
+  en el esquema global CRM para conservar los demás ingresos.
+- **Edna:** canal Ventas `2423` y cascada `2557` activos y aprobados. El webhook
+  «Red Unisol Main» ya recibe mensajes entrantes, exige autenticación y conserva
+  Bitrix como destino principal y `https://redunisol.com.ar/api/webhooks/edna/incoming`
+  como URL adicional; esta última respondió HEAD 200. No hizo falta modificarlo.
+  Los Flows se envían por API con su ID publicado, dentro de la conversación abierta;
+  no requieren una nueva plantilla ni un nuevo webhook para este piloto.
+
+Meta validó el JSON sin errores. En su vista previa se comprobó que las tres ramas
+de ayuda bloquean CUIL vacío y permiten CUIL de 11 dígitos con email vacío. Esto
+verifica la interfaz; la entrega en un teléfono y la persistencia real siguen siendo
+parte del piloto. No se enviaron mensajes ni se crearon leads de prueba.
+
+## Activación posterior del piloto
+
+1. Usar el Flow publicado `1993586314642842`, alineado en PHP/Python y pruebas.
+   Si cambia, actualizar esas constantes y el JSON fuente antes de habilitar.
+2. Configurar `ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW=UC_WA_ASSIST_REVIEW`
+   por el circuito de entorno Git-managed; el intake rechaza destinos automáticos
    o finales. `BITRIX24_ASSISTANCE_REVIEW_USER_ID` admite responsable específico en
    pruebas Python; el flow usa el fallback Maru (`57`).
 3. Comprobar el esquema habitual de atribución, opciones de motor comercial
@@ -122,10 +155,11 @@ El preview fuerza `dry_run=true`, aunque el archivo de entrada indique otra cosa
    manual antes de activar ambas compuertas CRM. Para procesar un preview existente:
    `php artisan edna:assistance process CASO --dispatch`. No reenvía el Flow.
 
-UAT: las cuatro combinaciones de identidad, valores inválidos omitibles, email previo,
+UAT: CUIL obligatorio en las tres ramas de ayuda, email omitido o inválido, email previo,
 CUIL previo inequívoco, cambio de rama, formulario completado antes del rescate o
 antes del intake, persona en gestión, caso duplicado, fuente conservada y omisión
-de datos sin rechazo. Verificar el mensaje/Flow recibido y el lead/deal reales;
+de datos recibida fuera de la interfaz sin rechazo comercial. Verificar el
+mensaje/Flow recibido y el lead/deal reales;
 una respuesta HTTP aceptada no prueba entrega ni persistencia.
 
 ## Recuperación y retención
