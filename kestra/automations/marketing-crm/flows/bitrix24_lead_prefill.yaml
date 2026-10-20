@@ -20,8 +20,34 @@ inputs:
   required: true
   defaults: 3
 tasks:
+# Pregunta a Bitrix si hay leads en INGRESO desde date_from (el mismo filtro que la
+# seleccion); el lote solo se selecciona si hay. Runner Process: sin contenedor. No es
+# core.http.Request porque esa tarea guarda la URL (con el path secreto) en sus outputs.
+- id: hay_pendientes
+  type: io.kestra.plugin.scripts.python.Script
+  timeout: PT1M
+  taskRunner:
+    type: io.kestra.plugin.core.runner.Process
+  env:
+    BITRIX24_LIST_URL: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_WEBHOOK_PATH') }}/crm.lead.list.json"
+    BITRIX24_LEAD_STATUS_NEW: "{{ envs.bitrix24_lead_status_new ?? 'UC_5N2OEO' }}"
+    BACKFILL_DATE_FROM: '{{ inputs.date_from }}'
+  script: |
+    import json, os, urllib.request
+    lead_filter = {"STATUS_ID": os.environ["BITRIX24_LEAD_STATUS_NEW"]}
+    date_from = os.environ.get("BACKFILL_DATE_FROM", "").strip()
+    if date_from:
+        lead_filter[">=DATE_CREATE"] = date_from
+    body = json.dumps({"filter": lead_filter, "select": ["ID"]}).encode()
+    request = urllib.request.Request(os.environ["BITRIX24_LIST_URL"], data=body,
+                                     headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        total = json.load(response).get("total")
+    # Sin total no se sabe: corre la seleccion, como antes de esta tarea.
+    print("::" + json.dumps({"outputs": {"total": total if isinstance(total, int) else 1}}) + "::")
 - id: seleccionar_lote
   type: io.kestra.plugin.scripts.python.Commands
+  runIf: "{{ (outputs.hay_pendientes.vars.total ?? 1) > 0 }}"
   namespaceFiles:
     enabled: true
     include:
@@ -52,7 +78,7 @@ tasks:
   tasks:
   - id: procesar_1
     type: io.kestra.plugin.core.flow.Subflow
-    runIf: '{{ outputs.seleccionar_lote.vars.count > 0 }}'
+    runIf: '{{ (outputs.seleccionar_lote.vars.count ?? 0) > 0 }}'
     namespace: '{{ flow.namespace }}'
     flowId: bitrix24_lead_prefill_one
     inputs:
@@ -66,7 +92,7 @@ tasks:
     transmitFailed: false
   - id: procesar_2
     type: io.kestra.plugin.core.flow.Subflow
-    runIf: '{{ outputs.seleccionar_lote.vars.count > 1 }}'
+    runIf: '{{ (outputs.seleccionar_lote.vars.count ?? 0) > 1 }}'
     namespace: '{{ flow.namespace }}'
     flowId: bitrix24_lead_prefill_one
     inputs:
@@ -81,15 +107,15 @@ tasks:
 - id: verificar_lote
   type: io.kestra.plugin.core.execution.Assert
   conditions:
-  - '{{ outputs.seleccionar_lote.vars.count > 0 ? outputs.procesar_1.state == ''SUCCESS'' : true }}'
-  - '{{ outputs.seleccionar_lote.vars.count > 1 ? outputs.procesar_2.state == ''SUCCESS'' : true }}'
+  - '{{ (outputs.seleccionar_lote.vars.count ?? 0) > 0 ? outputs.procesar_1.state == ''SUCCESS'' : true }}'
+  - '{{ (outputs.seleccionar_lote.vars.count ?? 0) > 1 ? outputs.procesar_2.state == ''SUCCESS'' : true }}'
 outputs:
 - id: lead_ids
   type: ARRAY
-  value: '{{ outputs.seleccionar_lote.vars.lead_ids }}'
+  value: '{{ outputs.seleccionar_lote.vars.lead_ids ?? [] }}'
 - id: count
   type: INT
-  value: '{{ outputs.seleccionar_lote.vars.count }}'
+  value: '{{ outputs.seleccionar_lote.vars.count ?? 0 }}'
 triggers:
 - id: cada_minuto
   type: io.kestra.plugin.core.trigger.Schedule

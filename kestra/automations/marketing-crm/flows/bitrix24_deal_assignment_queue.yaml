@@ -15,8 +15,36 @@ labels:
   integration: bitrix24
 
 tasks:
+  # Pregunta a Bitrix si hay negociaciones en la cola; el procesamiento solo corre si
+  # hay. Runner Process: sin contenedor. No es core.http.Request porque esa tarea guarda
+  # la URL (con el path secreto del webhook) en sus outputs.
+  - id: hay_pendientes
+    type: io.kestra.plugin.scripts.python.Script
+    timeout: PT1M
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    env:
+      BITRIX24_LIST_URL: "{{ envs.bitrix24_base_url }}/{{ secret('BITRIX24_WEBHOOK_PATH') }}/crm.item.list.json"
+      BITRIX24_DEAL_CATEGORY_ID: "{{ envs.bitrix24_deal_category_id ?? '1' }}"
+      BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID: "{{ envs.bitrix24_deal_assignment_queue_stage_id ?? 'C1:KESTRA_QUEUE' }}"
+    script: |
+      import json, os, urllib.request
+      body = json.dumps({
+          "entityTypeId": 2,
+          "filter": {"=categoryId": os.environ["BITRIX24_DEAL_CATEGORY_ID"],
+                     "=stageId": os.environ["BITRIX24_DEAL_ASSIGNMENT_QUEUE_STAGE_ID"]},
+          "select": ["id"],
+      }).encode()
+      request = urllib.request.Request(os.environ["BITRIX24_LIST_URL"], data=body,
+                                       headers={"Content-Type": "application/json"})
+      with urllib.request.urlopen(request, timeout=15) as response:
+          total = json.load(response).get("total")
+      # Sin total no se sabe: corre el procesamiento, como antes de esta tarea.
+      print("::" + json.dumps({"outputs": {"total": total if isinstance(total, int) else 1}}) + "::")
+
   - id: procesar_colas
     type: io.kestra.plugin.scripts.python.Commands
+    runIf: "{{ (outputs.hay_pendientes.vars.total ?? 1) > 0 }}"
     namespaceFiles:
       enabled: true
       include:
@@ -69,25 +97,25 @@ tasks:
 outputs:
   - id: ok
     type: BOOL
-    value: "{{ outputs.procesar_colas.vars.ok }}"
+    value: "{{ outputs.procesar_colas.vars.ok ?? true }}"
   - id: processed_at
     type: STRING
     value: "{{ outputs.procesar_colas.vars.processed_at ?? '' }}"
   - id: event_count
     type: INT
-    value: "{{ outputs.procesar_colas.vars.event_count }}"
+    value: "{{ outputs.procesar_colas.vars.event_count ?? 0 }}"
   - id: distributed_count
     type: INT
-    value: "{{ outputs.procesar_colas.vars.distributed_count }}"
+    value: "{{ outputs.procesar_colas.vars.distributed_count ?? 0 }}"
   - id: waiting_count
     type: INT
-    value: "{{ outputs.procesar_colas.vars.waiting_count }}"
+    value: "{{ outputs.procesar_colas.vars.waiting_count ?? 0 }}"
   - id: closed_count
     type: INT
-    value: "{{ outputs.procesar_colas.vars.closed_count }}"
+    value: "{{ outputs.procesar_colas.vars.closed_count ?? 0 }}"
   - id: events_json
     type: STRING
-    value: "{{ outputs.procesar_colas.vars.events_json }}"
+    value: "{{ outputs.procesar_colas.vars.events_json ?? '[]' }}"
 
 triggers:
   - id: cada_minuto
