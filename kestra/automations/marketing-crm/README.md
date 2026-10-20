@@ -78,6 +78,9 @@ evita liberar el selector mientras el otro hijo sigue escribiendo.
 No se solapan en una tanda los leads que comparten contacto o DNI (incluido el DNI
 extraido del CUIL, para cubrir la resolucion de identidad Finguru).
 Los duplicados conservan su lugar para tandas posteriores; no se descartan.
+Antes de seleccionar, la tarea `hay_pendientes` (script Python con runner Process,
+sin contenedor) cuenta en Bitrix los leads en INGRESO desde `date_from`; si no hay,
+la seleccion no corre y la ejecucion termina con `count: 0`.
 
 `bitrix24_lead_prefill_one` tiene un limite global de dos ejecuciones y no tiene
 trigger. No ejecutar el hijo manualmente ni reanudar ejecuciones historicas mientras
