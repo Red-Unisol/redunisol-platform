@@ -9,6 +9,7 @@ export type RefreshTokenRecord = {
   expiresAt: Date;
   id: string;
   revokedAt: Date | null;
+  replacedByTokenHash: string | null;
   tokenHash: string;
   user: AuthUser;
   userId: string;

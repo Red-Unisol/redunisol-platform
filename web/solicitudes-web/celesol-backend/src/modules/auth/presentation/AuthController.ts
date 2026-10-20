@@ -278,6 +278,7 @@ export class AuthController {
   };
 
   refresh = async (req: CookieRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
     try {
       const session = await this.refreshSessionUseCase.execute({
         metadata: this.getRequestMetadata(req),
@@ -285,8 +286,25 @@ export class AuthController {
       });
 
       setAuthCookies(res, session.tokens, this.authCookieConfig);
-      res.status(200).json({ user: actingContext.getStore()?.selectedUser ?? session.user });
+      res
+        .status(200)
+        .json({ user: actingContext.getStore()?.selectedUser ?? session.user });
     } catch (error) {
+      const failure = (error instanceof Error ? error : { name: "UnknownError" }) as {
+        name?: string;
+        code?: string;
+        statusCode?: number;
+      };
+      if ((failure.statusCode ?? 500) >= 500) {
+        // Never log the request, cookies, error message or Prisma query inputs.
+        console.error("auth_refresh_failed", {
+          errorName: failure.name,
+          databaseCode: /^P\d{4}$/.test(failure.code ?? "")
+            ? failure.code
+            : undefined,
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
       next(error);
     }
   };

@@ -6,7 +6,6 @@ import {
   getCurrentUser,
   login,
   logout,
-  refreshSession,
   updateOwnProfile,
   type AuthUser,
   type ChangeOwnPasswordRequest,
@@ -45,17 +44,6 @@ export function useLoginMutation() {
 
   return useMutation({
     mutationFn: (payload: LoginRequest) => login(payload),
-    onSuccess: ({ user }) => {
-      queryClient.setQueryData<AuthUser | null>(authQueryKeys.session, user);
-    },
-  });
-}
-
-export function useRefreshSessionMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: refreshSession,
     onSuccess: ({ user }) => {
       queryClient.setQueryData<AuthUser | null>(authQueryKeys.session, user);
     },
