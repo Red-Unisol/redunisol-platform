@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArchiveRestore,
   ArchiveX,
+  Calculator,
   CloudDownload,
   Ellipsis,
   FileCode,
@@ -15,6 +16,7 @@ import type { AuthUser } from "@/modules/auth/services/auth-api";
 import { Button } from "@/shared/components/ui/button";
 
 import { SolicitudesCoreListFooter } from "@/modules/solicitudes-core/components/solicitudes-core-list-footer";
+import { useLineasDelAgenteQuery } from "@/modules/solicitudes-core/hooks/use-lineas-del-agente-query";
 import { useSolicitudesCoreRecientesQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-recientes-query";
 import {
   resolveListRefreshState,
@@ -25,6 +27,8 @@ import {
   filterSolicitudesTableRows,
 } from "@/modules/solicitudes/utils/solicitudes-table-filters";
 import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
+import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
+import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
 import {
   SolicitudesTable,
   type SolicitudesTableColumn,
@@ -35,6 +39,12 @@ import {
   SolicitudesToolbar,
   type SolicitudesToolbarAction,
 } from "@/modules/solicitudes/components/solicitudes-toolbar";
+
+const SimuladorPrestamoModal = lazy(() =>
+  loadSimuladorPrestamoModal().then((module) => ({
+    default: module.SimuladorPrestamoModal,
+  })),
+);
 
 const CORE_RECIENTES_COLUMNS: SolicitudesTableColumn[] = [
   {
@@ -95,7 +105,11 @@ const CORE_RECIENTES_COLUMNS: SolicitudesTableColumn[] = [
   },
 ];
 
-const CORE_RECIENTES_LEFT_ACTIONS: SolicitudesToolbarAction[] = [];
+// Simulador suelto, sin solicitud: para vendedores y Riesgo, con las lineas
+// del agente de cada uno.
+const CORE_RECIENTES_LEFT_ACTIONS: SolicitudesToolbarAction[] = [
+  { icon: Calculator, id: "simulador", label: "Simulador" },
+];
 
 const CORE_RECIENTES_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
   { disabled: true, id: "borrar-mover", label: "Borrar/Mover" },
@@ -223,6 +237,9 @@ function RecientesList({ user }: { user: AuthUser }) {
     {},
   );
   const isRefreshPendingRef = useRef(false);
+  const [isSimuladorOpen, setIsSimuladorOpen] = useState(false);
+  const lineasQuery = useLineasDelAgenteQuery(isSimuladorOpen);
+  useEffect(() => prefetchWhenIdle(loadSimuladorPrestamoModal), []);
   const { data, error, isFetching, isLoading, refetch } =
     useSolicitudesCoreRecientesQuery({
       vista,
@@ -340,7 +357,11 @@ function RecientesList({ user }: { user: AuthUser }) {
           if (actionId === "refresh") {
             void handleRefresh();
           }
+          if (actionId === "simulador") {
+            setIsSimuladorOpen(true);
+          }
         }}
+        onSimularIntent={loadSimuladorPrestamoModal}
         onSearchChange={(value) => {
           setSearchTerm(value);
           setPage(1);
@@ -436,6 +457,16 @@ function RecientesList({ user }: { user: AuthUser }) {
         selectedCount={selectedIds.length}
         totalItems={Math.max(tableRows.length, totalItems)}
       />
+      {isSimuladorOpen ? (
+        <Suspense fallback={null}>
+          <SimuladorPrestamoModal
+            isLoadingLineas={lineasQuery.isLoading}
+            lineas={lineasQuery.data ?? []}
+            onOpenChange={setIsSimuladorOpen}
+            open={isSimuladorOpen}
+          />
+        </Suspense>
+      ) : null}
     </article>
   );
 }

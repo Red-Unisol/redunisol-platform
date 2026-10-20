@@ -3048,7 +3048,7 @@ export function SolicitudesActualDetallePage() {
   const [isUploadingAdjunto, setIsUploadingAdjunto] = useState(false);
   const [isGarantiaModalOpen, setIsGarantiaModalOpen] = useState(false);
   const [isSimuladorOpen, setIsSimuladorOpen] = useState(false);
-  const { data: lineasSimulador = [] } = useLineasPrestamoQuery(solicitudId);
+  const { data: lineasSimulador = [], isLoading: isLoadingLineasSimulador } = useLineasPrestamoQuery(solicitudId);
   const [datosPersonalesTab, setDatosPersonalesTab] =
     useState<DatosPersonalesTab>("datosPersonales");
   const [solicitanteNavigation, setSolicitanteNavigation] = useState(0);
@@ -4405,6 +4405,7 @@ export function SolicitudesActualDetallePage() {
           fallback={<ModalLoadingOverlay label="Cargando simulador..." />}
         >
           <SimuladorPrestamoModal
+            isLoadingLineas={isLoadingLineasSimulador}
             solicitudId={solicitudId}
             onLimitsAdjusted={() => { void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) }); }}
             defaultLineaOid={

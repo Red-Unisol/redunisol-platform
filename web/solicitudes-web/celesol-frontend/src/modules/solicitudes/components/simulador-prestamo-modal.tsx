@@ -55,6 +55,8 @@ export type SimulacionAplicada = {
 
 type SimuladorPrestamoModalProps = {
   lineas?: LineaPrestamoPresolicitud[];
+  // Mientras se piden las lineas (simulador suelto de las listas).
+  isLoadingLineas?: boolean;
   defaultLineaOid?: string;
   solicitudId?: string;
   onLimitsAdjusted?: () => void;
@@ -88,6 +90,7 @@ function getLineaDefaults(linea?: LineaPrestamoPresolicitud | null) {
 
 export function SimuladorPrestamoModal({
   lineas = [],
+  isLoadingLineas = false,
   defaultLineaOid,
   solicitudId,
   onLimitsAdjusted,
@@ -307,6 +310,15 @@ export function SimuladorPrestamoModal({
 
         <div className="max-h-[calc(100vh-8rem)] overflow-y-auto p-3">
           <form className="space-y-3">
+            {!isLoadingLineas && eligibleLineas.length === 0 ? (
+              <p
+                className="rounded-sm border border-border bg-surface px-2.5 py-2 text-[0.68rem] text-foreground-secondary"
+                role="status"
+              >
+                No tenés líneas asignadas para simular. Las líneas salen del
+                agente de tu usuario en Vimarx.
+              </p>
+            ) : null}
             {errorMessage ? (
               <p className="rounded-sm border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[0.68rem] text-destructive">
                 {errorMessage}
@@ -338,7 +350,12 @@ export function SimuladorPrestamoModal({
                         label: linea.descripcion ?? "",
                         value: linea.oid ?? "",
                       }))}
-                      placeholder="Seleccione una línea"
+                      disabled={isLoadingLineas}
+                      placeholder={
+                        isLoadingLineas
+                          ? "Cargando líneas..."
+                          : "Seleccione una línea"
+                      }
                       // Mismo buscador que al cargar la linea en la solicitud.
                       searchable
                       value={field.value}
