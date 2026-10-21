@@ -1,5 +1,9 @@
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
+import type {
+  ConvenioSocioGateway,
+  SocioConvenioLegacy,
+} from "../../domain/services/ConvenioSocioGateway";
 import { LegacyLineaPrestamoUnavailableError } from "../../domain/solicitudes-core-errors";
 import type { CreatePrestamoLegacyInput } from "../dtos/CreatePrestamoLegacy.dto";
 import { FindSolicitudTitularSocio } from "../services/FindSolicitudTitularSocio";
@@ -14,6 +18,7 @@ import {
 } from "../../domain/solicitudes-core-errors";
 
 type Dependencies = {
+  convenioSocioGateway: ConvenioSocioGateway;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
   repository: Pick<
     SolicitudesCoreRepository,
@@ -48,14 +53,26 @@ export class GetRevisionPrestamoUseCase {
     const socio = await new FindSolicitudTitularSocio({
       sociosRepository,
     }).execute(solicitud.titular);
+    const socioVimarx = await this.findSocioConvenio(
+      socio?.nroSocioLegacy ?? null,
+    );
     const titular = {
       nombreCompleto: socio
         ? socio.tipoPersona === "JURIDICA"
           ? socio.razonSocial
           : [socio.apellido, socio.nombre].filter(Boolean).join(" ")
         : null,
-      nroSocio: socio?.nroSocioLegacy ?? null,
+      // El NroSocio de Vimarx, no nroSocioLegacy (que es su ID interno).
+      nroSocio: socioVimarx?.nroSocio ?? null,
     };
+    const convenio = socioVimarx
+      ? {
+          beneficio: socioVimarx.beneficio,
+          caja40: socioVimarx.caja40,
+          convAux: socioVimarx.convAux,
+          observaciones: socioVimarx.observaciones,
+        }
+      : null;
     const vendedor = await repository.findVendedorLegacyUser?.(solicitud.id);
     if (!vendedor) throw new LegacyLineaPrestamoUnavailableError();
     const limites =
@@ -72,7 +89,7 @@ export class GetRevisionPrestamoUseCase {
       cuotas: efectivos.cuotas,
     };
     if (solicitud.montoAFinanciar === null || solicitud.cuotas === null) {
-      return { titular, condiciones, calculo: null };
+      return { titular, convenio, condiciones, calculo: null };
     }
     // Verifica la misma relación que usa CrearPrestamo, sin confundir los IDs.
     const linea = await lineaPrestamoLegacyIdResolver.resolveByPresolicitudOid(
@@ -93,6 +110,20 @@ export class GetRevisionPrestamoUseCase {
       cuotas: efectivos.cuotas as number,
       // Sin tasa ni fecha manual: las determina el sistema.
     });
-    return { titular, condiciones, calculo };
+    return { titular, convenio, condiciones, calculo };
+  }
+
+  // Solo para mostrar: si Vimarx no responde, la revision sigue sin convenio.
+  private async findSocioConvenio(
+    socioLegacyId: string | null,
+  ): Promise<SocioConvenioLegacy | null> {
+    if (!socioLegacyId) return null;
+    try {
+      return await this.dependencies.convenioSocioGateway.getConvenioSocioByLegacyId(
+        socioLegacyId,
+      );
+    } catch {
+      return null;
+    }
   }
 }

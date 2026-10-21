@@ -276,6 +276,7 @@ export function createSolicitudesCoreRouter(
     sociosRepository,
   });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
+    convenioSocioGateway: solicitudesLegacyGateway,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository, sociosRepository,
     lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
