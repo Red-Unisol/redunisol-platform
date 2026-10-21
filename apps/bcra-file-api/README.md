@@ -57,8 +57,19 @@ El maestro `nomdeu.txt` de 202608 agrega once espacios al diseño documentado;
 se admiten sólo si están en blanco. Bytes indefinidos de Windows-1252 en nombres
 se muestran como `U+FFFD` y se cuentan en `name_encoding_replacements` con una
 advertencia; se conserva el archivo original y no se adivina otra codificación.
+Se excluyen del maestro las identificaciones extranjeras entidad+país+secuencia,
+igual que en la base, y se cuentan en `excluded_non_fiscal_names`.
+Los puntos y coma dentro de nombres de ancho fijo se conservan como texto.
+El código oficial `9 = No aplicable` se guarda en SQLite y se muestra como null
+en los booleanos de refinanciaciones, situación jurídica e irrecuperables.
+Los códigos numéricos no documentados también se conservan en
+`codigosBanderasFuente`; el booleano derivado es null y el manifiesto cuenta los
+registros afectados en `unrecognized_flag_rows`. No se interpretan como verdadero.
 Las rectificaciones completas se aplican antes de las parciales; se omiten
-las de períodos anteriores en esta base del último mes. Situación y monto cero
+las de meses que no estén representados en el archivo base. La publicación
+202608 contiene datos de 202608 y 202607: se conservan ambos bajo su mes real,
+sin atribuir los registros anteriores al mes de publicación. No se aceptan meses
+posteriores al período de publicación. Situación y monto cero
 eliminan el registro. Se conservan todas las situaciones del archivo base.
 
 SQLite tiene una clave por identificación, entidad y período. Se construye una
@@ -123,7 +134,8 @@ importación/control, huellas, cantidades y limitaciones. Monto se expresa en
 No reemplaza el contrato completo de la API individual: denominación puede faltar
 (no se descarga el padrón ARCA), `fechaSit1` es null (no se importa 1DSF), y las
 rectificaciones dejan días/observaciones en null cuando no los proporcionan.
-No incluye historia de 24 meses ni cheques. No determina elegibilidad crediticia.
+No incluye historia completa de 24 meses ni cheques. `meta.data_periods` indica
+los meses efectivamente presentes en el archivo. No determina elegibilidad crediticia.
 
 ## Endpoint de Kestra
 

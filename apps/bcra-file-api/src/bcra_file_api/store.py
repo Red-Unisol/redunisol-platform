@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import closing
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 import sqlite3
 
@@ -40,6 +41,7 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
         period = manifest["period"]
         monthly = archives["DEUDORES"]
         rows = 0
+        base_periods = set()
         batch = []
         with monthly.lines("deudores.txt") as lines:
             for number, line in lines:
@@ -47,8 +49,9 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
                     record = base_record(line)
                     if record is None:
                         continue
-                    if record[2] != period:
-                        raise FormatError("Base period differs from publication")
+                    if record[2] > period:
+                        raise FormatError("Base period is newer than publication")
+                    base_periods.add(record[2])
                     batch.append(record)
                     rows += 1
                     if len(batch) >= 10_000:
@@ -72,6 +75,7 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
         if connection.execute("SELECT count(*) FROM entities").fetchone()[0] == 0:
             raise SourceError("Empty BCRA entity master")
 
+        non_fiscal_names = 0
         if "nomdeu.txt" in monthly.members:
             batch = []
             with monthly.lines("nomdeu.txt") as lines:
@@ -83,7 +87,12 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
                         if len(line) == 77 and not line[66:].strip():
                             line = line[:66]
                         fields, _ = split_record(line, [11, 55])
-                        if len(fields[0]) != 11 or not fields[0].isdigit():
+                        # Foreign IDs follow entity(5)+country(2)+sequence(4).
+                        # They are excluded just like non-fiscal base records.
+                        if re.fullmatch(r"[0-9]{5}[A-Z]{2}[0-9]{4}", fields[0]):
+                            non_fiscal_names += 1
+                            continue
+                        if len(fields[0]) != 11 or not fields[0].isascii() or not fields[0].isdigit():
                             raise FormatError("Invalid debtor name")
                         batch.append(tuple(fields))
                         if len(batch) >= 10_000:
@@ -100,8 +109,8 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
                 for number, line in lines:
                     try:
                         record = rect_record(line)
-                        if record is None or record[2] != period:
-                            continue  # Historical corrections do not belong to this monthly snapshot.
+                        if record is None or record[2] not in base_periods:
+                            continue  # Only rectify months represented in the base publication.
                         identification, entity, date, situation, amount, name = record
                         if situation == 0 and amount == 0:
                             connection.execute(
@@ -140,20 +149,33 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
             ).fetchone()[0]
             for table in ("entities", "names")
         )
+        unrecognized_flag_rows = connection.execute(
+            """SELECT count(*) FROM debts WHERE observation NOT IN (0,1,2)
+               OR refinancing NOT IN (0,1,9) OR recategorization NOT IN (0,1)
+               OR legal NOT IN (0,1,9) OR technical NOT IN (0,1,9)"""
+        ).fetchone()[0]
         warnings = list(manifest.get("warnings", []))
+        if unrecognized_flag_rows:
+            warnings.append(
+                f"{unrecognized_flag_rows} source rows have unrecognized flag codes; raw codes retained and derived values are null"
+            )
         if name_encoding_replacements:
             warnings.append(
                 f"Source names contain {name_encoding_replacements} undecodable Windows-1252 bytes shown as U+FFFD"
             )
         manifest = {
             **manifest, "warnings": warnings,
-            "name_encoding_replacements": name_encoding_replacements, "imported_at": timestamp(), "base_rows": rows,
+            "name_encoding_replacements": name_encoding_replacements,
+            "excluded_non_fiscal_names": non_fiscal_names, "imported_at": timestamp(), "base_rows": rows,
             "rows": final_rows, "corrections": corrections, "deletions": deleted,
-            "coverage": "latest_published_month",
+            "coverage": "latest_publication_file",
+            "data_periods": sorted(base_periods, reverse=True),
+            "unrecognized_flag_rows": unrecognized_flag_rows,
             "amount_unit": "thousands_of_ARS",
             "limitations": [
                 "denominacion may be absent; no ARCA padron is downloaded",
                 "fechaSit1 is not imported",
+                "source code 9 means not applicable and is represented as null in boolean flags",
                 "days and observations are null when a correction does not provide them",
             ],
         }
@@ -172,31 +194,37 @@ def lookup(path: Path, identification: str) -> dict:
     with closing(connect_readonly(path)) as connection:
         manifest = json.loads(connection.execute("SELECT value FROM metadata").fetchone()[0])
         rows = connection.execute(
-            """SELECT d.entity,e.name,d.situation,d.amount_tenths,d.days,d.observation,
+            """SELECT d.period,d.entity,e.name,d.situation,d.amount_tenths,d.days,d.observation,
                       d.refinancing,d.recategorization,d.legal,d.technical,d.origin
                FROM debts d JOIN entities e ON e.code=d.entity
-               WHERE identification=? ORDER BY d.entity""", (identification,)
+               WHERE identification=? ORDER BY d.period DESC,d.entity""", (identification,)
         ).fetchall()
         name = connection.execute("SELECT name FROM names WHERE identification=?", (identification,)).fetchone()
-    entities = []
-    for code, entity_name, situation, amount, days, observation, ref, recat, legal, technical, origin in rows:
+    periods = {}
+    for period, code, entity_name, situation, amount, days, observation, ref, recat, legal, technical, origin in rows:
+        entities = periods.setdefault(period, [])
         entities.append({
             "codigoEntidad": code, "entidad": entity_name, "situacion": situation,
             "monto": amount / 10, "diasAtrasoPago": days, "fechaSit1": None,
-            "enRevision": None if observation is None else observation == 2,
-            "procesoJud": None if observation is None else observation == 1,
-            "refinanciaciones": None if ref is None else bool(ref),
-            "recategorizacionOblig": None if recat is None else bool(recat),
-            "situacionJuridica": None if legal is None else bool(legal),
-            "irrecDisposicionTecnica": None if technical is None else bool(technical),
+            "enRevision": None if observation not in (0, 1, 2) else observation == 2,
+            "procesoJud": None if observation not in (0, 1, 2) else observation == 1,
+            "refinanciaciones": None if ref not in (0, 1) else bool(ref),
+            "recategorizacionOblig": None if recat not in (0, 1) else bool(recat),
+            "situacionJuridica": None if legal not in (0, 1) else bool(legal),
+            "irrecDisposicionTecnica": None if technical not in (0, 1) else bool(technical),
+            "codigosBanderasFuente": {
+                "procesoJudicialRevision": observation, "refinanciaciones": ref,
+                "recategorizacionOblig": recat, "situacionJuridica": legal,
+                "irrecDisposicionTecnica": technical,
+            },
             "archivoOrigen": origin,
         })
     return {
-        "status": 200 if entities else 404,
+        "status": 200 if periods else 404,
         "results": {
             "identificacion": identification,
             "denominacion": name[0] if name else None,
-            "periodos": [{"periodo": manifest["period"], "entidades": entities}] if entities else [],
+            "periodos": [{"periodo": period, "entidades": entities} for period, entities in periods.items()],
         },
         "meta": {"source": "bcra_monthly_file_poc", **manifest},
     }

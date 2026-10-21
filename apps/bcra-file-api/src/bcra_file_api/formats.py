@@ -20,7 +20,9 @@ RECT_WIDTHS = [5, 6, 2, 11, 55, 2, 12]
 
 def split_record(line: str, widths: list[int]) -> tuple[list[str], bool]:
     line = line.rstrip("\r\n")
-    if ";" in line:
+    # The official fixed-width name fields may themselves contain semicolons.
+    # Exact fixed width takes precedence over the optional delimited format.
+    if len(line) != sum(widths) and ";" in line:
         fields = next(csv.reader([line], delimiter=";"))
         if len(fields) != len(widths):
             raise FormatError("Unexpected field count")
@@ -83,8 +85,7 @@ def base_record(line: str) -> tuple | None:
     if situation is None or situation > 99:
         raise FormatError("Invalid situation")
     flags = [integer(fields[index]) for index in range(18, 23)]
-    if (flags[0] not in (None, 0, 1, 2)
-            or any(value not in (None, 0, 1) for value in flags[1:])):
+    if any(value is not None and not 0 <= value <= 9 for value in flags):
         raise FormatError("Invalid observation")
     # Financiaciones y Otros conceptos: loans + guarantees + other concepts.
     amount = sum(money(fields[index], implicit) for index in (6, 8, 9))
