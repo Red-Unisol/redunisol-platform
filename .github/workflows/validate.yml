@@ -73,6 +73,17 @@ jobs:
           pip install -r apps/credixsa-cache-api/requirements.txt
           pip install beautifulsoup4 pytest
 
+      - name: Run BCRA file POC tests
+        run: python -m unittest discover -s apps/bcra-file-api/tests -v
+        env:
+          PYTHONPATH: apps/bcra-file-api/src
+
+      - name: Build and test BCRA file POC image
+        run: docker build --target test -t bcra-file-poc:test apps/bcra-file-api
+
+      - name: Validate BCRA POC Compose
+        run: docker compose --env-file apps/bcra-file-api/deploy/.env.example -f apps/bcra-file-api/deploy/docker-compose.yml config -q
+
       - name: Validate repository structure
         run: python kestra/tools/validate_kestra.py
 
@@ -103,7 +114,7 @@ jobs:
         run: python -m unittest kestra.tools.tests.test_ci_image_tags
 
       - name: Run deploy tooling tests
-        run: python -m unittest kestra.tools.tests.test_deploy_kestra
+        run: python -m unittest kestra.tools.tests.test_deploy_kestra kestra.tools.tests.test_bcra_poc_deploy
 
       - name: Run alert sweep tests
         run: python -m pytest kestra/tools/tests/test_alerta_barrido.py -q

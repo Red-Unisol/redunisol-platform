@@ -1,0 +1,88 @@
+name: Deploy BCRA File POC
+on:
+  workflow_dispatch:
+    inputs:
+      terms_accepted:
+        description: "El operador ya aceptó la declaración jurada y condiciones de descarga BCRA"
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: deploy-bcra-file-poc
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' && github.actor == 'Nasst'
+    uses: ./.github/workflows/publish-bcra-file-api.yml
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: vps-infra
+    env:
+      SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      SSH_USER: ${{ secrets.VPS_SSH_USER }}
+      RUNTIME_ENV_KEY: ${{ secrets.RUNTIME_ENV_KEY }}
+      ACCEPT_BCRA_TERMS: ${{ inputs.terms_accepted }}
+      IMAGE: ghcr.io/red-unisol/bcra-file-api:sha-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install environment tooling
+        run: pip install -r kestra/tools/requirements.txt
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+      - name: Prepare isolated runtime environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RUNTIME_ENV_KEY" > "$RUNNER_TEMP/runtime.key"
+          python kestra/tools/manage_encrypted_env.py decrypt \
+            --key-file "$RUNNER_TEMP/runtime.key" \
+            --input apps/bcra-file-api/deploy/bcra-file-poc.env.enc \
+            --output "$RUNNER_TEMP/bcra-file-poc.env" --force
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "bcra-file-poc.env"
+          values = dict(line.split("=", 1) for line in path.read_text().splitlines()
+                        if line and not line.startswith("#") and "=" in line)
+          values["BCRA_FILE_IMAGE"] = os.environ["IMAGE"]
+          values["BCRA_FILE_TERMS_ACCEPTED"] = os.environ["ACCEPT_BCRA_TERMS"]
+          path.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
+          PY
+      - name: Deploy only the POC service
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+          staging="/tmp/bcra-file-poc-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "umask 077; mkdir -p '$staging'"
+          scp -P "$SSH_PORT" apps/bcra-file-api/deploy/docker-compose.yml "$SSH_USER@$SSH_HOST:$staging/docker-compose.yml"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/bcra-file-poc.env" "$SSH_USER@$SSH_HOST:$staging/.env"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$staging" <<'REMOTE'
+          set -euo pipefail
+          staging="$1"
+          target=/opt/bcra-file-poc
+          trap 'rm -rf "$staging"' EXIT
+          docker network inspect kestra_net >/dev/null
+          docker compose --env-file "$staging/.env" -f "$staging/docker-compose.yml" config -q
+          install -d -m 700 "$target"
+          install -m 600 "$staging/.env" "$target/.env"
+          install -m 644 "$staging/docker-compose.yml" "$target/docker-compose.yml"
+          cd "$target"
+          docker compose -p bcra-file-poc pull
+          docker compose -p bcra-file-poc up -d --wait --wait-timeout 90
+          docker compose -p bcra-file-poc ps
+          REMOTE
+      - name: Remove decrypted local settings
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/runtime.key" "$RUNNER_TEMP/bcra-file-poc.env"

@@ -15,6 +15,17 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `consulta_padron_a13`
 - `consulta_empleador`
 - `consulta_cuad`
+- bcra_archivo_actualizar_poc (POC aislada)
+- bcra_archivo_consultar_poc (POC aislada)
+
+## BCRA desde archivos — POC
+
+- bcra_archivo_actualizar_poc: scheduler diario 04:00 Argentina, dev-only y
+  desactivado por flag inicialmente; prueba manual con run_now=true.
+- bcra_archivo_consultar_poc: webhook síncrono con HTTP nativo hacia un
+  contenedor persistente, sin crear un contenedor por consulta.
+- No hay consumidores existentes ni cambios de reglas comerciales.
+- [Arquitectura, contrato, límites y activación](../../../../apps/bcra-file-api/README.md).
 
 ## renovacion_cruz_del_eje
 

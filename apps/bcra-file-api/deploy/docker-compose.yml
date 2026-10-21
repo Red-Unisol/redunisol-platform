@@ -1,0 +1,38 @@
+services:
+  bcra-file-api-poc:
+    image: ${BCRA_FILE_IMAGE:?Set an immutable image tag}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    environment:
+      BCRA_FILE_API_TOKEN: ${BCRA_FILE_API_TOKEN:?Set the POC token}
+      BCRA_FILE_TERMS_ACCEPTED: ${BCRA_FILE_TERMS_ACCEPTED:-false}
+      BCRA_FILE_DATA_DIR: /data
+    volumes:
+      - bcra-file-data:/data
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    expose:
+      - "8080"
+    mem_limit: 2g
+    cpus: 1.0
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - kestra_net
+volumes:
+  bcra-file-data:
+networks:
+  kestra_net:
+    external: true
+    name: kestra_net

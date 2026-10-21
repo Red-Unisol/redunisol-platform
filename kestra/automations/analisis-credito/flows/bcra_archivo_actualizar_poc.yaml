@@ -1,0 +1,74 @@
+id: bcra_archivo_actualizar_poc
+namespace: redunisol
+description: POC aislada. Revalida diariamente la publicación mensual BCRA y sus rectificativas.
+labels:
+  env: dev
+  team: redunisol
+  domain: analisis-credito
+  kind: scheduled
+  integration: bcra-file-poc
+  schedule_scope: dev_only
+inputs:
+  - id: run_now
+    type: BOOL
+    defaults: false
+    description: Permite una prueba manual sin habilitar el scheduler.
+concurrency:
+  limit: 1
+  behavior: CANCEL
+tasks:
+  - id: habilitado
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_now or (envs.bcra_file_poc_enabled ?? 'false') == 'true' }}"
+    then:
+      - id: iniciar_actualizacion
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ envs.bcra_file_poc_url }}/refresh"
+        method: POST
+        timeout: PT30S
+        contentType: application/json
+        body: "{}"
+        headers:
+          Authorization: "Bearer {{ secret('BCRA_FILE_POC_TOKEN') }}"
+          Idempotency-Key: "{{ execution.id }}"
+        options:
+          logs: []
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+      - id: esperar_actualizacion
+        type: io.kestra.plugin.core.flow.LoopUntil
+        condition: "{{ json(outputs.estado_actualizacion.body).status == 'completed' }}"
+        checkFrequency:
+          interval: PT1M
+          maxDuration: PT12H
+          maxIterations: 720
+        failOnMaxReached: true
+        tasks:
+          - id: estado_actualizacion
+            type: io.kestra.plugin.core.http.Request
+            uri: "{{ envs.bcra_file_poc_url }}/jobs/{{ json(outputs.iniciar_actualizacion.body).job_id }}"
+            method: GET
+            timeout: PT30S
+            headers:
+              Authorization: "Bearer {{ secret('BCRA_FILE_POC_TOKEN') }}"
+            options:
+              logs: []
+            retry:
+              type: constant
+              interval: PT10S
+              maxAttempts: 3
+    else:
+      - id: poc_desactivada
+        type: io.kestra.plugin.core.log.Log
+        message: "POC BCRA desactivada. Configurar el servicio y habilitar bcra_file_poc_enabled."
+outputs:
+  - id: response_json
+    type: STRING
+    value: "{{ outputs.estado_actualizacion is defined ? outputs.estado_actualizacion.body : '{\"status\":\"disabled\"}' }}"
+triggers:
+  - id: diario
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 4 * * *"
+    timezone: America/Argentina/Buenos_Aires
