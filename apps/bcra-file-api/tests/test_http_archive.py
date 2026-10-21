@@ -134,6 +134,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
                     name = b"NOMBRE SINTETICO " + bytes([0x81])
                     (fixture / "nomdeu.txt").write_bytes(
                         CUIL.encode() + name.ljust(55) + b" " * 11 + b"\r\n"
+                        + b"00007US0001" + b"NOMBRE EXTRANJERO".ljust(55) + b" " * 11 + b"\r\n"
                     )
                 archive = root / (kind + ".7z")
                 subprocess.run([SEVEN_ZIP, "a", "-t7z", "-bd", "-y", str(archive), "."],
@@ -142,6 +143,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
             path = root / "snapshot.sqlite"
             result = import_snapshot(path, extracted, manifest(), 1)
             self.assertEqual(result["name_encoding_replacements"], 1)
+            self.assertEqual(result["excluded_non_fiscal_names"], 1)
             self.assertEqual(lookup(path, CUIL)["results"]["denominacion"], "NOMBRE SINTETICO \ufffd")
             self.assertEqual(lookup(path, CUIL)["status"], 200)
             corrupted = root / "broken.7z"

@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from bcra_file_api.config import Config
-from bcra_file_api.formats import BASE_WIDTHS, FormatError, base_record
+from bcra_file_api.formats import BASE_WIDTHS, FormatError, base_record, rect_record
 from bcra_file_api.refresh import RefreshManager
 from bcra_file_api.source import Asset, SourceClient, SourceError, content_version, parse_catalog
 from bcra_file_api.store import import_snapshot, lookup, timestamp
@@ -20,10 +20,11 @@ OTHER = "27123456780"
 PERIOD = "202608"
 
 
-def base(identification=CUIL, entity="00007", situation=1, amount="100,0", period=PERIOD):
+def base(identification=CUIL, entity="00007", situation=1, amount="100,0", period=PERIOD,
+         refinancing=1, legal=0, technical=0, recategorization=0):
     fields = [entity, period, "11", identification, "000", str(situation)]
     fields += [amount, "0,0", "20,0", "3,5"] + ["0,0"] * 7
-    fields += ["0", "0", "1", "0", "0", "0", "12"]
+    fields += ["0", "0", str(refinancing), str(recategorization), str(legal), str(technical), "12"]
     return "".join(value.rjust(width) for value, width in zip(fields, BASE_WIDTHS)) + "\r\n"
 
 
@@ -89,6 +90,11 @@ class FormatTests(unittest.TestCase):
         for line in ("bad", base(amount="NaN"), base(amount="-1,0"), base(period="202613")):
             with self.subTest(line_length=len(line)), self.assertRaises(FormatError):
                 base_record(line)
+
+    def test_semicolon_inside_fixed_width_rectification_name_is_not_a_separator(self):
+        record = rect_record(rect().replace("NOMBRE SINTETICO", "NOMBRE;SINTETICO"))
+        self.assertEqual(record[5], "NOMBRE;SINTETICO")
+        self.assertEqual(record[4], 775)
 
     def test_non_fiscal_identifications_are_excluded(self):
         value = base()
@@ -188,6 +194,15 @@ class DownloadTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def test_official_not_applicable_flags_are_not_reported_as_true(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "snapshot.sqlite"
+            import_snapshot(path, archives(rows=base(refinancing=9, legal=9, technical=9)), manifest(), 1)
+            entity = lookup(path, CUIL)["results"]["periodos"][0]["entidades"][0]
+            for key in ("refinanciaciones", "situacionJuridica", "irrecDisposicionTecnica"):
+                self.assertIsNone(entity[key])
+            self.assertFalse(entity["recategorizacionOblig"])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.path = Path(self.temporary.name) / "snapshot.sqlite"
@@ -222,6 +237,26 @@ class StoreTests(unittest.TestCase):
         self.assertIsNone(entity["refinanciaciones"])
         self.assertEqual(response["results"]["denominacion"], "NOMBRE SINTETICO")
         self.assertEqual(lookup(self.path, OTHER)["status"], 404)
+
+    def test_file_months_keep_their_period_and_only_loaded_months_are_rectified(self):
+        values = archives(rows=base() + base(period="202607"),
+                          full=rect(period="202607") + rect(period="202606"))
+        result = import_snapshot(self.path, values, manifest(), 1)
+        periods = lookup(self.path, CUIL)["results"]["periodos"]
+        self.assertEqual(result["data_periods"], ["202608", "202607"])
+        self.assertEqual([p["periodo"] for p in periods], ["202608", "202607"])
+        self.assertEqual([p["entidades"][0]["monto"] for p in periods], [123.5, 77.5])
+        self.path.unlink()
+        with self.assertRaises(SourceError):
+            import_snapshot(self.path, archives(rows=base(period="202609")), manifest(), 1)
+
+    def test_unrecognized_source_flag_is_retained_without_boolean_interpretation(self):
+        result = import_snapshot(self.path, archives(rows=base(recategorization=3)), manifest(), 1)
+        entity = lookup(self.path, CUIL)["results"]["periodos"][0]["entidades"][0]
+        self.assertIsNone(entity["recategorizacionOblig"])
+        self.assertEqual(entity["codigosBanderasFuente"]["recategorizacionOblig"], 3)
+        self.assertEqual(result["unrecognized_flag_rows"], 1)
+        self.assertTrue(result["warnings"])
 
     def test_old_period_corrections_do_not_change_current_month(self):
         import_snapshot(self.path, archives(full=rect(period="202607")), manifest(), 1)
