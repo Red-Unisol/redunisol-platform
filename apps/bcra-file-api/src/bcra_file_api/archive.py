@@ -52,7 +52,10 @@ class Archive:
                 stdout=subprocess.PIPE, stderr=errors,
             )
             assert process.stdout is not None
-            reader = io.TextIOWrapper(process.stdout, encoding="cp1252")
+            # The public 202608 name master contains undefined Windows-1252 bytes.
+            # Preserve visible U+FFFD markers instead of guessing another encoding.
+            # Numeric/layout validation remains strict; metadata counts name markers.
+            reader = io.TextIOWrapper(process.stdout, encoding="cp1252", errors="replace")
             def records():
                 for number, line in enumerate(iter(lambda: reader.readline(4097), ''), 1):
                     if self.deadline is not None and time.monotonic() > self.deadline:

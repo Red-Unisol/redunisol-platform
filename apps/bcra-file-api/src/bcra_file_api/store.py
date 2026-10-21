@@ -77,6 +77,11 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
             with monthly.lines("nomdeu.txt") as lines:
                 for number, line in lines:
                     try:
+                        line = line.rstrip("\r\n")
+                        # 202608 has eleven additional blank padding characters;
+                        # reject nonblank extensions rather than truncate names.
+                        if len(line) == 77 and not line[66:].strip():
+                            line = line[:66]
                         fields, _ = split_record(line, [11, 55])
                         if len(fields[0]) != 11 or not fields[0].isdigit():
                             raise FormatError("Invalid debtor name")
@@ -129,8 +134,20 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int) -
         ).fetchone()[0]
         if unknown_entities:
             raise SourceError("BCRA snapshot references entities absent from the master")
+        name_encoding_replacements = sum(
+            connection.execute(
+                "SELECT COALESCE(SUM(length(name)-length(replace(name,char(65533),''))),0) FROM " + table
+            ).fetchone()[0]
+            for table in ("entities", "names")
+        )
+        warnings = list(manifest.get("warnings", []))
+        if name_encoding_replacements:
+            warnings.append(
+                f"Source names contain {name_encoding_replacements} undecodable Windows-1252 bytes shown as U+FFFD"
+            )
         manifest = {
-            **manifest, "imported_at": timestamp(), "base_rows": rows,
+            **manifest, "warnings": warnings,
+            "name_encoding_replacements": name_encoding_replacements, "imported_at": timestamp(), "base_rows": rows,
             "rows": final_rows, "corrections": corrections, "deletions": deleted,
             "coverage": "latest_published_month",
             "amount_unit": "thousands_of_ARS",

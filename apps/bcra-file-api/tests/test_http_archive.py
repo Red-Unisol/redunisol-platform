@@ -128,12 +128,21 @@ class ArchiveIntegrationTests(unittest.TestCase):
                 fixture.mkdir()
                 for name, content in fake.members.items():
                     (fixture / name).write_bytes(content.encode("cp1252"))
+                if kind == "DEUDORES":
+                    # Actual publication: 11+55 fields plus 11 blank padding,
+                    # including undefined Windows-1252 bytes in some names.
+                    name = b"NOMBRE SINTETICO " + bytes([0x81])
+                    (fixture / "nomdeu.txt").write_bytes(
+                        CUIL.encode() + name.ljust(55) + b" " * 11 + b"\r\n"
+                    )
                 archive = root / (kind + ".7z")
                 subprocess.run([SEVEN_ZIP, "a", "-t7z", "-bd", "-y", str(archive), "."],
                                cwd=fixture, check=True, capture_output=True)
                 extracted[kind] = Archive(archive, SEVEN_ZIP)
             path = root / "snapshot.sqlite"
-            import_snapshot(path, extracted, manifest(), 1)
+            result = import_snapshot(path, extracted, manifest(), 1)
+            self.assertEqual(result["name_encoding_replacements"], 1)
+            self.assertEqual(lookup(path, CUIL)["results"]["denominacion"], "NOMBRE SINTETICO \ufffd")
             self.assertEqual(lookup(path, CUIL)["status"], 200)
             corrupted = root / "broken.7z"
             corrupted.write_bytes(b"7z\xbc\xaf\x27\x1c" + b"broken archive")

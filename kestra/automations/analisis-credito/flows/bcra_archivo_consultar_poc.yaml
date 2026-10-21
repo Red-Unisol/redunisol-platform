@@ -31,7 +31,7 @@ outputs:
     value: "{{ outputs.consultar.code }}"
   - id: data
     type: JSON
-    value: "{{ json(outputs.consultar.body) }}"
+    value: "{{ fromJson(outputs.consultar.body) }}"
 triggers:
   - id: webhook
     type: io.kestra.plugin.core.trigger.Webhook

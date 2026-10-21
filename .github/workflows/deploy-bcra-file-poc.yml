@@ -57,6 +57,20 @@ jobs:
           values["BCRA_FILE_TERMS_ACCEPTED"] = os.environ["ACCEPT_BCRA_TERMS"]
           path.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
           PY
+      - name: Prepare temporary registry credentials
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+        run: |
+          python - <<'PY'
+          import base64, json, os
+          from pathlib import Path
+          auth = base64.b64encode((os.environ["REGISTRY_USERNAME"] + ":" + os.environ["REGISTRY_TOKEN"]).encode()).decode()
+          path = Path(os.environ["RUNNER_TEMP"]) / "bcra-registry.json"
+          path.write_text(json.dumps({"auths": {"ghcr.io": {"auth": auth}}}))
+          path.chmod(0o600)
+          PY
       - name: Deploy only the POC service
         shell: bash
         run: |
@@ -67,6 +81,7 @@ jobs:
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "umask 077; mkdir -p '$staging'"
           scp -P "$SSH_PORT" apps/bcra-file-api/deploy/docker-compose.yml "$SSH_USER@$SSH_HOST:$staging/docker-compose.yml"
           scp -P "$SSH_PORT" "$RUNNER_TEMP/bcra-file-poc.env" "$SSH_USER@$SSH_HOST:$staging/.env"
+          scp -P "$SSH_PORT" "$RUNNER_TEMP/bcra-registry.json" "$SSH_USER@$SSH_HOST:$staging/registry.json"
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s -- "$staging" <<'REMOTE'
           set -euo pipefail
           staging="$1"
@@ -78,6 +93,9 @@ jobs:
           install -m 600 "$staging/.env" "$target/.env"
           install -m 644 "$staging/docker-compose.yml" "$target/docker-compose.yml"
           cd "$target"
+          export DOCKER_CONFIG="$staging/docker-config"
+          install -d -m 700 "$DOCKER_CONFIG"
+          install -m 600 "$staging/registry.json" "$DOCKER_CONFIG/config.json"
           docker compose -p bcra-file-poc pull
           docker compose -p bcra-file-poc up -d --wait --wait-timeout 90
           docker compose -p bcra-file-poc ps
@@ -85,4 +103,4 @@ jobs:
       - name: Remove decrypted local settings
         if: always()
         shell: bash
-        run: rm -f "$RUNNER_TEMP/runtime.key" "$RUNNER_TEMP/bcra-file-poc.env"
+        run: rm -f "$RUNNER_TEMP/runtime.key" "$RUNNER_TEMP/bcra-file-poc.env" "$RUNNER_TEMP/bcra-registry.json"
