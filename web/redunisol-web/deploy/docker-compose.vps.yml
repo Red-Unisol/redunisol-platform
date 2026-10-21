@@ -69,6 +69,15 @@ services:
       AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT}
       KESTRA_FORM_WEBHOOK_URL: ${KESTRA_FORM_WEBHOOK_URL}
       EDNA_INCOMING_ENABLED: ${EDNA_INCOMING_ENABLED:-false}
+      EDNA_ASSISTANCE_ENABLED: ${EDNA_ASSISTANCE_ENABLED:-false}
+      EDNA_ASSISTANCE_SEND_ENABLED: ${EDNA_ASSISTANCE_SEND_ENABLED:-false}
+      EDNA_ASSISTANCE_CRM_ENABLED: ${EDNA_ASSISTANCE_CRM_ENABLED:-false}
+      EDNA_ASSISTANCE_TEST_MODE: ${EDNA_ASSISTANCE_TEST_MODE:-false}
+      EDNA_ASSISTANCE_TEST_DELAY_SECONDS: ${EDNA_ASSISTANCE_TEST_DELAY_SECONDS:-30}
+      EDNA_ASSISTANCE_RECIPIENTS: ${EDNA_ASSISTANCE_RECIPIENTS:-}
+      EDNA_ASSISTANCE_START_AT: ${EDNA_ASSISTANCE_START_AT:-}
+      EDNA_ASSISTANCE_DELAY_MINUTES: ${EDNA_ASSISTANCE_DELAY_MINUTES:-30}
+      KESTRA_EDNA_ASSISTANCE_WEBHOOK_URL: ${KESTRA_EDNA_ASSISTANCE_WEBHOOK_URL:-}
       EDNA_OUT_OF_HOURS_ENABLED: ${EDNA_OUT_OF_HOURS_ENABLED:-false}
       EDNA_OUT_OF_HOURS_RECIPIENTS: ${EDNA_OUT_OF_HOURS_RECIPIENTS:-}
       EDNA_FORM_LINKS_ENABLED: ${EDNA_FORM_LINKS_ENABLED:-false}
@@ -168,6 +177,19 @@ services:
       postgres:
         condition: service_started
       redis:
+        condition: service_started
+    restart: unless-stopped
+
+  edna-assistance-worker:
+    profiles: [whatsapp-assistance]
+    image: ${APP_IMAGE}
+    entrypoint: [php, artisan, queue:work]
+    command: [edna_assistance, --queue=edna-assistance, --sleep=1, --tries=3, --timeout=120, --max-time=3600]
+    environment: *app-environment
+    volumes:
+      - storage-data:/var/www/storage
+    depends_on:
+      postgres:
         condition: service_started
     restart: unless-stopped
 

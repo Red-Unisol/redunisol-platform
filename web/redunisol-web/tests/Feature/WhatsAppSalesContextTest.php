@@ -182,6 +182,18 @@ test('many old lost leads do not establish management by themselves', function (
     expect($context['evidence'])->toBeEmpty()->and($context['name'])->toBeNull();
 });
 
+test('assistance suppresses even lost forms within thirty days without changing the default policy', function (int $days, bool $blocked) {
+    salesContextHttp(['contact_ids' => [], 'lead_ids' => ['456'], 'direct_leads' => [
+        '456' => salesFormLead(['ID' => '456', 'CONTACT_ID' => null, 'STATUS_SEMANTIC_ID' => 'F',
+            'DATE_CREATE' => now()->subDays($days)->toIso8601String()]),
+    ]]);
+    $context = (new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements() + [
+        'any_form_since' => now()->subDays(30)->toIso8601String(),
+    ]);
+    expect(count($context['evidence']) > 0)->toBe($blocked);
+    expect((new WhatsAppSalesContext)->resolve('5493511234567', salesRequirements())['evidence'])->toBeEmpty();
+})->with([[29, true], [31, false]]);
+
 test('a mismatched phone in an identity batch is never used as management evidence', function () {
     salesContextHttp(['contact_ids' => [], 'lead_ids' => ['456'], 'direct_leads' => [
         '456' => salesFormLead(['PHONE' => [['VALUE' => '+54 351 9999999']]]),

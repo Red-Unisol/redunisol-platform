@@ -81,9 +81,10 @@ class WhatsAppSalesContext
                 $leads[(string) $lead['ID']] = $lead;
             }
         }
-        $forms = array_filter($leads, fn ($lead) => ($lead['STATUS_SEMANTIC_ID'] ?? '') !== 'F'
-            && CarbonImmutable::parse($lead['DATE_CREATE'])->gte($formSince)
-            && $this->isForm($lead));
+        $anyFormSince = isset($requirements['any_form_since']) ? CarbonImmutable::parse($requirements['any_form_since']) : null;
+        $forms = array_filter($leads, fn ($lead) => $this->isForm($lead)
+            && ((($lead['STATUS_SEMANTIC_ID'] ?? '') !== 'F' && CarbonImmutable::parse($lead['DATE_CREATE'])->gte($formSince))
+                || ($anyFormSince && CarbonImmutable::parse($lead['DATE_CREATE'])->gte($anyFormSince))));
         if ($forms) {
             return $this->withEvidence($base, $forms, $identity !== null, 'form');
         }

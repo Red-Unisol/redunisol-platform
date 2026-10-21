@@ -55,6 +55,7 @@ def select_new_leads_for_prefill(
             "select": [
                 "ID",
                 "CONTACT_ID",
+                "UF_CRM_WA_TEST",
                 config.fields.lead_cuil,
                 config.fields.lead_dni,
                 config.fields.lead_source,
@@ -70,6 +71,8 @@ def select_new_leads_for_prefill(
     selected: list[dict[str, object]] = []
     occupied: set[str] = set()
     for lead in leads:
+        if lead.get("UF_CRM_WA_TEST") == "SI":
+            continue
         lead_id = _optional_int(lead.get("ID"))
         if lead_id is None:
             continue
@@ -165,6 +168,10 @@ def prefill_lead(
     lead_id_int = int(str(lead_id))
     lead = get_lead(client, lead_id_int, active_logger)
     current_status = _optional_str(lead.get("STATUS_ID"))
+
+    if lead.get("UF_CRM_WA_TEST") == "SI":
+        return _result(action="skipped", lead_id=lead_id_int, lead_status=current_status,
+                       attempts=0, message="Lead de prueba WhatsApp; sin backfill.")
 
     if current_status != config.lead_statuses.new:
         return _result(

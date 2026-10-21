@@ -5,6 +5,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  solicitudes-sessions:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/solicitudes-web/celesol-backend
+    env:
+      DATABASE_URL: postgresql://beex_test:test_only@127.0.0.1:5432/beex_session_test
+      BEEX_TEST_DATABASE_URL: postgresql://beex_test:test_only@127.0.0.1:5432/beex_session_test
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: beex_session_test
+          POSTGRES_USER: beex_test
+          POSTGRES_PASSWORD: test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beex_test -d beex_session_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/solicitudes-web/celesol-backend/package-lock.json
+            web/solicitudes-web/celesol-frontend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare isolated database
+        run: |
+          npm run prisma:generate
+          npx prisma migrate deploy
+      - name: Build backend
+        run: npm run build
+      - name: Test authentication and session recovery
+        run: npx tsx --test "src/modules/auth/**/*.test.ts"
+      - name: Test and build frontend
+        working-directory: web/solicitudes-web/celesol-frontend
+        env:
+          VITE_API_BASE_URL: https://api.example.test
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build
+
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -22,6 +72,17 @@ jobs:
           pip install -r kestra/tools/requirements.txt
           pip install -r apps/credixsa-cache-api/requirements.txt
           pip install beautifulsoup4 pytest
+
+      - name: Run BCRA file POC tests
+        run: python -m unittest discover -s apps/bcra-file-api/tests -v
+        env:
+          PYTHONPATH: apps/bcra-file-api/src
+
+      - name: Build and test BCRA file POC image
+        run: docker build --target test -t bcra-file-poc:test apps/bcra-file-api
+
+      - name: Validate BCRA POC Compose
+        run: docker compose --env-file apps/bcra-file-api/deploy/.env.example -f apps/bcra-file-api/deploy/docker-compose.yml config -q
 
       - name: Validate repository structure
         run: python kestra/tools/validate_kestra.py
@@ -41,13 +102,19 @@ jobs:
             --allow-missing SECRET_AFIP_CONTACTO_WEBHOOK_KEY \
             --allow-missing ENV_EDNA_INCOMING_SUBJECT_ID \
             --allow-missing SECRET_EDNA_INCOMING_WEBHOOK_KEY \
+            --allow-missing ENV_EDNA_ASSISTANCE_CRM_ENABLED \
+            --allow-missing ENV_EDNA_ASSISTANCE_RECIPIENTS \
+            --allow-missing ENV_EDNA_ASSISTANCE_TEST_MODE \
+            --allow-missing ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_TEST \
+            --allow-missing ENV_BITRIX24_ASSISTANCE_TEST_USER_ID \
+            --allow-missing ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW \
             --allow-missing SECRET_SMTP_PASSWORD
 
       - name: Verify CI environment isolation
         run: python -m unittest kestra.tools.tests.test_ci_image_tags
 
       - name: Run deploy tooling tests
-        run: python -m unittest kestra.tools.tests.test_deploy_kestra
+        run: python -m unittest kestra.tools.tests.test_deploy_kestra kestra.tools.tests.test_bcra_poc_deploy
 
       - name: Run alert sweep tests
         run: python -m pytest kestra/tools/tests/test_alerta_barrido.py -q
@@ -151,10 +218,11 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-scripts
       - name: Discover packages
         run: |
-          printf 'APP_URL=http://localhost\n' > .env
+          printf 'APP_URL=http://localhost\nAPP_KEY=\n' > .env
           php artisan package:discover
+          php artisan key:generate --force
       - name: Test Edna HTTP inbox and delivery worker
-        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaAssistanceTest.php tests/Feature/EdnaRouterTest.php tests/Feature/EdnaResultsTest.php tests/Feature/EdnaFormLinksTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php tests/Feature/FormSubmissionTest.php tests/Feature/AttributionJourneyTest.php
       - name: Test private report downloads and regeneration
         run: php vendor/bin/pest tests/Unit/ReportCatalogTest.php tests/Unit/ReportRepositoryTest.php tests/Unit/ReportRegeneratorTest.php tests/Unit/AdminReportsTest.php
       - name: Test notice references and evaluation recovery on PostgreSQL

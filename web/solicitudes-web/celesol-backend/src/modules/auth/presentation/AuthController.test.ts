@@ -10,6 +10,38 @@ import {
 import { AuthController } from "./AuthController";
 
 describe("AuthController", () => {
+  it("logs only safe diagnostics when refresh fails internally", async (t) => {
+    const failure = Object.assign(new Error("private query details"), {
+      code: "P2028",
+    });
+    const log = t.mock.method(console, "error", () => {});
+    const controller = new AuthController({
+      refreshSessionUseCase: {
+        execute: async () => { throw failure; },
+      },
+    } as never);
+    let forwarded: unknown;
+    await controller.refresh(
+      {
+        cookies: { refreshToken: "private-cookie-value" },
+        get: () => undefined,
+      } as never,
+      {} as Response,
+      error => { forwarded = error; },
+    );
+    assert.equal(forwarded, failure);
+    assert.equal(log.mock.calls.length, 1);
+    const [event, details] = log.mock.calls[0].arguments as unknown as [
+      string,
+      { errorName: string; databaseCode: string; elapsedMs: number },
+    ];
+    assert.equal(event, "auth_refresh_failed");
+    assert.equal(details.errorName, "Error");
+    assert.equal(details.databaseCode, "P2028");
+    assert.equal(typeof details.elapsedMs, "number");
+    assert.ok(!JSON.stringify(details).includes("private"));
+  });
+
   it("returns 403 when authenticated user is not system admin", async () => {
     let assignCalled = false;
     const controller = new AuthController({

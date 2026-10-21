@@ -60,15 +60,20 @@ it("HTTP impersonation: real admin validation, effective permissions, return, au
       return { userId: token };
     },
   };
+  let rotatedAt: Date | null = null;
   const refreshTokens = {
     findByHash: async (token: string) =>
-      token === "refresh-admin"
+      token === "refresh-admin" || (rotatedAt && token === "next:refresh-admin")
         ? {
             id: randomUUID(),
             userId: admin.id,
             user: admin,
             expiresAt: new Date(Date.now() + 600000),
-            revokedAt: null,
+            revokedAt: token === "refresh-admin" ? rotatedAt : null,
+            replacedByTokenHash:
+              token === "refresh-admin" && rotatedAt
+                ? "next:refresh-admin"
+                : null,
             tokenHash: token,
           }
         : null,
@@ -78,7 +83,11 @@ it("HTTP impersonation: real admin validation, effective permissions, return, au
     users: repository,
     accessTokens,
     refreshTokens,
-    refreshService: { hash: (s) => s, generate: () => "unused" },
+    refreshService: {
+      hash: (s) => s,
+      generate: () => "unused",
+      successor: (s) => `next:${s}`,
+    },
     secure: false,
     origin: "https://app.example.test",
   });
@@ -188,6 +197,8 @@ it("HTTP impersonation: real admin validation, effective permissions, return, au
         .status,
       403,
     );
+    // A lost renewal response left this browser with the replaced token.
+    rotatedAt = new Date();
     const renewed = await request(
       "/auth/refresh",
       {},

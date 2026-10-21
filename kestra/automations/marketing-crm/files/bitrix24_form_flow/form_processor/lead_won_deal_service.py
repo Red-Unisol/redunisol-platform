@@ -44,6 +44,10 @@ def process_lead_update_event(
         lead_status = _optional_str(lead.get("STATUS_ID"))
         contact_id = _optional_int(lead.get("CONTACT_ID"))
 
+        if lead.get("UF_CRM_WA_TEST") == "SI":
+            return _event_result(ok=True, action="skipped", reason="test_lead", lead_id=lead_id,
+                                 lead_status=lead_status, message="Lead de prueba WhatsApp; sin negociacion.")
+
         if lead_status == config.lead_statuses.preclassification:
             cutoff = _optional_str(source.get(PREQUALIFICATION_CUTOFF_ENV))
             if cutoff and _is_before_cutoff(lead, cutoff):

@@ -1,12 +1,12 @@
 import type { AuthSessionDto } from "../dtos/AuthSession.dto";
 import type { RefreshTokenDto } from "../dtos/RefreshToken.dto";
 import { InvalidSessionError } from "../../domain/auth-errors";
-import { isRefreshTokenActive } from "../../domain/entities/RefreshToken.entity";
 import type { AuthRepository } from "../../domain/repositories/AuthRepository";
 import type { RefreshTokenRepository } from "../../domain/repositories/RefreshTokenRepository";
 import type { AccessTokenService } from "../../domain/services/AccessTokenService";
 import type { RefreshTokenService } from "../../domain/services/RefreshTokenService";
 import type { AuthUseCaseConfig } from "./AuthUseCaseConfig";
+import { resolveRefreshToken } from "../resolve-refresh-token";
 
 type RefreshSessionUseCaseDependencies = {
   accessTokenService: AccessTokenService;
@@ -36,49 +36,84 @@ export class RefreshSessionUseCase {
       throw new InvalidSessionError();
     }
 
-    const currentTokenHash = this.refreshTokenService.hash(input.refreshToken);
-    const currentToken =
-      await this.refreshTokenRepository.findByHash(currentTokenHash);
-    const now = new Date();
+    const current = await resolveRefreshToken(
+      input.refreshToken,
+      this.refreshTokenRepository,
+      this.refreshTokenService,
+    );
+    if (!current) throw new InvalidSessionError();
 
-    if (!currentToken || !isRefreshTokenActive(currentToken, now)) {
-      throw new InvalidSessionError();
-    }
-
-    const user = await this.userRepository.findActiveById(currentToken.userId);
+    const user = await this.userRepository.findActiveById(
+      current.record.userId,
+    );
 
     if (!user) {
       throw new InvalidSessionError();
     }
 
-    const accessToken = this.accessTokenService.sign({ userId: user.id });
-    const accessTokenExpiresAt = this.addMinutes(
-      now,
-      this.config.accessTokenTtlMinutes,
-    );
-    const refreshToken = this.refreshTokenService.generate();
+    if (current.recovered) {
+      return this.session(user, current.value, current.record.expiresAt);
+    }
+
+    const now = new Date();
+    const refreshToken = this.refreshTokenService.successor(input.refreshToken);
     const newRefreshTokenHash = this.refreshTokenService.hash(refreshToken);
     const refreshTokenExpiresAt = this.addDays(
       now,
       this.config.refreshTokenTtlDays,
     );
 
-    const sessionRotated = await this.refreshTokenRepository.rotate({
-      currentTokenHash,
-      expiresAt: refreshTokenExpiresAt,
-      metadata: input.metadata,
-      newTokenHash: newRefreshTokenHash,
-      userId: user.id,
-    });
+    let sessionRotated: boolean;
+    try {
+      sessionRotated = await this.refreshTokenRepository.rotate({
+        currentTokenHash: current.record.tokenHash,
+        expiresAt: refreshTokenExpiresAt,
+        metadata: input.metadata,
+        newTokenHash: newRefreshTokenHash,
+        userId: user.id,
+      });
+    } catch (error) {
+      // A failed commit acknowledgement is ambiguous: read the persisted result
+      // before reporting failure. Never rotate again or extend its expiry.
+      const recovered = await resolveRefreshToken(
+        input.refreshToken,
+        this.refreshTokenRepository,
+        this.refreshTokenService,
+      ).catch(() => null);
+      if (recovered?.recovered) {
+        return this.session(user, recovered.value, recovered.record.expiresAt);
+      }
+      throw error;
+    }
 
     if (!sessionRotated) {
+      const recovered = await resolveRefreshToken(
+        input.refreshToken,
+        this.refreshTokenRepository,
+        this.refreshTokenService,
+      );
+      if (recovered?.recovered) {
+        return this.session(user, recovered.value, recovered.record.expiresAt);
+      }
       throw new InvalidSessionError();
     }
 
+    return this.session(user, refreshToken, refreshTokenExpiresAt);
+  }
+
+  private session(
+    user: AuthSessionDto["user"],
+    refreshToken: string,
+    refreshTokenExpiresAt: Date,
+  ): AuthSessionDto {
+    const now = new Date();
     return {
       tokens: {
-        accessToken,
-        accessTokenExpiresAt,
+        accessToken: this.accessTokenService.sign({ userId: user.id }),
+        accessTokenExpiresAt: this.addMinutes(
+          now,
+          this.config.accessTokenTtlMinutes,
+        ),
         refreshToken,
         refreshTokenExpiresAt,
       },

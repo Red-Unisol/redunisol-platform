@@ -5,6 +5,7 @@ export type PrismaRefreshTokenShape = {
   expiresAt: Date;
   id: string;
   revokedAt: Date | null;
+  replacedByTokenHash: string | null;
   tokenHash: string;
   user: PrismaUserShape;
   userId: string;
@@ -16,6 +17,7 @@ export class RefreshTokenMapper {
       expiresAt: token.expiresAt,
       id: token.id,
       revokedAt: token.revokedAt,
+      replacedByTokenHash: token.replacedByTokenHash,
       tokenHash: token.tokenHash,
       user: UserMapper.toDomain(token.user),
       userId: token.userId,

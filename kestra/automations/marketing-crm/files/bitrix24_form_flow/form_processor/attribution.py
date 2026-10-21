@@ -12,6 +12,9 @@ WA_FIELDS = (
     "UF_CRM_WA_ASSISTED", "UF_CRM_WA_ENTRY", "UF_CRM_WA_FLOW",
     "UF_CRM_WA_PROVINCE", "UF_CRM_WA_SEGMENT", "UF_CRM_WA_FLOW_ID", "UF_CRM_WA_TIMESTAMP",
 )
+ASSISTANCE_FIELDS = tuple("UF_CRM_" + name for name in (
+    "WA_ASSISTANCE_ID", "WA_ASSISTANCE_STATE", "WA_SUBFLOW", "WA_SUBFLOW_ID",
+    "WA_ORGANISMO", "WA_BANCO", "WA_CONTINUIDAD"))
 
 
 def normalize_attribution(value: Any) -> dict[str, Any] | None:
@@ -91,7 +94,7 @@ def copy_to_deal(client: Any, lead: dict[str, Any], fields: dict[str, Any]) -> N
         return
     metadata = client.call("crm.item.fields", {"entityTypeId": 2}).get("fields", {})
     names = {value.get("upperName", key): key for key, value in metadata.items()}
-    for name in (*CRM_FIELDS, *WA_FIELDS):
+    for name in (*CRM_FIELDS, *WA_FIELDS, *ASSISTANCE_FIELDS):
         value = lead.get(name)
         if value is None or value == "":
             continue
