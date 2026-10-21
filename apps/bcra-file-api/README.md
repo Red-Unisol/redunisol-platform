@@ -47,7 +47,9 @@ metadatos remotos queda fuera de esta versión.
 Medición remota del 21/10/2026, período `202608`: `DEUDORES.7Z` pesa
 325.315.249 bytes, `INFRET.7Z` 233.128 bytes y `INFRETPA.7Z` 7.199.629 bytes:
 **332.748.006 bytes en total (333 MB / 317 MiB comprimidos por control diario)**.
-El tamaño de la base y de los miembros descomprimidos debe medirse en la carga.
+Los miembros suman **7,42 GB descomprimidos**; deudores.txt ocupa 7,23 GB.
+Se procesan por streaming: ese texto no se escribe descomprimido al disco.
+El tamaño de la base SQLite debe medirse en la carga.
 
 Se transmiten los miembros a stdout de 7-Zip, sin extraer rutas al disco.
 Se importan `deudores.txt`, `maeent.txt` y, si existe, `nomdeu.txt`.
@@ -141,7 +143,8 @@ y guardados también en el archivo local canónico de accesos.
    de entorno siguen sus pipelines habituales.
 2. Ejecutar **Deploy BCRA File POC** desde main. Sólo despliega
    `/opt/bcra-file-poc`; no configura Apache. Requiere `kestra_net` y acceso
-   de lectura a GHCR en la VPS.
+   de lectura a GHCR. El workflow utiliza su token efímero en un DOCKER_CONFIG
+   temporal, eliminado al terminar; no cambia el login global de Docker en la VPS.
 3. Marcar `terms_accepted=true` únicamente cuando el operador haya aceptado las
    condiciones/declaración jurada. False permite probar errores sin descargar.
 4. Ejecutar el flow de actualización en prod con `run_now=true` y comprobar
