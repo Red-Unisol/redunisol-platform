@@ -595,6 +595,12 @@ export function listSolicitudesDelTitular(id: string) {
 
 export type RevisionPrestamoResponse = {
   titular: { nombreCompleto: string | null; nroSocio: string | null };
+  // SocAux del socio en Vimarx (Mudon = beneficio, AMEJUCA = convAux) y sus
+  // observaciones. null si no hay socio o Vimarx no respondio.
+  convenio: {
+    beneficio: string | null; caja40: number | null;
+    convAux: number | null; observaciones: string | null;
+  } | null;
   condiciones: { lineaDescripcion: string; montoAFinanciar: number | null; cuotas: number | null };
   calculo: {
     capital: number | null; cuotaResultante: number | null; cuotas: number | null;

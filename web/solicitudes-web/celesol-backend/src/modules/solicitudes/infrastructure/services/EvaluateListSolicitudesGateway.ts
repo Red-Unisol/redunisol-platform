@@ -481,6 +481,52 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     );
   }
 
+  // Datos del convenio del socio (SocAux: Mudon = Beneficio, AMEJUCA =
+  // ConvAux, Caja 40) y sus observaciones, para verlos al generar el
+  // prestamo. Solo lectura: la edicion de SocAux todavia no tiene llamada.
+  // socioLegacyId es el ID de F.Module.SocioMutual (lo que Sol Web guarda como
+  // nroSocioLegacy), no el NroSocio: el socio 1707 tiene ID 143254.
+  async getConvenioSocioByLegacyId(socioLegacyId: string): Promise<{
+    nroSocio: string | null;
+    beneficio: string | null;
+    caja40: number | null;
+    convAux: number | null;
+    observaciones: string | null;
+  } | null> {
+    const id = socioLegacyId.trim();
+    if (!/^\d+$/.test(id)) return null;
+    const fields = [
+      "NroSocio",
+      "SocAux.Beneficio",
+      "SocAux.ConvAux",
+      "SocAux.Caja40",
+      "Observaciones",
+    ] as const;
+    const indexes = buildFieldIndexByName(fields);
+    const [convenio] = await this.executeEvaluateList({
+      buildCmd: () => `[ID] = ${id}`,
+      defaultMax: 1,
+      fields,
+      tipo: "F.Module.SocioMutual",
+      mapRow: (row) => {
+        const text = (field: string) =>
+          getStringValue(row, indexes, field)?.trim() || null;
+        const number = (field: string) => {
+          const value = getNullableNumberValue(row, indexes, field);
+          return value !== null && Number.isFinite(value) ? value : null;
+        };
+        return {
+          nroSocio: text("NroSocio"),
+          beneficio: text("SocAux.Beneficio"),
+          caja40: number("SocAux.Caja40"),
+          convAux: number("SocAux.ConvAux"),
+          observaciones: text("Observaciones"),
+        };
+      },
+    });
+    return convenio ?? null;
+  }
+
   getSocioByDni(dni: string) {
     return this.executeEvaluateList(buildSocioMutualDefinitionByDni(dni), 2);
   }

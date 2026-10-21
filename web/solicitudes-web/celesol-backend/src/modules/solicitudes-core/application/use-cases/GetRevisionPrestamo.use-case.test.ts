@@ -14,10 +14,19 @@ function setup(
     socio?: boolean;
     linea?: boolean;
     monto?: number | null;
+    convenioFalla?: boolean;
   } = {},
 ) {
   const calls: unknown[] = [];
+  const convenioCalls: string[] = [];
   const useCase = new GetRevisionPrestamoUseCase({
+    convenioSocioGateway: {
+      getConvenioSocioByLegacyId: async (socioLegacyId) => {
+        convenioCalls.push(socioLegacyId);
+        if (options.convenioFalla) throw new Error("Vimarx no responde");
+        return { nroSocio: "1707", beneficio: "733767/0", caja40: 50, convAux: 80, observaciones: "depositar en CBU" };
+      },
+    },
     lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "2519", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
     repository: {
       findVendedorLegacyUser: async () => "SELLER",
@@ -71,7 +80,7 @@ function setup(
       },
     },
   });
-  return { useCase, calls };
+  return { useCase, calls, convenioCalls };
 }
 const input = {
   solicitudId: "sol-1",
@@ -80,9 +89,10 @@ const input = {
 it("resolves the generation socio and line relationship, uses simulation OID and omits manual date/rate", async () => {
   const { useCase, calls } = setup();
   const result = await useCase.execute(input);
+  // Muestra el NroSocio de Vimarx, no el ID interno que guarda Sol Web.
   assert.deepEqual(result.titular, {
     nombreCompleto: "Pérez Juana",
-    nroSocio: "143471",
+    nroSocio: "1707",
   });
   assert.deepEqual(calls, [
     { documento: "33344455" },
@@ -123,4 +133,29 @@ it("preserves missing socio and missing conditions without making up a calculati
   assert.deepEqual(result.titular, { nombreCompleto: null, nroSocio: null });
   assert.equal(result.calculo, null);
   assert.equal(calls.length, 1);
+});
+it("trae el convenio del socio desde Vimarx por su ID interno", async () => {
+  const { useCase, convenioCalls } = setup();
+  const result = await useCase.execute(input);
+  assert.deepEqual(convenioCalls, ["143471"]);
+  assert.deepEqual(result.convenio, {
+    beneficio: "733767/0",
+    caja40: 50,
+    convAux: 80,
+    observaciones: "depositar en CBU",
+  });
+});
+it("si Vimarx falla al leer el convenio, la revision sigue sin el", async () => {
+  const { useCase } = setup({ convenioFalla: true });
+  const result = await useCase.execute(input);
+  assert.equal(result.convenio, null);
+  // Sin Vimarx no se conoce el NroSocio: mejor vacio que el ID interno.
+  assert.equal(result.titular.nroSocio, null);
+  assert.equal(result.calculo?.fechaPrimerVencimiento, "2026-11-30");
+});
+it("sin socio no consulta el convenio", async () => {
+  const { useCase, convenioCalls } = setup({ socio: false });
+  const result = await useCase.execute(input);
+  assert.equal(result.convenio, null);
+  assert.deepEqual(convenioCalls, []);
 });

@@ -122,6 +122,53 @@ function RevisionPrestamoDialog({
             <Campo label="Número de socio" value={data?.titular.nroSocio} />
           </dl>
         </section>
+        {data ? (
+          <section
+            aria-label="Datos del convenio"
+            className="rounded-md border border-border bg-background p-3"
+          >
+            <h3 className="mb-1 text-sm font-semibold">Datos del convenio</h3>
+            {/* Solo lectura: se editan en Vimarx hasta tener la llamada de
+                edicion de SocAux. */}
+            <p className="mb-2 text-xs text-foreground-secondary">
+              Del socio en Vimarx. Para cambiarlos, editalos en Vimarx.
+            </p>
+            {data.convenio ? (
+              <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                <Campo
+                  label="Mudon (beneficio)"
+                  value={data.convenio.beneficio ?? "Sin cargar"}
+                />
+                <Campo
+                  label="AMEJUCA"
+                  value={
+                    data.convenio.convAux === null
+                      ? "Sin cargar"
+                      : String(data.convenio.convAux)
+                  }
+                />
+                <Campo
+                  label="Caja 40"
+                  value={
+                    data.convenio.caja40 === null
+                      ? "Sin cargar"
+                      : String(data.convenio.caja40)
+                  }
+                />
+                <div className="sm:col-span-3">
+                  <Campo
+                    label="Observaciones del socio"
+                    value={data.convenio.observaciones ?? "Sin cargar"}
+                  />
+                </div>
+              </dl>
+            ) : (
+              <p className="text-sm text-foreground-secondary">
+                No se pudieron leer los datos del convenio de Vimarx.
+              </p>
+            )}
+          </section>
+        ) : null}
         <section aria-label="Condiciones">
           <h3 className="mb-2 text-sm font-semibold">Condiciones</h3>
           <dl className="grid grid-cols-2 gap-3 md:grid-cols-4 text-sm">
