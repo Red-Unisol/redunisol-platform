@@ -70,5 +70,5 @@ outputs:
 triggers:
   - id: diario
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "0 4 * * *"
+    cron: "0 21 * * *"
     timezone: America/Argentina/Buenos_Aires

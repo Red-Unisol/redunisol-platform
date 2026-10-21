@@ -9,6 +9,9 @@ services:
       BCRA_FILE_API_TOKEN: ${BCRA_FILE_API_TOKEN:?Set the POC token}
       BCRA_FILE_TERMS_ACCEPTED: ${BCRA_FILE_TERMS_ACCEPTED:-false}
       BCRA_FILE_DATA_DIR: /data
+      BCRA_FILE_REFRESH_START_HOUR: "21"
+      BCRA_FILE_REFRESH_END_HOUR: "7"
+      BCRA_FILE_REFRESH_TIMEZONE: America/Argentina/Buenos_Aires
     volumes:
       - bcra-file-data:/data
     tmpfs:

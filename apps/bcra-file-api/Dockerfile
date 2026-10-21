@@ -1,6 +1,6 @@
 FROM python:3.11-slim-bookworm AS base
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y 7zip \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y 7zip tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 bcra \
     && useradd --uid 10001 --gid 10001 --no-create-home bcra \

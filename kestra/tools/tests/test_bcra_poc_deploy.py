@@ -31,7 +31,7 @@ class BcraPocDeploymentTests(unittest.TestCase):
 
     def test_daily_schedule_has_an_explicit_manual_test_and_no_business_tasks(self):
         flow = yaml.safe_load((FLOWS / "bcra_archivo_actualizar_poc.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(flow["triggers"][0]["cron"], "0 4 * * *")
+        self.assertEqual(flow["triggers"][0]["cron"], "0 21 * * *")
         self.assertEqual(flow["triggers"][0]["timezone"], "America/Argentina/Buenos_Aires")
         self.assertFalse(flow["inputs"][0]["defaults"])
         self.assertIn("inputs.run_now", flow["tasks"][0]["condition"])
