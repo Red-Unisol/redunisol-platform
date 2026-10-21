@@ -102,6 +102,7 @@ class RefreshManager:
             }
             staged_database = work / "snapshot.sqlite"
             manifest = import_snapshot(staged_database, archives, manifest, self.config.min_rows)
+            warnings = manifest["warnings"]
             if previous and manifest["rows"] < previous["rows"] * self.config.min_row_ratio:
                 raise SourceError("BCRA row count dropped by more than the allowed threshold")
             # Retain exactly the active publication's raw archives plus the active
