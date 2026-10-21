@@ -27,8 +27,13 @@ type LocalidadSelectProps = {
   disabled?: boolean;
   invalid?: boolean;
   onBlur?: () => void;
-  onChange: (id: string) => void;
+  onChange?: (id: string) => void;
+  // Para quien guarda el nombre y no el id (la solicitud): el texto que se
+  // muestra, la localidad elegida completa y como quitarla (campo opcional).
+  onClear?: () => void;
+  onPick?: (localidad: Localidad) => void;
   value: string;
+  valueLabel?: string;
 };
 
 /**
@@ -41,7 +46,10 @@ export function LocalidadSelect({
   invalid,
   onBlur,
   onChange,
+  onClear,
+  onPick,
   value,
+  valueLabel,
 }: LocalidadSelectProps) {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -93,15 +101,23 @@ export function LocalidadSelect({
           disabled={disabled}
           type="button"
         >
-          <span
-            className={selected ? "truncate" : "truncate text-foreground-muted"}
-          >
-            {selected
-              ? formatLocalidad(selected)
-              : currentQuery.isFetching
-                ? "Cargando..."
-                : "Buscar localidad"}
-          </span>
+          {valueLabel !== undefined ? (
+            <span
+              className={valueLabel ? "truncate" : "truncate text-foreground-muted"}
+            >
+              {valueLabel || "Buscar localidad"}
+            </span>
+          ) : (
+            <span
+              className={selected ? "truncate" : "truncate text-foreground-muted"}
+            >
+              {selected
+                ? formatLocalidad(selected)
+                : currentQuery.isFetching
+                  ? "Cargando..."
+                  : "Buscar localidad"}
+            </span>
+          )}
           <ChevronDown className="size-4 shrink-0 text-foreground-secondary" />
         </button>
       </PopoverTrigger>
@@ -116,6 +132,18 @@ export function LocalidadSelect({
             value={searchTerm}
           />
         </div>
+        {onClear && valueLabel ? (
+          <button
+            className="flex min-h-9 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground-secondary transition hover:bg-background"
+            onClick={() => {
+              onClear();
+              handleOpenChange(false);
+            }}
+            type="button"
+          >
+            Sin localidad
+          </button>
+        ) : null}
         {status ? (
           <div className="px-3 py-2 text-sm text-foreground-muted">
             {status}
@@ -131,7 +159,8 @@ export function LocalidadSelect({
               key={localidad.id}
               onClick={() => {
                 setPicked(localidad);
-                onChange(localidad.id);
+                onChange?.(localidad.id);
+                onPick?.(localidad);
                 handleOpenChange(false);
               }}
               type="button"
