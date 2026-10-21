@@ -385,10 +385,12 @@ Si no se hace eso, el dominio puede quedar versionado pero no desplegable por pi
 publish-bcra-file-api.yml prueba y publica la imagen inmutable del servicio
 persistente al cambiar su código en main. deploy-bcra-file-poc.yml es manual,
 restringido a main y al operador habitual; despliega sólo /opt/bcra-file-poc
-y descifra su env propio. No activa el scheduler ni conecta consumidores.
+y descifra su env propio. La aceptación del operador quedó registrada el
+21/10/2026; el input de despliegue permite revocarla. No conecta consumidores.
 
-El normalizador soporta labels.schedule_scope: dev_only, que elimina sus triggers
-al publicar en prod. Los flows existentes prod_only conservan su comportamiento.
-La bandera cifrada ENV_BCRA_FILE_POC_ENABLED comienza en false.
+Los dos flows BCRA usan labels.schedule_scope: prod_only: sus triggers sólo se
+publican en producción. La bandera cifrada ENV_BCRA_FILE_POC_ENABLED=true activa
+el trabajo diario a las 04:00 Argentina. El normalizador también soporta dev_only
+para otros flows aislados.
 
 Ver [runbook y contrato del POC](../apps/bcra-file-api/README.md).

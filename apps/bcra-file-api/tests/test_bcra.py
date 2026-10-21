@@ -169,6 +169,17 @@ class DownloadTests(unittest.TestCase):
             with self.assertRaises(SourceError):
                 client.acknowledge_terms(self.asset)
 
+    def test_null_logging_response_is_recorded_but_download_still_requires_real_7z(self):
+        client = SourceClient(self.config)
+        with patch.object(client.opener, "open", return_value=self.response(b'{"result":null}')):
+            self.assertEqual(client.acknowledge_terms(self.asset), "null_response")
+        with patch.object(client.opener, "open", side_effect=[
+            self.response(b'{"result":null}'), self.response(b"<html>Login</html>")
+        ]):
+            with self.assertRaises(SourceError):
+                client.download(self.asset, self.target)
+        self.assertFalse(self.target.exists())
+
     def test_no_download_without_operator_acceptance(self):
         client = SourceClient(replace(self.config, terms_accepted=False))
         with patch.object(client.opener, "open") as call, self.assertRaises(SourceError):

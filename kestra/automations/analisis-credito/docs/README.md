@@ -20,8 +20,8 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 ## BCRA desde archivos — POC
 
-- bcra_archivo_actualizar_poc: scheduler diario 04:00 Argentina, dev-only y
-  desactivado por flag inicialmente; prueba manual con run_now=true.
+- bcra_archivo_actualizar_poc: scheduler diario 04:00 Argentina, prod-only y
+  habilitado por flag; carga manual con run_now=true.
 - bcra_archivo_consultar_poc: webhook síncrono con HTTP nativo hacia un
   contenedor persistente, sin crear un contenedor por consulta.
 - No hay consumidores existentes ni cambios de reglas comerciales.

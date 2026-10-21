@@ -2,12 +2,12 @@ id: bcra_archivo_actualizar_poc
 namespace: redunisol
 description: POC aislada. Revalida diariamente la publicación mensual BCRA y sus rectificativas.
 labels:
-  env: dev
+  env: prod
   team: redunisol
   domain: analisis-credito
   kind: scheduled
   integration: bcra-file-poc
-  schedule_scope: dev_only
+  schedule_scope: prod_only
 inputs:
   - id: run_now
     type: BOOL

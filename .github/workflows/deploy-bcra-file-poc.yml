@@ -6,7 +6,7 @@ on:
         description: "El operador ya aceptó la declaración jurada y condiciones de descarga BCRA"
         type: boolean
         required: true
-        default: false
+        default: true
 permissions:
   contents: read
   packages: write

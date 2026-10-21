@@ -12,10 +12,10 @@ Bitrix y no consulta la API individual del BCRA. No toma decisiones comerciales.
   hacia el contenedor que ya está activo; sin Docker task runner.
 - `bcra_archivo_actualizar_poc`: scheduler diario a las 04:00 Argentina; inicia
   un job en el servicio y consulta su estado cada minuto, hasta 12 horas.
-- Ambos triggers se publican solamente en `redunisol.dev.analisis-credito`.
-  El normalizador elimina los triggers `dev_only` en prod.
-- `ENV_BCRA_FILE_POC_ENABLED=false` desactiva inicialmente el trabajo diario.
-  La entrada manual `run_now=true` permite probarlo sin habilitar el scheduler.
+- Ambos triggers se publican solamente en `redunisol.prod.analisis-credito`.
+  El normalizador elimina los triggers `prod_only` en dev.
+- `ENV_BCRA_FILE_POC_ENABLED=true` habilita el trabajo diario en producción.
+  La entrada manual `run_now=true` permite una primera carga o reintento.
 - Sin cambios de reglas, consumidores, rutas históricas ni DNS.
 
 ## Fuente y actualización
@@ -33,11 +33,21 @@ cookies ni campos de sesión. Requiere que el operador haya aceptado las
 condiciones/declaración jurada BCRA: rechaza descargas mientras
 `BCRA_FILE_TERMS_ACCEPTED=false`. No automatiza el login de ARCA ni evade
 controles de acceso. Una página HTML de login con HTTP 200 se considera error.
+El 21/10/2026 el registro público `Log_Archivo` devolvió `result: null` mientras
+el formulario oficial entregaba archivos 7z válidos. Ese resultado se conserva
+como advertencia en el job y el manifiesto; una negativa explícita impide la
+descarga. La aceptación del operador sigue siendo obligatoria y quedó registrada
+en la configuración cifrada el 21/10/2026.
 
 Por ahora se descargan y calculan las huellas de los tres comprimidos **cada día**.
 Así se detectan correcciones que conserven el mismo nombre o enlace. Si los
 SHA-256 no cambian, no se descomprime ni importa. La optimización mediante
 metadatos remotos queda fuera de esta versión.
+
+Medición remota del 21/10/2026, período `202608`: `DEUDORES.7Z` pesa
+325.315.249 bytes, `INFRET.7Z` 233.128 bytes y `INFRETPA.7Z` 7.199.629 bytes:
+**332.748.006 bytes en total (333 MB / 317 MiB comprimidos por control diario)**.
+El tamaño de la base y de los miembros descomprimidos debe medirse en la carga.
 
 Se transmiten los miembros a stdout de 7-Zip, sin extraer rutas al disco.
 Se importan `deudores.txt`, `maeent.txt` y, si existe, `nomdeu.txt`.
@@ -112,7 +122,7 @@ No incluye historia de 24 meses ni cheques. No determina elegibilidad crediticia
 ## Endpoint de Kestra
 
 ~~~text
-POST /api/v1/main/executions/webhook/redunisol.dev.analisis-credito/bcra_archivo_consultar_poc/<BCRA_FILE_POC_WEBHOOK_KEY>
+POST /api/v1/main/executions/webhook/redunisol.prod.analisis-credito/bcra_archivo_consultar_poc/<BCRA_FILE_POC_WEBHOOK_KEY>
 Content-Type: application/json
 
 {"identificacion":"20123456786"}
@@ -134,11 +144,11 @@ y guardados también en el archivo local canónico de accesos.
    de lectura a GHCR en la VPS.
 3. Marcar `terms_accepted=true` únicamente cuando el operador haya aceptado las
    condiciones/declaración jurada. False permite probar errores sin descargar.
-4. Ejecutar el flow de actualización en dev con `run_now=true` y comprobar
+4. Ejecutar el flow de actualización en prod con `run_now=true` y comprobar
    finalización, período, conteos y consultas conocidas.
-5. Para habilitar el trabajo diario, cambiar `ENV_BCRA_FILE_POC_ENABLED=true`
-   en el runtime cifrado mediante el tooling habitual y llevarlo a Git.
-   Esto sigue sin conectar consumidores ni cambiar reglas.
+5. El trabajo diario está habilitado mediante `ENV_BCRA_FILE_POC_ENABLED=true`
+   en el runtime cifrado. El despliegue de infraestructura aplica esa configuración.
+   No se conectan consumidores ni se cambian reglas.
 
 El Compose usa el volumen `bcra-file-poc_bcra-file-data`, hasta 2 GiB de memoria
 y 1 CPU. Medir espacio antes de importar: pueden coexistir archivos anteriores,
