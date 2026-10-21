@@ -379,3 +379,16 @@ Si no se hace eso, el dominio puede quedar versionado pero no desplegable por pi
 - `Deploy Dev` para `bitrix24`: OK como checkpoint historico previo al rename a `marketing-crm`
 - namespace `redunisol.dev.bitrix24`: verificado como checkpoint historico
 - deploy prod desde GitHub Actions: no verificado en runtime
+
+## BCRA File POC
+
+publish-bcra-file-api.yml prueba y publica la imagen inmutable del servicio
+persistente al cambiar su código en main. deploy-bcra-file-poc.yml es manual,
+restringido a main y al operador habitual; despliega sólo /opt/bcra-file-poc
+y descifra su env propio. No activa el scheduler ni conecta consumidores.
+
+El normalizador soporta labels.schedule_scope: dev_only, que elimina sus triggers
+al publicar en prod. Los flows existentes prod_only conservan su comportamiento.
+La bandera cifrada ENV_BCRA_FILE_POC_ENABLED comienza en false.
+
+Ver [runbook y contrato del POC](../apps/bcra-file-api/README.md).

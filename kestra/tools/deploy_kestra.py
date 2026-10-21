@@ -89,7 +89,8 @@ def normalize_flow_source(
 
 def _normalize_triggers(payload: dict, labels: dict, environment: str) -> None:
     schedule_scope = str(labels.get("schedule_scope") or "").strip().lower()
-    if environment != "prod" and schedule_scope == "prod_only":
+    if ((environment != "prod" and schedule_scope == "prod_only")
+            or (environment != "dev" and schedule_scope == "dev_only")):
         payload.pop("triggers", None)
 
 
