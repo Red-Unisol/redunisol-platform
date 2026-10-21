@@ -12,10 +12,12 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { NavLink, useLocation } from "react-router-dom";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { canCreateSolicitud, canManageUsers } from "@/modules/auth/utils/auth-user";
+import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 import { Input } from "@/shared/components/ui/input";
 
 type SidebarGroup = {
@@ -103,7 +105,16 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   },
 ];
 
+// Tocar la lista en la que ya se esta la vuelve a pedir (antes no hacia nada).
+const LISTA_QUERY_KEY_POR_RUTA: Record<string, readonly unknown[]> = {
+  "/solicitudes/core/precarga": solicitudesCoreQueryKeys.precargaAll,
+  "/solicitudes/core/recientes": solicitudesCoreQueryKeys.recientesAll,
+  "/solicitudes/core/historicas": solicitudesCoreQueryKeys.historicasAll,
+};
+
 export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
+  const queryClient = useQueryClient();
+  const location = useLocation();
   const sessionQuery = useAuthSessionQuery();
   const user = sessionQuery.data;
   const [searchTerm, setSearchTerm] = useState("");
@@ -238,7 +249,13 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                                   }`
                                 }
                                 key={item.to}
-                                onClick={isDesktop ? undefined : onClose}
+                                onClick={() => {
+                                  const listaKey = LISTA_QUERY_KEY_POR_RUTA[item.to];
+                                  if (listaKey && location.pathname === item.to) {
+                                    void queryClient.invalidateQueries({ queryKey: listaKey });
+                                  }
+                                  if (!isDesktop) onClose();
+                                }}
                                 to={item.to}
                               >
                                 <item.icon className="size-4 shrink-0" />
