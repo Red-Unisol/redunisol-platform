@@ -1,4 +1,4 @@
-import { FindSolicitudTitularSocio } from "../services/FindSolicitudTitularSocio";
+import { FindSolicitudTitularSocioLegacyId } from "../services/FindSolicitudTitularSocioLegacyId";
 import type {
   CuotaPrestamoLegacy,
   PrestamoDelSocioDetalleLegacy,
@@ -7,19 +7,22 @@ import {
   PrestamoDelSocioNotFoundError,
   SolicitudCoreNotFoundError,
 } from "../../domain/solicitudes-core-errors";
-import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
 
 type LegacyGateway = Pick<
   SolicitudesLegacyGateway,
   "getPrestamoDelSocio" | "listCuotasDelPrestamo"
->;
+> & {
+  lookupSocioRapido(
+    documento: string,
+    tipoDocumento?: string,
+  ): Promise<{ id: string }[]>;
+};
 
 type Dependencies = {
   legacyGateway: LegacyGateway;
   repository: Pick<SolicitudesCoreRepository, "findById">;
-  sociosRepository: SocioRepository;
 };
 
 export type GetPrestamoDelSocioInput = {
@@ -33,13 +36,13 @@ export type PrestamoDelSocioConCuotas = {
 };
 
 export class GetPrestamoDelSocioUseCase {
-  private readonly findSolicitudTitularSocio: FindSolicitudTitularSocio;
+  private readonly findSocioLegacyId: FindSolicitudTitularSocioLegacyId;
   private readonly legacyGateway: LegacyGateway;
   private readonly repository: Pick<SolicitudesCoreRepository, "findById">;
 
   constructor(dependencies: Dependencies) {
-    this.findSolicitudTitularSocio = new FindSolicitudTitularSocio({
-      sociosRepository: dependencies.sociosRepository,
+    this.findSocioLegacyId = new FindSolicitudTitularSocioLegacyId({
+      gateway: dependencies.legacyGateway,
     });
     this.legacyGateway = dependencies.legacyGateway;
     this.repository = dependencies.repository;
@@ -62,14 +65,14 @@ export class GetPrestamoDelSocioUseCase {
       throw new PrestamoDelSocioNotFoundError();
     }
 
-    const socio = await this.findSolicitudTitularSocio.execute(
+    // El socio se busca en Vimarx, igual que en la lista de prestamos.
+    const socioLegacyId = await this.findSocioLegacyId.execute(
       solicitud.titular,
     );
-    const socioLegacyId = socio?.nroSocioLegacy?.trim() ?? "";
 
     // Un titular que no es socio no tiene prestamos: para quien pregunta es lo
     // mismo que pedir un prestamo ajeno.
-    if (!/^\d+$/.test(socioLegacyId)) {
+    if (!socioLegacyId) {
       throw new PrestamoDelSocioNotFoundError();
     }
 

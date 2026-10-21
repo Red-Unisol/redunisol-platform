@@ -6,7 +6,6 @@ import {
   PrestamoDelSocioNotFoundError,
   SolicitudCoreNotFoundError,
 } from "../../domain/solicitudes-core-errors";
-import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 
 const TITULAR = {
   cuit: null,
@@ -93,8 +92,8 @@ describe("GetPrestamoDelSocioUseCase", () => {
   it("does not call the legacy system with non numeric ids", async () => {
     // Los dos numeros se interpolan en la expresion de criterios del legado.
     for (const caso of [
-      { nroSocioLegacy: "146871", prestamoId: "423331 OR 1=1" },
-      { nroSocioLegacy: "146871 OR 1=1", prestamoId: "423331" },
+      { nroDocumento: "35578689", prestamoId: "423331 OR 1=1" },
+      { nroDocumento: "35578689 OR 1=1", prestamoId: "423331" },
     ]) {
       let llamado = false;
       const useCase = buildUseCase({
@@ -105,7 +104,10 @@ describe("GetPrestamoDelSocioUseCase", () => {
           },
           listCuotasDelPrestamo: async () => [],
         },
-        socios: [{ nroSocioLegacy: caso.nroSocioLegacy }],
+        solicitud: {
+          id: "sol-1",
+          titular: { ...TITULAR, nroDocumento: caso.nroDocumento },
+        },
       });
 
       await assert.rejects(
@@ -158,24 +160,25 @@ function buildUseCase(
         prestamoLegacyId: string,
       ) => Promise<ReturnType<typeof cuota>[]>;
     };
-    socios?: { nroSocioLegacy: string | null }[];
+    socios?: { id: string }[];
     solicitud?: unknown;
   } = {},
 ) {
-  const socios = overrides.socios ?? [{ nroSocioLegacy: "146871" }];
+  const socios = overrides.socios ?? [{ id: "146871" }];
   const solicitud =
     overrides.solicitud === undefined
       ? { id: "sol-1", titular: TITULAR }
       : overrides.solicitud;
 
   return new GetPrestamoDelSocioUseCase({
-    legacyGateway: overrides.legacyGateway ?? {
-      getPrestamoDelSocio: async () => prestamo(),
-      listCuotasDelPrestamo: async () => [],
+    legacyGateway: {
+      ...(overrides.legacyGateway ?? {
+        getPrestamoDelSocio: async () => prestamo(),
+        listCuotasDelPrestamo: async () => [],
+      }),
+      // El socio del titular se busca en el padron de Vimarx.
+      lookupSocioRapido: async () => socios,
     },
     repository: { findById: async () => solicitud } as never,
-    sociosRepository: {
-      lookupByDocumento: async () => socios,
-    } as unknown as SocioRepository,
   });
 }
