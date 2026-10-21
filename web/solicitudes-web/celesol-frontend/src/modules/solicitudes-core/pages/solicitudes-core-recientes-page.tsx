@@ -215,15 +215,20 @@ export function SolicitudesCoreRecientesPage() {
 }
 
 function RecientesList({ user }: { user: AuthUser }) {
+  // El vendedor arranca viendo todas las suyas, en cualquier area: si
+  // arrancara en "Mi area", la solicitud se le iria al enviarla a Riesgo.
+  // "Ver todas" nunca le muestra las de otros (lo limita el backend).
+  const esVendedor = user.workflowOwner?.code === "VENDEDORES";
   const areaLabel = user.workflowOwner?.code === "RIESGO"
     ? "Riesgo"
-    : user.workflowOwner?.code === "VENDEDORES"
-      ? "Vendedores"
+    : esVendedor
+      ? "Pendientes de mi lado"
       : user.workflowOwner?.name ?? "Sin área asignada";
+  const todasLabel = esVendedor ? "Todas mis solicitudes" : "Ver todas";
   const [vista, setVista] = useState<"mi-area" | "todas">(() =>
     !user.isSystemAdmin &&
     user.workflowOwnerId &&
-    ["VENDEDORES", "RIESGO"].includes(user.workflowOwner?.code ?? "")
+    user.workflowOwner?.code === "RIESGO"
       ? "mi-area"
       : "todas",
   );
@@ -347,7 +352,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                   setSelectedIds([]);
                 }}
               >
-                {value === "mi-area" ? areaLabel : "Ver todas"}
+                {value === "mi-area" ? areaLabel : todasLabel}
               </Button>
             ))}
           </div>

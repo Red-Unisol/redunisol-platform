@@ -7,13 +7,31 @@ import {
 } from "./SolicitudesCorePrismaDatasource";
 import type { CreateSolicitudCoreRecord } from "../../domain/repositories/SolicitudesCoreRepository";
 
+// Recientes: lo que no esta en un estado final, mas lo que llego a uno hace
+// menos de 24 hs.
+function assertRecientesEstadoCondition(or: unknown) {
+  assert.ok(Array.isArray(or));
+  const [enCurso, finalizadas] = or as Array<{
+    estadoActual: { code: Record<string, unknown> };
+    estadoHistorial?: { some: { toStateCodeSnapshot: unknown } };
+  }>;
+  assert.deepEqual(enCurso!.estadoActual.code, {
+    notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
+  });
+  assert.deepEqual(finalizadas!.estadoActual.code, { in: [...HISTORICAS_NEGATIVE_STATE_CODES] });
+  assert.deepEqual(finalizadas!.estadoHistorial!.some.toStateCodeSnapshot, {
+    in: [...HISTORICAS_NEGATIVE_STATE_CODES],
+  });
+}
+
 describe("SolicitudesCorePrismaDatasource", () => {
   it("aplica área del estado antes de paginar sin filtrar por ejecutivo", async () => {
     const prisma = new FakeSolicitudesCorePrisma();
     const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
     await datasource.listRecientes({ estadoOwnerId: "riesgo", creadoPorIn: ["visible"], limit: 10, offset: 20, nroDocumento: "123" });
     const query = prisma.solicitudFindManyCalls[0]!;
-    assert.deepEqual(query.where.estadoActual, { ownerId: "riesgo", code: { notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"] } });
+    assert.deepEqual(query.where.estadoActual, { ownerId: "riesgo" });
+    assertRecientesEstadoCondition(query.where.OR);
     assert.equal(query.skip, 20);
     assert.equal(query.take, 10);
     assert.deepEqual(query.where.createdBy, { in: ["visible"] });
@@ -215,13 +233,40 @@ describe("SolicitudesCorePrismaDatasource", () => {
         }
       | undefined;
 
-    assert.equal("OR" in (recientesWhere ?? {}), false);
     assert.equal("createdBy" in (recientesWhere ?? {}), false);
     assert.equal("participants" in (recientesWhere ?? {}), false);
-    assert.equal(recientesWhere?.estadoActual?.ownerId, undefined);
-    assert.deepEqual(recientesWhere?.estadoActual?.code, {
-      notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
-    });
+    assert.equal(recientesWhere?.estadoActual, undefined);
+    assertRecientesEstadoCondition(recientesWhere?.OR);
+  });
+
+  it("deja en Recientes 24 hs las solicitudes que llegaron a un estado final", async () => {
+    const prisma = new FakeSolicitudesCorePrisma();
+    const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
+    const antes = Date.now();
+
+    await datasource.listRecientes({ limit: 10, offset: 0 });
+
+    const [, finalizadas] = prisma.solicitudFindManyCalls[0]!.where.OR as Array<{
+      estadoHistorial: { some: { changedAt: { gte: Date } } };
+    }>;
+    const desde = finalizadas!.estadoHistorial.some.changedAt.gte.getTime();
+    const horas = (antes - desde) / (60 * 60 * 1000);
+    assert(horas >= 23.99 && horas <= 24.01, `ventana de ${horas} hs`);
+  });
+
+  it("Historicas no repite las finalizadas que siguen en Recientes", async () => {
+    const prisma = new FakeSolicitudesCorePrisma();
+    const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
+
+    await datasource.listHistoricas({ limit: 10, offset: 0 });
+
+    const [finalizadas] = prisma.solicitudFindManyCalls[0]!.where.OR as Array<{
+      estadoActual: { code: { in: string[] } };
+      OR: Array<Record<string, unknown>>;
+    }>;
+    assert.deepEqual(finalizadas!.estadoActual.code.in, [...HISTORICAS_NEGATIVE_STATE_CODES]);
+    assert.ok("createdAt" in finalizadas!.OR[0]!);
+    assert.deepEqual(Object.keys(finalizadas!.OR[1]!.estadoHistorial as object), ["none"]);
   });
 
   it("assigns solicitud only when assignedToUserId is null", async () => {
