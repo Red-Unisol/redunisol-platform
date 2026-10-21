@@ -18,4 +18,5 @@ def create_logger() -> Logger:
 
 def _write(level: str, message: str) -> None:
     timestamp = datetime.now(timezone.utc).isoformat()
-    sys.stderr.write(f"[{timestamp}] {level} {message}\n")
+    stream = sys.stderr if level == "ERROR" else sys.stdout
+    print(f"[{timestamp}] {level} {message}", file=stream, flush=True)
