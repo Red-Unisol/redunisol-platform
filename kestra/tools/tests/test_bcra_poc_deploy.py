@@ -9,14 +9,14 @@ FLOWS = ROOT / "kestra/automations/analisis-credito/flows"
 
 
 class BcraPocDeploymentTests(unittest.TestCase):
-    def test_poc_triggers_exist_only_in_dev(self):
+    def test_poc_triggers_exist_only_in_prod(self):
         for name in ("bcra_archivo_actualizar_poc", "bcra_archivo_consultar_poc"):
             with self.subTest(flow=name):
                 path = FLOWS / (name + ".yaml")
                 dev = yaml.safe_load(normalize_flow_source(path, "redunisol.dev.analisis-credito", "dev"))
                 prod = yaml.safe_load(normalize_flow_source(path, "redunisol.prod.analisis-credito", "prod"))
-                self.assertIn("triggers", dev)
-                self.assertNotIn("triggers", prod)
+                self.assertNotIn("triggers", dev)
+                self.assertIn("triggers", prod)
 
     def test_query_is_one_native_http_task_without_a_container_runner(self):
         flow = yaml.safe_load((FLOWS / "bcra_archivo_consultar_poc.yaml").read_text(encoding="utf-8"))

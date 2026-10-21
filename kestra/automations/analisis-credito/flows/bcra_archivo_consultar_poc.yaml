@@ -2,12 +2,12 @@ id: bcra_archivo_consultar_poc
 namespace: redunisol
 description: POC de consulta BCRA por CUIT/CUIL/CDI desde el archivo local. Sin decisiones comerciales ni API upstream.
 labels:
-  env: dev
+  env: prod
   team: redunisol
   domain: analisis-credito
   kind: webhook
   integration: bcra-file-poc
-  schedule_scope: dev_only
+  schedule_scope: prod_only
 inputs:
   - id: identificacion
     type: STRING

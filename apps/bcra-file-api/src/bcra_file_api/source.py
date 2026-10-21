@@ -104,7 +104,7 @@ class SourceClient:
         except Exception:
             raise SourceError("Unable to read BCRA catalog") from None
 
-    def acknowledge_terms(self, asset: Asset) -> None:
+    def acknowledge_terms(self, asset: Asset) -> str:
         request = Request(
             self.config.catalog_url.rstrip("/") + "/Log_Archivo",
             data=urlencode({"Name": asset.name}).encode(),
@@ -115,8 +115,17 @@ class SourceClient:
         try:
             with self.opener.open(request, timeout=self.config.timeout) as response:
                 result = json.loads(response.read(65536))
-            if not isinstance(result, dict) or result.get("result") is not True:
-                raise SourceError("BCRA did not acknowledge the accepted download terms")
+            if not isinstance(result, dict) or "result" not in result:
+                raise SourceError("Unexpected BCRA download-log response")
+            if result["result"] is True:
+                return "accepted"
+            if result["result"] is None:
+                # Observed 2026-10-21: the public catalog's logging endpoint
+                # returns null, while its own session authorizes the 7z download.
+                # Operator consent is still mandatory. Explicit denial is fatal;
+                # null is recorded, and MFT must independently return a real archive.
+                return "null_response"
+            raise SourceError("BCRA did not acknowledge the accepted download terms")
         except SourceError:
             raise
         except Exception:
@@ -125,7 +134,7 @@ class SourceClient:
     def download(self, asset: Asset, target: Path) -> dict:
         if not self.config.terms_accepted:
             raise SourceError("BCRA terms must be accepted by the operator before downloading")
-        self.acknowledge_terms(asset)
+        terms_log_result = self.acknowledge_terms(asset)
         # Use the official form's POST, including its hidden fields. A GET can return
         # an HTML login page with HTTP 200 instead of the archive.
         for attempt in range(3):
@@ -160,7 +169,8 @@ class SourceClient:
                     length = response.headers.get("Content-Length")
                     if length and int(length) != total:
                         raise SourceError("Truncated BCRA archive")
-                return {"name": asset.name, "kind": asset.kind, "sha256": digest.hexdigest(), "bytes": total}
+                return {"name": asset.name, "kind": asset.kind, "sha256": digest.hexdigest(),
+                        "bytes": total, "terms_log_result": terms_log_result}
             except Exception as exc:
                 target.unlink(missing_ok=True)
                 if isinstance(exc, SourceError):

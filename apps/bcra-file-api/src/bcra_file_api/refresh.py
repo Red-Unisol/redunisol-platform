@@ -87,14 +87,18 @@ class RefreshManager:
             work = Path(temporary)
             downloaded = [client.download(asset, work / asset.name) for asset in assets]
             version = content_version(downloaded)
+            warnings = [
+                "BCRA download log returned null for " + item["name"]
+                for item in downloaded if item.get("terms_log_result") == "null_response"
+            ]
             if previous and previous["version"] == version:
-                return {"action": "unchanged", "version": version, "period": period}
+                return {"action": "unchanged", "version": version, "period": period, "warnings": warnings}
             archives = {
                 asset.kind: Archive(work / asset.name, self.config.seven_zip, deadline=deadline) for asset in assets
             }
             manifest = {
                 "version": version, "period": period, "checked_at": timestamp(),
-                "files": downloaded,
+                "files": downloaded, "warnings": warnings,
             }
             staged_database = work / "snapshot.sqlite"
             manifest = import_snapshot(staged_database, archives, manifest, self.config.min_rows)
@@ -122,7 +126,8 @@ class RefreshManager:
                 # just because an old raw archive could not be removed.
                 cleanup_pending = True
             return {"action": "updated", "version": version, "period": period,
-                    "rows": manifest["rows"], "archive_cleanup_pending": cleanup_pending}
+                    "rows": manifest["rows"], "archive_cleanup_pending": cleanup_pending,
+                    "warnings": warnings}
 
     def _run(self) -> None:
         try:
