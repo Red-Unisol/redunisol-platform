@@ -17,6 +17,18 @@ class Config:
     max_download_bytes: int = 12 * 1024**3
     max_check_age_hours: int = 72
     seven_zip: str = "7z"
+    refresh_start_hour: int | None = None
+    refresh_end_hour: int = 7
+    refresh_timezone: str = "America/Argentina/Buenos_Aires"
+
+    def __post_init__(self) -> None:
+        if self.refresh_start_hour is not None and (
+            not 0 <= self.refresh_start_hour < 24
+            or not 0 <= self.refresh_end_hour < 24
+            or self.refresh_start_hour == self.refresh_end_hour
+        ):
+            raise ValueError("Invalid BCRA refresh window")
+
 
     @classmethod
     def from_env(cls) -> Config:
@@ -30,4 +42,10 @@ class Config:
             catalog_url=os.environ.get("BCRA_FILE_CATALOG_URL", cls.catalog_url),
             min_rows=int(os.environ.get("BCRA_FILE_MIN_ROWS", "100000")),
             seven_zip=os.environ.get("BCRA_FILE_7Z", "7z"),
+            refresh_start_hour=(
+                int(os.environ["BCRA_FILE_REFRESH_START_HOUR"])
+                if os.environ.get("BCRA_FILE_REFRESH_START_HOUR") else None
+            ),
+            refresh_end_hour=int(os.environ.get("BCRA_FILE_REFRESH_END_HOUR", "7")),
+            refresh_timezone=os.environ.get("BCRA_FILE_REFRESH_TIMEZONE", "America/Argentina/Buenos_Aires"),
         )

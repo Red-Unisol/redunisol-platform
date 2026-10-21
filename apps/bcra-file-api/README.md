@@ -10,8 +10,16 @@ Bitrix y no consulta la API individual del BCRA. No toma decisiones comerciales.
   `kestra_net`. Sin puerto publicado al host y sin acceso al socket de Docker.
 - `bcra_archivo_consultar_poc`: webhook síncrono con una única tarea HTTP nativa
   hacia el contenedor que ya está activo; sin Docker task runner.
-- `bcra_archivo_actualizar_poc`: scheduler diario a las 04:00 Argentina; inicia
+- `bcra_archivo_actualizar_poc`: scheduler diario a las 21:00 Argentina; inicia
   un job en el servicio y consulta su estado cada minuto, hasta 12 horas.
+- El servicio sólo admite trabajo pesado entre las 21:00 y las 07:00 Argentina,
+  incluso con `run_now=true`. El presupuesto de diez horas se acorta al cierre
+  de la ventana; se controla también durante SQL, descarga y descompresión.
+  Un corte conserva la base activa, marca el job como fallido y descarta la
+  construcción temporal. No hay reanudación parcial: la siguiente noche reintenta
+  desde el principio. Las consultas al snapshot activo siguen disponibles.
+- No se agregan límites de I/O, esperas entre lotes ni prioridades de disco.
+  Se conservan los límites existentes de 1 CPU y 2 GiB de memoria.
 - Ambos triggers se publican solamente en `redunisol.prod.analisis-credito`.
   El normalizador elimina los triggers `prod_only` en dev.
 - `ENV_BCRA_FILE_POC_ENABLED=true` habilita el trabajo diario en producción.
