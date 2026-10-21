@@ -27,6 +27,7 @@ export type SolicitudesToolbarAction = {
 
 type SolicitudesToolbarProps = {
   viewControl?: ReactNode;
+  status?: ReactNode;
   leftActions?: SolicitudesToolbarAction[];
   onAction?: (actionId: string) => void;
   onSimularIntent?: () => void;
@@ -64,6 +65,7 @@ const DEFAULT_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
 
 export function SolicitudesToolbar({
   viewControl,
+  status,
   leftActions = DEFAULT_LEFT_ACTIONS,
   onAction,
   onSimularIntent,
@@ -112,6 +114,8 @@ export function SolicitudesToolbar({
             value={searchTerm}
           />
         </div>
+
+        {status}
 
         {rightActions.map((action) => {
           const isIconOnly = !action.label;

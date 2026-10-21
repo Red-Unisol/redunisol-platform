@@ -1,14 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { LISTAS_REFRESCO_AUTOMATICO_MS } from "@/modules/solicitudes-core/utils/list-refresh-state";
+import { recientesRefreshOptions } from "../utils/recientes-refresh-options";
+import type { RecientesView } from "../utils/recientes-view";
 
 import { listSolicitudesCore } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 import { buildRecientesDateRange } from "@/modules/solicitudes-core/utils/recientes-date-range";
 
 type UseSolicitudesCoreRecientesQueryOptions = {
-  vista: "mi-area" | "todas";
+  vista: RecientesView;
   userId?: string;
+  isSystemAdmin?: boolean;
   workflowOwnerId?: string | null;
   search?: string;
   page: number;
@@ -18,6 +20,7 @@ type UseSolicitudesCoreRecientesQueryOptions = {
 export function useSolicitudesCoreRecientesQuery({
   vista,
   userId,
+  isSystemAdmin,
   workflowOwnerId,
   search,
   page,
@@ -44,6 +47,7 @@ export function useSolicitudesCoreRecientesQuery({
     queryKey: solicitudesCoreQueryKeys.recientes({
       vista,
       userId,
+      isSystemAdmin,
       workflowOwnerId,
       createdFrom,
       createdTo,
@@ -53,7 +57,6 @@ export function useSolicitudesCoreRecientesQuery({
       offset,
       scope: "recientes",
     }),
-    refetchInterval: LISTAS_REFRESCO_AUTOMATICO_MS,
-    retry: false,
+    ...recientesRefreshOptions,
   });
 }

@@ -40,6 +40,14 @@ import {
   type SolicitudesToolbarAction,
 } from "@/modules/solicitudes/components/solicitudes-toolbar";
 
+import { RecientesRefreshIndicator } from "../components/recientes-refresh-indicator";
+import {
+  initialRecientesView,
+  isRecientesVendedor,
+  recientesViews,
+  type RecientesView,
+} from "../utils/recientes-view";
+
 const SimuladorPrestamoModal = lazy(() =>
   loadSimuladorPrestamoModal().then((module) => ({
     default: module.SimuladorPrestamoModal,
@@ -128,7 +136,7 @@ const CORE_RECIENTES_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
     id: "desarchivar-solicitud",
     label: "Desarchivar Solicitud",
   },
-  { icon: RefreshCw, id: "refresh" },
+  { icon: RefreshCw, id: "refresh", label: "Actualizar" },
   { disabled: true, icon: Ellipsis, id: "more-actions" },
 ];
 
@@ -215,22 +223,29 @@ export function SolicitudesCoreRecientesPage() {
 }
 
 function RecientesList({ user }: { user: AuthUser }) {
-  // El vendedor arranca viendo todas las suyas, en cualquier area: si
-  // arrancara en "Mi area", la solicitud se le iria al enviarla a Riesgo.
-  // "Ver todas" nunca le muestra las de otros (lo limita el backend).
-  const esVendedor = user.workflowOwner?.code === "VENDEDORES";
-  const areaLabel = user.workflowOwner?.code === "RIESGO"
-    ? "Riesgo"
-    : esVendedor
-      ? "Pendientes de mi lado"
-      : user.workflowOwner?.name ?? "Sin área asignada";
-  const todasLabel = esVendedor ? "Todas mis solicitudes" : "Ver todas";
-  const [vista, setVista] = useState<"mi-area" | "todas">(() =>
-    !user.isSystemAdmin &&
-    user.workflowOwnerId &&
-    user.workflowOwner?.code === "RIESGO"
-      ? "mi-area"
-      : "todas",
+  const esVendedor = isRecientesVendedor(user);
+  const viewOptions = recientesViews(user);
+  const [vista, setVista] = useState<RecientesView>(() =>
+    initialRecientesView(user),
+  );
+  const columns = useMemo<SolicitudesTableColumn[]>(
+    () =>
+      esVendedor
+        ? CORE_RECIENTES_COLUMNS.flatMap((column) =>
+            column.key === "estado"
+              ? [
+                  column,
+                  {
+                    key: "areaActual",
+                    label: "Área actual",
+                    minWidth: "min-w-28",
+                    filterable: true,
+                  },
+                ]
+              : [column],
+          )
+        : CORE_RECIENTES_COLUMNS,
+    [esVendedor],
   );
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
@@ -245,15 +260,24 @@ function RecientesList({ user }: { user: AuthUser }) {
   const [isSimuladorOpen, setIsSimuladorOpen] = useState(false);
   const lineasQuery = useLineasDelAgenteQuery(isSimuladorOpen);
   useEffect(() => prefetchWhenIdle(loadSimuladorPrestamoModal), []);
-  const { data, error, isFetching, isLoading, refetch } =
-    useSolicitudesCoreRecientesQuery({
-      vista,
-      userId: user.id,
-      workflowOwnerId: user.workflowOwnerId,
-      search: searchTerm,
-      page,
-      pageSize,
-    });
+  const {
+    data,
+    dataUpdatedAt,
+    error,
+    isError,
+    isPaused,
+    isFetching,
+    isLoading,
+    refetch,
+  } = useSolicitudesCoreRecientesQuery({
+    vista,
+    userId: user.id,
+    isSystemAdmin: user.isSystemAdmin,
+    workflowOwnerId: user.workflowOwnerId,
+    search: searchTerm,
+    page,
+    pageSize,
+  });
 
   const tableRows = useMemo<SolicitudesTableRow[]>(() => {
     if (!data) {
@@ -261,6 +285,7 @@ function RecientesList({ user }: { user: AuthUser }) {
     }
 
     return data.map((item) => ({
+      areaActual: item.estadoActual.owner?.name ?? "Área no disponible",
       cuotaResultante: formatAmount(item.cuotaResultante),
       cuotas: item.cuotas !== null ? String(item.cuotas) : "",
       estado: item.estadoActual.name ?? "",
@@ -284,8 +309,8 @@ function RecientesList({ user }: { user: AuthUser }) {
   }, [data]);
 
   const filterOptions = useMemo(
-    () => buildSolicitudesTableFilterOptions(tableRows, CORE_RECIENTES_COLUMNS),
-    [tableRows],
+    () => buildSolicitudesTableFilterOptions(tableRows, columns),
+    [tableRows, columns],
   );
   const filteredRows = useMemo(
     () => filterSolicitudesTableRows(tableRows, "", columnFilters),
@@ -328,35 +353,47 @@ function RecientesList({ user }: { user: AuthUser }) {
     >
       <SolicitudesToolbar
         searchPlaceholder="Buscar por DNI, nombre o apellido"
-        viewControl={user.workflowOwner?.code !== "TESORERIA" && (
-          <div
-            className="flex flex-wrap items-center gap-2"
-            role="group"
-            aria-label="Vista por área"
-          >
-            <span className="text-sm text-foreground-secondary">
-              Área: {areaLabel}
-            </span>
-            {(["mi-area", "todas"] as const).map((value) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                variant={vista === value ? "default" : "outline"}
-                aria-pressed={vista === value}
-                disabled={value === "mi-area" && !user.workflowOwnerId}
-                onClick={() => {
-                  if (vista === value) return;
-                  setVista(value);
-                  setPage(1);
-                  setSelectedIds([]);
-                }}
-              >
-                {value === "mi-area" ? areaLabel : todasLabel}
-              </Button>
-            ))}
-          </div>
-        )}
+        status={
+          <RecientesRefreshIndicator
+            dataUpdatedAt={dataUpdatedAt}
+            isError={isError}
+            isFetching={isFetching}
+            isPaused={isPaused}
+          />
+        }
+        viewControl={
+          user.workflowOwner?.code !== "TESORERIA" && (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label="Vista por área"
+            >
+              {!esVendedor && (
+                <span className="text-sm text-foreground-secondary">
+                  Área: {viewOptions[0].label}
+                </span>
+              )}
+              {viewOptions.map(({ value, label }) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={vista === value ? "default" : "outline"}
+                  aria-pressed={vista === value}
+                  disabled={value === "mi-area" && !user.workflowOwnerId}
+                  onClick={() => {
+                    if (vista === value) return;
+                    setVista(value);
+                    setPage(1);
+                    setSelectedIds([]);
+                  }}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )
+        }
         leftActions={CORE_RECIENTES_LEFT_ACTIONS}
         onAction={(actionId) => {
           if (actionId === "refresh") {
@@ -376,18 +413,25 @@ function RecientesList({ user }: { user: AuthUser }) {
         searchTerm={searchTerm}
       />
 
-      {!refreshState.isInitialLoading && !error && vista === "mi-area" && filteredRows.length === 0 && (
-        <p role="status" className="shrink-0 border-b border-border px-3 py-3 text-sm text-foreground-secondary">
-          No hay solicitudes para tu área dentro de los criterios de búsqueda aplicados.
-        </p>
-      )}
+      {!refreshState.isInitialLoading &&
+        !error &&
+        vista === "mi-area" &&
+        filteredRows.length === 0 && (
+          <p
+            role="status"
+            className="shrink-0 border-b border-border px-3 py-3 text-sm text-foreground-secondary"
+          >
+            No hay solicitudes para tu área dentro de los criterios de búsqueda
+            aplicados.
+          </p>
+        )}
       <div className="min-h-0 flex-1">
         {refreshState.isInitialLoading ? (
           <SolicitudesContentLoader />
         ) : (
           <SolicitudesTable
             columnFilters={columnFilters}
-            columns={CORE_RECIENTES_COLUMNS}
+            columns={columns}
             emptyMessage={
               error
                 ? "No se pudieron cargar las solicitudes."

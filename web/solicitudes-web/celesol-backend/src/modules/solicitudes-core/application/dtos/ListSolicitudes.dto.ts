@@ -1,6 +1,6 @@
 export type ListSolicitudesInput = {
   search?: string;
-  vista?: "mi-area" | "todas";
+  vista?: "mi-area" | "vendedores" | "analistas" | "todas";
   /**
    * Solo para Vendedores: ids de quienes crearon las solicitudes que puede
    * ver (las suyas y, si es dueño de un agente, las de sus vendedores).
@@ -19,6 +19,7 @@ export type ListSolicitudesInput = {
     id: string;
     isSystemAdmin?: boolean;
     workflowOwnerId: string | null;
+    workflowOwnerCode?: string | null;
   };
   workflowOwnerId?: string;
 };

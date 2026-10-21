@@ -42,15 +42,26 @@ export class ListSolicitudesUseCase {
         throw new Error("Recientes list repository method is not available.");
       }
 
-      if (input.vista === "mi-area" && !input.currentUser.workflowOwnerId) {
+      const esVendedor = !input.currentUser.isSystemAdmin &&
+        input.currentUser.workflowOwnerCode === "VENDEDORES";
+      const vista = input.vista ?? (esVendedor ? "vendedores" : "todas");
+      // Área del estado actual, no del ejecutivo. La visibilidad por creador
+      // sigue intersectándose en la misma consulta antes de paginar.
+      const estadoOwnerCodes = vista === "vendedores" ? ["VENDEDORES"]
+        : vista === "analistas" ? ["RIESGO"]
+        : vista === "todas" && esVendedor ? ["VENDEDORES", "RIESGO"]
+        : undefined;
+
+      if (vista === "mi-area" && !input.currentUser.workflowOwnerId) {
         throw new InvalidSolicitudesCoreRequestError("No tenés un área asignada para consultar Mi área.");
       }
       const resolvedExcludeEstado = input.excludeEstado ?? "CargaVendedor";
 
       return this.repository
         .listRecientes({
+          ...(estadoOwnerCodes ? { estadoOwnerCodes } : {}),
           ...(input.search?.trim() ? { search: input.search.trim() } : {}),
-          ...(input.vista === "mi-area" && input.currentUser.workflowOwnerId
+          ...(vista === "mi-area" && input.currentUser.workflowOwnerId
             ? { estadoOwnerId: input.currentUser.workflowOwnerId }
             : {}),
           ...(input.creadoresVisibles
