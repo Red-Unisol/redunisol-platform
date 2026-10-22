@@ -18,9 +18,12 @@ tasks:
   # Pregunta a Bitrix si hay negociaciones en la cola; el procesamiento solo corre si
   # hay. Runner Process: sin contenedor. No es core.http.Request porque esa tarea guarda
   # la URL (con el path secreto del webhook) en sus outputs.
+  # logLevel WARN en las dos tareas: corre cada minuto y el resultado de cada vuelta ya
+  # queda en los outputs del flow; en la base se guardan solo advertencias y errores.
   - id: hay_pendientes
     type: io.kestra.plugin.scripts.python.Script
     timeout: PT1M
+    logLevel: WARN
     taskRunner:
       type: io.kestra.plugin.core.runner.Process
     env:
@@ -45,6 +48,7 @@ tasks:
   - id: procesar_colas
     type: io.kestra.plugin.scripts.python.Commands
     runIf: "{{ (outputs.hay_pendientes.vars.total ?? 1) > 0 }}"
+    logLevel: WARN
     namespaceFiles:
       enabled: true
       include:
