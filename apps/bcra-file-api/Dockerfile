@@ -7,9 +7,13 @@ RUN apt-get update \
     && mkdir /data && chown bcra:bcra /data
 ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 BCRA_FILE_7Z=7zz
 WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY src /app/src
 
 FROM base AS test
+COPY requirements-test.txt /app/requirements-test.txt
+RUN pip install --no-cache-dir -r /app/requirements-test.txt
 COPY tests /app/tests
 RUN python -m unittest discover -s /app/tests -v
 

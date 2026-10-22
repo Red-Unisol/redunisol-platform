@@ -73,8 +73,13 @@ jobs:
           pip install -r apps/credixsa-cache-api/requirements.txt
           pip install beautifulsoup4 pytest
 
+      - name: Install BCRA file API test dependencies
+        run: |
+          python -m venv "$RUNNER_TEMP/bcra-test-venv"
+          "$RUNNER_TEMP/bcra-test-venv/bin/python" -m pip install -r apps/bcra-file-api/requirements-test.txt
+
       - name: Run BCRA file POC tests
-        run: python -m unittest discover -s apps/bcra-file-api/tests -v
+        run: '"$RUNNER_TEMP/bcra-test-venv/bin/python" -m unittest discover -s apps/bcra-file-api/tests -v'
         env:
           PYTHONPATH: apps/bcra-file-api/src
 

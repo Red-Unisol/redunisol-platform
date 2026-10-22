@@ -9,12 +9,17 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
+import socket
+import http.client
+from concurrent.futures import ThreadPoolExecutor
 import unittest
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 from unittest.mock import patch
 
-from bcra_file_api.app import create_server
+from fastapi.testclient import TestClient
+import uvicorn
+
+from bcra_file_api.app import create_app
 from bcra_file_api.archive import Archive
 from bcra_file_api.config import Config
 from bcra_file_api.source import SourceError
@@ -29,16 +34,13 @@ class HTTPTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         config = Config(Path(self.temporary.name), "x" * 32, min_rows=1)
-        self.server = create_server(config, ("127.0.0.1", 0))
-        self.manager = self.server.RequestHandlerClass.keywords["manager"]
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        self.url = "http://127.0.0.1:" + str(self.server.server_port)
+        self.app = create_app(config)
+        self.client = TestClient(self.app)
+        self.client.__enter__()
+        self.manager = self.app.state.manager
 
     def tearDown(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(5)
+        self.client.__exit__(None, None, None)
         self.temporary.cleanup()
 
     def request(self, path, body=None, token=True, key=None):
@@ -47,13 +49,11 @@ class HTTPTests(unittest.TestCase):
             headers["Authorization"] = "Bearer " + self.manager.config.token
         if key:
             headers["Idempotency-Key"] = key
-        data = json.dumps(body).encode() if body is not None else None
-        try:
-            response = urlopen(Request(self.url + path, data=data, headers=headers), timeout=5)
-        except HTTPError as exc:
-            response = exc
-        with response:
-            return response.status, json.loads(response.read())
+        result = self.client.request(
+            "POST" if body is not None else "GET", path,
+            json=body if body is not None else None, headers=headers,
+        )
+        return result.status_code, result.json()
 
     def test_auth_missing_dataset_and_invalid_identification(self):
         self.assertEqual(self.request("/health", token=False)[0], 200)
@@ -115,6 +115,95 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(code, 500)
         self.assertEqual(body["error"], "source unavailable")
         self.assertEqual(self.request("/lookup", {"cuil": CUIL})[0], 200)
+
+    def test_existing_snapshot_is_reused_at_startup_without_import_or_file_changes(self):
+        import_snapshot(self.manager.database, archives(), manifest(), 1)
+        before = self.manager.database.stat()
+        with patch("bcra_file_api.refresh.RefreshManager._refresh") as refresh:
+            with TestClient(create_app(self.manager.config)) as restarted:
+                result = restarted.post(
+                    "/lookup", json={"cuil": CUIL},
+                    headers={"Authorization": "Bearer " + self.manager.config.token},
+                )
+                self.assertEqual(result.status_code, 200)
+                entity = result.json()["results"]["periodos"][0]["entidades"][0]
+                self.assertIn("fechaSit1", entity)
+                self.assertIsNone(entity["fechaSit1"])
+                self.assertIsNone(result.json()["results"]["denominacion"])
+                refresh.assert_not_called()
+        after = self.manager.database.stat()
+        self.assertEqual((before.st_ino, before.st_size, before.st_mtime_ns),
+                         (after.st_ino, after.st_size, after.st_mtime_ns))
+
+    def test_concurrent_queries_keep_consistent_data_and_do_not_change_snapshot(self):
+        import_snapshot(self.manager.database, archives(), manifest(), 1)
+        before = self.manager.database.stat()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(
+                lambda _: self.request("/lookup", {"cuil": CUIL}), range(32),
+            ))
+        for code, body in results:
+            self.assertEqual(code, 200)
+            self.assertEqual(body["meta"]["version"], "first")
+            self.assertEqual(body["results"]["periodos"][0]["entidades"][0]["monto"], 123.5)
+        self.assertEqual(before.st_mtime_ns, self.manager.database.stat().st_mtime_ns)
+
+    def test_body_limits_malformed_json_and_authentication_are_preserved(self):
+        headers = {"Authorization": "Bearer " + self.manager.config.token,
+                   "Content-Type": "application/json"}
+        for content, extra in [
+            (b"{", {}),
+            (b"x" * 4097, {}),
+            (b'{"cuil":"20123456786"}', {"Transfer-Encoding": "chunked"}),
+            (b"", {}),
+        ]:
+            with self.subTest(length=len(content)):
+                result = self.client.post("/lookup", content=content, headers={**headers, **extra})
+                self.assertEqual(result.status_code, 400)
+                self.assertEqual(result.json()["status"], 400)
+                self.assertEqual(result.headers["cache-control"], "no-store")
+        result = self.client.post("/lookup", content=b"{")
+        self.assertEqual(result.status_code, 401)
+        self.assertEqual(self.request("/jobs/unknown")[0], 404)
+
+    def test_uvicorn_serves_real_http_keep_alive_without_starting_an_import(self):
+        app = create_app(self.manager.config)
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(
+            app, host="127.0.0.1", port=port, log_level="error",
+            access_log=False, lifespan="on", ws="none",
+        ))
+        thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        try:
+            thread.start()
+            deadline = time.monotonic() + 5
+            while not server.started and thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(server.started)
+            first_socket = None
+            for _ in range(3):
+                connection.request(
+                    "POST", "/lookup", body=json.dumps({"cuil": CUIL}),
+                    headers={"Authorization": "Bearer " + self.manager.config.token,
+                             "Content-Type": "application/json"},
+                )
+                result = connection.getresponse()
+                self.assertEqual(result.status, 503)
+                self.assertEqual(result.version, 11)
+                self.assertEqual(json.loads(result.read())["status"], 503)
+                if first_socket is None:
+                    first_socket = connection.sock
+                self.assertIs(connection.sock, first_socket)
+            self.assertIsNone(app.state.manager.thread)
+        finally:
+            connection.close()
+            server.should_exit = True
+            thread.join(5)
+            listener.close()
+        self.assertFalse(thread.is_alive())
 
 
 @unittest.skipUnless(SEVEN_ZIP, "7z/7zz required; Docker test stage installs it")
