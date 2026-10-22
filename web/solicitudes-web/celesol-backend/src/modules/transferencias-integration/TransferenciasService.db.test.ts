@@ -4,6 +4,8 @@ import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { TransferenciasService } from "./TransferenciasService";
 import { createPayWorkflow } from "./workflow";
+import { ExternalPaymentService, argentinaToday } from "./ExternalPaymentService";
+import { externalPaymentInput } from "./external-payment-input";
 import {
   IntegrationError,
   type Actor,
@@ -591,5 +593,98 @@ test(
         }
       },
     );
+
+    const external = () => new ExternalPaymentService({ ...deps, maxFileBytes: 100000 });
+    const externalInput = () => externalPaymentInput.parse({ requestId: randomUUID(), paidOn: argentinaToday(), reference: "EXTERNAL-123" });
+
+    await t.test("external settlement atomically closes a reservation, preserves IDs and audits an optional comment", async () => {
+      const { source, service, input, plan } = await fixture();
+      const order = await service.reserve(source.id, input, actor);
+      const registration = externalInput();
+      const outcomes = await Promise.all([
+        external().register(source.id, user, registration, pdf),
+        external().register(source.id, user, registration, pdf),
+      ]);
+      assert.equal(outcomes[0].payment?.id, registration.requestId);
+      assert.equal(outcomes[1].payment?.id, registration.requestId);
+      assert.equal(outcomes[0].payment?.comment, null);
+      assert.equal(outcomes[0].payment?.paidOn, registration.paidOn);
+      const saved = await service.get(order.id, actor);
+      assert.equal(saved.status, "EXTERNALLY_SETTLED");
+      assert(saved.completedAt);
+      assert.equal(saved.payments[0]!.bankTransactionId, order.payments[0]!.bankTransactionId);
+      assert.equal(saved.payments[0]!.confirmedAt, null);
+      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: source.id } }), 1);
+      assert.equal(await db.solicitudPagoExterno.count({ where: { solicitudId: source.id } }), 1);
+      const history = await db.solicitudEstadoHistorial.findFirstOrThrow({ where: { solicitudId: source.id, actionCode: "pagar" } });
+      assert.equal(history.changedBy, user.id);
+      assert.match(history.comentario!, /Transferencia realizada por fuera/);
+      assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: source.id } })).estadoActualId, paid.id);
+      assert(!((await service.list(100)).items.some(item => item.solicitudId === source.id)));
+      await assert.rejects(service.reserve(source.id, input, actor), (e: unknown) => e instanceof IntegrationError && e.code === "EXTERNALLY_SETTLED");
+      await assert.rejects(service.revalidate(order.id, actor));
+      await assert.rejects(service.confirm(order.id, "member", evidence(plan, order.payments[0]!.bankTransactionId), actor), (e: unknown) => e instanceof IntegrationError && e.code === "EXTERNALLY_SETTLED");
+      await assert.rejects(service.receipt(order.id, pdf, actor));
+      await assert.rejects(external().register(source.id, user, { ...registration, reference: "OTHER" }, pdf));
+      await assert.rejects(db.solicitudPagoExterno.update({ where: { id: registration.requestId }, data: { reference: "OTHER" } }));
+      await assert.rejects(db.solicitudPagoExterno.delete({ where: { id: registration.requestId } }));
+      await assert.rejects(db.solicitudAdjunto.update({ where: { id: outcomes[0].payment!.adjuntoId }, data: { deletedAt: new Date() } }));
+    });
+
+    await t.test("Riesgo can register an external payment without a reservation; sellers and inactive users cannot", async () => {
+      const source = await sourceFixture();
+      const riesgo = await db.workflowOwner.findUniqueOrThrow({ where: { code: "RIESGO" } });
+      const vendedores = await db.workflowOwner.findUniqueOrThrow({ where: { code: "VENDEDORES" } });
+      const newUser = (ownerId: string) => db.user.create({ data: { email: `${randomUUID()}@example.invalid`, legacyUser: randomUUID(), passwordHash: "no-login", workflowOwnerId: ownerId } });
+      const seller = await newUser(vendedores.id);
+      await assert.rejects(external().register(source.id, seller, externalInput(), pdf), (e: unknown) => e instanceof IntegrationError && e.statusCode === 403);
+      await assert.rejects(external().register(source.id, { ...user, state: 0 }, externalInput(), pdf));
+      const riskUser = await newUser(riesgo.id);
+      const registration = { ...externalInput(), paidOn: "2026-01-15", comment: "Pago efectuado por otro circuito" };
+      const result = await external().register(source.id, riskUser, registration, pdf);
+      assert.equal(result.payment?.comment, registration.comment);
+      assert.equal(result.payment?.paidOn, "2026-01-15");
+      assert.equal((await db.solicitudPagoExterno.findUniqueOrThrow({ where: { solicitudId: source.id } })).desembolsoId, null);
+    });
+
+    await t.test("confirmed payments and authorized bank attempts require reconciliation", async () => {
+      const a = await fixture();
+      const order = await a.service.reserve(a.source.id, a.input, actor);
+      await a.service.confirm(order.id, "member", evidence(a.plan, order.payments[0]!.bankTransactionId), actor);
+      await assert.rejects(external().register(a.source.id, user, externalInput(), pdf), /conciliación/);
+      const b = await fixture();
+      const reserved = await b.service.reserve(b.source.id, b.input, actor);
+      await b.service.revalidate(reserved.id, actor);
+      assert((await db.transferenciaDesembolso.findUniqueOrThrow({ where: { id: reserved.id } })).bankStartedAt);
+      await assert.rejects(external().register(b.source.id, user, externalInput(), pdf), /conciliación/);
+    });
+
+    await t.test("bank revalidation and external settlement cannot both win concurrently", async () => {
+      const f = await fixture();
+      const order = await f.service.reserve(f.source.id, f.input, actor);
+      const results = await Promise.allSettled([
+        external().register(f.source.id, user, externalInput(), pdf),
+        f.service.revalidate(order.id, actor),
+      ]);
+      assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
+      const saved = await db.transferenciaDesembolso.findUniqueOrThrow({ where: { id: order.id }, include: { pagoExterno: true } });
+      assert.notEqual(Boolean(saved.bankStartedAt), Boolean(saved.pagoExterno));
+    });
+
+    await t.test("storage and workflow failures leave the reservation and solicitud open", async () => {
+      const f = await fixture();
+      const order = await f.service.reserve(f.source.id, f.input, actor);
+      storageFails = true;
+      try { await assert.rejects(external().register(f.source.id, user, externalInput(), pdf), /storage/); }
+      finally { storageFails = false; }
+      failAfterWorkflow = true;
+      try { await assert.rejects(external().register(f.source.id, user, externalInput(), pdf), /simulated/); }
+      finally { failAfterWorkflow = false; }
+      assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: f.source.id } })).estadoActualId, transfer.id);
+      assert.equal((await f.service.get(order.id, actor)).status, "RESERVED");
+      assert.equal(await db.solicitudPagoExterno.count({ where: { solicitudId: f.source.id } }), 0);
+      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: f.source.id } }), 0);
+      assert.equal(await db.solicitudEstadoHistorial.count({ where: { solicitudId: f.source.id } }), 0);
+    });
   },
 );

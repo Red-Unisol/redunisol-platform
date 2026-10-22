@@ -59,6 +59,7 @@ model User {
   createdSolicitudParticipants  SolicitudParticipant[]     @relation("SolicitudParticipantCreatedByUser")
   workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
   documentReviewDecisions        SolicitudDocumentDecision[]
+  pagosExternos                 SolicitudPagoExterno[]
 
   @@index([workflowOwnerId])
   @@map("users")
@@ -179,6 +180,7 @@ model Solicitud {
   estadoHistorial          SolicitudEstadoHistorial[]
   participants             SolicitudParticipant[]
   desembolso               TransferenciaDesembolso?
+  pagoExterno              SolicitudPagoExterno?
   bankIdentifiers          TransferenciaIdentificador[]
   documentReviews          SolicitudDocumentReview[]
   documentReviewJob         SolicitudDocumentReviewJob?
@@ -473,6 +475,7 @@ model SolicitudAdjunto {
   solicitud        Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
   uploadedByUser   User?     @relation("SolicitudAdjuntoUploadedByUser", fields: [uploadedBy], references: [id], onDelete: SetNull)
   desembolso       TransferenciaDesembolso?
+  pagoExterno      SolicitudPagoExterno?
   deletedByUser    User?     @relation("SolicitudAdjuntoDeletedByUser", fields: [deletedBy], references: [id], onDelete: SetNull)
   documentReviews SolicitudDocumentReview[] @relation("DocumentReviewLegajo")
   documentDecisions SolicitudDocumentDecision[] @relation("DocumentDecisionLegajo")
@@ -641,12 +644,33 @@ model TransferenciaDesembolso {
   receiptAdjuntoId String?             @unique @map("receipt_adjunto_id") @db.Uuid
   receiptAdjunto   SolicitudAdjunto?    @relation(fields: [receiptAdjuntoId], references: [id], onDelete: Restrict)
   completedAt      DateTime?           @map("completed_at")
+  bankStartedAt    DateTime?           @map("bank_started_at")
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
   solicitud        Solicitud           @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
   pagos            TransferenciaPago[]
+  pagoExterno      SolicitudPagoExterno?
 
   @@map("transferencia_desembolsos")
+}
+
+model SolicitudPagoExterno {
+  id              String @id @db.Uuid
+  solicitudId     String @unique @map("solicitud_id") @db.Uuid
+  desembolsoId    String? @unique @map("desembolso_id") @db.Uuid
+  paidOn          DateTime @map("paid_on") @db.Date
+  reference       String
+  comment         String?
+  receiptSha256   String @map("receipt_sha256")
+  adjuntoId       String @unique @map("adjunto_id") @db.Uuid
+  recordedBy      String @map("recorded_by") @db.Uuid
+  recordedAt      DateTime @default(now()) @map("recorded_at")
+  solicitud       Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  desembolso      TransferenciaDesembolso? @relation(fields: [desembolsoId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  adjunto         SolicitudAdjunto @relation(fields: [adjuntoId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  recordedByUser  User @relation(fields: [recordedBy], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@map("solicitud_pagos_externos")
 }
 
 model TransferenciaPago {

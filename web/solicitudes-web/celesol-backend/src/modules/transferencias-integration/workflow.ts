@@ -25,7 +25,7 @@ export function createPayWorkflow(db: PrismaClient) {
   return async (
     tx: Prisma.TransactionClient,
     solicitudId: string,
-    actor: Actor,
+    actor: Actor & { isSystemAdmin?: boolean },
     comment: string,
   ) => {
     const repository = new SolicitudWorkflowRepositoryImpl(
@@ -42,7 +42,11 @@ export function createPayWorkflow(db: PrismaClient) {
       solicitudId,
       actionCode: "pagar",
       comment,
-      currentUser: { id: actor.id, workflowOwnerId: actor.workflowOwnerId },
+      currentUser: {
+        id: actor.id,
+        workflowOwnerId: actor.workflowOwnerId,
+        ...(actor.isSystemAdmin ? { isSystemAdmin: true } : {}),
+      },
     });
   };
 }

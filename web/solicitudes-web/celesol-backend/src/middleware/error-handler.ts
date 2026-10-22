@@ -8,6 +8,10 @@ type HttpError = Error & {
 };
 
 export const errorHandler: ErrorRequestHandler = (error: HttpError, _req, res, _next) => {
+  if (error.message.includes("BEEX_EXTERNAL_PAYMENT_IMMUTABLE")) {
+    res.status(409).json({ error: { code: "EXTERNAL_PAYMENT_IMMUTABLE", message: "El registro del pago externo es evidencia histórica y no puede editarse ni eliminarse.", statusCode: 409 } });
+    return;
+  }
   if (error.message.includes("BEEX_DOCUMENT_REVIEW_IMMUTABLE")) {
     res.status(409).json({ error: { code: "DOCUMENT_REVIEW_IMMUTABLE", message: "La revisión y sus legajos son evidencia histórica y no pueden editarse ni eliminarse.", statusCode: 409 } });
     return;
