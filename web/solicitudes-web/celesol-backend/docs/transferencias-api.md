@@ -244,7 +244,7 @@ la sesión web habitual y el guard de visibilidad de la solicitud. La identidad
 técnica de Transferencias no tiene acceso a estas rutas con su token de integración.
 
 El POST es multipart: `requestId` UUID persistente por intento de registro,
-`paidOn` fecha ISO sin hora, `reference` obligatoria, `comment` opcional y `file`
+`paidOn` fecha ISO sin hora, `reference` y `comment` opcionales y `file`
 obligatorio (PDF, JPG o PNG; límite de adjuntos del ambiente). La UI completa la
 fecha del día en Argentina y permite modificarla; el backend rechaza fechas
 futuras. Solo se admite una solicitud activa en Transferir / TESORERIA.

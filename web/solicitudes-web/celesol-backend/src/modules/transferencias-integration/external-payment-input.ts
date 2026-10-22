@@ -4,7 +4,7 @@ export const externalPaymentInput = z
   .object({
     requestId: z.uuid(),
     paidOn: z.iso.date(),
-    reference: z.string().trim().min(1).max(200),
+    reference: z.string().trim().max(200).optional().default(""),
     comment: z.string().trim().max(4000).optional().default(""),
   })
   .strict();
