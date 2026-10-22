@@ -232,7 +232,7 @@ test(
     );
 
     await t.test(
-      "HTTP revalidation returns the recoverable desktop order and preserves legacy acknowledgement fields",
+      "HTTP revalidation and receipt recovery preserve the desktop order and bank IDs",
       async (t) => {
         const { source, service, plan, input } = await fixture();
         const order = await service.reserve(source.id, input, actor);
@@ -317,6 +317,35 @@ test(
           input.payments[0]!.bankTransactionId,
         );
         assert(confirmed.payments[0].confirmation);
+
+        const uploadReceipt = async () => {
+          const form = new FormData();
+          form.append(
+            "file",
+            new Blob([new Uint8Array(pdf)], { type: "application/pdf" }),
+            "comprobante.pdf",
+          );
+          const response = await fetch(
+            `http://127.0.0.1:${address.port}/desembolsos/${order.id}/comprobante`,
+            { method: "POST", body: form, headers: { Authorization: `Bearer ${token}` } },
+          );
+          const body = await response.json();
+          assert.equal(response.status, 200, JSON.stringify(body));
+          assert.equal(body.id, order.id);
+          assert.equal(body.status, "COMPLETED");
+          assert.deepEqual(body.payments, confirmed.payments);
+          assert(body.receipt.adjuntoId);
+          assert(body.completedAt);
+          return body;
+        };
+        const completed = await uploadReceipt();
+        assert.deepEqual((await uploadReceipt()).receipt, completed.receipt);
+        assert.equal(
+          await db.solicitudEstadoHistorial.count({
+            where: { solicitudId: source.id, actionCode: "pagar" },
+          }),
+          1,
+        );
       },
     );
 
@@ -488,7 +517,10 @@ test(
           }),
           1,
         );
-        assert.equal(objects.size, 1);
+        assert.equal(
+          [...objects.keys()].filter((key) => key.startsWith(`solicitudes/${source.id}/`)).length,
+          1,
+        );
         const history = await db.solicitudEstadoHistorial.findFirstOrThrow({
           where: { solicitudId: source.id },
         });
