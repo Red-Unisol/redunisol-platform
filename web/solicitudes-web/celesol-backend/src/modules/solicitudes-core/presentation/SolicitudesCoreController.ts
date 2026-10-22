@@ -290,6 +290,7 @@ export class SolicitudesCoreController {
         currentUser: {
           id: user.id,
           workflowOwnerId: user.workflowOwnerId,
+          ...(user.workflowOwner?.code ? { workflowOwnerCode: user.workflowOwner.code } : {}),
           ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
         },
         ...(workflowOwnerId ? { workflowOwnerId } : {}),

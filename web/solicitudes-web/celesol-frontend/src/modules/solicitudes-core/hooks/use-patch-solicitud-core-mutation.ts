@@ -26,6 +26,9 @@ export function usePatchSolicitudCoreMutation(solicitudId: string) {
         queryClient.invalidateQueries({
           queryKey: solicitudesCoreQueryKeys.recientesAll,
         }),
+        queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.historicasAll,
+        }),
       ]);
     },
   });

@@ -252,7 +252,10 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                                 onClick={() => {
                                   const listaKey = LISTA_QUERY_KEY_POR_RUTA[item.to];
                                   if (listaKey && location.pathname === item.to) {
-                                    void queryClient.invalidateQueries({ queryKey: listaKey });
+                                    void queryClient.invalidateQueries(
+                                      { queryKey: listaKey },
+                                      { cancelRefetch: false },
+                                    );
                                   }
                                   if (!isDesktop) onClose();
                                 }}

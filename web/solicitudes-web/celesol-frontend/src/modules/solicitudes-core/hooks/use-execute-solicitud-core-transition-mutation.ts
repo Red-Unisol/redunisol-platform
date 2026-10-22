@@ -26,7 +26,9 @@ export function useExecuteSolicitudCoreTransitionMutation(
     mutationFn: (payload: ExecuteWorkflowTransitionRequest) =>
       executeSolicitudCoreTransition(solicitudId, payload),
     onError: async (error) => {
-      await queryClient.invalidateQueries({queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId)});
+      await queryClient.invalidateQueries({
+        queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId),
+      });
       if (!shouldRefreshWorkflowData(error)) {
         return;
       }
@@ -61,12 +63,17 @@ export function useExecuteSolicitudCoreTransitionMutation(
       );
 
       const invalidations = [
-        queryClient.invalidateQueries({queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId)}),
+        queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId),
+        }),
         queryClient.invalidateQueries({
           queryKey: solicitudesCoreQueryKeys.precargaAll,
         }),
         queryClient.invalidateQueries({
           queryKey: solicitudesCoreQueryKeys.recientesAll,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.historicasAll,
         }),
       ];
 
