@@ -9,7 +9,10 @@ import type {
   UploadSolicitudCoreAdjuntoRequest,
 } from "@/modules/solicitudes/types/solicitudes-core";
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
-import { MoneyInputField } from "@/shared/components/forms/money-input-field";
+import {
+  MoneyInputField,
+  StaticMoneyInput,
+} from "@/shared/components/forms/money-input-field";
 import { Button } from "@/shared/components/ui/button";
 import { NUEVA_SOLICITUD_TABS } from "../constants/solicitud-tabs";
 import type {
@@ -56,6 +59,12 @@ const VALIDATION_FIELDS: Array<{
 ];
 
 type NuevaSolicitudViewProps = {
+  cuotaCalculo: {
+    mensaje: string | null;
+    onCuotaChange: (value: string) => void;
+    onDatosChange: () => void;
+    valor: string;
+  };
   adjuntos: SolicitudCoreAdjuntoResponse[];
   control: SolicitudFormControl;
   garantias: CreateSolicitudCoreGarantiaRequest[];
@@ -90,6 +99,7 @@ type NuevaSolicitudViewProps = {
 };
 
 export function NuevaSolicitudView({
+  cuotaCalculo,
   adjuntos,
   control,
   errors,
@@ -203,7 +213,10 @@ export function NuevaSolicitudView({
                       <StyledSelect
                         disabled={isLoadingLineas}
                         invalid={!!errors?.linea}
-                        onChange={field.onChange}
+                        onChange={(value) => {
+                          cuotaCalculo.onDatosChange();
+                          field.onChange(value);
+                        }}
                         options={lineaOptions}
                         placeholder={
                           isLoadingLineas
@@ -222,6 +235,11 @@ export function NuevaSolicitudView({
                     invalid={!!errors?.montoAFinanciar}
                     name="montoAFinanciar"
                     placeholder={getMontoAFinanciarPlaceholder(selectedLinea)}
+                    transform={(value) => {
+                      // Solo corre cuando escribe el usuario.
+                      cuotaCalculo.onDatosChange();
+                      return value;
+                    }}
                   />
                 </LegacyField>
                 <LegacyField label="Cuotas" required>
@@ -229,8 +247,29 @@ export function NuevaSolicitudView({
                     aria-invalid={!!errors?.cuotas}
                     className={legacyFieldClassName}
                     placeholder={getCuotasPlaceholder(selectedLinea)}
-                    {...register("cuotas")}
+                    {...register("cuotas", {
+                      onChange: cuotaCalculo.onDatosChange,
+                    })}
                   />
+                </LegacyField>
+                {/* Editable: escribir una cuota calcula el monto, como en el
+                    detalle y el simulador. */}
+                <LegacyField label="Cuota Resultante">
+                  <div className="grid gap-1">
+                    <StaticMoneyInput
+                      aria-label="Cuota Resultante"
+                      onChange={cuotaCalculo.onCuotaChange}
+                      value={cuotaCalculo.valor}
+                    />
+                    {cuotaCalculo.mensaje ? (
+                      <span
+                        className="text-xs text-foreground-secondary"
+                        role="status"
+                      >
+                        {cuotaCalculo.mensaje}
+                      </span>
+                    ) : null}
+                  </div>
                 </LegacyField>
                 <LegacyField label="Cupo Titular">
                   <MoneyInputField

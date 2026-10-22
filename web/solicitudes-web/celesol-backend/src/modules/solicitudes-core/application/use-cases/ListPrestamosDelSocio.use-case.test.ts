@@ -3,7 +3,6 @@ import { describe, it } from "node:test";
 
 import { ListPrestamosDelSocioUseCase } from "./ListPrestamosDelSocio.use-case";
 import { SolicitudCoreNotFoundError } from "../../domain/solicitudes-core-errors";
-import type { SocioRepository } from "../../../socios/domain/repositories/SocioRepository";
 
 const TITULAR = {
   cuit: null,
@@ -12,20 +11,22 @@ const TITULAR = {
 };
 
 describe("ListPrestamosDelSocioUseCase", () => {
-  it("asks the legacy system for the loans of the titular socio", async () => {
-    let recibido: string | undefined;
+  it("looks up the titular in the legacy padron and asks for its loans", async () => {
+    const llamadas: string[] = [];
     const useCase = buildUseCase({
-      legacyGateway: {
-        listPrestamosDelSocio: async (socioLegacyId: string) => {
-          recibido = socioLegacyId;
-          return [prestamo()];
-        },
+      lookupSocioRapido: async (documento, tipoDocumento) => {
+        llamadas.push(`socio ${documento} ${tipoDocumento}`);
+        return [{ id: "143471" }];
+      },
+      listPrestamosDelSocio: async (socioLegacyId) => {
+        llamadas.push(`prestamos ${socioLegacyId}`);
+        return [prestamo()];
       },
     });
 
     const prestamos = await useCase.execute({ solicitudId: "sol-1" });
 
-    assert.equal(recibido, "143471");
+    assert.deepEqual(llamadas, ["socio 30111222 DNI", "prestamos 143471"]);
     assert.equal(prestamos.length, 1);
     assert.equal(prestamos[0].vigente, true);
   });
@@ -44,46 +45,63 @@ describe("ListPrestamosDelSocioUseCase", () => {
     // todavia no esta en el padron.
     let llamado = false;
     const useCase = buildUseCase({
-      legacyGateway: {
-        listPrestamosDelSocio: async () => {
-          llamado = true;
-          return [];
-        },
+      lookupSocioRapido: async () => [],
+      listPrestamosDelSocio: async () => {
+        llamado = true;
+        return [];
       },
-      socios: [],
     });
 
     assert.deepEqual(await useCase.execute({ solicitudId: "sol-1" }), []);
     assert.equal(llamado, false);
   });
 
-  it("returns empty when the socio has no legacy number", async () => {
+  it("falls back to the CUIT when the document does not match", async () => {
+    // Las juridicas tienen el CUIT en NroDoc.
+    const buscados: string[] = [];
+    const useCase = buildUseCase({
+      lookupSocioRapido: async (documento) => {
+        buscados.push(documento);
+        return documento === "30711222339" ? [{ id: "152199" }] : [];
+      },
+      listPrestamosDelSocio: async () => [prestamo()],
+      solicitud: {
+        id: "sol-1",
+        titular: { cuit: "30-71122233-9", nroDocumento: null, tipoDocumento: null },
+      },
+    });
+
+    assert.equal((await useCase.execute({ solicitudId: "sol-1" })).length, 1);
+    assert.deepEqual(buscados, ["30711222339"]);
+  });
+
+  it("does not pick a socio when the document matches more than one", async () => {
+    // Mostrar los prestamos de otra persona es peor que no mostrar nada.
     let llamado = false;
     const useCase = buildUseCase({
-      legacyGateway: {
-        listPrestamosDelSocio: async () => {
-          llamado = true;
-          return [];
-        },
+      lookupSocioRapido: async () => [{ id: "1" }, { id: "2" }],
+      listPrestamosDelSocio: async () => {
+        llamado = true;
+        return [];
       },
-      socios: [{ nroSocioLegacy: null }],
     });
 
     assert.deepEqual(await useCase.execute({ solicitudId: "sol-1" }), []);
     assert.equal(llamado, false);
   });
 
-  it("does not call the legacy system with a non numeric socio number", async () => {
-    // El numero se interpola en la expresion de criterios del legado.
+  it("does not query the legacy system with a non numeric document", async () => {
+    // El documento se interpola en la expresion de criterios del legado.
     let llamado = false;
     const useCase = buildUseCase({
-      legacyGateway: {
-        listPrestamosDelSocio: async () => {
-          llamado = true;
-          return [];
-        },
+      lookupSocioRapido: async () => {
+        llamado = true;
+        return [];
       },
-      socios: [{ nroSocioLegacy: "143471 OR 1=1" }],
+      solicitud: {
+        id: "sol-1",
+        titular: { cuit: null, nroDocumento: "1 OR 1=1", tipoDocumento: "DNI" },
+      },
     });
 
     assert.deepEqual(await useCase.execute({ solicitudId: "sol-1" }), []);
@@ -110,24 +128,26 @@ function prestamo() {
 
 function buildUseCase(
   overrides: {
-    legacyGateway?: { listPrestamosDelSocio: (id: string) => Promise<ReturnType<typeof prestamo>[]> };
-    socios?: { nroSocioLegacy: string | null }[];
+    listPrestamosDelSocio?: (id: string) => Promise<ReturnType<typeof prestamo>[]>;
+    lookupSocioRapido?: (
+      documento: string,
+      tipoDocumento?: string,
+    ) => Promise<{ id: string }[]>;
     solicitud?: unknown;
   } = {},
 ) {
-  const socios =
-    overrides.socios ?? [{ nroSocioLegacy: "143471" }];
   const solicitud =
     overrides.solicitud === undefined
       ? { id: "sol-1", titular: TITULAR }
       : overrides.solicitud;
 
   return new ListPrestamosDelSocioUseCase({
-    legacyGateway:
-      overrides.legacyGateway ?? { listPrestamosDelSocio: async () => [] },
+    legacyGateway: {
+      listPrestamosDelSocio:
+        overrides.listPrestamosDelSocio ?? (async () => []),
+      lookupSocioRapido:
+        overrides.lookupSocioRapido ?? (async () => [{ id: "143471" }]),
+    } as never,
     repository: { findById: async () => solicitud } as never,
-    sociosRepository: {
-      lookupByDocumento: async () => socios,
-    } as unknown as SocioRepository,
   });
 }

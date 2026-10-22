@@ -52,6 +52,19 @@ const solicitudDetailInclude = {
 const ARGENTINA_UTC_OFFSET_HOURS = 3;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const RECIENTES_WINDOW_DAYS = 21;
+// Una solicitud que llega a un estado final se queda este tiempo en Recientes
+// antes de pasar a Historicas, para que el vendedor vea como termino.
+const ESTADO_FINAL_EN_RECIENTES_HORAS = 24;
+
+// Entro a un estado final hace menos de ESTADO_FINAL_EN_RECIENTES_HORAS.
+function finalizadaRecienteCondition(now = new Date()) {
+  return {
+    toStateCodeSnapshot: { in: [...HISTORICAS_NEGATIVE_STATE_CODES] },
+    changedAt: {
+      gte: new Date(now.getTime() - ESTADO_FINAL_EN_RECIENTES_HORAS * 60 * 60 * 1000),
+    },
+  } satisfies Prisma.SolicitudEstadoHistorialWhereInput;
+}
 // Solicitudes en Carga Vendedor son borradores del vendedor -- no se
 // muestran en el dashboard de administracion (Operacion), a diferencia del
 // dashboard de vendedor, que si necesita ver sus propios borradores.
@@ -714,13 +727,29 @@ export class SolicitudesCorePrismaDatasource {
         archivedAt: null,
         ...(searchConditions.length ? { AND: searchConditions } : {}),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
-        estadoActual: {
-          ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),
-          code: {
-            notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
-            ...(input.estado ? { equals: input.estado } : {}),
+        ...(input.estadoOwnerId || input.estado
+          ? {
+              estadoActual: {
+                ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),
+                ...(input.estado ? { code: { equals: input.estado } } : {}),
+              },
+            }
+          : {}),
+        OR: [
+          {
+            estadoActual: {
+              code: {
+                notIn: [...HISTORICAS_NEGATIVE_STATE_CODES, "CargaVendedor"],
+              },
+            },
           },
-        },
+          {
+            estadoActual: {
+              code: { in: [...HISTORICAS_NEGATIVE_STATE_CODES] },
+            },
+            estadoHistorial: { some: finalizadaRecienteCondition() },
+          },
+        ],
         createdAt: {
           gte: SolicitudesCorePrismaDatasource.toUtcBoundaryFromArgentinaDate(
             input.createdFrom,
@@ -782,6 +811,12 @@ export class SolicitudesCorePrismaDatasource {
                 in: [...HISTORICAS_NEGATIVE_STATE_CODES],
               },
             },
+            // Mientras sigue en Recientes (creada dentro de la ventana y
+            // finalizada hace menos de 24 hs) no se repite aca.
+            OR: [
+              { createdAt: { lt: recientesStartUtc } },
+              { estadoHistorial: { none: finalizadaRecienteCondition() } },
+            ],
           },
           {
             AND: [

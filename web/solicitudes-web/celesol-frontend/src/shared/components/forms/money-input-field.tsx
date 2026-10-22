@@ -7,6 +7,7 @@ import {
 } from "react-hook-form";
 
 import { Input } from "@/shared/components/ui/input";
+import { cn } from "@/shared/utils/cn";
 import { formatMoneyValue } from "@/shared/utils/money-format";
 
 const defaultMoneyInputClassName =
@@ -37,7 +38,8 @@ export function MoneyInputField<TFieldValues extends FieldValues>({
       render={({ field }) => (
         <input
           aria-invalid={invalid || undefined}
-          className={className ?? defaultMoneyInputClassName}
+          // Se combina con la base: pasar solo "h-8 text-xs" borraba el borde.
+          className={cn(defaultMoneyInputClassName, className)}
           inputMode="decimal"
           name={field.name}
           onBlur={field.onBlur}

@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { LISTAS_REFRESCO_AUTOMATICO_MS } from "@/modules/solicitudes-core/utils/list-refresh-state";
+
 import { listSolicitudesCore } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 
@@ -31,6 +33,7 @@ export function useSolicitudesCorePrecargaQuery({
       nroDocumento: normalizedDocument,
       offset,
     }),
+    refetchInterval: LISTAS_REFRESCO_AUTOMATICO_MS,
     retry: false,
   });
 }

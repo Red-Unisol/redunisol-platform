@@ -95,3 +95,30 @@ test("una cuota inválida no consulta legacy", async () => {
       /no es válido/,
     );
 });
+// Cuota con mesetas por peso, como el legado: 280.000 y 280.000,02 dan la
+// misma cuota. Con minimo 100,3 la interpolacion cae en 280.000,02.
+const cuotaPorPeso = (amount: number) => Math.round(Math.round(amount) * 0.33 * 100) / 100;
+test("si el entero mas cercano da la misma cuota, devuelve el monto entero", async () => {
+  const result = await calcularMontoPorCuota({
+    cuotaObjetivo: 92400,
+    montoMinimo: 100.3,
+    montoMaximo: 300000,
+    simular: async (amount) => response(amount, cuotaPorPeso(amount)),
+  });
+  assert.equal(result.montoAFinanciar, 280000);
+  assert.equal(result.cuotaResultante, 92400);
+});
+test("si la prueba con el entero falla, conserva el monto ya encontrado", async () => {
+  const result = await calcularMontoPorCuota({
+    cuotaObjetivo: 92400,
+    montoMinimo: 100.3,
+    montoMaximo: 300000,
+    simular: async (amount) => {
+      if (amount === 280000) throw new Error("legado caido");
+      return response(amount, cuotaPorPeso(amount));
+    },
+  });
+  assert.notEqual(result.montoAFinanciar, 280000);
+  assert.equal(Math.round(result.montoAFinanciar), 280000);
+  assert.equal(result.cuotaResultante, 92400);
+});

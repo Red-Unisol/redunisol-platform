@@ -55,3 +55,8 @@ export async function runListManualRefresh({
     setIsManualRefreshPending(false);
   }
 }
+
+// Precarga, Recientes e Historicas se vuelven a pedir solas cada minuto, para
+// ver los cambios que hacen otros (un envio a Riesgo, una aprobacion) sin
+// recargar. React Query no consulta mientras la pestaña esta oculta.
+export const LISTAS_REFRESCO_AUTOMATICO_MS = 60_000;

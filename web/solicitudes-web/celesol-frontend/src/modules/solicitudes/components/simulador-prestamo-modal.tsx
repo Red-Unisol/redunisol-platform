@@ -1,5 +1,5 @@
 import { Calculator, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
@@ -10,7 +10,10 @@ import {
   ajustarCuotasTexto,
 } from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { StyledSelect } from "@/modules/solicitudes-editor/components/fields/base";
-import { MoneyInputField } from "@/shared/components/forms/money-input-field";
+import {
+  MoneyInputField,
+  StaticMoneyInput,
+} from "@/shared/components/forms/money-input-field";
 import { Button } from "@/shared/components/ui/button";
 import { DateInput } from "@/shared/components/ui/date-input";
 import {
@@ -52,6 +55,8 @@ export type SimulacionAplicada = {
 
 type SimuladorPrestamoModalProps = {
   lineas?: LineaPrestamoPresolicitud[];
+  // Mientras se piden las lineas (simulador suelto de las listas).
+  isLoadingLineas?: boolean;
   defaultLineaOid?: string;
   solicitudId?: string;
   onLimitsAdjusted?: () => void;
@@ -85,6 +90,7 @@ function getLineaDefaults(linea?: LineaPrestamoPresolicitud | null) {
 
 export function SimuladorPrestamoModal({
   lineas = [],
+  isLoadingLineas = false,
   defaultLineaOid,
   solicitudId,
   onLimitsAdjusted,
@@ -121,14 +127,31 @@ export function SimuladorPrestamoModal({
     null;
   const selectedLinea = eligibleLineas.find((linea) => linea.oid === lineaOid);
   const cuotasError = getCuotasFueraDeLineaError(cuotas, selectedLinea);
+  // Cuota que escribio el usuario: con ella el legado calcula el monto (igual
+  // que en el detalle). Vuelve a null si se toca monto, cuotas, linea o fecha.
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(
+    null,
+  );
+  // Al cerrar, la proxima apertura arranca calculando por monto.
+  const [lastOpen, setLastOpen] = useState(open);
+  if (lastOpen !== open) {
+    setLastOpen(open);
+    if (!open) setCuotaObjetivoTexto(null);
+  }
+  const cuotaObjetivo =
+    cuotaObjetivoTexto !== null ? parseMoneyValue(cuotaObjetivoTexto) : null;
   const simularPrestamoMutation = useCuotaCalculada(
     {
       ...(solicitudId ? { solicitudId } : {}),
+      ...(cuotaObjetivo !== null && cuotaObjetivo > 0 ? { cuotaObjetivo } : {}),
       capitalPuro: CAPITAL_PURO_DEFAULT,
       lineaId: Number(selectedLinea?.oid),
-      montoAFinanciar: parseMoneyValue(
-        ajustarMontoTexto(montoAFinanciar, selectedLinea),
-      ),
+      // Con cuota objetivo el monto lo busca el legado; la API igual pide uno
+      // positivo, asi que sin monto cargado va el maximo de la linea.
+      montoAFinanciar:
+        cuotaObjetivo !== null
+          ? parseMoneyValue(montoAFinanciar) || (selectedLinea?.montoMaximo ?? 1)
+          : parseMoneyValue(ajustarMontoTexto(montoAFinanciar, selectedLinea)),
       cuotas: Number(ajustarCuotasTexto(cuotas, selectedLinea)),
       ...(fechaPrimerVencimiento ? { fechaPrimerVencimiento } : {}),
     },
@@ -137,10 +160,19 @@ export function SimuladorPrestamoModal({
         selectedLinea?.oid &&
         !cuotasError &&
         Number(cuotas) > 0 &&
-        parseMoneyValue(montoAFinanciar) > 0,
+        (cuotaObjetivo !== null
+          ? cuotaObjetivo > 0
+          : parseMoneyValue(montoAFinanciar) > 0),
     ),
     (result) => {
-      if (parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar || Number(cuotas) !== result.cuotas) onLimitsAdjusted?.();
+      // Con cuota objetivo, que cambie el monto es el resultado, no un ajuste
+      // por los maximos de la linea.
+      if (
+        (cuotaObjetivo === null &&
+          parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar) ||
+        Number(cuotas) !== result.cuotas
+      )
+        onLimitsAdjusted?.();
       if (parseMoneyValue(montoAFinanciar) !== result.montoAFinanciar)
         setValue("montoAFinanciar", formatMoneyAmount(result.montoAFinanciar));
       if (Number(cuotas) !== result.cuotas)
@@ -190,6 +222,7 @@ export function SimuladorPrestamoModal({
     onFieldChange: (value: string) => void,
   ) {
     onFieldChange(nextLineaOid);
+    setCuotaObjetivoTexto(null);
 
     const nextLinea = eligibleLineas.find(
       (linea) => linea.oid === nextLineaOid,
@@ -277,139 +310,98 @@ export function SimuladorPrestamoModal({
 
         <div className="max-h-[calc(100vh-8rem)] overflow-y-auto p-3">
           <form className="space-y-3">
+            {!isLoadingLineas && eligibleLineas.length === 0 ? (
+              <p
+                className="rounded-sm border border-border bg-surface px-2.5 py-2 text-[0.68rem] text-foreground-secondary"
+                role="status"
+              >
+                No tenés líneas asignadas para simular. Las líneas salen del
+                agente de tu usuario en Vimarx.
+              </p>
+            ) : null}
             {errorMessage ? (
               <p className="rounded-sm border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[0.68rem] text-destructive">
                 {errorMessage}
               </p>
             ) : null}
 
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="space-y-2">
+            {/* Primero lo que se carga, despues lo que calcula el legado. */}
+            <section aria-labelledby="simulador-datos" className="space-y-2">
+              <h3
+                className="text-[0.68rem] font-semibold uppercase tracking-wide text-foreground-muted"
+                id="simulador-datos"
+              >
+                Datos del crédito
+              </h3>
+              <label className="grid gap-1">
+                <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                  Línea<span className="text-destructive"> *</span>
+                </span>
+                <Controller
+                  control={control}
+                  name="lineaOid"
+                  render={({ field }) => (
+                    <StyledSelect
+                      className="text-xs"
+                      onChange={(value) =>
+                        handleLineaChange(value, field.onChange)
+                      }
+                      options={eligibleLineas.map((linea) => ({
+                        label: linea.descripcion ?? "",
+                        value: linea.oid ?? "",
+                      }))}
+                      disabled={isLoadingLineas}
+                      placeholder={
+                        isLoadingLineas
+                          ? "Cargando líneas..."
+                          : "Seleccione una línea"
+                      }
+                      // Mismo buscador que al cargar la linea en la solicitud.
+                      searchable
+                      value={field.value}
+                    />
+                  )}
+                />
+              </label>
+              <div className="grid gap-2 md:grid-cols-3">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                    Línea<span className="text-destructive"> *</span>
+                    Monto a Financiar<span className="text-destructive"> *</span>
                   </span>
-                  <Controller
+                  <MoneyInputField
+                    className="h-8 text-xs"
                     control={control}
-                    name="lineaOid"
-                    render={({ field }) => (
-                      <StyledSelect
-                        className="text-xs"
-                        onChange={(value) =>
-                          handleLineaChange(value, field.onChange)
-                        }
-                        options={eligibleLineas.map((linea) => ({
-                          label: linea.descripcion ?? "",
-                          value: linea.oid ?? "",
-                        }))}
-                        placeholder="Seleccione una línea"
-                        // Mismo buscador que al cargar la linea en la solicitud.
-                        searchable
-                        value={field.value}
-                      />
-                    )}
+                    name="montoAFinanciar"
+                    transform={(value) => {
+                      // Solo corre cuando escribe el usuario.
+                      setCuotaObjetivoTexto(null);
+                      return ajustarMontoTexto(value, selectedLinea);
+                    }}
                   />
                 </label>
-              </div>
-              <div className="space-y-2">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                    Cuota Resultante
+                    Cuotas<span className="text-destructive"> *</span>
                   </span>
                   <Input
+                    aria-invalid={cuotasError ? true : undefined}
                     className="h-8 text-xs"
-                    readOnly
-                    {...register("cuotaResultante")}
+                    {...register("cuotas", {
+                      onChange: (event) => {
+                        setCuotaObjetivoTexto(null);
+                        setValue(
+                          "cuotas",
+                          ajustarCuotasTexto(event.target.value, selectedLinea),
+                        );
+                      },
+                    })}
                   />
+                  {cuotasError ? (
+                    <span className="text-[0.68rem] text-destructive">
+                      {cuotasError}
+                    </span>
+                  ) : null}
                 </label>
-              </div>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-4">
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Monto a Financiar<span className="text-destructive"> *</span>
-                </span>
-                <MoneyInputField
-                  className="h-8 text-xs"
-                  control={control}
-                  name="montoAFinanciar"
-                  transform={(value) => ajustarMontoTexto(value, selectedLinea)}
-                />
-              </label>
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Tasa
-                </span>
-                <Input className="h-8 text-xs" readOnly {...register("tasa")} />
-              </label>
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Gastos Adm. (Liquidación)
-                </span>
-                <Input
-                  className="h-8 text-xs"
-                  readOnly
-                  {...register("gastosAdministrativos")}
-                />
-              </label>
-              <label className="grid gap-1 md:col-span-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Capital Financiado
-                </span>
-                <Input
-                  className="h-8 text-xs"
-                  readOnly
-                  {...register("capitalFinanciado")}
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Cuotas<span className="text-destructive"> *</span>
-                </span>
-                <Input
-                  aria-invalid={cuotasError ? true : undefined}
-                  className="h-8 text-xs"
-                  {...register("cuotas", {
-                    onChange: (event) =>
-                      setValue(
-                        "cuotas",
-                        ajustarCuotasTexto(event.target.value, selectedLinea),
-                      ),
-                  })}
-                />
-                {cuotasError ? (
-                  <span className="text-[0.68rem] text-destructive">
-                    {cuotasError}
-                  </span>
-                ) : null}
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Total
-                </span>
-                <Input
-                  className="h-8 text-xs"
-                  readOnly
-                  {...register("total")}
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                  Condiciones
-                </span>
-                <textarea
-                  className={`${FIELD_CLASSNAME} h-[4.6rem] resize-none py-1.5`}
-                  {...register("condiciones")}
-                />
-              </label>
-              <div className="space-y-2">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
                     Fecha Primer Vencimiento
@@ -422,7 +414,10 @@ export function SimuladorPrestamoModal({
                         className="h-8 text-xs"
                         name={field.name}
                         onBlur={field.onBlur}
-                        onChange={field.onChange}
+                        onChange={(value) => {
+                          setCuotaObjetivoTexto(null);
+                          field.onChange(value);
+                        }}
                         value={
                           field.value ||
                           simulacion?.fechaPrimerVencimiento?.slice(0, 10) ||
@@ -430,6 +425,89 @@ export function SimuladorPrestamoModal({
                         }
                       />
                     )}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section
+              aria-labelledby="simulador-resultado"
+              className="space-y-2 rounded-sm border border-border bg-surface p-2.5"
+            >
+              <h3
+                className="text-[0.68rem] font-semibold uppercase tracking-wide text-foreground-muted"
+                id="simulador-resultado"
+              >
+                Resultado
+              </h3>
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Cuota Resultante
+                  </span>
+                  {/* Editable: escribir una cuota calcula el monto. Muestra
+                      el calculo si lo hay y, mientras, lo que se escribe. */}
+                  <StaticMoneyInput
+                    aria-label="Cuota Resultante"
+                    className="h-9 text-sm font-semibold"
+                    onChange={setCuotaObjetivoTexto}
+                    value={
+                      simulacion
+                        ? formatDecimalMoneyValue(simulacion.cuotaResultante)
+                        : (cuotaObjetivoTexto ?? "")
+                    }
+                  />
+                  {cuotaObjetivo !== null ? (
+                    <span
+                      className="text-[0.68rem] text-foreground-secondary"
+                      role="status"
+                    >
+                      {cuotaObjetivo <= 0
+                        ? "Ingresá una cuota mayor a cero."
+                        : simularPrestamoMutation.isPending
+                          ? "Calculando el monto..."
+                          : simulacion
+                            ? "Monto calculado a partir de la cuota."
+                            : null}
+                    </span>
+                  ) : null}
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Capital Financiado
+                  </span>
+                  <Input
+                    className="h-9 text-xs"
+                    readOnly
+                    {...register("capitalFinanciado")}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Total
+                  </span>
+                  <Input
+                    className="h-9 text-xs"
+                    readOnly
+                    {...register("total")}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Tasa
+                  </span>
+                  <Input className="h-8 text-xs" readOnly {...register("tasa")} />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                    Gastos Adm. (Liquidación)
+                  </span>
+                  <Input
+                    className="h-8 text-xs"
+                    readOnly
+                    {...register("gastosAdministrativos")}
                   />
                 </label>
                 <label className="grid gap-1">
@@ -443,7 +521,17 @@ export function SimuladorPrestamoModal({
                   />
                 </label>
               </div>
-            </div>
+            </section>
+
+            <label className="grid gap-1">
+              <span className="text-[0.68rem] font-medium text-foreground-secondary">
+                Condiciones
+              </span>
+              <textarea
+                className={`${FIELD_CLASSNAME} h-14 resize-none py-1.5`}
+                {...register("condiciones")}
+              />
+            </label>
 
             <div className="h-[23rem] overflow-auto rounded-sm border border-border">
               {cuotasDetalle && cuotasDetalle.length > 0 ? (

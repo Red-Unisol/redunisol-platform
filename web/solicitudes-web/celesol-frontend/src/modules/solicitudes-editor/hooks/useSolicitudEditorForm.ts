@@ -7,7 +7,7 @@ import {
   parseMoneyValue,
   formatDecimalMoneyValue,
 } from "@/shared/utils/money-format";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import type { LineaPrestamoPresolicitud } from "@/modules/solicitudes/types/solicitudes";
@@ -111,19 +111,45 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLi
     control: form.control,
     name: ["montoAFinanciar", "cuotas", "fechaPrimerVencimiento"],
   });
+  // Cuota que escribio el usuario: con ella el legado calcula el monto (igual
+  // que en el detalle). La vista la vuelve a null si se toca monto, cuotas o
+  // linea.
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(
+    null,
+  );
+  const cuotaObjetivo =
+    cuotaObjetivoTexto !== null ? parseMoneyValue(cuotaObjetivoTexto) : null;
   const calculo = useCuotaCalculada(
     {
+      ...(cuotaObjetivo !== null && cuotaObjetivo > 0 ? { cuotaObjetivo } : {}),
       capitalPuro: false,
       lineaId: Number(selectedLinea?.oid),
-      montoAFinanciar: parseMoneyValue(ajustarMontoTexto(monto, selectedLinea)),
+      // Con cuota objetivo el monto lo busca el legado; la API igual pide uno
+      // positivo, asi que sin monto cargado va el maximo de la linea.
+      montoAFinanciar:
+        cuotaObjetivo !== null
+          ? parseMoneyValue(monto) || (selectedLinea?.montoMaximo ?? 1)
+          : parseMoneyValue(ajustarMontoTexto(monto, selectedLinea)),
       cuotas: Number(ajustarCuotasTexto(cuotas, selectedLinea)),
       ...(fecha ? { fechaPrimerVencimiento: fecha } : {}),
     },
     Boolean(
-      selectedLinea?.oid && Number(cuotas) > 0 && parseMoneyValue(monto) > 0,
+      selectedLinea?.oid &&
+        Number(cuotas) > 0 &&
+        (cuotaObjetivo !== null
+          ? cuotaObjetivo > 0
+          : parseMoneyValue(monto) > 0),
     ),
     (result) => {
-      if (parseMoneyValue(form.getValues("montoAFinanciar")) !== result.montoAFinanciar || Number(form.getValues("cuotas")) !== result.cuotas) onLimitsAdjusted?.();
+      // Con cuota objetivo, que cambie el monto es el resultado, no un ajuste
+      // por los maximos de la linea.
+      if (
+        (cuotaObjetivo === null &&
+          parseMoneyValue(form.getValues("montoAFinanciar")) !==
+            result.montoAFinanciar) ||
+        Number(form.getValues("cuotas")) !== result.cuotas
+      )
+        onLimitsAdjusted?.();
       if (
         parseMoneyValue(form.getValues("montoAFinanciar")) !==
         result.montoAFinanciar
@@ -149,9 +175,30 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLi
     );
   }, [form, calculo.data, calculo.isPending, calculo.error]);
   const currentEstado = currentEstadoValue?.trim() || "Sin estado";
+  const cuotaCalculo = {
+    // El calculo si lo hay y, mientras, lo que esta escribiendo el usuario.
+    valor: calculo.data
+      ? formatDecimalMoneyValue(calculo.data.cuotaResultante)
+      : (cuotaObjetivoTexto ?? ""),
+    mensaje:
+      cuotaObjetivo !== null && cuotaObjetivo <= 0
+        ? "Ingresá una cuota mayor a cero."
+        : calculo.isPending
+          ? cuotaObjetivo !== null
+            ? "Calculando el monto..."
+            : "Calculando..."
+          : calculo.error
+            ? calculo.error.message
+            : cuotaObjetivo !== null && calculo.data
+              ? "Monto calculado a partir de la cuota."
+              : null,
+    onCuotaChange: setCuotaObjetivoTexto,
+    onDatosChange: () => setCuotaObjetivoTexto(null),
+  };
 
   return {
     ...form,
+    cuotaCalculo,
     currentEstado,
     errors: form.formState.errors,
     estadoCivilOptions: ESTADO_CIVIL_OPTIONS,

@@ -57,6 +57,20 @@ describe("SimularPrestamoUseCase", () => {
     assert(calls.every(call => call.cuotas === 12 && call.montoAFinanciar >= 100 && call.montoAFinanciar <= 20000));
     assert(calls.every(call => !("cuotaObjetivo" in call)));
   });
+  it("con minimo 0 en la linea, la busqueda por cuota arranca en $1 y no en centavos", async () => {
+    // Vimarx rechaza $0,01 con "Se requiere un Monto A Financiar" (lineas de
+    // Carlos Paz, 20/10/2026).
+    const calls: number[] = [];
+    const useCase = new SimularPrestamoUseCase({
+      repository: { findById: async () => null, findVendedorLegacyUser: async () => null } as never,
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async (_user, oid) => ({ vigente: true, descripcion: "Linea", legacyOid: oid, montoMinimo: 0, montoMaximo: 20000, cantidadMaximaCuotas: 12 }) },
+      gateway: { simular: async (input: { montoAFinanciar: number; cuotas: number; lineaId: number }) => { calls.push(input.montoAFinanciar); return { ...input, cuotaResultante: input.montoAFinanciar / 10 + 100 }; } } as unknown as PrestamosSimulacionGateway,
+    });
+    const result = await useCase.execute({ legacyUser: "VENDEDOR", capitalPuro: false, lineaId: 1462, montoAFinanciar: 1000, cuotas: 12, cuotaObjetivo: 1100 });
+    assert.equal(calls[0], 1);
+    assert(calls.every(monto => monto >= 1));
+    assert.equal(result.montoAFinanciar, 10000);
+  });
 
   it("calls the gateway when the line belongs to the authenticated agent", async () => {
     let receivedInput: unknown;

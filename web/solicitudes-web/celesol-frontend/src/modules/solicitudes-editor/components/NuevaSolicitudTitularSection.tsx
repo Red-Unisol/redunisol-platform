@@ -1,6 +1,6 @@
-import { Search } from "lucide-react";
 import { Controller, useWatch } from "react-hook-form";
 
+import { LocalidadSelect } from "@/modules/socios/components/localidad-select";
 import { DateInputField } from "@/shared/components/forms/date-input-field";
 import { MoneyInputField } from "@/shared/components/forms/money-input-field";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -16,7 +16,6 @@ import type { SolicitudFormControl, SolicitudFormRegister } from "../types";
 import { calculateAge } from "../utils/calculate-age";
 import {
   LegacyField,
-  LegacyIconButton,
   StyledSelect,
   legacyFieldClassName,
 } from "./fields/base";
@@ -121,12 +120,22 @@ export function NuevaSolicitudTitularFields({
         <span className="text-xs font-medium text-foreground-secondary">
           Localidad
         </span>
-        <div className="flex min-w-0 gap-1">
-          <input className={legacyFieldClassName} {...register("localidad")} />
-          <LegacyIconButton className="text-foreground-secondary">
-            <Search className="size-4" />
-          </LegacyIconButton>
-        </div>
+        {/* El mismo buscador de Vimarx que el alta de socio, pero opcional.
+            Se guarda el nombre: el finalizar y la revision documental leen
+            la localidad de la solicitud como texto. */}
+        <Controller
+          control={control}
+          name="localidad"
+          render={({ field }) => (
+            <LocalidadSelect
+              onBlur={field.onBlur}
+              onClear={() => field.onChange("")}
+              onPick={(localidad) => field.onChange(localidad.nombre)}
+              value=""
+              valueLabel={field.value ?? ""}
+            />
+          )}
+        />
       </div>
       <div className="grid grid-cols-[13.5rem_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
         <span className="text-xs font-medium text-foreground-secondary">

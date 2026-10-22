@@ -579,4 +579,31 @@ describe("EvaluateListSolicitudesGateway", () => {
 
     assert.equal(id, null);
   });
+
+  it("lee el convenio del socio por su ID interno, con los vacios en null", async () => {
+    // Respuesta real de Vimarx para el socio 143254 (NroSocio 1707), 21/10.
+    const { gateway, requests } = createGateway([
+      [1707, null, null, 50, "acepta oferta en 15 cuotas, firma digital"],
+    ]);
+
+    const convenio = await gateway.getConvenioSocioByLegacyId("143254");
+
+    assert.deepEqual(convenio, {
+      nroSocio: "1707",
+      beneficio: null,
+      caja40: 50,
+      convAux: null,
+      observaciones: "acepta oferta en 15 cuotas, firma digital",
+    });
+    const body = requests[0]?.body as { cmd: string; tipo: string; campos: string };
+    assert.equal(body.cmd, "[ID] = 143254");
+    assert.equal(body.tipo, "F.Module.SocioMutual");
+  });
+
+  it("no consulta Vimarx con un ID que no es numerico", async () => {
+    const { gateway, requests } = createGateway([]);
+
+    assert.equal(await gateway.getConvenioSocioByLegacyId("1 OR 1=1"), null);
+    assert.equal(requests.length, 0);
+  });
 });

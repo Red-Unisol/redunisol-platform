@@ -271,14 +271,13 @@ export function createSolicitudesCoreRouter(
   const listPrestamosDelSocioUseCase = new ListPrestamosDelSocioUseCase({
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
-    sociosRepository,
   });
   const getPrestamoDelSocioUseCase = new GetPrestamoDelSocioUseCase({
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
-    sociosRepository,
   });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
+    convenioSocioGateway: solicitudesLegacyGateway,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository, sociosRepository,
     lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
