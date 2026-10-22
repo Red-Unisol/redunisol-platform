@@ -12,13 +12,16 @@ export function useCuotaCalculada(
   onResolved?: (
     result: Pick<SimulacionPrestamoResponse, "montoAFinanciar" | "cuotas">,
   ) => void,
+  options: { applyEffectiveValuesOnError?: boolean } = {},
 ) {
+  const applyEffectiveValuesOnError = options.applyEffectiveValuesOnError ?? true;
   const key = JSON.stringify(input);
   const callback = useRef(onResolved);
   useEffect(() => {
     callback.current = onResolved;
   });
   const completed = useRef<string | null>(null);
+  const cancelPending = useRef<(() => void) | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
     key: string;
@@ -55,6 +58,7 @@ export function useCuotaCalculada(
         if (cancelled) return;
         let effectiveKey = key;
         if (
+          applyEffectiveValuesOnError &&
           error instanceof ApiError &&
           error.code === "CALCULO_CON_VALORES_EFECTIVOS" &&
           error.rawBody
@@ -91,13 +95,20 @@ export function useCuotaCalculada(
         });
       }
     }, 400);
-    return () => {
+    const cancel = () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [key, enabled, attempt]);
+    cancelPending.current = cancel;
+    return cancel;
+  }, [key, enabled, attempt, applyEffectiveValuesOnError]);
   const current = enabled && state.key === key;
   return {
+    cancel: (error?: Error) => {
+      cancelPending.current?.();
+      completed.current = null;
+      setState({ key, error });
+    },
     data: current ? state.data : undefined,
     error: current ? state.error : undefined,
     isPending: enabled && (!current || (!state.data && !state.error)),
