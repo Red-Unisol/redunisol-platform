@@ -62,6 +62,27 @@ los siguientes; el resultado conserva los IDs, motivos y conteos, sin textos de
 clientes. La ejecución falla al terminar si hubo errores, para usar las alertas
 existentes. Las siguientes tandas reevalúan el estado actual.
 
+## Logs y diagnóstico
+
+Cada barrido emite un único resumen `bitrix24_deal_chat_response_summary` con
+`ok`, duración, negociaciones revisadas, conteos por resultado, llamadas por
+método y tipos de error. `api_calls` cuenta intentos HTTP reales, incluidos los
+reintentos de lectura; `api_failed_attempts` también incluye fallos recuperados.
+Un intento fallido recuperado no convierte un barrido exitoso en un error.
+
+El resumen exitoso va a stdout/INFO y el fallido a stderr/ERROR. El logger
+compartido de Bitrix también envía sus mensajes INFO a stdout. Los errores
+conservan su tipo sin imprimir cuerpos HTTP, credenciales ni datos de clientes.
+`ok` y `result_json` conservan el contrato completo de salidas de Kestra,
+incluidos los eventos por negociación; no se duplica esa lista en el log.
+
+Sólo este entrypoint omite por defecto los mensajes rutinarios «Invocando…».
+Para un diagnóstico puntual se puede agregar `BITRIX24_LOG_API_CALLS: "true"`
+al entorno de su tarea en Git y desplegarlo; restaurar luego el valor por defecto.
+Los demás consumidores de `BitrixClient` conservan sus mensajes por llamada.
+No cambia el cron, el ritmo, los reintentos ni la selección y actualización de
+negociaciones.
+
 ## Negociaciones anteriores a la incorporación del campo
 
 No convertir valores vacíos en aprobaciones. Se pueden recuperar decisiones de

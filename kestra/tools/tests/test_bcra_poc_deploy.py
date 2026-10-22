@@ -9,6 +9,14 @@ FLOWS = ROOT / "kestra/automations/analisis-credito/flows"
 
 
 class BcraPocDeploymentTests(unittest.TestCase):
+    def test_direct_api_is_loopback_only_and_reuses_the_existing_volume(self):
+        compose = yaml.safe_load((ROOT / "apps/bcra-file-api/deploy/docker-compose.yml").read_text(encoding="utf-8"))
+        service = compose["services"]["bcra-file-api-poc"]
+        self.assertEqual(service["ports"], ["127.0.0.1:18082:8080"])
+        self.assertEqual(compose["volumes"]["bcra-file-data"]["name"], "bcra-file-poc_bcra-file-data")
+        self.assertIn("bcra-file-data:/data", service["volumes"])
+        self.assertEqual(service["logging"]["options"]["max-size"], "10m")
+
     def test_poc_triggers_exist_only_in_prod(self):
         for name in ("bcra_archivo_actualizar_poc", "bcra_archivo_consultar_poc"):
             with self.subTest(flow=name):
@@ -31,7 +39,7 @@ class BcraPocDeploymentTests(unittest.TestCase):
 
     def test_daily_schedule_has_an_explicit_manual_test_and_no_business_tasks(self):
         flow = yaml.safe_load((FLOWS / "bcra_archivo_actualizar_poc.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(flow["triggers"][0]["cron"], "0 4 * * *")
+        self.assertEqual(flow["triggers"][0]["cron"], "0 21 * * *")
         self.assertEqual(flow["triggers"][0]["timezone"], "America/Argentina/Buenos_Aires")
         self.assertFalse(flow["inputs"][0]["defaults"])
         self.assertIn("inputs.run_now", flow["tasks"][0]["condition"])

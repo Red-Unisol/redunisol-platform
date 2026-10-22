@@ -18,6 +18,16 @@ class SourceError(RuntimeError):
     """Messages must not include download URLs, cookies or form credentials."""
 
 
+def check_deadline(deadline: float | None) -> None:
+    if deadline is not None and time.monotonic() >= deadline:
+        raise SourceError("BCRA refresh exceeded its time budget or nightly window")
+
+
+def request_timeout(config: Config, deadline: float | None) -> float:
+    check_deadline(deadline)
+    return min(config.timeout, max(0.1, deadline - time.monotonic())) if deadline is not None else config.timeout
+
+
 @dataclass(frozen=True)
 class Asset:
     name: str
@@ -94,7 +104,7 @@ class SourceClient:
     def catalog(self) -> list[Asset]:
         try:
             request = Request(self.config.catalog_url, headers={"User-Agent": "Mozilla/5.0"})
-            with self.opener.open(request, timeout=self.config.timeout) as response:
+            with self.opener.open(request, timeout=request_timeout(self.config, self.deadline)) as response:
                 body = response.read(2_000_001)
             if len(body) > 2_000_000:
                 raise SourceError("BCRA catalog exceeds size limit")
@@ -113,7 +123,7 @@ class SourceClient:
             method="POST",
         )
         try:
-            with self.opener.open(request, timeout=self.config.timeout) as response:
+            with self.opener.open(request, timeout=request_timeout(self.config, self.deadline)) as response:
                 result = json.loads(response.read(65536))
             if not isinstance(result, dict) or "result" not in result:
                 raise SourceError("Unexpected BCRA download-log response")
@@ -151,7 +161,7 @@ class SourceClient:
                 )
                 digest = hashlib.sha256()
                 total = 0
-                with self.opener.open(request, timeout=self.config.timeout) as response, target.open("wb") as output:
+                with self.opener.open(request, timeout=request_timeout(self.config, self.deadline)) as response, target.open("wb") as output:
                     signature = response.read(6)
                     if signature != b"7z\xbc\xaf\x27\x1c":
                         raise SourceError("BCRA returned no 7z archive; verify MFT access and accepted terms")
@@ -159,8 +169,7 @@ class SourceClient:
                     digest.update(signature)
                     total = len(signature)
                     while chunk := response.read(1024 * 1024):
-                        if self.deadline is not None and time.monotonic() > self.deadline:
-                            raise SourceError('BCRA refresh exceeded its time budget')
+                        check_deadline(self.deadline)
                         total += len(chunk)
                         if total > self.config.max_download_bytes:
                             raise SourceError("BCRA archive exceeds download size limit")

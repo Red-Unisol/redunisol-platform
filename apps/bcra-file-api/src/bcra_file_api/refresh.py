@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -8,11 +8,28 @@ import tempfile
 import threading
 import time
 import uuid
+from zoneinfo import ZoneInfo
 
 from .archive import Archive
 from .config import Config
-from .source import SourceClient, SourceError, content_version
+from .source import SourceClient, SourceError, check_deadline, content_version
 from .store import import_snapshot, read_manifest, timestamp
+
+
+def refresh_budget_seconds(config: Config, now: datetime | None = None) -> float:
+    """Bound work by both the ten-hour budget and the local window end."""
+    budget = 10 * 3600
+    if config.refresh_start_hour is None:
+        return budget
+    local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(config.refresh_timezone))
+    start, end = config.refresh_start_hour, config.refresh_end_hour
+    allowed = start <= local.hour < end if start < end else local.hour >= start or local.hour < end
+    if not allowed:
+        raise SourceError("BCRA refresh is outside its configured nightly window")
+    finish = local.replace(hour=end, minute=0, second=0, microsecond=0)
+    if start > end and local.hour >= start:
+        finish += timedelta(days=1)
+    return min(budget, (finish.astimezone(timezone.utc) - local.astimezone(timezone.utc)).total_seconds())
 
 
 class RefreshManager:
@@ -74,7 +91,7 @@ class RefreshManager:
     def _refresh(self) -> dict:
         if not self.config.terms_accepted:
             raise SourceError("Operator acceptance of BCRA download terms is required")
-        deadline = time.monotonic() + 10 * 3600
+        deadline = time.monotonic() + refresh_budget_seconds(self.config)
         client = SourceClient(self.config, deadline=deadline)
         assets = client.catalog()
         previous = read_manifest(self.database)
@@ -91,6 +108,7 @@ class RefreshManager:
                 "BCRA download log returned null for " + item["name"]
                 for item in downloaded if item.get("terms_log_result") == "null_response"
             ]
+            check_deadline(deadline)
             if previous and previous["version"] == version:
                 return {"action": "unchanged", "version": version, "period": period, "warnings": warnings}
             archives = {
@@ -101,7 +119,8 @@ class RefreshManager:
                 "files": downloaded, "warnings": warnings,
             }
             staged_database = work / "snapshot.sqlite"
-            manifest = import_snapshot(staged_database, archives, manifest, self.config.min_rows)
+            manifest = import_snapshot(staged_database, archives, manifest, self.config.min_rows, deadline=deadline)
+            check_deadline(deadline)
             warnings = manifest["warnings"]
             if previous and manifest["rows"] < previous["rows"] * self.config.min_row_ratio:
                 raise SourceError("BCRA row count dropped by more than the allowed threshold")
@@ -111,6 +130,7 @@ class RefreshManager:
             destination.mkdir(parents=True, exist_ok=True)
             for asset in assets:
                 os.replace(work / asset.name, destination / asset.name)
+            check_deadline(deadline)
             os.replace(staged_database, self.database)
             archive_root = self.config.data_dir / "archives"
             cleanup_pending = False

@@ -100,6 +100,9 @@ import { VimarxVisibilidadVendedorResolver } from "./infrastructure/services/Vim
 import { FinSolicitudController } from "./presentation/FinSolicitudController";
 import { FinSolicitudRoutes } from "./presentation/FinSolicitudRoutes";
 import { Router } from "express";
+import { addExternalPaymentRoutes } from "../transferencias-integration/external-payment-routes";
+import { ExternalPaymentService } from "../transferencias-integration/ExternalPaymentService";
+import { createPayWorkflow } from "../transferencias-integration/workflow";
 
 type CreateSolicitudesCoreRouterDependencies = {
   getCurrentUserUseCase: GetCurrentUserUseCase;
@@ -462,6 +465,13 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
+  addExternalPaymentRoutes(router, {
+    auth: dependencies.getCurrentUserUseCase,
+    service: new ExternalPaymentService({ db: prisma, storage: adjuntosObjectStorage,
+      bucket: env.MINIO_BUCKET_SOLICITUDES, maxFileBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
+      pay: createPayWorkflow(prisma) }),
+    maxFileBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
+  });
   const combined = Router();
   const configuracion = new ConfiguracionReconocimientoPrisma(prisma);
   combined.use("/reconocimiento-recibos", createReconocimientoRecibosRoutes({

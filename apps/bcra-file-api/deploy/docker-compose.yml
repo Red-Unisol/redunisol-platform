@@ -9,12 +9,22 @@ services:
       BCRA_FILE_API_TOKEN: ${BCRA_FILE_API_TOKEN:?Set the POC token}
       BCRA_FILE_TERMS_ACCEPTED: ${BCRA_FILE_TERMS_ACCEPTED:-false}
       BCRA_FILE_DATA_DIR: /data
+      BCRA_FILE_REFRESH_START_HOUR: "21"
+      BCRA_FILE_REFRESH_END_HOUR: "7"
+      BCRA_FILE_REFRESH_TIMEZONE: America/Argentina/Buenos_Aires
     volumes:
       - bcra-file-data:/data
     tmpfs:
       - /tmp:size=64m,mode=1777
     expose:
       - "8080"
+    ports:
+      - "127.0.0.1:18082:8080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     mem_limit: 2g
     cpus: 1.0
     pids_limit: 64
@@ -32,6 +42,7 @@ services:
       - kestra_net
 volumes:
   bcra-file-data:
+    name: bcra-file-poc_bcra-file-data
 networks:
   kestra_net:
     external: true

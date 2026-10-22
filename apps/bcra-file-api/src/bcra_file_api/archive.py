@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-from .source import SourceError
+from .source import SourceError, check_deadline
 
 
 class Archive:
@@ -15,10 +15,11 @@ class Archive:
         self.path = path
         self.executable = executable
         self.deadline = deadline
+        check_deadline(deadline)
         try:
             result = subprocess.run(
                 [executable, "l", "-slt", "--", str(path)],
-                capture_output=True, timeout=120, check=True,
+                capture_output=True, timeout=min(120, max(0.1, deadline - time.monotonic())) if deadline is not None else 120, check=True,
             )
         except (OSError, subprocess.SubprocessError):
             raise SourceError("Unable to list BCRA 7z archive") from None
@@ -42,6 +43,7 @@ class Archive:
 
     @contextmanager
     def lines(self, basename: str):
+        check_deadline(self.deadline)
         member = self.members.get(basename)
         if member is None:
             raise SourceError("Required BCRA archive member is missing: " + basename)
@@ -58,15 +60,16 @@ class Archive:
             reader = io.TextIOWrapper(process.stdout, encoding="cp1252", errors="replace")
             def records():
                 for number, line in enumerate(iter(lambda: reader.readline(4097), ''), 1):
-                    if self.deadline is not None and time.monotonic() > self.deadline:
-                        raise SourceError('BCRA refresh exceeded its time budget')
+                    check_deadline(self.deadline)
                     if len(line) > 4096:
                         raise SourceError("BCRA record exceeds length limit")
                     if line.strip() and line.strip() != "\x1a":
                         yield number, line
             try:
                 yield records()
-                if process.wait(timeout=60) != 0:
+                check_deadline(self.deadline)
+                remaining = min(60, max(0.1, self.deadline - time.monotonic())) if self.deadline is not None else 60
+                if process.wait(timeout=remaining) != 0:
                     raise SourceError("BCRA archive failed decompression/integrity validation")
             finally:
                 reader.close()

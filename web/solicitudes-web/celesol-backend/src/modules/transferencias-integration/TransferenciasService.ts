@@ -50,6 +50,7 @@ const sourceSelect = {
 } satisfies Prisma.SolicitudSelect;
 const orderInclude = {
   pagos: { orderBy: { paymentKey: "asc" as const } },
+  pagoExterno: true,
 } as const;
 type Order = Prisma.TransferenciaDesembolsoGetPayload<{
   include: typeof orderInclude;
@@ -160,7 +161,10 @@ export class TransferenciasService {
     const built = buildPlan(source, loan, creditors);
     // Concurrent readers allocate once. Gaps are intentional; never recycle IDs.
     await this.deps.db.transferenciaIdentificador.createMany({
-      data: built.payments.map((p) => ({ solicitudId: id, paymentKey: p.paymentKey })),
+      data: built.payments.map((p) => ({
+        solicitudId: id,
+        paymentKey: p.paymentKey,
+      })),
       skipDuplicates: true,
     });
     const identifiers = await this.deps.db.transferenciaIdentificador.findMany({
@@ -172,7 +176,9 @@ export class TransferenciasService {
       ...base,
       payments: built.payments.map((p) => ({
         ...p,
-        bankNumber: identifiers.find((row) => row.paymentKey === p.paymentKey)!.numero.toString(),
+        bankNumber: identifiers
+          .find((row) => row.paymentKey === p.paymentKey)!
+          .numero.toString(),
       })),
     };
     return {
@@ -202,13 +208,22 @@ export class TransferenciasService {
       prestamoLegacyId: order.prestamoLegacyId,
       plan: order.plan,
       verificationId: order.verificationId,
-      status: order.completedAt
-        ? "COMPLETED"
-        : order.pagos.every((p) => p.confirmedAt)
-          ? "BANK_CONFIRMED_PENDING_SYNC"
-          : "RESERVED",
+      status: order.pagoExterno
+        ? "EXTERNALLY_SETTLED"
+        : order.completedAt
+          ? "COMPLETED"
+          : order.pagos.every((p) => p.confirmedAt)
+            ? "BANK_CONFIRMED_PENDING_SYNC"
+            : "RESERVED",
       createdAt: order.createdAt,
       completedAt: order.completedAt,
+      externalPayment: order.pagoExterno
+        ? {
+            id: order.pagoExterno.id,
+            paidOn: order.pagoExterno.paidOn,
+            reference: order.pagoExterno.reference,
+          }
+        : null,
       installationId: order.installationId,
       operator: order.operator,
       receipt: order.receiptAdjuntoId
@@ -248,6 +263,11 @@ export class TransferenciasService {
       input: normalized,
     });
     const replay = (order: Order) => {
+      if (order.pagoExterno)
+        fail(
+          "EXTERNALLY_SETTLED",
+          "La solicitud fue pagada por fuera. No iniciar ni reenviar transferencias.",
+        );
       if (order.reservationHash !== reservationHash)
         fail("IDEMPOTENCY_CONFLICT", "La clave ya fue usada con otra reserva.");
       return this.view(order);
@@ -329,7 +349,24 @@ export class TransferenciasService {
         "PLAN_CHANGED",
         "Cambió el plan financiero. Conciliar cualquier pago iniciado antes de continuar.",
       );
-    return { planVersion: plan.version, checkedAt: new Date(), valid: true };
+    // Persist an uncertain bank attempt BEFORE handing permission back to the
+    // desktop. A manual external settlement must not race an authorized send.
+    return this.deps.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${order.solicitudId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM transferencia_desembolsos WHERE id = ${id}::uuid FOR UPDATE`;
+      const current = await this.order(tx, id, actor);
+      if (current.completedAt || current.pagoExterno)
+        fail(
+          "ALREADY_COMPLETED",
+          "El desembolso ya fue cerrado. No iniciar transferencias.",
+        );
+      await this.source(tx, current.solicitudId);
+      await tx.transferenciaDesembolso.update({
+        where: { id },
+        data: { bankStartedAt: current.bankStartedAt ?? new Date() },
+      });
+      return { planVersion: plan.version, checkedAt: new Date(), valid: true };
+    });
   }
 
   async confirm(
@@ -342,6 +379,11 @@ export class TransferenciasService {
       return await this.deps.db.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM transferencia_desembolsos WHERE id = ${id}::uuid FOR UPDATE`;
         const order = await this.order(tx, id, actor);
+        if (order.pagoExterno)
+          fail(
+            "EXTERNALLY_SETTLED",
+            "La solicitud fue pagada por fuera. Requiere conciliación.",
+          );
         const payment = order.pagos.find((p) => p.paymentKey === paymentKey);
         const leg = (order.plan as unknown as PaymentPlan).payments.find(
           (p) => p.paymentKey === paymentKey,
@@ -416,6 +458,11 @@ export class TransferenciasService {
       fail("INVALID_PDF", "El comprobante debe ser un PDF.", 400);
     const sha256 = hash(body);
     const initial = await this.order(this.deps.db, id, actor);
+    if (initial.pagoExterno)
+      fail(
+        "EXTERNALLY_SETTLED",
+        "La solicitud fue pagada por fuera. Requiere conciliación.",
+      );
     const completed = (order: Order) => {
       if (order.receiptSha256 !== sha256)
         fail("RECEIPT_CONFLICT", "El desembolso tiene otro comprobante.");
@@ -439,6 +486,11 @@ export class TransferenciasService {
         await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${initial.solicitudId}::uuid FOR UPDATE`;
         await tx.$queryRaw`SELECT id FROM transferencia_desembolsos WHERE id = ${id}::uuid FOR UPDATE`;
         const order = await this.order(tx, id, actor);
+        if (order.pagoExterno)
+          fail(
+            "EXTERNALLY_SETTLED",
+            "La solicitud fue pagada por fuera. Requiere conciliación.",
+          );
         if (order.completedAt) return completed(order);
         await this.source(tx, order.solicitudId);
         const rule = await tx.solicitudFieldAccessRule.findFirst({

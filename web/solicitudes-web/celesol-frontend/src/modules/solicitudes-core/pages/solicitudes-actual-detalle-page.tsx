@@ -53,6 +53,7 @@ import {
 import { NuevaGarantiaModal } from "@/modules/solicitudes-editor/components/NuevaGarantiaModal";
 import { SolicitudDetailToolbar } from "@/modules/solicitudes-editor/components/SolicitudToolbar";
 import { SolicitudWorkflowActionDialog } from "@/modules/solicitudes-core/components/solicitud-workflow-action-dialog";
+import { ExternalPaymentControl } from "@/modules/solicitudes-core/components/external-payment-control";
 import { SolicitudWorkflowHistorySection } from "@/modules/solicitudes-core/components/solicitud-workflow-history-section";
 import { DocumentReviewPanel } from "@/modules/solicitudes-core/components/document-review-panel";
 import { useDocumentReview } from "@/modules/solicitudes-core/services/document-review-api";
@@ -4175,6 +4176,10 @@ export function SolicitudesActualDetallePage() {
         }
       />
 
+      {(["Transferir", "Pagada"].includes(resolvedSolicitud.estadoActual.code) &&
+        (currentUser?.isSystemAdmin || ["TESORERIA", "RIESGO"].includes(currentUser?.workflowOwner?.code ?? ""))) ? (
+        <ExternalPaymentControl key={solicitudId} solicitudId={solicitudId} isPaid={resolvedSolicitud.estadoActual.code === "Pagada"} />
+      ) : null}
       </div>
       {analisisActivo ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-sm">
