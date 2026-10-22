@@ -63,6 +63,7 @@ type NuevaSolicitudViewProps = {
     mensaje: string | null;
     onCuotaChange: (value: string) => void;
     onDatosChange: () => void;
+    onReintentar?: () => void;
     valor: string;
   };
   adjuntos: SolicitudCoreAdjuntoResponse[];
@@ -268,6 +269,17 @@ export function NuevaSolicitudView({
                       >
                         {cuotaCalculo.mensaje}
                       </span>
+                    ) : null}
+                    {cuotaCalculo.onReintentar ? (
+                      <Button
+                        className="justify-self-start"
+                        onClick={cuotaCalculo.onReintentar}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Reintentar cuota
+                      </Button>
                     ) : null}
                   </div>
                 </LegacyField>
