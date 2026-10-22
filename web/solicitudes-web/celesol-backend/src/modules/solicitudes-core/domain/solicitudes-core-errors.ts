@@ -364,6 +364,13 @@ export class SolicitudFueraDeLimitesDeLineaError extends SolicitudesError {
   }
 }
 
+export class MontoSuperaAprobadoRiesgoError extends SolicitudesError {
+  constructor(message: string) {
+    super(message, 422);
+    this.name = "MontoSuperaAprobadoRiesgoError";
+  }
+}
+
 export class ConfiguracionMaximosLineaInvalidaError extends SolicitudesError {
   constructor() {
     super("La línea tiene máximos ausentes o inválidos. Corregí su configuración en el legacy.", 503);

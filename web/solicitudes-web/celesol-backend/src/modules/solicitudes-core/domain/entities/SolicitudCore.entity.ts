@@ -1,3 +1,13 @@
+/**
+ * Estados en los que el vendedor recibe la solicitud de vuelta de Riesgo. Al
+ * entrar se guarda el monto como montoAprobadoRiesgo y, mientras siga ahi, el
+ * vendedor puede bajar el monto pero no pasar de ese tope.
+ */
+export const ESTADOS_CON_TOPE_DE_RIESGO: readonly string[] = [
+  "PreAprobada",
+  "Revisar",
+];
+
 export type SolicitudCoreState = {
   code: string;
   id: string;
@@ -239,6 +249,9 @@ export type SolicitudCore = {
   conyuge: SolicitudCoreConyuge | null;
   datosLaborales: SolicitudCoreDatosLaborales;
   montoAFinanciar: number | null;
+  // Tope del vendedor en ESTADOS_CON_TOPE_DE_RIESGO: el monto con el que
+  // Riesgo se la devolvio por ultima vez.
+  montoAprobadoRiesgo?: number | null;
   cupoTitular?: number | null;
   motivo: string | null;
   nroSolicitud: string | null;
