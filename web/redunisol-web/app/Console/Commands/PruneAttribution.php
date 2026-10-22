@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Services\AttributionJourney;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class PruneAttribution extends Command
 {
@@ -13,7 +13,7 @@ class PruneAttribution extends Command
 
     public function handle(): int
     {
-        $query = DB::table('attribution_journeys')->where('expires_at', '<=', now());
+        $query = (new AttributionJourney)->database()->table('attribution_journeys')->where('expires_at', '<=', now());
         $count = $this->option('apply') ? $query->delete() : $query->count();
         $this->line(json_encode(['expired' => $count, 'applied' => (bool) $this->option('apply')]));
 

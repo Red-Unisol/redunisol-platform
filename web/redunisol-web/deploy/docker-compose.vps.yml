@@ -90,6 +90,13 @@ services:
       EDNA_ROUTER_RESULTS_ENABLED: ${EDNA_ROUTER_RESULTS_ENABLED:-false}
       EDNA_BITRIX_WEBHOOK_URL: ${EDNA_BITRIX_WEBHOOK_URL:-}
       ATTRIBUTION_ENABLED: ${ATTRIBUTION_ENABLED:-false}
+      ATTRIBUTION_DB_CONNECTION: ${ATTRIBUTION_DB_CONNECTION:-}
+      JOURNEY_ENABLED: ${JOURNEY_ENABLED:-false}
+      JOURNEY_ROOT: /var/www/journey
+      JOURNEY_ENVIRONMENT: ${JOURNEY_ENVIRONMENT:-${APP_ENV}}
+      JOURNEY_EXPORT_TOKEN: ${JOURNEY_EXPORT_TOKEN:-}
+      JOURNEY_CRM_ENABLED: ${JOURNEY_CRM_ENABLED:-false}
+      JOURNEY_CRM_SINCE: ${JOURNEY_CRM_SINCE:-2026-10-22T00:00:00-03:00}
       EDNA_ROUTER_ENABLED: ${EDNA_ROUTER_ENABLED:-false}
       EDNA_ROUTER_START_AT: ${EDNA_ROUTER_START_AT:-}
       EDNA_ROUTER_RECIPIENTS: ${EDNA_ROUTER_RECIPIENTS:-}
@@ -120,6 +127,11 @@ services:
       FINALIZAR_ITS_API_TIMEOUT_SECONDS: ${FINALIZAR_ITS_API_TIMEOUT_SECONDS:-25}
     volumes:
       - storage-data:/var/www/storage
+      - type: bind
+        source: /srv/redunisol-tracking
+        target: /var/www/journey
+        bind:
+          create_host_path: false
       - /srv/redunisol-reports:/var/www/reports:ro
     depends_on:
       postgres:
@@ -142,6 +154,11 @@ services:
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage
+      - type: bind
+        source: /srv/redunisol-tracking
+        target: /var/www/journey
+        bind:
+          create_host_path: false
     depends_on:
       php-fpm:
         condition: service_started
@@ -158,6 +175,11 @@ services:
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage
+      - type: bind
+        source: /srv/redunisol-tracking
+        target: /var/www/journey
+        bind:
+          create_host_path: false
     depends_on:
       php-fpm:
         condition: service_started
@@ -171,6 +193,11 @@ services:
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage
+      - type: bind
+        source: /srv/redunisol-tracking
+        target: /var/www/journey
+        bind:
+          create_host_path: false
     depends_on:
       php-fpm:
         condition: service_started
@@ -188,6 +215,11 @@ services:
     environment: *app-environment
     volumes:
       - storage-data:/var/www/storage
+      - type: bind
+        source: /srv/redunisol-tracking
+        target: /var/www/journey
+        bind:
+          create_host_path: false
     depends_on:
       postgres:
         condition: service_started

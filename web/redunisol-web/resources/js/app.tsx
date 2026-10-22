@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { initializeTheme } from './hooks/use-appearance';
 import { formatPageTitle } from './lib/seo';
 import { captureAnalyticsAttribution } from './utils/analyticsAttribution';
+import { initializeJourney } from './utils/journey';
 import { initializeWhatsAppAttribution } from './utils/whatsappAttribution';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Red Unisol';
@@ -20,6 +21,10 @@ createInertiaApp({
             import.meta.glob('./pages/**/*.tsx'),
         ),
     setup({ el, App, props }) {
+        if (props.initialPage.props.journeyEnabled) {
+            initializeJourney();
+            router.on('navigate', () => window.dispatchEvent(new Event('journey:navigate')));
+        }
         if (props.initialPage.props.attributionEnabled) {
             initializeWhatsAppAttribution();
             const measurementId = String(

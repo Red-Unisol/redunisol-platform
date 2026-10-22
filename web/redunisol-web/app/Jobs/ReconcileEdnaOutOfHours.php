@@ -12,6 +12,7 @@ use Throwable;
 class ReconcileEdnaOutOfHours implements ShouldQueue
 {
     use Queueable;
+    use \App\Jobs\Middleware\TracksJourney;
 
     public int $tries = 8;
 

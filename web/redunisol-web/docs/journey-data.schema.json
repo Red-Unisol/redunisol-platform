@@ -1,0 +1,62 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Red Unisol journey event v1",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "event_id",
+        "type",
+        "source",
+        "environment",
+        "occurred_at",
+        "received_at",
+        "links",
+        "data"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "schema_version": { "const": 1 },
+        "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "UUID for web events; deterministic SHA-256 for replayable CRM records. Deduplication key within environment."
+        },
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_.]+$" },
+        "source": {
+            "enum": [
+                "web.browser",
+                "web.server",
+                "whatsapp.edna",
+                "kestra.form",
+                "kestra.edna",
+                "bitrix"
+            ]
+        },
+        "environment": { "type": "string" },
+        "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Source timestamp; browser clocks are untrusted. Snapshot time is DATE_MODIFY, not an inferred stage transition."
+        },
+        "received_at": { "type": "string", "format": "date-time" },
+        "links": {
+            "type": "object",
+            "description": "Explicit observed references. Missing/null means unknown; never infer a person from a shared browser or unrelated CRM record.",
+            "properties": {
+                "visitor_id": { "type": "string", "format": "uuid" },
+                "session_id": { "type": "string", "format": "uuid" },
+                "page_id": { "type": "string", "format": "uuid" },
+                "submission_id": { "type": "string", "format": "uuid" },
+                "journey_id": { "type": ["string", "null"] },
+                "phone_hash": { "type": ["string", "null"] },
+                "lead_id": { "type": "string" },
+                "contact_id": { "type": "string" },
+                "deal_id": { "type": "string" },
+                "execution_id": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+        },
+        "data": { "type": "object", "additionalProperties": true }
+    }
+}

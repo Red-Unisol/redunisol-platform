@@ -5,6 +5,12 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
+// The command locks a file on the volume; no SQL cache locks or per-event jobs.
+Schedule::command('journey:crm')->everyFiveMinutes()
+    ->when(fn () => config('journey.enabled') && config('journey.crm_enabled'));
+Schedule::command('attribution:prune --apply')->dailyAt('04:15')
+    ->when(fn () => config('attribution.connection') === 'journey');
+
 $assistancePoll = Schedule::command('edna:assistance poll --dispatch')->withoutOverlapping(5)
     ->when(fn () => config('edna.assistance_enabled') && config('edna.assistance_send_enabled') && config('edna.assistance_recipients'));
 if (config('edna.assistance_test_mode')) {

@@ -5,9 +5,10 @@ import {
     XIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { type SectionCta } from '@/components/section-cta';
+import { trackJourney } from '@/utils/journey';
 import { trackEvent, trackMetaLead } from '@/utils/tracking';
 
 import WhatsAppButton from '../WhatsAppButton';
@@ -1026,6 +1027,11 @@ export default function FormSection({
     );
     const [uploading, setUploading] = useState(false);
 
+    const lastTrackedStep = useRef<number | null>(null);
+    useEffect(() => {
+        if (lastTrackedStep.current !== step) { trackJourney('form.step', { step }); lastTrackedStep.current = step; }
+    }, [step]);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const submissionInProgressRef = useRef(false);
 
@@ -1112,6 +1118,7 @@ export default function FormSection({
     };
 
     const handleSubmit = async () => {
+        trackJourney('form.submit', { step });
         if (submissionInProgressRef.current || wasAlreadySubmitted) return;
 
         submissionInProgressRef.current = true;
@@ -1204,6 +1211,7 @@ export default function FormSection({
                   })
                 : null;
 
+            trackJourney('form.result', { result: String(res.status), step });
             if (res.status === 422 && data?.errors) {
                 const validationErrors: FormErrors = {};
                 for (const [field, messages] of Object.entries(data.errors)) {
@@ -1286,6 +1294,7 @@ export default function FormSection({
             setErrorMessage(
                 'No pudimos conectarnos con el servidor. Revisá tu conexión e intentá nuevamente.',
             );
+            trackJourney('form.result', { result: 'network_error', step });
             setResult('error');
         } finally {
             submissionInProgressRef.current = false;
@@ -1294,6 +1303,7 @@ export default function FormSection({
     };
 
     const goNext = () => {
+        trackJourney('form.validation', { step });
         setFormErrors({});
         const hasErrors = currentStepFields[step].some(
             (field) => clientErrors[field],
@@ -1352,6 +1362,7 @@ export default function FormSection({
                 method: 'POST',
                 body: fd,
             });
+            trackJourney('receipt.result', { result: String(res.status), step });
             if (res.ok) {
                 const data = (await res.json()) as { url: string };
                 if (!data.url) {

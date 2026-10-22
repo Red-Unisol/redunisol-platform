@@ -21,6 +21,7 @@ class CaptureAttribution
         try {
             $journey = (new AttributionJourney)->touch($request);
             if ($journey) {
+                $request->attributes->set('journey_reference', $journey->id);
                 $response->headers->setCookie(cookie(AttributionJourney::COOKIE, $journey->id, config('attribution.days', 30) * 1440, '/', null, $request->isSecure(), true, false, 'lax'));
             } elseif ($request->query->has('ref')) {
                 $response->headers->setCookie(cookie()->forget(AttributionJourney::COOKIE));
