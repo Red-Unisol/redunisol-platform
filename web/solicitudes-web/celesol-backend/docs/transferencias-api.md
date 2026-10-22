@@ -148,7 +148,7 @@ actual; `verification.document` es el documento BEEX. Comparar MetaMap contra
 | POST `/solicitudes/:id/reserva` | Reserva y snapshot inmutable; reintento idéntico devuelve la misma operación |
 | GET `/reservas/:idempotencyKey` | Recuperación cuando se perdió la respuesta de reserva |
 | GET `/desembolsos/:id` | Estado durable, snapshot, IDs y resultados por pago, y referencia/hash del PDF |
-| POST `/desembolsos/:id/revalidar` | Compara el plan financiero actual con la reserva antes de iniciar un pago pendiente |
+| POST `/desembolsos/:id/revalidar` | Compara el plan financiero y registra el inicio bancario antes de autorizar un pago pendiente |
 | PUT `/desembolsos/:id/pagos/:paymentKey` | Registra un resultado bancario confirmado e inmutable |
 | POST `/desembolsos/:id/comprobante` | Multipart `file` PDF; adjunta y ejecuta `pagar` atómicamente en PostgreSQL |
 
@@ -225,16 +225,50 @@ distinto produce conflicto y no reemplaza lo confirmado.
 
 No hay expiración ni liberación automática de reservas. La app no puede reservar
 una nueva operación para eludir un resultado bancario desconocido. Cualquier
-anulación/liberación requiere un procedimiento de conciliación separado, fuera
-de esta API v1.
+anulación/liberación requiere conciliación. Para pagos ya realizados por otro
+circuito existe el registro autenticado de pago externo descrito abajo.
 
 La reserva congela datos financieros de la solicitud, todo el titular y las
 cancelaciones, también desde la UI normal. Solo la transacción de esta
-integración puede cambiar el estado de una solicitud reservada. El comprobante
+integración o del registro autorizado de pago externo puede cambiar el estado de una solicitud reservada. El comprobante
 vinculado no se puede editar ni borrar desde la UI. Los triggers de base
 serializan esos cambios con las reservas; las solicitudes sin reserva
 conservan su funcionamiento anterior. No se cambia automáticamente una
 solicitud ya pagada manualmente por fuera de esta integración.
+
+## Transferencias realizadas por fuera
+
+Los operadores activos de TESORERIA y RIESGO, y los administradores, disponen de
+`GET /solicitudes/:id/pago-externo` y `POST /solicitudes/:id/pago-externo`, usando
+la sesión web habitual y el guard de visibilidad de la solicitud. La identidad
+técnica de Transferencias no tiene acceso a estas rutas con su token de integración.
+
+El POST es multipart: `requestId` UUID persistente por intento de registro,
+`paidOn` fecha ISO sin hora, `reference` obligatoria, `comment` opcional y `file`
+obligatorio (PDF, JPG o PNG; límite de adjuntos del ambiente). La UI completa la
+fecha del día en Argentina y permite modificarla; el backend rechaza fechas
+futuras. Solo se admite una solicitud activa en Transferir / TESORERIA.
+
+El comprobante se guarda por hash de contenido. En una sola transacción se
+registran fecha, referencia, comentario, usuario y hora de registro; se adjunta
+el comprobante, se ejecuta el workflow oficial `pagar`, y se cierra cualquier
+reserva pendiente. La fecha declarada del pago y la hora de registro son datos
+distintos. El registro y su adjunto son inmutables. Repetir el mismo requestId
+con los mismos datos es idempotente; otra evidencia produce conflicto.
+
+Una reserva con pagos confirmados o `bankStartedAt` exige conciliación y bloquea
+el registro externo. La revalidación toma los mismos locks que el cierre externo
+y persiste `bankStartedAt` antes de devolver autorización al cliente: ambas
+operaciones no pueden ganar concurrentemente. Esta marca no expira ni se borra
+automáticamente. Las reservas anteriores a esta versión no permiten deducir si
+hubo un intento local: deben revisarse los registros bancarios y del operador.
+El backend no consulta al banco ni certifica el contenido del comprobante.
+
+Una reserva cerrada por esta vía devuelve `EXTERNALLY_SETTLED`, conserva sus
+identificadores y pagos originales y no inventa confirmaciones bancarias.
+No aparece en candidatos y rechaza reserva, revalidación, confirmaciones y PDF
+posteriores. Los clientes antiguos que no reconozcan el estado deben detener
+la recuperación; no se debe generar otro ID ni reenviar un pago.
 
 MinIO no comparte transacción con PostgreSQL: una falla posterior al upload
 puede dejar un objeto sin vínculo. La clave incluye desembolso y SHA-256 para
