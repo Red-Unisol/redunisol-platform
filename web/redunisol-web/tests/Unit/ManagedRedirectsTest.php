@@ -13,7 +13,13 @@ dataset('agency redirects', function () {
     fgetcsv($file, escape: '');
     $row = 2;
     while (($values = fgetcsv($file, escape: '')) !== false) {
-        yield 'htaccess row '.$row++ => $values;
+        $label = 'htaccess row '.$row++;
+        // Marketing confirmed this commercial landing in tasks #23051 and #23315.
+        // Keep the original agency fixture as evidence, but retire its blog redirect.
+        if ($values[0] === 'https://www.redunisol.com.ar/prestamos-para-empleados-universidad-nacional-de-cordoba') {
+            continue;
+        }
+        yield $label => $values;
     }
     fclose($file);
 });
@@ -49,7 +55,8 @@ it('limits historical rules to their source host and directory', function () {
         ->and($rules->targetFor('www.redunisol.com.ar', '/privacidad/'))->toBe('https://redunisol.com.ar/politicas-de-privacidad')
         ->and($rules->targetFor('redunisol.com.ar', '/privacidad'))->toBe('https://redunisol.com.ar/politicas-de-privacidad')
         ->and($rules->targetFor('dev.redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBe('https://redunisol.com.ar/')
-        ->and($rules->targetFor('www.redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBe('https://redunisol.com.ar/blog');
+        ->and($rules->targetFor('redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBeNull()
+        ->and($rules->targetFor('www.redunisol.com.ar', '/prestamos-para-empleados-universidad-nacional-de-cordoba'))->toBeNull();
 });
 
 it('does not redirect submissions to a legacy URL', function () {
