@@ -241,9 +241,58 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
             </tr>
           )}
         </tbody>
+        {cuotas.length > 0 && (
+          <tfoot className="border-t-2 border-border bg-background font-semibold">
+            <tr>
+              <th
+                scope="row"
+                colSpan={4}
+                className="border-r border-border px-3 py-2 text-left"
+              >
+                Total
+              </th>
+              <td className="border-r border-border px-3 py-2">
+                {formatNullableAmount(sumar(cuotas, "montoTotal")) ||
+                  PLACEHOLDER}
+              </td>
+              <td className="border-r border-border px-3 py-2">
+                {formatNullableAmount(
+                  sumar(cuotas, "saldoCuotaConPunitorios"),
+                ) || PLACEHOLDER}
+              </td>
+              <td className="border-r border-border px-3 py-2">
+                {formatNullableAmount(sumar(cuotas, "saldoCuota")) ||
+                  PLACEHOLDER}
+              </td>
+              <td className="px-3 py-2">
+                {formatNullableAmount(sumar(cuotas, "capital")) || PLACEHOLDER}
+              </td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
+}
+
+// Suma todas las cuotas del prestamo, tambien las cobradas que estan ocultas.
+// Redondea a centavos para no arrastrar el error de los decimales. Si ninguna
+// cuota tiene el dato, devuelve null.
+function sumar(
+  cuotas: CuotaPrestamoResponse[],
+  campo: "capital" | "montoTotal" | "saldoCuota" | "saldoCuotaConPunitorios",
+) {
+  const valores = cuotas
+    .map((cuota) => cuota[campo])
+    .filter((valor): valor is number => typeof valor === "number");
+
+  if (!valores.length) {
+    return null;
+  }
+
+  const total = valores.reduce((acumulado, valor) => acumulado + valor, 0);
+
+  return Math.round(total * 100) / 100;
 }
 
 function Dato({ label, value }: { label: string; value: string | null }) {
