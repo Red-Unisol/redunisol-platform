@@ -30,6 +30,7 @@ export function createTransferenciasIntegrationRouter() {
         secretKey: env.MINIO_SECRET_KEY,
         endPoint: env.MINIO_ENDPOINT,
         port: env.MINIO_PORT,
+        region: env.MINIO_REGION,
         useSSL: env.MINIO_USE_SSL,
       }),
       bucket: env.MINIO_BUCKET_SOLICITUDES,
