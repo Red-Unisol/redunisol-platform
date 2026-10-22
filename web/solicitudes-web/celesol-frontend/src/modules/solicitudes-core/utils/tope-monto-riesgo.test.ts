@@ -43,6 +43,6 @@ describe("tope-monto-riesgo", () => {
     assert.equal(getMontoSuperaTopeError(500000, 500000), null);
     assert.equal(getMontoSuperaTopeError(200000, 500000), null);
     assert.equal(getMontoSuperaTopeError(900000, null), null);
-    assert.match(getMontoSuperaTopeError(500001, 500000) ?? "", /aprobado por Riesgo \(\$500\.000\)/);
+    assert.match(getMontoSuperaTopeError(500001, 500000) ?? "", /máximo es el devuelto por Riesgo: \$500\.000\./);
   });
 });
