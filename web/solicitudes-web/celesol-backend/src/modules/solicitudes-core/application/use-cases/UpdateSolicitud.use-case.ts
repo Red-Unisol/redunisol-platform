@@ -3,10 +3,12 @@ import type { UpdateSolicitudInput } from "../dtos/UpdateSolicitud.dto";
 import {
   ForbiddenSolicitudAccessError,
   LineaPrestamoNoDisponibleParaSolicitudError,
+  MontoSuperaAprobadoRiesgoError,
   SolicitudCoreNotFoundError,
   SolicitudFieldNotEditableInCurrentStateError,
   SolicitudFueraDeLimitesDeLineaError,
 } from "../../domain/solicitudes-core-errors";
+import { ESTADOS_CON_TOPE_DE_RIESGO } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type {
   SolicitudesCoreRepository,
@@ -127,6 +129,14 @@ export class UpdateSolicitudUseCase {
     });
     if (lineaOid !== solicitud.lineaPrestamoLegacyOid)
       assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, efectivos);
+    const editaRiesgo = workflowOwnerCode === "RIESGO";
+    if (
+      input.solicitud?.montoAFinanciar !== undefined &&
+      !input.currentUser.isSystemAdmin &&
+      !input.currentUser.isAnalista &&
+      !editaRiesgo
+    )
+      assertMontoDentroDelAprobadoPorRiesgo(solicitud, efectivos.montoAFinanciar);
     if (
       efectivos.cuotas !== solicitud.cuotas ||
       efectivos.montoAFinanciar !== solicitud.montoAFinanciar ||
@@ -142,6 +152,17 @@ export class UpdateSolicitudUseCase {
         patch.solicitud.cuotas = efectivos.cuotas;
       if (patch.solicitud.montoAFinanciar !== undefined)
         patch.solicitud.montoAFinanciar = efectivos.montoAFinanciar;
+    }
+
+    // Si Riesgo corrige el monto mientras la solicitud esta con el vendedor,
+    // ese pasa a ser el nuevo aprobado.
+    if (
+      editaRiesgo &&
+      input.solicitud?.montoAFinanciar !== undefined &&
+      ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code)
+    ) {
+      patch.solicitud ??= {};
+      patch.solicitud.montoAprobadoRiesgo = efectivos.montoAFinanciar;
     }
 
     if (input.titular) {
@@ -266,6 +287,32 @@ function assertSolicitudDentroDeLimitesDeLinea(
   if (montoAFinanciar !== null && minMonto && montoAFinanciar < minMonto) {
     throw new SolicitudFueraDeLimitesDeLineaError(
       `La línea requiere financiar al menos ${formatMonto(minMonto)}.`,
+    );
+  }
+}
+
+/**
+ * Cuando Riesgo devuelve la solicitud, el vendedor puede bajar el monto (y
+ * volver a subirlo) pero nunca pasar del que aprobo Riesgo. Riesgo, analistas
+ * y administradores no tienen tope.
+ */
+function assertMontoDentroDelAprobadoPorRiesgo(
+  solicitud: { estadoActual: { code: string }; montoAprobadoRiesgo?: number | null },
+  montoAFinanciar: number | null,
+) {
+  const tope = solicitud.montoAprobadoRiesgo ?? null;
+  if (!ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code) || tope === null)
+    return;
+
+  if (montoAFinanciar === null) {
+    throw new MontoSuperaAprobadoRiesgoError(
+      `Ingresá un monto de hasta ${formatMonto(tope)}, el aprobado por Riesgo.`,
+    );
+  }
+
+  if (montoAFinanciar > tope) {
+    throw new MontoSuperaAprobadoRiesgoError(
+      `El monto no puede superar el aprobado por Riesgo (${formatMonto(tope)}).`,
     );
   }
 }

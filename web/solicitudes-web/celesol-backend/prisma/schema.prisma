@@ -148,6 +148,9 @@ model Solicitud {
   lineaPrestamoLegacyOid   String                     @map("linea_prestamo_legacy_oid")
   lineaPrestamoDescripcion String                     @map("linea_prestamo_descripcion")
   montoAFinanciar          Decimal?                   @map("monto_a_financiar") @db.Decimal(18, 2)
+  // Ultimo monto con el que Riesgo devolvio la solicitud al vendedor
+  // (PreAprobada o Revisar). Ahi el vendedor solo puede financiar hasta este tope.
+  montoAprobadoRiesgo      Decimal?                   @map("monto_aprobado_riesgo") @db.Decimal(18, 2)
   cuotaResultante          String?                    @map("cuota_resultante")
   cuotas                   Int?
   motivo                   String?

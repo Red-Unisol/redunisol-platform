@@ -116,6 +116,7 @@ export type UpdateSolicitudCorePatch = {
     lineaPrestamoDescripcion?: string;
     lineaPrestamoLegacyOid?: string;
     montoAFinanciar?: number | null;
+    montoAprobadoRiesgo?: number | null;
     motivo?: string | null;
     observaciones?: string | null;
     vendedorSolicitud?: string | null;

@@ -34,6 +34,11 @@ import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
+import {
+  formatTope,
+  getMontoSuperaTopeError,
+  getTopeMontoRiesgo,
+} from "@/modules/solicitudes-core/utils/tope-monto-riesgo";
 import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
 import { canViewPrestamosDelSocio,
   canAccessRiesgoTools,
@@ -1325,16 +1330,22 @@ function SolicitudSection({
   isEditing,
   isExecutiveAssignmentDisabled,
   lineas,
+  montoTopeError,
   mostrarEjecutivo,
   onAssignmentChange,
   onBooleanChange,
   onChange,
   readonlyAppearanceStyle,
   solicitud,
+  topeMontoRiesgo,
   ultimaNovedad,
   values,
 }: {
   cuotaCalculoMensaje?: string;
+  /** El monto cargado pasa el aprobado por Riesgo. */
+  montoTopeError?: string | null;
+  /** Hasta cuanto puede financiar el vendedor; null si no tiene tope. */
+  topeMontoRiesgo?: number | null;
   assignmentOptions: StyledSelectOption[];
   assignmentValue: string;
   assignmentValueLabel: string;
@@ -1405,15 +1416,24 @@ function SolicitudSection({
           readOnlyValue={formatAmount(solicitud.cupoTitular)}
           value={values.cupoTitular}
         />
-        <EditableMoneyInput
-          {...getReadonlyProps("solicitud.montoAFinanciar")}
-          disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
-          isEditing={isEditing}
-          label="Monto a financiar"
-          onChange={(value) => onChange("montoAFinanciar", value)}
-          readOnlyValue={formatAmount(solicitud.montoAFinanciar)}
-          value={values.montoAFinanciar}
-        />
+        <div>
+          <EditableMoneyInput
+            {...getReadonlyProps("solicitud.montoAFinanciar")}
+            disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+            isEditing={isEditing}
+            label="Monto a financiar"
+            onChange={(value) => onChange("montoAFinanciar", value)}
+            readOnlyValue={formatAmount(solicitud.montoAFinanciar)}
+            value={values.montoAFinanciar}
+          />
+          {isEditing && montoTopeError ? (
+            <p role="alert" className="mt-1 text-xs text-danger">{montoTopeError}</p>
+          ) : isEditing && topeMontoRiesgo != null ? (
+            <p className="mt-1 text-xs text-foreground-secondary">
+              Aprobado por Riesgo: {formatTope(topeMontoRiesgo)}
+            </p>
+          ) : null}
+        </div>
         <EditableTextInput
           {...getReadonlyProps("solicitud.cuotas")}
           disabled={!isFieldEditableByKey("solicitud.cuotas")}
@@ -3273,6 +3293,13 @@ export function SolicitudesActualDetallePage() {
   const resolvedSolicitud = solicitud;
   const currentValues =
     editableValues ?? mapSolicitudCoreToEditableValues(resolvedSolicitud);
+  const topeMontoRiesgo = getTopeMontoRiesgo(currentUser, resolvedSolicitud);
+  const montoTopeError = isEditing
+    ? getMontoSuperaTopeError(
+        parseMoneyValue(currentValues.solicitud.montoAFinanciar),
+        topeMontoRiesgo,
+      )
+    : null;
   const currentGarantias =
     editableGarantias ??
     resolvedSolicitud.garantias.map(toEditableGarantiaRequest);
@@ -3523,6 +3550,15 @@ export function SolicitudesActualDetallePage() {
             ),
           )
         : null;
+
+    if (montoTopeError) {
+      toast.error(montoTopeError, {
+        duration: 3500,
+        icon: <CircleAlert className="size-5" />,
+        id: EDIT_SOLICITUD_CUOTAS_ERROR_TOAST_ID,
+      });
+      return;
+    }
 
     if (cuotasError) {
       toast.error(cuotasError, {
@@ -4114,6 +4150,7 @@ export function SolicitudesActualDetallePage() {
         isSaveDisabled={
           patchSolicitudCoreMutation.isPending ||
           (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
+          Boolean(montoTopeError) ||
           (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
         }
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
@@ -4264,7 +4301,7 @@ export function SolicitudesActualDetallePage() {
                 Cancelar
               </Button>
               <Button
-                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data)}
+                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data) || Boolean(montoTopeError)}
                 onClick={() => void handleSaveChanges()}
                 type="button"
               >
@@ -4282,6 +4319,7 @@ export function SolicitudesActualDetallePage() {
             isFieldEditableByKey={isSolicitudFieldEditable}
             isEditing={isEditing}
             isExecutiveAssignmentDisabled={!canManageAssignment}
+            montoTopeError={montoTopeError}
             mostrarEjecutivo={!isVendedor(currentUser)}
             lineas={lineasSimulador}
             onAssignmentChange={setSelectedAssignmentValue}
@@ -4289,6 +4327,7 @@ export function SolicitudesActualDetallePage() {
             onChange={updateSolicitudField}
             readonlyAppearanceStyle={readonlyAppearanceStyle}
             solicitud={resolvedSolicitud}
+            topeMontoRiesgo={topeMontoRiesgo}
             ultimaNovedad={ultimaNovedad}
             values={{ ...currentValues.solicitud, montoAFinanciar: cuotaObjetivoTexto !== null ? currentValues.solicitud.montoAFinanciar : ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaObjetivoTexto ?? "" : currentValues.solicitud.cuotaResultante }}
           />

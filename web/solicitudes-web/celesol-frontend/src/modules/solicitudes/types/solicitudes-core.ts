@@ -433,6 +433,8 @@ export type SolicitudCoreResponse = {
   lineaPrestamoLegacyOid: string;
   fechaPrimerVencimiento: string | null;
   montoAFinanciar: number | null;
+  /** Tope del vendedor en PreAprobada y Revisar: el ultimo monto que aprobo Riesgo. */
+  montoAprobadoRiesgo?: number | null;
   motivo: string | null;
   nroSolicitud: string | null;
   nroOperacion: string | null;

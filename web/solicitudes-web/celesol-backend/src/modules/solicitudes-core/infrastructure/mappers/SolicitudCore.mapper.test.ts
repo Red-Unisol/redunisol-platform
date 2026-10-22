@@ -87,6 +87,7 @@ describe("SolicitudCoreMapper", () => {
       lineaPrestamoDescripcion: "Linea 1",
       lineaPrestamoLegacyOid: "LP-1",
       montoAFinanciar: new Prisma.Decimal("200000.00"),
+      montoAprobadoRiesgo: new Prisma.Decimal("180000.00"),
       motivo: null,
       nroOperacion: "OP-123",
       nroSolicitud: "SOL-2026-001",
@@ -123,6 +124,7 @@ describe("SolicitudCoreMapper", () => {
     assert.equal(domain.fechaPrimerVencimiento, "2026-06-01");
     assert.equal(domain.nroOperacion, "OP-123");
     assert.equal(domain.cupoTitular, 150000.5);
+    assert.equal(domain.montoAprobadoRiesgo, 180000);
     assert.equal(domain.conyuge?.nombre, "Maria");
     assert.equal(domain.titular.personaExpuestaPoliticamente, true);
     assert.equal(domain.titular.telefonoFijo, "1144444444");
@@ -175,6 +177,7 @@ describe("SolicitudCoreMapper", () => {
         lineaPrestamoDescripcion: "Linea 2",
         lineaPrestamoLegacyOid: "LP-2",
         montoAFinanciar: null,
+        montoAprobadoRiesgo: null,
         motivo: null,
         nroOperacion: null,
         nroSolicitud: null,

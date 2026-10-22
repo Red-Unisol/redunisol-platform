@@ -878,6 +878,7 @@ export class SolicitudesCorePrismaDatasource {
         lineaPrestamoDescripcion: patch.solicitud?.lineaPrestamoDescripcion,
         lineaPrestamoLegacyOid: patch.solicitud?.lineaPrestamoLegacyOid,
         montoAFinanciar: patch.solicitud?.montoAFinanciar,
+        montoAprobadoRiesgo: patch.solicitud?.montoAprobadoRiesgo,
         motivo: patch.solicitud?.motivo,
         nroOperacion: patch.solicitud?.nroOperacion,
         observaciones: patch.solicitud?.observaciones,
