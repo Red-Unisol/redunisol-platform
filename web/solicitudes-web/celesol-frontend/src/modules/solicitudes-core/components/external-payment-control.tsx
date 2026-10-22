@@ -70,8 +70,9 @@ export function ExternalPaymentControl({
       <div className="border-b border-border bg-muted/20 px-4 py-3 text-sm">
         <strong>Transferencia realizada por fuera</strong>
         <p className="mt-1 text-foreground-secondary">
-          Fecha: {payment.paidOn.split("-").reverse().join("/")} · Referencia:{" "}
-          {payment.reference} · Registró: {payment.recordedBy}
+          Fecha: {payment.paidOn.split("-").reverse().join("/")}
+          {payment.reference ? <> · Referencia: {payment.reference}</> : null} ·
+          Registró: {payment.recordedBy}
         </p>
         {payment.comment ? (
           <p className="mt-1 whitespace-pre-wrap">{payment.comment}</p>
@@ -129,7 +130,7 @@ export function ExternalPaymentControl({
             className="grid gap-4 px-4 py-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (file && paidOn && reference.trim()) mutation.mutate();
+              if (file && paidOn) mutation.mutate();
             }}
           >
             <fieldset
@@ -148,10 +149,9 @@ export function ExternalPaymentControl({
                 />
               </label>
               <label className="grid gap-1.5 text-sm">
-                Referencia de la operación *
+                Referencia de la operación (opcional)
                 <input
                   className={fieldClass}
-                  required
                   maxLength={200}
                   value={reference}
                   onChange={(event) => setReference(event.target.value)}
@@ -200,9 +200,7 @@ export function ExternalPaymentControl({
               </Button>
               <Button
                 type="submit"
-                disabled={
-                  mutation.isPending || !file || !paidOn || !reference.trim()
-                }
+                disabled={mutation.isPending || !file || !paidOn}
               >
                 {mutation.isPending
                   ? "Registrando…"
