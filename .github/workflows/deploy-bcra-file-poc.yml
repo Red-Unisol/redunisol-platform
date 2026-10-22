@@ -99,6 +99,7 @@ jobs:
           docker compose -p bcra-file-poc pull
           docker compose -p bcra-file-poc up -d --wait --wait-timeout 90
           docker compose -p bcra-file-poc ps
+          curl --fail --silent --show-error http://127.0.0.1:18082/health
           REMOTE
       - name: Remove decrypted local settings
         if: always()

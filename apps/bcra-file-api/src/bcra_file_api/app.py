@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from functools import partial
+from contextlib import asynccontextmanager
 import hmac
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import re
-from urllib.parse import urlsplit
 import uuid
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import uvicorn
 
 from .config import Config
 from .refresh import RefreshManager
@@ -29,112 +33,118 @@ def normalize_identification(body: object) -> str:
     return text
 
 
-class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, manager: RefreshManager, **kwargs):
-        self.manager = manager
-        super().__init__(*args, **kwargs)
+def response(status: int, payload: dict) -> JSONResponse:
+    return JSONResponse(payload, status_code=status, headers={"Cache-Control": "no-store"})
 
-    def setup(self):
-        super().setup()
-        self.connection.settimeout(15)
 
-    def log_message(self, format, *args):
-        # No request bodies, identifiers, Authorization headers or source URLs in logs.
-        pass
+async def read_json(request: Request) -> object:
+    try:
+        length = int(request.headers.get("content-length", "0"))
+        if not 0 < length <= 4096 or request.headers.get("transfer-encoding"):
+            raise ValueError
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 4096:
+                raise ValueError
+        if len(body) != length:
+            raise ValueError
+        return json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(400, "Invalid JSON request body") from None
 
-    def send_json(self, status: int, payload: dict):
-        body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
 
-    def authorized(self) -> bool:
-        expected = "Bearer " + self.manager.config.token
-        provided = self.headers.get("Authorization", "")
+def lookup_response(manager: RefreshManager, identification: str) -> JSONResponse:
+    state = manager.status()
+    if not state["ready"]:
+        return response(503, {
+            "status": 503, "errorMessages": ["No validated and recently checked BCRA dataset"],
+            "meta": {"check_stale": state["check_stale"], "dataset": state["dataset"]},
+        })
+    # Metadata and debts are read together from one immutable snapshot.
+    result = lookup(manager.database, identification)
+    result["meta"]["last_successful_check_at"] = (
+        state["last_successful_check_at"]
+        if result["meta"]["version"] == state["dataset"]["version"]
+        else result["meta"]["checked_at"]
+    )
+    if result["status"] == 404:
+        result["errorMessages"] = ["Identification absent from the loaded monthly publication"]
+    return response(result["status"], result)
+
+
+def create_app(config: Config | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Exactly one manager per server process; startup never triggers an import.
+        app.state.manager = RefreshManager(config or Config.from_env())
+        yield
+
+    app = FastAPI(
+        title="BCRA File API", lifespan=lifespan,
+        docs_url=None, redoc_url=None, openapi_url=None,
+    )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        return response(exc.status_code, {
+            "status": exc.status_code, "errorMessages": [str(exc.detail)],
+        })
+
+    async def authorize(request: Request) -> None:
+        expected = "Bearer " + request.app.state.manager.config.token
+        provided = request.headers.get("authorization", "")
         if not hmac.compare_digest(provided.encode(), expected.encode()):
-            self.send_json(401, {"status": 401, "errorMessages": ["Unauthorized"]})
-            return False
-        return True
+            raise HTTPException(401, "Unauthorized")
 
-    def do_GET(self):
-        path = urlsplit(self.path).path
-        if path == "/health":
-            self.send_json(200, {"status": "up"})
-            return
-        if not self.authorized():
-            return
-        if path == "/status":
-            self.send_json(200, self.manager.status())
-        elif path.startswith("/jobs/"):
-            result = self.manager.job(path.removeprefix("/jobs/"))
-            if result is None:
-                self.send_json(404, {"status": 404, "errorMessages": ["Unknown refresh job"]})
-            else:
-                self.send_json(500 if result["status"] == "failed" else 200, result)
-        else:
-            self.send_json(404, {"status": 404, "errorMessages": ["Unknown endpoint"]})
+    @app.get("/health")
+    async def health():
+        return response(200, {"status": "up"})
 
-    def do_POST(self):
-        if not self.authorized():
-            return
+    @app.get("/status", dependencies=[Depends(authorize)])
+    def status(request: Request):
+        return response(200, request.app.state.manager.status())
+
+    @app.get("/jobs/{job_id}", dependencies=[Depends(authorize)])
+    def job(job_id: str, request: Request):
+        result = request.app.state.manager.job(job_id)
+        if result is None:
+            return response(404, {"status": 404, "errorMessages": ["Unknown refresh job"]})
+        return response(500 if result["status"] == "failed" else 200, result)
+
+    @app.post("/refresh", dependencies=[Depends(authorize)])
+    async def refresh(request: Request):
+        await read_json(request)
+        request_id = request.headers.get("idempotency-key", uuid.uuid4().hex)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,150}", request_id):
+            raise HTTPException(400, "Invalid idempotency key")
+        result = await run_in_threadpool(request.app.state.manager.start, request_id)
+        return response(202, result)
+
+    @app.post("/lookup", dependencies=[Depends(authorize)])
+    async def query(request: Request):
+        body = await read_json(request)
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 4096 or self.headers.get("Transfer-Encoding"):
-                raise ValueError("Request body must contain 1 to 4096 bytes")
-            body = json.loads(self.rfile.read(length))
-        except (ValueError, UnicodeDecodeError):
-            self.send_json(400, {"status": 400, "errorMessages": ["Invalid JSON request body"]})
-            return
-        path = urlsplit(self.path).path
-        if path == "/refresh":
-            request_id = self.headers.get("Idempotency-Key", uuid.uuid4().hex)
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,150}", request_id):
-                self.send_json(400, {"status": 400, "errorMessages": ["Invalid idempotency key"]})
-                return
-            self.send_json(202, self.manager.start(request_id))
-        elif path == "/lookup":
-            try:
-                identification = normalize_identification(body)
-            except ValueError as exc:
-                self.send_json(400, {"status": 400, "errorMessages": [str(exc)]})
-                return
-            state = self.manager.status()
-            if not state["ready"]:
-                self.send_json(503, {
-                    "status": 503, "errorMessages": ["No validated and recently checked BCRA dataset"],
-                    "meta": {"check_stale": state["check_stale"], "dataset": state["dataset"]},
-                })
-                return
-            # Read metadata and records from one immutable snapshot. A concurrent
-            # refresh can replace the file without mixing versions within a result.
-            result = lookup(self.manager.database, identification)
-            result["meta"]["last_successful_check_at"] = (
-                state["last_successful_check_at"]
-                if result["meta"]["version"] == state["dataset"]["version"]
-                else result["meta"]["checked_at"]
-            )
-            if result["status"] == 404:
-                result["errorMessages"] = ["Identification absent from the loaded monthly publication"]
-            self.send_json(result["status"], result)
-        else:
-            self.send_json(404, {"status": 404, "errorMessages": ["Unknown endpoint"]})
+            identification = normalize_identification(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        # sqlite3 is synchronous: queries run in the bounded thread pool rather
+        # than blocking the ASGI event loop. No request or debt payload is logged.
+        return await run_in_threadpool(
+            lookup_response, request.app.state.manager, identification,
+        )
 
-
-def create_server(config: Config, address=("0.0.0.0", 8080)) -> ThreadingHTTPServer:
-    manager = RefreshManager(config)
-    return ThreadingHTTPServer(address, partial(Handler, manager=manager))
+    return app
 
 
 def main():
-    config = Config.from_env()
-    server = create_server(config, ("0.0.0.0", int(os.environ.get("PORT", "8080"))))
-    try:
-        server.serve_forever()
-    finally:
-        server.server_close()
+    # RefreshManager coordinates its one background job in memory. Multiple
+    # Uvicorn workers/replicas require shared coordination before being enabled.
+    uvicorn.run(
+        create_app(), host="0.0.0.0", port=int(os.environ.get("PORT", "8080")),
+        workers=1, access_log=False, server_header=False, proxy_headers=False,
+        timeout_keep_alive=5, timeout_graceful_shutdown=15,
+    )
 
 
 if __name__ == "__main__":

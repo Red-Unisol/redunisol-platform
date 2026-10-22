@@ -390,7 +390,11 @@ y descifra su env propio. La aceptación del operador quedó registrada el
 
 Los dos flows BCRA usan labels.schedule_scope: prod_only: sus triggers sólo se
 publican en producción. La bandera cifrada ENV_BCRA_FILE_POC_ENABLED=true activa
-el trabajo diario a las 04:00 Argentina. El normalizador también soporta dev_only
-para otros flows aislados.
+el trabajo diario a las 21:00 Argentina, con corte del importador a las 07:00.
+El normalizador también soporta dev_only para otros flows aislados.
+
+El servicio FastAPI/Uvicorn también permite consultas directas por la red Docker
+o por el puerto local `127.0.0.1:18082` mediante SSH. El despliegue reutiliza el
+volumen `bcra-file-poc_bcra-file-data` y comprueba su health HTTP local.
 
 Ver [runbook y contrato del POC](../apps/bcra-file-api/README.md).

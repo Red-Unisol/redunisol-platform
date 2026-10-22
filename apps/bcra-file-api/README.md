@@ -1,14 +1,23 @@
 # BCRA File API — prueba de concepto
 
-Servicio persistente para consultar la publicación mensual de la Central de
+Servicio FastAPI/Uvicorn persistente para consultar la publicación mensual de la Central de
 Deudores por CUIT/CUIL/CDI. Ningún proceso existente lo consume, no escribe en
 Bitrix y no consulta la API individual del BCRA. No toma decisiones comerciales.
 
 ## Arquitectura
 
-- Contenedor con reinicio automático, una instancia por volumen, en la red interna
-  `kestra_net`. Sin puerto publicado al host y sin acceso al socket de Docker.
-- `bcra_archivo_consultar_poc`: webhook síncrono con una única tarea HTTP nativa
+- Contenedor con reinicio automático, un proceso Uvicorn por volumen, en la red
+  interna `kestra_net`. Puerto local `127.0.0.1:18082` para acceso directo o túnel
+  SSH, sin exposición pública ni acceso al socket de Docker.
+- La consulta directa `POST /lookup` no crea una ejecución de Kestra. Las
+  aplicaciones de la VPS pueden usar `http://bcra-file-api-poc:8080/lookup`.
+  Conserva los campos null y devuelve directamente los HTTP 400/404/503.
+- Se reutiliza explícitamente el volumen `bcra-file-poc_bcra-file-data`: el
+  arranque lee la base publicada y no descarga ni importa automáticamente.
+  La configuración Compose mantiene el nombre aunque cambie el directorio del
+  checkout; no borrar/recrear el volumen como parte de un despliegue.
+- `bcra_archivo_consultar_poc` se conserva como acceso de compatibilidad:
+  webhook síncrono con una única tarea HTTP nativa
   hacia el contenedor que ya está activo; sin Docker task runner.
 - `bcra_archivo_actualizar_poc`: scheduler diario a las 21:00 Argentina; inicia
   un job en el servicio y consulta su estado cada minuto, hasta 12 horas.
@@ -25,6 +34,37 @@ Bitrix y no consulta la API individual del BCRA. No toma decisiones comerciales.
 - `ENV_BCRA_FILE_POC_ENABLED=true` habilita el trabajo diario en producción.
   La entrada manual `run_now=true` permite una primera carga o reintento.
 - Sin cambios de reglas, consumidores, rutas históricas ni DNS.
+
+## Acceso directo y operación
+
+El servicio tiene una única instancia Uvicorn. El coordinador del refresh vive
+en ese proceso: no aumentar workers ni réplicas sin agregar coordinación
+compartida. Las consultas SQLite se ejecutan en un thread pool y el importador
+continúa en su hilo de trabajo; el event loop HTTP queda disponible. La
+publicación de snapshots mantiene el reemplazo atómico y la base anterior ante
+fallos. La actualización nocturna y la ventana 21:00–07:00 siguen bajo el flujo
+existente de Kestra.
+
+Para una aplicación en la VPS, usar la red interna de Docker y un Bearer token.
+Desde otra máquina, establecer un túnel SSH siguiendo exactamente el acceso
+canónico local y reenviar un puerto local hacia `127.0.0.1:18082` en la VPS.
+No se publica un nuevo dominio ni se modifica Apache para este acceso.
+
+~~~bash
+curl http://127.0.0.1:18082/lookup \
+  -H "Authorization: Bearer $BCRA_FILE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"identificacion":"20123456786"}'
+~~~
+
+El ejemplo usa una identificación sintética. `/refresh`, `/jobs/{id}` y
+`/status` siguen autenticados y disponibles para Kestra y operadores internos.
+El token se toma del archivo local canónico o de los secretos del runtime;
+nunca se copia al repositorio ni a ejemplos ejecutados con valores literales.
+
+Uvicorn no registra cada petición, cuerpo ni respuesta. Los logs operativos del
+contenedor rotan a 10 MiB con tres archivos; `/health` comprueba el proceso y
+`/status` informa readiness, período, versión y último control exitoso.
 
 ## Fuente y actualización
 
@@ -188,6 +228,7 @@ si se pretende conservar la base; no usar `down -v` como rutina.
 ## Validación
 
 ~~~bash
+pip install -r apps/bcra-file-api/requirements-test.txt
 PYTHONPATH=apps/bcra-file-api/src python -m unittest discover -s apps/bcra-file-api/tests -v
 python -m unittest kestra.tools.tests.test_bcra_poc_deploy
 docker build --target test -t bcra-file-poc:test apps/bcra-file-api
@@ -200,6 +241,17 @@ reales cuando está disponible 7z/7zz (siempre en la etapa Docker de tests).
 Cubren correcciones/bajas, fallas, contenido sin cambios, autenticación, HTML con
 HTTP 200, expiración y lecturas durante una actualización.
 
-La lectura del catálogo real fue verificada. La primera descarga/importación
-completa, su comparación con consultas oficiales y el dimensionamiento real
-siguen pendientes. CI no descarga datos personales del BCRA.
+Checkpoint 22/10/2026: la primera carga nocturna terminó en unos 32 minutos y
+publicó 41.804.946 filas, período 202608 con datos de 202608/202607. SQLite ocupa
+2,34 GB y los comprimidos 333 MB. Una muestra aleatoria de 20 CUIL de Bitrix
+coincidió con la API oficial en presencia de datos (18 con datos y dos sin datos)
+y en los 55 registros entidad/período comparados para situación, monto y días de
+atraso. Hubo un nombre de entidad truncado a 70 caracteres; las diferencias de
+cobertura del contrato permanecen documentadas. Este checkpoint no reemplaza la
+verificación del runtime actual. CI sólo usa datos sintéticos.
+
+La migración a FastAPI debe comprobar que la versión, el tamaño y el inode del
+snapshot se preservan al recrear el contenedor y que el flujo diario continúa
+activo. La validación local incluye arranque con una base ya existente sin
+importar, consultas concurrentes, HTTP real con keep-alive y los endpoints de
+actualización/idempotencia.
