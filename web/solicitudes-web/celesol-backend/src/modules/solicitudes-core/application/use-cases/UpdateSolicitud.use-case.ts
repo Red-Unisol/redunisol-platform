@@ -312,7 +312,7 @@ function assertMontoDentroDelAprobadoPorRiesgo(
 
   if (montoAFinanciar > tope) {
     throw new MontoSuperaAprobadoRiesgoError(
-      `El monto no puede superar el aprobado por Riesgo (${formatMonto(tope)}).`,
+      `El monto máximo es el devuelto por Riesgo: ${formatMonto(tope)}.`,
     );
   }
 }

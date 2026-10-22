@@ -67,6 +67,7 @@ export function StaticMoneyInput({
   className,
   defaultValue = "",
   disabled = false,
+  invalid,
   onChange,
   style,
   value: controlledValue,
@@ -75,6 +76,7 @@ export function StaticMoneyInput({
   className?: string;
   defaultValue?: string;
   disabled?: boolean;
+  invalid?: boolean;
   onChange?: (value: string) => void;
   style?: CSSProperties;
   value?: string;
@@ -86,6 +88,7 @@ export function StaticMoneyInput({
 
   return (
     <Input
+      aria-invalid={invalid || undefined}
       aria-label={ariaLabel}
       className={className}
       disabled={disabled}

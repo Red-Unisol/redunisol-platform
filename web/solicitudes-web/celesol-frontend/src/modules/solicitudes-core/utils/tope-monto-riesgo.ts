@@ -29,9 +29,9 @@ export function getMontoSuperaTopeError(monto: number, tope: number | null) {
     return null;
   }
 
-  return `El monto no puede superar el aprobado por Riesgo (${formatTope(tope)}).`;
+  return `El monto máximo es el devuelto por Riesgo: ${formatTope(tope)}.`;
 }
 
-export function formatTope(value: number) {
+function formatTope(value: number) {
   return `$${value.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
 }

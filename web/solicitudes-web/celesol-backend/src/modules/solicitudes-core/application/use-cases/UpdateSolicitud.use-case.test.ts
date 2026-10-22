@@ -845,7 +845,7 @@ describe("tope del monto aprobado por Riesgo", () => {
             estadoActual: { ...preAprobada.estadoActual, code: "Revisar", name: "Revisar" },
           },
         }),
-      /aprobado por Riesgo \(\$500\.000\)/,
+      /máximo es el devuelto por Riesgo: \$500\.000\./,
     );
   });
 
