@@ -46,6 +46,8 @@ jobs:
         run: npm run build
       - name: Test authentication and session recovery
         run: npx tsx --test "src/modules/auth/**/*.test.ts"
+      - name: Test Transferencias API contract and recovery
+        run: npx tsx --test "src/modules/transferencias-integration/*.test.ts"
       - name: Test and build frontend
         working-directory: web/solicitudes-web/celesol-frontend
         env:

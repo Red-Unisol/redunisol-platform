@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import test from "node:test";
+import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { TransferenciasService } from "./TransferenciasService";
+import { createTransferenciasRouter } from "./router";
 import { createPayWorkflow } from "./workflow";
 import { ExternalPaymentService, argentinaToday } from "./ExternalPaymentService";
 import { externalPaymentInput } from "./external-payment-input";
 import {
   IntegrationError,
+  hash,
   type Actor,
   type Confirmation,
   type FinancialGateway,
@@ -224,6 +228,95 @@ test(
           actor,
         );
         assert.equal(confirmed.status, "BANK_CONFIRMED_PENDING_SYNC");
+      },
+    );
+
+    await t.test(
+      "HTTP revalidation returns the recoverable desktop order and preserves legacy acknowledgement fields",
+      async (t) => {
+        const { source, service, plan, input } = await fixture();
+        const order = await service.reserve(source.id, input, actor);
+        const token = "synthetic-revalidation-contract-token-1234567890";
+        const app = express();
+        app.use(
+          createTransferenciasRouter({
+            config: {
+              tokenSha256: hash(token),
+              userId: actor.id,
+              clientId: actor.clientId,
+            },
+            service,
+            maxFileBytes: 1024,
+            findUser: async () => ({
+              id: actor.id,
+              state: 1,
+              deletedAt: null,
+              isSystemAdmin: false,
+              workflowOwner: {
+                id: actor.workflowOwnerId,
+                code: "TESORERIA",
+                isActive: true,
+              },
+            }),
+          }),
+        );
+        const server = app.listen(0, "127.0.0.1");
+        t.after(() => {
+          server.closeAllConnections();
+          server.close();
+        });
+        await once(server, "listening");
+        const address = server.address();
+        assert(address && typeof address !== "string");
+        const revalidate = async () => {
+          const response = await fetch(
+            `http://127.0.0.1:${address.port}/desembolsos/${order.id}/revalidar`,
+            { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+          );
+          assert.equal(response.status, 200);
+          const { valid, planVersion, checkedAt, ...desktopOrder } =
+            await response.json();
+          assert.equal(valid, true);
+          assert.equal(planVersion, plan.version);
+          assert(Number.isFinite(Date.parse(checkedAt)));
+          // Compare the real HTTP JSON with GET's complete order, including all
+          // fields required by BeexOrder/Journal in the installed Rust client.
+          assert.deepEqual(
+            desktopOrder,
+            JSON.parse(JSON.stringify(await service.get(order.id, actor))),
+          );
+          return desktopOrder;
+        };
+
+        const first = await revalidate();
+        assert.equal(first.id, order.id);
+        assert.equal(first.solicitudId, source.id);
+        assert.equal(first.status, "RESERVED");
+        assert.deepEqual(first.plan, plan);
+        assert.deepEqual(first.payments, order.payments);
+        const started = await db.transferenciaDesembolso.findUniqueOrThrow({
+          where: { id: order.id },
+        });
+        assert(started.bankStartedAt);
+        assert.deepEqual(await revalidate(), first);
+        const retried = await db.transferenciaDesembolso.findUniqueOrThrow({
+          where: { id: order.id },
+        });
+        assert.deepEqual(retried.bankStartedAt, started.bankStartedAt);
+
+        await service.confirm(
+          order.id,
+          "member",
+          evidence(plan, input.payments[0]!.bankTransactionId),
+          actor,
+        );
+        const confirmed = await revalidate();
+        assert.equal(confirmed.status, "BANK_CONFIRMED_PENDING_SYNC");
+        assert.equal(
+          confirmed.payments[0].bankTransactionId,
+          input.payments[0]!.bankTransactionId,
+        );
+        assert(confirmed.payments[0].confirmation);
       },
     );
 
