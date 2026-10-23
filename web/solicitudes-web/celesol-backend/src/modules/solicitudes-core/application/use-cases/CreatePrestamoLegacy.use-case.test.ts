@@ -803,3 +803,127 @@ it("rechecks current legacy maxima and persists adjusted values before the exist
   const generated = (events[2] as { generation: { cuotas: number; montoDeseado: number } }).generation;
   assert.equal(generated.cuotas, 3); assert.equal(generated.montoDeseado, 5000);
 });
+
+describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
+  const VIMARX = {
+    beneficio: "733767/0",
+    caja40: 100,
+    convAux: null,
+    nroSocio: "90999",
+    observaciones: null,
+  };
+
+  function buildUseCase(calls: string[], ediciones: unknown[], editarError?: Error) {
+    return new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
+      convenioSocioGateway: { getConvenioSocioByLegacyId: async () => VIMARX },
+      editarSocioGateway: {
+        editar: async (socioLegacyId, campos) => {
+          calls.push("editar");
+          ediciones.push({ socioLegacyId, campos });
+          if (editarError) throw editarError;
+        },
+      },
+      gateway: fakeGateway({
+        crear: async () => {
+          calls.push("crear");
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+    });
+  }
+
+  const currentUser = { id: "user-1", workflowOwnerId: "owner-2" };
+
+  it("writes only the changed fields to the socio before creating the prestamo", async () => {
+    const calls: string[] = [];
+    const ediciones: unknown[] = [];
+
+    await buildUseCase(calls, ediciones).execute({
+      convenio: {
+        beneficio: "733767/0",
+        caja40: 110,
+        convAux: 80,
+        observaciones: "  Depositar en Nación ",
+      },
+      currentUser,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(calls, ["editar", "crear"]);
+    assert.deepEqual(ediciones, [
+      {
+        campos: {
+          Observaciones: "Depositar en Nación",
+          "SocAux.Caja40": "110",
+          "SocAux.ConvAux": "80",
+        },
+        socioLegacyId: "143471",
+      },
+    ]);
+  });
+
+  it("does not call EditarObjeto when nothing changed", async () => {
+    const calls: string[] = [];
+
+    await buildUseCase(calls, []).execute({
+      convenio: { beneficio: "733767/0", caja40: 100, convAux: null, observaciones: null },
+      currentUser,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(calls, ["crear"]);
+  });
+
+  it("clears a text field with an empty string", async () => {
+    const ediciones: unknown[] = [];
+
+    await buildUseCase([], ediciones).execute({
+      convenio: { beneficio: null, caja40: 100, convAux: null, observaciones: null },
+      currentUser,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(ediciones, [
+      { campos: { "SocAux.Beneficio": "" }, socioLegacyId: "143471" },
+    ]);
+  });
+
+  // Vimarx guarda 0 si se manda vacio en un numero de SocAux.
+  it("rejects clearing a numeric field that has a value, without creating the prestamo", async () => {
+    const calls: string[] = [];
+
+    await assert.rejects(
+      buildUseCase(calls, []).execute({
+        convenio: { beneficio: "733767/0", caja40: null, convAux: null, observaciones: null },
+        currentUser,
+        solicitudId: "sol-1",
+      }),
+      /Caja 40 no se puede borrar/,
+    );
+    assert.deepEqual(calls, []);
+  });
+
+  it("does not create the prestamo when Vimarx rejects the convenio", async () => {
+    const calls: string[] = [];
+
+    await assert.rejects(
+      buildUseCase(calls, [], new Error("rechazado")).execute({
+        convenio: { beneficio: "733767/0", caja40: 120, convAux: null, observaciones: null },
+        currentUser,
+        solicitudId: "sol-1",
+      }),
+      /rechazado/,
+    );
+    assert.deepEqual(calls, ["editar"]);
+  });
+});

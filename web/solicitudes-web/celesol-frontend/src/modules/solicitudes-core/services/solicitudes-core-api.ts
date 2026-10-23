@@ -132,11 +132,23 @@ export function assignSolicitudToUser(
   );
 }
 
-export function createPrestamoLegacy(solicitudId: string) {
+// Datos del convenio como deben quedar en el socio de Vimarx (null = sin
+// cargar). El backend solo escribe lo que difiere de Vimarx.
+export type ConvenioSocioRequest = {
+  beneficio: string | null;
+  caja40: number | null;
+  convAux: number | null;
+  observaciones: string | null;
+};
+
+export function createPrestamoLegacy(
+  solicitudId: string,
+  convenio?: ConvenioSocioRequest,
+) {
   return withAreaForbiddenMessage(
     apiClient.post<SolicitudCoreResponse>(
       `/solicitudes/${solicitudId}/prestamo-legacy`,
-      {},
+      convenio ? { convenio } : {},
     ),
   );
 }

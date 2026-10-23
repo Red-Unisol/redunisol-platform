@@ -83,6 +83,7 @@ import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/reposito
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
 import { SimularCuotaSolicitud } from "./application/services/SimularCuotaSolicitud";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
+import { EditarSocioMutualGateway } from "./infrastructure/services/EditarSocioMutualGateway";
 import { EvaluateListLineaPrestamoLegacyIdResolver } from "./infrastructure/services/EvaluateListLineaPrestamoLegacyIdResolver";
 import { PrismaWorkflowStateCatalog } from "./infrastructure/services/PrismaWorkflowStateCatalog";
 import { SolicitudWorkflowEngine } from "./domain/workflow/SolicitudWorkflowEngine";
@@ -161,6 +162,10 @@ export function createSolicitudesCoreRouter(
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
   const crearPrestamoGateway = new CrearPrestamoGateway({
+    baseUrl: env.LEGACY_API_BASE_URL,
+    timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
+  const editarSocioGateway = new EditarSocioMutualGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
@@ -287,6 +292,8 @@ export function createSolicitudesCoreRouter(
     lineasPrestamoCatalog, simularCuotaSolicitud,
     authRepository,
     cancelacionesRepository: solicitudCancelacionRepository,
+    convenioSocioGateway: solicitudesLegacyGateway,
+    editarSocioGateway,
     gateway: crearPrestamoGateway,
     lineaPrestamoLegacyIdResolver,
     linkFirmaDigitalBaseUrl: env.FINALIZAR_FIRMA_DIGITAL_BASE_URL,

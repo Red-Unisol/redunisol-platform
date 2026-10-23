@@ -11,6 +11,11 @@ import { buildLinkFirmaDigital } from "../services/buildLinkFirmaDigital";
 import { EnsureSolicitudTitularHasRequiredDataForConfirmar } from "../services/EnsureSolicitudTitularHasRequiredDataForConfirmar";
 import { FindSolicitudTitularSocio } from "../services/FindSolicitudTitularSocio";
 import type { CrearPrestamoGateway } from "../../infrastructure/services/CrearPrestamoGateway";
+import type { EditarSocioMutualGateway } from "../../infrastructure/services/EditarSocioMutualGateway";
+import type {
+  ConvenioSocio,
+  ConvenioSocioGateway,
+} from "../../domain/services/ConvenioSocioGateway";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudCancelacionRepository } from "../../cancelaciones/domain/repositories/SolicitudCancelacionRepository";
 import {
@@ -42,6 +47,9 @@ type Dependencies = {
     SolicitudCancelacionRepository,
     "listBySolicitudId"
   >;
+  // Para escribir en Vimarx los datos del convenio editados en el modal.
+  convenioSocioGateway?: ConvenioSocioGateway;
+  editarSocioGateway?: Pick<EditarSocioMutualGateway, "editar">;
   gateway: CrearPrestamoGateway;
   lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
   linkFirmaDigitalBaseUrl: string;
@@ -66,6 +74,8 @@ export class CreatePrestamoLegacyUseCase {
     SolicitudCancelacionRepository,
     "listBySolicitudId"
   >;
+  private readonly convenioSocioGateway?: ConvenioSocioGateway;
+  private readonly editarSocioGateway?: Pick<EditarSocioMutualGateway, "editar">;
   private readonly ensureSolicitudTitularHasRequiredDataForConfirmar: EnsureSolicitudTitularHasRequiredDataForConfirmar;
   private readonly findSolicitudTitularSocio: FindSolicitudTitularSocio;
   private readonly gateway: CrearPrestamoGateway;
@@ -84,6 +94,8 @@ export class CreatePrestamoLegacyUseCase {
     this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
     this.authRepository = dependencies.authRepository;
     this.cancelacionesRepository = dependencies.cancelacionesRepository;
+    this.convenioSocioGateway = dependencies.convenioSocioGateway;
+    this.editarSocioGateway = dependencies.editarSocioGateway;
     this.ensureSolicitudTitularHasRequiredDataForConfirmar =
       new EnsureSolicitudTitularHasRequiredDataForConfirmar({
         solicitudesRepository: dependencies.repository,
@@ -199,6 +211,8 @@ export class CreatePrestamoLegacyUseCase {
       );
     if (!limitesLinea || !limitesLinea.vigente)
       throw new LegacyLineaPrestamoUnavailableError();
+    // Antes del prestamo: si Vimarx rechaza el convenio, no se genera.
+    await this.actualizarConvenioSocio(socio.nroSocioLegacy, input.convenio);
     const efectivos = ajustarMaximosLinea(limitesLinea, solicitud);
     const huboAjuste =
       efectivos.cuotas !== solicitud.cuotas ||
@@ -244,6 +258,66 @@ export class CreatePrestamoLegacyUseCase {
         linkFirmaDigital,
       },
     });
+  }
+
+  // Escribe en el socio solo lo que difiere de lo que tiene Vimarx ahora, asi
+  // el modal no pisa con valores viejos lo que alguien cambio en Vimarx
+  // mientras tanto.
+  private async actualizarConvenioSocio(
+    socioLegacyId: string,
+    convenio: ConvenioSocio | undefined,
+  ) {
+    if (!convenio) return;
+
+    if (!this.convenioSocioGateway || !this.editarSocioGateway) {
+      throw new Error("Falta configurar la edicion del convenio del socio.");
+    }
+
+    const actual =
+      await this.convenioSocioGateway.getConvenioSocioByLegacyId(socioLegacyId);
+
+    if (!actual) {
+      throw new InvalidSolicitudesCoreRequestError(
+        "No se pudieron leer los datos del convenio del socio en Vimarx.",
+      );
+    }
+
+    const campos: Record<string, string> = {};
+    const textos = [
+      ["beneficio", "SocAux.Beneficio"],
+      ["observaciones", "Observaciones"],
+    ] as const;
+    const numeros = [
+      ["caja40", "SocAux.Caja40", "Caja 40"],
+      ["convAux", "SocAux.ConvAux", "AMEJUCA"],
+    ] as const;
+
+    for (const [key, campo] of textos) {
+      const nuevo = convenio[key]?.trim() || null;
+
+      if (nuevo !== actual[key]) campos[campo] = nuevo ?? "";
+    }
+
+    for (const [key, campo, label] of numeros) {
+      const nuevo = convenio[key];
+
+      if (nuevo === actual[key]) continue;
+
+      // Vacio en un numero de SocAux Vimarx lo guarda como 0, no como vacio.
+      if (nuevo === null) {
+        if (actual[key] === 0) continue;
+
+        throw new InvalidSolicitudesCoreRequestError(
+          `${label} no se puede borrar: Vimarx lo guardaría en 0. Cargá el valor que corresponde.`,
+        );
+      }
+
+      campos[campo] = String(nuevo);
+    }
+
+    if (Object.keys(campos).length === 0) return;
+
+    await this.editarSocioGateway.editar(socioLegacyId, campos);
   }
 
   // El legado no recibe las cancelaciones: las lee de la solicitud antigua, que
