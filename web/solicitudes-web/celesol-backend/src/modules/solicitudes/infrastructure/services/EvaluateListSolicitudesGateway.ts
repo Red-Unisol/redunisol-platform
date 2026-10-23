@@ -531,6 +531,33 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return this.executeEvaluateList(buildSocioMutualDefinitionByDni(dni), 2);
   }
 
+  async getCoreReconciliationSnapshot(legacyOid: string, documento: string) {
+    if (!/^\d+$/.test(legacyOid) || !/^\d+$/.test(documento)) throw new LegacySolicitudesUnavailableError();
+    const socios = await this.lookupSocioRapido(documento);
+    if (socios.length !== 1) return null;
+    const socioId = socios[0]!.id;
+    const fields = ["ID", "MontoDeseado", "Cuotas", "LineaPrestamo.ID", "PrimerVencimiento", "NroLote"] as const;
+    const index = buildFieldIndexByName(fields);
+    const mapRow = (row: EvaluateListRow) => ({
+      id: getStringValue(row, index, "ID") ?? "",
+      amount: getNumberValue(row, index, "MontoDeseado"), cuotas: getNumberValue(row, index, "Cuotas"),
+      lineaId: getStringValue(row, index, "LineaPrestamo.ID"),
+      primerVencimiento: getStringValue(row, index, "PrimerVencimiento"),
+      cancelacionesCentavos: getNumberValue(row, index, "NroLote"),
+    });
+    // A legacyOid can refer to a historical PreSolicitud or a directly created loan.
+    const historical = await this.executeEvaluateObj({
+      tipo: "PreSolicitud.Module.Solicitud", buildCmd: () => `[Oid]=${legacyOid}`,
+      fields: fields.map(f => `Prestamo.${f}`), mapRow,
+    });
+    if (historical?.id) return this.executeEvaluateObj({
+      tipo: "F.Module.Cuentas.Prestamos.Prestamo",
+      buildCmd: () => `[ID]=${historical.id} And Integrantes[Socio.ID = ${socioId}].Count() > 0`, fields, mapRow,
+    });
+    return this.executeEvaluateObj({ tipo: "F.Module.Cuentas.Prestamos.Prestamo",
+      buildCmd: () => `[ID]=${legacyOid} And Integrantes[Socio.ID = ${socioId}].Count() > 0`, fields, mapRow });
+  }
+
   async getPrestamoOtorgadoByLegacyOid(legacyOid: string) {
     const prestamo = await this.executeEvaluateObj(
       buildPrestamoOtorgadoDefinitionByOid(legacyOid),

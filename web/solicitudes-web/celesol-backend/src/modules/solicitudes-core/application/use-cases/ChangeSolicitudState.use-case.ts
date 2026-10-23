@@ -109,6 +109,7 @@ export class ChangeSolicitudStateUseCase {
         : null;
 
     const result = await this.engine.execute({
+      ...(input.administrativeCorrection ? { administrativeCorrection: input.administrativeCorrection } : {}),
       actionCode: input.actionCode,
       changedBy: input.currentUser.id,
       comment: input.comment,
