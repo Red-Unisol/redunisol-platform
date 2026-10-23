@@ -14,6 +14,7 @@ from .archive import Archive
 from .config import Config
 from .source import SourceClient, SourceError, check_deadline, content_version
 from .store import import_snapshot, read_manifest, timestamp
+from .bundle import active_bundle, refresh_bundle
 
 
 def refresh_budget_seconds(config: Config, now: datetime | None = None) -> float:
@@ -40,6 +41,7 @@ class RefreshManager:
         self.database = config.data_dir / "snapshot.sqlite"
         self.state_path = config.data_dir / "refresh.json"
         self.lock = threading.Lock()
+        self.snapshot_lock = threading.RLock()
         self.thread: threading.Thread | None = None
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
         if self.state.get("status") == "running":
@@ -71,7 +73,8 @@ class RefreshManager:
             return dict(self.state) if self.state.get("job_id") == job_id else None
 
     def status(self) -> dict:
-        manifest = read_manifest(self.database)
+        with self.snapshot_lock:
+            manifest = active_bundle(self.config.data_dir) or read_manifest(self.database)
         with self.lock:
             state = dict(self.state)
         checked_at = (
@@ -86,12 +89,16 @@ class RefreshManager:
         return {
             "ready": manifest is not None and not stale, "check_stale": stale,
             "last_successful_check_at": checked_at, "refresh": state, "dataset": manifest,
+            "capabilities": (manifest or {}).get('capabilities', {
+                'current': manifest is not None, 'history': False, 'padron': False, 'normal_since': False}),
         }
 
     def _refresh(self) -> dict:
         if not self.config.terms_accepted:
             raise SourceError("Operator acceptance of BCRA download terms is required")
         deadline = time.monotonic() + refresh_budget_seconds(self.config)
+        if self.config.extended_enabled:
+            return refresh_bundle(self, deadline)
         client = SourceClient(self.config, deadline=deadline)
         assets = client.catalog()
         previous = read_manifest(self.database)
