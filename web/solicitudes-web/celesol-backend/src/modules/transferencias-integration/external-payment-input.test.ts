@@ -4,7 +4,7 @@ import test from "node:test";
 import { externalPaymentInput } from "./external-payment-input";
 import { argentinaToday, receiptFormat } from "./ExternalPaymentService";
 
-test("external payment permits an omitted comment and validates real calendar dates", () => {
+test("external payment permits omitted reference and comment and validates real calendar dates", () => {
   const input = {
     requestId: randomUUID(),
     paidOn: "2026-10-20",
@@ -19,10 +19,12 @@ test("external payment permits an omitted comment and validates real calendar da
     externalPaymentInput.safeParse({ ...input, paidOn: "2026-02-30" }).success,
     false,
   );
-  assert.equal(
-    externalPaymentInput.safeParse({ ...input, reference: " " }).success,
-    false,
-  );
+  for (const reference of [undefined, "", "   "]) {
+    assert.deepEqual(externalPaymentInput.parse({ ...input, reference }), {
+      ...input, reference: "", comment: "",
+    });
+  }
+  assert.equal(externalPaymentInput.safeParse({ ...input, reference: "x".repeat(201) }).success, false);
   assert.equal(
     externalPaymentInput.safeParse({ ...input, amount: "1.00" }).success,
     false,

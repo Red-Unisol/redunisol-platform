@@ -21,7 +21,10 @@ import {
 import { NUEVA_SOLICITUD_DEFAULT_VALUES } from "../constants/solicitud-default-values";
 import type { NuevaSolicitudFormValues } from "../types";
 
-export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLimitsAdjusted?: () => void) {
+export function useSolicitudEditorForm(
+  lineas: LineaPrestamoPresolicitud[],
+  onLimitsAdjusted?: () => void,
+) {
   const form = useForm<NuevaSolicitudFormValues>({
     defaultValues: NUEVA_SOLICITUD_DEFAULT_VALUES,
   });
@@ -117,6 +120,21 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLi
   const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(
     null,
   );
+  const [cuotaAnterior, setCuotaAnterior] = useState<{
+    condicionesKey: string;
+    valor: number;
+  } | null>(null);
+  const condicionesKey = JSON.stringify([
+    selectedLinea?.oid,
+    parseMoneyValue(monto),
+    Number(cuotas),
+    fecha || "",
+  ]);
+  // Una cuota anterior solo es vigente para la misma linea, monto, cuotas y fecha.
+  const cuotaVigente =
+    cuotaAnterior?.condicionesKey === condicionesKey
+      ? cuotaAnterior.valor
+      : null;
   const cuotaObjetivo =
     cuotaObjetivoTexto !== null ? parseMoneyValue(cuotaObjetivoTexto) : null;
   const calculo = useCuotaCalculada(
@@ -135,10 +153,8 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLi
     },
     Boolean(
       selectedLinea?.oid &&
-        Number(cuotas) > 0 &&
-        (cuotaObjetivo !== null
-          ? cuotaObjetivo > 0
-          : parseMoneyValue(monto) > 0),
+      Number(cuotas) > 0 &&
+      (cuotaObjetivo !== null ? cuotaObjetivo > 0 : parseMoneyValue(monto) > 0),
     ),
     (result) => {
       // Con cuota objetivo, que cambie el monto es el resultado, no un ajuste
@@ -161,6 +177,9 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLi
       if (Number(form.getValues("cuotas")) !== result.cuotas)
         form.setValue("cuotas", String(result.cuotas));
     },
+    // Un error no confirma el monto de una cuota solicitada, aunque el backend
+    // incluya valores efectivos. Conservar las condiciones vigentes.
+    { applyEffectiveValuesOnError: cuotaObjetivo === null },
   );
   useEffect(() => {
     form.setValue(
@@ -175,25 +194,60 @@ export function useSolicitudEditorForm(lineas: LineaPrestamoPresolicitud[], onLi
     );
   }, [form, calculo.data, calculo.isPending, calculo.error]);
   const currentEstado = currentEstadoValue?.trim() || "Sin estado";
+  const cuotaVigenteTexto =
+    cuotaVigente !== null ? formatDecimalMoneyValue(cuotaVigente) : "";
+  const condicionesVigentes = `Se mantienen ${formatMoneyAmount(parseMoneyValue(monto))} en ${cuotas} cuotas${cuotaVigente !== null ? ` de ${formatMoneyAmount(cuotaVigente)}` : ""}.`;
   const cuotaCalculo = {
-    // El calculo si lo hay y, mientras, lo que esta escribiendo el usuario.
+    // Al fallar, mostrar la cuota vigente; lo solicitado se conserva en el
+    // aviso y se puede reintentar sin impedir guardar otros datos.
     valor: calculo.data
       ? formatDecimalMoneyValue(calculo.data.cuotaResultante)
-      : (cuotaObjetivoTexto ?? ""),
+      : calculo.error && cuotaObjetivo !== null
+        ? cuotaVigenteTexto
+        : (cuotaObjetivoTexto ?? cuotaVigenteTexto),
     mensaje:
       cuotaObjetivo !== null && cuotaObjetivo <= 0
-        ? "Ingresá una cuota mayor a cero."
+        ? `Ingresá una cuota mayor a cero. La cuota ingresada no se aplicó. ${condicionesVigentes}`
         : calculo.isPending
           ? cuotaObjetivo !== null
-            ? "Calculando el monto..."
+            ? `Calculando el monto para una cuota de ${formatMoneyAmount(cuotaObjetivo)}. Hasta confirmar, estas son las condiciones vigentes: ${condicionesVigentes}`
             : "Calculando..."
           : calculo.error
-            ? calculo.error.message
+            ? cuotaObjetivo !== null
+              ? `No se pudo aplicar la cuota de ${formatMoneyAmount(cuotaObjetivo)}. ${calculo.error.message} ${condicionesVigentes}`
+              : calculo.error.message
             : cuotaObjetivo !== null && calculo.data
               ? "Monto calculado a partir de la cuota."
               : null,
-    onCuotaChange: setCuotaObjetivoTexto,
-    onDatosChange: () => setCuotaObjetivoTexto(null),
+    onCuotaChange: (value: string) => {
+      if (calculo.data) {
+        setCuotaAnterior({
+          condicionesKey,
+          valor: calculo.data.cuotaResultante,
+        });
+      } else if (cuotaObjetivoTexto === null) {
+        setCuotaAnterior(null);
+      }
+      setCuotaObjetivoTexto(value);
+    },
+    onDatosChange: () => {
+      setCuotaObjetivoTexto(null);
+      setCuotaAnterior(null);
+    },
+    onGuardar: () => {
+      if (cuotaObjetivoTexto !== null && calculo.isPending) {
+        // Cancelar antes de armar el payload: una respuesta tardia no debe
+        // cambiar el monto del formulario despues de enviar la solicitud.
+        // Conservar la cuota solicitada para poder reintentar si hace falta.
+        calculo.cancel(
+          new Error("Se conservan las condiciones vigentes al guardar."),
+        );
+      }
+    },
+    onReintentar:
+      cuotaObjetivo !== null && cuotaObjetivo > 0 && calculo.error
+        ? calculo.recalculate
+        : undefined,
   };
 
   return {

@@ -221,7 +221,7 @@ export class ExternalPaymentService {
               archivoMimeType: format.mime,
               archivoSizeBytes: body.length,
               tipoAdjunto: "Comprobante de transferencia",
-              descripcion: `Transferencia realizada por fuera. Referencia: ${input.reference}`,
+              descripcion: `Transferencia realizada por fuera.${input.reference ? ` Referencia: ${input.reference}` : ""}`,
               uploadedBy: user.id,
             },
           });
@@ -249,7 +249,7 @@ export class ExternalPaymentService {
               clientId: "beex-external-payment",
               isSystemAdmin: user.isSystemAdmin,
             },
-            `Transferencia realizada por fuera. Fecha: ${input.paidOn}. Referencia: ${input.reference}.${input.comment ? ` Comentario: ${input.comment}` : ""}`,
+            `Transferencia realizada por fuera. Fecha: ${input.paidOn}.${input.reference ? ` Referencia: ${input.reference}.` : ""}${input.comment ? ` Comentario: ${input.comment}` : ""}`,
           );
           const paid = await tx.solicitud.findUniqueOrThrow({
             where: { id },

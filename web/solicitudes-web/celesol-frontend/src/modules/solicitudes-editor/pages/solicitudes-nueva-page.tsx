@@ -194,6 +194,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     toast.dismiss(CREATE_SOLICITUD_SUCCESS_TOAST_ID);
 
     try {
+      cuotaCalculo.onGuardar();
       const payload = mapNuevaSolicitudFormToCreateSolicitudCoreRequest(
         getValues(),
         {

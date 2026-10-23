@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import test from "node:test";
+import express from "express";
 import { PrismaClient } from "@prisma/client";
 import { TransferenciasService } from "./TransferenciasService";
+import { createTransferenciasRouter } from "./router";
 import { createPayWorkflow } from "./workflow";
 import { ExternalPaymentService, argentinaToday } from "./ExternalPaymentService";
 import { externalPaymentInput } from "./external-payment-input";
 import {
   IntegrationError,
+  hash,
   type Actor,
   type Confirmation,
   type FinancialGateway,
@@ -228,6 +232,124 @@ test(
     );
 
     await t.test(
+      "HTTP revalidation and receipt recovery preserve the desktop order and bank IDs",
+      async (t) => {
+        const { source, service, plan, input } = await fixture();
+        const order = await service.reserve(source.id, input, actor);
+        const token = "synthetic-revalidation-contract-token-1234567890";
+        const app = express();
+        app.use(
+          createTransferenciasRouter({
+            config: {
+              tokenSha256: hash(token),
+              userId: actor.id,
+              clientId: actor.clientId,
+            },
+            service,
+            maxFileBytes: 1024,
+            findUser: async () => ({
+              id: actor.id,
+              state: 1,
+              deletedAt: null,
+              isSystemAdmin: false,
+              workflowOwner: {
+                id: actor.workflowOwnerId,
+                code: "TESORERIA",
+                isActive: true,
+              },
+            }),
+          }),
+        );
+        const server = app.listen(0, "127.0.0.1");
+        t.after(() => {
+          server.closeAllConnections();
+          server.close();
+        });
+        await once(server, "listening");
+        const address = server.address();
+        assert(address && typeof address !== "string");
+        const revalidate = async () => {
+          const response = await fetch(
+            `http://127.0.0.1:${address.port}/desembolsos/${order.id}/revalidar`,
+            { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+          );
+          assert.equal(response.status, 200);
+          const { valid, planVersion, checkedAt, ...desktopOrder } =
+            await response.json();
+          assert.equal(valid, true);
+          assert.equal(planVersion, plan.version);
+          assert(Number.isFinite(Date.parse(checkedAt)));
+          // Compare the real HTTP JSON with GET's complete order, including all
+          // fields required by BeexOrder/Journal in the installed Rust client.
+          assert.deepEqual(
+            desktopOrder,
+            JSON.parse(JSON.stringify(await service.get(order.id, actor))),
+          );
+          return desktopOrder;
+        };
+
+        const first = await revalidate();
+        assert.equal(first.id, order.id);
+        assert.equal(first.solicitudId, source.id);
+        assert.equal(first.status, "RESERVED");
+        assert.deepEqual(first.plan, plan);
+        assert.deepEqual(first.payments, order.payments);
+        const started = await db.transferenciaDesembolso.findUniqueOrThrow({
+          where: { id: order.id },
+        });
+        assert(started.bankStartedAt);
+        assert.deepEqual(await revalidate(), first);
+        const retried = await db.transferenciaDesembolso.findUniqueOrThrow({
+          where: { id: order.id },
+        });
+        assert.deepEqual(retried.bankStartedAt, started.bankStartedAt);
+
+        await service.confirm(
+          order.id,
+          "member",
+          evidence(plan, input.payments[0]!.bankTransactionId),
+          actor,
+        );
+        const confirmed = await revalidate();
+        assert.equal(confirmed.status, "BANK_CONFIRMED_PENDING_SYNC");
+        assert.equal(
+          confirmed.payments[0].bankTransactionId,
+          input.payments[0]!.bankTransactionId,
+        );
+        assert(confirmed.payments[0].confirmation);
+
+        const uploadReceipt = async () => {
+          const form = new FormData();
+          form.append(
+            "file",
+            new Blob([new Uint8Array(pdf)], { type: "application/pdf" }),
+            "comprobante.pdf",
+          );
+          const response = await fetch(
+            `http://127.0.0.1:${address.port}/desembolsos/${order.id}/comprobante`,
+            { method: "POST", body: form, headers: { Authorization: `Bearer ${token}` } },
+          );
+          const body = await response.json();
+          assert.equal(response.status, 200, JSON.stringify(body));
+          assert.equal(body.id, order.id);
+          assert.equal(body.status, "COMPLETED");
+          assert.deepEqual(body.payments, confirmed.payments);
+          assert(body.receipt.adjuntoId);
+          assert(body.completedAt);
+          return body;
+        };
+        const completed = await uploadReceipt();
+        assert.deepEqual((await uploadReceipt()).receipt, completed.receipt);
+        assert.equal(
+          await db.solicitudEstadoHistorial.count({
+            where: { solicitudId: source.id, actionCode: "pagar" },
+          }),
+          1,
+        );
+      },
+    );
+
+    await t.test(
       "concurrent identical reservations and lost-response lookup return same order",
       async () => {
         const { source, service, plan, input } = await fixture();
@@ -395,7 +517,10 @@ test(
           }),
           1,
         );
-        assert.equal(objects.size, 1);
+        assert.equal(
+          [...objects.keys()].filter((key) => key.startsWith(`solicitudes/${source.id}/`)).length,
+          1,
+        );
         const history = await db.solicitudEstadoHistorial.findFirstOrThrow({
           where: { solicitudId: source.id },
         });
@@ -595,9 +720,9 @@ test(
     );
 
     const external = () => new ExternalPaymentService({ ...deps, maxFileBytes: 100000 });
-    const externalInput = () => externalPaymentInput.parse({ requestId: randomUUID(), paidOn: argentinaToday(), reference: "EXTERNAL-123" });
+    const externalInput = () => externalPaymentInput.parse({ requestId: randomUUID(), paidOn: argentinaToday() });
 
-    await t.test("external settlement atomically closes a reservation, preserves IDs and audits an optional comment", async () => {
+    await t.test("external settlement closes a reservation with only receipt and date, preserving IDs and audit", async () => {
       const { source, service, input, plan } = await fixture();
       const order = await service.reserve(source.id, input, actor);
       const registration = externalInput();
@@ -608,6 +733,7 @@ test(
       assert.equal(outcomes[0].payment?.id, registration.requestId);
       assert.equal(outcomes[1].payment?.id, registration.requestId);
       assert.equal(outcomes[0].payment?.comment, null);
+      assert.equal(outcomes[0].payment?.reference, "");
       assert.equal(outcomes[0].payment?.paidOn, registration.paidOn);
       const saved = await service.get(order.id, actor);
       assert.equal(saved.status, "EXTERNALLY_SETTLED");
@@ -619,6 +745,10 @@ test(
       const history = await db.solicitudEstadoHistorial.findFirstOrThrow({ where: { solicitudId: source.id, actionCode: "pagar" } });
       assert.equal(history.changedBy, user.id);
       assert.match(history.comentario!, /Transferencia realizada por fuera/);
+      assert.doesNotMatch(history.comentario!, /Referencia:/);
+      const adjunto = await db.solicitudAdjunto.findUniqueOrThrow({ where: { id: outcomes[0].payment!.adjuntoId } });
+      assert.equal(adjunto.descripcion, "Transferencia realizada por fuera.");
+      assert.equal((await external().register(source.id, user, { ...registration, reference: "   " }, pdf)).payment?.id, registration.requestId);
       assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: source.id } })).estadoActualId, paid.id);
       assert(!((await service.list(100)).items.some(item => item.solicitudId === source.id)));
       await assert.rejects(service.reserve(source.id, input, actor), (e: unknown) => e instanceof IntegrationError && e.code === "EXTERNALLY_SETTLED");
@@ -640,9 +770,10 @@ test(
       await assert.rejects(external().register(source.id, seller, externalInput(), pdf), (e: unknown) => e instanceof IntegrationError && e.statusCode === 403);
       await assert.rejects(external().register(source.id, { ...user, state: 0 }, externalInput(), pdf));
       const riskUser = await newUser(riesgo.id);
-      const registration = { ...externalInput(), paidOn: "2026-01-15", comment: "Pago efectuado por otro circuito" };
+      const registration = { ...externalInput(), paidOn: "2026-01-15", reference: "EXTERNAL-123", comment: "Pago efectuado por otro circuito" };
       const result = await external().register(source.id, riskUser, registration, pdf);
       assert.equal(result.payment?.comment, registration.comment);
+      assert.equal(result.payment?.reference, registration.reference);
       assert.equal(result.payment?.paidOn, "2026-01-15");
       assert.equal((await db.solicitudPagoExterno.findUniqueOrThrow({ where: { solicitudId: source.id } })).desembolsoId, null);
     });

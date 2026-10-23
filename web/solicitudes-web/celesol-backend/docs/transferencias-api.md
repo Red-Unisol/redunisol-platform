@@ -157,6 +157,15 @@ Recorrer hasta `nextCursor=null`; no es un snapshot de una cola cambiante.
 Consultar directamente el desembolso para recuperar pagos que ya salieron de
 Transferir. Codificar `paymentKey` como segmento URL.
 
+Una revalidación exitosa devuelve el mismo desembolso completo que
+`GET /desembolsos/:id` (`id`, `solicitudId`, `plan`, `status`, `payments` y sus
+datos de recuperación), junto con `valid: true`, `planVersion` y `checkedAt`.
+Transferencias 2.3.1 necesita ese desembolso para verificar el plan y los IDs
+reservados antes de enviar. La respuesta conserva los campos de confirmación
+anteriores y los resultados bancarios ya registrados; no crea otra reserva ni
+reemplaza sus identificadores. Un plan modificado o un desembolso cerrado sigue
+produciendo un error y no autoriza nuevos pagos.
+
 Ejemplo sintético de reserva (usar los valores del plan recibido):
 
 ```json
@@ -244,7 +253,7 @@ la sesión web habitual y el guard de visibilidad de la solicitud. La identidad
 técnica de Transferencias no tiene acceso a estas rutas con su token de integración.
 
 El POST es multipart: `requestId` UUID persistente por intento de registro,
-`paidOn` fecha ISO sin hora, `reference` obligatoria, `comment` opcional y `file`
+`paidOn` fecha ISO sin hora, `reference` y `comment` opcionales y `file`
 obligatorio (PDF, JPG o PNG; límite de adjuntos del ambiente). La UI completa la
 fecha del día en Argentina y permite modificarla; el backend rechaza fechas
 futuras. Solo se admite una solicitud activa en Transferir / TESORERIA.

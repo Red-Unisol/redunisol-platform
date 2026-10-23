@@ -187,7 +187,6 @@ return [
         '/mupol.html' => 'https://redunisol.com.ar/',
         '/preguntas.html' => 'https://redunisol.com.ar/',
         '/prestamos-para-' => 'https://redunisol.com.ar/blog',
-        '/prestamos-para-empleados-universidad-nacional-de-cordoba' => 'https://redunisol.com.ar/blog',
         '/privacidad' => 'https://redunisol.com.ar/politicas-de-privacidad',
         '/terminos' => 'https://redunisol.com.ar/gestion-de-datos',
         '/vendedores.html' => 'https://redunisol.com.ar/',

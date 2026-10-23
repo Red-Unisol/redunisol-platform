@@ -95,7 +95,9 @@ export function createTransferenciasRouter(deps: Dependencies) {
   const id = (req: Request) => z.string().uuid().parse(req.params.id);
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: deps.maxFileBytes, files: 1, fields: 0, parts: 1 },
+    // Busboy emits partsLimit at the cap, including after the only valid file.
+    // files/fields and single("file") still enforce exactly one PDF without fields.
+    limits: { fileSize: deps.maxFileBytes, files: 1, fields: 0, parts: 2 },
     fileFilter: (_req, file, callback) => {
       if (file.mimetype !== "application/pdf")
         return callback(

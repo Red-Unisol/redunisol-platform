@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import express from "express";
-import { hash } from "./domain";
+import { hash, type Actor } from "./domain";
 import { createTransferenciasRouter, tokenMatches } from "./router";
 import { integrationConfigSchema } from "./config";
 import type { TransferenciasService } from "./TransferenciasService";
@@ -30,6 +30,7 @@ test("HTTP auth precedes multipart processing and validates service role and inp
   let admin = false;
   let active = true;
   let calls = 0;
+  const receipts: { id: string; bytes: Buffer; actor: Actor }[] = [];
   const config = {
     tokenSha256: hash(token),
     userId: randomUUID(),
@@ -40,6 +41,10 @@ test("HTTP auth precedes multipart processing and validates service role and inp
       calls++;
       return { items: [], nextCursor: null };
     },
+    receipt: async (id: string, bytes: Buffer, actor: Actor) => {
+      receipts.push({ id, bytes, actor });
+      return { id, status: "COMPLETED" };
+    },
   } as unknown as TransferenciasService;
   const app = express();
   app.use(express.json());
@@ -47,7 +52,7 @@ test("HTTP auth precedes multipart processing and validates service role and inp
     createTransferenciasRouter({
       config,
       service,
-      maxFileBytes: 10,
+      maxFileBytes: 20,
       findUser: async () =>
         enabled
           ? {
@@ -113,6 +118,46 @@ test("HTTP auth precedes multipart processing and validates service role and inp
     (await fetch(url, { method: "POST", body: form, headers })).status,
     413,
   );
+  const receiptId = randomUUID();
+  const receiptUrl = root + `/desembolsos/${receiptId}/comprobante`;
+  const smallPdf = "%PDF-%%EOF";
+  const receiptForm = (name = "file") => {
+    const body = new FormData();
+    body.append(
+      name,
+      new Blob([smallPdf], { type: "application/pdf" }),
+      "comprobante.pdf",
+    );
+    return body;
+  };
+  await t.test("accepts exactly one PDF file without extra form fields", async () => {
+    const response = await fetch(receiptUrl, {
+      method: "POST", body: receiptForm(), headers,
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.deepEqual(body, { id: receiptId, status: "COMPLETED" });
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0]!.id, receiptId);
+    assert.deepEqual(receipts[0]!.bytes, Buffer.from(smallPdf));
+    assert.equal(receipts[0]!.actor.id, config.userId);
+  });
+  await t.test("still rejects additional fields, files and unexpected file names", async () => {
+    const extraField = receiptForm();
+    extraField.append("comment", "unexpected");
+    const extraFile = receiptForm();
+    extraFile.append("file", new Blob([smallPdf], { type: "application/pdf" }), "second.pdf");
+    for (const [body, code] of [
+      [extraField, "LIMIT_FIELD_COUNT"],
+      [extraFile, "LIMIT_FILE_COUNT"],
+      [receiptForm("other"), "LIMIT_UNEXPECTED_FILE"],
+    ] as const) {
+      const response = await fetch(receiptUrl, { method: "POST", body, headers });
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, code);
+    }
+    assert.equal(receipts.length, 1);
+  });
   config.tokenSha256 = "";
   assert.equal((await fetch(root + "/solicitudes", { headers })).status, 404);
 });
