@@ -89,6 +89,7 @@ import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/
 import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
 import { GenerarPrestamoDialog } from "@/modules/solicitudes-core/components/generar-prestamo-dialog";
 import { PrestamoDelSocioDialog } from "@/modules/solicitudes-core/components/prestamo-del-socio-dialog";
+import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
@@ -3284,6 +3285,16 @@ export function SolicitudesActualDetallePage() {
       montoAFinanciar: parseMoneyValue(current.solicitud.montoAFinanciar) === result.montoAFinanciar ? current.solicitud.montoAFinanciar : formatMoneyAmount(result.montoAFinanciar),
       cuotas: String(result.cuotas) } } : current);
   });
+  // legacyOid es el ID interno del prestamo en Vimarx; operativamente se usa
+  // su NroCuenta, que se consulta en vivo. Vendedores no tienen acceso.
+  const canViewPrestamoGenerado =
+    Boolean(currentUser) && canViewPrestamosDelSocio(currentUser);
+  const prestamoGeneradoQuery = usePrestamoDelSocioQuery(
+    solicitudId,
+    canViewPrestamoGenerado ? (solicitud?.legacyOid ?? null) : null,
+  );
+  const nroCuentaPrestamo =
+    prestamoGeneradoQuery.data?.prestamo.nroCuenta ?? null;
   if (!solicitudId) {
     return (
       <ErrorState
@@ -4113,18 +4124,26 @@ export function SolicitudesActualDetallePage() {
               </span>
               <IdChip value={resolvedSolicitud.id} />
             </div>
-            <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-xs font-medium text-foreground-muted">
-                Préstamo
-              </span>
-              {resolvedSolicitud.legacyOid ? (
-                <IdChip value={resolvedSolicitud.legacyOid} variant="accent" />
-              ) : (
-                <Badge icon={<Clock className="size-3" />} variant="neutral">
-                  Sin generar
-                </Badge>
-              )}
-            </div>
+            {canViewPrestamoGenerado ? (
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <span className="text-xs font-medium text-foreground-muted">
+                  Préstamo
+                </span>
+                {!resolvedSolicitud.legacyOid ? (
+                  <Badge icon={<Clock className="size-3" />} variant="neutral">
+                    Sin generar
+                  </Badge>
+                ) : nroCuentaPrestamo ? (
+                  <IdChip value={nroCuentaPrestamo} variant="accent" />
+                ) : (
+                  <Badge variant="neutral">
+                    {prestamoGeneradoQuery.isLoading
+                      ? "Consultando..."
+                      : "No disponible"}
+                  </Badge>
+                )}
+              </div>
+            ) : null}
           </div>
           <Badge
             className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
