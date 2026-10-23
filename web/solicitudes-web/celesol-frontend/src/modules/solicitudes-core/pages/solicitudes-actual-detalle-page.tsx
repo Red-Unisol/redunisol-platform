@@ -103,6 +103,7 @@ import { useLineasPrestamoQuery } from "@/modules/solicitudes-core/hooks/use-lin
 import { useSociosCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-socios-cancelaciones-query";
 import { useSolicitudCoreTransitionsQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-transitions-query";
 import {
+  type ConvenioSocioRequest,
   uploadSolicitudCoreAdjunto,
   uploadSolicitudCoreAdjuntosLote,
 } from "@/modules/solicitudes-core/services/solicitudes-core-api";
@@ -3791,12 +3792,12 @@ export function SolicitudesActualDetallePage() {
     });
   }
 
-  async function handleCreatePrestamoLegacy() {
+  async function handleCreatePrestamoLegacy(convenio?: ConvenioSocioRequest) {
     toast.dismiss(CREATE_PRESTAMO_LEGACY_ERROR_TOAST_ID);
     toast.dismiss(CREATE_PRESTAMO_LEGACY_SUCCESS_TOAST_ID);
 
     try {
-      await createPrestamoLegacyMutation.mutateAsync();
+      await createPrestamoLegacyMutation.mutateAsync(convenio);
       setIsGenerarPrestamoModalOpen(false);
       toast.success("Préstamo creado en el legado correctamente.", {
         duration: 3500,
@@ -4572,7 +4573,7 @@ export function SolicitudesActualDetallePage() {
         isPending={createPrestamoLegacyMutation.isPending}
         lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}
         montoAFinanciar={resolvedSolicitud.montoAFinanciar}
-        onConfirm={() => void handleCreatePrestamoLegacy()}
+        onConfirm={(convenio) => void handleCreatePrestamoLegacy(convenio)}
         onOpenChange={setIsGenerarPrestamoModalOpen}
         open={isGenerarPrestamoModalOpen}
         solicitudId={solicitudId}

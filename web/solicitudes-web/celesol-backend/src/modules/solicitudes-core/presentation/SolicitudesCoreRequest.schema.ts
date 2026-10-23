@@ -206,6 +206,30 @@ export const solicitudByIdParamsSchema = z.object({
   id: z.string().uuid("id must be a valid uuid"),
 });
 
+// Texto opcional del convenio: vacio o solo espacios = sin cargar (null).
+const convenioTextoSchema = (max: number) =>
+  z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim().length === 0 ? null : value,
+    z.string().trim().max(max).nullable(),
+  );
+
+// Datos del convenio editados en el modal de Generar prestamo, como deben
+// quedar en Vimarx. Caja 40 y AMEJUCA son Int32 en SocAux.
+export const createPrestamoLegacyBodySchema = z
+  .object({
+    convenio: z
+      .object({
+        beneficio: convenioTextoSchema(50),
+        caja40: z.number().int().min(0).max(2147483647).nullable(),
+        convAux: z.number().int().min(0).max(2147483647).nullable(),
+        observaciones: convenioTextoSchema(500),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 // "prestamoId" es el ID del prestamo en Vimarx. Solo digitos: se interpola en
 // la expresion de criterios del legado.
 export const prestamoDelSocioParamsSchema = solicitudByIdParamsSchema.extend({
@@ -359,6 +383,9 @@ export type GetAnalistaStatsQuery = z.infer<typeof getAnalistaStatsQuerySchema>;
 export type ListSolicitudesQuery = z.infer<typeof listSolicitudesQuerySchema>;
 export type PatchSolicitudBody = z.infer<typeof patchSolicitudBodySchema>;
 export type SolicitudByIdParams = z.infer<typeof solicitudByIdParamsSchema>;
+export type CreatePrestamoLegacyBody = z.infer<
+  typeof createPrestamoLegacyBodySchema
+>;
 export type PrestamoDelSocioParams = z.infer<typeof prestamoDelSocioParamsSchema>;
 export type FinSolicitudParams = z.infer<typeof finSolicitudParamsSchema>;
 export type AssignSolicitudToSelfBody = z.infer<typeof assignSolicitudToSelfBodySchema>;

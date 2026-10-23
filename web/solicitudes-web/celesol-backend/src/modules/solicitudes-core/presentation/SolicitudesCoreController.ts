@@ -46,6 +46,7 @@ import {
   prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
   solicitudByIdParamsSchema,
+  createPrestamoLegacyBodySchema,
   type AssignSolicitudToSelfBody,
   type AssignSolicitudToUserBody,
   type CreateSolicitudBody,
@@ -56,6 +57,7 @@ import {
   type PrestamoDelSocioParams,
   type SimularPrestamoBody,
   type SolicitudByIdParams,
+  type CreatePrestamoLegacyBody,
 } from "./SolicitudesCoreRequest.schema";
 import {
   changeSolicitudStateBodySchema,
@@ -552,7 +554,12 @@ export class SolicitudesCoreController {
         solicitudByIdParamsSchema,
         req.params,
       );
+      const body = this.parseRequest<CreatePrestamoLegacyBody>(
+        createPrestamoLegacyBodySchema,
+        req.body ?? {},
+      );
       const solicitud = await this.createPrestamoLegacyUseCase.execute({
+        ...(body.convenio ? { convenio: body.convenio } : {}),
         currentUser: {
           id: user.id,
           workflowOwnerId,
