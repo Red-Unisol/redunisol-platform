@@ -2,6 +2,10 @@
 
 Aplicación web desarrollada con **Laravel 12**, **FilamentPHP 4**, **React 19** e **Inertia.js 2**.
 
+El [dataset del recorrido completo](../../docs/journey-data.md) conserva navegación, origen,
+WhatsApp, formularios, acuses Kestra y evolución CRM en el volumen dedicado, con lotes
+y exportación JSONL autenticada. El código no incorpora un dashboard de analítica.
+
 El [piloto de asistencia de Jubilados por WhatsApp](../../docs/whatsapp-jubilados-assistance.md) prepara dos teléfonos internos, espera de 30 segundos y leads marcados en una etapa de prueba. Los valores por defecto permanecen apagados; la activación usa configuración cifrada y worker optativo.
 
 Para una guia de onboarding tecnico mas orientada a arquitectura y extension del sistema, ver `../../docs/redunisol-web-overview.md`.

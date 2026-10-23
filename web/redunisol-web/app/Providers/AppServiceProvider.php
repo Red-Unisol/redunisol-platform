@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\JourneyLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(JourneyLedger::class);
+        $this->app->terminating(fn () => $this->app->make(JourneyLedger::class)->flush());
     }
 
     /**

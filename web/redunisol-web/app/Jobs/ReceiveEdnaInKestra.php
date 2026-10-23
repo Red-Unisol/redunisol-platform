@@ -17,6 +17,7 @@ use Throwable;
 class ReceiveEdnaInKestra implements ShouldQueue
 {
     use Queueable;
+    use \App\Jobs\Middleware\TracksJourney;
 
     public int $tries = 8;
 
@@ -67,6 +68,11 @@ class ReceiveEdnaInKestra implements ShouldQueue
                     throw new RuntimeException('Kestra did not acknowledge the Edna event.');
                 }
                 (new EdnaFormLink)->capture($event, $payload, $result['kind']);
+                DB::afterCommit(function () use ($event, $result): void {
+                    app(\App\Services\JourneyLedger::class)->record('whatsapp.kestra_processed', [
+                        'kind' => $result['kind'], 'flow_id_verified' => $result['flow_id_verified'] ?? null,
+                    ], ['edna_incoming_events_id' => $event->id, 'execution_id' => $result['execution_id'] ?? null], 'kestra.edna');
+                });
                 if ($result['kind'] === 'router_entry') {
                     $router->start($event, $payload);
                 } elseif ($context && $result['kind'] === 'flow_response') {

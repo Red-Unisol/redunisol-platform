@@ -6,6 +6,8 @@ use App\Http\Controllers\BitrixVolumeAllocationController;
 use App\Http\Controllers\EdnaIncomingController;
 use App\Http\Controllers\EdnaProbeController;
 use App\Http\Controllers\FormSubmissionController;
+use App\Http\Controllers\JourneyEventsController;
+use App\Http\Controllers\JourneyExportController;
 use App\Http\Controllers\PdfSearchController;
 use App\Http\Middleware\DecryptAttributionCookie;
 use Illuminate\Http\Request;
@@ -13,6 +15,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
 Route::post('/pdf/search', PdfSearchController::class)->name('api.pdf.search');
+Route::post('/journey/events', JourneyEventsController::class)->middleware(DecryptAttributionCookie::class);
+Route::get('/journey/export', JourneyExportController::class);
 Route::post('/attribution/analytics', AnalyticsAttributionController::class)
     ->middleware([DecryptAttributionCookie::class, 'throttle:60,1'])->name('api.attribution.analytics');
 Route::post('/form-submissions', FormSubmissionController::class)
