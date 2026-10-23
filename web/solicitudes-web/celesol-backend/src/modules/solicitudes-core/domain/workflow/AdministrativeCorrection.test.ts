@@ -50,3 +50,9 @@ it("reserved action requires an administrator, structured correction and reason"
   for (const patch of [{ isSystemAdmin: false }, { administrativeCorrection: undefined }, { comment: " " }])
     assert.throws(() => policy.validate({ ...context, command: { ...context.command, ...patch } }));
 });
+
+it("an uncertain loan replacement freezes every workflow action, including exits", () => {
+  const s = { ...source(), administrativeCoreControl: { replacementPending: "operation-id" } };
+  for (const action of ["liquidar", "desestimar", "confirmar", "enviar_a_riesgo"])
+    assert.throws(() => assertCoreReconciled(s, action), /reemplazo/);
+});

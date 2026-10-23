@@ -1,3 +1,6 @@
+import { addControlledLoanReplacementRoutes } from "./presentation/ControlledLoanReplacementRoutes";
+import { ControlledLoanReplacementService } from "./infrastructure/services/ControlledLoanReplacementService";
+import { buildLinkFirmaDigital } from "./application/services/buildLinkFirmaDigital";
 import { addAdministrativeCorrectionRoutes } from "./presentation/AdministrativeCorrectionRoutes";
 import { assertCoreReconciled } from "./domain/workflow/AdministrativeCorrection";
 import { AdministrativeCorrectionService, administrativeSource } from "./infrastructure/services/AdministrativeCorrectionService";
@@ -468,9 +471,17 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
+  addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase,
+    service: new ControlledLoanReplacementService({ db: prisma, creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS, prepare: createPrestamoLegacyUseCase,
+      gateway: crearPrestamoGateway,
+      lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
+      loanSnapshot: (id, documento, direct) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento, direct),
+      makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
+    }),
+  });
   addAdministrativeCorrectionRoutes(router, { auth: dependencies.getCurrentUserUseCase,
     service: new AdministrativeCorrectionService({ db: prisma, changeState: changeSolicitudStateUseCase,
-      loanSnapshot: (id, documento) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento),
+      loanSnapshot: (id, documento, direct) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento, direct),
       lineResolver: lineaPrestamoLegacyIdResolver }),
   });
   addExternalPaymentRoutes(router, {

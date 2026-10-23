@@ -10,7 +10,10 @@ import {
 } from "@/shared/components/ui/dialog";
 import { solicitudesCoreQueryKeys } from "../services/solicitudes-core-query-keys";
 
+import { ControlledLoanReplacementControl } from "./controlled-loan-replacement-control";
+
 type View = {
+  replacementPending: boolean;
   canAdmin: boolean;
   state: string;
   updatedAt: string;
@@ -129,7 +132,7 @@ export function AdministrativeStateControl({
               <Button
                 variant="outline"
                 type="button"
-                disabled={isEditing || mutation.isPending}
+                disabled={isEditing || mutation.isPending || data.replacementPending}
                 onClick={() => start("reconcile")}
               >
                 Conciliar préstamo Core
@@ -140,6 +143,9 @@ export function AdministrativeStateControl({
       </div>
       {data.canAdmin && data.state === "Confirmada" && data.blockedReason && (
         <p className="mt-2 text-sm">{data.blockedReason}</p>
+      )}
+      {data.canAdmin && data.loanId && data.reconciliationRequired && (
+        <ControlledLoanReplacementControl solicitudId={solicitudId} updatedAt={updatedAt} isEditing={isEditing} />
       )}
       <DialogRoot
         open={mode !== null}

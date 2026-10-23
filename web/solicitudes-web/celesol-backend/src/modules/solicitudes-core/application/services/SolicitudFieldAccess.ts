@@ -142,17 +142,18 @@ type PatchAccessTargets = {
 };
 
 export function buildSolicitudFieldAccess(
-  solicitud: Pick<SolicitudCore, "estadoActual">,
+  solicitud: Pick<SolicitudCore, "estadoActual" | "loanReplacementPending">,
   ruleRecord?: SolicitudFieldAccessRuleRecord | null,
   isSystemAdmin?: boolean,
   isAnalista?: boolean,
 ): SolicitudFieldAccess {
+  if (solicitud.loanReplacementPending) return buildReadonlyFieldAccess();
   const access = buildSolicitudFieldAccessRaw(solicitud, ruleRecord, isSystemAdmin, isAnalista);
   return { ...access, editableFields: access.editableFields.filter(field => field !== "solicitud.cuotaResultante") };
 }
 
 function buildSolicitudFieldAccessRaw(
-  solicitud: Pick<SolicitudCore, "estadoActual">,
+  solicitud: Pick<SolicitudCore, "estadoActual" | "loanReplacementPending">,
   ruleRecord?: SolicitudFieldAccessRuleRecord | null,
   isSystemAdmin?: boolean,
   isAnalista?: boolean,
@@ -187,7 +188,7 @@ function buildSolicitudFieldAccessRaw(
 }
 
 export function buildSolicitudAppearance(
-  solicitud: Pick<SolicitudCore, "estadoActual">,
+  solicitud: Pick<SolicitudCore, "estadoActual" | "loanReplacementPending">,
   ruleRecord?: SolicitudFieldAccessRuleRecord | null,
   isSystemAdmin?: boolean,
   isAnalista?: boolean,

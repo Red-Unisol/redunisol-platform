@@ -531,12 +531,33 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return this.executeEvaluateList(buildSocioMutualDefinitionByDni(dni), 2);
   }
 
-  async getCoreReconciliationSnapshot(legacyOid: string, documento: string) {
+  async getCoreLoanLifecycle(legacyOid: string, directLoanId = false) {
+    if (!/^\d+$/.test(legacyOid)) throw new LegacySolicitudesUnavailableError();
+    const historical = directLoanId ? null : await this.executeEvaluateObj({
+      tipo: "PreSolicitud.Module.Solicitud", buildCmd: () => `[Oid]=${legacyOid}`,
+      fields: ["Prestamo.ID"], mapRow: row => ({ id: getStringValue(row, { "Prestamo.ID": 0 }, "Prestamo.ID") }),
+    });
+    if (historical && !historical.id) return null;
+    const id = historical?.id ?? legacyOid;
+    if (!/^\d+$/.test(id)) return null;
+    const fields = ["ID", "NroCuenta", "Estado", "ToStr([Estado])", "EstadoPrestamo", "ToStr([EstadoPrestamo])", "Vigente", "Saldo"] as const;
+    const index = buildFieldIndexByName(fields);
+    return this.executeEvaluateObj({
+      tipo: "F.Module.Cuentas.Prestamos.Prestamo", buildCmd: () => `[ID]=${id}`, fields,
+      mapRow: row => ({ id: getStringValue(row, index, "ID"), account: getStringValue(row, index, "NroCuenta"),
+        estado: getNumberValue(row, index, "Estado"), estadoLabel: getStringValue(row, index, "ToStr([Estado])"),
+        estadoPrestamo: getNumberValue(row, index, "EstadoPrestamo"), estadoPrestamoLabel: getStringValue(row, index, "ToStr([EstadoPrestamo])"),
+        vigente: getBooleanValue(row, index, "Vigente"), saldo: getNumberValue(row, index, "Saldo"),
+      }),
+    });
+  }
+
+  async getCoreReconciliationSnapshot(legacyOid: string, documento: string, directLoanId = false) {
     if (!/^\d+$/.test(legacyOid) || !/^\d+$/.test(documento)) throw new LegacySolicitudesUnavailableError();
     const socios = await this.lookupSocioRapido(documento);
     if (socios.length !== 1) return null;
     const socioId = socios[0]!.id;
-    const fields = ["ID", "MontoDeseado", "Cuotas", "LineaPrestamo.ID", "PrimerVencimiento", "NroLote"] as const;
+    const fields = ["ID", "MontoDeseado", "Cuotas", "LineaPrestamo.ID", "PrimerVencimiento", "NroLote", "Estado"] as const;
     const index = buildFieldIndexByName(fields);
     const mapRow = (row: EvaluateListRow) => ({
       id: getStringValue(row, index, "ID") ?? "",
@@ -544,12 +565,14 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       lineaId: getStringValue(row, index, "LineaPrestamo.ID"),
       primerVencimiento: getStringValue(row, index, "PrimerVencimiento"),
       cancelacionesCentavos: getNumberValue(row, index, "NroLote"),
+      estado: getNumberValue(row, index, "Estado"),
     });
     // A legacyOid can refer to a historical PreSolicitud or a directly created loan.
-    const historical = await this.executeEvaluateObj({
+    const historical = directLoanId ? null : await this.executeEvaluateObj({
       tipo: "PreSolicitud.Module.Solicitud", buildCmd: () => `[Oid]=${legacyOid}`,
       fields: fields.map(f => `Prestamo.${f}`), mapRow,
     });
+    if (historical && !historical.id) return null;
     if (historical?.id) return this.executeEvaluateObj({
       tipo: "F.Module.Cuentas.Prestamos.Prestamo",
       buildCmd: () => `[ID]=${historical.id} And Integrantes[Socio.ID = ${socioId}].Count() > 0`, fields, mapRow,
