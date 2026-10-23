@@ -1564,15 +1564,20 @@ function SolicitudSection({
 }
 
 function TitularFields({
+  datosLaborales,
+  datosLaboralesValues,
   errors,
   isFieldEditableByKey,
   isEditing,
   onBooleanChange,
   onChange,
+  onDatosLaboralesChange,
   readonlyAppearanceStyle,
   titular,
   values,
 }: {
+  datosLaborales: SolicitudCoreDatosLaboralesResponse;
+  datosLaboralesValues: EditableSolicitudCoreValues["datosLaborales"];
   errors?: Partial<
     Record<keyof EditableSolicitudCoreValues["titular"], string>
   >;
@@ -1581,6 +1586,10 @@ function TitularFields({
   onBooleanChange: (value: boolean) => void;
   onChange: (
     field: keyof EditableSolicitudCoreValues["titular"],
+    value: string,
+  ) => void;
+  onDatosLaboralesChange: (
+    field: keyof EditableSolicitudCoreValues["datosLaborales"],
     value: string,
   ) => void;
   readonlyAppearanceStyle?: CSSProperties;
@@ -1812,6 +1821,16 @@ function TitularFields({
         onChange={(value) => onChange("cbuNoHabitual", value)}
         readOnlyValue={formatText(titular.cbuNoHabitual)}
         value={values.cbuNoHabitual}
+      />
+      {/* También en Económicos/Laborales: acá queda a mano aunque esa pestaña no muestre campos. */}
+      <EditableMoneyInput
+        {...getReadonlyProps("datosLaborales.montoRecibo")}
+        disabled={!isFieldEditableByKey("datosLaborales.montoRecibo")}
+        isEditing={isEditing}
+        label="Monto recibo"
+        onChange={(value) => onDatosLaboralesChange("montoRecibo", value)}
+        readOnlyValue={formatAmount(datosLaborales.montoRecibo)}
+        value={datosLaboralesValues.montoRecibo}
       />
     </div>
   );
@@ -2712,11 +2731,14 @@ function SolicitanteSection({
         <div>
           {activeContentTab === "datosPersonales" ? (
             <TitularFields
+              datosLaborales={datosLaborales}
+              datosLaboralesValues={titularDatosLaboralesValues}
               errors={titularErrors}
               isFieldEditableByKey={isFieldEditableByKey}
               isEditing={isEditing}
               onBooleanChange={onTitularBooleanChange}
               onChange={onTitularChange}
+              onDatosLaboralesChange={onDatosLaboralesChange}
               readonlyAppearanceStyle={readonlyAppearanceStyle}
               titular={titular}
               values={titularValues}
