@@ -13,9 +13,12 @@ import type {
   ListSolicitudesByOwnerInput,
   ListSolicitudesTrackingInput,
   SolicitudesStatsResult,
+  UpdateSolicitudCoreGuard,
   UpdateSolicitudCorePatch,
   VendedorDashboardStatsResult,
 } from "../../domain/repositories/SolicitudesCoreRepository";
+import { assertMontoDentroDelAprobadoPorRiesgo } from "../../domain/services/MontoAprobadoRiesgo";
+import { SolicitudCoreNotFoundError, SolicitudEditStateConflictError } from "../../domain/solicitudes-core-errors";
 import { SolicitudCoreMapper } from "../mappers/SolicitudCore.mapper";
 
 const solicitudInclude = {
@@ -860,8 +863,31 @@ export class SolicitudesCorePrismaDatasource {
     }));
   }
 
-  async update(id: string, patch: UpdateSolicitudCorePatch) {
+  async update(id: string, patch: UpdateSolicitudCorePatch, guard?: UpdateSolicitudCoreGuard) {
     return this.prisma.$transaction(async (tx) => {
+      if (guard) {
+        // Solo se bloquea durante el guardado, nunca durante la simulacion.
+        // Releer despues del lock incluye cambios que hayan terminado mientras
+        // esta transaccion esperaba a otro escritor de la misma solicitud.
+        await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
+        const current = await tx.solicitud.findUnique({
+          where: { id },
+          select: {
+            estadoActualId: true,
+            estadoActual: { select: { code: true } },
+            montoAprobadoRiesgo: true,
+          },
+        });
+        if (!current) throw new SolicitudCoreNotFoundError();
+        if (current.estadoActualId !== guard.expectedEstadoActualId)
+          throw new SolicitudEditStateConflictError();
+        if (guard.enforceMontoAprobadoRiesgo && patch.solicitud?.montoAFinanciar !== undefined) {
+          assertMontoDentroDelAprobadoPorRiesgo({
+            estadoActual: current.estadoActual,
+            montoAprobadoRiesgo: current.montoAprobadoRiesgo === null ? null : Number(current.montoAprobadoRiesgo),
+          }, patch.solicitud.montoAFinanciar);
+        }
+      }
       const data = {
         cuotaResultante: patch.solicitud?.cuotaResultante,
         cuotas: patch.solicitud?.cuotas,

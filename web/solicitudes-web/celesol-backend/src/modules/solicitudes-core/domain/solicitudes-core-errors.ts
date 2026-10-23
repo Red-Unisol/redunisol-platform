@@ -364,6 +364,13 @@ export class SolicitudFueraDeLimitesDeLineaError extends SolicitudesError {
   }
 }
 
+export class SolicitudEditStateConflictError extends SolicitudesError {
+  constructor() {
+    super("La solicitud cambió de estado mientras se guardaba. Actualizá el detalle y volvé a intentar.", 409);
+    this.name = "SolicitudEditStateConflictError";
+  }
+}
+
 export class MontoSuperaAprobadoRiesgoError extends SolicitudesError {
   constructor(message: string) {
     super(message, 422);
