@@ -185,3 +185,15 @@ it("a returned ID already linked to another request is preserved for investigati
     assert.equal(f.calls(), 1);
   } finally { await db.solicitud.delete({ where: { id: other.id } }); await f.clean(); }
 });
+
+it("a cancellation edited after opening the form invalidates the observed request version before any Core creation", { skip: !enabled }, async () => {
+  const f = await fixture();
+  try {
+    await new SolicitudCancelacionesPrismaDatasource(db).update({ cancelacionId: f.s.cancelaciones[0]!.id, monto: 20000 });
+    const current = await administrativeSource(db, f.s.id);
+    assert.notEqual(current.updatedAt.toISOString(), f.input.expectedUpdatedAt);
+    await assert.rejects(() => f.service.replace(f.s.id, f.actor, f.input), /cambió/);
+    assert.equal(f.calls(), 0);
+    assert.equal(await db.solicitudPrestamoReplacement.count({ where: { solicitudId: f.s.id } }), 0);
+  } finally { await f.clean(); }
+});
