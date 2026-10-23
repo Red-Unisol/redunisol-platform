@@ -152,6 +152,9 @@ y ATTRIBUTION_DB_CONNECTION=journey. Sólo producción activa JOURNEY_CRM_ENABLE
 Compose expone estas variables a todos los procesos PHP y exige que el bind ya exista.
 Los workflows verifican el mount y crean el schema SQLite con la imagen nueva antes
 de recrear los servicios. No formatean discos ni migran masivamente datos durante deploy.
+Los comandos adjuntos de Compose reciben stdin vacío para no consumir el script SSH.
+Después de recrear los servicios se verifica la imagen efectiva de PHP, nginx y cada worker,
+además del estado del volumen; un HTTP 200 de la revisión anterior no confirma el despliegue.
 
 Las referencias antiguas se importan de PostgreSQL por lectura puntual al primer uso,
 sin sobrescribir filas ya creadas/vinculadas en el volumen. Se preservan los viejos enlaces.
