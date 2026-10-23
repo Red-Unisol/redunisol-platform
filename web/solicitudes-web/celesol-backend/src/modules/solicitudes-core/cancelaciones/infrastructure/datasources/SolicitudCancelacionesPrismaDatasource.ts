@@ -33,7 +33,11 @@ export class SolicitudCancelacionesPrismaDatasource {
         const s = await tx.solicitud.findUnique({ where: { id }, select: { administrativeCoreControl: true } });
         if (s) assertNoLoanReplacementPending(s);
       }
-      return write(tx);
+      const result = await write(tx);
+      // A cancellation changes the loan input and must invalidate forms opened
+      // against the previous parent version, even before a replacement starts.
+      if (id) await tx.solicitud.update({ where: { id }, data: { updatedAt: new Date() } });
+      return result;
     });
   }
 
