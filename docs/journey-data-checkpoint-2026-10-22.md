@@ -1,6 +1,11 @@
 # Checkpoint: recorrido completo en volumen dedicado
 
-Estado: **WIP, pausado por pedido de Santiago el 22/10/2026. No mergear ni desplegar todavía.**
+Estado histórico al 22/10/2026: **WIP, pausado por pedido de Santiago**.
+
+Retomado el 23/10/2026. La revisión posterior corrigió renovación de sesión, lotes de salida,
+correlación de página/formulario, exclusión de rutas privadas y durabilidad del checkpoint.
+Los pendientes enumerados abajo documentan la pausa original; para el contrato final ver
+[datos del recorrido](journey-data.md). La activación productiva se verifica tras el deploy Git-managed.
 
 ## Retomar
 

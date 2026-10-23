@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\CaptureAttribution;
+use App\Http\Middleware\CaptureJourney;
 use App\Jobs\Middleware\JourneyJobMiddleware;
 use App\Jobs\SyncEdnaFormLink;
 use App\Services\AttributionJourney;
@@ -36,6 +38,10 @@ function journeyBrowserEvent(): array
 }
 
 test('browser batches preserve IDs and origin without accepting identity or arbitrary data', function () {
+    $queries = [];
+    DB::listen(function ($query) use (&$queries) {
+        $queries[] = $query->sql;
+    });
     $event = journeyBrowserEvent() + ['source' => 'bitrix', 'lead_id' => '999', 'email' => 'private'];
     $this->withCredentials()->withCookies(['ru_visitor' => $this->visitor, 'ru_session' => $this->session])
         ->withHeader('Origin', 'http://localhost')->postJson('/api/journey/events', ['events' => [$event, journeyBrowserEvent()]])
@@ -47,7 +53,8 @@ test('browser batches preserve IDs and origin without accepting identity or arbi
         ->and($events[0]['source'])->toBe('web.browser')
         ->and($events[0]['links']['visitor_id'])->toBe($this->visitor)
         ->and($events[0]['data']['url'])->toBe('https://localhost/jubilados?utm_source=meta')
-        ->and($events[0]['links'])->not->toHaveKey('lead_id');
+        ->and($events[0]['links'])->not->toHaveKey('lead_id')
+        ->and($queries)->toBe([]);
 });
 
 test('capture rejects cross-origin batches and reports a missing volume without fallback', function () {
@@ -56,6 +63,15 @@ test('capture rejects cross-origin batches and reports a missing volume without 
     unlink($this->volume.'/.redunisol-tracking-volume');
     $this->withHeader('Origin', 'http://localhost')->postJson('/api/journey/events', ['events' => [journeyBrowserEvent()]])->assertStatus(503);
     expect(glob($this->volume.'/testing/events-*.jsonl'))->toBe([]);
+});
+
+test('activity in a long-lived tab starts a new session without losing the visitor', function () {
+    $this->withCredentials()->withCookies(['ru_visitor' => $this->visitor])
+        ->withHeader('Origin', 'http://localhost')->postJson('/api/journey/events', ['events' => [journeyBrowserEvent()]])
+        ->assertAccepted()->assertCookie('ru_session');
+    $event = json_decode(file(glob($this->volume.'/testing/events-*.jsonl')[0])[0], true);
+    expect($event['links']['visitor_id'])->toBe($this->visitor)
+        ->and(Str::isUuid($event['links']['session_id']))->toBeTrue();
 });
 
 test('exports require a token and byte cursors must be record boundaries', function () {
@@ -86,6 +102,11 @@ test('attribution moves to the volume and old references import without overwrit
         ->and($service->find($legacy->id)->subject_id)->toBe('77');
     $this->artisan('journey:storage import-attribution')->assertSuccessful();
     expect($service->find($legacy->id)->subject_id)->toBe('77');
+    $export = $this->withToken('test-export-token')->get('/api/journey/export?entity=attribution')->assertOk();
+    $entities = array_map(fn ($line) => json_decode($line, true), explode("\n", trim($export->getContent())));
+    expect($entities)->toHaveCount(2)->and($entities[0]['type'])->toBe('attribution.snapshot');
+    $last = $export->headers->get('X-Next-Id');
+    $this->get('/api/journey/export?entity=attribution&after='.$last)->assertOk()->assertContent('');
 });
 
 test('CRM exports stage transitions with replay-safe IDs and advances durable cursors', function () {
@@ -107,6 +128,8 @@ test('CRM exports stage transitions with replay-safe IDs and advances durable cu
     expect($state)->toHaveKeys(['lead.snapshot', 'lead.stage', 'deal.snapshot', 'deal.stage', 'catalog_date']);
     $events = array_map(fn ($line) => json_decode($line, true), file(glob($this->volume.'/testing/events-*.jsonl')[0], FILE_IGNORE_NEW_LINES));
     expect($events[1]['type'])->toBe('crm.stage')->and($events[1]['links']['lead_id'])->toBe('10');
+    $this->withToken('test-export-token')->getJson('/api/journey/export')->assertOk()
+        ->assertJsonPath('collection.crm_cursors', $state);
 });
 
 test('lost volume does not block form attribution resolution or write to the business database', function () {
@@ -144,4 +167,45 @@ test('WhatsApp middleware captures CRM linkage and preserves the job outcome', f
     expect($result)->toBe('business_result')->and($events[0]['links']['contact_id'])->toBe('10')
         ->and($events[0]['links']['phone_hash'])->toBe((new AttributionJourney)->phoneHash('3511234567'))
         ->and($events[0]['data']['record'])->not->toHaveKey('recipient');
+});
+
+test('server navigation supplies the page ID used to correlate browser and form events', function () {
+    $request = Request::create('https://redunisol.com.ar/jubilados?utm_source=meta');
+    (new CaptureJourney)->handle($request, fn () => response('<html></html>', 200, ['Content-Type' => 'text/html']));
+    app(JourneyLedger::class)->flush();
+    $context = $request->attributes->get('journey_context');
+    $event = json_decode(file(glob($this->volume.'/testing/events-*.jsonl')[0])[0], true);
+    expect(Str::isUuid($context['page_id']))->toBeTrue()
+        ->and($event['links']['page_id'])->toBe($context['page_id']);
+});
+
+test('authentication paths and reset tokens are excluded from capture and attribution', function () {
+    config()->set('attribution.enabled', true);
+    $request = Request::create('https://redunisol.com.ar/reset-password/private-token');
+    $capture = new CaptureJourney;
+    $attribution = new CaptureAttribution;
+    $capture->handle($request, fn ($request) => $attribution->handle($request, fn () => response('<html></html>', 200, ['Content-Type' => 'text/html'])));
+    app(JourneyLedger::class)->flush();
+    expect(glob($this->volume.'/testing/events-*.jsonl'))->toBe([])
+        ->and(DB::table('attribution_journeys')->count())->toBe(0)
+        ->and(JourneyLedger::url($request->fullUrl()))->toBe('');
+});
+
+test('manifest reports an unreadable CRM checkpoint without blocking journal exports', function () {
+    file_put_contents($this->volume.'/testing/crm-cursors.json', '{broken');
+    $this->withToken('test-export-token')->getJson('/api/journey/export')->assertOk()
+        ->assertJsonPath('collection.crm_cursor_status', 'unreadable')
+        ->assertJsonPath('collection.crm_cursors', null);
+});
+
+test('CRM does not advance its checkpoint when volume reserve prevents an append', function () {
+    config()->set(['journey.crm_enabled' => true, 'journey.min_free_bytes' => PHP_INT_MAX]);
+    $api = Mockery::mock(EdnaBitrix::class);
+    $api->shouldReceive('call')->with('crm.lead.list', Mockery::type('array'))->once()->andReturn([
+        ['ID' => '10', 'DATE_MODIFY' => now()->subMinute()->toIso8601String()],
+    ]);
+    app()->instance(EdnaBitrix::class, $api);
+    $this->artisan('journey:crm')->assertFailed();
+    expect(is_file($this->volume.'/testing/crm-cursors.json'))->toBeFalse()
+        ->and(glob($this->volume.'/testing/events-*.jsonl'))->toBe([]);
 });

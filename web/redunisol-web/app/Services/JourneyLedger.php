@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -12,6 +13,9 @@ class JourneyLedger
     private array $pending = [];
 
     public const COOKIES = ['ru_visitor', 'ru_session'];
+
+    public const PRIVATE_PATHS = ['admin*', 'api/*', 'dashboard*', 'settings*', 'login', 'register', 'logout',
+        'forgot-password', 'reset-password*', 'confirm-password', 'two-factor-challenge', 'user/*', 'email/*', 'sanctum/*', 'health', 'up'];
 
     public function directory(): string
     {
@@ -57,8 +61,8 @@ class JourneyLedger
             'schema_version' => 1, 'event_id' => $id ?? (string) Str::uuid(),
             'type' => $type, 'source' => $source,
             'environment' => config('journey.environment'),
-            'occurred_at' => $at ?? now()->toIso8601String(),
-            'received_at' => now()->toIso8601String(),
+            'occurred_at' => $at === null ? now()->toISOString() : CarbonImmutable::parse($at)->toISOString(),
+            'received_at' => now()->toISOString(),
             'links' => (object) $links, 'data' => (object) $data,
         ];
     }
@@ -179,6 +183,9 @@ class JourneyLedger
         }
         $parts = parse_url($url);
         if (! is_array($parts) || ! in_array($parts['scheme'] ?? '', ['https', 'http'], true) || empty($parts['host'])) {
+            return '';
+        }
+        if (Str::is(self::PRIVATE_PATHS, ltrim($parts['path'] ?? '', '/'))) {
             return '';
         }
         parse_str($parts['query'] ?? '', $query);

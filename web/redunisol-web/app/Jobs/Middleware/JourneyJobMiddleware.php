@@ -46,8 +46,10 @@ class JourneyJobMiddleware
                     $links['phone_hash'] = (new AttributionJourney)->phoneHash((string) ($payload['subscriber']['identifier'] ?? ''));
                     $data['message'] = $payload;
                 }
-                if (! empty($data['answer'])) {
-                    $data['answer'] = Crypt::decryptString($data['answer']);
+                foreach (['answer', 'link_text'] as $field) {
+                    if (! empty($data[$field])) {
+                        $data[$field] = Crypt::decryptString($data[$field]);
+                    }
                 }
                 foreach (['content', 'decision'] as $field) {
                     if (! empty($data[$field]) && is_string($data[$field])) {
@@ -58,7 +60,7 @@ class JourneyJobMiddleware
                 $send = ! empty($data['flow_send_id']) ? DB::table('edna_flow_sends')->find($data['flow_send_id']) : $row;
                 foreach (['journey_id', 'request_id', 'flow_send_id', 'outgoing_message_id', 'crm_id', 'crm_entity', 'lead_id', 'contact_id'] as $key) {
                     if (! empty($data[$key])) {
-                        $links[$key] = $data[$key];
+                        $links[$key] = (string) $data[$key];
                     }
                 }
                 if (! empty($data['crm_id']) && in_array($data['crm_entity'] ?? '', ['lead', 'contact', 'deal'], true)) {

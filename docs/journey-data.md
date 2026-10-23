@@ -15,7 +15,7 @@ nginx no recibe los datos. Los archivos quedan fuera del directorio público.
 
 [JSON Schema v1](../web/redunisol-web/docs/journey-data.schema.json).
 Cada registro tiene `schema_version`, `event_id`, `type`, `source`, `environment`,
-`occurred_at`, `received_at`, `links` y `data`. No se debe ordenar por nombre de archivo
+`occurred_at`, `received_at`, `links` y `data`. Los timestamps del envelope se normalizan a UTC conservando fracciones de segundo; el valor fuente permanece en el registro crudo. No se debe ordenar por nombre de archivo
 para inferir el momento del evento: un reintento o una extracción histórica llega después.
 
 ## Eventos y alcance
@@ -27,9 +27,10 @@ para inferir el momento del evento: un reintento o una extracción histórica ll
 | `link.click` | Destino de enlaces públicos, incluidos los de WhatsApp |
 | `form.step`, `form.validation`, `form.submit`, `form.result` | Pasos, intentos y resultado HTTP del formulario; sin valores de inputs desde el navegador |
 | `attribution.created`, `analytics.identity` | Snapshot de adquisición y asociación con IDs GA disponibles |
+| `attribution.snapshot` | Estado actual de una referencia, incluida la adquisición heredada; disponible en el inventario de exportación |
 | `identity.whatsapp_bound`, `whatsapp.handoff` | Referencia independiente del handoff y asociación verificada con teléfono/subject |
 | `form.received`, `form.prequalified` | Datos validados del formulario y decisión de precalificación |
-| `form.persistence_result`, `form.persistence_failed` | Respuesta de Kestra con IDs de ejecución/contacto/lead o fallo de persistencia |
+| `form.persistence_result`, `form.persistence_failed`, `form.queue_failed` | Respuesta de Kestra con IDs de ejecución/contacto/lead o fallo de persistencia |
 | `whatsapp.kestra_processed` | Acuse de procesamiento Kestra y tipo de mensaje/Flow |
 | `whatsapp.job` | Estado de inbox, envío, reconciliación, asistencia, landing y sincronización CRM después de cada intento de job |
 | `crm.snapshot` | Ficha cruda modificada de lead, contacto o deal, incluidos campos personalizados |
@@ -45,10 +46,12 @@ Los acuses existentes enlazan ejecución, resultado comercial y evento de WhatsA
 La evolución comercial posterior se recupera desde Bitrix, fuente primaria de esas etapas.
 
 `links.visitor_id` identifica un navegador por cookie cifrada HttpOnly durante 30 días;
-`session_id` dura 30 minutos entre navegaciones. No prueban identidad personal.
+`session_id` se renueva con la actividad recibida (navegación o lote) y dura 30 minutos. Una pestaña abierta puede iniciar otra sesión sin perder el visitante. No prueban identidad personal.
 `journey_id` sigue siendo una referencia de atribución/WhatsApp, con múltiples referencias
 posibles para un visitante. El handoff conserva `parent_journey_id`; el formulario agrega
 un `submission_id` generado por el servidor y los IDs devueltos por Kestra.
+`page_id` enlaza el render del servidor, sus eventos de navegador y el formulario.
+En vistas sin ID compartido se usa un UUID del navegador; el ID no prueba identidad personal.
 `phone_hash` usa la normalización argentina y HMAC con APP_KEY ya vigentes.
 Cambiar APP_KEY requiere contemplar la continuidad de cookies, cifrado y hashes existentes.
 
@@ -56,7 +59,9 @@ Se conservan URL de landing, todos los parámetros `utm_*`, click IDs conocidos
 (Google, Meta, Microsoft, TikTok, LinkedIn, Snapchat, X, Yandex, Impact y Pinterest),
 `_gl`, `gad_*` seleccionados y `ref`. Se excluyen fragmentos, credenciales de URL,
 parámetros personales/operativos desconocidos y URLs firmadas de recibos.
-No se registran contraseñas, webhooks, tokens de acceso ni el contenido de archivos subidos.
+Se excluyen las rutas de autenticación y recuperación de contraseña. El colector no agrega
+credenciales de configuración, URLs de webhook ni el contenido de archivos subidos.
+Los registros y mensajes fuente son crudos y pueden contener información reservada.
 El dataset protegido sí contiene datos personales de formularios/CRM y mensajes recibidos.
 
 El navegador es una fuente no confiable: no puede elegir persona, fuente del evento,
@@ -66,8 +71,10 @@ de campaña durante un lote. `page.request` es la evidencia del servidor para ca
 
 ## Escrituras y lecturas
 
-- Navegador: lotes cada 10 segundos o hasta 20 eventos, ajustados a 12.000 caracteres.
-  Un solo envío activo, keepalive, reintentos con los mismos IDs y backoff de hasta 60 s.
+- Navegador: lotes cada 10 segundos o hasta 20 eventos, ajustados a 12.000 bytes UTF-8.
+  Un solo envío periódico activo; al salir se permiten hasta tres lotes en vuelo acotados,
+  con keepalive. Se confirma por ID, incluso si llegan fuera de orden; reintentos con
+  los mismos IDs y backoff de hasta 60 s.
   Cola en memoria limitada a 200 eventos. No hay scroll, mousemove ni escritura por tecla.
 - Servidor: buffer durante la solicitud y un append al terminar; cada job WhatsApp agrupa
   sus eventos al terminar el intento. No se agregan jobs ni sesiones SQL para la captura.
@@ -84,9 +91,10 @@ de campaña durante un lote. `page.request` es la evidencia del servidor para ca
   de ventanas temporales fijas, con solapamiento de cinco minutos entre ventanas.
   Los catálogos se consultan una vez al día. Si queda backlog se retoma en la próxima tanda.
   Un request ya iniciado puede terminar después del presupuesto (timeout API de 5 s).
-- CRM confirma el diario con fsync **por página/lote**, antes de guardar su cursor;
+- CRM confirma el diario con fsync **por página/lote**, antes de escribir y hacer fsync del checkpoint temporal, que luego se renombra atómicamente;
   un fallo puede repetir registros y nunca autoriza avanzar un cursor por una página fallida.
-  El consumidor elimina duplicados por `(environment,event_id)`.
+  El consumidor elimina duplicados por `(environment,event_id)`. Cada registro se limita a
+  1 MiB; si uno excede ese límite no se adelanta el cursor de su página.
 - Exportación: lee hasta 4 MiB del volumen por pedido. No vuelve a consultar sistemas fuente
   ni genera ZIP/Excel/informes ni una copia completa en el disco principal.
 
@@ -103,6 +111,11 @@ el I/O wait global debe compararse con las métricas propias de cada dispositivo
 
 `GET /api/journey/export`, con `Authorization: Bearer <token>`, devuelve manifest:
 archivos disponibles, tamaños, esquema, identidad y reserva de espacio.
+El bloque `collection` muestra flags, fecha inicial y cursores por stream.
+`crm_cursor_status` distingue inicio pendiente, disponible y checkpoint ilegible; un
+checkpoint ilegible no impide descargar los eventos ya capturados. Para `crm.stage`,
+usar también el ID de historial de la fuente al ordenar transiciones con la misma hora.
+
 Los accesos reales están en `credentials.txt` (`JOURNEY_EXPORT_URL_*`, `JOURNEY_EXPORT_TOKEN_*`).
 Nunca poner el token en query strings, notebooks compartidos o prompts de IA.
 
@@ -114,6 +127,14 @@ Nunca poner el token en query strings, notebooks compartidos o prompts de IA.
 
 No hay acceso público, CORS de exportación, sesión de usuario final ni token frontend.
 Rotar el token no modifica los eventos. `?schema=1` devuelve JSON Schema.
+
+`?entity=attribution&after=reference_id` permite recorrer el inventario actual de referencias
+en páginas de 200 filas, leyendo sólo SQLite del volumen. Empezar sin `after`, seguir
+`X-Next-Id` y terminar cuando `X-Count=0`. Incluye los snapshots heredados que ya se
+importaron, con fechas de creación, actualización, vínculo y vencimiento. Es una lectura
+del estado actual, no un cursor incremental: las referencias nuevas pueden ordenarse antes
+del cursor. Usarlo para la carga inicial o recuperación de orígenes; consumir los archivos
+de eventos para la historia incremental posterior.
 
 ## Preparación y activación
 

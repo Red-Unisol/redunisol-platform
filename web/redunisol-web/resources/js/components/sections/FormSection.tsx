@@ -8,7 +8,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { type SectionCta } from '@/components/section-cta';
-import { trackJourney } from '@/utils/journey';
+import { getJourneyPageId, trackJourney } from '@/utils/journey';
 import { trackEvent, trackMetaLead } from '@/utils/tracking';
 
 import WhatsAppButton from '../WhatsAppButton';
@@ -1134,6 +1134,8 @@ export default function FormSection({
         };
 
         const ref = params.get('ref');
+        const journeyPageId = getJourneyPageId();
+        if (journeyPageId) payload.journey_page_id = journeyPageId;
         if (ref) payload.ref = ref;
 
         if (formData.email) payload.email = formData.email;
@@ -1303,11 +1305,11 @@ export default function FormSection({
     };
 
     const goNext = () => {
-        trackJourney('form.validation', { step });
         setFormErrors({});
         const hasErrors = currentStepFields[step].some(
             (field) => clientErrors[field],
         );
+        trackJourney('form.validation', { step, result: hasErrors ? 'blocked' : 'passed' });
 
         if (hasErrors) {
             setAttemptedSteps((previous) => new Set(previous).add(step));

@@ -26,8 +26,16 @@ class FormSubmissionController extends Controller
             'phone_hash' => (new AttributionJourney)->phoneHash((string) ($input['celular'] ?? '')),
         ];
         $input['_journey_links']['journey_id'] = $input['attribution']['journey_id'] ?? null;
+        if (! empty($input['journey_page_id'])) {
+            $input['_journey_links']['page_id'] = $input['journey_page_id'];
+        }
+        unset($input['journey_page_id']);
+        $trackingInput = array_diff_key($input, array_flip(['_journey_links', 'recibo_url']));
+        if (isset($trackingInput['landing_url'])) {
+            $trackingInput['landing_url'] = JourneyLedger::url($trackingInput['landing_url']);
+        }
         app(JourneyLedger::class)->record('form.received', [
-            'input' => array_diff_key($input, array_flip(['_journey_links', 'recibo_url'])),
+            'input' => $trackingInput,
             'receipt_present' => ! empty($input['recibo_url']),
         ], $input['_journey_links']);
         $prequalificationResponse = null;
@@ -76,6 +84,7 @@ class FormSubmissionController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
+            app(JourneyLedger::class)->record('form.queue_failed', [], $input['_journey_links']);
             return $this->loadFailure(503);
         }
 

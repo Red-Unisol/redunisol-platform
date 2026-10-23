@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AttributionJourney;
 use App\Services\JourneyLedger;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class JourneyExportController
 {
@@ -20,10 +22,42 @@ class JourneyExportController
         } catch (\Throwable) {
             abort(503);
         }
+        if ($request->has('entity')) {
+            $input = $request->validate(['entity' => 'required|in:attribution',
+                'after' => ['nullable', 'string', 'regex:/^'.AttributionJourney::REFERENCE_PATTERN.'$/D']]);
+            // Current reference inventory, including pre-cutover acquisition. Only the volume is read.
+            $rows = DB::connection('journey')->table('attribution_journeys')
+                ->where('id', '>', $input['after'] ?? '')->orderBy('id')->limit(200)->get();
+            $body = '';
+            foreach ($rows as $row) {
+                $event = $ledger->event('attribution.snapshot', [
+                    'snapshot' => (new AttributionJourney)->snapshot($row),
+                    'created_at' => $row->created_at, 'updated_at' => $row->updated_at,
+                    'bound_at' => $row->bound_at, 'expires_at' => $row->expires_at,
+                ], array_filter(['journey_id' => $row->id, 'phone_hash' => $row->recipient_hash, 'subject_id' => $row->subject_id]),
+                    'web.server', hash('sha256', 'attribution.snapshot:'.json_encode($row, JSON_THROW_ON_ERROR)), $row->updated_at);
+                $body .= json_encode($event, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+            }
+
+            return response($body, 200, ['Content-Type' => 'application/x-ndjson; charset=UTF-8',
+                'Cache-Control' => 'private, no-store', 'X-Next-Id' => $rows->last()?->id ?? ($input['after'] ?? ''),
+                'X-Count' => (string) $rows->count()]);
+        }
         if (! $request->has('date')) {
             $files = [];
             foreach (glob($directory.'/events-????-??-??.jsonl') ?: [] as $file) {
                 $files[] = ['date' => substr(basename($file), 7, 10), 'bytes' => filesize($file)];
+            }
+            $stateFile = $directory.'/crm-cursors.json';
+            $collection = null;
+            $cursorStatus = 'not_started';
+            if (is_file($stateFile)) {
+                try {
+                    $collection = json_decode(file_get_contents($stateFile), true, 32, JSON_THROW_ON_ERROR);
+                    $cursorStatus = is_array($collection) ? 'available' : 'unreadable';
+                } catch (\Throwable) {
+                    $cursorStatus = 'unreadable';
+                }
             }
 
             return response()->json([
@@ -31,6 +65,10 @@ class JourneyExportController
                 'environment' => config('journey.environment'), 'generated_at' => now()->toIso8601String(),
                 'files' => $files, 'free_bytes' => disk_free_space($directory),
                 'reserve_bytes' => config('journey.min_free_bytes'),
+                'entities' => ['attribution' => 'GET ?entity=attribution&after=reference_id; 200 current states/page; follow X-Next-Id until X-Count=0. Use event files for incremental history.'],
+                'collection' => ['web_enabled' => (bool) config('journey.enabled'),
+                    'crm_enabled' => (bool) config('journey.crm_enabled'),
+                    'crm_since' => config('journey.crm_since'), 'crm_cursor_status' => $cursorStatus, 'crm_cursors' => $collection],
                 'deduplicate_by' => 'event_id', 'order_by' => ['occurred_at', 'received_at', 'event_id'],
                 'envelope' => ['schema_version', 'event_id', 'type', 'source', 'environment', 'occurred_at', 'received_at', 'links', 'data'],
                 'identity' => ['visitor_id' => 'browser, 30 days', 'session_id' => 'browser, 30 minutes inactivity',

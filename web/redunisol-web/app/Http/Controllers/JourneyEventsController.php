@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\JourneyLedger;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class JourneyEventsController
 {
@@ -29,7 +30,10 @@ class JourneyEventsController
             'events.*.dropped_count' => 'nullable|integer|min:0|max:1000000000',
         ]);
         $context = $ledger->context($request);
-        abort_unless(isset($context['visitor_id'], $context['session_id']), 422);
+        abort_unless(isset($context['visitor_id']), 422);
+        // A tab can stay open past cookie expiry. Start a new session on activity,
+        // while keeping the visitor observed in the encrypted first-party cookie.
+        $context['session_id'] ??= (string) Str::uuid();
         $events = [];
         foreach ($input['events'] as $event) {
             // Client events are evidence from a browser, never CRM identity or server success.
@@ -47,6 +51,7 @@ class JourneyEventsController
             return response()->json(['error' => 'storage_unavailable'], 503);
         }
 
-        return response()->json(['accepted' => count($events)], 202)->header('Cache-Control', 'no-store');
+        return response()->json(['accepted' => count($events)], 202)->header('Cache-Control', 'no-store')
+            ->cookie('ru_session', $context['session_id'], 30, '/', null, $request->isSecure(), true, false, 'lax');
     }
 }

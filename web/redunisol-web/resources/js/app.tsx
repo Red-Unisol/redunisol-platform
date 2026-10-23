@@ -22,8 +22,10 @@ createInertiaApp({
         ),
     setup({ el, App, props }) {
         if (props.initialPage.props.journeyEnabled) {
-            initializeJourney();
-            router.on('navigate', () => window.dispatchEvent(new Event('journey:navigate')));
+            initializeJourney(props.initialPage.props.journeyPageId);
+            router.on('navigate', event => window.dispatchEvent(new CustomEvent('journey:navigate', {
+                detail: event.detail.page.props.journeyPageId,
+            })));
         }
         if (props.initialPage.props.attributionEnabled) {
             initializeWhatsAppAttribution();

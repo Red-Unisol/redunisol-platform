@@ -16,12 +16,15 @@ let enabled = false;
 let pageId = '';
 let entered = 0;
 const queue: JourneyEvent[] = [];
-let sending = false;
+let activeBatches = 0;
+const inFlight = new Set<string>();
 let retryAt = 0;
 let failures = 0;
 let dropped = 0;
 let previousUrl = '';
 const endpoint = '/api/journey/events';
+const privatePath =
+    /^\/(admin|api|dashboard|settings|login|register|logout|forgot-password|reset-password|confirm-password|two-factor-challenge|user|email|sanctum|health|up)(\/|$)/;
 const keys = [
     'gclid',
     'gbraid',
@@ -47,7 +50,11 @@ export function journeyUrl(value: string): string {
     if (!value) return '';
     try {
         const url = new URL(value, location.href);
-        if (!['http:', 'https:'].includes(url.protocol)) return '';
+        if (
+            !['http:', 'https:'].includes(url.protocol) ||
+            privatePath.test(url.pathname)
+        )
+            return '';
         const query = new URLSearchParams();
         url.searchParams.forEach((value, key) => {
             if (
@@ -70,7 +77,7 @@ export function trackJourney(
     type: string,
     data: Partial<JourneyEvent> = {},
 ): void {
-    if (!enabled) return;
+    if (!enabled || privatePath.test(location.pathname)) return;
     // Bound memory during an outage. Keep original IDs and times for retries.
     if (queue.length >= 200) {
         dropped++;
@@ -88,13 +95,26 @@ export function trackJourney(
 }
 
 export async function flushJourney(leaving = false): Promise<void> {
-    if (!queue.length || sending || (!leaving && Date.now() < retryAt)) return;
-    const batch = queue.slice(0, 20);
+    if (
+        (!leaving && activeBatches > 0) ||
+        activeBatches >= 3 ||
+        (!leaving && Date.now() < retryAt)
+    )
+        return;
+    const batch = queue
+        .filter((event) => !inFlight.has(event.event_id))
+        .slice(0, 20);
+    if (!batch.length) return;
     // Stay below the 48 KiB server and keepalive budgets even with long URLs.
-    while (JSON.stringify({ events: batch }).length > 12000 && batch.length > 1)
+    while (
+        new TextEncoder().encode(JSON.stringify({ events: batch })).length >
+            12000 &&
+        batch.length > 1
+    )
         batch.pop();
     const body = JSON.stringify({ events: batch });
-    sending = true;
+    activeBatches++;
+    batch.forEach((event) => inFlight.add(event.event_id));
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -108,8 +128,13 @@ export async function flushJourney(leaving = false): Promise<void> {
             (await response.json()).accepted !== batch.length
         )
             throw new Error('unavailable');
-        queue.splice(0, batch.length);
+        const acknowledged = new Set(batch.map((event) => event.event_id));
+        // Exit batches can finish out of order. Remove only acknowledged IDs.
+        for (let index = queue.length - 1; index >= 0; index--) {
+            if (acknowledged.has(queue[index].event_id)) queue.splice(index, 1);
+        }
         failures = 0;
+        retryAt = 0;
         if (dropped) {
             const count = dropped;
             dropped = 0;
@@ -123,29 +148,35 @@ export async function flushJourney(leaving = false): Promise<void> {
         retryAt =
             Date.now() + Math.min(60000, 2000 * 2 ** Math.min(failures, 5));
     } finally {
-        sending = false;
+        batch.forEach((event) => inFlight.delete(event.event_id));
+        activeBatches--;
     }
 }
 
-export function initializeJourney(): void {
+export function getJourneyPageId(): string | undefined {
+    return enabled && pageId ? pageId : undefined;
+}
+
+export function initializeJourney(initialPageId?: unknown): void {
     if (enabled || !crypto.randomUUID) return;
     enabled = true;
-    const navigate = () => {
-        if (
-            /^\/(admin|dashboard|settings|login|register)(\/|$)/.test(
-                location.pathname,
-            )
-        )
-            return;
+    const navigate = (serverPageId?: unknown) => {
+        if (privatePath.test(location.pathname)) return;
         if (previousUrl === location.href) return;
         const referrer = previousUrl || document.referrer;
         previousUrl = location.href;
-        pageId = crypto.randomUUID();
+        pageId =
+            typeof serverPageId === 'string' &&
+            /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(serverPageId)
+                ? serverPageId
+                : crypto.randomUUID();
         entered = Date.now();
         trackJourney('page.view', { referrer: journeyUrl(referrer) });
     };
-    navigate();
-    window.addEventListener('journey:navigate', navigate);
+    navigate(initialPageId);
+    window.addEventListener('journey:navigate', (event) =>
+        navigate((event as CustomEvent).detail),
+    );
     document.addEventListener(
         'click',
         (event) => {

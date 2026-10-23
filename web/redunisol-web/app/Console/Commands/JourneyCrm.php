@@ -86,11 +86,16 @@ class JourneyCrm extends Command
             if (($state['catalog_date'] ?? null) !== gmdate('Y-m-d') && microtime(true) < $deadline) {
                 $events = [];
                 foreach (['crm.lead.fields', 'crm.contact.fields', 'crm.deal.fields', 'crm.status.list'] as $method) {
+                    if (microtime(true) >= $deadline) {
+                        break;
+                    }
                     $events[] = $ledger->event('crm.catalog', ['method' => $method, 'record' => $api->call($method)], [], 'bitrix',
                         hash('sha256', $method.':'.gmdate('Y-m-d')));
                 }
                 $ledger->append($events, durable: true);
-                $state['catalog_date'] = gmdate('Y-m-d');
+                if (count($events) === 4) {
+                    $state['catalog_date'] = gmdate('Y-m-d');
+                }
                 $this->save($stateFile, $state);
             }
             $this->line(json_encode(['ok' => true, 'cursors' => $state]));
@@ -111,7 +116,18 @@ class JourneyCrm extends Command
     {
         $temporary = $path.'.tmp';
         $payload = json_encode($state, JSON_THROW_ON_ERROR);
-        if (file_put_contents($temporary, $payload) !== strlen($payload) || ! rename($temporary, $path)) {
+        $handle = fopen($temporary, 'wb');
+        if (! $handle) {
+            throw new \RuntimeException('CRM tracking checkpoint unavailable.');
+        }
+        try {
+            if (fwrite($handle, $payload) !== strlen($payload) || ! fflush($handle) || ! fsync($handle)) {
+                throw new \RuntimeException('CRM tracking checkpoint flush failed.');
+            }
+        } finally {
+            fclose($handle);
+        }
+        if (! rename($temporary, $path)) {
             throw new \RuntimeException('CRM tracking checkpoint unavailable.');
         }
     }

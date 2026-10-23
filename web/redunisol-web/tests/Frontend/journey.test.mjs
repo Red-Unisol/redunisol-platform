@@ -23,7 +23,9 @@ function fixture() {
         listeners = new Map(),
         timers = [];
     let clock = Date.now(),
-        unavailable = false;
+        unavailable = false,
+        paused = false;
+    const pending = [];
     const location = {
         href: 'https://redunisol.com.ar/jubilados?utm_id=123&msclkid=abc&email=secret',
         pathname: '/jubilados',
@@ -36,6 +38,7 @@ function fixture() {
         crypto: { randomUUID },
         URL,
         URLSearchParams,
+        TextEncoder,
         location,
         Date: class extends Date {
             static now() {
@@ -51,10 +54,15 @@ function fixture() {
         fetch: async (url, options) => {
             const payload = JSON.parse(options.body);
             requests.push({ url, ...options, payload });
-            return {
+            const response = {
                 status: unavailable ? 503 : 202,
                 json: async () => ({ accepted: payload.events.length }),
             };
+            if (paused)
+                return new Promise((resolve) =>
+                    pending.push(() => resolve(response)),
+                );
+            return response;
         },
     });
     vm.runInContext(code, context);
@@ -64,6 +72,10 @@ function fixture() {
         listeners,
         timers,
         location,
+        pause: () => {
+            paused = true;
+        },
+        respond: (index) => pending[index](),
         fail: (value) => {
             unavailable = value;
         },
@@ -106,16 +118,50 @@ test('keeps event IDs on retry and respects backoff during a storage outage', as
 
 test('deduplicates initial Inertia navigation and keeps each subsequent page origin', async () => {
     const f = fixture();
-    f.initializeJourney();
-    f.listeners.get('journey:navigate')();
+    const firstPage = randomUUID(),
+        secondPage = randomUUID();
+    f.initializeJourney(firstPage);
+    assert.equal(f.getJourneyPageId(), firstPage);
+    f.listeners.get('journey:navigate')({ detail: firstPage });
     f.location.href = 'https://redunisol.com.ar/policias';
     f.location.pathname = '/policias';
-    f.listeners.get('journey:navigate')();
+    f.listeners.get('journey:navigate')({ detail: secondPage });
     await f.flushJourney();
     assert.equal(f.requests[0].payload.events.length, 2);
+    assert.equal(f.requests[0].payload.events[1].page_id, secondPage);
     assert.equal(
         f.requests[0].payload.events[1].referrer,
         'https://redunisol.com.ar/jubilados?utm_id=123&msclkid=abc',
     );
     assert.equal(f.journeyUrl('javascript:alert(1)'), '');
+});
+
+test('flushes pending exit events while another batch is in flight and acknowledges by ID', async () => {
+    const f = fixture();
+    f.initializeJourney();
+    f.pause();
+    const first = f.flushJourney();
+    f.trackJourney('form.submit', { step: 4 });
+    const second = f.flushJourney(true);
+    assert.equal(f.requests.length, 2);
+    assert.equal(f.requests[0].payload.events[0].type, 'page.view');
+    assert.equal(f.requests[1].payload.events[0].type, 'form.submit');
+    // The exit request can be acknowledged before the periodic request.
+    f.respond(1);
+    await second;
+    f.respond(0);
+    await first;
+    await f.flushJourney();
+    assert.equal(f.requests.length, 2);
+});
+
+test('never records authentication routes or password reset tokens', async () => {
+    const f = fixture();
+    f.location.href = 'https://redunisol.com.ar/reset-password/private-token';
+    f.location.pathname = '/reset-password/private-token';
+    f.initializeJourney();
+    f.trackJourney('page.leave');
+    await f.flushJourney();
+    assert.equal(f.requests.length, 0);
+    assert.equal(f.journeyUrl(f.location.href), '');
 });

@@ -85,6 +85,7 @@ class FormSubmissionRequest extends FormRequest
             'recibo_url' => ['nullable', 'url', 'max:4096'],
             'ref' => ['nullable', 'string', 'max:128'],
             'meta_event_id' => ['nullable', 'string', 'max:128'],
+            'journey_page_id' => ['nullable', 'uuid'],
             'utm_source' => ['nullable', 'string', 'max:120'],
             'utm_medium' => ['nullable', 'string', 'max:120'],
             'utm_campaign' => ['nullable', 'string', 'max:150'],
