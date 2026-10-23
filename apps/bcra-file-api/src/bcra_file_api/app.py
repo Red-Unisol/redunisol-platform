@@ -16,6 +16,9 @@ import uvicorn
 from .config import Config
 from .refresh import RefreshManager
 from .store import lookup
+from .bundle import active_bundle, inside
+from .compat import compatible_response, INVALID_ID
+from .source import SourceError
 
 
 def normalize_identification(body: object) -> str:
@@ -55,22 +58,40 @@ async def read_json(request: Request) -> object:
 
 
 def lookup_response(manager: RefreshManager, identification: str) -> JSONResponse:
-    state = manager.status()
-    if not state["ready"]:
-        return response(503, {
-            "status": 503, "errorMessages": ["No validated and recently checked BCRA dataset"],
-            "meta": {"check_stale": state["check_stale"], "dataset": state["dataset"]},
-        })
-    # Metadata and debts are read together from one immutable snapshot.
-    result = lookup(manager.database, identification)
-    result["meta"]["last_successful_check_at"] = (
-        state["last_successful_check_at"]
-        if result["meta"]["version"] == state["dataset"]["version"]
-        else result["meta"]["checked_at"]
-    )
-    if result["status"] == 404:
-        result["errorMessages"] = ["Identification absent from the loaded monthly publication"]
-    return response(result["status"], result)
+    with manager.snapshot_lock:
+        state = manager.status()
+        if not state["ready"]:
+            return response(503, {
+                "status": 503, "errorMessages": ["No validated and recently checked BCRA dataset"],
+                "meta": {"check_stale": state["check_stale"], "dataset": state["dataset"]},
+            })
+        bundle = active_bundle(manager.config.data_dir)
+        database = inside(manager.config.data_dir, bundle['components']['current']['path']) if bundle else manager.database
+        result = lookup(database, identification)
+        result["meta"]["last_successful_check_at"] = state['last_successful_check_at']
+        if result["status"] == 404:
+            result["errorMessages"] = ["Identification absent from the loaded monthly publication"]
+        return response(result["status"], result)
+
+
+def compatibility_response(manager: RefreshManager, identification: str, historical=False) -> JSONResponse:
+    if not re.fullmatch(r'[0-9]{11}', identification):
+        return response(400, INVALID_ID)
+    with manager.snapshot_lock:
+        state = manager.status()
+        if not state['ready']:
+            return response(503, {'status': 503, 'errorMessages': ['No hay una publicación BCRA validada y vigente.']})
+        bundle = active_bundle(manager.config.data_dir)
+        database = inside(manager.config.data_dir, bundle['components']['current']['path']) if bundle else manager.database
+        body = compatible_response(manager.config.data_dir, database, bundle, identification, historical)
+        result = response(body['status'], body)
+        result.headers['X-BCRA-Source'] = 'monthly-files'
+        result.headers['X-BCRA-Period'] = state['dataset']['period']
+        result.headers['X-BCRA-Version'] = state['dataset']['version']
+        result.headers['X-BCRA-Checked-At'] = state['last_successful_check_at']
+        if bundle:
+            result.headers['X-BCRA-Normal-Date-Precision'] = 'month'
+        return result
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -90,6 +111,10 @@ def create_app(config: Config | None = None) -> FastAPI:
         return response(exc.status_code, {
             "status": exc.status_code, "errorMessages": [str(exc.detail)],
         })
+
+    @app.exception_handler(SourceError)
+    async def source_error(request: Request, exc: SourceError):
+        return response(503, {'status': 503, 'errorMessages': ['La publicación BCRA no está disponible.']})
 
     async def authorize(request: Request) -> None:
         expected = "Bearer " + request.app.state.manager.config.token
@@ -133,6 +158,16 @@ def create_app(config: Config | None = None) -> FastAPI:
         return await run_in_threadpool(
             lookup_response, request.app.state.manager, identification,
         )
+
+    @app.get('/centraldedeudores/v1.0/Deudas/Historicas/{identificacion}', dependencies=[Depends(authorize)])
+    @app.get('/CentralDeDeudores/v1.0/Deudas/Historicas/{identificacion}', dependencies=[Depends(authorize)])
+    def historical(identificacion: str, request: Request):
+        return compatibility_response(request.app.state.manager, identificacion, historical=True)
+
+    @app.get('/centraldedeudores/v1.0/Deudas/{identificacion}', dependencies=[Depends(authorize)])
+    @app.get('/CentralDeDeudores/v1.0/Deudas/{identificacion}', dependencies=[Depends(authorize)])
+    def current(identificacion: str, request: Request):
+        return compatibility_response(request.app.state.manager, identificacion)
 
     return app
 

@@ -35,11 +35,17 @@ CREATE TABLE metadata (value TEXT NOT NULL);
 INSERT = "INSERT INTO debts VALUES (" + ",".join(["?"] * 12) + ")"
 
 
-def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int, *, deadline: float | None = None) -> dict:
+def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int, *, deadline: float | None = None,
+                    guard=None, progress=None) -> dict:
     check_deadline(deadline)
+    def check_budget():
+        check_deadline(deadline)
+        if guard is not None:
+            guard()
+        return 0
     connection = sqlite3.connect(path)
-    if deadline is not None:
-        connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10_000)
+    if deadline is not None or guard is not None:
+        connection.set_progress_handler(check_budget, 10_000)
     try:
         connection.executescript("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;" + SCHEMA)
         period = manifest["period"]
@@ -61,8 +67,10 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int, *
                     if len(batch) >= 10_000:
                         connection.executemany(INSERT, batch)
                         batch.clear()
+                        if progress is not None:
+                            progress('current', rows)
                 except (FormatError, sqlite3.Error):
-                    check_deadline(deadline)
+                    check_budget()
                     raise SourceError(f"Invalid monthly BCRA record at line {number}") from None
         connection.executemany(INSERT, batch)
         if rows < min_rows:
@@ -76,7 +84,7 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int, *
                         raise FormatError("Invalid entity master")
                     connection.execute("INSERT INTO entities VALUES (?,?)", (fields[0].zfill(5), fields[1]))
                 except (FormatError, sqlite3.Error):
-                    check_deadline(deadline)
+                    check_budget()
                     raise SourceError(f"Invalid BCRA entity master at line {number}") from None
         if connection.execute("SELECT count(*) FROM entities").fetchone()[0] == 0:
             raise SourceError("Empty BCRA entity master")
@@ -140,7 +148,7 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int, *
                                 )
                         corrections += 1
                     except (FormatError, sqlite3.Error):
-                        check_deadline(deadline)
+                        check_budget()
                         raise SourceError(f"Invalid {kind} BCRA record at line {number}") from None
         final_rows = connection.execute("SELECT count(*) FROM debts").fetchone()[0]
         if final_rows < min_rows:
@@ -192,7 +200,7 @@ def import_snapshot(path: Path, archives: dict, manifest: dict, min_rows: int, *
             raise SourceError("BCRA database integrity check failed")
         return manifest
     except sqlite3.Error:
-        check_deadline(deadline)
+        check_budget()
         raise SourceError("Unable to construct BCRA database") from None
     finally:
         connection.close()
