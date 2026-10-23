@@ -1,3 +1,4 @@
+import { assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { DbClient } from "../../../../db/prisma";
 import type { Prisma } from "@prisma/client";
@@ -874,11 +875,13 @@ export class SolicitudesCorePrismaDatasource {
           where: { id },
           select: {
             estadoActualId: true,
+            administrativeCoreControl: true,
             estadoActual: { select: { code: true } },
             montoAprobadoRiesgo: true,
           },
         });
         if (!current) throw new SolicitudCoreNotFoundError();
+        assertNoLoanReplacementPending(current);
         if (current.estadoActualId !== guard.expectedEstadoActualId)
           throw new SolicitudEditStateConflictError();
         if (guard.enforceMontoAprobadoRiesgo && patch.solicitud?.montoAFinanciar !== undefined) {

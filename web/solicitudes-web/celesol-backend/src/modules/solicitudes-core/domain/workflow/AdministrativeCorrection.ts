@@ -44,7 +44,13 @@ export function coreReconciliationPending(s: ControlledSolicitud) {
     control.reconciledFingerprint !== coreConditionsFingerprint(s);
 }
 
+export function assertNoLoanReplacementPending(s: { administrativeCoreControl?: unknown }) {
+  if ((s.administrativeCoreControl as Record<string, unknown> | null)?.replacementPending)
+    throw new AdministrativeCorrectionError("Hay un reemplazo de préstamo en curso o con resultado incierto. No repitas la generación; verificá Vimarx y vinculá el préstamo generado.");
+}
+
 export function assertCoreReconciled(s: ControlledSolicitud, action: string) {
+  assertNoLoanReplacementPending(s);
   if (CORE_GUARDED_ACTIONS.has(action) && coreReconciliationPending(s))
     throw new AdministrativeCorrectionError(CORE_RECONCILIATION_REASON);
 }

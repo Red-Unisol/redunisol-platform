@@ -141,6 +141,7 @@ model Socio {
 
 model Solicitud {
   id                       String                     @id @default(uuid()) @db.Uuid
+  loanReplacements SolicitudPrestamoReplacement[]
   administrativeCoreControl Json? @map("administrative_core_control")
   legacyOid                String?                    @unique @map("legacy_oid")
   nroSolicitud             String?                    @unique @map("nro_solicitud")
@@ -735,4 +736,24 @@ model ReconocimientoRecibosConfiguracion {
   habilitado Boolean @default(true)
   version Int @default(1)
   updatedAt DateTime @default(now()) @updatedAt
+}
+
+
+model SolicitudPrestamoReplacement {
+  id String @id @db.Uuid
+  solicitudId String @map("solicitud_id") @db.Uuid
+  previousLoanId String @map("previous_loan_id")
+  newLoanId String? @unique @map("new_loan_id")
+  status String
+  reason String
+  actorId String @map("actor_id") @db.Uuid
+  previousSnapshot Json @map("previous_snapshot")
+  intendedInput Json @map("intended_input")
+  sourceFingerprint String @map("source_fingerprint")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  completedAt DateTime? @map("completed_at")
+  solicitud Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
+  @@unique([solicitudId, previousLoanId])
+  @@map("solicitud_prestamo_replacements")
 }

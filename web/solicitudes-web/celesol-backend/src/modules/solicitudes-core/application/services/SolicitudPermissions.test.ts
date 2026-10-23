@@ -705,3 +705,10 @@ it("Riesgo puede agregar cancelaciones a su cargo sin ampliar edición o borrado
  assert.equal(capabilities.canManageCancelaciones,false);
  assert.equal(canEditSolicitud(actor,solicitud({ownerId:"owner-vendedor"}),"CREATE_CANCELACION"),false);
 });
+
+it("a pending replacement is readonly even for admins while retaining history and downloads", () => {
+  const target = { ...solicitud({ownerId:"owner-riesgo"}), loanReplacementPending: true };
+  const caps = buildSolicitudCapabilities({ id: "admin", isSystemAdmin: true, workflowOwnerId: "" }, target);
+  for (const flag of [caps.canEdit, caps.canChangeState, caps.canManageCancelaciones, caps.canCreateCancelaciones, caps.canUploadAdjuntos, caps.canDeleteAdjuntos]) assert.equal(flag, false);
+  assert.equal(caps.canViewHistory, true); assert.equal(caps.canDownloadAdjuntos, true);
+});

@@ -803,3 +803,27 @@ it("rechecks current legacy maxima and persists adjusted values before the exist
   const generated = (events[2] as { generation: { cuotas: number; montoDeseado: number } }).generation;
   assert.equal(generated.cuotas, 3); assert.equal(generated.montoDeseado, 5000);
 });
+
+it("replacement preflight retains required data checks and rejects unsaved maxima or excess cancellations without creating", async () => {
+  let max = 10000000;
+  let total = 0;
+  let createCalls = 0;
+  let writes = 0;
+  const useCase = new CreatePrestamoLegacyUseCase({
+    authRepository: authRepository(), cancelacionesRepository: { listBySolicitudId: async () => total ? [cancelacion({ monto: total })] : [] },
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: max, cantidadMaximaCuotas: 48 }) },
+    simularCuotaSolicitud: { execute: async () => { throw new Error("must not silently adjust"); } },
+    repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: "443417" }), update: async () => { writes++; return solicitud(); } }),
+    gateway: fakeGateway({ crear: async () => { createCalls++; return { id: "999" }; } }),
+    lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(), linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+    sociosRepository: socioRepository(), solicitudesLegacyGateway: solicitudesLegacyGateway(), today: () => TODAY,
+  });
+  const input = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2", isSystemAdmin: true } };
+  assert.equal((await useCase.prepareReplacement(input)).coreInput.montoDeseado, 10000);
+  max = 5000;
+  await assert.rejects(() => useCase.prepareReplacement(input), /Guardá las condiciones/);
+  max = 10000000; total = 10001;
+  await assert.rejects(() => useCase.prepareReplacement(input), /cancelaciones superan/);
+  await assert.rejects(() => useCase.prepareReplacement({ ...input, currentUser: { ...input.currentUser, isSystemAdmin: false } }), /administrador/);
+  assert.equal(createCalls, 0); assert.equal(writes, 0);
+});

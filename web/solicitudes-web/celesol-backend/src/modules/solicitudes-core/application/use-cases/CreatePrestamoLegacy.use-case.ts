@@ -1,3 +1,5 @@
+import { assertAdministrativeActor } from "../../infrastructure/services/AdministrativeCorrectionService";
+import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
@@ -101,13 +103,27 @@ export class CreatePrestamoLegacyUseCase {
   }
 
   async execute(input: CreatePrestamoLegacyInput): Promise<SolicitudCore> {
+    const prepared = await this.prepare(input);
+    const result = await this.gateway.crear(prepared.coreInput);
+    return this.repository.update(input.solicitudId, { solicitud: {
+      legacyOid: result.id, lineaPrestamoCodigoMutual: prepared.codigoMutual,
+      linkFirmaDigital: buildLinkFirmaDigital(this.linkFirmaDigitalBaseUrl, result.id, prepared.codigoMutual),
+    } });
+  }
+
+  async prepareReplacement(input: CreatePrestamoLegacyInput) {
+    assertAdministrativeActor(input.currentUser);
+    return this.prepare(input, true);
+  }
+
+  private async prepare(input: CreatePrestamoLegacyInput, replacement = false) {
     const solicitud = await this.repository.findById(input.solicitudId);
 
     if (!solicitud) {
       throw new SolicitudCoreNotFoundError();
     }
 
-    if (solicitud.legacyOid) {
+    if (solicitud.legacyOid && !replacement) {
       throw new SolicitudLegacyOidAlreadyExistsError();
     }
 
@@ -203,6 +219,8 @@ export class CreatePrestamoLegacyUseCase {
     const huboAjuste =
       efectivos.cuotas !== solicitud.cuotas ||
       efectivos.montoAFinanciar !== solicitud.montoAFinanciar;
+    if (replacement && huboAjuste)
+      throw new AdministrativeCorrectionError("La línea exige ajustar el monto o las cuotas. Guardá las condiciones corregidas antes de reemplazar.");
     if (huboAjuste) {
       const calculo = await this.simularCuotaSolicitud.execute({
         ...efectivos,
@@ -217,33 +235,16 @@ export class CreatePrestamoLegacyUseCase {
       });
     }
     const nroLote = await this.buildNroLoteCancelaciones(input.solicitudId,
-      huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
+      replacement || huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
     await this.archivarEvaluacion?.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "generacion"});
-    const result = await this.gateway.crear({
-      cuotas: efectivos.cuotas as number,
-      fechaEmision: this.today(),
-      integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" }],
-      lineaPrestamo: lineaPrestamo.id,
-      montoDeseado: efectivos.montoAFinanciar as number,
-      ...nroLote,
-      vendedor: String(vendedorLegacyId),
-    });
-
-    const linkFirmaDigital = buildLinkFirmaDigital(
-      this.linkFirmaDigitalBaseUrl,
-      result.id,
-      lineaPrestamo.codigoMutual,
-    );
-
-    return this.repository.update(input.solicitudId, {
-      solicitud: {
-        legacyOid: result.id,
-        // Se guarda ademas de usarse en el link: el finalizar lo necesita
-        // para elegir el documento sin depender del parametro de la URL.
-        lineaPrestamoCodigoMutual: lineaPrestamo.codigoMutual,
-        linkFirmaDigital,
+    return { solicitud, codigoMutual: lineaPrestamo.codigoMutual,
+      coreInput: {
+        cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
+        integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],
+        lineaPrestamo: lineaPrestamo.id, montoDeseado: efectivos.montoAFinanciar as number,
+        ...nroLote, vendedor: String(vendedorLegacyId),
       },
-    });
+    };
   }
 
   // El legado no recibe las cancelaciones: las lee de la solicitud antigua, que

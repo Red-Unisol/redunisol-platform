@@ -657,6 +657,7 @@ export class SolicitudWorkflowPrismaDatasource {
       this.validateWorkflowOwner(input.workflowOwnerId, solicitud);
     }
 
+    if ((solicitud.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending) return [];
     const transitions = await this.loadActiveTransitions(this.db, solicitud.estadoActualId);
     return coreReconciliationPending(solicitud)
       ? transitions.map(t => CORE_GUARDED_ACTIONS.has(t.actionCode) ? { ...t, blockedReason: CORE_RECONCILIATION_REASON } : t)

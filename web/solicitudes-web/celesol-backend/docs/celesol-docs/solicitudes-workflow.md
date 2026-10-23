@@ -171,3 +171,51 @@ API autenticada (con el guard de visibilidad habitual):
 
 Las dos escrituras validan privilegios en backend, rechazan modo de suplantación y no
 aceptan identidad ni privilegios enviados por el cliente. No hay un selector de estados libre.
+
+
+## Reemplazo controlado de préstamo anulado (2026-10-23)
+
+En una solicitud devuelta con la corrección administrativa, el administrador puede
+abrir **Conciliación del préstamo Core pendiente → Reemplazo excepcional de préstamo
+anulado → Reemplazar préstamo anulado**, debajo de la barra del detalle.
+Primero debe guardar las condiciones corregidas. El modal muestra monto, cuotas,
+cálculo actualizado, cancelaciones y neto, y exige un motivo.
+
+- Es excepcional: exige administrador activo en sesión propia, préstamo vinculado,
+  estado Revisar/RevisionRiesgo/PreAprobada/Confirmada, sin archivo, liquidación previa,
+  reserva de desembolso ni pago externo. No agrega transiciones al flujo habitual.
+- Vimarx debe confirmar ambos estados como Anulada/Anulado, sin vigencia y saldo cero.
+  Beex no anula préstamos. La consulta del préstamo anulado admite que Vimarx haya
+  retirado a sus integrantes y resuelve el vínculo histórico antes del ID directo.
+- Reutiliza las validaciones de generación: titular completo, socio, vendedor, línea
+  vigente y máximos actuales. Rechaza ajustes silenciosos de monto/cuotas y cancelaciones
+  superiores al monto. Es necesario guardar y revisar esas condiciones antes de generar.
+- Antes de llamar a CrearPrestamo registra un intento durable y único por solicitud y
+  préstamo anterior. Conserva el vínculo y firma anteriores hasta tener el ID nuevo.
+  Mientras hay un intento pendiente bloquea ediciones, cancelaciones, workflow y firma.
+- Al recibir el ID, cambia vínculo y enlace de firma en una transacción y registra
+  ADMIN_LOAN_REPLACED sin alterar estado, asignación, documentos ni historia anterior.
+  Conserva ID, firma anterior, evidencia de anulación, condiciones enviadas, motivo,
+  administrador real y fechas en solicitud_prestamo_replacements e historial.
+- El nuevo préstamo exige conciliación antes de liquidar. La conciliación rechaza
+  préstamos anulados aunque sus condiciones económicas coincidan.
+
+Un error HTTP o timeout no prueba que Vimarx no haya creado el préstamo. No se repite
+la creación automáticamente. La UI muestra el intento y permite **Vincular préstamo
+generado**: se ingresa el ID real, y Beex verifica titular, estado activo, monto,
+cuotas, línea y cancelaciones contra el intento antes de enlazarlo. Un intento aún
+en curso espera el timeout configurado más 60 segundos antes de permitir recuperación.
+Si no existe préstamo o hay resultados contradictorios, corresponde investigar la
+operación; no hay un botón para borrar el intento ni generar nuevamente a ciegas.
+
+API autenticada con visibilidad habitual y validaciones propias de administrador:
+
+- GET /solicitudes/:id/admin-loan-replacements: disponibilidad y últimos intentos.
+- POST /solicitudes/:id/admin-loan-replacements: requestId UUID, expectedUpdatedAt,
+  previousLoanId y reason; nunca recibe monto/cuotas ni flags para saltear verificaciones.
+- POST /solicitudes/:id/admin-loan-replacements/recover: requestId, expectedUpdatedAt,
+  newLoanId y reason. No crea operaciones en el Core.
+
+La migración es aditiva. Los registros no se eliminan en cascada al borrar una solicitud.
+La base garantiza un único intento por préstamo anterior y un ID nuevo sin duplicados.
+Las pruebas de integración usan exclusivamente una base local cuyo nombre termina en _test.

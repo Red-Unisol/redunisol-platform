@@ -32,7 +32,7 @@ async function fixture() {
   const service = new AdministrativeCorrectionService({ db,
     changeState: { execute: input => engine.execute({ ...command, ...input, changedBy: input.currentUser.id,
       isSystemAdmin: input.currentUser.isSystemAdmin, workflowOwnerId: input.currentUser.workflowOwnerId }) },
-    loanSnapshot: async () => ({ id: s.legacyOid!, amount: 600000, cuotas: 12, lineaId: "77", primerVencimiento: null, cancelacionesCentavos: 0 }),
+    loanSnapshot: async () => ({ id: s.legacyOid!, estado: 0, amount: 600000, cuotas: 12, lineaId: "77", primerVencimiento: null, cancelacionesCentavos: 0 }),
     lineResolver: { resolveByPresolicitudOid: async () => ({ id: "77", codigoMutual: null }) },
   });
   const clean = async () => {

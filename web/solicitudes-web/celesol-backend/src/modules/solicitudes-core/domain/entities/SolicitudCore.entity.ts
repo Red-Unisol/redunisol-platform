@@ -220,6 +220,7 @@ export type SolicitudCoreGarantia = {
 };
 
 export type SolicitudCore = {
+  loanReplacementPending?: boolean;
   appearance?: SolicitudAppearance;
   assignedToUser?: {
     email: string | null;

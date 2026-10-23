@@ -5,7 +5,7 @@ import type { ChangeSolicitudStateUseCase } from "../../application/use-cases/Ch
 import type { LineaPrestamoLegacyIdResolver } from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import {
   ADMIN_CORRECTION_ACTION, AdministrativeCorrectionError, coreConditionsFingerprint,
-  coreReconciliationPending,
+  coreReconciliationPending, assertNoLoanReplacementPending,
 } from "../../domain/workflow/AdministrativeCorrection";
 import type { WorkflowCommand } from "../../domain/workflow/types";
 import { SolicitudCoreNotFoundError } from "../../domain/solicitudes-core-errors";
@@ -28,6 +28,8 @@ export async function administrativeSource(db: Prisma.TransactionClient, id: str
 }
 
 export async function correctionBlockedReason(db: Prisma.TransactionClient, s: Source) {
+  if ((s.administrativeCoreControl as Record<string, unknown> | null)?.replacementPending)
+    return "Hay un reemplazo de préstamo en curso o con resultado incierto.";
   if (s.archivedAt || s.estadoActual.code !== "Confirmada")
     return "La corrección habilitada es Confirmada → Revisar, en solicitudes no archivadas.";
   if (s.desembolso || s.pagoExterno)
@@ -50,6 +52,7 @@ export async function applyAdministrativeCorrection(db: Prisma.TransactionClient
   const s = await administrativeSource(db, command.solicitudId);
   if (s.updatedAt.toISOString() !== correction.expectedUpdatedAt)
     throw new AdministrativeCorrectionError("La solicitud cambió. Actualizá el detalle antes de corregirla.");
+  assertNoLoanReplacementPending(s);
   const blocked = await correctionBlockedReason(db, s);
   if (blocked) throw new AdministrativeCorrectionError(blocked);
   const target = await db.workflowState.findUnique({ where: { code: "Revisar" }, include: { owner: true } });
@@ -83,6 +86,7 @@ export async function applyAdministrativeCorrection(db: Prisma.TransactionClient
 }
 
 export type CoreLoanSnapshot = {
+  estado: number | null;
   id: string; amount: number | null; cuotas: number | null; lineaId: string | null;
   primerVencimiento: string | null; cancelacionesCentavos: number | null;
 };
@@ -91,7 +95,7 @@ export class AdministrativeCorrectionService {
   constructor(private readonly deps: {
     db: PrismaClient;
     changeState: Pick<ChangeSolicitudStateUseCase, "execute">;
-    loanSnapshot: (loanId: string, documento: string) => Promise<CoreLoanSnapshot | null>;
+    loanSnapshot: (loanId: string, documento: string, directLoanId?: boolean) => Promise<CoreLoanSnapshot | null>;
     lineResolver: LineaPrestamoLegacyIdResolver;
   }) {}
 
@@ -100,6 +104,7 @@ export class AdministrativeCorrectionService {
     const canAdmin = Boolean(user.isSystemAdmin && !actingContext.getStore());
     return {
       canAdmin, updatedAt: s.updatedAt.toISOString(), state: s.estadoActual.code,
+      replacementPending: Boolean((s.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending),
       loanId: s.legacyOid, reconciliationRequired: coreReconciliationPending(s),
       blockedReason: canAdmin ? await correctionBlockedReason(this.deps.db, s) : null,
     };
@@ -119,15 +124,18 @@ export class AdministrativeCorrectionService {
   async reconcile(id: string, user: AuthUser, input: { expectedUpdatedAt: string; reason: string }) {
     assertAdministrativeActor(user);
     const before = await administrativeSource(this.deps.db, id);
+    assertNoLoanReplacementPending(before);
     if (!before.administrativeCoreControl || !before.legacyOid || !before.titular?.nroDocumento)
       throw new AdministrativeCorrectionError("La solicitud no tiene una conciliación pendiente verificable.");
     // Read only: this operation never generates, replaces or modifies a Core loan.
     const [loan, line] = await Promise.all([
-      this.deps.loanSnapshot(before.legacyOid, before.titular.nroDocumento),
+      this.deps.loanSnapshot(before.legacyOid, before.titular.nroDocumento, Boolean((before.administrativeCoreControl as Prisma.JsonObject).replacementId)),
       this.deps.lineResolver.resolveByPresolicitudOid(before.lineaPrestamoLegacyOid),
     ]);
     const cancellations = before.cancelaciones.filter(c => !c.deletedAt).reduce((v, c) => v + Number(c.monto), 0);
-    if (!loan || !line || before.montoAFinanciar === null || loan.amount === null || loan.amount <= 0 || loan.cuotas === null ||
+    if (!loan || loan.estado !== 0)
+      throw new AdministrativeCorrectionError("El préstamo Core no está activo o no pudo verificarse con el titular. Un préstamo anulado requiere un reemplazo excepcional.");
+    if (!line || before.montoAFinanciar === null || loan.amount === null || loan.amount <= 0 || loan.cuotas === null ||
       loan.amount !== Number(before.montoAFinanciar) || loan.cuotas !== before.cuotas ||
       loan.lineaId !== line.id ||
       (before.fechaPrimerVencimiento && loan.primerVencimiento?.slice(0, 10) !== before.fechaPrimerVencimiento.toISOString().slice(0, 10)) ||
@@ -136,6 +144,7 @@ export class AdministrativeCorrectionService {
     await this.deps.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
       const s = await administrativeSource(tx, id);
+      assertNoLoanReplacementPending(s);
       if (s.updatedAt.toISOString() !== input.expectedUpdatedAt ||
         coreConditionsFingerprint(s) !== coreConditionsFingerprint(before))
         throw new AdministrativeCorrectionError("La solicitud cambió durante la verificación. Actualizá el detalle.");

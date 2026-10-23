@@ -31,7 +31,7 @@ export type SolicitudCapabilities = {
   canViewHistory: boolean;
 };
 
-type SolicitudPermissionTarget = Pick<SolicitudCore, "estadoActual">;
+type SolicitudPermissionTarget = Pick<SolicitudCore, "estadoActual" | "loanReplacementPending">;
 
 export function canViewSolicitud(
   _user: SolicitudPermissionUser,
@@ -49,6 +49,7 @@ export function canEditSolicitud(
     "active" | "canManageAttachments" | "workflowStateId"
   > | null = null,
 ) {
+  if (solicitud.loanReplacementPending && action !== "VIEW_HISTORY" && action !== "DOWNLOAD_ATTACHMENT") return false;
   if (user.isSystemAdmin) {
     return true;
   }
@@ -170,6 +171,7 @@ export function canManageSolicitudAttachments(input: {
     "active" | "canManageAttachments" | "workflowStateId"
   > | null;
 }) {
+  if (input.solicitud.loanReplacementPending) return false;
   if (input.user.isSystemAdmin) {
     return true;
   }

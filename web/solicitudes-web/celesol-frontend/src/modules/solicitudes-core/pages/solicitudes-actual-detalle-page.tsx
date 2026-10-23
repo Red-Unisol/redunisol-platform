@@ -3178,7 +3178,7 @@ export function SolicitudesActualDetallePage() {
     solicitudCapabilities?.canManageCancelaciones ?? false;
   const canManageAdjuntos = canUploadAdjuntos || canDeleteAdjuntos;
   const canEnterEditMode =
-    canEditSolicitud && (hasEditableSolicitudFields || canManageAdjuntos);
+    !solicitud?.loanReplacementPending && canEditSolicitud && (hasEditableSolicitudFields || canManageAdjuntos);
   const isSolicitudFieldEditable = (fieldKey: string) =>
     isFieldEditable(
       solicitudCapabilities,
