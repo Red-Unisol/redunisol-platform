@@ -1,3 +1,6 @@
+import { addAdministrativeCorrectionRoutes } from "./presentation/AdministrativeCorrectionRoutes";
+import { assertCoreReconciled } from "./domain/workflow/AdministrativeCorrection";
+import { AdministrativeCorrectionService, administrativeSource } from "./infrastructure/services/AdministrativeCorrectionService";
 import { createReconocimientoRecibosRoutes } from "./adjuntos/reconocimiento/presentation/ReconocimientoRecibosRoutes";
 import { ConfiguracionReconocimientoPrisma } from "./adjuntos/reconocimiento/infrastructure/ConfiguracionReconocimientoPrisma";
 import { MistralReciboGateway } from "./adjuntos/reconocimiento/infrastructure/MistralReciboGateway";
@@ -465,6 +468,11 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
+  addAdministrativeCorrectionRoutes(router, { auth: dependencies.getCurrentUserUseCase,
+    service: new AdministrativeCorrectionService({ db: prisma, changeState: changeSolicitudStateUseCase,
+      loanSnapshot: (id, documento) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento),
+      lineResolver: lineaPrestamoLegacyIdResolver }),
+  });
   addExternalPaymentRoutes(router, {
     auth: dependencies.getCurrentUserUseCase,
     service: new ExternalPaymentService({ db: prisma, storage: adjuntosObjectStorage,
@@ -561,6 +569,7 @@ export function createFinSolicitudRouter() {
     solicitudesCoreDatasource,
   );
   const getFinSolicitudDatosUseCase = new GetFinSolicitudDatosUseCase({
+    ensureCoreReconciled: async id => assertCoreReconciled(await administrativeSource(prisma, id), "liquidar"),
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });

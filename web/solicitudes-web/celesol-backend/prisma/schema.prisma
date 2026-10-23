@@ -141,6 +141,7 @@ model Socio {
 
 model Solicitud {
   id                       String                     @id @default(uuid()) @db.Uuid
+  administrativeCoreControl Json? @map("administrative_core_control")
   legacyOid                String?                    @unique @map("legacy_oid")
   nroSolicitud             String?                    @unique @map("nro_solicitud")
   fechaPrimerVencimiento   DateTime?                  @map("fecha_primer_vencimiento") @db.Date

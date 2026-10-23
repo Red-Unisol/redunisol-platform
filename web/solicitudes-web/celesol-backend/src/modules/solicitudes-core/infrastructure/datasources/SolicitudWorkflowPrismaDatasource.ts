@@ -1,3 +1,5 @@
+import { applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
+import { ADMIN_CORRECTION_ACTION, assertCoreReconciled, coreReconciliationPending, CORE_RECONCILIATION_REASON, CORE_GUARDED_ACTIONS } from "../../domain/workflow/AdministrativeCorrection";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { Prisma } from "@prisma/client";
 
@@ -38,6 +40,7 @@ const solicitudCoreInclude = {
 } satisfies Prisma.SolicitudInclude;
 
 const solicitudWithOwnerInclude = {
+  titular: true, cancelaciones: true,
   estadoActual: {
     include: {
       owner: true,
@@ -130,6 +133,14 @@ export class SolicitudWorkflowPrismaDatasource {
       };
     }
 
+    if (input.actionCode === ADMIN_CORRECTION_ACTION) {
+      const target = await this.db.workflowState.findUnique({ where: { code: "Revisar" } });
+      return { solicitud: { estadoActualId: solicitud.estadoActualId, ownerId: solicitud.estadoActual.ownerId },
+        transition: target && solicitud.estadoActual.code === "Confirmada" ? {
+          isActive: true, requiresComment: true, toStateCode: target.code,
+          toStateId: target.id, toStateIsActive: target.isActive, toStateOwnerCode: "VENDEDORES",
+        } : null };
+    }
     const transition = await this.db.workflowTransition.findFirst({
       where: {
         actionCode: input.actionCode,
@@ -163,6 +174,15 @@ export class SolicitudWorkflowPrismaDatasource {
     );
     if (issues.length > 0) {
       throw new WorkflowExecutionPlanNotExecutableError(issues);
+    }
+
+    if (input.plan.command.actionCode === ADMIN_CORRECTION_ACTION) {
+      return this.inTransaction(async tx => {
+        await applyAdministrativeCorrection(tx, input.plan.command);
+        const s = await this.loadSolicitudCoreById(tx, input.plan.command.solicitudId);
+        return { solicitud: SolicitudCoreMapper.toDomain(s),
+          transitions: await this.loadActiveTransitions(tx, s.estadoActualId) };
+      });
     }
 
     this.logWorkflowEvent("workflow_plan_execution_started", {
@@ -263,6 +283,7 @@ export class SolicitudWorkflowPrismaDatasource {
             throw new WorkflowExecutionPlanStateConflictError();
           }
 
+          assertCoreReconciled(solicitud, step.actionCode);
           const transition = await executor.workflowTransition.findFirst({
             where: {
               actionCode: step.actionCode,
@@ -370,6 +391,7 @@ export class SolicitudWorkflowPrismaDatasource {
         },
         "error",
       );
+      if ((error as { code?: string }).code === "P2025") throw new WorkflowExecutionPlanStateConflictError();
       throw error;
     }
   }
@@ -573,6 +595,8 @@ export class SolicitudWorkflowPrismaDatasource {
     const updatedSolicitud = await input.executor.solicitud.update({
       where: {
         id: input.solicitud.id,
+        estadoActualId: input.solicitud.estadoActualId,
+        updatedAt: input.solicitud.updatedAt,
       },
       data: updateData,
       include: solicitudCoreInclude,
@@ -633,7 +657,10 @@ export class SolicitudWorkflowPrismaDatasource {
       this.validateWorkflowOwner(input.workflowOwnerId, solicitud);
     }
 
-    return this.loadActiveTransitions(this.db, solicitud.estadoActualId);
+    const transitions = await this.loadActiveTransitions(this.db, solicitud.estadoActualId);
+    return coreReconciliationPending(solicitud)
+      ? transitions.map(t => CORE_GUARDED_ACTIONS.has(t.actionCode) ? { ...t, blockedReason: CORE_RECONCILIATION_REASON } : t)
+      : transitions;
   }
 
   async listHistory(

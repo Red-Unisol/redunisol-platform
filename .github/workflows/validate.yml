@@ -53,6 +53,13 @@ jobs:
           src/modules/solicitudes-core/infrastructure/datasources/MontoAprobadoRiesgo.integration.test.ts
           src/modules/solicitudes-core/infrastructure/datasources/SolicitudWorkflowPrismaDatasource.test.ts
           src/modules/solicitudes-core/infrastructure/mappers/SolicitudCore.mapper.test.ts
+      - name: Test administrative state correction and Core reconciliation
+        run: >-
+          npx tsx --test
+          src/modules/solicitudes-core/domain/workflow/AdministrativeCorrection.test.ts
+          src/modules/solicitudes-core/presentation/AdministrativeCorrectionRoutes.test.ts
+          src/modules/solicitudes-core/infrastructure/services/AdministrativeCorrection.integration.test.ts
+          src/modules/solicitudes/infrastructure/services/CoreReconciliationSnapshot.test.ts
       - name: Test Transferencias API contract and recovery
         run: npx tsx --test "src/modules/transferencias-integration/*.test.ts"
       - name: Test and build frontend

@@ -1,3 +1,4 @@
+import { AdministrativeStateControl } from "../components/administrative-state-control";
 import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
 import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
 import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
@@ -4230,6 +4231,8 @@ export function SolicitudesActualDetallePage() {
           />
         }
       />
+
+      <AdministrativeStateControl key={solicitudId} solicitudId={solicitudId} updatedAt={resolvedSolicitud.updatedAt} isEditing={isEditing} />
 
       {(["Transferir", "Pagada"].includes(resolvedSolicitud.estadoActual.code) &&
         (currentUser?.isSystemAdmin || ["TESORERIA", "RIESGO"].includes(currentUser?.workflowOwner?.code ?? ""))) ? (

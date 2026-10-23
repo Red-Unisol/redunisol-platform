@@ -56,6 +56,7 @@ export type FinSolicitudDatosResponse = {
 };
 
 type Dependencies = {
+  ensureCoreReconciled?: (id: string) => Promise<void>;
   legacyGateway: SolicitudesLegacyGateway;
   repository: SolicitudesCoreRepository;
 };
@@ -71,10 +72,12 @@ function toNullableInteger(value: string | null): number | null {
 }
 
 export class GetFinSolicitudDatosUseCase {
+  private readonly ensureCoreReconciled?: (id: string) => Promise<void>;
   private readonly legacyGateway: SolicitudesLegacyGateway;
   private readonly repository: SolicitudesCoreRepository;
 
   constructor(dependencies: Dependencies) {
+    this.ensureCoreReconciled = dependencies.ensureCoreReconciled;
     this.legacyGateway = dependencies.legacyGateway;
     this.repository = dependencies.repository;
   }
@@ -96,6 +99,7 @@ export class GetFinSolicitudDatosUseCase {
       throw new SolicitudPrestamoNoGeneradoError();
     }
 
+    await this.ensureCoreReconciled?.(solicitud.id);
     const prestamo = await this.legacyGateway.getPrestamoOtorgadoByLegacyOid(
       solicitud.legacyOid,
     );

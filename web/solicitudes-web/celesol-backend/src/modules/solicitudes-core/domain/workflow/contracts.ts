@@ -2,6 +2,7 @@ import type { SolicitudCore } from "../entities/SolicitudCore.entity";
 import type { WorkflowTransition } from "../entities/WorkflowTransition.entity";
 
 export type ExecuteSolicitudTransitionInput = {
+  administrativeCorrection?: { expectedUpdatedAt: string; requestId: string };
   actionCode: string;
   changedBy: string;
   comment?: string;

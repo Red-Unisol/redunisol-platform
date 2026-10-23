@@ -130,3 +130,44 @@ Reproceso desde verificacion:
 ```text
 Liquidada -> VerificarFirmaYDocumentacion -> Liquidada
 ```
+
+
+## Corrección administrativa excepcional (2026-10-23)
+
+En el detalle de la solicitud, debajo de la barra de herramientas, los administradores
+ven **Administración → Corregir estado**. La primera versión admite exclusivamente
+`Confirmada → Revisar` (owner `VENDEDORES`). No se agrega esa transición al catálogo
+ni al selector operativo normal.
+
+- Requiere sesión propia de administrador activo, motivo de 10 a 2000 caracteres,
+  UUID de operación y la versión `updatedAt` observada al abrir el formulario.
+- Rechaza solicitudes archivadas, reservas de desembolso, pagos externos y solicitudes
+  cuyo historial haya llegado a Liquidada, VerificarFirmaYDocumentacion, Transferir o Pagada.
+- Se ejecuta por `ChangeSolicitudStateUseCase → SolicitudWorkflowEngine`; la persistencia
+  bloquea la solicitud y guarda estado e historial en una única transacción.
+- Conserva préstamo Core, firma, adjuntos, ejecutivo y asignación. Al entrar a Revisar
+  actualiza el tope de Riesgo al monto actual, igual que las devoluciones habituales.
+- Registra `ADMIN_CORRECTION_TO_REVISAR` con motivo, administrador real y snapshots de
+  estados/áreas; no borra ni reescribe historia ni genera préstamos u operaciones bancarias.
+
+Si existe un préstamo vinculado, la corrección deja pendiente su conciliación. Se bloquean
+`liquidar`, `verificar_firma`, `transferir`, `pagar` y la provisión de datos para firma
+(`finSolicitud`) hasta verificar las condiciones. El administrador usa
+**Conciliar préstamo Core**, en la misma barra, con un motivo obligatorio. La verificación
+consulta el Core sin modificarlo y compara socio, monto deseado, cuotas, línea resuelta,
+vencimiento explícito y cancelaciones en centavos. Si hay diferencias o falta información,
+no se libera el bloqueo; las correcciones en el Core requieren su propio procedimiento.
+
+La conciliación registra evidencia e historial. Un cambio posterior en el vínculo,
+identificación del socio, monto, cuotas, línea, vencimiento o cancelaciones invalida
+la conciliación automáticamente. El historial anterior de firma se conserva como evidencia;
+una conciliación de condiciones no sustituye una nueva firma/documentación si corresponde.
+
+API autenticada (con el guard de visibilidad habitual):
+
+- `GET /solicitudes/:id/admin-state-correction`: disponibilidad, versión y conciliación pendiente.
+- `POST /solicitudes/:id/admin-state-correction`: `targetStateCode: Revisar`, `reason`, `expectedUpdatedAt`, `requestId`.
+- `POST /solicitudes/:id/admin-core-reconciliation`: `reason`, `expectedUpdatedAt`.
+
+Las dos escrituras validan privilegios en backend, rechazan modo de suplantación y no
+aceptan identidad ni privilegios enviados por el cliente. No hay un selector de estados libre.
