@@ -108,7 +108,8 @@ export class SolicitudesCoreRepositoryImpl implements SolicitudesCoreRepository 
   update(
     id: string,
     patch: Parameters<SolicitudesCoreRepository["update"]>[1],
+    guard?: Parameters<SolicitudesCoreRepository["update"]>[2],
   ) {
-    return this.datasource.update(id, patch);
+    return this.datasource.update(id, patch, guard);
   }
 }

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 
 import type { DbClient } from "../../../../db/prisma";
 import { ESTADOS_QUE_BORRAN_INFORME_CREDIXSA } from "../../domain/repositories/SolicitudCredixsaInformeRepository";
+import { ESTADOS_CON_TOPE_DE_RIESGO } from "../../domain/entities/SolicitudCore.entity";
 import type {
   ExecuteSolicitudWorkflowPlanInput,
   SolicitudWorkflowRepository,
@@ -562,6 +563,12 @@ export class SolicitudWorkflowPrismaDatasource {
         },
       },
     };
+
+    // Riesgo se la devuelve al vendedor: el monto de este momento queda como
+    // tope. Si vuelve a pasar por Riesgo, se pisa con el nuevo.
+    if (ESTADOS_CON_TOPE_DE_RIESGO.includes(input.transition.toState.code)) {
+      updateData.montoAprobadoRiesgo = input.solicitud.montoAFinanciar;
+    }
 
     const updatedSolicitud = await input.executor.solicitud.update({
       where: {

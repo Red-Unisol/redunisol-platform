@@ -46,6 +46,13 @@ jobs:
         run: npm run build
       - name: Test authentication and session recovery
         run: npx tsx --test "src/modules/auth/**/*.test.ts"
+      - name: Test risk amount limits and concurrent saves
+        run: >-
+          npx tsx --test
+          src/modules/solicitudes-core/application/use-cases/UpdateSolicitud.use-case.test.ts
+          src/modules/solicitudes-core/infrastructure/datasources/MontoAprobadoRiesgo.integration.test.ts
+          src/modules/solicitudes-core/infrastructure/datasources/SolicitudWorkflowPrismaDatasource.test.ts
+          src/modules/solicitudes-core/infrastructure/mappers/SolicitudCore.mapper.test.ts
       - name: Test Transferencias API contract and recovery
         run: npx tsx --test "src/modules/transferencias-integration/*.test.ts"
       - name: Test and build frontend

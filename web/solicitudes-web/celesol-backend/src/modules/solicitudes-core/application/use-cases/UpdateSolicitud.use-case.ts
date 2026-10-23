@@ -7,6 +7,8 @@ import {
   SolicitudFieldNotEditableInCurrentStateError,
   SolicitudFueraDeLimitesDeLineaError,
 } from "../../domain/solicitudes-core-errors";
+import { assertMontoDentroDelAprobadoPorRiesgo } from "../../domain/services/MontoAprobadoRiesgo";
+import { ESTADOS_CON_TOPE_DE_RIESGO } from "../../domain/entities/SolicitudCore.entity";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type {
   SolicitudesCoreRepository,
@@ -127,6 +129,11 @@ export class UpdateSolicitudUseCase {
     });
     if (lineaOid !== solicitud.lineaPrestamoLegacyOid)
       assertSolicitudDentroDeLimitesDeLinea(lineaPrestamo, efectivos);
+    const editaRiesgo = workflowOwnerCode === "RIESGO";
+    const enforceMontoAprobadoRiesgo =
+      !input.currentUser.isSystemAdmin && !input.currentUser.isAnalista && !editaRiesgo;
+    if (input.solicitud?.montoAFinanciar !== undefined && enforceMontoAprobadoRiesgo)
+      assertMontoDentroDelAprobadoPorRiesgo(solicitud, efectivos.montoAFinanciar);
     if (
       efectivos.cuotas !== solicitud.cuotas ||
       efectivos.montoAFinanciar !== solicitud.montoAFinanciar ||
@@ -142,6 +149,17 @@ export class UpdateSolicitudUseCase {
         patch.solicitud.cuotas = efectivos.cuotas;
       if (patch.solicitud.montoAFinanciar !== undefined)
         patch.solicitud.montoAFinanciar = efectivos.montoAFinanciar;
+    }
+
+    // Si Riesgo corrige el monto mientras la solicitud esta con el vendedor,
+    // ese pasa a ser el nuevo aprobado.
+    if (
+      editaRiesgo &&
+      input.solicitud?.montoAFinanciar !== undefined &&
+      ESTADOS_CON_TOPE_DE_RIESGO.includes(solicitud.estadoActual.code)
+    ) {
+      patch.solicitud ??= {};
+      patch.solicitud.montoAprobadoRiesgo = efectivos.montoAFinanciar;
     }
 
     if (input.titular) {
@@ -189,7 +207,12 @@ export class UpdateSolicitudUseCase {
 
     await this.recalcularCuotaResultante(patch, solicitud);
 
-    return this.repository.update(input.id, patch);
+    // La simulacion queda fuera del bloqueo. El repositorio vuelve a validar
+    // el estado y el tope vigentes dentro de la transaccion que guarda el patch.
+    return this.repository.update(input.id, patch, {
+      expectedEstadoActualId: solicitud.estadoActual.id,
+      enforceMontoAprobadoRiesgo,
+    });
   }
 
   /**
