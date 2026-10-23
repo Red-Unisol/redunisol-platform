@@ -157,6 +157,15 @@ Recorrer hasta `nextCursor=null`; no es un snapshot de una cola cambiante.
 Consultar directamente el desembolso para recuperar pagos que ya salieron de
 Transferir. Codificar `paymentKey` como segmento URL.
 
+Una revalidación exitosa devuelve el mismo desembolso completo que
+`GET /desembolsos/:id` (`id`, `solicitudId`, `plan`, `status`, `payments` y sus
+datos de recuperación), junto con `valid: true`, `planVersion` y `checkedAt`.
+Transferencias 2.3.1 necesita ese desembolso para verificar el plan y los IDs
+reservados antes de enviar. La respuesta conserva los campos de confirmación
+anteriores y los resultados bancarios ya registrados; no crea otra reserva ni
+reemplaza sus identificadores. Un plan modificado o un desembolso cerrado sigue
+produciendo un error y no autoriza nuevos pagos.
+
 Ejemplo sintético de reserva (usar los valores del plan recibido):
 
 ```json

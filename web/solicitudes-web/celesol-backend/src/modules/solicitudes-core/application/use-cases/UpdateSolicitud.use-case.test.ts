@@ -6,6 +6,7 @@ import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import {
   ForbiddenSolicitudAccessError,
   LineaPrestamoNoDisponibleParaSolicitudError,
+  MontoSuperaAprobadoRiesgoError,
   SolicitudFieldNotEditableInCurrentStateError,
   SolicitudCoreNotFoundError,
 } from "../../domain/solicitudes-core-errors";
@@ -781,6 +782,103 @@ describe("UpdateSolicitudUseCase", () => {
           }),
         ),
       SolicitudCoreNotFoundError,
+    );
+  });
+});
+
+describe("tope del monto aprobado por Riesgo", () => {
+  const preAprobada = {
+    estadoActual: {
+      code: "PreAprobada",
+      id: "state-1",
+      name: "Pre Aprobada",
+      ownerId: "owner-1",
+    },
+    montoAFinanciar: 300000,
+    montoAprobadoRiesgo: 500000,
+  };
+
+  async function guardarMonto(
+    montoAFinanciar: number,
+    options: {
+      solicitud?: Partial<SolicitudCore>;
+      isAnalista?: boolean;
+      workflowOwnerCode?: string;
+    } = {},
+  ) {
+    let patch: UpdateSolicitudCorePatch | undefined;
+    const useCase = buildUseCase({
+      findById: async () => solicitudCore({ ...preAprobada, ...options.solicitud }),
+      findWorkflowOwnerCodeById: async () => options.workflowOwnerCode ?? null,
+      update: async (_id, p) => {
+        patch = p;
+        return solicitudCore();
+      },
+    });
+    await useCase.execute(
+      updateInput({
+        currentUser: {
+          id: "user-1",
+          workflowOwnerId: "owner-1",
+          ...(options.isAnalista ? { isAnalista: true } : {}),
+        },
+        solicitud: { montoAFinanciar },
+      }),
+    );
+    return patch?.solicitud;
+  }
+
+  it("el vendedor puede bajar el monto", async () => {
+    assert.equal((await guardarMonto(200000))?.montoAFinanciar, 200000);
+  });
+
+  it("el vendedor puede volver a subirlo hasta el aprobado", async () => {
+    assert.equal((await guardarMonto(500000))?.montoAFinanciar, 500000);
+  });
+
+  it("el vendedor no puede pasar del aprobado, tambien en Revisar", async () => {
+    await assert.rejects(() => guardarMonto(500001), MontoSuperaAprobadoRiesgoError);
+    await assert.rejects(
+      () =>
+        guardarMonto(600000, {
+          solicitud: {
+            estadoActual: { ...preAprobada.estadoActual, code: "Revisar", name: "Revisar" },
+          },
+        }),
+      /máximo es el devuelto por Riesgo: \$500\.000\./,
+    );
+  });
+
+  it("Riesgo no tiene tope y su monto pasa a ser el nuevo aprobado", async () => {
+    const guardado = await guardarMonto(600000, { workflowOwnerCode: "RIESGO" });
+    assert.equal(guardado?.montoAFinanciar, 600000);
+    assert.equal(guardado?.montoAprobadoRiesgo, 600000);
+  });
+
+  it("el vendedor no cambia el tope al bajar el monto", async () => {
+    const guardado = await guardarMonto(200000);
+    assert.equal(guardado?.montoAprobadoRiesgo, undefined);
+  });
+
+  it("el analista no tiene tope", async () => {
+    assert.equal((await guardarMonto(600000, { isAnalista: true }))?.montoAFinanciar, 600000);
+  });
+
+  it("no aplica fuera de los estados que vuelven de Riesgo ni sin tope guardado", async () => {
+    assert.equal(
+      (
+        await guardarMonto(600000, {
+          solicitud: {
+            estadoActual: { ...preAprobada.estadoActual, code: "CargaVendedor", name: "Carga vendedor" },
+          },
+        })
+      )?.montoAFinanciar,
+      600000,
+    );
+    assert.equal(
+      (await guardarMonto(600000, { solicitud: { montoAprobadoRiesgo: null } }))
+        ?.montoAFinanciar,
+      600000,
     );
   });
 });

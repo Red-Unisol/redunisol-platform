@@ -16,6 +16,14 @@ class BcraPocDeploymentTests(unittest.TestCase):
         self.assertEqual(compose["volumes"]["bcra-file-data"]["name"], "bcra-file-poc_bcra-file-data")
         self.assertIn("bcra-file-data:/data", service["volumes"])
         self.assertEqual(service["logging"]["options"]["max-size"], "10m")
+        self.assertEqual(service["cpus"], 1.0)
+        self.assertEqual(service["mem_limit"], "2g")
+        environment = service["environment"]
+        self.assertEqual(environment["BCRA_FILE_EXTENDED_ENABLED"], "true")
+        self.assertEqual(int(environment["BCRA_FILE_MIN_FREE_BYTES"]), 20 * 1024**3)
+        self.assertEqual(int(environment["BCRA_FILE_MAX_BUILD_BYTES"]), 35 * 1024**3)
+        self.assertEqual(environment["BCRA_FILE_REFRESH_START_HOUR"], "21")
+        self.assertEqual(environment["BCRA_FILE_REFRESH_END_HOUR"], "7")
 
     def test_poc_triggers_exist_only_in_prod(self):
         for name in ("bcra_archivo_actualizar_poc", "bcra_archivo_consultar_poc"):

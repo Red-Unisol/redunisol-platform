@@ -116,6 +116,7 @@ export type UpdateSolicitudCorePatch = {
     lineaPrestamoDescripcion?: string;
     lineaPrestamoLegacyOid?: string;
     montoAFinanciar?: number | null;
+    montoAprobadoRiesgo?: number | null;
     motivo?: string | null;
     observaciones?: string | null;
     vendedorSolicitud?: string | null;
@@ -311,6 +312,11 @@ export type AnalistaDashboardStatsV2Result = {
   };
 };
 
+export type UpdateSolicitudCoreGuard = {
+  expectedEstadoActualId: string;
+  enforceMontoAprobadoRiesgo: boolean;
+};
+
 export type SolicitudesCoreRepository = {
   assignToUserIfUnassigned?(input: {
     actorUserId: string;
@@ -343,5 +349,9 @@ export type SolicitudesCoreRepository = {
   getVendedorStats?(input: GetSolicitudesStatsInput): Promise<VendedorDashboardStatsResult>;
   getAnalistaStats?(input: GetAnalistaStatsInput): Promise<AnalistaDashboardStatsResult>;
   getAnalistaStatsV2?(input: GetAnalistaStatsInput): Promise<AnalistaDashboardStatsV2Result>;
-  update(id: string, patch: UpdateSolicitudCorePatch): Promise<SolicitudCore>;
+  update(
+    id: string,
+    patch: UpdateSolicitudCorePatch,
+    guard?: UpdateSolicitudCoreGuard,
+  ): Promise<SolicitudCore>;
 };

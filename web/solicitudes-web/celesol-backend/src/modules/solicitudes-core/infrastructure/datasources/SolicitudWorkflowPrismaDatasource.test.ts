@@ -216,6 +216,53 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     ]);
   });
 
+  it("guarda el monto como tope del vendedor cuando Riesgo la preaprueba", async () => {
+    const prisma = new FakeWorkflowPrisma({
+      activeTransition: transitionRecord({
+        actionCode: "preaprobar",
+        fromStateId: "state-riesgo",
+        id: "tr-preaprobar",
+        toState: resolveStateById("state-preaprobada"),
+        toStateId: "state-preaprobada",
+      }),
+      currentSolicitud: solicitudRecord({
+        estadoActual: resolveStateById("state-riesgo"),
+        montoAFinanciar: new Prisma.Decimal("450000.00"),
+      }),
+    });
+    const datasource = new SolicitudWorkflowPrismaDatasource(prisma.client());
+
+    await executeDomainStepPlan(datasource, {
+      actionCode: "preaprobar",
+      changedBy: "riesgo-1",
+      now: new Date("2026-05-18T12:00:00.000Z"),
+      solicitudId: "sol-1",
+      workflowOwnerId: "owner-riesgo",
+    });
+
+    const data = prisma.solicitudUpdateCalls[0]?.data as {
+      montoAprobadoRiesgo?: Prisma.Decimal | null;
+    };
+    assert.equal(data.montoAprobadoRiesgo?.toString(), "450000");
+  });
+
+  it("no toca el tope en transiciones que no devuelven la solicitud al vendedor", async () => {
+    const prisma = new FakeWorkflowPrisma({ enableMotorTransition: false });
+    const datasource = new SolicitudWorkflowPrismaDatasource(prisma.client());
+
+    await executeDomainStepPlan(datasource, {
+      actionCode: "enviar",
+      changedBy: "user-1",
+      expectedToStateId: "state-motor",
+      now: new Date("2026-05-18T12:00:00.000Z"),
+      solicitudId: "sol-1",
+      workflowOwnerId: "owner-vendedor",
+    });
+
+    const data = prisma.solicitudUpdateCalls[0]?.data as Record<string, unknown>;
+    assert.equal("montoAprobadoRiesgo" in data, false);
+  });
+
   it("executes workflow plan using the first domain-transition without changing runtime path", async () => {
     const prisma = new FakeWorkflowPrisma();
     const now = new Date("2026-05-18T12:00:00.000Z");

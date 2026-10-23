@@ -12,6 +12,9 @@ services:
       BCRA_FILE_REFRESH_START_HOUR: "21"
       BCRA_FILE_REFRESH_END_HOUR: "7"
       BCRA_FILE_REFRESH_TIMEZONE: America/Argentina/Buenos_Aires
+      BCRA_FILE_EXTENDED_ENABLED: "true"
+      BCRA_FILE_MIN_FREE_BYTES: "21474836480"
+      BCRA_FILE_MAX_BUILD_BYTES: "37580963840"
     volumes:
       - bcra-file-data:/data
     tmpfs:

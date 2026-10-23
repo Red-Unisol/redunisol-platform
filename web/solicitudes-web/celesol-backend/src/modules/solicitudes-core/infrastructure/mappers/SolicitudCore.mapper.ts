@@ -171,6 +171,10 @@ export class SolicitudCoreMapper {
       nroOperacion: record.nroOperacion,
       montoAFinanciar:
         record.montoAFinanciar === null ? null : Number(record.montoAFinanciar),
+      montoAprobadoRiesgo:
+        record.montoAprobadoRiesgo === null
+          ? null
+          : Number(record.montoAprobadoRiesgo),
       motivo: record.motivo,
       nroSolicitud: record.nroSolicitud,
       observaciones: record.observaciones,

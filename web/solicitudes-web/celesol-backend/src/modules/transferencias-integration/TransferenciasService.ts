@@ -365,7 +365,13 @@ export class TransferenciasService {
         where: { id },
         data: { bankStartedAt: current.bankStartedAt ?? new Date() },
       });
-      return { planVersion: plan.version, checkedAt: new Date(), valid: true };
+      // Desktop 2.3.1 expects the durable order; retain the acknowledgement fields.
+      return {
+        ...this.view(current),
+        planVersion: plan.version,
+        checkedAt: new Date(),
+        valid: true,
+      };
     });
   }
 

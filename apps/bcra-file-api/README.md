@@ -1,257 +1,230 @@
-# BCRA File API — prueba de concepto
+# BCRA File API
 
-Servicio FastAPI/Uvicorn persistente para consultar la publicación mensual de la Central de
-Deudores por CUIT/CUIL/CDI. Ningún proceso existente lo consume, no escribe en
-Bitrix y no consulta la API individual del BCRA. No toma decisiones comerciales.
+Servicio interno FastAPI/Uvicorn que consulta los archivos de la Central de
+Deudores. Expone contratos compatibles de deudas vigentes e histórico de 24
+meses. No hay consumidores de negocio conectados, no escribe en Bitrix y no
+consulta la API individual del BCRA. Cheques rechazados queda fuera de alcance.
 
-## Arquitectura
+## Contrato compatible
 
-- Contenedor con reinicio automático, un proceso Uvicorn por volumen, en la red
-  interna `kestra_net`. Puerto local `127.0.0.1:18082` para acceso directo o túnel
-  SSH, sin exposición pública ni acceso al socket de Docker.
-- La consulta directa `POST /lookup` no crea una ejecución de Kestra. Las
-  aplicaciones de la VPS pueden usar `http://bcra-file-api-poc:8080/lookup`.
-  Conserva los campos null y devuelve directamente los HTTP 400/404/503.
-- Se reutiliza explícitamente el volumen `bcra-file-poc_bcra-file-data`: el
-  arranque lee la base publicada y no descarga ni importa automáticamente.
-  La configuración Compose mantiene el nombre aunque cambie el directorio del
-  checkout; no borrar/recrear el volumen como parte de un despliegue.
-- `bcra_archivo_consultar_poc` se conserva como acceso de compatibilidad:
-  webhook síncrono con una única tarea HTTP nativa
-  hacia el contenedor que ya está activo; sin Docker task runner.
-- `bcra_archivo_actualizar_poc`: scheduler diario a las 21:00 Argentina; inicia
-  un job en el servicio y consulta su estado cada minuto, hasta 12 horas.
-- El servicio sólo admite trabajo pesado entre las 21:00 y las 07:00 Argentina,
-  incluso con `run_now=true`. El presupuesto de diez horas se acorta al cierre
-  de la ventana; se controla también durante SQL, descarga y descompresión.
-  Un corte conserva la base activa, marca el job como fallido y descarta la
-  construcción temporal. No hay reanudación parcial: la siguiente noche reintenta
-  desde el principio. Las consultas al snapshot activo siguen disponibles.
-- No se agregan límites de I/O, esperas entre lotes ni prioridades de disco.
-  Se conservan los límites existentes de 1 CPU y 2 GiB de memoria.
-- Ambos triggers se publican solamente en `redunisol.prod.analisis-credito`.
-  El normalizador elimina los triggers `prod_only` en dev.
-- `ENV_BCRA_FILE_POC_ENABLED=true` habilita el trabajo diario en producción.
-  La entrada manual `run_now=true` permite una primera carga o reintento.
-- Sin cambios de reglas, consumidores, rutas históricas ni DNS.
+Autenticación interna: `Authorization: Bearer <token>`.
 
-## Acceso directo y operación
+- `GET /centraldedeudores/v1.0/Deudas/{identificacion}`.
+- `GET /centraldedeudores/v1.0/Deudas/Historicas/{identificacion}`.
+- También se admite el prefijo `/CentralDeDeudores/v1.0`.
 
-El servicio tiene una única instancia Uvicorn. El coordinador del refresh vive
-en ese proceso: no aumentar workers ni réplicas sin agregar coordinación
-compartida. Las consultas SQLite se ejecutan en un thread pool y el importador
-continúa en su hilo de trabajo; el event loop HTTP queda disponible. La
-publicación de snapshots mantiene el reemplazo atómico y la base anterior ante
-fallos. La actualización nocturna y la ventana 21:00–07:00 siguen bajo el flujo
-existente de Kestra.
+Las rutas validan 11 dígitos y devuelven el código HTTP y el cuerpo del contrato
+BCRA: `status`, `results` con `identificacion` numérica, `denominacion` y
+`periodos`, o `status` y `errorMessages` para errores. El JSON compatible no
+agrega `meta`, códigos internos ni campos de procedencia.
 
-Para una aplicación en la VPS, usar la red interna de Docker y un Bearer token.
-Desde otra máquina, establecer un túnel SSH siguiendo exactamente el acceso
-canónico local y reenviar un puerto local hacia `127.0.0.1:18082` en la VPS.
-No se publica un nuevo dominio ni se modifica Apache para este acceso.
+Deudas vigentes selecciona el último mes **por entidad**, sin repetir la misma
+entidad en meses anteriores. Incluye los campos `entidad`, `situacion`, `fechaSit1`,
+`monto`, `diasAtrasoPago`, `refinanciaciones`, `recategorizacionOblig`,
+`situacionJuridica`, `irrecDisposicionTecnica`, `enRevision` y `procesoJud`.
+Histórico incluye `entidad`, `situacion`, `monto`, `enRevision` y `procesoJud` por
+mes. Sólo se devuelven meses y entidades con información. Los montos están en
+**miles de pesos**, con un decimal; internamente se almacenan como enteros.
 
-~~~bash
-curl http://127.0.0.1:18082/lookup \
-  -H "Authorization: Bearer $BCRA_FILE_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"identificacion":"20123456786"}'
-~~~
+El padrón ARCA aporta la denominación completa; se conserva el maestro `nomdeu`
+como respaldo para identificaciones que no estén en el padrón. Del padrón se
+importan exclusivamente identificación y denominación.
 
-El ejemplo usa una identificación sintética. `/refresh`, `/jobs/{id}` y
-`/status` siguen autenticados y disponibles para Kestra y operadores internos.
-El token se toma del archivo local canónico o de los secretos del runtime;
-nunca se copia al repositorio ni a ejemplos ejecutados con valores literales.
+`1DSF` aporta el mes desde el que una persona permanece en situación normal en
+todas las entidades. Se devuelve `fechaSit1` únicamente si todas las entidades
+vigentes están en situación 1 y existe ese dato. Se usa la convención observada
+en la API oficial: día 30, limitado al último día de febrero. El archivo sólo
+tiene precisión mensual, declarada en `X-BCRA-Normal-Date-Precision: month`.
 
-Uvicorn no registra cada petición, cuerpo ni respuesta. Los logs operativos del
-contenedor rotan a 10 MiB con tres archivos; `/health` comprueba el proceso y
-`/status` informa readiness, período, versión y último control exitoso.
+Los encabezados `X-BCRA-Source`, `X-BCRA-Period`, `X-BCRA-Version` y
+`X-BCRA-Checked-At` permiten identificar la publicación usada sin alterar el JSON.
+Las respuestas usan `Cache-Control: no-store`.
 
-## Fuente y actualización
+- HTTP 400: identificación inválida.
+- HTTP 404: identificación sin datos en la cobertura cargada.
+- HTTP 503: falta una publicación validada, pasaron más de 72 horas sin control
+  exitoso o aún no terminó la carga inicial del histórico. No significa ausencia
+  de deudas. Hasta la primera carga ampliada, deudas vigentes sigue disponible
+  con la base anterior y sus campos todavía incompletos.
+
+La compatibilidad es de contrato y de la información disponible en archivos.
+La API oficial puede tener novedades posteriores al corte mensual, denominaciones
+de entidades más largas que los 70 caracteres del maestro o flags que las
+rectificaciones no aportan. No se inventan datos: valores no disponibles y
+códigos no interpretables se muestran como `null`. No se garantiza igualdad
+instantánea con la API oficial ni se determina elegibilidad crediticia.
+
+## Arquitectura y publicación
+
+- Un contenedor, un proceso Uvicorn y un volumen persistente
+  `bcra-file-poc_bcra-file-data`. Red interna `kestra_net` y puerto
+  `127.0.0.1:18082`; sin exposición pública ni socket Docker.
+- `1 CPU`, `2 GiB` de RAM. No se agregan throttling de I/O ni prioridades de disco.
+- El arranque sólo lee la publicación existente, sin descargas ni importación.
+- `BCRA_FILE_EXTENDED_ENABLED=true` en Compose habilita la publicación ampliada.
+  Los defaults de la aplicación mantienen el importador anterior para pruebas.
+- Cinco componentes SQLite inmutables: `current`, `history`, `corrections`,
+  `normal` y `padron`. Un único `active.json` selecciona la versión completa.
+- Se construye en `refresh-*`, en el mismo volumen. El manifiesto cambia mediante
+  rename atómico únicamente después de validar todos los componentes y sus
+  entidades. Las consultas mantienen una versión completa durante la lectura;
+  el importador trabaja en otro hilo y las consultas SQLite usan un thread pool.
+- Un fallo conserva la publicación anterior. No se publica un histórico parcial.
+  Después del cambio se retiran componentes y comprimidos que ya no se usan.
+  Las construcciones abandonadas se limpian al comenzar el siguiente refresh.
+- Se reutilizan componentes cuyo contenido no cambió. Una corrección diaria se
+  guarda en una tabla separada y se aplica al consultar; no obliga a reconstruir
+  las 60 millones de filas históricas. Cambiar sólo nombres tampoco reconstruye
+  el histórico.
+- La migración reutiliza por hardlink el snapshot mensual ya validado si coincide
+  su huella. `snapshot.sqlite` se conserva como respaldo de la migración; futuras
+  publicaciones usan `components/`. No se borra el volumen al desplegar.
+
+El histórico guarda una fila por identificación/entidad con sus 24 meses en un
+blob compacto e indexado, en lugar de multiplicar cada fila por 24. La consulta
+lee sólo las filas de la identificación pedida. Los textos descomprimidos se
+transmiten desde 7-Zip a stdout y nunca se escriben completos al disco.
+
+No aumentar workers ni réplicas sin agregar coordinación compartida: tanto el
+coordinador de refresh como el bloqueo de publicación viven en un único proceso.
+
+## Fuentes y validación de datos
 
 Catálogo: https://www5.bcra.gob.ar/ChequesyDeudores/Deudores
 
-Diseños: https://www.bcra.gob.ar/archivos/Pdfs/Texord/t-ceninf.pdf, sección 4.1.1.
+Diseños: https://www.bcra.gob.ar/archivos/Pdfs/Texord/t-ceninf.pdf y los documentos
+`LEAME DEUDORES.pdf` y `LEAME PADRON.pdf` incluidos en los comprimidos.
 
-Se selecciona el mayor período que tenga `AAAAMMDEUDORES.7Z`,
-`AAAAMMINFRET.7Z` y `AAAAMMINFRETPA.7Z`.
+Se requiere la publicación mensual completa: `AAAAMMDEUDORES.7Z`,
+`AAAAMMINFRET.7Z`, `AAAAMMINFRETPA.7Z`, `24DSFAAAAMM.7Z` y `1DSFAAAAMM.7Z`,
+más el padrón `AAAAMMDDPADRON.7Z` más reciente. Todos los archivos mensuales deben
+corresponder al mayor período de DEUDORES, sin retroceder frente al activo.
 
-El cliente conserva cookies y campos del formulario, registra la aceptación en
-`Deudores/Log_Archivo` y envía el formulario por POST a MFT. No registra URLs,
-cookies ni campos de sesión. Requiere que el operador haya aceptado las
-condiciones/declaración jurada BCRA: rechaza descargas mientras
-`BCRA_FILE_TERMS_ACCEPTED=false`. No automatiza el login de ARCA ni evade
-controles de acceso. Una página HTML de login con HTTP 200 se considera error.
-El 21/10/2026 el registro público `Log_Archivo` devolvió `result: null` mientras
-el formulario oficial entregaba archivos 7z válidos. Ese resultado se conserva
-como advertencia en el job y el manifiesto; una negativa explícita impide la
-descarga. La aceptación del operador sigue siendo obligatoria y quedó registrada
-en la configuración cifrada el 21/10/2026.
+El cliente conserva cookies y campos oficiales del formulario, registra la
+aceptación en `Deudores/Log_Archivo` y descarga por POST a MFT. No registra URLs,
+cookies ni campos de sesión. Requiere la aceptación del operador
+`BCRA_FILE_TERMS_ACCEPTED=true`, registrada en la configuración cifrada el
+21/10/2026. No automatiza login ARCA. Una página HTML con HTTP 200 no es un 7z.
+El registro público devolvió `result: null` en las verificaciones del 21–23/10;
+se conserva esa advertencia, mientras una negativa explícita impide descargar.
 
-Por ahora se descargan y calculan las huellas de los tres comprimidos **cada día**.
-Así se detectan correcciones que conserven el mismo nombre o enlace. Si los
-SHA-256 no cambian, no se descomprime ni importa. La optimización mediante
-metadatos remotos queda fuera de esta versión.
+Se descargan y calculan los SHA-256 de los seis comprimidos **cada noche**,
+para detectar cambios que conserven el nombre. Si no cambian, se omite toda la
+importación. No se confía en metadatos remotos no verificados.
 
-Medición remota del 21/10/2026, período `202608`: `DEUDORES.7Z` pesa
-325.315.249 bytes, `INFRET.7Z` 233.128 bytes y `INFRETPA.7Z` 7.199.629 bytes:
-**332.748.006 bytes en total (333 MB / 317 MiB comprimidos por control diario)**.
-Los miembros suman **7,42 GB descomprimidos**; deudores.txt ocupa 7,23 GB.
-Se procesan por streaming: ese texto no se escribe descomprimido al disco.
-El tamaño de la base SQLite debe medirse en la carga.
+- Mensual: `deudores.txt`, `maeent.txt`, `nomdeu.txt` opcional, más rectificaciones
+  completas y luego parciales para los meses presentes en la base.
+- Histórico: `24DSF.txt`, 24 meses desde el mes de publicación hacia atrás. Sus
+  rectificaciones completas y parciales se superponen para toda esa cobertura;
+  situación y monto cero eliminan el registro.
+- Fecha normal: `1DSF.txt`, tipo de identificación 11 y mes de origen válido.
+- Nombres: `Padron_ARCA.txt`, ancho fijo de 220 caracteres. No se almacenan
+  nacimiento, sexo, domicilio, actividades ni otras columnas del padrón.
 
-Se transmiten los miembros a stdout de 7-Zip, sin extraer rutas al disco.
-Se importan `deudores.txt`, `maeent.txt` y, si existe, `nomdeu.txt`.
-El maestro `nomdeu.txt` de 202608 agrega once espacios al diseño documentado;
-se admiten sólo si están en blanco. Bytes indefinidos de Windows-1252 en nombres
-se muestran como `U+FFFD` y se cuentan en `name_encoding_replacements` con una
-advertencia; se conserva el archivo original y no se adivina otra codificación.
-Se excluyen del maestro las identificaciones extranjeras entidad+país+secuencia,
-igual que en la base, y se cuentan en `excluded_non_fiscal_names`.
-Los puntos y coma dentro de nombres de ancho fijo se conservan como texto.
-El código oficial `9 = No aplicable` se guarda en SQLite y se muestra como null
-en los booleanos de refinanciaciones, situación jurídica e irrecuperables.
-Los códigos numéricos no documentados también se conservan en
-`codigosBanderasFuente`; el booleano derivado es null y el manifiesto cuenta los
-registros afectados en `unrecognized_flag_rows`. No se interpretan como verdadero.
-Las rectificaciones completas se aplican antes de las parciales; se omiten
-las de meses que no estén representados en el archivo base. La publicación
-202608 contiene datos de 202608 y 202607: se conservan ambos bajo su mes real,
-sin atribuir los registros anteriores al mes de publicación. No se aceptan meses
-posteriores al período de publicación. Situación y monto cero
-eliminan el registro. Se conservan todas las situaciones del archivo base.
+Se rechazan diseños desconocidos, duplicados, entidades sin maestro, fechas
+inconsistentes, componentes principales con menos de 100.000 filas y caídas de
+más del 20% respecto de la versión previa. Cada SQLite pasa `quick_check`.
+El código `9 = No aplicable` y códigos no interpretables no se convierten en
+verdadero. Las rectificaciones sólo aportan situación y monto: sus días y
+observaciones se devuelven `null`. Los bytes indefinidos de Windows-1252 se
+muestran como `U+FFFD` y se cuentan; se conservan los comprimidos originales.
+Los puntos y coma dentro de nombres de ancho fijo son texto.
 
-SQLite tiene una clave por identificación, entidad y período. Se construye una
-base temporal del mismo volumen y se rechazan formatos desconocidos, períodos
-inconsistentes, duplicados, entidades sin maestro, menos de 100.000 filas y caídas
-de más del 20% frente a la base activa. Sólo después de validar se reemplaza la
-base mediante un rename atómico. Las lecturas usan una sola versión inmutable.
+## Horario, recursos y carga inicial
 
-Un job fallido conserva la base activa; reiniciar el proceso marca el job
-interrumpido como fallido. Actualizaciones simultáneas comparten el job en curso;
-`Idempotency-Key` permite retomar el último job. La descarga reintenta errores
-de transporte tres veces y el procesamiento tiene un presupuesto de 10 horas.
-Kestra falla si el job falla o no termina a tiempo.
+El flow Git-managed `bcra_archivo_actualizar_poc`, namespace de runtime
+`redunisol.prod.analisis-credito`, ejecuta diariamente a las **21:00 Argentina**
+con `ENV_BCRA_FILE_POC_ENABLED=true`. Inicia un job del servicio y consulta su
+estado cada minuto. No hace falta crear otro scheduler para la carga ampliada.
+El despliegue de esta versión prepara la primera carga para el **23/10/2026 a
+las 21:00**, sin modificar consumidores.
 
-## Contrato
+El servicio sólo admite trabajo pesado entre las 21:00 y las 07:00, incluso con
+`run_now=true`. El presupuesto de diez horas se acorta al cierre de la ventana y
+se controla en descarga, descompresión y SQL. Al agotarse, se descarta el temporal
+y se conserva la base activa. Reiniciar marca el job interrumpido como fallido.
+No hay reanudación dentro de un componente incompleto; la siguiente noche
+reintenta. Los componentes terminados de una primera carga interrumpida justo
+antes de publicar pueden reutilizarse después de verificar sus huellas.
 
-Servicio interno, con `Authorization: Bearer <token>`:
+Protecciones Compose, ajustables mediante configuración de la aplicación:
+
+| Variable | Valor de producción | Propósito |
+| --- | --- | --- |
+| `BCRA_FILE_MIN_FREE_BYTES` | 21.474.836.480 (20 GiB) | Reserva libre durante descargas/importación |
+| `BCRA_FILE_MAX_BUILD_BYTES` | 37.580.963.840 (35 GiB) | Máximo de archivos temporales por construcción |
+| `BCRA_FILE_MIN_EXTENDED_ROWS` | 100.000 por defecto | Mínimo de filas de histórico, padrón y normal |
+
+Antes de comenzar se exige espacio para la reserva más hasta 25 GiB adicionales.
+Los límites se comprueban periódicamente y antes de publicar. Si faltan recursos,
+el job falla con una causa operativa y no toca la publicación activa.
+
+Mediciones de partida (23/10/2026, no son una garantía de capacidad futura):
+
+- Primera carga mensual: 31m29s del servicio, 41.804.946 filas, SQLite 2,34 GB.
+  Control posterior sin cambios: 30,44s del servicio.
+- Seis comprimidos: 3.995.606.525 bytes (~4,0 GB) por control diario. Los tres
+  archivos adicionales suman unos 37,7 GB de texto que se procesará por streaming.
+- Histórico: 60.226.446 filas por entidad/persona. Fecha normal: 14.782.763 filas.
+  Padrón: unos 65 millones de registros.
+- VPS: 8 CPU, 16 GiB RAM, unos 79 GB libres antes de la ampliación.
+- Estimación de diseño, pendiente de medir la carga completa: 20–30 GB de bases
+  activas y 50–70 GB de uso máximo con versiones anterior/nueva y comprimidos.
+  La primera carga permanece acotada a la ventana nocturna; no se presupone que
+  terminará hasta observar el job real.
+
+## Operación y despliegue
+
+Servicio interno: `http://bcra-file-api-poc:8080`. Para acceso desde otra máquina,
+usar un túnel SSH al puerto loopback siguiendo el acceso canónico local.
+No se agrega dominio ni configuración Apache.
 
 - `GET /health`: liveness sin autenticación ni datos personales.
-- `GET /status`: período, versión, último control exitoso, job y readiness.
-- `POST /refresh` con body `{}`: HTTP 202 y `job_id`.
-- `GET /jobs/<job_id>`: estado; HTTP 500 si falló.
-- `POST /lookup` con `{"identificacion":"20123456786"}`: también admite las
-  claves `cuil` o `cuit` y guiones.
+- `GET /status`: readiness, capacidades (`current`, `history`, `padron`,
+  `normal_since`), versión, componentes, último control y progreso del job.
+- `POST /refresh`, body `{}`: HTTP 202 y `job_id`. `Idempotency-Key` retoma el
+  mismo job; ejecuciones simultáneas comparten el que esté activo.
+- `GET /jobs/{job_id}`: estado y progreso sin datos de deudores; HTTP 500 si falló.
+- `POST /lookup`: conserva el contrato diagnóstico previo, incluido `meta`, ID
+  textual y códigos de fuente. También admite claves `cuil`/`cuit` y guiones.
+  Las rutas compatibles GET son las destinadas a una futura migración.
 
-Ejemplo de estructura; nombres e identificación sintéticos:
+`bcra_archivo_consultar_poc` conserva el webhook síncrono existente y devuelve
+los outputs `status` y `data` de `/lookup`. Sus triggers se publican sólo en prod.
+El token del servicio y la key de webhook son distintos y están cifrados en Git;
+los accesos se consultan en el archivo local canónico sin copiarlos a ejemplos.
+No se registran peticiones, identificaciones ni respuestas. Logs con rotación
+a 10 MiB y tres archivos.
 
-~~~json
-{
-  "status": 200,
-  "results": {
-    "identificacion": "20123456786",
-    "denominacion": null,
-    "periodos": [{
-      "periodo": "202608",
-      "entidades": [{
-        "codigoEntidad": "00007",
-        "entidad": "BANCO SINTETICO",
-        "situacion": 1,
-        "monto": 123.5
-      }]
-    }]
-  },
-  "meta": {
-    "source": "bcra_monthly_file_poc",
-    "period": "202608",
-    "version": "sha256-de-la-publicacion"
-  }
-}
-~~~
+1. Mergear el PR y ejecutar **Deploy BCRA File POC** desde main.
+2. El workflow construye/prueba la imagen `sha-<commit>` y despliega sólo
+   `/opt/bcra-file-poc`, conservando el volumen, con credenciales GHCR temporales.
+3. Mantener `terms_accepted=true` con la aceptación ya registrada del operador.
+4. Verificar imagen, `/health`, snapshot preservado, contrato GET actual y el
+   scheduler de Kestra habilitado. El despliegue no dispara una importación.
+5. Después de la carga nocturna, comprobar job `completed`, cuatro capacidades
+   activas, filas/bytes por componente, disco libre y consultas actuales/históricas.
+   Una falla sigue siendo visible en Kestra y en `/jobs`; no conectar consumidores
+   hasta validar el resultado completo.
 
-Incluye además días de atraso, observaciones, archivo de origen, fechas de
-importación/control, huellas, cantidades y limitaciones. Monto se expresa en
-**miles de pesos**, con un decimal; se almacena internamente como enteros.
+Para detenerlo, deshabilitar su flag y detener Compose. Conservar el volumen;
+no usar `down -v`. Una reversión de imagen a la versión anterior vuelve a usar
+`snapshot.sqlite`, que puede estar menos actualizado; requiere revisar vigencia.
 
-- HTTP 400: entrada inválida.
-- HTTP 404: identificación ausente de la publicación mensual cargada.
-- HTTP 503: no hay base validada o pasaron más de 72 horas sin un control exitoso
-  de los archivos. No equivale a una persona sin datos.
-- El período mensual y la fecha de verificación de la fuente se exponen separados.
+## Validación local
 
-No reemplaza el contrato completo de la API individual: denominación puede faltar
-(no se descarga el padrón ARCA), `fechaSit1` es null (no se importa 1DSF), y las
-rectificaciones dejan días/observaciones en null cuando no los proporcionan.
-No incluye historia completa de 24 meses ni cheques. `meta.data_periods` indica
-los meses efectivamente presentes en el archivo. No determina elegibilidad crediticia.
-
-## Endpoint de Kestra
-
-~~~text
-POST /api/v1/main/executions/webhook/redunisol.prod.analisis-credito/bcra_archivo_consultar_poc/<BCRA_FILE_POC_WEBHOOK_KEY>
-Content-Type: application/json
-
-{"identificacion":"20123456786"}
-~~~
-
-Usa `wait: true` y `returnOutputs: true`; devuelve los outputs `status` y `data`
-(objeto JSON del servicio). El HTTP exterior corresponde al webhook; el resultado
-de la consulta está en `status` y `data.status`. Si cae el servicio, falla la ejecución.
-
-El token del servicio y la key del webhook son distintos. Están cifrados en Git
-y guardados también en el archivo local canónico de accesos.
-
-## Despliegue y activación
-
-1. Mergear el PR. La imagen se publica como `sha-<commit>`. Los flows y mapeos
-   de entorno siguen sus pipelines habituales.
-2. Ejecutar **Deploy BCRA File POC** desde main. Sólo despliega
-   `/opt/bcra-file-poc`; no configura Apache. Requiere `kestra_net` y acceso
-   de lectura a GHCR. El workflow utiliza su token efímero en un DOCKER_CONFIG
-   temporal, eliminado al terminar; no cambia el login global de Docker en la VPS.
-3. Marcar `terms_accepted=true` únicamente cuando el operador haya aceptado las
-   condiciones/declaración jurada. False permite probar errores sin descargar.
-4. Ejecutar el flow de actualización en prod con `run_now=true` y comprobar
-   finalización, período, conteos y consultas conocidas.
-5. El trabajo diario está habilitado mediante `ENV_BCRA_FILE_POC_ENABLED=true`
-   en el runtime cifrado. El despliegue de infraestructura aplica esa configuración.
-   No se conectan consumidores ni se cambian reglas.
-
-El Compose usa el volumen `bcra-file-poc_bcra-file-data`, hasta 2 GiB de memoria
-y 1 CPU. Medir espacio antes de importar: pueden coexistir archivos anteriores,
-descargas nuevas, base activa y base en construcción. Se conservan los comprimidos
-activos y se limpian los anteriores después del cambio exitoso.
-
-Para detenerlo, deshabilitar su flag y detener el Compose. Conservar el volumen
-si se pretende conservar la base; no usar `down -v` como rutina.
-
-## Validación
-
-~~~bash
+```bash
 pip install -r apps/bcra-file-api/requirements-test.txt
 PYTHONPATH=apps/bcra-file-api/src python -m unittest discover -s apps/bcra-file-api/tests -v
 python -m unittest kestra.tools.tests.test_bcra_poc_deploy
 docker build --target test -t bcra-file-poc:test apps/bcra-file-api
 docker compose --env-file apps/bcra-file-api/deploy/.env.example \
   -f apps/bcra-file-api/deploy/docker-compose.yml config -q
-~~~
+```
 
-Los tests usan datos sintéticos según el diseño publicado y crean comprimidos 7z
-reales cuando está disponible 7z/7zz (siempre en la etapa Docker de tests).
-Cubren correcciones/bajas, fallas, contenido sin cambios, autenticación, HTML con
-HTTP 200, expiración y lecturas durante una actualización.
-
-Checkpoint 22/10/2026: la primera carga nocturna terminó en unos 32 minutos y
-publicó 41.804.946 filas, período 202608 con datos de 202608/202607. SQLite ocupa
-2,34 GB y los comprimidos 333 MB. Una muestra aleatoria de 20 CUIL de Bitrix
-coincidió con la API oficial en presencia de datos (18 con datos y dos sin datos)
-y en los 55 registros entidad/período comparados para situación, monto y días de
-atraso. Hubo un nombre de entidad truncado a 70 caracteres; las diferencias de
-cobertura del contrato permanecen documentadas. Este checkpoint no reemplaza la
-verificación del runtime actual. CI sólo usa datos sintéticos.
-
-La migración a FastAPI debe comprobar que la versión, el tamaño y el inode del
-snapshot se preservan al recrear el contenedor y que el flujo diario continúa
-activo. La validación local incluye arranque con una base ya existente sin
-importar, consultas concurrentes, HTTP real con keep-alive y los endpoints de
-actualización/idempotencia.
+Los tests usan datos sintéticos y 7z reales cuando está disponible 7z/7zz
+(`BCRA_FILE_7Z` permite elegir el ejecutable; la etapa Docker siempre lo incluye).
+Cubren contratos, rectificaciones históricas, montos, fechas, meses vacíos,
+publicación fallida, cambios por componente, migración sin copiar, lecturas
+concurrentes, autenticación, vigencia, límites de recursos y ventana nocturna.
+La integración usa seis comprimidos de prueba y sirve ambas rutas GET.

@@ -34,6 +34,10 @@ import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
+import {
+  getMontoSuperaTopeError,
+  getTopeMontoRiesgo,
+} from "@/modules/solicitudes-core/utils/tope-monto-riesgo";
 import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
 import { canViewPrestamosDelSocio,
   canAccessRiesgoTools,
@@ -1194,6 +1198,7 @@ function EditableMoneyInput({
   appearanceStyle,
   disabled = false,
   highlightReadOnly = false,
+  invalid,
   isEditing,
   label,
   onChange,
@@ -1203,6 +1208,7 @@ function EditableMoneyInput({
   appearanceStyle?: CSSProperties;
   disabled?: boolean;
   highlightReadOnly?: boolean;
+  invalid?: boolean;
   isEditing: boolean;
   label: string;
   onChange: (value: string) => void;
@@ -1216,6 +1222,7 @@ function EditableMoneyInput({
         <StaticMoneyInput
           aria-label={label}
           disabled={disabled}
+          invalid={invalid}
           onChange={onChange}
           style={disabled ? appearanceStyle : undefined}
           value={value}
@@ -1325,6 +1332,7 @@ function SolicitudSection({
   isEditing,
   isExecutiveAssignmentDisabled,
   lineas,
+  montoTopeError,
   mostrarEjecutivo,
   onAssignmentChange,
   onBooleanChange,
@@ -1335,6 +1343,8 @@ function SolicitudSection({
   values,
 }: {
   cuotaCalculoMensaje?: string;
+  /** El monto cargado pasa el aprobado por Riesgo. */
+  montoTopeError?: string | null;
   assignmentOptions: StyledSelectOption[];
   assignmentValue: string;
   assignmentValueLabel: string;
@@ -1405,15 +1415,21 @@ function SolicitudSection({
           readOnlyValue={formatAmount(solicitud.cupoTitular)}
           value={values.cupoTitular}
         />
-        <EditableMoneyInput
-          {...getReadonlyProps("solicitud.montoAFinanciar")}
-          disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
-          isEditing={isEditing}
-          label="Monto a financiar"
-          onChange={(value) => onChange("montoAFinanciar", value)}
-          readOnlyValue={formatAmount(solicitud.montoAFinanciar)}
-          value={values.montoAFinanciar}
-        />
+        <div>
+          <EditableMoneyInput
+            {...getReadonlyProps("solicitud.montoAFinanciar")}
+            disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+            invalid={isEditing && Boolean(montoTopeError)}
+            isEditing={isEditing}
+            label="Monto a financiar"
+            onChange={(value) => onChange("montoAFinanciar", value)}
+            readOnlyValue={formatAmount(solicitud.montoAFinanciar)}
+            value={values.montoAFinanciar}
+          />
+          {isEditing && montoTopeError ? (
+            <span role="alert" className="text-xs text-danger">{montoTopeError}</span>
+          ) : null}
+        </div>
         <EditableTextInput
           {...getReadonlyProps("solicitud.cuotas")}
           disabled={!isFieldEditableByKey("solicitud.cuotas")}
@@ -1548,15 +1564,20 @@ function SolicitudSection({
 }
 
 function TitularFields({
+  datosLaborales,
+  datosLaboralesValues,
   errors,
   isFieldEditableByKey,
   isEditing,
   onBooleanChange,
   onChange,
+  onDatosLaboralesChange,
   readonlyAppearanceStyle,
   titular,
   values,
 }: {
+  datosLaborales: SolicitudCoreDatosLaboralesResponse;
+  datosLaboralesValues: EditableSolicitudCoreValues["datosLaborales"];
   errors?: Partial<
     Record<keyof EditableSolicitudCoreValues["titular"], string>
   >;
@@ -1565,6 +1586,10 @@ function TitularFields({
   onBooleanChange: (value: boolean) => void;
   onChange: (
     field: keyof EditableSolicitudCoreValues["titular"],
+    value: string,
+  ) => void;
+  onDatosLaboralesChange: (
+    field: keyof EditableSolicitudCoreValues["datosLaborales"],
     value: string,
   ) => void;
   readonlyAppearanceStyle?: CSSProperties;
@@ -1796,6 +1821,16 @@ function TitularFields({
         onChange={(value) => onChange("cbuNoHabitual", value)}
         readOnlyValue={formatText(titular.cbuNoHabitual)}
         value={values.cbuNoHabitual}
+      />
+      {/* También en Económicos/Laborales: acá queda a mano aunque esa pestaña no muestre campos. */}
+      <EditableMoneyInput
+        {...getReadonlyProps("datosLaborales.montoRecibo")}
+        disabled={!isFieldEditableByKey("datosLaborales.montoRecibo")}
+        isEditing={isEditing}
+        label="Monto recibo"
+        onChange={(value) => onDatosLaboralesChange("montoRecibo", value)}
+        readOnlyValue={formatAmount(datosLaborales.montoRecibo)}
+        value={datosLaboralesValues.montoRecibo}
       />
     </div>
   );
@@ -2696,11 +2731,14 @@ function SolicitanteSection({
         <div>
           {activeContentTab === "datosPersonales" ? (
             <TitularFields
+              datosLaborales={datosLaborales}
+              datosLaboralesValues={titularDatosLaboralesValues}
               errors={titularErrors}
               isFieldEditableByKey={isFieldEditableByKey}
               isEditing={isEditing}
               onBooleanChange={onTitularBooleanChange}
               onChange={onTitularChange}
+              onDatosLaboralesChange={onDatosLaboralesChange}
               readonlyAppearanceStyle={readonlyAppearanceStyle}
               titular={titular}
               values={titularValues}
@@ -3273,6 +3311,13 @@ export function SolicitudesActualDetallePage() {
   const resolvedSolicitud = solicitud;
   const currentValues =
     editableValues ?? mapSolicitudCoreToEditableValues(resolvedSolicitud);
+  const topeMontoRiesgo = getTopeMontoRiesgo(currentUser, resolvedSolicitud);
+  const montoTopeError = isEditing
+    ? getMontoSuperaTopeError(
+        parseMoneyValue(currentValues.solicitud.montoAFinanciar),
+        topeMontoRiesgo,
+      )
+    : null;
   const currentGarantias =
     editableGarantias ??
     resolvedSolicitud.garantias.map(toEditableGarantiaRequest);
@@ -3523,6 +3568,15 @@ export function SolicitudesActualDetallePage() {
             ),
           )
         : null;
+
+    if (montoTopeError) {
+      toast.error(montoTopeError, {
+        duration: 3500,
+        icon: <CircleAlert className="size-5" />,
+        id: EDIT_SOLICITUD_CUOTAS_ERROR_TOAST_ID,
+      });
+      return;
+    }
 
     if (cuotasError) {
       toast.error(cuotasError, {
@@ -4114,6 +4168,7 @@ export function SolicitudesActualDetallePage() {
         isSaveDisabled={
           patchSolicitudCoreMutation.isPending ||
           (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
+          Boolean(montoTopeError) ||
           (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
         }
         isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
@@ -4264,7 +4319,7 @@ export function SolicitudesActualDetallePage() {
                 Cancelar
               </Button>
               <Button
-                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data)}
+                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data) || Boolean(montoTopeError)}
                 onClick={() => void handleSaveChanges()}
                 type="button"
               >
@@ -4282,6 +4337,7 @@ export function SolicitudesActualDetallePage() {
             isFieldEditableByKey={isSolicitudFieldEditable}
             isEditing={isEditing}
             isExecutiveAssignmentDisabled={!canManageAssignment}
+            montoTopeError={montoTopeError}
             mostrarEjecutivo={!isVendedor(currentUser)}
             lineas={lineasSimulador}
             onAssignmentChange={setSelectedAssignmentValue}
