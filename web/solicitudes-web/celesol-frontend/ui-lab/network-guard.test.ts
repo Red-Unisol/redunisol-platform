@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { SAMPLE_REQUEST } from "./scenarios.ts";
+import { HEADER_SAMPLE } from "./header-fixtures.ts";
 import {
   createUiLabFetch,
   installUiLabNetworkGuard,
@@ -57,6 +58,80 @@ it("serves deterministic GET fixtures without invoking the original transport", 
   );
   assert.equal(realCalls, 0);
   restore();
+});
+
+it("serves the fictional session, applicant and review contracts used by real header components", async () => {
+  const fetcher = createUiLabFetch();
+  const get = async (path: string) =>
+    (await fetcher(`${UI_LAB_API_ORIGIN}${path}`)).json();
+  const session = await get("/auth/me");
+  assert.equal(session.user.firstName, "SOFÍA");
+  assert.equal(session.user.lastName, "DEMO");
+  assert.equal(session.user.isSystemAdmin, false);
+  assert.deepEqual(await get(`${route}/datos-rapidos/socio`), {
+    condicion: "member",
+  });
+  assert.deepEqual(await get(`${route}/datos-rapidos/convenio`), {
+    descripcion: HEADER_SAMPLE.convenio,
+  });
+  assert.deepEqual(await get(`${route}/datos-rapidos/mora`), {
+    enMora: false,
+  });
+  assert.deepEqual(await get(`${route}/datos-rapidos/creditos`), {
+    activos: true,
+  });
+  const review = await get(`${route}/document-review`);
+  assert.equal(review.canDecide, false);
+  assert.equal(review.state, "Pagada");
+  assert.equal(review.currentReview.systemDecision, "approve");
+  assert.ok(review.history.length > 0);
+  const attempt = review.currentReview.attempts.find(
+    (item: { verificationId: string }) =>
+      item.verificationId === review.currentReview.selectedVerificationId,
+  );
+  assert.ok(attempt);
+  assert.ok(attempt.checks.length > 0);
+  assert.equal(
+    attempt.checks.every((check: { passed: boolean }) => check.passed),
+    true,
+  );
+  assert.equal(attempt.dashboardUrl, null);
+  assert.equal(review.currentReview.legajoAdjuntoId, null);
+  assert.equal(review.history[0].decisions[0].humanDecision, "approve");
+  // Responses remain independent after a consumer mutates its parsed copy.
+  review.currentReview.attempts[0].checks[0].passed = false;
+  const next = await get(`${route}/document-review`);
+  assert.equal(next.currentReview.attempts[0].checks[0].passed, true);
+});
+
+it("does not grant mutations or new routes when header GET fixtures are available", async () => {
+  const fetcher = createUiLabFetch();
+  for (const path of [
+    "/auth/me",
+    `${route}/datos-rapidos/socio`,
+    `${route}/datos-rapidos/convenio`,
+    `${route}/datos-rapidos/mora`,
+    `${route}/datos-rapidos/creditos`,
+    `${route}/document-review`,
+    `${route}/document-review/evaluate`,
+    `${route}/document-review/decisions`,
+  ])
+    await assert.rejects(
+      () => fetcher(`${UI_LAB_API_ORIGIN}${path}`, { method: "POST" }),
+      UiLabNetworkBlockedError,
+    );
+  for (const path of [
+    "/solicitudes/another-request/datos-rapidos/socio",
+    "/solicitudes/another-request/document-review",
+    `${route}/datos-rapidos/unknown`,
+    `${route}/document-review/evaluate`,
+    `${route}/document-review/decisions`,
+    `${route}/document-review/demo-revision-001/legajo`,
+  ])
+    await assert.rejects(
+      () => fetcher(`${UI_LAB_API_ORIGIN}${path}`),
+      UiLabNetworkBlockedError,
+    );
 });
 
 it("fails closed for mutations, unknown routes and production or external hosts", async () => {

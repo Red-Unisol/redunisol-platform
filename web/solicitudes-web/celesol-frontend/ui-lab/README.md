@@ -27,7 +27,8 @@ El guard sólo acepta los GET de revisión de préstamo y cancelaciones para la 
 ficticia exportada como `UI_LAB_SOLICITUD_ID`. Cualquier POST, ruta no prevista u origen
 externo falla localmente; nunca se invoca el `fetch` anterior. No usar datos de clientes.
 La política CSP permite recursos del mismo servidor y su websocket de recarga, y bloquea
-conexiones a APIs externas, iframes y envíos de formularios.
+conexiones a APIs externas, iframes externos y envíos de formularios.
+Los únicos iframes permitidos son del mismo origen, usados para probar un viewport móvil real.
 
 Para incorporar un componente nuevo que consulte API, agregar primero su fixture explícito
 y una prueba de que rutas no previstas siguen bloqueadas. No agregar una salida a la red real.
@@ -43,3 +44,37 @@ y una prueba de que rutas no previstas siguen bloqueadas. No agregar una salida 
 
 La revisión visual no introduce una aprobación adicional cuando el trabajo ya está autorizado.
 El proceso general se documenta en [prototipado de UI](../../../../docs/ui-prototyping.md).
+
+## Cabeceras de solicitud
+
+Abrir `http://127.0.0.1:5271/headers?layout=merged` para comparar Actual, A (barra compacta),
+B (encabezado integrado) y C (vista de lectura). Se puede desplegar la cabecera, abrir las
+acciones de C, recorrer las tres pestañas y probar un viewport móvil real de 390 px.
+`clean=1` deja sólo la interfaz para capturas comparables y `expanded=1` abre los datos.
+
+La revisión de firma, los datos rápidos, la barra de acciones y la navegación usan componentes
+del producto. Las composiciones de cabecera son propuestas del lab; Evaluación y CredixSA
+presentan contenido reducido de ejemplo. No se implementan decisiones, edición ni operaciones.
+Los GET de sesión, datos rápidos y revisión documental tienen fixtures explícitos. Las mutaciones
+y las rutas no previstas siguen bloqueadas, y la navegación del producto se simula localmente.
+
+## Prueba visual reproducible
+
+Con `ui:dev` ejecutándose, en otra terminal:
+
+```powershell
+npx playwright install chromium
+npm run ui:visual
+```
+
+Si ya existe Chrome instalado, se puede usarlo sin descargar otro navegador:
+
+```powershell
+$env:UI_LAB_BROWSER_CHANNEL = 'chrome'
+npm run ui:visual
+```
+
+El runner abre un navegador de prueba independiente con datos ficticios. Captura los cuatro
+diseños en 1365×699, 1024×768 y 390×844; prueba los controles y guarda un `report.json`
+junto a los PNG en `.local/ui-header-review/`. `UI_LAB_BASE_URL` permite indicar otro servidor
+loopback y `UI_LAB_OUTPUT_DIR` una carpeta absoluta para la evidencia. No se conecta a producción.

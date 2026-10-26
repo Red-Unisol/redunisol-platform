@@ -170,6 +170,9 @@ export function App() {
           </div>
         </div>
         <div className="lab-safe-badge">
+          <a href="/headers?layout=merged" className="mr-3 underline">
+            Comparar cabeceras
+          </a>
           <ShieldCheck size={14} />
           <span>Prototipo local · datos ficticios</span>
         </div>

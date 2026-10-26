@@ -26,3 +26,24 @@ La galería se sirve en `http://127.0.0.1:5271/`. Tiene una entrada y una config
 El primer conjunto presenta la propuesta de generación de préstamo y liquidación. Incluye préstamos compatibles, diferencias de monto o condiciones, anulación verificada, indisponibilidad de Core, operación en curso, resultado incierto y éxito. Los importes se comparan con el monto solicitado, sin confundirlo con el capital que incluye gastos. La firma sigue después de Liquidada.
 
 Para agregar una propuesta, crear datos de escenarios separados de sus componentes y mantener visible qué se está simulando. No reutilizar nombres, documentos, solicitudes ni préstamos reales.
+
+## Comparación de cabeceras y espacio de lectura
+
+En `http://127.0.0.1:5271/headers` se comparan la cabecera actual y tres propuestas:
+
+- `?layout=current`: referencia con barra global de 64 px y datos completos.
+- `?layout=slim`: A, barra global de 40 px y datos plegables.
+- `?layout=merged`: B, navegación e identificación integradas en una sola cabecera.
+- `?layout=focus`: C, vista de lectura con datos y acciones desplegables.
+
+`expanded=1` abre los datos y `clean=1` oculta los controles del laboratorio. La opción de 390 px usa un iframe del mismo origen, con un viewport real de ese ancho, para que los breakpoints de los componentes compartidos se ejecuten correctamente. El iframe también conserva el bloqueo de red del laboratorio.
+
+La galería importa `AppTopbar`, `AppSidebar`, `DatosRapidosSolicitante`, `SolicitudDetailToolbar` y `DocumentReviewPanel` del producto. La composición alternativa de la cabecera vive sólo en el laboratorio. Los cuerpos de Evaluación y CredixSA son ejemplos reducidos para revisar el espacio; no sustituyen las pantallas operativas ni prueban sus cálculos o integraciones. Las acciones de navegación y edición están simuladas.
+
+Para revisar un diseño:
+
+1. Abrir Actual, A, B y C al mismo tamaño de viewport y con el mismo contenido cargado. Registrar inicio y altura del área de lectura.
+2. Probar Mostrar/Ocultar encabezado en las tres pestañas, Acciones en C, menú lateral y menú de usuario. Comprobar que no se pierde identificación ni acceso a los controles.
+3. Repetir en una notebook de poca altura, en 1024×768 y en 390×844. Comprobar foco de teclado, navegación por flechas en las pestañas, tablas y scroll. En dispositivos táctiles usar blancos de al menos 44 px.
+4. Guardar capturas de las alternativas y del diseño desplegado. Mantener la evidencia local fuera del build de producción.
+5. Ejecutar `npm run ui:test` y `npm run ui:build`. Tras integrar un diseño en los componentes operativos, ejecutar también las validaciones del producto y repetir la revisión visual en el entorno autorizado.

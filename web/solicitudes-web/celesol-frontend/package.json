@@ -15,7 +15,8 @@
     "ui:check": "tsc --noEmit -p tsconfig.ui-lab.json",
     "ui:build": "npm run ui:check && vite build --config ui-lab/vite.config.ts --mode ui-lab",
     "ui:test": "node --experimental-strip-types --test ui-lab/network-guard.test.ts",
-    "ui:preview": "vite preview --config ui-lab/vite.config.ts --mode ui-lab"
+    "ui:preview": "vite preview --config ui-lab/vite.config.ts --mode ui-lab",
+    "ui:visual": "node ui-lab/header-gallery.browser-test.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -63,6 +64,7 @@
     "globals": "^17.4.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
+    "playwright": "^1.64.1",
     "prettier": "^3.8.2",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",

@@ -8,7 +8,9 @@ async function start() {
     await Promise.all([
       import("react-dom/client"),
       import("@tanstack/react-query"),
-      import("./app"),
+      window.location.pathname.startsWith("/headers")
+        ? import("./header-gallery")
+        : import("./app"),
     ]);
   const element = document.getElementById("root");
   if (!element) throw new Error("UI Lab root is missing");

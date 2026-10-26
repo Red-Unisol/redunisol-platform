@@ -1,4 +1,9 @@
 import { INSTALLMENTS, SAMPLE_REQUEST } from "./scenarios.ts";
+import {
+  HEADER_DOCUMENT_REVIEW_FIXTURE,
+  HEADER_SAMPLE,
+  HEADER_SESSION_FIXTURE,
+} from "./header-fixtures.ts";
 
 /** Fixture-only transport for the UI lab. No request ever reaches a real API. */
 export const UI_LAB_API_ORIGIN = "http://beex-ui-lab.local";
@@ -63,6 +68,17 @@ export function createUiLabFetch(): typeof fetch {
     let body: unknown;
     if (url.pathname === `${base}/revision-prestamo`) body = revisionFixture;
     else if (url.pathname === `${base}/cancelaciones`) body = [];
+    else if (url.pathname === "/auth/me") body = HEADER_SESSION_FIXTURE;
+    else if (url.pathname === `${base}/datos-rapidos/socio`)
+      body = { condicion: "member" };
+    else if (url.pathname === `${base}/datos-rapidos/convenio`)
+      body = { descripcion: HEADER_SAMPLE.convenio };
+    else if (url.pathname === `${base}/datos-rapidos/mora`)
+      body = { enMora: false };
+    else if (url.pathname === `${base}/datos-rapidos/creditos`)
+      body = { activos: true };
+    else if (url.pathname === `${base}/document-review`)
+      body = HEADER_DOCUMENT_REVIEW_FIXTURE;
     else throw new UiLabNetworkBlockedError(method, url.pathname);
     return new Response(JSON.stringify(body), {
       status: 200,
