@@ -109,3 +109,9 @@ src/
 
 - The app currently starts with a minimal neutral screen, ready to grow into routes, layouts, and features.
 - This README documents the intended folder structure even if parts of it have not been created yet.
+
+## UI Lab local
+
+Para maquetar y revisar estados con datos ficticios, ejecutar `npm run ui:dev`.
+El laboratorio tiene su propia entrada, configuración y build; no usa APIs operativas.
+Ver [ui-lab/README.md](ui-lab/README.md) para escenarios, bloqueo de red y proceso de trabajo.
