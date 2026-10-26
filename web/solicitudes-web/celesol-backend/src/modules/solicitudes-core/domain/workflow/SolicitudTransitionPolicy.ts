@@ -37,8 +37,11 @@ export class SolicitudTransitionPolicy {
       const isRiesgoException =
         RIESGO_OWNER_ACTION_EXCEPTIONS.has(context.command.actionCode) &&
         context.command.workflowOwnerCode === "RIESGO";
+      const isLegajosException = context.command.actionCode === "transferir" &&
+        context.command.workflowOwnerCode === "LEGAJOS_DIGITALES" &&
+        ["Liquidada", "VerificarFirmaYDocumentacion"].includes(solicitud.stateCode ?? "");
 
-      if (!isOwnerMatch && !isRiesgoException) {
+      if (!isOwnerMatch && !isRiesgoException && !isLegajosException) {
         throw new ForbiddenSolicitudAccessError();
       }
     }

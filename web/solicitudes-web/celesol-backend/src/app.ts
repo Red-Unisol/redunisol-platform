@@ -15,7 +15,7 @@ import {
   usersRouter,
 } from "./modules/auth/auth-module";
 import { createRiesgoRouter } from "./modules/riesgo/riesgo-module";
-import { createDocumentReviewRouter } from "./modules/document-review/document-review-module";
+import { createNotificationsRouter } from "./modules/notifications/notifications-module";
 import { createSociosRouter } from "./modules/socios/socios-module";
 import {
   createFinSolicitudRouter,
@@ -48,6 +48,7 @@ app.use("/integrations/transferencias/v1", createTransferenciasIntegrationRouter
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/auth", authRouter);
 app.use("/auth/users", usersRouter);
+app.use("/api/notifications", createNotificationsRouter(getCurrentUserUseCase));
 app.use(
   "/api/socios",
   createSociosRouter({
@@ -68,7 +69,6 @@ app.use(
 );
 app.use(
   "/solicitudes",
-  createDocumentReviewRouter(getCurrentUserUseCase),
   createSolicitudesCoreRouter({
     getCurrentUserUseCase,
   }),

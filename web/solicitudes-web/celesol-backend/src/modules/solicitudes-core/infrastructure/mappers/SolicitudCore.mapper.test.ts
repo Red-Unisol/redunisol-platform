@@ -28,6 +28,9 @@ describe("SolicitudCoreMapper", () => {
     const record: PrismaSolicitudShape = {
       administrativeCoreControl: null,
       archivedAt: null,
+      analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+      signatureCycleId: null, signatureRequestedAt: null,
+      signatureRequestReason: null, signatureExcludedVerificationIds: null,
       assignedToUser: null,
       assignedToUserId: null,
       conyuge: {
@@ -141,6 +144,9 @@ describe("SolicitudCoreMapper", () => {
       ...({
         administrativeCoreControl: null,
       archivedAt: null,
+      analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+      signatureCycleId: null, signatureRequestedAt: null,
+      signatureRequestReason: null, signatureExcludedVerificationIds: null,
         assignedToUser: {
           email: "assignee@example.com",
           firstName: "Riesgo",

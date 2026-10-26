@@ -3,6 +3,7 @@ export type DownloadSolicitudAdjuntoInput = {
   adjuntoId: string;
   currentUser: {
     id: string;
+    isSystemAdmin?: boolean;
     workflowOwnerId: string | null;
   };
   workflowOwnerId?: string | null;

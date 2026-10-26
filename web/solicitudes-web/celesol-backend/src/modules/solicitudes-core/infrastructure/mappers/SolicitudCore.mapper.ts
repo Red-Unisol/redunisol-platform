@@ -48,7 +48,8 @@ export class SolicitudCoreMapper {
       .trim();
 
     return {
-      ...((record.administrativeCoreControl as Record<string, unknown> | null)?.replacementPending ? { loanReplacementPending: true } : {}),
+      ...((record.administrativeCoreControl as Record<string, unknown> | null)?.replacementPending ||
+        (record.administrativeCoreControl as Record<string, unknown> | null)?.generationPending ? { loanReplacementPending: true } : {}),
       assignedToUser: record.assignedToUser
         ? {
             email: record.assignedToUser.email,

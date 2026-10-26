@@ -35,6 +35,12 @@ export class ListSolicitudAdjuntosUseCase {
       input.solicitudId,
     );
 
-    return adjuntos.filter((adjunto) => adjunto.deletedAt === null);
+    const visible = adjuntos.filter((adjunto) => adjunto.deletedAt === null);
+    const generatedReview = (adjunto: SolicitudAdjunto) => adjunto.tipoAdjunto === "Legajo Digital" &&
+      Boolean(adjunto.archivoPath?.includes("/revision-documental/"));
+    if (!visible.some(generatedReview) || input.currentUser.isSystemAdmin) return visible;
+    const ownerCode = input.currentUser.workflowOwnerId && this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
+      ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId) : null;
+    return ownerCode === "LEGAJOS_DIGITALES" ? visible : visible.filter(adjunto => !generatedReview(adjunto));
   }
 }

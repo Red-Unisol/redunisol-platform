@@ -11,7 +11,7 @@ export const EXPECTED_ACTIVE_WORKFLOW_STATES = [
   "RevisionRiesgo|RIESGO",
   "Transferir|TESORERIA",
   "Vencida|HISTORIAL",
-  "VerificarFirmaYDocumentacion|RIESGO",
+  "VerificarFirmaYDocumentacion|LEGAJOS_DIGITALES",
 ] as const;
 
 export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
@@ -19,8 +19,11 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "CargaVendedor|enviar|Motor",
   "CargaVendedor|vencer|Vencida",
   "Confirmada|desestimar|Desestimada",
-  "Confirmada|liquidar|Liquidada",
+  "Confirmada|liquidar|VerificarFirmaYDocumentacion",
+  "Confirmada|liquidar_con_firma|Transferir",
+  "Confirmada|revisar|Revisar",
   "Liquidada|desestimar|Desestimada",
+  "Liquidada|transferir|Transferir",
   "Liquidada|verificar_firma|VerificarFirmaYDocumentacion",
   "Motor|motor|RevisionRiesgo",
   "PreAprobada|confirmar|Confirmada",
@@ -33,7 +36,6 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "RevisionRiesgo|rechazar|Rechazada",
   "RevisionRiesgo|revisar|Revisar",
   "Transferir|pagar|Pagada",
-  "VerificarFirmaYDocumentacion|devolver_a_liquidada|Liquidada",
   "VerificarFirmaYDocumentacion|transferir|Transferir",
 ] as const;
 
@@ -74,12 +76,21 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     requiresComment: true,
     sortOrder: 10,
   },
-  "Confirmada|liquidar|Liquidada": {
-    actionLabel: "Liquidada",
-    defaultComment: "Liquidada",
+  "Confirmada|liquidar|VerificarFirmaYDocumentacion": {
+    actionLabel: "Mandar a revisar firma",
+    defaultComment: "Análisis finalizado; firma pendiente de aprobación.",
     description: null,
     requiresComment: false,
     sortOrder: 20,
+  },
+  "Confirmada|liquidar_con_firma|Transferir": {
+    actionLabel: "Mandar a transferir", defaultComment: null, description: null,
+    requiresComment: false, sortOrder: 21,
+  },
+  "Confirmada|revisar|Revisar": {
+    actionLabel: "Devolver a Revisar", defaultComment: "Devolver a Revisar",
+    description: "Devolución habitual de Confirmada a Vendedores para corregir la solicitud.",
+    requiresComment: true, sortOrder: 30,
   },
   "Liquidada|desestimar|Desestimada": {
     actionLabel: "Desestimar",
@@ -87,6 +98,10 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     description: null,
     requiresComment: true,
     sortOrder: 10,
+  },
+  "Liquidada|transferir|Transferir": {
+    actionLabel: "Firma aprobada; mandar a transferir", defaultComment: null,
+    description: null, requiresComment: false, sortOrder: 22,
   },
   "Liquidada|verificar_firma|VerificarFirmaYDocumentacion": {
     actionLabel: "Verificar Firma y Documentación",
@@ -170,13 +185,6 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     defaultComment: null,
     description: null,
     requiresComment: false,
-    sortOrder: 10,
-  },
-  "VerificarFirmaYDocumentacion|devolver_a_liquidada|Liquidada": {
-    actionLabel: "Devolver a Liquidada",
-    defaultComment: "La documentación presenta errores",
-    description: null,
-    requiresComment: true,
     sortOrder: 10,
   },
   "VerificarFirmaYDocumentacion|transferir|Transferir": {

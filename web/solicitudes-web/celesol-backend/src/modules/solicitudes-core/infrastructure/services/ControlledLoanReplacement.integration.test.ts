@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, it } from "node:test";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { ControlledLoanReplacementService } from "./ControlledLoanReplacementService";
 import { AdministrativeCorrectionService, administrativeSource } from "./AdministrativeCorrectionService";
 import { coreReconciliationPending } from "../../domain/workflow/AdministrativeCorrection";
 import { SolicitudWorkflowPrismaDatasource } from "../datasources/SolicitudWorkflowPrismaDatasource";
 import { SolicitudesCorePrismaDatasource } from "../datasources/SolicitudesCorePrismaDatasource";
 import { SolicitudCancelacionesPrismaDatasource } from "../../cancelaciones/infrastructure/datasources/SolicitudCancelacionesPrismaDatasource";
-import { actingContext } from "../../../auth/impersonation/context";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 
@@ -18,8 +17,8 @@ after(() => db.$disconnect());
 async function fixture() {
   const url = new URL(process.env.BEEX_TEST_DATABASE_URL!);
   assert(["127.0.0.1", "localhost"].includes(url.hostname) && url.pathname.endsWith("_test"));
-  const admin = await db.user.create({ data: { email: `${randomUUID()}@example.test`, legacyUser: randomUUID(), passwordHash: "test", isSystemAdmin: true } });
-  const state = await db.workflowState.findUniqueOrThrow({ where: { code: "Revisar" } });
+  const state = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });
+  const admin = await db.user.create({ data: { email: `${randomUUID()}@example.test`, legacyUser: randomUUID(), passwordHash: "test", isSystemAdmin: true, workflowOwnerId: state.ownerId } });
   const s = await db.solicitud.create({ data: {
     createdBy: admin.id, assignedToUserId: admin.id, estadoActualId: state.id,
     legacyOid: "443417", lineaPrestamoLegacyOid: "55", lineaPrestamoCodigoMutual: "amejuca", lineaPrestamoDescripcion: "Línea",
@@ -45,6 +44,7 @@ async function fixture() {
   const service = new ControlledLoanReplacementService(deps);
   const input = { requestId: randomUUID(), expectedUpdatedAt: s.updatedAt.toISOString(), previousLoanId: "443417", reason: "Corregir monto luego de anulación confirmada" };
   const clean = async () => {
+    await db.beexNotification.deleteMany({ where: { solicitudId: s.id } });
     await db.solicitudPrestamoReplacement.deleteMany({ where: { solicitudId: s.id } });
     await db.solicitudEstadoHistorial.deleteMany({ where: { solicitudId: s.id } });
     await db.transferenciaDesembolso.deleteMany({ where: { solicitudId: s.id } });
@@ -71,9 +71,9 @@ it("reserves before Core creation, atomically replaces the active link and prese
     assert.equal(s.legacyOid, f.newId);
     assert.equal(s.linkFirmaDigital, `https://example.test/new-signature?sol=${f.newId}`);
     assert.equal(s.assignedToUserId, f.actor.id);
-    assert.equal(s.estadoActual.code, "Revisar");
+    assert.equal(s.estadoActual.code, "Confirmada");
     assert.equal(String(s.montoAFinanciar), "600000");
-    assert(coreReconciliationPending(s));
+    assert.equal(coreReconciliationPending(s), false);
     const op = await db.solicitudPrestamoReplacement.findUniqueOrThrow({ where: { id: f.input.requestId } });
     assert.equal(op.status, "LINKED"); assert.equal(op.previousLoanId, "443417"); assert.equal(op.newLoanId, f.newId);
     assert.equal((op.previousSnapshot as { signatureLink: string }).signatureLink, f.s.linkFirmaDigital);
@@ -126,13 +126,12 @@ it("concurrent operators can make only one external call", { skip: !enabled }, a
   } finally { await f.clean(); }
 });
 
-it("rejects non-admins, impersonation, stale forms, active loans and downstream cases before creating", { skip: !enabled }, async () => {
+it("rejects unauthorized operators, stale forms, active loans and downstream cases before creating", { skip: !enabled }, async () => {
   const f = await fixture();
   try {
-    await assert.rejects(() => f.service.replace(f.s.id, { ...f.actor, isSystemAdmin: false }, f.input), /administrador/);
-    await actingContext.run({ administrator: f.actor, selectedUser: f.actor, sessionId: "test", auditId: "test" }, async () => {
-      await assert.rejects(() => f.service.replace(f.s.id, f.actor, f.input), /propia sesión/);
-    });
+    await db.user.update({ where: { id: f.actor.id }, data: { isSystemAdmin: false, workflowOwnerId: null } });
+    await assert.rejects(() => f.service.replace(f.s.id, { ...f.actor, isSystemAdmin: false, workflowOwnerId: null }, f.input), /operador habilitado/);
+    await db.user.update({ where: { id: f.actor.id }, data: { isSystemAdmin: true, workflowOwnerId: f.actor.workflowOwnerId } });
     await assert.rejects(() => f.service.replace(f.s.id, f.actor, { ...f.input, expectedUpdatedAt: "2000-01-01T00:00:00.000Z" }), /cambió/);
     const lifecycle = f.deps.lifecycle;
     f.deps.lifecycle = async id => ({ ...(await lifecycle(id))!, estadoLabel: "Activa" });
@@ -142,6 +141,40 @@ it("rejects non-admins, impersonation, stale forms, active loans and downstream 
     await assert.rejects(() => f.service.replace(f.s.id, f.actor, f.input), /antecedentes/);
     assert.equal(f.calls(), 0);
     assert.equal(await db.solicitudPrestamoReplacement.count({ where: { solicitudId: f.s.id } }), 0);
+  } finally { await f.clean(); }
+});
+
+it("ordinary loan operators can replace a proven cancelled loan in Confirmada without an administrative correction marker", { skip: !enabled }, async () => {
+  const f = await fixture();
+  try {
+    await db.user.update({ where: { id: f.actor.id }, data: { isSystemAdmin: false } });
+    const s = await db.solicitud.update({ where: { id: f.s.id }, data: { administrativeCoreControl: Prisma.DbNull } });
+    const actor = { ...f.actor, isSystemAdmin: false };
+    assert.equal((await f.service.view(s.id, actor)).canReplace, true);
+    await f.service.replace(s.id, actor, { ...f.input, expectedUpdatedAt: s.updatedAt.toISOString() });
+    const result = await administrativeSource(db, s.id);
+    assert.equal(result.legacyOid, f.newId);
+    assert.equal(coreReconciliationPending(result), false);
+    assert.equal(f.calls(), 1);
+  } finally { await f.clean(); }
+});
+
+it("a new loan must match Core before it is linked or reconciled; mismatches preserve the recoverable result", { skip: !enabled }, async () => {
+  const f = await fixture();
+  try {
+    const snapshot = f.deps.loanSnapshot;
+    f.deps.loanSnapshot = async (...args) => ({ ...(await snapshot(...args))!, amount: 999999 });
+    await assert.rejects(f.service.replace(f.s.id, f.actor, f.input), /conciliarse/);
+    assert.equal((await administrativeSource(db, f.s.id)).legacyOid, f.input.previousLoanId);
+    const op = await db.solicitudPrestamoReplacement.findUniqueOrThrow({ where: { id: f.input.requestId } });
+    assert.equal(op.status, "CREATED");
+    assert.equal(op.newLoanId, f.newId);
+    f.deps.loanSnapshot = snapshot;
+    await f.service.replace(f.s.id, f.actor, f.input);
+    assert.equal(f.calls(), 1);
+    const result = await administrativeSource(db, f.s.id);
+    assert.equal(result.legacyOid, f.newId);
+    assert.equal(coreReconciliationPending(result), false);
   } finally { await f.clean(); }
 });
 

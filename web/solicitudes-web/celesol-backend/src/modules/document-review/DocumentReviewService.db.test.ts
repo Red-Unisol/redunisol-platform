@@ -8,6 +8,8 @@ import { DocumentReviewService } from "./DocumentReviewService";
 import { createDocumentReviewWorkflow } from "./workflow";
 import { candidateFixture } from "./fixtures";
 import { REVIEW_STATE, type ProviderCandidate } from "./domain";
+import { coreConditionsFingerprint } from "../solicitudes-core/domain/workflow/AdministrativeCorrection";
+import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
 
 const url = process.env.BEEX_TEST_DATABASE_URL;
 test(
@@ -23,7 +25,7 @@ test(
     const db = new PrismaClient({ datasources: { db: { url } } });
     t.after(() => db.$disconnect());
     const owner = await db.workflowOwner.findUniqueOrThrow({
-      where: { code: "RIESGO" },
+      where: { code: "LEGAJOS_DIGITALES" },
     });
     const state = await db.workflowState.findUniqueOrThrow({
       where: { code: REVIEW_STATE },
@@ -52,8 +54,11 @@ test(
     const objects = new Map<string, Buffer>();
     let provider: ProviderCandidate[] = [],
       storageFails = false,
-      workflowFails = false;
-    const workflow = createDocumentReviewWorkflow(db);
+      workflowFails = false,
+      wrongFinancialProof = false,
+      changeDuringPreflight = false,
+      revokeDuringPreflight = false;
+    const workflow = createDocumentReviewWorkflow(db, { financialGuard: async () => undefined });
     const service = new DocumentReviewService({
       db,
       bucket: "test-bucket",
@@ -76,6 +81,12 @@ test(
         },
         getObjectStream: async (i) =>
           Readable.from(objects.get(i.key) ?? Buffer.alloc(0)),
+      },
+      financialPreflight: async (id) => {
+        if (changeDuringPreflight) await db.solicitud.update({ where: { id }, data: { cuotas: 7 } });
+        if (revokeDuringPreflight) await db.user.update({ where: { id: actor.id }, data: { workflowOwnerId: null } });
+        const source = await administrativeSource(db, id);
+        return { loanId: wrongFinancialProof ? "different-loan" : source.legacyOid!, conditionsFingerprint: coreConditionsFingerprint(source) };
       },
       transition: async (...args) => {
         await workflow(...args);
@@ -139,7 +150,7 @@ test(
       "worker prioritizes never-reviewed and oldest due jobs, preventing starvation",
       async () => {
         const otherPending = await db.solicitud.findMany({
-          where: { estadoActual: { code: REVIEW_STATE } },
+          where: { legacyOid: { not: null }, archivedAt: null, estadoActual: { isTerminal: false }, desembolso: null, pagoExterno: null },
           select: { id: true },
         });
         const tomorrow = new Date(Date.now() + 86400000);
@@ -280,7 +291,7 @@ test(
       },
     );
     await t.test(
-      "human rejection records disparity and returns to Liquidada, preserving the proposed approval",
+      "requesting a new signature preserves the proposal and analysis state but invalidates the previous signing cycle",
       async () => {
         const row = await fixture(),
           review = await service.evaluate(row.id),
@@ -300,7 +311,7 @@ test(
               include: { estadoActual: true },
             })
           ).estadoActual.code,
-          "Liquidada",
+          REVIEW_STATE,
         );
       },
     );
@@ -455,6 +466,76 @@ test(
         );
       },
     );
+    await t.test("Legajos may approve while analysis is still pending without moving the application", async () => {
+      const row = await fixture();
+      const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });
+      await db.solicitud.update({ where: { id: row.id }, data: { estadoActualId: confirmed.id } });
+      const review = await service.evaluate(row.id);
+      await service.decide(row.id, actor, decision(review.id));
+      const result = await service.view(row.id, actor);
+      assert.equal(result.state, "Confirmada");
+      assert.equal(result.analysisReady, false);
+      assert.equal(result.signature.approved, true);
+      const sellerView = await service.view(row.id, { ...actor, ...outsider, workflowOwner: null });
+      assert.equal(sellerView.currentReview, null);
+      assert.deepEqual(sellerView.history, []);
+      assert.equal(sellerView.signature.approved, true);
+    });
+
+    await t.test("a new signature request is idempotent and old attempts cannot satisfy the new cycle", async () => {
+      const row = await fixture(), review = await service.evaluate(row.id);
+      const input = { requestId: randomUUID(), reason: "El socio debe repetirla: DNI borroso." };
+      await service.requestSignature(row.id, actor, input);
+      const first = await service.view(row.id, actor);
+      assert.equal(first.signature.status, "requested_again");
+      assert.equal(first.signature.completedAttempts, 0);
+      await service.requestSignature(row.id, actor, input);
+      const replayed = await service.view(row.id, actor);
+      assert.equal(replayed.signature.cycle, first.signature.cycle);
+      await service.evaluate(row.id);
+      assert.equal((await service.view(row.id, actor)).signature.completedAttempts, 0);
+      const fresh = structuredClone(provider.find(c => c.verificationId === "good-old")!);
+      fresh.verificationId = "fresh-after-request";
+      fresh.completedAt = new Date(Date.now() + 1000).toISOString();
+      provider.push(fresh);
+      await service.evaluate(row.id);
+      const received = await service.view(row.id, actor);
+      assert.equal(received.signature.status, "to_review");
+      assert.equal(received.signature.completedAttempts, 1);
+      await assert.rejects(() => service.decide(row.id, actor, decision(review.id)), /solicitud cambió/);
+    });
+
+    await t.test("financial proof is rechecked under the decision lock instead of trusting an old loan", async () => {
+      const row = await fixture(), review = await service.evaluate(row.id), input = decision(review.id);
+      wrongFinancialProof = true;
+      try { await assert.rejects(() => service.decide(row.id, actor, input), /préstamo o sus condiciones cambiaron/); }
+      finally { wrongFinancialProof = false; }
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 0);
+      assert.equal((await service.view(row.id, actor)).state, REVIEW_STATE);
+    });
+
+    await t.test("source changes during financial preflight require a new review before artifacts or approval", async () => {
+      const row = await fixture(), review = await service.evaluate(row.id), input = decision(review.id);
+      changeDuringPreflight = true;
+      try { await assert.rejects(() => service.decide(row.id, actor, input), /comprobación financiera/); }
+      finally { changeDuringPreflight = false; }
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 0);
+    });
+
+    await t.test("revoking Legajos permissions while the provider is checked prevents the decision from committing", async () => {
+      const row = await fixture(), review = await service.evaluate(row.id), input = decision(review.id);
+      revokeDuringPreflight = true;
+      try {
+        await assert.rejects(() => service.decide(row.id, actor, input), error =>
+          error instanceof Error && /permisos.*cambiaron/.test(error.message) && (error as { statusCode?: number }).statusCode === 403);
+      } finally {
+        revokeDuringPreflight = false;
+        await db.user.update({ where: { id: actor.id }, data: { workflowOwnerId: owner.id } });
+      }
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 0);
+      assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: row.id } })).estadoActualId, state.id);
+    });
+
     await t.test(
       "audit records and their attachments are immutable at the database boundary",
       async () => {

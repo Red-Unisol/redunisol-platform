@@ -60,6 +60,7 @@ model User {
   workflowOwner                 WorkflowOwner?             @relation(fields: [workflowOwnerId], references: [id])
   documentReviewDecisions        SolicitudDocumentDecision[]
   pagosExternos                 SolicitudPagoExterno[]
+  notifications                 BeexNotification[]
 
   @@index([workflowOwnerId])
   @@map("users")
@@ -144,6 +145,12 @@ model Solicitud {
   loanReplacements SolicitudPrestamoReplacement[]
   administrativeCoreControl Json? @map("administrative_core_control")
   legacyOid                String?                    @unique @map("legacy_oid")
+  analisisFinalizadoAt      DateTime?                  @map("analisis_finalizado_at")
+  analisisFinalizadoBy      String?                    @map("analisis_finalizado_by") @db.Uuid
+  signatureCycleId          String?                    @map("signature_cycle_id")
+  signatureRequestedAt      DateTime?                  @map("signature_requested_at")
+  signatureRequestReason    String?                    @map("signature_request_reason")
+  signatureExcludedVerificationIds Json?               @map("signature_excluded_verification_ids")
   nroSolicitud             String?                    @unique @map("nro_solicitud")
   fechaPrimerVencimiento   DateTime?                  @map("fecha_primer_vencimiento") @db.Date
   estadoActualId           String                     @map("estado_actual_id") @db.Uuid
@@ -189,6 +196,7 @@ model Solicitud {
   bankIdentifiers          TransferenciaIdentificador[]
   documentReviews          SolicitudDocumentReview[]
   documentReviewJob         SolicitudDocumentReviewJob?
+  notifications            BeexNotification[]
 
   @@index([estadoActualId])
   @@index([createdBy])
@@ -196,6 +204,26 @@ model Solicitud {
   @@index([vendedorId])
   @@index([createdAt])
   @@map("solicitudes")
+}
+
+model BeexNotification {
+  id          String    @id @default(uuid()) @db.Uuid
+  recipientId String    @map("recipient_id") @db.Uuid
+  solicitudId String    @map("solicitud_id") @db.Uuid
+  loanId      String    @map("loan_id")
+  eventKey    String    @map("event_key")
+  kind        String
+  title       String
+  body        String
+  readAt      DateTime? @map("read_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  recipient   User      @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+  solicitud   Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Restrict)
+
+  @@unique([recipientId, eventKey])
+  @@index([recipientId, readAt, createdAt])
+  @@index([solicitudId, loanId])
+  @@map("beex_notifications")
 }
 
 // Immutable system observations. A new signature/contract version produces a
