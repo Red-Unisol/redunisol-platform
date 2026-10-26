@@ -60,7 +60,7 @@ it("administrative engine path preserves links, assignment and history; reconcil
     assert.equal(history[0]!.realActorUserId, f.actor.id);
     assert.equal(history[0]!.toOwnerCodeSnapshot, "VENDEDORES");
     const transitions = await db.workflowTransition.count({ where: { fromStateId: f.s.estadoActualId, toState: { code: "Revisar" } } });
-    assert.equal(transitions, 0);
+    assert.equal(transitions, 1); // The regular return now exists alongside the legacy admin endpoint.
     await assert.rejects(() => f.engine.execute(f.command));
     await f.service.reconcile(f.s.id, f.actor, { expectedUpdatedAt: corrected.updatedAt.toISOString(), reason: "Préstamo revisado y condiciones verificadas" });
     assert(!coreReconciliationPending(await administrativeSource(db, f.s.id)));
