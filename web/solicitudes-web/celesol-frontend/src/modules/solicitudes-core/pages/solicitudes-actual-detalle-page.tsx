@@ -144,6 +144,7 @@ import { canManageSolicitudAssignment } from "@/modules/solicitudes-core/utils/s
 import { calculateAge } from "@/modules/solicitudes-editor/utils/calculate-age";
 import { buildSocioPrefillFromTitular } from "@/modules/solicitudes-core/utils/build-socio-prefill-from-titular";
 import { getSolicitudCoreDetailOriginPath } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
+import { LocalidadSelect } from "@/modules/socios/components/localidad-select";
 import { SocioFormDialog } from "@/modules/socios/components/socio-form-dialog";
 import { createSocio } from "@/modules/socios/services/socios-api";
 import { useCreatePrestamoLegacyMutation } from "@/modules/solicitudes-core/hooks/use-create-prestamo-legacy-mutation";
@@ -1084,6 +1085,49 @@ function EditableSelectInput({
   );
 }
 
+// Localidad: siempre del buscador de localidades de Vimarx, el mismo del alta
+// de la solicitud y del alta de socio. No se puede escribir texto libre. Se
+// guarda el nombre, como en el alta: el finalizar y la revision documental
+// leen la localidad de la solicitud como texto.
+function EditableLocalidadInput({
+  appearanceStyle,
+  disabled = false,
+  highlightReadOnly = false,
+  isEditing,
+  label,
+  onChange,
+  readOnlyValue,
+  value,
+}: {
+  appearanceStyle?: CSSProperties;
+  disabled?: boolean;
+  highlightReadOnly?: boolean;
+  isEditing: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  readOnlyValue: ReactNode;
+  value: string;
+}) {
+  return (
+    <EditableField
+      appearanceStyle={appearanceStyle}
+      editor={
+        <LocalidadSelect
+          disabled={disabled}
+          onClear={() => onChange("")}
+          onPick={(localidad) => onChange(localidad.nombre)}
+          value=""
+          valueLabel={value}
+        />
+      }
+      highlightReadOnly={highlightReadOnly}
+      isEditing={isEditing}
+      label={label}
+      value={readOnlyValue}
+    />
+  );
+}
+
 function EditableDateInput({
   appearanceStyle,
   disabled = false,
@@ -1797,7 +1841,7 @@ function TitularFields({
         readOnlyValue={formatText(titular.nroPuerta)}
         value={values.nroPuerta}
       />
-      <EditableTextInput
+      <EditableLocalidadInput
         {...getReadonlyProps("titular.localidad")}
         disabled={!isFieldEditableByKey("titular.localidad")}
         isEditing={isEditing}
@@ -2080,7 +2124,7 @@ function DatosLaboralesFields({
         readOnlyValue={formatText(datosLaborales.domicilioLaboralPisoDepto)}
         value={values.domicilioLaboralPisoDepto}
       />
-      <EditableTextInput
+      <EditableLocalidadInput
         {...getReadonlyProps("datosLaborales.domicilioLaboralLocalidad")}
         disabled={
           !isFieldEditableByKey("datosLaborales.domicilioLaboralLocalidad")

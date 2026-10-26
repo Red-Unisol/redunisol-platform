@@ -2,6 +2,7 @@ import { Pencil, Search } from "lucide-react";
 import { Controller } from "react-hook-form";
 
 import type { SolicitudCoreGarantiaResponse } from "@/modules/solicitudes/types/solicitudes-core";
+import { LocalidadSelect } from "@/modules/socios/components/localidad-select";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { DateInputField } from "@/shared/components/forms/date-input-field";
@@ -123,7 +124,21 @@ export function SolicitudDatosPersonalesSection({
             <Input {...register("noPuerta")} />
           </Field>
           <Field className="xl:col-span-3" label="Localidad">
-            <Input {...register("localidad")} />
+            {/* Siempre del buscador de localidades de Vimarx, como en el alta.
+                Se guarda el nombre. */}
+            <Controller
+              control={control}
+              name="localidad"
+              render={({ field }) => (
+                <LocalidadSelect
+                  onBlur={field.onBlur}
+                  onClear={() => field.onChange("")}
+                  onPick={(localidad) => field.onChange(localidad.nombre)}
+                  value=""
+                  valueLabel={field.value ?? ""}
+                />
+              )}
+            />
           </Field>
           <div className="hidden xl:block xl:col-span-3" />
           <Field className="xl:col-span-5" label="Celular" required>
@@ -299,7 +314,21 @@ export function SolicitudDatosPersonalesSection({
               <Input {...register("pisoDeptoLaboral")} />
             </Field>
             <Field className="xl:col-span-12" label="Localidad">
-              <Input {...register("localidadLaboral")} />
+              {/* Siempre del buscador de localidades de Vimarx, como en el alta.
+                  Se guarda el nombre. */}
+              <Controller
+                control={control}
+                name="localidadLaboral"
+                render={({ field }) => (
+                  <LocalidadSelect
+                    onBlur={field.onBlur}
+                    onClear={() => field.onChange("")}
+                    onPick={(localidad) => field.onChange(localidad.nombre)}
+                    value=""
+                    valueLabel={field.value ?? ""}
+                  />
+                )}
+              />
             </Field>
             <Field className="xl:col-span-6" label="Monto Recibo">
               <MoneyInputField
