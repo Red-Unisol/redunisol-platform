@@ -730,10 +730,13 @@ export class SolicitudesCorePrismaDatasource {
         archivedAt: null,
         ...(searchConditions.length ? { AND: searchConditions } : {}),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
-        ...(input.estadoOwnerId || input.estado
+        ...(input.estadoOwnerId || input.estadoOwnerCodes || input.estado
           ? {
               estadoActual: {
                 ...(input.estadoOwnerId ? { ownerId: input.estadoOwnerId } : {}),
+                ...(input.estadoOwnerCodes
+                  ? { owner: { code: { in: input.estadoOwnerCodes } } }
+                  : {}),
                 ...(input.estado ? { code: { equals: input.estado } } : {}),
               },
             }

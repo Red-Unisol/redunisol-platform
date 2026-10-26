@@ -1309,6 +1309,29 @@ describe("SolicitudesCoreController", () => {
     });
   });
 
+  it("usa el perfil efectivo y mantiene la visibilidad del vendedor en las tres vistas", async () => {
+    let received: { currentUser: { workflowOwnerCode: string }; creadoresVisibles: string[]; vista: string; offset: number } | undefined;
+    const controller = new SolicitudesCoreController({
+      ...workflowUseCases(),
+      getCurrentUserUseCase: { execute: async () => ({ ...authenticatedUser(),
+        isSystemAdmin: false, workflowOwner: { id: "sales", code: "VENDEDORES", name: "Vendedores" } }) },
+      visibilidadVendedorResolver: { creadoresVisibles: async () => ["visible"] },
+      listSolicitudesUseCase: { execute: async (input: typeof received) => { received = input; return []; } },
+    } as never);
+    for (const vista of ["vendedores", "analistas", "todas"]) {
+      let nextError: unknown;
+      const response = createResponse();
+      await controller.list(request({ query: { scope: "recientes", vista, offset: "20", workflowOwnerCode: "TESORERIA" } }), response,
+        captureNextError(error => { nextError = error; }));
+      assert.equal(nextError, undefined);
+      assert.equal(response.statusCode, 200);
+      assert.equal(received?.currentUser.workflowOwnerCode, "VENDEDORES");
+      assert.deepEqual(received?.creadoresVisibles, ["visible"]);
+      assert.equal(received?.vista, vista);
+      assert.equal(received?.offset, 20);
+    }
+  });
+
   it("accepts recientes scope and delegates it to list use case", async () => {
     let receivedInput: unknown;
     const controller = new SolicitudesCoreController({

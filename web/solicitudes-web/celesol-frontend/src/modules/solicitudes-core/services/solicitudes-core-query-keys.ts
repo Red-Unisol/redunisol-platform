@@ -28,7 +28,8 @@ export const solicitudesCoreQueryKeys = {
     [...solicitudesCoreRootKey, "prestamos-socio", id] as const,
   prestamoDelSocio: (id: string, prestamoId: string) =>
     [...solicitudesCoreRootKey, "prestamos-socio", id, prestamoId] as const,
-  credixsa: (id: string) => [...solicitudesCoreRootKey, "credixsa", id] as const,
+  credixsa: (id: string) =>
+    [...solicitudesCoreRootKey, "credixsa", id] as const,
   detail: (id: string) => [...solicitudesCoreRootKey, "detail", id] as const,
   history: (id: string) => [...solicitudesCoreRootKey, "history", id] as const,
   lineasDelAgente: [...solicitudesCoreRootKey, "lineas-del-agente"] as const,
@@ -51,8 +52,9 @@ export const solicitudesCoreQueryKeys = {
   }) => [...solicitudesCoreHistoricasRootKey, input] as const,
   recientes: (input: {
     search?: string;
-    vista?: "mi-area" | "todas";
+    vista?: "mi-area" | "vendedores" | "analistas" | "todas";
     userId?: string;
+    isSystemAdmin?: boolean;
     workflowOwnerId?: string | null;
     createdFrom: string;
     createdTo: string;

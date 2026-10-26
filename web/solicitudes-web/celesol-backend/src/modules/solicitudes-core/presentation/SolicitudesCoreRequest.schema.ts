@@ -191,7 +191,7 @@ export const createSolicitudBodySchema = z.object({
 
 export const listSolicitudesQuerySchema = z.object({
   search: z.string().trim().max(160).optional(),
-  vista: z.enum(["mi-area", "todas"]).optional(),
+  vista: z.enum(["mi-area", "vendedores", "analistas", "todas"]).optional(),
   createdFrom: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   createdTo: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   excludeEstado: z.string().trim().min(1).optional(),

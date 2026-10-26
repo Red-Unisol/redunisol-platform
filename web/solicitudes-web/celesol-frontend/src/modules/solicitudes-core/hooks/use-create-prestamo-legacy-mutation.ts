@@ -13,13 +13,22 @@ export function useCreatePrestamoLegacyMutation(solicitudId: string) {
     mutationFn: (convenio?: ConvenioSocioRequest) =>
       createPrestamoLegacy(solicitudId, convenio),
     onSettled: async (updatedSolicitud) => {
-      if (updatedSolicitud) queryClient.setQueryData(
-        solicitudesCoreQueryKeys.detail(solicitudId),
-        updatedSolicitud,
-      );
+      if (updatedSolicitud)
+        queryClient.setQueryData(
+          solicitudesCoreQueryKeys.detail(solicitudId),
+          updatedSolicitud,
+        );
 
       await Promise.all([
-        queryClient.invalidateQueries({queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId)}),
+        queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.recientesAll,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.historicasAll,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId),
+        }),
         queryClient.invalidateQueries({
           queryKey: solicitudesCoreQueryKeys.detail(solicitudId),
         }),

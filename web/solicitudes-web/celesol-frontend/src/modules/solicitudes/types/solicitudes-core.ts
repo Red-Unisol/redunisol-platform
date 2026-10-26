@@ -446,7 +446,7 @@ export type SolicitudCoreResponse = {
 
 export type ListSolicitudesCoreQuery = {
   search?: string;
-  vista?: "mi-area" | "todas";
+  vista?: "mi-area" | "vendedores" | "analistas" | "todas";
   createdFrom?: string;
   createdTo?: string;
   excludeEstado?: string;

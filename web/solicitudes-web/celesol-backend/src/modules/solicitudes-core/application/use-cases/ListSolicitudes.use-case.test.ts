@@ -12,6 +12,42 @@ import type {
 import { ListSolicitudesUseCase } from "./ListSolicitudes.use-case";
 
 describe("ListSolicitudesUseCase", () => {
+  it("filtra las tres vistas por catálogo de áreas y conserva la visibilidad y paginación", async () => {
+    const calls: ListSolicitudesRecientesInput[] = [];
+    const useCase = new ListSolicitudesUseCase({ repository: {
+      listRecientes: async (input: ListSolicitudesRecientesInput) => { calls.push(input); return []; },
+    } as unknown as SolicitudesCoreRepository });
+    for (const [vista, codes] of [
+      [undefined, ["VENDEDORES"]],
+      ["vendedores", ["VENDEDORES"]],
+      ["analistas", ["RIESGO"]],
+      ["todas", ["VENDEDORES", "RIESGO"]],
+    ] as const) {
+      await useCase.execute({ scope: "recientes", vista,
+        currentUser: { id: "seller", workflowOwnerId: "sales-id", workflowOwnerCode: "VENDEDORES" },
+        workflowOwnerId: "untrusted", creadoresVisibles: ["seller", "team"],
+        limit: 10, offset: 20, search: "  Ana Pérez  ",
+        createdFrom: "2026-10-01", createdTo: "2026-10-21" });
+      assert.deepEqual(calls.at(-1), {
+        estadoOwnerCodes: codes, creadoPorIn: ["seller", "team"],
+        limit: 10, offset: 20, nroDocumento: undefined, search: "Ana Pérez", excludeEstado: "CargaVendedor",
+        createdFrom: "2026-10-01", createdTo: "2026-10-21",
+      });
+    }
+  });
+
+  it("no limita Todas de administradores, Riesgo y Tesorería a las dos áreas", async () => {
+    const calls: ListSolicitudesRecientesInput[] = [];
+    const useCase = new ListSolicitudesUseCase({ repository: {
+      listRecientes: async (input: ListSolicitudesRecientesInput) => { calls.push(input); return []; },
+    } as unknown as SolicitudesCoreRepository });
+    for (const [workflowOwnerCode, isSystemAdmin] of [["RIESGO", false], ["TESORERIA", false], ["VENDEDORES", true]] as const) {
+      await useCase.execute({ scope: "recientes", vista: "todas", limit: 10, offset: 0,
+        currentUser: { id: "user", workflowOwnerId: "owner", workflowOwnerCode, isSystemAdmin } });
+      assert.equal(calls.at(-1)?.estadoOwnerCodes, undefined);
+    }
+  });
+
   it("lista capabilities de edición para Riesgo en Vendedores consultando el área una sola vez", async () => {
     let lookups = 0;
     const row = solicitudCore({ estadoActual: { id: "pre", code: "PreAprobada", name: "PreAprobada", ownerId: "vendedores", owner: { id: "vendedores", code: "VENDEDORES", name: "Vendedores" } } });

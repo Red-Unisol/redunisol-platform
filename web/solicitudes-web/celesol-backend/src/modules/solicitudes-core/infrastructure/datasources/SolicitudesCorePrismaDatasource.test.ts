@@ -25,6 +25,26 @@ function assertRecientesEstadoCondition(or: unknown) {
 }
 
 describe("SolicitudesCorePrismaDatasource", () => {
+  it("intersecta el catálogo de áreas con visibilidad y búsqueda antes de skip/take", async () => {
+    const prisma = new FakeSolicitudesCorePrisma();
+    const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
+    for (const codes of [["VENDEDORES"], ["RIESGO"], ["VENDEDORES", "RIESGO"]]) {
+      await datasource.listRecientes({ estadoOwnerCodes: codes, creadoPorIn: ["seller"],
+        search: "Ana Pérez", limit: 10, offset: 20, createdFrom: "2026-10-01", createdTo: "2026-10-21" });
+      const query = prisma.solicitudFindManyCalls.at(-1)!;
+      assert.deepEqual(query.where.estadoActual, { owner: { code: { in: codes } } });
+      assert.deepEqual(query.where.createdBy, { in: ["seller"] });
+      assert.ok(Array.isArray(query.where.AND));
+      assert.equal(query.where.AND.length, 2);
+      assert.equal(query.take, 10);
+      assert.equal(query.skip, 20);
+      assert.equal(query.where.archivedAt, null);
+      assertRecientesEstadoCondition(query.where.OR);
+      assert.equal("assignedToUserId" in query.where, false);
+      assert.ok(query.where.createdAt);
+    }
+  });
+
   it("aplica área del estado antes de paginar sin filtrar por ejecutivo", async () => {
     const prisma = new FakeSolicitudesCorePrisma();
     const datasource = new SolicitudesCorePrismaDatasource(prisma.client());
