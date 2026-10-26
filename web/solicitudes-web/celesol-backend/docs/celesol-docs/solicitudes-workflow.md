@@ -61,6 +61,7 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `RevisionRiesgo` | `confirmar` | `Confirmar` | `Confirmada` | no |
 | `Confirmada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
 | `Confirmada` | `liquidar` | `Liquidada` | `Liquidada` | no |
+| `Confirmada` | `revisar` | `Devolver a Revisar` | `Revisar` | yes |
 | `Liquidada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
 | `Liquidada` | `verificar_firma` | `Verificar Firma y Documentación` | `VerificarFirmaYDocumentacion` | no |
 | `VerificarFirmaYDocumentacion` | `devolver_a_liquidada` | `Devolver a Liquidada` | `Liquidada` | yes |
@@ -92,7 +93,6 @@ No deben quedar activas:
 - `RevisionRiesgo -> VerificarFirmaYDocumentacion`;
 - `Revisar -> VerificarFirmaYDocumentacion`;
 - `Confirmada -> Rechazada`;
-- `Confirmada -> Revisar`;
 - `Confirmada -> VerificarFirmaYDocumentacion`;
 - `Confirmada -> Vencida`.
 
@@ -136,8 +136,9 @@ Liquidada -> VerificarFirmaYDocumentacion -> Liquidada
 
 En el detalle de la solicitud, debajo de la barra de herramientas, los administradores
 ven **Administración → Corregir estado**. La primera versión admite exclusivamente
-`Confirmada → Revisar` (owner `VENDEDORES`). No se agrega esa transición al catálogo
-ni al selector operativo normal.
+`Confirmada → Revisar` (owner `VENDEDORES`). Este control se mantiene por compatibilidad.
+Desde el 2026-10-26 también existe la devolución habitual mediante el selector normal,
+con las mismas barreras financieras y sin exigir rol administrador.
 
 - Requiere sesión propia de administrador activo, motivo de 10 a 2000 caracteres,
   UUID de operación y la versión `updatedAt` observada al abrir el formulario.
@@ -219,3 +220,27 @@ API autenticada con visibilidad habitual y validaciones propias de administrador
 La migración es aditiva. Los registros no se eliminan en cascada al borrar una solicitud.
 La base garantiza un único intento por préstamo anterior y un ID nuevo sin duplicados.
 Las pruebas de integración usan exclusivamente una base local cuyo nombre termina en _test.
+
+
+## Devolución habitual Confirmada → Revisar (2026-10-26)
+
+El selector normal de acciones de una solicitud Confirmada incorpora **Devolver a Revisar**
+(actionCode `revisar`). Lo puede ejecutar el área a cargo de Confirmada (`RIESGO`) o un
+administrador activo, con un motivo obligatorio. No necesita usar Corregir estado.
+
+La transición pasa por el mismo use case, engine, policy, plan y transacción del workflow.
+Conserva préstamo Core, firma, documentos, asignación e historial; actualiza el tope de
+Riesgo al monto actual como las otras devoluciones a Vendedores. Registra el usuario
+operativo y el actor real, incluido el administrador si se trabaja como otro usuario.
+
+Se bloquea para solicitudes archivadas, con antecedentes de Liquidada, VerificarFirmaYDocumentacion,
+Transferir o Pagada, con reserva de desembolso o pago externo, y durante reemplazos pendientes
+con resultado incierto. El selector informa el bloqueo y el backend lo vuelve a validar con
+el registro bloqueado antes de escribir estado y auditoría juntos.
+
+Si existe préstamo, se conserva el vínculo y queda pendiente **Conciliar préstamo Core**
+antes de liquidar. El control conserva `replacementId` y la referencia al préstamo anterior;
+el evento de devolución identifica `correctionId`, por lo que sigue siendo compatible con
+el reemplazo controlado exclusivamente para administradores. Si no existe préstamo, no se
+introduce conciliación. La devolución no anula ni genera préstamos, ni cambia la firma o el
+orden del circuito actual. La corrección administrativa anterior se mantiene por compatibilidad.

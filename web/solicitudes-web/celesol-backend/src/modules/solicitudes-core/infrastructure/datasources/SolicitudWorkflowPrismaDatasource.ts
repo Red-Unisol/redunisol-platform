@@ -1,4 +1,5 @@
-import { applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
+import { isConfirmedReturnToReview, prepareConfirmedReturnToReview } from "../services/ConfirmedReturnToReview";
+import { administrativeSource, correctionBlockedReason, applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
 import { ADMIN_CORRECTION_ACTION, assertCoreReconciled, coreReconciliationPending, CORE_RECONCILIATION_REASON, CORE_GUARDED_ACTIONS } from "../../domain/workflow/AdministrativeCorrection";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { Prisma } from "@prisma/client";
@@ -578,7 +579,13 @@ export class SolicitudWorkflowPrismaDatasource {
     solicitud: SolicitudWithOwner;
     transition: WorkflowTransitionWithToState;
   }) {
+    const confirmedReturn = isConfirmedReturnToReview(input.solicitud.estadoActual.code, input.transition.toState.code)
+      ? await prepareConfirmedReturnToReview(input.executor as Prisma.TransactionClient, {
+        solicitudId: input.solicitud.id, changedBy: input.changedBy, comment: input.comentario,
+        now: input.now, expectedUpdatedAt: input.solicitud.updatedAt,
+      }) : null;
     const updateData: Prisma.SolicitudUpdateInput = {
+      ...(confirmedReturn?.control ? { administrativeCoreControl: confirmedReturn.control } : {}),
       estadoActual: {
         connect: {
           id: input.transition.toStateId,
@@ -605,6 +612,7 @@ export class SolicitudWorkflowPrismaDatasource {
     await input.executor.solicitudEstadoHistorial.create({
       data: {
         ...actingHistoryFields(),
+        ...(confirmedReturn?.audit ?? {}),
         actionCode: input.transition.actionCode,
         actionLabel: input.transition.actionLabel,
         changedAt: input.now,
@@ -659,9 +667,14 @@ export class SolicitudWorkflowPrismaDatasource {
 
     if ((solicitud.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending) return [];
     const transitions = await this.loadActiveTransitions(this.db, solicitud.estadoActualId);
-    return coreReconciliationPending(solicitud)
-      ? transitions.map(t => CORE_GUARDED_ACTIONS.has(t.actionCode) ? { ...t, blockedReason: CORE_RECONCILIATION_REASON } : t)
-      : transitions;
+    const returnBlocked = transitions.some(t => isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code))
+      ? await correctionBlockedReason(this.db, await administrativeSource(this.db, solicitud.id)) : null;
+    return transitions.map(t => {
+      if (isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code) && returnBlocked)
+        return { ...t, blockedReason: returnBlocked };
+      return coreReconciliationPending(solicitud) && CORE_GUARDED_ACTIONS.has(t.actionCode)
+        ? { ...t, blockedReason: CORE_RECONCILIATION_REASON } : t;
+    });
   }
 
   async listHistory(
