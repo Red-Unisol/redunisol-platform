@@ -109,3 +109,9 @@ src/
 
 - The app currently starts with a minimal neutral screen, ready to grow into routes, layouts, and features.
 - This README documents the intended folder structure even if parts of it have not been created yet.
+
+## Laboratorio local de interfaces
+
+Ejecutar `npm run ui:dev` para revisar préstamo, análisis, firmas y avisos con
+datos ficticios. La entrada y el build están aislados de las APIs operativas.
+Ver [ui-lab/README.md](ui-lab/README.md) para escenarios y validaciones.

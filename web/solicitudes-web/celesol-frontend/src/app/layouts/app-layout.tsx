@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
+  Bell,
+  FileCheck2,
   Calculator,
   ClipboardList,
   FileChartColumn,
@@ -28,6 +30,8 @@ import {
 } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
 
 const TITLE_BY_PATH: Record<string, string> = {
+  "/notificaciones": "Notificaciones",
+  "/legajos/firmas": "Legajos Digitales",
   "/404": "Página no encontrada",
   "/dev/loader-preview": "Preview Loader",
   "/listados/creditos-por-vendedor": "Créditos por Vendedor",
@@ -61,6 +65,8 @@ const TITLE_BY_PATH: Record<string, string> = {
 };
 
 const TITLE_ICON_BY_PATH: Record<string, LucideIcon> = {
+  "/notificaciones": Bell,
+  "/legajos/firmas": FileCheck2,
   "/404": History,
   "/dev/loader-preview": ClipboardList,
   "/listados/creditos-por-vendedor": BarChart3,
@@ -138,6 +144,8 @@ export function AppLayout() {
     return TITLE_ICON_BY_PATH[pathname];
   }, [pathname]);
   const isScrollableContentRoute =
+    pathname === "/notificaciones" ||
+    pathname === "/legajos/firmas" ||
     pathname === "/solicitudes/core/precarga/nueva" ||
     pathname === "/solicitudes/core/precarga" ||
     pathname.startsWith("/solicitudes/core/detalle/") ||
