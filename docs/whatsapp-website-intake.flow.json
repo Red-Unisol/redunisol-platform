@@ -93,7 +93,7 @@
                       {
                         "type": "Dropdown",
                         "name": "organismo",
-                        "label": "Origen de tus haberes",
+                        "label": "Origen de haberes",
                         "required": true,
                         "data-source": [
                           {
@@ -326,7 +326,7 @@
               {
                 "type": "TextInput",
                 "name": "email",
-                "label": "Email (opcional)",
+                "label": "Email",
                 "input-type": "email",
                 "required": false
               },

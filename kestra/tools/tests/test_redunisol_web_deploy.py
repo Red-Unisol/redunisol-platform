@@ -23,6 +23,33 @@ class RedunisolWebDeployTests(unittest.TestCase):
             script = next(step['run'] for step in job['steps'] if step.get('name') == 'Deploy on VPS')
             cls.scripts[environment] = script.split("<<'EOF'\n", 1)[1].rsplit('\nEOF', 1)[0]
 
+    def test_intake_configuration_reaches_all_app_workers(self):
+        compose = yaml.safe_load((ROOT / 'web/redunisol-web/deploy/docker-compose.vps.yml').read_text())
+        expected = {
+            'EDNA_INTAKE_ENABLED', 'EDNA_INTAKE_CRM_ENABLED', 'EDNA_INTAKE_FLOW_ID',
+            'EDNA_INTAKE_START_AT', 'EDNA_INTAKE_PILOT_ID', 'EDNA_INTAKE_RECIPIENTS',
+            'KESTRA_EDNA_INTAKE_WEBHOOK_URL',
+        }
+        for service in ['php-fpm', 'queue-worker', 'edna-worker', 'edna-assistance-worker', 'scheduler']:
+            with self.subTest(service=service):
+                environment = compose['services'][service]['environment']
+                self.assertTrue(expected.issubset(environment), expected.difference(environment))
+        self.assertEqual(compose['services']['php-fpm']['environment']['EDNA_INTAKE_ENABLED'], '${EDNA_INTAKE_ENABLED:-false}')
+
+    def test_kestra_runtime_propagates_the_intake_gates(self):
+        compose = yaml.safe_load((ROOT / 'kestra/platform/infra/docker-compose.yml').read_text())
+        environment = compose['services']['kestra']['environment']
+        for key in ['ENV_EDNA_INTAKE_CRM_ENABLED', 'ENV_EDNA_INTAKE_RECIPIENTS', 'ENV_EDNA_INTAKE_FLOW_ID']:
+            self.assertIn(key, environment)
+        self.assertEqual(environment['ENV_EDNA_INTAKE_CRM_ENABLED'], '${ENV_EDNA_INTAKE_CRM_ENABLED:-false}')
+
+    def test_intake_webhook_invokes_dedicated_processor(self):
+        flow = yaml.safe_load((ROOT / 'kestra/automations/marketing-crm/flows/bitrix24_whatsapp_intake.yaml').read_text())
+        task = next(task for task in flow['tasks'] if task['id'] == 'procesar')
+        self.assertEqual(task['commands'], ['python -m bitrix24_form_flow.kestra_whatsapp_intake_entrypoint'])
+        self.assertIn('EDNA_INTAKE_FLOW_ID', task['env'])
+        self.assertNotIn('EDNA_ASSISTANCE_FLOW_ID', task['env'])
+
     def shell(self, script):
         # bash -s reproduces SSH's shared script/stdin stream; -c would hide the bug.
         return subprocess.run([self.bash, '-s'], input=script, capture_output=True, text=True, timeout=10)

@@ -79,6 +79,27 @@ globalmente en Bitrix. `WA_FLOW=web_whatsapp_intake`,
 campaña, referencia y fecha de respuesta. El CUIL puede completar el nombre a
 través del prefill normal; no se inventa la identidad.
 
+## Flow publicado y activación preparada (27/10/2026)
+
+Meta publicó `Solicitud web | CUIL obligatorio | Piloto 10 v1`, ID
+`3298964390491520`, en la cuenta Red Unisol (`823632237115803`). El JSON se
+validó y guardó sin errores. El piloto conserva el ID `website-intake-10-v1` y
+el máximo persistente de 10 números únicos; no se envían pruebas a clientes ni
+se reservan cupos al publicar.
+
+La configuración cifrada de producción prepara el inicio desde
+`2026-10-27T15:25:04+00:00`; sólo empieza a admitir cuando se despliega la
+configuración habilitada. Desarrollo conserva las banderas apagadas. El Compose
+propaga las variables a PHP y los workers, y el webhook invoca el entrypoint
+dedicado `kestra_whatsapp_intake_entrypoint`.
+
+Antes de dar la activación por terminada, verificar las banderas efectivas en Web
+y Kestra, la revisión desplegada y la respuesta `invalid` a un contrato vacío en
+el webhook dedicado (no consulta ni modifica Bitrix). Registrar el horario real
+de activación y revisar 30 minutos después: admisiones, entregas, respuestas,
+leads/contactos y errores. No enviar respuestas de clientes como pruebas ni
+reintentar escrituras inciertas.
+
 ## Publicación y activación
 
 Los valores por defecto quedan apagados. Este cambio no reemplaza un Flow publicado
