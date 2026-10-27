@@ -131,6 +131,33 @@ class IntakeTests(unittest.TestCase):
         self.assertEqual(process(payload(), env=CONFIG, client=api)['action'], 'already_processed')
         self.assertEqual(len(api.writes), writes)
 
+    def test_empty_contact_and_lead_searches_create_one_identity_and_case(self):
+        api = IntakeCrm()
+        first = process(payload(), env=CONFIG, client=api)
+        self.assertEqual(first['action'], 'queued')
+        self.assertEqual((len(api.contacts), len(api.leads)), (1, 1))
+        writes = len(api.writes)
+        again = process(payload(), env=CONFIG, client=api)
+        self.assertEqual((again['action'], again['lead_id'], again['contact_id']),
+                         ('already_processed', first['lead_id'], first['contact_id']))
+        self.assertEqual(len(api.writes), writes)
+
+    def test_invalid_duplicate_search_shape_stops_before_any_identity_write(self):
+        for bad in [[1], None, {'CONTACT': None}, {'CONTACT': '12'}, {'CONTACT': [True]}, {'CONTACT': ['bad']}]:
+            for entity in ['CONTACT', 'LEAD']:
+                api = IntakeCrm()
+                original = api.call
+
+                def call(method, body):
+                    if method == 'crm.duplicate.findbycomm' and body['entity_type'] == entity:
+                        return bad
+                    return original(method, body)
+
+                api.call = call
+                with self.subTest(shape=bad, entity=entity), self.assertRaises(ValueError):
+                    process(payload(), env=CONFIG, client=api)
+                self.assertEqual(api.writes, [])
+
     def test_caja_without_bank_reuses_existing_qualification_exception(self):
         api = IntakeCrm()
         result = process(payload(provincia='cordoba', situacion_cordoba='jubilado_pensionado', organismo='caja_cordoba'), env=CONFIG, client=api)
