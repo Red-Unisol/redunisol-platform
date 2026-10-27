@@ -1,4 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { assertSignatureTransferReady } from "../document-review/signature-transfer-guard";
+import { DocumentReviewError } from "../document-review/domain";
 import type { AdjuntosObjectStorage } from "../solicitudes-core/adjuntos/domain/services/AdjuntosObjectStorage";
 import {
   buildPlan,
@@ -72,6 +74,14 @@ type Dependencies = {
 export class TransferenciasService {
   constructor(private readonly deps: Dependencies) {}
 
+  private async signatureReady(db: Db, id: string) {
+    try { await assertSignatureTransferReady(db, id); }
+    catch (error) {
+      if (error instanceof DocumentReviewError) fail("SIGNATURE_GATE_BLOCKED", error.message, error.statusCode);
+      throw error;
+    }
+  }
+
   async list(limit: number, cursor?: string) {
     const rows = await this.deps.db.solicitud.findMany({
       where: {
@@ -133,6 +143,7 @@ export class TransferenciasService {
 
   private async currentPlan(id: string) {
     const source = await this.source(this.deps.db, id);
+    await this.signatureReady(this.deps.db, id);
     if (!source.legacyOid || !source.titular?.cuit)
       return fail("INCOMPLETE_PLAN", "Falta préstamo o CUIT del titular.");
     const cuit = source.titular.cuit.replace(/[-.\s]/g, "");
@@ -305,6 +316,7 @@ export class TransferenciasService {
           include: orderInclude,
         });
         if (existing) return replay(existing);
+        await this.signatureReady(tx, id);
         if (digest(await this.source(tx, id)) !== sourceVersion)
           fail("PLAN_CHANGED", "Los datos BEEX cambiaron durante la reserva.");
         const order = await tx.transferenciaDesembolso.create({
@@ -361,6 +373,7 @@ export class TransferenciasService {
           "El desembolso ya fue cerrado. No iniciar transferencias.",
         );
       await this.source(tx, current.solicitudId);
+      await this.signatureReady(tx, current.solicitudId);
       await tx.transferenciaDesembolso.update({
         where: { id },
         data: { bankStartedAt: current.bankStartedAt ?? new Date() },

@@ -5,6 +5,8 @@ import {
   CircleDot,
   ClipboardList,
   FileChartColumn,
+  FileCheck2,
+  Bell,
   History,
   LayoutDashboard,
   Search,
@@ -16,7 +18,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
-import { canCreateSolicitud, canManageUsers } from "@/modules/auth/utils/auth-user";
+import {
+  canCreateSolicitud,
+  canManageUsers,
+  canReviewSignatures,
+} from "@/modules/auth/utils/auth-user";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 import { Input } from "@/shared/components/ui/input";
 
@@ -47,6 +53,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
         label: "Dashboard",
         to: "/dashboard",
       },
+      { icon: Bell, label: "Notificaciones", to: "/notificaciones" },
     ],
   },
   {
@@ -119,13 +126,32 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
   const user = sessionQuery.data;
   const [searchTerm, setSearchTerm] = useState("");
   const sidebarGroups: SidebarGroup[] = [
-    ...SIDEBAR_GROUPS.map(group => ({
+    ...SIDEBAR_GROUPS.map((group) => ({
       ...group,
-      sections: group.sections?.map(section => ({
+      sections: group.sections?.map((section) => ({
         ...section,
-        items: section.items.filter(item => item.to !== "/solicitudes/core/precarga" || canCreateSolicitud(user)),
+        items: section.items.filter(
+          (item) =>
+            item.to !== "/solicitudes/core/precarga" ||
+            canCreateSolicitud(user),
+        ),
       })),
     })),
+    ...(canReviewSignatures(user)
+      ? [
+          {
+            id: "legajos",
+            label: "Legajos Digitales",
+            items: [
+              {
+                icon: FileCheck2,
+                label: "Bandeja de firmas",
+                to: "/legajos/firmas",
+              },
+            ],
+          },
+        ]
+      : []),
     ...(canManageUsers(user)
       ? [
           {
@@ -147,7 +173,11 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                 label: "Permisos de edición",
                 to: "/admin/solicitudes/field-access-rules",
               },
-              { label: "Reconocimiento de recibos", icon: Shield, to: "/admin/solicitudes/reconocimiento-recibos" },
+              {
+                label: "Reconocimiento de recibos",
+                icon: Shield,
+                to: "/admin/solicitudes/reconocimiento-recibos",
+              },
               {
                 icon: Shield,
                 label: "Transiciones",
@@ -250,9 +280,15 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                                 }
                                 key={item.to}
                                 onClick={() => {
-                                  const listaKey = LISTA_QUERY_KEY_POR_RUTA[item.to];
-                                  if (listaKey && location.pathname === item.to) {
-                                    void queryClient.invalidateQueries({ queryKey: listaKey });
+                                  const listaKey =
+                                    LISTA_QUERY_KEY_POR_RUTA[item.to];
+                                  if (
+                                    listaKey &&
+                                    location.pathname === item.to
+                                  ) {
+                                    void queryClient.invalidateQueries({
+                                      queryKey: listaKey,
+                                    });
                                   }
                                   if (!isDesktop) onClose();
                                 }}

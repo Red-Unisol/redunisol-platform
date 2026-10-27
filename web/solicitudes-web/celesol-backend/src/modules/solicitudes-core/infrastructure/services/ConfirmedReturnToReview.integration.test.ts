@@ -79,9 +79,11 @@ it("the catalog exposes a regular return to Revisar/Vendedores; it preserves lin
     assert(coreReconciliationPending(s));
     const unavailable = async () => { throw new Error("No external operation is permitted by this test"); };
     const replacement = new ControlledLoanReplacementService({ db, prepare: { prepareReplacement: unavailable }, gateway: { crear: unavailable }, lifecycle: unavailable, loanSnapshot: unavailable, makeSignatureLink: () => "" });
-    assert.equal((await replacement.view(s.id, f.admin as unknown as AuthUser)).canReplace, true);
+    assert.equal((await replacement.view(s.id, f.admin as unknown as AuthUser)).canReplace, false);
     assert.equal((await replacement.view(s.id, f.risk as unknown as AuthUser)).canReplace, false);
     await db.solicitud.update({ where: { id: s.id }, data: { estadoActualId: f.s.estadoActualId } });
+    assert.equal((await replacement.view(s.id, f.admin as unknown as AuthUser)).canReplace, true);
+    assert.equal((await replacement.view(s.id, f.risk as unknown as AuthUser)).canReplace, true);
     await assert.rejects(() => f.engine.execute({ ...f.command, actionCode: "liquidar" }), /conciliar/);
   } finally { await f.clean(); }
 });

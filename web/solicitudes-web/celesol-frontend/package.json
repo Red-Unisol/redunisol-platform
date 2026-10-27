@@ -10,7 +10,12 @@
     "test": "node --experimental-strip-types --test src/shared/services/http/session-fetch.test.ts",
     "preview": "vite preview",
     "format": "prettier --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "ui:dev": "vite --config ui-lab/vite.config.ts --mode ui-lab",
+    "ui:check": "tsc --noEmit -p tsconfig.ui-lab.json",
+    "ui:build": "npm run ui:check && vite build --config ui-lab/vite.config.ts --mode ui-lab",
+    "ui:test": "node --experimental-strip-types --test ui-lab/network-guard.test.ts",
+    "ui:preview": "vite preview --config ui-lab/vite.config.ts --mode ui-lab"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

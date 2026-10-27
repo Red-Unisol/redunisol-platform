@@ -233,6 +233,26 @@ describe("GetFinSolicitudDatosUseCase", () => {
 });
 
 describe("GetFinSolicitudDatosUseCase - linea", () => {
+  it("rechaza un enlace si el préstamo fue reemplazado durante la comprobación", async () => {
+    const useCase = new GetFinSolicitudDatosUseCase({
+      legacyGateway: buildLegacyGateway(buildPrestamo()),
+      repository: buildRepository(buildSolicitud()),
+      ensureCoreReconciled: async () => ({ loanId: "new-loan", conditionsFingerprint: "verified" }),
+    });
+    await assert.rejects(useCase.execute({ sol: "228418" }), /préstamo cambió/);
+  });
+
+  it("rechaza datos que cambiaron mientras se consultaba el préstamo", async () => {
+    const source = buildSolicitud();
+    const repository = buildRepository(source);
+    repository.findById = async () => ({ ...source, updatedAt: new Date(source.updatedAt.getTime() + 1) });
+    const useCase = new GetFinSolicitudDatosUseCase({
+      legacyGateway: buildLegacyGateway(buildPrestamo()), repository,
+      ensureCoreReconciled: async () => ({ loanId: source.legacyOid!, conditionsFingerprint: "verified" }),
+    });
+    await assert.rejects(useCase.execute({ sol: "228418" }), /cambió durante la consulta/);
+  });
+
   it("devuelve el codigo de mutual guardado en la solicitud", async () => {
     // Es lo que permite que el finalizar elija el documento sin mirar el
     // parametro de la URL, que se puede editar a mano.

@@ -79,6 +79,7 @@ export function SolicitudDetailToolbar({
   transitionControl,
   submitAction,
   attachmentsAction,
+  analysisAction,
 }: {
   canEdit?: boolean;
   isCreatePrestamoLegacyPending?: boolean;
@@ -93,8 +94,18 @@ export function SolicitudDetailToolbar({
   onSave?: () => void;
   onStartEdit?: () => void;
   transitionControl?: ReactNode;
-  submitAction?: { onClick: () => void; disabled: boolean; disabledReason?: string };
+  submitAction?: {
+    onClick: () => void;
+    disabled: boolean;
+    disabledReason?: string;
+  };
   attachmentsAction?: { onClick: () => void; count?: number };
+  analysisAction?: {
+    label: string;
+    onClick: () => void;
+    disabled: boolean;
+    disabledReason?: string;
+  };
 }) {
   return (
     <div className="border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5">
@@ -123,10 +134,30 @@ export function SolicitudDetailToolbar({
             Enviar solicitud
           </Button>
         ) : null}
+        {analysisAction ? (
+          <Button
+            disabled={analysisAction.disabled}
+            onClick={analysisAction.onClick}
+            title={analysisAction.disabledReason}
+            size="sm"
+            type="button"
+          >
+            <Send className="size-4" />
+            {analysisAction.label}
+          </Button>
+        ) : null}
         {attachmentsAction ? (
-          <Button onClick={attachmentsAction.onClick} size="sm" type="button" variant="outline">
+          <Button
+            onClick={attachmentsAction.onClick}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             <Paperclip className="size-4" aria-hidden="true" />
-            Adjuntos{attachmentsAction.count !== undefined ? ` (${attachmentsAction.count})` : ""}
+            Adjuntos
+            {attachmentsAction.count !== undefined
+              ? ` (${attachmentsAction.count})`
+              : ""}
           </Button>
         ) : null}
         {onCreateSocio ? (

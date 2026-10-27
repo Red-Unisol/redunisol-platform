@@ -7,11 +7,14 @@ import {
   documentReviewKey,
   downloadDocumentLegajo,
   evaluateDocumentReview,
+  requestNewSignature,
+  signatureInboxKey,
   useDocumentReview,
   type DocumentDecision,
   type DocumentReview,
   type ReviewAttempt,
 } from "../services/document-review-api";
+import { SignatureStatusCard } from "./signature-status-card";
 
 const decisionLabel = (value: DocumentDecision) =>
   value === "approve" ? "Aprobar" : "No aprobar";
@@ -100,15 +103,18 @@ export function DocumentReviewPanel({
   } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [requestSignatureId, setRequestSignatureId] = useState(() =>
+    crypto.randomUUID(),
+  );
   const current = query.data?.currentReview ?? null;
+  const commentKey = current?.id ?? query.data?.signature?.cycle ?? "pending";
   const selectedId =
     selection?.reviewId === current?.id
       ? selection?.id
       : current?.selectedVerificationId;
   const attempt =
     current?.attempts.find((a) => a.verificationId === selectedId) ?? null;
-  const reason =
-    comment?.reviewId === current?.id ? (comment?.value ?? "") : "";
+  const reason = comment?.reviewId === commentKey ? comment.value : "";
   const refresh = useMutation({
     mutationFn: () => evaluateDocumentReview(solicitudId),
     onSuccess: (data) => {
@@ -131,9 +137,12 @@ export function DocumentReviewPanel({
     onSuccess: async (data) => {
       client.setQueryData(documentReviewKey(solicitudId), data);
       setMessage(
-        "Decisión humana registrada. Se actualizó el estado de la solicitud.",
+        data.analysisReady
+          ? "Firma aprobada. La solicitud pasó a Para transferir."
+          : "Firma aprobada. Quedó registrada mientras continúa el análisis.",
       );
       await client.invalidateQueries({ queryKey: ["solicitudes-core"] });
+      await client.invalidateQueries({ queryKey: signatureInboxKey });
     },
     onError: async (e) => {
       setMessage(e.message);
@@ -142,7 +151,24 @@ export function DocumentReviewPanel({
       });
     },
   });
-  const busy = decide.isPending || refresh.isPending;
+  const requestAgain = useMutation({
+    mutationFn: () =>
+      requestNewSignature(solicitudId, reason, requestSignatureId),
+    onSuccess: async (data) => {
+      client.setQueryData(documentReviewKey(solicitudId), data);
+      setRequestSignatureId(crypto.randomUUID());
+      setComment(null);
+      setMessage(
+        "Nueva firma solicitada. El vendedor recibirá el aviso y el motivo en Beex.",
+      );
+      await client.invalidateQueries({ queryKey: signatureInboxKey });
+      await client.invalidateQueries({ queryKey: ["notifications"] });
+      await client.invalidateQueries({ queryKey: ["solicitudes-core"] });
+    },
+    onError: (e) => setMessage(e.message),
+    retry: false,
+  });
+  const busy = decide.isPending || refresh.isPending || requestAgain.isPending;
   async function download(review: DocumentReview, decisionId?: string) {
     setDownloading(true);
     try {
@@ -168,11 +194,14 @@ export function DocumentReviewPanel({
       </section>
     );
   if (!query.data) return null;
-  if (
-    query.data.state !== "VerificarFirmaYDocumentacion" &&
-    query.data.history.length === 0
-  )
-    return null;
+  const summary = query.data.signature;
+  if (!query.data.canDecide && !current && query.data.history.length === 0)
+    return summary ? (
+      <SignatureStatusCard
+        signature={summary}
+        analysisReady={query.data.analysisReady ?? false}
+      />
+    ) : null;
   const canDecide = query.data.canDecide && !editing;
   const override =
     current?.systemDecision !== "approve" || attempt?.decision !== "approve";
@@ -181,12 +210,19 @@ export function DocumentReviewPanel({
       className="space-y-4 rounded-lg border border-border bg-surface p-4"
       aria-label="Revisión de firma y legajo digital"
     >
+      {summary && (
+        <SignatureStatusCard
+          key={summary.cycle}
+          signature={summary}
+          analysisReady={query.data.analysisReady ?? false}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-semibold">Revisión de firma y legajo digital</h2>
           <p className="text-sm text-foreground-secondary">
-            El sistema propone una decisión. Una persona debe aprobar o
-            desaprobar para cambiar el estado.
+            Legajos Digitales valida la firma del préstamo vigente. La revisión
+            puede hacerse mientras continúa el análisis.
           </p>
         </div>
         {query.data.canDecide && (
@@ -218,7 +254,7 @@ export function DocumentReviewPanel({
       {!current ? (
         <p className="text-sm">
           La evaluación de los datos vigentes está pendiente. Se completa
-          automáticamente mientras la solicitud está en verificación.
+          automáticamente para los préstamos pendientes de transferencia.
         </p>
       ) : (
         <>
@@ -299,9 +335,9 @@ export function DocumentReviewPanel({
                 maxLength={4000}
                 value={reason}
                 disabled={busy}
-                placeholder="Obligatorio para desaprobar o para diferir del sistema."
+                placeholder="Indicá el motivo si necesitás pedir una nueva firma o diferir de la propuesta."
                 onChange={(e) =>
-                  setComment({ reviewId: current.id, value: e.target.value })
+                  setComment({ reviewId: commentKey, value: e.target.value })
                 }
               />
               {override && (
@@ -324,20 +360,51 @@ export function DocumentReviewPanel({
                   <CheckCircle2 className="size-4" />
                   {decide.isPending
                     ? "Guardando decisión…"
-                    : "Aprobar y enviar a Transferir"}
+                    : query.data.analysisReady
+                      ? "Aprobar y mandar a transferir"
+                      : "Aprobar firma"}
                 </Button>
                 <Button
                   variant="outline"
                   disabled={busy || !reason.trim()}
-                  onClick={() => decide.mutate("not_approve")}
+                  onClick={() => requestAgain.mutate()}
                 >
                   <XCircle className="size-4" />
-                  Desaprobar y devolver a Liquidada
+                  Solicitar nueva firma
                 </Button>
               </div>
             </div>
           )}
         </>
+      )}
+      {canDecide && !current && (
+        <div className="space-y-3 border-t border-border pt-4">
+          <label
+            className="block text-sm font-medium"
+            htmlFor={`request-signature-${solicitudId}`}
+          >
+            Motivo para solicitar nueva firma
+          </label>
+          <textarea
+            id={`request-signature-${solicitudId}`}
+            className="min-h-20 w-full rounded-md border border-border bg-surface p-3 text-sm"
+            maxLength={4000}
+            value={reason}
+            disabled={busy}
+            onChange={(e) =>
+              setComment({ reviewId: commentKey, value: e.target.value })
+            }
+            placeholder="Por ejemplo: el DNI quedó borroso. Debe repetir la firma."
+          />
+          <Button
+            variant="outline"
+            disabled={busy || !reason.trim()}
+            onClick={() => requestAgain.mutate()}
+          >
+            <XCircle className="size-4" />
+            Solicitar nueva firma
+          </Button>
+        </div>
       )}
       {query.data.history.length > 0 && (
         <details className="border-t border-border pt-3">

@@ -21,6 +21,7 @@ import {
   PopoverTrigger,
 } from "@/shared/components/ui/popover";
 import { Separator } from "@/shared/components/ui/separator";
+import { NotificationBell } from "@/modules/notifications/notification-center";
 
 type AppTopbarProps = {
   titleIcon: LucideIcon;
@@ -114,6 +115,7 @@ export function AppTopbar({
       </div>
 
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <PopoverRoot>
           <PopoverTrigger asChild>
             <button
