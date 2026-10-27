@@ -89,6 +89,7 @@ import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/
 import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
 import { GenerarPrestamoDialog } from "@/modules/solicitudes-core/components/generar-prestamo-dialog";
 import { PrestamoDelSocioDialog } from "@/modules/solicitudes-core/components/prestamo-del-socio-dialog";
+import { RefinanciacionSection } from "@/modules/solicitudes-core/components/refinanciacion-section";
 import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
@@ -260,6 +261,7 @@ type SolicitanteTab =
   | "adjuntos"
   | "cancelaciones"
   | "prestamos"
+  | "refinanciacion"
   | "solicitante"
   | "solicitudes";
 type SolicitanteContentTab =
@@ -267,6 +269,7 @@ type SolicitanteContentTab =
   | "adjuntos"
   | "cancelaciones"
   | "prestamos"
+  | "refinanciacion"
   | "solicitudes";
 
 const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
@@ -281,6 +284,14 @@ const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
 const PRESTAMOS_TAB: TabItem<SolicitanteContentTab> = {
   label: "Préstamos",
   value: "prestamos",
+};
+
+// Mismo criterio que Prestamos: elegir cuotas a refinanciar requiere ver los
+// prestamos del socio. Va al lado de Cancelaciones porque las dos cambian el
+// en mano del prestamo nuevo.
+const REFINANCIACION_TAB: TabItem<SolicitanteContentTab> = {
+  label: "Refinanciación",
+  value: "refinanciacion",
 };
 
 const CANCELACIONES_TABLE_COLUMNS = [
@@ -2669,6 +2680,7 @@ function SolicitanteSection({
     activeTab === "adjuntos" ||
     activeTab === "cancelaciones" ||
     activeTab === "prestamos" ||
+    activeTab === "refinanciacion" ||
     activeTab === "solicitudes"
       ? activeTab
       : datosPersonalesTab;
@@ -2744,6 +2756,7 @@ function SolicitanteSection({
             tab === "adjuntos" ||
             tab === "cancelaciones" ||
             tab === "prestamos" ||
+            tab === "refinanciacion" ||
             tab === "solicitudes"
           ) {
             onTabChange(tab);
@@ -2755,12 +2768,24 @@ function SolicitanteSection({
         }}
         tabs={
           canViewPrestamos
-            ? [...SOLICITANTE_CONTENT_TABS, PRESTAMOS_TAB, { label: "Solicitudes", value: "solicitudes" }]
+            ? [
+                ...SOLICITANTE_CONTENT_TABS.slice(0, 2),
+                REFINANCIACION_TAB,
+                ...SOLICITANTE_CONTENT_TABS.slice(2),
+                PRESTAMOS_TAB,
+                { label: "Solicitudes", value: "solicitudes" },
+              ]
             : SOLICITANTE_CONTENT_TABS
         }
       />
       {activeContentTab === "solicitudes" && canViewPrestamos ? (
         <SolicitudesDelTitularSection solicitudId={solicitudId} documento={titular.nroDocumento} />
+      ) : activeContentTab === "refinanciacion" && canViewPrestamos ? (
+        <RefinanciacionSection
+          canEdit={canCreateCancelaciones || canManageCancelaciones}
+          isActive={activeContentTab === "refinanciacion"}
+          solicitudId={solicitudId}
+        />
       ) : activeContentTab === "prestamos" ? (
         <PrestamosDelSocioSection
           isActive={activeContentTab === "prestamos"}

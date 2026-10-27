@@ -42,6 +42,9 @@ import { ListLineasPrestamoDeSolicitudUseCase } from "./application/use-cases/Li
 import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
 import { SimularRefinanciacionUseCase } from "./application/use-cases/SimularRefinanciacion.use-case";
+import { GetSolicitudRefinanciacionUseCase } from "./application/use-cases/GetSolicitudRefinanciacion.use-case";
+import { GuardarSolicitudRefinanciacionUseCase } from "./application/use-cases/GuardarSolicitudRefinanciacion.use-case";
+import { SolicitudRefinanciacionPrismaRepository } from "./infrastructure/repositories/SolicitudRefinanciacionPrismaRepository";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
@@ -291,6 +294,20 @@ export function createSolicitudesCoreRouter(
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });
+  const solicitudRefinanciacionRepository =
+    new SolicitudRefinanciacionPrismaRepository(prisma);
+  const getSolicitudRefinanciacionUseCase =
+    new GetSolicitudRefinanciacionUseCase({
+      refinanciacionRepository: solicitudRefinanciacionRepository,
+      repository: solicitudesCoreRepository,
+    });
+  const guardarSolicitudRefinanciacionUseCase =
+    new GuardarSolicitudRefinanciacionUseCase({
+      fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
+      refinanciacionRepository: solicitudRefinanciacionRepository,
+      repository: solicitudesCoreRepository,
+      simularRefinanciacion: simularRefinanciacionUseCase,
+    });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
     convenioSocioGateway: solicitudesLegacyGateway,
     lineasPrestamoCatalog,
@@ -434,6 +451,8 @@ export function createSolicitudesCoreRouter(
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
     simularRefinanciacionUseCase,
+    getSolicitudRefinanciacionUseCase,
+    guardarSolicitudRefinanciacionUseCase,
     listLineasPrestamoDeSolicitudUseCase,
     listSolicitudesDelTitularUseCase: new ListSolicitudesDelTitularUseCase({ repository: solicitudesCoreRepository, legacyGateway: solicitudesLegacyGateway }),
     listPrestamosDelSocioUseCase,

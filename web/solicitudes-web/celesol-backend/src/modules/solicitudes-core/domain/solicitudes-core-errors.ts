@@ -402,3 +402,29 @@ export class CalculoConValoresEfectivosError extends SolicitudesError {
     this.effectiveValues = values;
   }
 }
+
+export class SolicitudRefinanciacionNoEditableError extends SolicitudesError {
+  constructor() {
+    super("No podés cambiar la refinanciación de esta solicitud en este estado.", 403);
+    this.name = "SolicitudRefinanciacionNoEditableError";
+  }
+}
+
+export class SolicitudRefinanciacionPrestamoGeneradoError extends SolicitudesError {
+  constructor() {
+    super(
+      "El préstamo de esta solicitud ya fue generado: la refinanciación no se puede cambiar.",
+      409,
+    );
+    this.name = "SolicitudRefinanciacionPrestamoGeneradoError";
+  }
+}
+
+// Vimarx no acepta las cuotas elegidas (por ejemplo, falta una cuota anterior
+// impaga del mismo prestamo). El mensaje es el del legado.
+export class SolicitudRefinanciacionInvalidaError extends SolicitudesError {
+  constructor(message: string) {
+    super(message, 422);
+    this.name = "SolicitudRefinanciacionInvalidaError";
+  }
+}

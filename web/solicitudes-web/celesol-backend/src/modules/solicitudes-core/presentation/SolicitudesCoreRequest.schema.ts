@@ -238,33 +238,42 @@ export const prestamoDelSocioParamsSchema = solicitudByIdParamsSchema.extend({
 
 // Cuotas a cancelar con una refinanciacion, por prestamo de Vimarx. Los IDs
 // van solo con digitos por la misma razon que prestamoDelSocioParamsSchema.
+const refinanciacionPrestamosSchema = z
+  .array(
+    z
+      .object({
+        nrosCuota: z
+          .array(z.number().int().positive())
+          .min(1, "nrosCuota must not be empty")
+          .max(240)
+          .refine(
+            (nros) => new Set(nros).size === nros.length,
+            "nrosCuota must not repeat",
+          ),
+        prestamoId: z.string().regex(/^\d+$/, "prestamoId must be numeric"),
+      })
+      .strict(),
+  )
+  .max(20)
+  .refine(
+    (prestamos) =>
+      new Set(prestamos.map((item) => item.prestamoId)).size ===
+      prestamos.length,
+    "prestamos must not repeat",
+  );
+
 export const simularRefinanciacionBodySchema = z
   .object({
-    prestamos: z
-      .array(
-        z
-          .object({
-            nrosCuota: z
-              .array(z.number().int().positive())
-              .min(1, "nrosCuota must not be empty")
-              .max(240)
-              .refine(
-                (nros) => new Set(nros).size === nros.length,
-                "nrosCuota must not repeat",
-              ),
-            prestamoId: z.string().regex(/^\d+$/, "prestamoId must be numeric"),
-          })
-          .strict(),
-      )
-      .min(1, "prestamos must not be empty")
-      .max(20)
-      .refine(
-        (prestamos) =>
-          new Set(prestamos.map((item) => item.prestamoId)).size ===
-          prestamos.length,
-        "prestamos must not repeat",
-      ),
+    prestamos: refinanciacionPrestamosSchema.refine(
+      (prestamos) => prestamos.length > 0,
+      "prestamos must not be empty",
+    ),
   })
+  .strict();
+
+// Lista vacia: borra la refinanciacion de la solicitud.
+export const guardarRefinanciacionBodySchema = z
+  .object({ prestamos: refinanciacionPrestamosSchema })
   .strict();
 
 // Replica la forma de POST /api/redunisol/finSolicitud/:ntrans/:sol (ver
@@ -420,6 +429,9 @@ export type CreatePrestamoLegacyBody = z.infer<
 export type PrestamoDelSocioParams = z.infer<typeof prestamoDelSocioParamsSchema>;
 export type SimularRefinanciacionBody = z.infer<
   typeof simularRefinanciacionBodySchema
+>;
+export type GuardarRefinanciacionBody = z.infer<
+  typeof guardarRefinanciacionBodySchema
 >;
 export type FinSolicitudParams = z.infer<typeof finSolicitudParamsSchema>;
 export type AssignSolicitudToSelfBody = z.infer<typeof assignSolicitudToSelfBodySchema>;

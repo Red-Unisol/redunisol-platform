@@ -321,6 +321,73 @@ export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
   }>(`/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}`);
 }
 
+export type RefinanciacionPrestamoRequest = {
+  nrosCuota: number[];
+  /** ID del prestamo en Vimarx (legacyId). */
+  prestamoId: string;
+};
+
+export type RefinanciacionCuotaSimulada = {
+  fechaVto: string | null;
+  interesPagado: number;
+  nroCuota: number;
+  otrosPagado: number;
+  punitoriosPagados: number;
+  totalPagado: number;
+};
+
+export type RefinanciacionPrestamoSimulado =
+  | {
+      cuotas: RefinanciacionCuotaSimulada[];
+      ok: true;
+      otros: number;
+      prestamoId: string;
+      punitorios: number;
+      totalPago: number;
+    }
+  | { error: string; ok: false; prestamoId: string };
+
+export type RefinanciacionSimuladaResponse = {
+  prestamos: RefinanciacionPrestamoSimulado[];
+  /** null si algun prestamo no se pudo simular. */
+  total: number | null;
+};
+
+export type SolicitudRefinanciacionResponse = {
+  prestamos: RefinanciacionPrestamoRequest[];
+  updatedAt: string | null;
+};
+
+export function getSolicitudRefinanciacion(solicitudId: string) {
+  return apiClient.get<SolicitudRefinanciacionResponse>(
+    `/solicitudes/${solicitudId}/refinanciacion`,
+  );
+}
+
+// Vimarx calcula el importe de cada cuota a la fecha de hoy, sin guardar nada.
+export function simularRefinanciacion(
+  solicitudId: string,
+  prestamos: RefinanciacionPrestamoRequest[],
+) {
+  return apiClient.post<RefinanciacionSimuladaResponse>(
+    `/solicitudes/${solicitudId}/refinanciacion/simulacion`,
+    { prestamos },
+  );
+}
+
+export function guardarSolicitudRefinanciacion(
+  solicitudId: string,
+  prestamos: RefinanciacionPrestamoRequest[],
+) {
+  return withAreaForbiddenMessage(
+    apiClient.put<
+      SolicitudRefinanciacionResponse & {
+        simulacion: RefinanciacionSimuladaResponse | null;
+      }
+    >(`/solicitudes/${solicitudId}/refinanciacion`, { prestamos }),
+  );
+}
+
 export function listSolicitudCoreCancelaciones(solicitudId: string) {
   return apiClient.get<SolicitudCoreCancelacionResponse[]>(
     `/solicitudes/${solicitudId}/cancelaciones`,
