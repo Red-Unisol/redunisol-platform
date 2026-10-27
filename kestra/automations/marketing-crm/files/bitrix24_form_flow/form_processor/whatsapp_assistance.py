@@ -87,7 +87,7 @@ def _persist(payload, answer, *, env=None, client=None, intake=False):
     records = {}
     for entity in ("contact", "lead"):
         matches = api.call("crm.duplicate.findbycomm", {"entity_type": entity.upper(), "type": "PHONE", "values": [phone]})
-        ids = list(dict.fromkeys(str(i) for i in matches.get(entity.upper(), [])))
+        ids = _duplicate_ids(matches, entity.upper())
         if len(ids) > 50:
             return dict(result, action="review", reason="identity_search_too_large")
         rows = [api.call("crm." + entity + ".get", {"id": i}) for i in ids]
@@ -236,6 +236,19 @@ def _persist(payload, answer, *, env=None, client=None, intake=False):
         raise RuntimeError("Assisted lead write requires reconciliation.")
     return dict(result, action="queued" if automatic else "manual_review" if state != "bank_rejected" else "rejected",
                 reason=state, lead_id=lead_id, contact_id=str((contact or {}).get("ID") or ""))
+
+
+def _duplicate_ids(matches, entity):
+    # Bitrix returns [] (not {}) when a filtered duplicate search has no matches.
+    if isinstance(matches, list) and not matches:
+        return []
+    if not isinstance(matches, dict) or (matches and entity not in matches):
+        raise ValueError("Invalid CRM duplicate search result; requires review.")
+    ids = matches.get(entity, [])
+    if not isinstance(ids, list) or any(isinstance(i, bool) or not isinstance(i, (int, str))
+                                      or not re.fullmatch(r"[1-9][0-9]{0,63}", str(i)) for i in ids):
+        raise ValueError("Invalid CRM duplicate identities; requires review.")
+    return list(dict.fromkeys(str(i) for i in ids))
 
 
 def _create_test_lead(api, config, source, payload, answer, phone, case_id, status, result):

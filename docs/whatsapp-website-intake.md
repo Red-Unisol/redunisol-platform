@@ -143,6 +143,37 @@ incierto. `php artisan edna:intake prune` es preview; `prune --apply` elimina la
 respuestas cifradas de casos sincronizados de más de 30 días y conserva las claves
 de deduplicación. Los casos pendientes de revisión no se purgan automáticamente.
 
+### Recuperación de una falla comprobada antes de escribir en Bitrix
+
+Bitrix devuelve `[]` cuando `crm.duplicate.findbycomm` no encuentra coincidencias.
+El escritor acepta esa respuesta vacía para contactos y leads. Otras formas
+inválidas se detienen antes de crear identidades; no se interpretan como ausencia.
+
+`php artisan edna:intake recover ID` muestra el ID de solicitud, UUID de caso,
+envío y admisión originales; no consulta Bitrix ni encola trabajos. Para aplicar:
+
+1. Confirmar en Bitrix, por `UF_CRM_WA_ASSISTANCE_ID`, que el mismo UUID no tiene
+   un lead ya persistido. Revisar la ejecución Kestra correspondiente al caso y
+   confirmar que terminó antes de **cualquier intento** de `crm.*.add/update`.
+   La ausencia de un lead por sí sola no demuestra que no hubo escritura parcial.
+   Si hubo intento de escritura o evidencia incompleta, no usar recuperación:
+   reconciliar el resultado existente sin repetir un POST incierto.
+2. Desplegar la corrección del escritor y el comando por CI.
+3. Ejecutar `php artisan edna:intake recover ID --expected-case=UUID --confirmed-no-writes --apply`
+   sólo para esa falla auditada. La confirmación es del operador; el comando no
+   consulta los logs ni certifica por sí solo la ausencia de escrituras.
+4. Comprobar `edna:intake status ID`, el lead/contacto, la atribución y la evolución
+   normal del CRM. `review` es una derivación protegida y no habilita otro reintento.
+
+La recuperación exige `unknown` con acuse incierto, respuesta cifrada conservada,
+Flow completado y correlacionado, admisión y atribución vigentes, mismo UUID y
+banderas habilitadas. Bajo bloqueo de la solicitud, cambia a `pending` y encola
+**sólo** `ProcessEdnaIntake` en una transacción. Un fallo al encolar revierte el
+cambio. No crea un evento, envío, admisión ni cupo; conserva la respuesta y la fecha
+originales. Una segunda llamada no vuelve a encolar un caso pendiente/en proceso,
+y un caso `synced` es un no-op. El escritor vuelve a comprobar el UUID, teléfono,
+CUIL y gestiones previas antes de persistir; un caso ya registrado no crea otro lead.
+
 Pruebas: `tests/Feature/EdnaIntakeTest.php`, suites de Router/asistencia/atribución,
 `test_whatsapp_intake.py`, suites del dominio y validador de estructura Kestra.
 La UAT debe cubrir las cuatro provincias del Router, todas sus situaciones,
