@@ -14,6 +14,7 @@ import { createDocumentReviewWorkflow } from "./workflow";import { notifySignat
 import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "../solicitudes-core/infrastructure/services/WorkflowFinancialGuard";
 import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
 import { isAnalysisReady } from "./signature-workflow";
+import { EvaluateListSolicitudesGateway, signatureInboxLoanKey } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 
 let service: DocumentReviewService | null = null;
 function getService() {
@@ -31,6 +32,9 @@ function getService() {
       clientSecret: env.DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET,
       timeoutMs: env.DOCUMENT_REVIEW_TIMEOUT_MS,
     });
+    const loans = new EvaluateListSolicitudesGateway({
+      baseUrl: env.LEGACY_API_BASE_URL, timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    });
     service = new DocumentReviewService({
       db: prisma,
       gateway,
@@ -46,6 +50,14 @@ function getService() {
       maxPdfBytes: env.DOCUMENT_REVIEW_MAX_PDF_BYTES,
       buildLegajo: createLegajoBuilder(gateway),
       transition: createDocumentReviewWorkflow(prisma),      onSignatureEvent: notifySignatureEvent,
+      inboxLoanStates: async (rows) => {
+        const refs = rows.map(row => {
+          const control = row.administrativeCoreControl as Record<string, unknown> | null;
+          return { legacyOid: row.legacyOid!, directLoanId: Boolean(control?.replacementId || control?.generatedLoanId) };
+        });
+        const states = await loans.getSignatureInboxLoanStates(refs);
+        return new Map(rows.map((row, index) => [row.id, states.get(signatureInboxLoanKey(refs[index]))!]));
+      },
       financialPreflight: async (id, user) => {
         const proof = await assertSignatureLinkFinancialReady(prisma, id);
         if (isAnalysisReady(await administrativeSource(prisma, id)))
