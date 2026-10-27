@@ -49,7 +49,7 @@ tasks:
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_TIMEOUT_SECONDS: "{{ envs.bitrix24_timeout_seconds }}"
     commands:
-      - python -m bitrix24_form_flow.kestra_whatsapp_assistance_entrypoint
+      - python -m bitrix24_form_flow.kestra_whatsapp_intake_entrypoint
 
 outputs:
   - id: ok
