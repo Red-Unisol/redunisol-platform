@@ -101,6 +101,7 @@ export class ControlledLoanReplacementService {
 
   async replace(id: string, user: AuthUser, input: {
     requestId: string; expectedUpdatedAt: string; previousLoanId: string; reason: string;
+    convenio?: Parameters<CreatePrestamoLegacyUseCase["prepareReplacement"]>[0]["convenio"];
   }) {
     const before = await administrativeSource(this.deps.db, id);
     await this.actor(this.deps.db, user, id);
@@ -121,6 +122,7 @@ export class ControlledLoanReplacementService {
     const previous = await this.deps.lifecycle(before.legacyOid!, Boolean((before.administrativeCoreControl as Prisma.JsonObject | null)?.replacementId || (before.administrativeCoreControl as Prisma.JsonObject | null)?.generatedLoanId));
     assertCancelledLoan(previous);
     const prepared = await this.deps.prepare.prepareReplacement({
+      convenio: input.convenio,
       solicitudId: id, currentUser: { id: user.id, isSystemAdmin: user.isSystemAdmin, workflowOwnerId: user.workflowOwnerId ?? "" },
     });
     const fingerprint = coreConditionsFingerprint(before);

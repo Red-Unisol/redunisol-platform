@@ -62,6 +62,8 @@ jobs:
           src/modules/solicitudes-core/infrastructure/services/ControlledLoanReplacement.integration.test.ts
           src/modules/solicitudes-core/infrastructure/services/ControlledLoanReplacement.test.ts
           src/modules/solicitudes-core/application/use-cases/CreatePrestamoLegacy.use-case.test.ts
+          src/modules/solicitudes-core/presentation/SolicitudesCoreRequest.schema.test.ts
+          src/modules/solicitudes-core/infrastructure/services/EditarSocioMutualGateway.test.ts
           src/modules/solicitudes-core/infrastructure/services/AdministrativeCorrection.integration.test.ts
           src/modules/solicitudes-core/infrastructure/services/ConfirmedReturnToReview.integration.test.ts
           src/modules/solicitudes/infrastructure/services/CoreReconciliationSnapshot.test.ts

@@ -7,6 +7,14 @@ export type ConvenioSocio = {
   observaciones: string | null;
 };
 
+/** Only edited fields, with the value shown when the operator began editing. */
+export type ConvenioSocioEdicion = {
+  [K in keyof ConvenioSocio]?: {
+    original: ConvenioSocio[K];
+    valor: ConvenioSocio[K];
+  };
+};
+
 // Con el NroSocio que conocen los analistas: Sol Web guarda el ID interno
 // (socio 1707 = ID 143254).
 export type SocioConvenioLegacy = ConvenioSocio & { nroSocio: string | null };

@@ -1,4 +1,5 @@
-import { CalendarDays, UserRound } from "lucide-react";
+import { useState } from "react";
+import { CalendarDays, ChevronDown, UserRound } from "lucide-react";
 import { Section } from "@/modules/solicitudes-editor/components/fields/base";
 import type {
   SolicitudCoreWorkflowHistoryItem,
@@ -195,6 +196,22 @@ export function SolicitudWorkflowHistorySection({
   history,
   isLoading = false,
 }: SolicitudWorkflowHistorySectionProps) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleItem = (id: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      return next;
+    });
+  };
+
   return (
     <Section title="Historial de estados">
       {isLoading ? (
@@ -215,25 +232,34 @@ export function SolicitudWorkflowHistorySection({
 
       {!isLoading && !errorMessage && history.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-          <ul className="space-y-8 p-6">
-            {history.map((item) => (
-              <li
-                className="grid grid-cols-[1rem_minmax(0,1fr)] gap-4"
-                key={item.id}
-              >
-                <div className="relative">
-                  <div className="absolute top-2 bottom-0 left-1/2 w-px -translate-x-1/2 bg-blue-100" />
-                  <span
-                    className={`absolute top-1 left-1/2 inline-flex size-3 -translate-x-1/2 rounded-full ring-4 ring-surface ${getStateDotClassName(
-                      formatState(item.estadoNuevo),
-                    )}`}
-                  />
-                </div>
+          <ul className="space-y-4 p-6">
+            {history.map((item) => {
+              const isExpanded = expandedIds.has(item.id);
+              const detailId = `historial-detalle-${item.id}`;
 
-                <div className="relative min-w-0">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-3">
+              return (
+                <li
+                  className="grid grid-cols-[1rem_minmax(0,1fr)] gap-4"
+                  key={item.id}
+                >
+                  <div className="relative">
+                    <div className="absolute top-2 bottom-0 left-1/2 w-px -translate-x-1/2 bg-blue-100" />
+                    <span
+                      className={`absolute top-1 left-1/2 inline-flex size-3 -translate-x-1/2 rounded-full ring-4 ring-surface ${getStateDotClassName(
+                        formatState(item.estadoNuevo),
+                      )}`}
+                    />
+                  </div>
+
+                  <div className="relative min-w-0">
+                    <button
+                      aria-controls={detailId}
+                      aria-expanded={isExpanded}
+                      className="flex w-full cursor-pointer flex-wrap items-center justify-between gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      onClick={() => toggleItem(item.id)}
+                      type="button"
+                    >
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                         <span className={stateChipClassName()}>
                           {formatState(item.estadoAnterior)}
                         </span>
@@ -251,77 +277,86 @@ export function SolicitudWorkflowHistorySection({
                         </span>
                       </div>
 
-                      <div className="mt-2 text-sm text-foreground">
-                        <span className="font-bold text-foreground">
-                          Accion:
-                        </span>{" "}
-                        <span>{resolveHistoryActionLabel(item)}</span>
+                      <div className="inline-flex items-center gap-1.5 text-xs text-foreground-secondary">
+                        <CalendarDays className="size-3.5" />
+                        <div>{formatDateTime(item.changedAt)}</div>
+                        <ChevronDown
+                          className={`ml-1 size-4 shrink-0 transition-transform ${
+                            isExpanded ? "rotate-180" : ""
+                          }`}
+                        />
                       </div>
-                    </div>
+                    </button>
 
-                    <div className="inline-flex items-center gap-1.5 text-xs text-foreground-secondary">
-                      <CalendarDays className="size-3.5" />
-                      <div>{formatDateTime(item.changedAt)}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-xs text-foreground-secondary">
-                    <UserRound className="size-3.5 text-foreground-muted" />
-                    <span>Cambio Ejecutivo:</span>{" "}
-                    <span className="text-foreground">
-                      {formatOwner(item.estadoAnterior)}
-                    </span>{" "}
-                    <span>-&gt;</span>{" "}
-                    <span className="text-foreground">
-                      {formatOwner(item.estadoNuevo)}
-                    </span>
-                    <span className="mx-1 text-foreground-muted">·</span>
-                    <span>Usuario:</span>{" "}
-                    <span
-                      className="inline-block rounded-sm bg-background px-1.5 py-0.5 text-[12px] text-foreground-muted"
-                      title={formatText(
-                        item.changedBy ?? item.changedByFullName,
-                      )}
-                    >
-                      {formatChangedByDisplay(
-                        item.changedByFullName,
-                        item.changedBy,
-                      )}
-                    </span>
-                  </div>
-
-                  {item.motivo || item.comentario ? (
-                    <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
-                      {item.motivo ? (
-                        <div className="rounded-md border border-border/50 bg-background/70 px-3 py-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-                            Motivo
-                          </div>
-                          <p className="mt-1 italic text-foreground">
-                            {mapWorkflowOperationalCode(item.motivo) ??
-                              formatText(item.motivo)}
-                          </p>
+                    {isExpanded ? (
+                      <div id={detailId}>
+                        <div className="mt-2 text-sm text-foreground">
+                          <span className="font-bold text-foreground">
+                            Accion:
+                          </span>{" "}
+                          <span>{resolveHistoryActionLabel(item)}</span>
                         </div>
-                      ) : null}
-                      {item.comentario ? (
-                        <div
-                          className={`rounded-md border border-border/50 border-l-4 bg-background/80 px-3 py-3 ${getCommentAccentClassName(
-                            formatState(item.estadoNuevo),
-                          )}`}
-                        >
-                          <div className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-                            Comentario
-                          </div>
-                          <p className="mt-1 italic text-foreground">
-                            {item.comentario}
-                          </p>
+
+                        <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-xs text-foreground-secondary">
+                          <UserRound className="size-3.5 text-foreground-muted" />
+                          <span>Cambio Ejecutivo:</span>{" "}
+                          <span className="text-foreground">
+                            {formatOwner(item.estadoAnterior)}
+                          </span>{" "}
+                          <span>-&gt;</span>{" "}
+                          <span className="text-foreground">
+                            {formatOwner(item.estadoNuevo)}
+                          </span>
+                          <span className="mx-1 text-foreground-muted">·</span>
+                          <span>Usuario:</span>{" "}
+                          <span
+                            className="inline-block rounded-sm bg-background px-1.5 py-0.5 text-[12px] text-foreground-muted"
+                            title={formatText(
+                              item.changedBy ?? item.changedByFullName,
+                            )}
+                          >
+                            {formatChangedByDisplay(
+                              item.changedByFullName,
+                              item.changedBy,
+                            )}
+                          </span>
                         </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+
+                        {item.motivo || item.comentario ? (
+                          <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
+                            {item.motivo ? (
+                              <div className="rounded-md border border-border/50 bg-background/70 px-3 py-3">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
+                                  Motivo
+                                </div>
+                                <p className="mt-1 italic text-foreground">
+                                  {mapWorkflowOperationalCode(item.motivo) ??
+                                    formatText(item.motivo)}
+                                </p>
+                              </div>
+                            ) : null}
+                            {item.comentario ? (
+                              <div
+                                className={`rounded-md border border-border/50 border-l-4 bg-background/80 px-3 py-3 ${getCommentAccentClassName(
+                                  formatState(item.estadoNuevo),
+                                )}`}
+                              >
+                                <div className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
+                                  Comentario
+                                </div>
+                                <p className="mt-1 italic text-foreground">
+                                  {item.comentario}
+                                </p>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

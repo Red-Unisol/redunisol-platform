@@ -1,3 +1,4 @@
+import type { ConvenioSocioRequest } from "../utils/convenio-edicion";
 import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
@@ -132,11 +133,16 @@ export function assignSolicitudToUser(
   );
 }
 
-export function createPrestamoLegacy(solicitudId: string) {
+export type { ConvenioSocioRequest } from "../utils/convenio-edicion";
+
+export function createPrestamoLegacy(
+  solicitudId: string,
+  convenio?: ConvenioSocioRequest,
+) {
   return withAreaForbiddenMessage(
     apiClient.post<SolicitudCoreResponse>(
       `/solicitudes/${solicitudId}/prestamo-legacy`,
-      {},
+      convenio ? { convenio } : {},
     ),
   );
 }

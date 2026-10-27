@@ -19,6 +19,23 @@ El contrato de la API, reservas, comprobantes y recuperación está en
 [docs/transferencias-api.md](docs/transferencias-api.md).
 La integración está deshabilitada por defecto y requiere una identidad de servicio.
 
+## Edición del convenio al generar préstamos
+
+`POST /solicitudes/:id/prestamo-legacy` admite, por ejemplo,
+`{"convenio":{"caja40":{"original":100,"valor":110}}}`. Solo se escriben los
+campos editados; cada campo requiere el valor mostrado al empezar a editar.
+Si ese campo cambió en Vimarx, devuelve `409 ConvenioSocioConflictError` sin
+editar el socio ni generar el préstamo. El operador debe cerrar y reabrir el
+modal para revisar los valores actuales. Los reintentos cuyo valor ya quedó
+guardado no vuelven a escribirlo.
+
+El frontend conserva la referencia original durante las recargas de fondo.
+El backend compara con una lectura nueva antes de editar. Lectura y escritura
+en Vimarx son llamadas separadas, por lo que este control no es una comparación
+y escritura atómica frente a cambios externos ocurridos entre ambas llamadas.
+Frontend y backend deben desplegarse juntos: el formato anterior con el convenio
+completo sin valores originales se rechaza para evitar sobrescrituras.
+
 ## Tech Stack
 
 - Node.js 22+
