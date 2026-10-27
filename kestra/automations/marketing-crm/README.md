@@ -39,6 +39,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `docs/archive/`, `docs/audits/` y `docs/reports/`: evidencia histórica no normativa.
 - `tests/`: reservado para tests del dominio fuera del package si mas adelante conviene separarlos.
 
+El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-intake.md) usa `flows/bitrix24_whatsapp_intake.yaml`, CUIL obligatorio y el escritor de identidad del intake asistido. Conserva las reglas comerciales y el prefill existentes.
+
 ## Criterio
 
 - El codigo Python vive bajo `files/bitrix24_form_flow/` para que el deploy a namespace files preserve el path esperado por Kestra.
