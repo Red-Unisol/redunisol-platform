@@ -108,7 +108,7 @@ export function SolicitudDetailToolbar({
   };
 }) {
   return (
-    <div className="border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5">
+    <div className="shrink-0 border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onFocus={onPreloadSimulador}

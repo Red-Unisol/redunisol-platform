@@ -1,3 +1,4 @@
+import { useSolicitudHeaderPreference } from "../hooks/use-solicitud-header-preference";
 import { AdministrativeStateControl } from "../components/administrative-state-control";
 import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
 import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
@@ -18,8 +19,8 @@ import {
   Download,
   Eye,
   FileText,
-  Maximize2,
-  Minimize2,
+  ChevronDown,
+  ChevronUp,
   Pencil,
   Plus,
   Trash2,
@@ -3216,9 +3217,7 @@ export function SolicitudesActualDetallePage() {
   const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
   const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
-  const [modoAnalisis, setModoAnalisis] = useState(true);
-  const analisisActivo =
-    canViewCalculadora && vistaTab === "evaluacion" && modoAnalisis;
+  const [headerExpanded, setHeaderExpanded] = useSolicitudHeaderPreference();
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
     // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
@@ -3240,7 +3239,6 @@ export function SolicitudesActualDetallePage() {
 
     if (tab === "evaluacion" && canViewCalculadora) {
       closeSidebar();
-      if (vistaTab !== "evaluacion") setModoAnalisis(true);
     }
     setVistaTab(tab);
     return true;
@@ -4372,16 +4370,12 @@ export function SolicitudesActualDetallePage() {
 
   return (
     <article
-      className={`flex flex-col rounded-md border border-border bg-surface shadow-sm ${
-        canViewCalculadora ? "h-full" : "min-h-full"
-      }`}
+      data-header-expanded={headerExpanded}
+      className="flex h-full min-h-0 flex-col rounded-md border border-border bg-surface shadow-sm"
     >
-      <div
-        id="solicitud-encabezado-completo"
-        className={analisisActivo ? "hidden" : "contents"}
-      >
-        <header className="border-b border-border bg-surface px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+      <div id="solicitud-encabezado-completo" className="contents">
+        <header className="shrink-0 border-b border-border bg-surface px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <div className="flex min-w-0 max-w-full items-center gap-2.5">
               <Button
                 className="shrink-0 text-foreground-secondary"
@@ -4393,7 +4387,7 @@ export function SolicitudesActualDetallePage() {
                 <ArrowLeft className="size-4" />
               </Button>
               <FileText className="size-4 shrink-0 text-primary" />
-              <h1 className="truncate text-[2rem] leading-none font-semibold text-foreground">
+              <h1 className="truncate text-[1.375rem] leading-tight font-semibold text-foreground">
                 Detalle de Solicitud
               </h1>
             </div>
@@ -4444,6 +4438,7 @@ export function SolicitudesActualDetallePage() {
         </header>
 
         <DatosRapidosSolicitante
+          compact={!headerExpanded}
           key={resolvedSolicitud.id}
           solicitudId={resolvedSolicitud.id}
           titular={resolvedSolicitud.titular}
@@ -4545,97 +4540,28 @@ export function SolicitudesActualDetallePage() {
             },
           }}
           transitionControl={
-            <StyledSelect
-              className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
-              disabled={
-                !canChangeState ||
-                isLoadingWorkflowTransitions ||
-                workflowTransitionSelectorErrorMessage !== null ||
-                executeWorkflowTransitionMutation.isPending ||
-                workflowTransitionOptions.length === 0
-              }
-              onChange={handleWorkflowTransitionChange}
-              options={workflowTransitionOptions}
-              placeholder={workflowTransitionPlaceholder}
-              value={selectedWorkflowTransition?.id ?? ""}
-            />
+            !headerExpanded &&
+            workflowTransitionOptions.length === 0 &&
+            !isLoadingWorkflowTransitions &&
+            !workflowTransitionSelectorErrorMessage ? undefined : (
+              <StyledSelect
+                className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
+                disabled={
+                  !canChangeState ||
+                  isLoadingWorkflowTransitions ||
+                  workflowTransitionSelectorErrorMessage !== null ||
+                  executeWorkflowTransitionMutation.isPending ||
+                  workflowTransitionOptions.length === 0
+                }
+                onChange={handleWorkflowTransitionChange}
+                options={workflowTransitionOptions}
+                placeholder={workflowTransitionPlaceholder}
+                value={selectedWorkflowTransition?.id ?? ""}
+              />
+            )
           }
         />
-
-        <LinkedLoanStatusBanner
-          canRecover={currentUser?.isSystemAdmin === true}
-          solicitudId={solicitudId}
-          data={linkedLoan.data}
-          loading={linkedLoan.isPending}
-          failed={linkedLoan.isError}
-          retry={() => void linkedLoan.refetch()}
-          onRecovered={() =>
-            Promise.all([refetchDetail(), linkedLoan.refetch()])
-          }
-        />
-        {resolvedSolicitud.legacyOid && (
-          <div className="border-b border-border px-4 pb-3">
-            <ControlledLoanReplacementControl
-              solicitudId={solicitudId}
-              updatedAt={resolvedSolicitud.updatedAt}
-              isEditing={isEditing}
-            />
-          </div>
-        )}
-
-        <AdministrativeStateControl
-          key={solicitudId}
-          solicitudId={solicitudId}
-          updatedAt={resolvedSolicitud.updatedAt}
-          isEditing={isEditing}
-        />
-
-        {["Transferir", "Pagada"].includes(
-          resolvedSolicitud.estadoActual.code,
-        ) &&
-        (currentUser?.isSystemAdmin ||
-          ["TESORERIA", "RIESGO"].includes(
-            currentUser?.workflowOwner?.code ?? "",
-          )) ? (
-          <ExternalPaymentControl
-            key={solicitudId}
-            solicitudId={solicitudId}
-            isPaid={resolvedSolicitud.estadoActual.code === "Pagada"}
-          />
-        ) : null}
       </div>
-      {analisisActivo ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-sm">
-          <Button
-            aria-label="Volver al listado"
-            onClick={() => navigate(originPath)}
-            size="icon-sm"
-            variant="ghost"
-            type="button"
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
-            <span className="sr-only">Evaluación de </span>
-            {[
-              resolvedSolicitud.titular.nombre,
-              resolvedSolicitud.titular.apellidoDenominacion,
-            ]
-              .filter(Boolean)
-              .join(" ") || "Detalle de Solicitud"}
-          </h1>
-          <Badge
-            dot
-            variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}
-          >
-            {formatText(
-              resolvedSolicitud.estadoActual.code ||
-                resolvedSolicitud.estadoActual.name,
-            )}
-          </Badge>
-        </div>
-      ) : null}
-
       <SolicitudWorkflowActionDialog
         errorMessage={workflowTransitionErrorMessage}
         isSubmitting={executeWorkflowTransitionMutation.isPending}
@@ -4650,10 +4576,10 @@ export function SolicitudesActualDetallePage() {
         validate={handleValidateWorkflowTransition}
       />
 
-      {canViewCalculadora ? (
-        <div className="border-b border-border bg-surface px-3 md:px-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
+      <div className="shrink-0 border-b border-border bg-surface px-3 md:px-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {canViewCalculadora &&
+            SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
               const isActive = tab.value === vistaTab;
 
               return (
@@ -4671,42 +4597,29 @@ export function SolicitudesActualDetallePage() {
                 </button>
               );
             })}
-            {vistaTab === "evaluacion" ? (
-              <Button
-                className="ml-auto my-1"
-                aria-pressed={analisisActivo}
-                aria-expanded={!analisisActivo}
-                aria-controls="solicitud-encabezado-completo"
-                title={
-                  analisisActivo
-                    ? "Mostrar el encabezado completo"
-                    : "Plegar el encabezado para ampliar Evaluación"
-                }
-                onClick={() => {
-                  if (!modoAnalisis) closeSidebar();
-                  setModoAnalisis((value) => !value);
-                }}
-                size="sm"
-                type="button"
-                variant={analisisActivo ? "default" : "outline"}
-              >
-                {analisisActivo ? (
-                  <Minimize2 className="size-4" />
-                ) : (
-                  <Maximize2 className="size-4" />
-                )}
-                Modo análisis
-              </Button>
-            ) : null}
-          </div>
+          <Button
+            className="my-1 ml-auto"
+            aria-expanded={headerExpanded}
+            aria-controls="solicitud-encabezado-completo"
+            onClick={() => setHeaderExpanded((value) => !value)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {headerExpanded ? (
+              <ChevronUp className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+            {headerExpanded ? "Ocultar encabezado" : "Mostrar encabezado"}
+          </Button>
         </div>
-      ) : null}
+      </div>
 
       {!canViewCalculadora || vistaTab === "solicitud" ? (
         <div
-          className={`space-y-3 p-3 pb-8 md:p-4 md:pb-10 ${
-            canViewCalculadora ? "min-h-0 flex-1 overflow-y-auto" : ""
-          }`}
+          data-testid="solicitud-reading-area"
+          className="min-h-40 flex-1 space-y-3 overflow-y-auto p-3 pb-8 md:p-4 md:pb-10"
         >
           {isEditing ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -4731,6 +4644,47 @@ export function SolicitudesActualDetallePage() {
                 Guardar cambios
               </Button>
             </div>
+          ) : null}
+          <LinkedLoanStatusBanner
+            canRecover={currentUser?.isSystemAdmin === true}
+            solicitudId={solicitudId}
+            data={linkedLoan.data}
+            loading={linkedLoan.isPending}
+            failed={linkedLoan.isError}
+            retry={() => void linkedLoan.refetch()}
+            onRecovered={() =>
+              Promise.all([refetchDetail(), linkedLoan.refetch()])
+            }
+          />
+          {resolvedSolicitud.legacyOid && (
+            <div className="border-b border-border px-4 pb-3">
+              <ControlledLoanReplacementControl
+                solicitudId={solicitudId}
+                updatedAt={resolvedSolicitud.updatedAt}
+                isEditing={isEditing}
+              />
+            </div>
+          )}
+
+          <AdministrativeStateControl
+            key={`admin-state:${solicitudId}`}
+            solicitudId={solicitudId}
+            updatedAt={resolvedSolicitud.updatedAt}
+            isEditing={isEditing}
+          />
+
+          {["Transferir", "Pagada"].includes(
+            resolvedSolicitud.estadoActual.code,
+          ) &&
+          (currentUser?.isSystemAdmin ||
+            ["TESORERIA", "RIESGO"].includes(
+              currentUser?.workflowOwner?.code ?? "",
+            )) ? (
+            <ExternalPaymentControl
+              key={`external-payment:${solicitudId}`}
+              solicitudId={solicitudId}
+              isPaid={resolvedSolicitud.estadoActual.code === "Pagada"}
+            />
           ) : null}
           <DocumentReviewPanel solicitudId={solicitudId} editing={isEditing} />
           <SolicitudSection
@@ -4839,7 +4793,7 @@ export function SolicitudesActualDetallePage() {
       ) : null}
 
       {canViewCalculadora && vistaTab === "credixsa" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-40 flex-1 overflow-y-auto">
           <CredixsaInformeSection
             isActive={vistaTab === "credixsa"}
             solicitudId={solicitudId}

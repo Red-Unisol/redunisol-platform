@@ -26,4 +26,10 @@ export default defineConfig([
       "react-refresh/only-export-components": "off",
     },
   },
+  {
+    files: ["ui-lab/**/*.mjs"],
+    extends: [js.configs.recommended],
+    // Browser runners contain both Node orchestration and page-evaluated callbacks.
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
 ]);

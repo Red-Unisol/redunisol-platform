@@ -5,10 +5,33 @@ import {
   type FieldValues,
   type Path,
 } from "react-hook-form";
-import { PhoneInput } from "react-international-phone";
+import {
+  defaultCountries,
+  parseCountry,
+  PhoneInput,
+} from "react-international-phone";
 import "react-international-phone/style.css";
 
 import { cn } from "@/shared/utils/cn";
+
+const bundledFlagUrls = import.meta.glob<string>(
+  "../../../../node_modules/flag-icons/flags/4x3/*.svg",
+  { eager: true, query: "?url", import: "default" },
+);
+const flagUrlsByCountry = Object.fromEntries(
+  Object.entries(bundledFlagUrls).map(([filename, url]) => [
+    filename.slice(filename.lastIndexOf("/") + 1, -4),
+    url,
+  ]),
+);
+// Supply every supported flag explicitly so the phone library never falls back
+// to its external CDN, including flags inside the initially closed dropdown.
+const bundledFlags = defaultCountries.map((country) => {
+  const { iso2 } = parseCountry(country);
+  const src = flagUrlsByCountry[iso2];
+  if (!src) throw new Error(`Missing bundled country flag: ${iso2}`);
+  return { iso2, src };
+});
 
 export function InternationalPhoneField<TFieldValues extends FieldValues>({
   control,
@@ -25,6 +48,7 @@ export function InternationalPhoneField<TFieldValues extends FieldValues>({
       name={name}
       render={({ field }) => (
         <PhoneInput
+          flags={bundledFlags}
           allowMaskOverflow
           className="celesol-phone-input"
           defaultCountry="ar"
@@ -65,6 +89,7 @@ export function StaticInternationalPhoneField({
 
   return (
     <PhoneInput
+      flags={bundledFlags}
       allowMaskOverflow
       className={cn(
         "celesol-phone-input",

@@ -77,6 +77,11 @@ jobs:
           npm ci --ignore-scripts
           npm test
           npm run build
+      - name: Test and build isolated UI lab
+        working-directory: web/solicitudes-web/celesol-frontend
+        run: |
+          npm run ui:test
+          npm run ui:build
 
   validate:
     runs-on: ubuntu-latest

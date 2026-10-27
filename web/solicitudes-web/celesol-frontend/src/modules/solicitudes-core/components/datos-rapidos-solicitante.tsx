@@ -8,12 +8,14 @@ import {
 } from "../utils/datos-rapidos-state";
 
 export function DatosRapidosSolicitante({
+  compact = false,
   solicitudId,
   revision,
   titular,
   canViewDetalle,
   onVerDetalle,
 }: {
+  compact?: boolean;
   solicitudId: string;
   revision: string;
   titular: {
@@ -65,6 +67,65 @@ export function DatosRapidosSolicitante({
         ? "Tiene cuotas vencidas impagas"
         : "Sin cuotas vencidas impagas";
   const vigencia = creditosIndicator(creditos);
+  if (compact) {
+    return (
+      <section
+        aria-label="Datos rápidos del solicitante"
+        className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border bg-background px-3 py-2 md:px-4"
+      >
+        <div className="min-w-0">
+          <h2 className="break-words text-sm font-semibold text-foreground">
+            {[titular.nombre, titular.apellidoDenominacion]
+              .map((value) => value?.trim())
+              .filter(Boolean)
+              .join(" ") || "Nombre no informado"}
+          </h2>
+          <p className="mt-0.5 text-xs text-foreground-secondary">
+            {titular.tipoDocumento?.trim() || "Documento"}{" "}
+            {titular.nroDocumento?.trim() || "No informado"}
+          </p>
+        </div>
+        <div
+          aria-live="polite"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs"
+        >
+          <Badge variant={condicion.variant}>{condicion.text}</Badge>
+          {condicion.member && canViewDetalle && (
+            <Badge
+              variant={
+                mora.isError || mora.data?.enMora !== false
+                  ? "warning"
+                  : "neutral"
+              }
+            >
+              {mora.isPending
+                ? "Consultando mora"
+                : mora.isError || typeof mora.data?.enMora !== "boolean"
+                  ? "Mora sin verificar"
+                  : mora.data.enMora
+                    ? "Tiene mora"
+                    : "Sin mora"}
+            </Badge>
+          )}
+          {condicion.member && (
+            <Badge variant={vigencia.variant}>
+              Créditos activos: {vigencia.text}
+            </Badge>
+          )}
+          {condicion.member && canViewDetalle && (
+            <Button
+              onClick={onVerDetalle}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              Ver detalle
+            </Button>
+          )}
+        </div>
+      </section>
+    );
+  }
   return (
     <section
       aria-label="Datos rápidos del solicitante"
