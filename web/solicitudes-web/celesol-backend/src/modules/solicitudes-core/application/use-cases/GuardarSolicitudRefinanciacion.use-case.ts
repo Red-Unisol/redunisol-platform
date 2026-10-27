@@ -4,6 +4,7 @@ import {
   SolicitudRefinanciacionInvalidaError,
   SolicitudRefinanciacionNoEditableError,
   SolicitudRefinanciacionPrestamoGeneradoError,
+  SolicitudRefinanciacionYaCobradaError,
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudFieldAccessRulesRepository } from "../../domain/repositories/SolicitudFieldAccessRulesRepository";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
@@ -22,7 +23,10 @@ type Dependencies = {
     SolicitudFieldAccessRulesRepository,
     "findByWorkflowStateId"
   >;
-  refinanciacionRepository: Pick<SolicitudRefinanciacionRepository, "replace">;
+  refinanciacionRepository: Pick<
+    SolicitudRefinanciacionRepository,
+    "findBySolicitudId" | "replace"
+  >;
   repository: Pick<SolicitudesCoreRepository, "findById">;
   simularRefinanciacion: Pick<SimularRefinanciacionUseCase, "execute">;
 };
@@ -87,6 +91,17 @@ export class GuardarSolicitudRefinanciacionUseCase {
       !canEditSolicitud(user, solicitud, "CREATE_CANCELACION", fieldAccessRule)
     ) {
       throw new SolicitudRefinanciacionNoEditableError();
+    }
+
+    // Un intento anterior de generar el prestamo ya cobro cuotas en Vimarx:
+    // cambiar la seleccion dejaria esos cobros sin reflejo en Sol Web.
+    const actual =
+      await this.dependencies.refinanciacionRepository.findBySolicitudId(
+        input.solicitudId,
+      );
+
+    if (actual.prestamos.some((prestamo) => prestamo.cobro !== null)) {
+      throw new SolicitudRefinanciacionYaCobradaError();
     }
 
     const prestamos = input.prestamos.map((prestamo) => ({

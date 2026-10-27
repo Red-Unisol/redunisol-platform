@@ -17,6 +17,24 @@ export class SolicitudRefinanciacionPrismaRepository
     return this.load(this.prisma, solicitudId);
   }
 
+  async marcarCobrado(
+    input: Parameters<SolicitudRefinanciacionRepository["marcarCobrado"]>[0],
+  ) {
+    await this.prisma.solicitudRefinanciacion.update({
+      data: {
+        cobradoAt: new Date(),
+        cobroLegacyId: input.cobroId,
+        totalCobrado: input.totalCobrado,
+      },
+      where: {
+        solicitudId_prestamoLegacyId: {
+          prestamoLegacyId: input.prestamoId,
+          solicitudId: input.solicitudId,
+        },
+      },
+    });
+  }
+
   async replace(
     input: Parameters<SolicitudRefinanciacionRepository["replace"]>[0],
   ) {
@@ -51,6 +69,14 @@ export class SolicitudRefinanciacionPrismaRepository
 
     return {
       prestamos: rows.map((row) => ({
+        cobro:
+          row.cobroLegacyId && row.cobradoAt
+            ? {
+                cobradoAt: row.cobradoAt,
+                cobroId: row.cobroLegacyId,
+                totalCobrado: row.totalCobrado?.toNumber() ?? 0,
+              }
+            : null,
         nrosCuota: [...row.nrosCuota].sort((a, b) => a - b),
         prestamoId: row.prestamoLegacyId,
       })),

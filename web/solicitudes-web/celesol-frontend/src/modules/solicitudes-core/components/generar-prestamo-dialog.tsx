@@ -8,6 +8,7 @@ import type {
 import { formatLegacyDate } from "../utils/legacy-date-format";
 import { Button } from "@/shared/components/ui/button";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
+import { useRefinanciacionTotalQuery } from "@/modules/solicitudes-core/hooks/use-refinanciacion-total-query";
 import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
 import { Input } from "@/shared/components/ui/input";
 import { formatMoneyAmount } from "@/shared/utils/money-format";
@@ -86,7 +87,8 @@ type GenerarPrestamoDialogProps = {
 // Confirmacion previa a crear el prestamo en Vimarx con el reparto del monto a
 // desembolsar: lo que cancela deudas con terceros y lo que recibe el socio. Es
 // la misma cuenta que el legado ([Monto En Mano] = Bco + MontoCancelaciones).
-// REFI queda afuera: hoy el prestamo creado desde aca no refinancia deuda propia.
+// La refinanciacion (cuotas de prestamos propios elegidas en su pestaña) se
+// cobra en Vimarx al confirmar, y Vimarx la descuenta del en mano igual.
 export function GenerarPrestamoDialog(props: GenerarPrestamoDialogProps) {
   // Desmontar al cerrar descarta la vista previa, incluso una consulta pendiente.
   return props.open ? (
@@ -143,17 +145,30 @@ function RevisionPrestamoDialog({
     (total, cancelacion) => total + cancelacion.monto,
     0,
   );
+  const refinanciacion = useRefinanciacionTotalQuery(solicitudId, open);
+  const totalRefinanciacion = refinanciacion.data?.total ?? 0;
+  const hayRefinanciacion = (refinanciacion.data?.cantidadPrestamos ?? 0) > 0;
   const montoEnMano =
-    montoRevision === null || isLoading || error
+    montoRevision === null ||
+    isLoading ||
+    error ||
+    refinanciacion.isLoading ||
+    refinanciacion.isError
       ? null
-      : montoRevision - totalCancelaciones;
-  // Sin las cancelaciones no se puede mostrar el reparto, y un en mano negativo
-  // es un prestamo que no alcanza para pagar a los terceros.
+      : montoRevision - totalCancelaciones - totalRefinanciacion;
+  // Sin las cancelaciones o la refinanciacion no se puede mostrar el reparto,
+  // y un en mano negativo es un prestamo que no alcanza para pagar las deudas.
   const bloqueo = error
     ? "No se pudieron consultar las cancelaciones. Reintentá antes de generar el préstamo."
-    : montoEnMano !== null && montoEnMano < 0
-      ? "Las cancelaciones superan el monto a desembolsar."
-      : null;
+    : refinanciacion.isError
+      ? "No se pudo calcular la refinanciación en Vimarx. Reintentá antes de generar el préstamo."
+      : refinanciacion.data?.error
+        ? `Vimarx no acepta las cuotas de la refinanciación: ${refinanciacion.data.error}`
+        : montoEnMano !== null && montoEnMano < 0
+          ? hayRefinanciacion
+            ? "La refinanciación y las cancelaciones superan el monto a desembolsar."
+            : "Las cancelaciones superan el monto a desembolsar."
+          : null;
   // Con una sola cancelacion su monto es el total: repetirlo confunde.
   const detallarMontos = cancelaciones.length > 1;
 
@@ -162,7 +177,12 @@ function RevisionPrestamoDialog({
       className="max-w-[960px] p-4 md:p-5"
       confirmLabel="Generar préstamo"
       description="Revisá el titular, el plan de cuotas y el desembolso antes de confirmar."
-      isConfirmDisabled={isLoading || bloqueo !== null || hayErrorConvenio}
+      isConfirmDisabled={
+        isLoading ||
+        refinanciacion.isLoading ||
+        bloqueo !== null ||
+        hayErrorConvenio
+      }
       isConfirming={isPending}
       onConfirm={() =>
         onConfirm(
@@ -429,6 +449,30 @@ function RevisionPrestamoDialog({
               </ul>
             ) : null}
           </div>
+          {hayRefinanciacion || refinanciacion.isLoading ? (
+            <div>
+              <Dato
+                label="Refinanciación"
+                value={
+                  refinanciacion.isLoading
+                    ? "Calculando en Vimarx..."
+                    : refinanciacion.isError
+                      ? null
+                      : formatMoneyAmount(totalRefinanciacion)
+                }
+              />
+              {hayRefinanciacion ? (
+                <p className="mt-1 pl-3 text-xs text-foreground-secondary">
+                  Cuotas de {refinanciacion.data?.cantidadPrestamos}{" "}
+                  {refinanciacion.data?.cantidadPrestamos === 1
+                    ? "préstamo"
+                    : "préstamos"}{" "}
+                  del socio, con punitorios y el cargo de la línea, a hoy. Se
+                  cobran en Vimarx al generar el préstamo.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="border-t border-border pt-2 text-lg font-semibold">
             <Dato
               label="Monto en mano"

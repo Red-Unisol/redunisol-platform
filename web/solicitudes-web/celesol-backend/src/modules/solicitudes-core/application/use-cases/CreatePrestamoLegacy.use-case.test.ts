@@ -19,6 +19,7 @@ import {
   ForbiddenSolicitudAccessError,
   SolicitudCancelacionesFueraDeRangoError,
   SolicitudCoreNotFoundError,
+  SolicitudRefinanciacionCobroIncompletoError,
   SolicitudLegacyOidAlreadyExistsError,
   SolicitudLineaPrestamoLegacyIdUnresolvedError,
   SolicitudPrestamoDataIncompleteError,
@@ -564,6 +565,180 @@ describe("CreatePrestamoLegacyUseCase", () => {
     assert.equal(crearCalled, false);
   });
 });
+
+describe("CreatePrestamoLegacyUseCase con refinanciacion", () => {
+  it("charges the refinanciacion before creating the prestamo, with destino Refinanciacion", async () => {
+    const eventos: string[] = [];
+    let crearInput: { destino?: string } | undefined;
+    const useCase = buildRefinanciacionUseCase({
+      cancelaciones: [cancelacion({ monto: 1000 })],
+      crear: async (input) => {
+        eventos.push("crear");
+        crearInput = input as { destino?: string };
+        return { id: "441211" };
+      },
+      refinanciacion: {
+        cobrar: async () => {
+          eventos.push("cobrar");
+        },
+        preparar: async () => {
+          eventos.push("preparar");
+          return { pendientes: [prestamoGuardado()], total: 8000 };
+        },
+      },
+    });
+
+    await useCase.execute({
+      currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(eventos, ["preparar", "cobrar", "crear"]);
+    assert.equal(crearInput?.destino, "61");
+  });
+
+  it("writes nothing in Vimarx when the refinanciacion and cancelaciones exceed the monto", async () => {
+    // Monto a financiar 10.000: 9.500 de refi + 1.000 de cancelaciones no entran.
+    const eventos: string[] = [];
+    const useCase = buildRefinanciacionUseCase({
+      cancelaciones: [cancelacion({ monto: 1000 })],
+      crear: async () => {
+        eventos.push("crear");
+        return { id: "1" };
+      },
+      refinanciacion: {
+        cobrar: async () => {
+          eventos.push("cobrar");
+        },
+        preparar: async () => ({
+          pendientes: [prestamoGuardado()],
+          total: 9500,
+        }),
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message ===
+          "La refinanciación y las cancelaciones superan el monto a desembolsar.",
+    );
+    assert.deepEqual(eventos, []);
+  });
+
+  it("does not create the prestamo when a cobro fails", async () => {
+    let creo = false;
+    const useCase = buildRefinanciacionUseCase({
+      crear: async () => {
+        creo = true;
+        return { id: "1" };
+      },
+      refinanciacion: {
+        cobrar: async () => {
+          throw new SolicitudRefinanciacionCobroIncompletoError({
+            cobrados: 0,
+            motivo: "Vimarx rechazó el préstamo 416209: error.",
+            total: 1,
+          });
+        },
+        preparar: async () => ({ pendientes: [prestamoGuardado()], total: 100 }),
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+          solicitudId: "sol-1",
+        }),
+      SolicitudRefinanciacionCobroIncompletoError,
+    );
+    assert.equal(creo, false);
+  });
+
+  it("creates the prestamo without cobrar when everything was already charged", async () => {
+    // Reintento despues de un fallo de CrearPrestamo: los cobros ya estan.
+    let cobro = false;
+    let crearInput: { destino?: string } | undefined;
+    const useCase = buildRefinanciacionUseCase({
+      crear: async (input) => {
+        crearInput = input as { destino?: string };
+        return { id: "1" };
+      },
+      refinanciacion: {
+        cobrar: async () => {
+          cobro = true;
+        },
+        preparar: async () => ({ pendientes: [], total: 1194.5 }),
+      },
+    });
+
+    await useCase.execute({
+      currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(cobro, false);
+    assert.equal(crearInput?.destino, "61");
+  });
+
+  it("keeps the destino of the linea when there is no refinanciacion", async () => {
+    let crearInput: Record<string, unknown> | undefined;
+    const useCase = buildRefinanciacionUseCase({
+      crear: async (input) => {
+        crearInput = input as Record<string, unknown>;
+        return { id: "1" };
+      },
+      refinanciacion: {
+        cobrar: async () => {
+          throw new Error("no deberia cobrar");
+        },
+        preparar: async () => ({ pendientes: [], total: 0 }),
+      },
+    });
+
+    await useCase.execute({
+      currentUser: { id: "user-1", workflowOwnerId: "owner-2" },
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(crearInput !== undefined && "destino" in crearInput, false);
+  });
+});
+
+function prestamoGuardado() {
+  return { cobro: null, nrosCuota: [22, 23], prestamoId: "416209" };
+}
+
+function buildRefinanciacionUseCase(input: {
+  cancelaciones?: SolicitudCancelacion[];
+  crear: (input: unknown) => Promise<{ id: string }>;
+  refinanciacion: ConstructorParameters<
+    typeof CreatePrestamoLegacyUseCase
+  >[0]["refinanciacion"];
+}) {
+  return new CreatePrestamoLegacyUseCase({
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+    simularCuotaSolicitud: { execute: async () => null },
+    linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+    lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+    authRepository: authRepository(),
+    cancelacionesRepository: cancelacionesRepository(input.cancelaciones ?? []),
+    gateway: fakeGateway({ crear: input.crear as never }),
+    refinanciacion: input.refinanciacion,
+    repository: solicitudesRepository({
+      update: async () => solicitud({ legacyOid: "1" }),
+    }),
+    sociosRepository: socioRepository(),
+    solicitudesLegacyGateway: solicitudesLegacyGateway(),
+    today: () => TODAY,
+  });
+}
 
 function fakeGateway(
   impl: Partial<CrearPrestamoGateway> = {},

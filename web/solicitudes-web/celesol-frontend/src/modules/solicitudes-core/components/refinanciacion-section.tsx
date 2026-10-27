@@ -94,6 +94,12 @@ export function RefinanciacionSection({
     0,
   );
   const ocupado = guardarMutation.isPending || simularMutation.isPending;
+  // Un intento de generar el prestamo ya cobro cuotas en Vimarx: la seleccion
+  // queda fija (el backend tampoco deja cambiarla).
+  const yaCobrada = (guardadaQuery.data?.prestamos ?? []).some(
+    (prestamo) => prestamo.cobro,
+  );
+  const editable = canEdit && !yaCobrada;
 
   function cambiarSeleccion(prestamoId: string, nros: number[]) {
     setSimulacion(null);
@@ -161,6 +167,12 @@ export function RefinanciacionSection({
         Seleccioná las cuotas a cancelar con la refinanciación. Se cobran en
         Vimarx al generar el préstamo, con el importe de ese día.
       </p>
+      {yaCobrada ? (
+        <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+          Ya se cobraron en Vimarx cuotas de esta refinanciación. No se puede
+          cambiar: terminá de generar el préstamo.
+        </p>
+      ) : null}
       {prestamos.length === 0 ? (
         <p className="py-4 text-sm text-foreground-secondary">
           El socio no tiene préstamos activos con saldo para refinanciar.
@@ -168,7 +180,7 @@ export function RefinanciacionSection({
       ) : (
         prestamos.map((prestamo) => (
           <PrestamoRefinanciacion
-            canEdit={canEdit && !ocupado}
+            canEdit={editable && !ocupado}
             inicialmenteAbierto={
               prestamos.length <= 2 ||
               (seleccion[prestamo.legacyId ?? ""]?.length ?? 0) > 0
@@ -216,7 +228,7 @@ export function RefinanciacionSection({
           >
             {simularMutation.isPending ? "Calculando..." : "Calcular total"}
           </Button>
-          {canEdit ? (
+          {editable ? (
             <Button
               disabled={!hayCambios || ocupado}
               onClick={guardar}

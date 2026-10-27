@@ -23,6 +23,12 @@ export type CrearPrestamoIntegrante = {
 
 export type CrearPrestamoInput = {
   cuotas: number;
+  /**
+   * ID de F.Module.Cuentas.Prestamos.DestinoPrestamo. Sin el, Vimarx deja el
+   * de la linea (Consumo). Las refinanciaciones van con 61 (Refinanciacion),
+   * como las cargan los analistas.
+   */
+  destino?: string;
   fechaEmision: string;
   integrantes: CrearPrestamoIntegrante[];
   /**
@@ -102,6 +108,8 @@ export class CrearPrestamoGateway {
               Cuotas: input.cuotas,
               MontoDeseado: input.montoDeseado,
               Vendedor: input.vendedor,
+              // Al final, como se probo en FapiTest (prestamo 441210).
+              Destino: input.destino,
             },
             validar: false,
           }),
