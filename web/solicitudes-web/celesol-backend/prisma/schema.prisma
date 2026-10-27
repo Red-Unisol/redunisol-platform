@@ -178,6 +178,7 @@ model Solicitud {
   garantias                SolicitudGarantia[]
   adjuntos                 SolicitudAdjunto[]
   cancelaciones            SolicitudCancelacion[]
+  refinanciaciones         SolicitudRefinanciacion[]
   credixsaInforme          SolicitudCredixsaInforme?
   evaluacionRiesgo         SolicitudEvaluacionRiesgo?
   estadoHistorial          SolicitudEstadoHistorial[]
@@ -514,6 +515,24 @@ model SolicitudCancelacion {
   @@index([solicitudId])
   @@index([createdBy])
   @@map("solicitud_cancelaciones")
+}
+
+// Cuotas de prestamos de Vimarx que se cancelan con la refinanciacion de la
+// solicitud: una fila por prestamo. Se guardan hasta generar el prestamo
+// nuevo, que es cuando se cobran (motivo Refinanciacion, cobrador 65).
+model SolicitudRefinanciacion {
+  id               String    @id @default(uuid()) @db.Uuid
+  solicitudId      String    @map("solicitud_id") @db.Uuid
+  /// ID del prestamo en Vimarx (F.Module.Cuentas.Prestamos.Prestamo), no el NroCuenta.
+  prestamoLegacyId String    @map("prestamo_legacy_id")
+  nrosCuota        Int[]     @map("nros_cuota")
+  updatedBy        String?   @map("updated_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  solicitud        Solicitud @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@unique([solicitudId, prestamoLegacyId])
+  @@map("solicitud_refinanciaciones")
 }
 
 // Informe de CredixSA de la solicitud, para que la pestaña no espere a Kestra.

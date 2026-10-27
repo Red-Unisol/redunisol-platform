@@ -30,6 +30,8 @@ import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPre
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
 import type { SimularRefinanciacionUseCase } from "../application/use-cases/SimularRefinanciacion.use-case";
+import type { GetSolicitudRefinanciacionUseCase } from "../application/use-cases/GetSolicitudRefinanciacion.use-case";
+import type { GuardarSolicitudRefinanciacionUseCase } from "../application/use-cases/GuardarSolicitudRefinanciacion.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
 import {
   ForbiddenSolicitudAccessError,
@@ -47,6 +49,7 @@ import {
   prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
   simularRefinanciacionBodySchema,
+  guardarRefinanciacionBodySchema,
   solicitudByIdParamsSchema,
   createPrestamoLegacyBodySchema,
   type AssignSolicitudToSelfBody,
@@ -59,6 +62,7 @@ import {
   type PrestamoDelSocioParams,
   type SimularPrestamoBody,
   type SimularRefinanciacionBody,
+  type GuardarRefinanciacionBody,
   type SolicitudByIdParams,
   type CreatePrestamoLegacyBody,
 } from "./SolicitudesCoreRequest.schema";
@@ -96,6 +100,8 @@ type Dependencies = {
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
   simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
+  getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
+  guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
 };
 
@@ -124,6 +130,8 @@ export class SolicitudesCoreController {
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
   private readonly simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
+  private readonly getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
+  private readonly guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
 
   constructor(dependencies: Dependencies) {
@@ -159,6 +167,10 @@ export class SolicitudesCoreController {
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
     this.simularRefinanciacionUseCase =
       dependencies.simularRefinanciacionUseCase;
+    this.getSolicitudRefinanciacionUseCase =
+      dependencies.getSolicitudRefinanciacionUseCase;
+    this.guardarSolicitudRefinanciacionUseCase =
+      dependencies.guardarSolicitudRefinanciacionUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
   }
 
@@ -462,6 +474,74 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(simulacion);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Cuotas guardadas para refinanciar. Mismo acceso que los prestamos del
+  // socio: sin verlos no tiene sentido la seleccion.
+  getRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const refinanciacion =
+        await this.getSolicitudRefinanciacionUseCase.execute({
+          solicitudId: params.id,
+        });
+
+      res.status(200).json(refinanciacion);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Reemplaza las cuotas guardadas para refinanciar (lista vacia = ninguna).
+  guardarRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<GuardarRefinanciacionBody>(
+        guardarRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const refinanciacion =
+        await this.guardarSolicitudRefinanciacionUseCase.execute({
+          currentUser: {
+            id: user.id,
+            workflowOwnerCode: user.workflowOwner?.code ?? null,
+            workflowOwnerId: user.workflowOwnerId,
+            ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+          },
+          prestamos: body.prestamos,
+          solicitudId: params.id,
+        });
+
+      res.status(200).json(refinanciacion);
     } catch (error) {
       next(error);
     }
