@@ -7,10 +7,14 @@ use App\Jobs\SendEdnaFlow;
 use App\Jobs\SendEdnaLanding;
 use App\Services\AttributionJourney;
 use App\Services\EdnaFlowRouter;
+use App\Services\EdnaIntake;
+use App\Services\EdnaIntakePilot;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Process\Process;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 10, 27)->setTime(14, 0));
@@ -44,12 +48,13 @@ function intakeInbound(array $changes = []): object
     return DB::table('edna_incoming_events')->latest('id')->first();
 }
 
-function intakeReserve(): ?object
+function intakeReserve(string $phone = '5493510000000'): ?object
 {
     $journey = (new AttributionJourney)->create(['version' => 1,
         'first' => ['utm_source' => 'ig', 'utm_campaign' => 'original'],
         'last' => ['utm_source' => 'ig', 'utm_campaign' => 'original']]);
-    $event = intakeInbound(['messageContent' => ['text' => 'Hola, vengo del sitio web de Red Unisol (ref: '.$journey->id.')']]);
+    $event = intakeInbound(['subscriber' => ['identifier' => $phone],
+        'messageContent' => ['text' => 'Hola, vengo del sitio web de Red Unisol (ref: '.$journey->id.')']]);
     (new ReceiveEdnaInKestra($event->id))->handle();
 
     return DB::table('edna_flow_sends')->latest('id')->first();
@@ -77,8 +82,9 @@ test('only a bound website reference reserves the new Flow', function () {
     Queue::assertPushed(SendEdnaFlow::class);
     $event = intakeInbound();
     (new ReceiveEdnaInKestra($event->id))->handle();
-    expect(DB::table('edna_flow_sends')->count())->toBe(1);
-    expect(DB::table('edna_incoming_events')->find($event->id)->router_action)->toBe('intake_requires_website_context');
+    expect(DB::table('edna_flow_sends')->count())->toBe(2);
+    expect(DB::table('edna_flow_sends')->latest('id')->first()->flow_id)->toBe(EdnaFlowRouter::FLOW_ID);
+    expect(DB::table('edna_intake_admissions')->count())->toBe(1);
 });
 
 test('invalid expired and differently bound references do not enter intake', function (string $kind) {
@@ -91,7 +97,8 @@ test('invalid expired and differently bound references do not enter intake', fun
     $ref = $kind === 'invalid' ? 'unknown0000' : $journey->id;
     $event = intakeInbound(['messageContent' => ['text' => 'Hola, vengo del sitio web de Red Unisol (ref: '.$ref.')']]);
     (new ReceiveEdnaInKestra($event->id))->handle();
-    expect(DB::table('edna_flow_sends')->count())->toBe(0);
+    expect(DB::table('edna_flow_sends')->first()->flow_id)->toBe(EdnaFlowRouter::FLOW_ID);
+    expect(DB::table('edna_intake_admissions')->count())->toBe(0);
 })->with(['invalid', 'expired', 'other_phone']);
 
 test('intake cutover excludes missing Flow ID old entries and pilot exclusions', function (string $gate) {
@@ -101,8 +108,10 @@ test('intake cutover excludes missing Flow ID old entries and pilot exclusions',
         'start' => config()->set('edna.intake_start_at', now()->addMinute()->toIso8601String()),
         'recipient' => config()->set('edna.intake_recipients', ['5493519999999']),
     };
-    expect(intakeReserve())->toBeNull();
-    Queue::assertNotPushed(SendEdnaFlow::class);
+    expect(intakeReserve()->flow_id)->toBe(EdnaFlowRouter::FLOW_ID);
+    expect(DB::table('edna_intake_admissions')->count())->toBe(0);
+    expect(DB::table('edna_intake_pilots')->count())->toBe(0);
+    Queue::assertPushed(SendEdnaFlow::class);
 })->with(['id', 'legacy', 'start', 'recipient']);
 
 test('sending and history confirmation use the new Flow and CUIL copy', function () {
@@ -228,4 +237,165 @@ test('pending legacy Router responses still finish their previous route after cu
     (new ReceiveEdnaInKestra($event->id))->handle();
     expect(DB::table('edna_router_results')->count())->toBe(1);
     expect(DB::table('edna_intake_requests')->count())->toBe(0);
+});
+
+test('the first ten unique website entrants receive intake and the eleventh completes the legacy landing route', function () {
+    for ($i = 1; $i <= 11; $i++) {
+        $send = intakeReserve(sprintf('549351%07d', $i));
+        expect($send->flow_id)->toBe($i <= 10 ? '999000111222333' : EdnaFlowRouter::FLOW_ID);
+    }
+    expect(DB::table('edna_intake_admissions')->count())->toBe(10);
+    expect(DB::table('edna_intake_pilots')->value('admitted'))->toBe(10);
+    DB::table('edna_flow_sends')->where('id', $send->id)->update(['state' => 'confirmed', 'outgoing_message_id' => '900', 'send_started_at' => now()]);
+    $reply = intakeInbound(['subscriber' => ['identifier' => sprintf('549351%07d', 11)],
+        'replyOutMessageId' => '900', 'replyOutMessageExternalRequestId' => $send->request_id,
+        'messageContent' => ['type' => 'FLOW', 'text' => json_encode(['provincia' => 'catamarca', 'situacion_catamarca' => 'policia'])]]);
+    (new ReceiveEdnaInKestra($reply->id))->handle();
+    expect(DB::table('edna_router_results')->count())->toBe(1);
+    expect(DB::table('edna_intake_requests')->count())->toBe(0);
+    Queue::assertPushed(SendEdnaLanding::class, 1);
+    $this->artisan('edna:intake pilot')->expectsOutputToContain('"limit":10')->assertSuccessful();
+});
+
+test('quota exhaustion preserves in flight replies processing and returning participants', function () {
+    $send = intakeReserve();
+    DB::table('edna_flow_sends')->where('id', $send->id)->update(['state' => 'confirmed', 'outgoing_message_id' => '900', 'send_started_at' => now()]);
+    for ($i = 1; $i <= 10; $i++) {
+        intakeReserve(sprintf('549351%07d', $i));
+    }
+    expect(DB::table('edna_intake_admissions')->count())->toBe(10);
+    $reply = intakeInbound(['replyOutMessageId' => '900', 'replyOutMessageExternalRequestId' => $send->request_id,
+        'messageContent' => ['type' => 'FLOW', 'text' => json_encode(['provincia' => 'catamarca',
+            'situacion_catamarca' => 'policia', 'banco_catamarca' => 'nacion', 'cuil' => '20301234563'])]]);
+    (new ReceiveEdnaInKestra($reply->id))->handle();
+    $request = DB::table('edna_intake_requests')->first();
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'queued', 'lead_id' => '77',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    expect(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('synced');
+    $before = DB::table('edna_flow_sends')->count();
+    intakeReserve(); // A new website reference for the same phone hits the existing cooldown.
+    expect(DB::table('edna_flow_sends')->count())->toBe($before);
+    $this->travel(25)->hours();
+    $return = intakeReserve();
+    expect($return->flow_id)->toBe($send->flow_id)->and($return->intake_admission_id)->toBe($send->intake_admission_id);
+    expect(DB::table('edna_intake_pilots')->value('admitted'))->toBe(10);
+    expect(DB::table('edna_intake_admissions')->count())->toBe(10);
+});
+
+test('queue rollback restores the admission counter together with the Flow reservation', function () {
+    $journey = (new AttributionJourney)->create(['version' => 1, 'first' => [], 'last' => []]);
+    $event = intakeInbound(['messageContent' => ['text' => 'Hola, vengo del sitio web de Red Unisol (ref: '.$journey->id.')']]);
+    Queue::shouldReceive('connection')->with('edna')->once()->andThrow(new RuntimeException('private'));
+    expect(fn () => (new ReceiveEdnaInKestra($event->id))->handle())->toThrow(RuntimeException::class);
+    expect(DB::table('edna_intake_admissions')->count())->toBe(0);
+    expect(DB::table('edna_intake_pilots')->count())->toBe(0);
+    expect(DB::table('edna_flow_sends')->count())->toBe(0);
+});
+
+test('cancelled unknown and abandoned sends never release a participant slot', function () {
+    for ($i = 1; $i <= 10; $i++) {
+        $send = intakeReserve(sprintf('549351%07d', $i));
+        DB::table('edna_flow_sends')->where('id', $send->id)->update(['state' => $i % 2 ? 'cancelled' : 'unknown']);
+    }
+    expect(intakeReserve(sprintf('549351%07d', 11))->flow_id)->toBe(EdnaFlowRouter::FLOW_ID);
+    expect(DB::table('edna_intake_pilots')->value('admitted'))->toBe(10);
+});
+
+test('new admission restrictions and a new batch do not invalidate already reserved participants', function () {
+    $send = intakeReserve();
+    config()->set('edna.intake_recipients', ['5493519999999']);
+    config()->set('edna.intake_start_at', now()->addDay()->toIso8601String());
+    expect((new EdnaIntake)->canSend($send))->toBeTrue();
+    $this->travel(25)->hours();
+    expect(intakeReserve()->intake_admission_id)->toBe($send->intake_admission_id);
+    config()->set('edna.intake_recipients', []);
+    config()->set('edna.intake_pilot_id', 'website-intake-next-10');
+    $next = intakeReserve();
+    expect($next->intake_admission_id)->not->toBe($send->intake_admission_id);
+    expect(DB::table('edna_intake_pilots')->count())->toBe(2);
+    expect((new EdnaIntake)->canSend($send))->toBeTrue();
+});
+
+test('a participant admission cannot be reused for another phone', function () {
+    $first = intakeReserve();
+    $other = intakeReserve('5493519999999');
+    DB::table('edna_flow_sends')->where('id', $other->id)->update(['intake_admission_id' => $first->intake_admission_id]);
+    expect((new EdnaIntake)->canSend(DB::table('edna_flow_sends')->find($other->id)))->toBeFalse();
+});
+
+test('parallel database workers cannot exceed ten distinct admissions or double count one phone', function () {
+    $file = tempnam(sys_get_temp_dir(), 'edna-quota-');
+    $gate = $file.'.go';
+    $processes = [];
+    $default = DB::getDefaultConnection();
+    config()->set('database.connections.pilot_race', ['driver' => 'sqlite', 'database' => $file,
+        'foreign_key_constraints' => true, 'busy_timeout' => 10000]);
+    try {
+        DB::setDefaultConnection('pilot_race');
+        DB::statement('PRAGMA journal_mode=WAL');
+        DB::statement('PRAGMA busy_timeout=10000');
+        Schema::create('edna_flow_sends', fn ($table) => $table->id());
+        $migration = require database_path('migrations/2026_10_27_150000_create_edna_intake_pilot_admissions.php');
+        $migration->up();
+        $first = (new EdnaIntakePilot)->reserve('2423', '5493510000000', '999000111222333', true);
+        DB::setDefaultConnection($default);
+        $phones = [...array_map(fn ($i) => sprintf('549351%07d', $i), range(1, 12)),
+            '5493510000000', '5493510000000', '5493510000000'];
+        $extensions = PHP_OS_FAMILY === 'Windows' ? ['-d', 'extension=php_pdo_sqlite.dll', '-d', 'extension=php_intl.dll'] : [];
+        foreach ($phones as $phone) {
+            $process = new Process([PHP_BINARY, ...$extensions, base_path('tests/Fixtures/edna-pilot-quota-worker.php')], base_path(),
+                ['APP_ENV' => 'testing', 'APP_URL' => 'https://example.test'],
+                json_encode(['database' => $file, 'phone' => $phone, 'gate' => $gate]), 90);
+            $process->start();
+            $processes[] = $process;
+        }
+        $deadline = microtime(true) + 60;
+        do {
+            $ready = true;
+            foreach ($processes as $process) {
+                if (! str_contains($process->getOutput(), 'ready')) {
+                    if (! $process->isRunning()) {
+                        throw new RuntimeException($process->getErrorOutput().$process->getOutput());
+                    }
+                    $ready = false;
+                }
+            }
+            if (! $ready) {
+                usleep(10000);
+            }
+        } while (! $ready && microtime(true) < $deadline);
+        expect($ready)->toBeTrue('Workers did not reach the concurrency barrier.');
+        file_put_contents($gate, 'go');
+        foreach ($processes as $index => $process) {
+            $process->wait();
+            expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput());
+            $lines = explode("\n", trim($process->getOutput()));
+            $result = json_decode(end($lines), true, 8, JSON_THROW_ON_ERROR);
+            if ($phones[$index] === '5493510000000') {
+                expect($result['admission_id'])->toBe($first->id);
+            }
+        }
+        expect(DB::connection('pilot_race')->table('edna_intake_pilots')->value('admitted'))->toBe(10);
+        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->count())->toBe(10);
+        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->orderBy('slot')->pluck('slot')->all())->toBe(range(1, 10));
+        DB::setDefaultConnection('pilot_race');
+        $migration->down();
+        expect(Schema::hasTable('edna_intake_pilots'))->toBeFalse();
+        expect(Schema::hasColumn('edna_flow_sends', 'intake_admission_id'))->toBeFalse();
+    } finally {
+        DB::setDefaultConnection($default);
+        foreach ($processes as $process) {
+            if ($process->isRunning()) {
+                $process->stop();
+            }
+        }
+        DB::purge('pilot_race');
+        foreach ([$file, $file.'-wal', $file.'-shm', $gate] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
 });

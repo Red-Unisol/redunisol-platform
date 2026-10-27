@@ -2,17 +2,32 @@
 
 namespace App\Console\Commands;
 
+use App\Services\EdnaIntakePilot;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 class EdnaIntakeCommand extends Command
 {
-    protected $signature = 'edna:intake {action=status : status or prune} {id?} {--apply : Remove old completed encrypted answers}';
+    protected $signature = 'edna:intake {action=status : status, pilot or prune} {id?} {--apply : Remove old completed encrypted answers}';
 
     protected $description = 'Inspect website WhatsApp intake without identity data; never sends messages or replays CRM writes';
 
     public function handle(): int
     {
+        if ($this->argument('action') === 'pilot') {
+            $this->line(json_encode([
+                'limit' => EdnaIntakePilot::CAPACITY,
+                'pilots' => DB::table('edna_intake_pilots')->latest('created_at')->limit(50)
+                    ->get(['id', 'name', 'subject_id', 'flow_id', 'admitted', 'created_at']),
+                'participants' => DB::table('edna_intake_admissions as a')
+                    ->leftJoin('edna_flow_sends as s', 's.intake_admission_id', '=', 'a.id')
+                    ->leftJoin('edna_intake_requests as r', 'r.flow_send_id', '=', 's.id')
+                    ->orderByDesc('a.id')->limit(100)->get(['a.id', 'a.pilot_key', 'a.slot',
+                        's.id as flow_send_id', 's.state as send_state', 'r.state as intake_state', 'r.lead_id', 'r.contact_id']),
+            ]));
+
+            return self::SUCCESS;
+        }
         $query = DB::table('edna_intake_requests');
         if ($this->argument('action') === 'status') {
             $id = $this->argument('id');

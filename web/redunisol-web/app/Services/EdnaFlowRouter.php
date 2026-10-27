@@ -29,18 +29,6 @@ class EdnaFlowRouter
         }
         $journeyId = (new AttributionJourney)->bind((string) ($payload['messageContent']['text'] ?? ''),
             (string) $payload['subscriber']['identifier'], (string) $event->subject_id);
-        $flowId = self::FLOW_ID;
-        if (config('edna.intake_enabled')) {
-            $intake = new EdnaIntake;
-            $flowId = $intake->flowId();
-            if (! $flowId || ! $journeyId || ! $intake->allowed((string) $payload['subscriber']['identifier'])
-                || ! config('edna.intake_start_at')
-                || CarbonImmutable::parse($payload['receivedAt'])->lt(CarbonImmutable::parse(config('edna.intake_start_at')))) {
-                $this->record($event->id, 'intake_requires_website_context');
-
-                return;
-            }
-        }
         $received = CarbonImmutable::parse($payload['receivedAt']);
         $start = config('edna.router_start_at');
         if (! $start || ! config('edna.api_key') || ! preg_match('/^[0-9]+$/D', (string) config('edna.cascade_id'))) {
@@ -68,7 +56,11 @@ class EdnaFlowRouter
 
             return;
         }
-        $scope = $this->scope($event->subject_id, $phone, $flowId);
+        $admission = (new EdnaIntake)->admit($event->subject_id, $phone, $journeyId, $received);
+        $flowId = $admission?->flow_id ?? self::FLOW_ID;
+        $scope = $admission
+            ? hash_hmac('sha256', 'intake-admission:'.$admission->id, (string) config('app.key'))
+            : $this->scope($event->subject_id, $phone);
         DB::table('edna_router_contacts')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('edna_router_contacts')->where('scope', $scope)->lockForUpdate()->first();
         $previous = DB::table('edna_flow_sends')->where('scope', $scope)->where('created_at', '>', now()->subHours(24))->latest('id')->first();
@@ -85,7 +77,7 @@ class EdnaFlowRouter
         }
         $id = DB::table('edna_flow_sends')->insertGetId([
             'request_id' => (string) Str::uuid(), 'entry_event_id' => $event->id,
-            'journey_id' => $journeyId,
+            'journey_id' => $journeyId, 'intake_admission_id' => $admission?->id,
             'scope' => $scope, 'subject_id' => $event->subject_id,
             'cascade_id' => (string) config('edna.cascade_id'), 'flow_id' => $flowId,
             'recipient' => Crypt::encryptString($phone), 'state' => 'pending',
@@ -104,7 +96,7 @@ class EdnaFlowRouter
         $outgoing = $payload['replyOutMessageId'] ?? null;
         $send = $request ? DB::table('edna_flow_sends')->where('request_id', $request)->lockForUpdate()->first() : null;
         if (! $send || ! $send->recipient || ! $outgoing || $send->subject_id !== $event->subject_id
-            || ! in_array($send->flow_id, array_filter([self::FLOW_ID, (new EdnaIntake)->flowId()]), true)
+            || ($send->flow_id !== self::FLOW_ID && ! (new EdnaIntakePilot)->contains($send))
             || ! hash_equals(Crypt::decryptString($send->recipient), $payload['subscriber']['identifier'])) {
             $this->record($event->id, 'unmatched_response');
 

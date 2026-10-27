@@ -28,6 +28,18 @@ class EdnaIntake
             && ($recipients === [] || in_array($phone, $recipients, true));
     }
 
+    public function admit(string $subject, string $phone, ?string $journeyId, CarbonImmutable $received): ?object
+    {
+        $flowId = $this->flowId();
+        if (! config('edna.enabled') || ! config('edna.intake_enabled') || ! $flowId || ! $journeyId) {
+            return null;
+        }
+        $acceptNew = $this->allowed($phone) && config('edna.intake_start_at')
+            && $received->gte(CarbonImmutable::parse(config('edna.intake_start_at')));
+
+        return (new EdnaIntakePilot)->reserve($subject, $phone, $flowId, (bool) $acceptNew);
+    }
+
     public function attribution(object $send): ?array
     {
         $journeys = new AttributionJourney;
@@ -44,10 +56,8 @@ class EdnaIntake
 
     public function canSend(object $send): bool
     {
-        return $send->recipient && $this->allowed(Crypt::decryptString($send->recipient))
-            && $send->flow_id === $this->flowId() && config('edna.intake_start_at')
-            && CarbonImmutable::parse($send->entry_received_at)->gte(CarbonImmutable::parse(config('edna.intake_start_at')))
-            && $this->attribution($send) !== null;
+        return config('edna.enabled') && config('edna.intake_enabled')
+            && (new EdnaIntakePilot)->contains($send) && $this->attribution($send) !== null;
     }
 
     // Runs under the authenticated inbox transaction. The send ledger proves Flow identity.

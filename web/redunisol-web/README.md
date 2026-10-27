@@ -8,7 +8,7 @@ y exportación JSONL autenticada. El código no incorpora un dashboard de analí
 
 El [piloto de asistencia de Jubilados por WhatsApp](../../docs/whatsapp-jubilados-assistance.md) prepara dos teléfonos internos, espera de 30 segundos y leads marcados en una etapa de prueba. Los valores por defecto permanecen apagados; la activación usa configuración cifrada y worker optativo.
 
-El [ingreso único desde la web por WhatsApp](../../docs/whatsapp-website-intake.md) prepara un formulario con CUIL obligatorio y email opcional para todos los segmentos actuales; requiere publicar el Flow y activar su configuración después de UAT.
+El [ingreso único desde la web por WhatsApp](../../docs/whatsapp-website-intake.md) prepara un formulario con CUIL obligatorio y email opcional para todos los segmentos actuales, limitado a los próximos 10 números únicos por tanda; los demás conservan el recorrido anterior. Requiere publicar el Flow y activar su configuración después de UAT.
 
 Para una guia de onboarding tecnico mas orientada a arquitectura y extension del sistema, ver `../../docs/redunisol-web-overview.md`.
 
