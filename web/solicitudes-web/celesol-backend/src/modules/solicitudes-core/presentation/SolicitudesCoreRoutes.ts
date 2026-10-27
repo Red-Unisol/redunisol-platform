@@ -41,6 +41,10 @@ export class SolicitudesCoreRoutes {
       "/:id/prestamos-socio/:prestamoId",
       controller.getPrestamoDelSocio,
     );
+    router.post(
+      "/:id/refinanciacion/simulacion",
+      controller.simularRefinanciacion,
+    );
     router.get("/:id/credixsa", controller.getCredixsa);
     router.get("/:id/lineas-prestamo", controller.listLineasPrestamo);
     router.get("/:id/assignment/agents", controller.listAssignableAgents);

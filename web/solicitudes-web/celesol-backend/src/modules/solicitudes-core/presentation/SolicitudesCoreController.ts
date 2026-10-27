@@ -29,6 +29,7 @@ import {
 import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
+import type { SimularRefinanciacionUseCase } from "../application/use-cases/SimularRefinanciacion.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
 import {
   ForbiddenSolicitudAccessError,
@@ -45,6 +46,7 @@ import {
   patchSolicitudBodySchema,
   prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
+  simularRefinanciacionBodySchema,
   solicitudByIdParamsSchema,
   createPrestamoLegacyBodySchema,
   type AssignSolicitudToSelfBody,
@@ -56,6 +58,7 @@ import {
   type PatchSolicitudBody,
   type PrestamoDelSocioParams,
   type SimularPrestamoBody,
+  type SimularRefinanciacionBody,
   type SolicitudByIdParams,
   type CreatePrestamoLegacyBody,
 } from "./SolicitudesCoreRequest.schema";
@@ -92,6 +95,7 @@ type Dependencies = {
   visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
+  simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
 };
 
@@ -119,6 +123,7 @@ export class SolicitudesCoreController {
   private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
+  private readonly simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
 
   constructor(dependencies: Dependencies) {
@@ -152,6 +157,8 @@ export class SolicitudesCoreController {
     this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
+    this.simularRefinanciacionUseCase =
+      dependencies.simularRefinanciacionUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
   }
 
@@ -421,6 +428,40 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(detalle);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Simula la cancelacion de las cuotas elegidas para la pestaña
+  // Refinanciacion. No escribe en Vimarx. Mismo criterio de acceso que los
+  // prestamos del socio.
+  simularRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<SimularRefinanciacionBody>(
+        simularRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const simulacion = await this.simularRefinanciacionUseCase.execute({
+        prestamos: body.prestamos,
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(simulacion);
     } catch (error) {
       next(error);
     }
