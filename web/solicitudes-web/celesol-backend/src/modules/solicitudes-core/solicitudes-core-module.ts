@@ -41,6 +41,7 @@ import { CreatePrestamoLegacyUseCase } from "./application/use-cases/CreatePrest
 import { ListLineasPrestamoDeSolicitudUseCase } from "./application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
+import { SimularRefinanciacionUseCase } from "./application/use-cases/SimularRefinanciacion.use-case";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
@@ -82,6 +83,7 @@ import { SolicitudWorkflowRepositoryImpl } from "./infrastructure/repositories/S
 import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/repositories/WorkflowTransitionAdminRepositoryImpl";
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
 import { SimularCuotaSolicitud } from "./application/services/SimularCuotaSolicitud";
+import { CobrarPrestamoGateway } from "./infrastructure/services/CobrarPrestamoGateway";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
 import { EditarSocioMutualGateway } from "./infrastructure/services/EditarSocioMutualGateway";
 import { EvaluateListLineaPrestamoLegacyIdResolver } from "./infrastructure/services/EvaluateListLineaPrestamoLegacyIdResolver";
@@ -281,6 +283,14 @@ export function createSolicitudesCoreRouter(
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });
+  const simularRefinanciacionUseCase = new SimularRefinanciacionUseCase({
+    cobrarPrestamoGateway: new CobrarPrestamoGateway({
+      baseUrl: env.LEGACY_API_BASE_URL,
+      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    }),
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+  });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
     convenioSocioGateway: solicitudesLegacyGateway,
     lineasPrestamoCatalog,
@@ -423,6 +433,7 @@ export function createSolicitudesCoreRouter(
     visibilidadVendedorResolver,
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
+    simularRefinanciacionUseCase,
     listLineasPrestamoDeSolicitudUseCase,
     listSolicitudesDelTitularUseCase: new ListSolicitudesDelTitularUseCase({ repository: solicitudesCoreRepository, legacyGateway: solicitudesLegacyGateway }),
     listPrestamosDelSocioUseCase,
