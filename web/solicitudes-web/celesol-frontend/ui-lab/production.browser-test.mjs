@@ -107,6 +107,10 @@ async function closeDesktopSidebar(page, viewport) {
         exact: true,
       })
       .click();
+    // A zero-width bordered sidebar can still occupy one CSS pixel.
+    await page.waitForFunction(
+      () => document.querySelector("aside").getBoundingClientRect().width <= 2,
+    );
     await settle(page);
   }
 }
@@ -143,7 +147,6 @@ async function capture(page, name, result) {
   await settle(page);
   await page.screenshot({
     path: path.join(outputDir, `${name}.png`),
-    animations: "disabled",
   });
   result.screenshots.push(`${name}.png`);
 }

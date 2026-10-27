@@ -85,7 +85,6 @@ async function metrics(page) {
 async function capture(page, filename) {
   await page.screenshot({
     path: path.join(outputDir, filename),
-    animations: "disabled",
   });
   return filename;
 }
