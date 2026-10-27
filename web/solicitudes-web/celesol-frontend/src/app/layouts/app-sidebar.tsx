@@ -200,7 +200,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
       {!isDesktop && isOpen ? (
         <button
           aria-label="Cerrar menú lateral"
-          className="fixed inset-0 z-30 bg-black/30 opacity-100 transition-opacity duration-200 md:hidden"
+          className="fixed inset-0 top-[var(--app-topbar-height,4rem)] z-30 bg-black/30 opacity-100 transition-opacity duration-200 md:hidden"
           onClick={onClose}
           type="button"
         />
@@ -211,7 +211,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
         className={`shrink-0 bg-surface origin-left transition-[width,opacity] duration-300 ease-out ${
           isDesktop
             ? `border-r border-border ${isOpen ? "w-72 opacity-100" : "w-0 opacity-0"} overflow-hidden`
-            : `fixed top-16 bottom-0 left-0 z-40 w-72 border-r border-border shadow-lg transition-transform duration-300 ease-out ${
+            : `fixed top-[var(--app-topbar-height,4rem)] bottom-0 left-0 z-40 w-72 border-r border-border shadow-lg transition-transform duration-300 ease-out ${
                 isOpen ? "translate-x-0" : "-translate-x-full"
               }`
         }`}

@@ -106,6 +106,9 @@ export function AppLayout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const origen = searchParams.get("origen");
+  const compactHeader =
+    pathname.startsWith("/solicitudes/core/detalle/") ||
+    pathname.startsWith("/solicitudes/actual/detalle/");
 
   const title = useMemo(() => {
     if (
@@ -190,8 +193,11 @@ export function AppLayout() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main
+      className={`app-layout flex h-dvh min-h-0 flex-col bg-background text-foreground ${compactHeader ? "has-compact-header" : ""}`}
+    >
       <AppTopbar
+        compact={compactHeader}
         onToggleSidebar={() =>
           setIsSidebarOpen((currentState) => !currentState)
         }
@@ -200,14 +206,14 @@ export function AppLayout() {
         titleIcon={titleIcon}
       />
 
-      <div className="relative flex h-[calc(100vh-4rem)]">
+      <div className="relative flex min-h-0 flex-1">
         <AppSidebar
           isDesktop={isDesktop}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
         <section
-          className={`relative flex-1 p-2 md:p-1 ${
+          className={`relative min-w-0 flex-1 p-2 md:p-1 ${
             isScrollableContentRoute
               ? "overflow-y-auto overflow-x-hidden"
               : "overflow-hidden"

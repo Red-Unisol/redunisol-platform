@@ -24,6 +24,7 @@ import { Separator } from "@/shared/components/ui/separator";
 import { NotificationBell } from "@/modules/notifications/notification-center";
 
 type AppTopbarProps = {
+  compact?: boolean;
   titleIcon: LucideIcon;
   title?: string | null;
   titleBadge?: string | null;
@@ -45,6 +46,7 @@ function getInitials(
 }
 
 export function AppTopbar({
+  compact = false,
   titleIcon: TitleIcon,
   title,
   titleBadge,
@@ -87,26 +89,35 @@ export function AppTopbar({
   }
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border bg-surface px-4">
-      <div className="flex items-center gap-4">
+    <header
+      data-compact={compact || undefined}
+      className={`app-topbar flex shrink-0 items-center justify-between border-b border-border bg-surface ${compact ? "h-[var(--app-topbar-height,2.5rem)] gap-2 px-3" : "h-16 px-4"}`}
+    >
+      <div
+        className={`flex min-w-0 items-center ${compact ? "flex-1 gap-2" : "gap-4"}`}
+      >
         <button
           aria-label="Mostrar u ocultar menú lateral"
-          className="inline-flex size-9 items-center justify-center rounded-md text-foreground-secondary transition hover:bg-background hover:text-foreground"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground-secondary transition hover:bg-background hover:text-foreground"
           onClick={onToggleSidebar}
           type="button"
         >
           <Menu className="size-5" />
         </button>
-        <div className="flex items-center gap-3 md:ml-[15.25rem]">
-          <TitleIcon className="size-6 shrink-0 text-foreground-secondary" />
-          <div className="flex items-center gap-3">
+        <div
+          className={`flex min-w-0 items-center gap-3 ${compact ? "" : "md:ml-[15.25rem]"}`}
+        >
+          <TitleIcon
+            className={`${compact ? "hidden size-4.5 sm:block" : "size-6"} shrink-0 text-foreground-secondary`}
+          />
+          <div className="flex min-w-0 items-center gap-3">
             {title ? (
               <h1 className="text-[1.85rem] leading-none font-semibold text-foreground">
                 {title}
               </h1>
             ) : null}
             {titleBadge ? (
-              <span className="inline-flex items-center rounded-full border border-input-border bg-background px-3 py-1 text-sm font-medium text-foreground-secondary">
+              <span className="block min-w-0 truncate rounded-full border border-input-border bg-background px-3 py-1 text-sm font-medium text-foreground-secondary">
                 {titleBadge}
               </span>
             ) : null}
@@ -114,7 +125,9 @@ export function AppTopbar({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div
+        className={`flex shrink-0 items-center ${compact ? "gap-1" : "gap-2"}`}
+      >
         <NotificationBell />
         <PopoverRoot>
           <PopoverTrigger asChild>

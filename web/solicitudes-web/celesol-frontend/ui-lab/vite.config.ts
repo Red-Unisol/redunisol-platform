@@ -14,7 +14,7 @@ if (
 )
   throw new Error("UI Lab output must stay inside frontend/.local/ui-lab-dist");
 const contentSecurityPolicy =
-  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:5271 ws://localhost:5271; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'";
+  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:5271 ws://localhost:5271; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'";
 const headers = {
   "Content-Security-Policy": contentSecurityPolicy,
   "X-DNS-Prefetch-Control": "off",
