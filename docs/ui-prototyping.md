@@ -23,7 +23,7 @@ npm run ui:dev
 
 La galería se sirve en `http://127.0.0.1:5271/`. Tiene una entrada y una configuración de compilación propias; no forma parte del bundle de producción ni cambia la operativa de solicitudes.
 
-El primer conjunto presenta la propuesta de generación de préstamo y liquidación. Incluye préstamos compatibles, diferencias de monto o condiciones, anulación verificada, indisponibilidad de Core, operación en curso, resultado incierto y éxito. Los importes se comparan con el monto solicitado, sin confundirlo con el capital que incluye gastos. La firma sigue después de Liquidada.
+La galería principal presenta el flujo actual de firmas en paralelo al análisis, avisos y control de préstamos. Sus escenarios se mantienen junto a los componentes operativos para poder revisar los cambios sin ejecutar operaciones reales.
 
 Para agregar una propuesta, crear datos de escenarios separados de sus componentes y mantener visible qué se está simulando. No reutilizar nombres, documentos, solicitudes ni préstamos reales.
 
@@ -47,3 +47,16 @@ Para revisar un diseño:
 3. Repetir en una notebook de poca altura, en 1024×768 y en 390×844. Comprobar foco de teclado, navegación por flechas en las pestañas, tablas y scroll. En dispositivos táctiles usar blancos de al menos 44 px.
 4. Guardar capturas de las alternativas y del diseño desplegado. Mantener la evidencia local fuera del build de producción.
 5. Ejecutar `npm run ui:test` y `npm run ui:build`. Tras integrar un diseño en los componentes operativos, ejecutar también las validaciones del producto y repetir la revisión visual en el entorno autorizado.
+
+## Diseño A integrado
+
+La ficha actual usa la barra global compacta y los datos rápidos plegables de A. El detalle
+conserva nombre, documento, estado y acciones; Mostrar/Ocultar encabezado está disponible
+en todas las pestañas y la preferencia se guarda localmente. En pantallas cortas, las áreas
+de contenido conservan una altura mínima y la ficha puede desplazarse para llegar a ellas.
+
+`/production` en el servidor del laboratorio renderiza los componentes operativos completos,
+con sesión y datos ficticios. `npm run ui:visual:production` comprueba esta integración y
+guarda evidencia aparte de la comparación de propuestas (`npm run ui:visual`). Revisar
+también roles sin acceso a Evaluación, avisos de pago, preferencia tras recargar y visibilidad
+de Guardar/Cancelar mientras se pliega el encabezado.

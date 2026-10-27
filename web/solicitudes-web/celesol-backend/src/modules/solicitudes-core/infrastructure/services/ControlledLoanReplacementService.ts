@@ -1,5 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
+import { actingContext } from "../../../auth/impersonation/context";
+import { notifySignatureLinkAvailable } from "../../../notifications/SignatureNotifications";
 import type { CreatePrestamoLegacyUseCase } from "../../application/use-cases/CreatePrestamoLegacy.use-case";
 import type { CrearPrestamoGateway, CrearPrestamoInput } from "./CrearPrestamoGateway";
 import {
@@ -38,17 +40,20 @@ export class ControlledLoanReplacementService {
     makeSignatureLink: (id: string, codigoMutual: string | null) => string;
   }) {}
 
-  private async actor(tx: Prisma.TransactionClient, user: AuthUser) {
-    assertAdministrativeActor(user);
-    const actor = await tx.user.findFirst({ where: { id: user.id, isSystemAdmin: true, state: 1, deletedAt: null } });
-    if (!actor) throw new AdministrativeCorrectionError("Se requiere un administrador activo.", 403);
+  private async actor(tx: Prisma.TransactionClient, user: AuthUser, solicitudId: string, requireAdmin = false) {
+    if (requireAdmin) assertAdministrativeActor(user);
+    const actor = await tx.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null } });
+    const s = await administrativeSource(tx, solicitudId);
+    if (!actor || (requireAdmin && !actor.isSystemAdmin) || (!actor.isSystemAdmin &&
+      (s.estadoActual.code !== "Confirmada" || actor.workflowOwnerId !== s.estadoActual.ownerId)))
+      throw new AdministrativeCorrectionError("Se requiere un operador habilitado para generar el préstamo desde Confirmada.", 403);
     return actor;
   }
 
+
   private async eligible(tx: Prisma.TransactionClient, s: Source, allowPending = false) {
-    const control = s.administrativeCoreControl as Record<string, unknown> | null;
-    if (!control?.correctionId || !s.legacyOid || s.archivedAt || !editableStates.includes(s.estadoActual.code))
-      throw new AdministrativeCorrectionError("El reemplazo excepcional requiere una solicitud devuelta administrativamente, con préstamo vinculado y anterior a la liquidación.");
+    if (!s.legacyOid || s.archivedAt || !(allowPending ? editableStates : ["Confirmada"]).includes(s.estadoActual.code))
+      throw new AdministrativeCorrectionError("Regenerá el préstamo anulado desde Confirmada, con un préstamo vinculado y antes de liquidación, reservas o pagos.");
     if (!allowPending) assertNoLoanReplacementPending(s);
     if (s.desembolso || s.pagoExterno || await tx.solicitudEstadoHistorial.findFirst({
       where: { solicitudId: s.id, toStateCodeSnapshot: { in: downstreamStates } }, select: { id: true },
@@ -67,7 +72,7 @@ export class ControlledLoanReplacementService {
         : event === "ADMIN_LOAN_REPLACEMENT_STARTED" ? "Reemplazo excepcional iniciado"
           : event === "ADMIN_LOAN_REPLACEMENT_RECOVERED" ? "Préstamo generado recuperado"
             : "Resultado de reemplazo pendiente de verificar",
-      changedBy: actorId, realActorUserId: actorId, comentario: reason,
+      changedBy: actorId, realActorUserId: actingContext.getStore()?.administrator.id ?? actorId, comentario: reason,
       motivo: event, requiresComment: true, metadata: json(metadata),
     } });
   }
@@ -87,7 +92,8 @@ export class ControlledLoanReplacementService {
     });
     const last = operations[0];
     const canRecover = Boolean(last && last.status !== "LINKED" && (last.status !== "CREATING" || Date.now() - last.createdAt.getTime() > (this.deps.creationTimeoutMs ?? 30000) + 60000));
-    return { canRecover: canAdmin && canRecover, canAdmin, canReplace: canAdmin && !blockedReason, blockedReason,
+    const canOperate = user.isSystemAdmin || (s.estadoActual.code === "Confirmada" && user.workflowOwnerId === s.estadoActual.ownerId);
+    return { canRecover: canAdmin && canRecover, canAdmin, canReplace: canOperate && !blockedReason, blockedReason,
       updatedAt: s.updatedAt.toISOString(), currentLoanId: s.legacyOid, operations,
       amount: s.montoAFinanciar === null ? null : Number(s.montoAFinanciar), cuotas: s.cuotas,
       line: s.lineaPrestamoDescripcion };
@@ -96,30 +102,32 @@ export class ControlledLoanReplacementService {
   async replace(id: string, user: AuthUser, input: {
     requestId: string; expectedUpdatedAt: string; previousLoanId: string; reason: string;
   }) {
-    assertAdministrativeActor(user);
+    const before = await administrativeSource(this.deps.db, id);
+    await this.actor(this.deps.db, user, id);
     const existing = await this.deps.db.solicitudPrestamoReplacement.findUnique({ where: { id: input.requestId } });
     if (existing) {
       if (existing.solicitudId !== id || existing.previousLoanId !== input.previousLoanId)
         throw new AdministrativeCorrectionError("La operación no corresponde a esta solicitud.");
       if (existing.status === "LINKED") return this.view(id, user);
-      if (existing.status === "CREATED" && existing.newLoanId)
-        return this.finish(existing.id, user);
+      if (existing.status === "CREATED" && existing.newLoanId) {
+        assertAdministrativeActor(user);
+        return this.finish(existing.id, user, true);
+      }
       throw new AdministrativeCorrectionError("El intento ya fue enviado a Vimarx. No lo repitas; verificá el resultado y usá Vincular préstamo generado.");
     }
-    const before = await administrativeSource(this.deps.db, id);
     await this.eligible(this.deps.db, before);
     if (before.updatedAt.toISOString() !== input.expectedUpdatedAt || before.legacyOid !== input.previousLoanId)
       throw new AdministrativeCorrectionError("La solicitud cambió. Guardá y revisá las condiciones antes de reemplazar.");
-    const previous = await this.deps.lifecycle(before.legacyOid!, Boolean((before.administrativeCoreControl as Prisma.JsonObject).replacementId));
+    const previous = await this.deps.lifecycle(before.legacyOid!, Boolean((before.administrativeCoreControl as Prisma.JsonObject | null)?.replacementId || (before.administrativeCoreControl as Prisma.JsonObject | null)?.generatedLoanId));
     assertCancelledLoan(previous);
     const prepared = await this.deps.prepare.prepareReplacement({
-      solicitudId: id, currentUser: { id: user.id, isSystemAdmin: true, workflowOwnerId: user.workflowOwnerId ?? "" },
+      solicitudId: id, currentUser: { id: user.id, isSystemAdmin: user.isSystemAdmin, workflowOwnerId: user.workflowOwnerId ?? "" },
     });
     const fingerprint = coreConditionsFingerprint(before);
     try {
       await this.deps.db.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
-        await this.actor(tx, user);
+        await this.actor(tx, user, id);
         const s = await administrativeSource(tx, id);
         await this.eligible(tx, s);
         if (s.updatedAt.toISOString() !== input.expectedUpdatedAt || coreConditionsFingerprint(s) !== fingerprint)
@@ -189,11 +197,26 @@ export class ControlledLoanReplacementService {
     return this.finish(input.requestId, user);
   }
 
-  private async finish(operationId: string, user: AuthUser) {
+  private async finish(operationId: string, user: AuthUser, requireAdmin = false) {
     const op = await this.deps.db.solicitudPrestamoReplacement.findUniqueOrThrow({ where: { id: operationId } });
+    if (op.status === "LINKED") return this.view(op.solicitudId, user);
+    if (op.status !== "CREATED" || !op.newLoanId)
+      throw new AdministrativeCorrectionError("El préstamo nuevo todavía no tiene un ID confirmado.");
+    const before = await administrativeSource(this.deps.db, op.solicitudId);
+    const previousSnapshot = op.previousSnapshot as { lifecycle?: { id?: string } };
+    assertCancelledLoan(await this.deps.lifecycle(previousSnapshot.lifecycle?.id ?? op.previousLoanId, Boolean(previousSnapshot.lifecycle?.id)));
+    const intendedCore = (op.intendedInput as unknown as { core: CrearPrestamoInput }).core;
+    const verifiedLoan = before.titular?.nroDocumento
+      ? await this.deps.loanSnapshot(op.newLoanId, before.titular.nroDocumento, true) : null;
+    if (!verifiedLoan || verifiedLoan.id !== op.newLoanId || verifiedLoan.estado !== 0 ||
+      verifiedLoan.amount !== intendedCore.montoDeseado || verifiedLoan.cuotas !== intendedCore.cuotas ||
+      verifiedLoan.lineaId !== intendedCore.lineaPrestamo ||
+      verifiedLoan.cancelacionesCentavos !== (intendedCore.nroLote ?? 0) ||
+      (before.fechaPrimerVencimiento && verifiedLoan.primerVencimiento?.slice(0, 10) !== before.fechaPrimerVencimiento.toISOString().slice(0, 10)))
+      throw new AdministrativeCorrectionError("El préstamo nuevo no pudo conciliarse con el titular y las condiciones reservadas. El resultado queda guardado para recuperación; no generes otro.");
     await this.deps.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${op.solicitudId}::uuid FOR UPDATE`;
-      await this.actor(tx, user);
+      await this.actor(tx, user, op.solicitudId, requireAdmin);
       const currentOp = await tx.solicitudPrestamoReplacement.findUniqueOrThrow({ where: { id: operationId } });
       if (currentOp.status === "LINKED") return;
       if (currentOp.status !== "CREATED" || !currentOp.newLoanId)
@@ -211,20 +234,25 @@ export class ControlledLoanReplacementService {
         legacyOid: currentOp.newLoanId,
         lineaPrestamoCodigoMutual: intended.codigoMutual,
         linkFirmaDigital: this.deps.makeSignatureLink(currentOp.newLoanId, intended.codigoMutual),
+        analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+        signatureCycleId: null, signatureRequestedAt: null, signatureRequestReason: null,
+        signatureExcludedVerificationIds: Prisma.DbNull,
         administrativeCoreControl: {
           ...(s.administrativeCoreControl as Prisma.JsonObject),
           loanId: currentOp.newLoanId, previousLoanId: op.previousLoanId, replacementId: operationId,
-          replacementPending: null, reconciledFingerprint: null,
+          replacementPending: null, reconciledFingerprint: coreConditionsFingerprint({ ...s, legacyOid: currentOp.newLoanId }),
         },
       } });
       await this.audit(tx, s, user.id, "ADMIN_LOAN_REPLACED", `${op.reason}\nPréstamo anterior: ${op.previousLoanId}. Nuevo: ${currentOp.newLoanId}.`, {
         operationId, previousLoanId: op.previousLoanId, newLoanId: currentOp.newLoanId,
         previousSnapshot: currentOp.previousSnapshot,
         coreReconciliationRequired: true,
+        coreReconciliationVerified: true, verifiedLoan,
       });
       await tx.solicitudPrestamoReplacement.update({
         where: { id: operationId }, data: { status: "LINKED", completedAt: new Date() },
       });
+      await notifySignatureLinkAvailable(tx, s.id);
     });
     return this.view(op.solicitudId, user);
   }
@@ -259,7 +287,7 @@ export class ControlledLoanReplacementService {
       throw new AdministrativeCorrectionError("El préstamo indicado no está activo o no coincide con el titular y las condiciones del intento.");
     await this.deps.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
-      await this.actor(tx, user);
+      await this.actor(tx, user, id, true);
       const s = await administrativeSource(tx, id);
       await this.eligible(tx, s, true);
       if (s.updatedAt.toISOString() !== input.expectedUpdatedAt || coreConditionsFingerprint(s) !== op.sourceFingerprint)
@@ -272,6 +300,6 @@ export class ControlledLoanReplacementService {
         operationId: op.id, previousLoanId: op.previousLoanId, newLoanId: input.newLoanId, verifiedLoan: loan,
       });
     });
-    return this.finish(op.id, user);
+    return this.finish(op.id, user, true);
   }
 }

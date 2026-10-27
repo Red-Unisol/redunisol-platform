@@ -63,14 +63,18 @@ export function ControlledLoanReplacementControl({
   if (view.error)
     return (
       <p role="alert" className="mt-3 text-sm">
-        No se pudo consultar el reemplazo excepcional.{" "}
+        No se pudo consultar la regeneración del préstamo.{" "}
         <button className="underline" onClick={() => void view.refetch()}>
           Reintentar
         </button>
       </p>
     );
   const data = view.data;
-  if (!data?.canAdmin) return null;
+  if (
+    !data ||
+    (!data.canReplace && !data.canRecover && data.operations.length === 0)
+  )
+    return null;
   const last = data.operations[0];
   const pending = last && last.status !== "LINKED";
   return (
@@ -79,7 +83,7 @@ export function ControlledLoanReplacementControl({
       open={pending || undefined}
     >
       <summary className="cursor-pointer text-sm font-medium">
-        Reemplazo excepcional de préstamo anulado
+        Regenerar préstamo y reemplazar el anterior
       </summary>
       <p className="mt-2 text-sm text-foreground-secondary">
         Primero guardá el monto, las cuotas y las cancelaciones correctas.
@@ -89,8 +93,8 @@ export function ControlledLoanReplacementControl({
       {last?.status === "LINKED" && (
         <p className="mt-2 text-sm">
           Reemplazo registrado: {last.previousLoanId} →{" "}
-          <strong>{last.newLoanId}</strong>. Conciliá el préstamo vigente antes
-          de liquidar.
+          <strong>{last.newLoanId}</strong>. Se verificarán sus condiciones
+          antes de terminar el análisis.
         </p>
       )}
       {pending && (
@@ -113,7 +117,7 @@ export function ControlledLoanReplacementControl({
           disabled={isEditing || !data.canReplace}
           onClick={() => setMode("replace")}
         >
-          Reemplazar préstamo anulado
+          Regenerar préstamo y reemplazar el anterior
         </Button>
         {data.canRecover && (
           <Button
@@ -214,12 +218,12 @@ function ReplacementForm({
     >
       <DialogTitle className="text-xl font-semibold">
         {mode === "replace"
-          ? "Reemplazar préstamo anulado"
+          ? "Regenerar préstamo y reemplazar el anterior"
           : "Vincular préstamo generado"}
       </DialogTitle>
       <DialogDescription className="text-sm leading-relaxed text-foreground-secondary">
         {mode === "replace"
-          ? "Se generará un préstamo nuevo con las condiciones guardadas. El vínculo activo cambiará al recibir su ID. El préstamo anterior quedará registrado en el historial y la liquidación seguirá bloqueada hasta conciliar el nuevo."
+          ? "Se generará un préstamo nuevo con las condiciones guardadas y un enlace de firma vigente. Se conserva el préstamo anterior en el historial. La solicitud permanece en su estado actual."
           : "Usá esta recuperación si el intento ya generó un préstamo en Vimarx. Se verificará el titular y las condiciones antes de vincularlo."}
       </DialogDescription>
       <p className="text-sm">

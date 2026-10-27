@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { SAMPLE_REQUEST } from "./scenarios.ts";
+import { SAMPLE_REQUEST } from "./header-sample.ts";
 import { HEADER_SAMPLE } from "./header-fixtures.ts";
 import {
   createUiLabFetch,
@@ -10,6 +10,82 @@ import {
   UI_LAB_SOLICITUD_ID,
 } from "./network-guard.ts";
 const route = `/solicitudes/${UI_LAB_SOLICITUD_ID}`;
+
+it("serves explicit real-page read fixtures with role controls while rejecting writes and unknown IDs", async () => {
+  const fetcher = createUiLabFetch({ production: { role: "vendedor" } });
+  const get = async (pathname: string) =>
+    (await fetcher(`${UI_LAB_API_ORIGIN}${pathname}`)).json();
+  assert.equal((await get("/auth/me")).user.workflowOwner.code, "VENDEDORES");
+  const detail = await get(route);
+  assert.equal(detail.titular.nroDocumento, HEADER_SAMPLE.document);
+  assert.equal(detail.capabilities.canEdit, false);
+  assert.equal(detail.capabilities.canChangeState, false);
+  for (const pathname of [
+    "/api/notifications",
+    "/solicitudes/tipos-adjunto",
+    `${route}/adjuntos`,
+    `${route}/history`,
+    `${route}/lineas-prestamo`,
+    `${route}/linked-loan-status`,
+    `${route}/admin-loan-replacements`,
+    `${route}/admin-state-correction`,
+    `${route}/pago-externo`,
+    `${route}/credixsa`,
+  ]) {
+    assert.equal(
+      (await fetcher(`${UI_LAB_API_ORIGIN}${pathname}`)).status,
+      200,
+    );
+    await assert.rejects(
+      () => fetcher(`${UI_LAB_API_ORIGIN}${pathname}`, { method: "POST" }),
+      UiLabNetworkBlockedError,
+    );
+  }
+  const saved = await get(
+    `/api/riesgo/calculadora/core/${UI_LAB_SOLICITUD_ID}/evaluacion`,
+  );
+  assert.ok(
+    Object.values(saved.evaluacion.snapshot.sheets).some(
+      (sheet: unknown) => (sheet as { name: string }).name === "Datos",
+    ),
+  );
+  await assert.rejects(
+    () => fetcher(`${UI_LAB_API_ORIGIN}/solicitudes/another-id`),
+    UiLabNetworkBlockedError,
+  );
+  await assert.rejects(
+    () => createUiLabFetch()(`${UI_LAB_API_ORIGIN}${route}`),
+    UiLabNetworkBlockedError,
+  );
+});
+
+it("serves the current signature workflow scenarios without a network fallback", async () => {
+  let realCalls = 0;
+  const target = {
+    fetch: (async () => {
+      realCalls++;
+      throw new Error("Unexpected real network");
+    }) as typeof fetch,
+  };
+  const restore = installUiLabNetworkGuard(target);
+  const first = await (
+    await target.fetch(`${UI_LAB_API_ORIGIN}/fixtures/scenarios`)
+  ).json();
+  assert.ok(first.some((row: { id: string }) => row.id === "requested"));
+  first[0].signature.approved = true;
+  const second = await (
+    await target.fetch(`${UI_LAB_API_ORIGIN}/fixtures/scenarios`)
+  ).json();
+  assert.equal(second[0].signature.approved, false);
+  for (const method of ["POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS"]) {
+    await assert.rejects(
+      () => target.fetch(`${UI_LAB_API_ORIGIN}/fixtures/scenarios`, { method }),
+      UiLabNetworkBlockedError,
+    );
+  }
+  assert.equal(realCalls, 0);
+  restore();
+});
 
 it("serves deterministic GET fixtures without invoking the original transport", async () => {
   let realCalls = 0;

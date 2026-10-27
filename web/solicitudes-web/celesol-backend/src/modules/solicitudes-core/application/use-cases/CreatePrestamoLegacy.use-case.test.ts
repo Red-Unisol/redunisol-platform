@@ -824,6 +824,42 @@ it("replacement preflight retains required data checks and rejects unsaved maxim
   await assert.rejects(() => useCase.prepareReplacement(input), /Guardá las condiciones/);
   max = 10000000; total = 10001;
   await assert.rejects(() => useCase.prepareReplacement(input), /cancelaciones superan/);
-  await assert.rejects(() => useCase.prepareReplacement({ ...input, currentUser: { ...input.currentUser, isSystemAdmin: false } }), /administrador/);
+  total = 0;
+  assert.equal((await useCase.prepareReplacement({ ...input, currentUser: { ...input.currentUser, isSystemAdmin: false } })).coreInput.montoDeseado, 10000);
+  await assert.rejects(() => useCase.prepareReplacement({ ...input, currentUser: { ...input.currentUser, isSystemAdmin: false, workflowOwnerId: "otro" } }), ForbiddenSolicitudAccessError);
   assert.equal(createCalls, 0); assert.equal(writes, 0);
+});
+
+function buildLinkedUseCase(overrides: Partial<ConstructorParameters<typeof CreatePrestamoLegacyUseCase>[0]> = {}) {
+  return new CreatePrestamoLegacyUseCase({
+    authRepository: authRepository(), cancelacionesRepository: cancelacionesRepository(),
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+    simularCuotaSolicitud: { execute: async () => null }, repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: "444" }) }),
+    gateway: fakeGateway({ crear: async () => { throw new Error("must not create twice"); } }),
+    lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(), linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+    sociosRepository: socioRepository(), solicitudesLegacyGateway: solicitudesLegacyGateway(), today: () => TODAY,
+    ...overrides,
+  });
+}
+const linkedInput = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } };
+const linkedStatus = { status: "active" as const, currentLoanId: "444", resolvedLoanId: "444", amount: 10000, requestedAmount: 10000, matchesAmount: true, amountEditable: false };
+
+it("reuses an existing active loan at the same amount without generating again", async () => {
+  const uc = buildLinkedUseCase({ linkedLoanReader: async () => linkedStatus });
+  assert.equal((await uc.execute(linkedInput)).legacyOid, "444");
+});
+
+it("blocks an existing different amount and delegates proven cancellation to controlled replacement", async () => {
+  const mismatch = buildLinkedUseCase({ linkedLoanReader: async () => ({ ...linkedStatus, amount: 9000, matchesAmount: false }) });
+  await assert.rejects(mismatch.execute(linkedInput), /monto distinto.*444/);
+  let replaced = false;
+  const cancelled = buildLinkedUseCase({ linkedLoanReader: async () => ({ ...linkedStatus, status: "cancelled", amountEditable: true }),
+    replaceCancelledLoan: async () => { replaced = true; return solicitud({ legacyOid: "555" }); } });
+  assert.equal((await cancelled.execute(linkedInput)).legacyOid, "555");
+  assert.equal(replaced, true);
+});
+
+it("generation and regeneration require Confirmada, including for administrators", async () => {
+  const uc = buildLinkedUseCase({ repository: solicitudesRepository({ findById: async () => solicitud({ estadoActual: { code: "RevisionRiesgo", name: "Revisión", id: "risk", ownerId: "owner-2" } }) }) });
+  await assert.rejects(uc.execute({ ...linkedInput, currentUser: { ...linkedInput.currentUser, isSystemAdmin: true } }), /desde Confirmada/);
 });

@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import test from "node:test";
 import express from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { assess, digest, providerFingerprint, REVIEW_POLICY_VERSION } from "../document-review/domain";
+import { candidateFixture } from "../document-review/fixtures";
+import { reviewSource, signatureSourceInclude } from "../document-review/signature-workflow";
 import { TransferenciasService } from "./TransferenciasService";
 import { createTransferenciasRouter } from "./router";
 import { createPayWorkflow } from "./workflow";
@@ -55,6 +58,8 @@ test(
         workflowOwnerId: owner.id,
       },
     });
+    const legajos = await db.workflowOwner.findUniqueOrThrow({ where: { code: "LEGAJOS_DIGITALES" } });
+    const reviewer = await db.user.create({ data: { email: `${randomUUID()}@example.invalid`, legacyUser: randomUUID(), passwordHash: "no-login", workflowOwnerId: legajos.id } });
     const actor: Actor = {
       id: user.id,
       workflowOwnerId: owner.id,
@@ -122,6 +127,8 @@ test(
           lineaPrestamoLegacyOid: "99",
           lineaPrestamoDescripcion: "Synthetic line",
           montoAFinanciar: "1000.01",
+          cuotas: 6, cuotaResultante: "200,00", lineaPrestamoCodigoMutual: "CELESOL",
+          analisisFinalizadoAt: new Date(), analisisFinalizadoBy: actor.id,
           firmaDigitalmente: true,
           createdBy: actor.id,
           titular: {
@@ -135,7 +142,40 @@ test(
           },
         },
       });
+      await approveSourceSignature(source.id);
       return source;
+    }
+    async function approveSourceSignature(id: string) {
+      const row = await db.solicitud.findUniqueOrThrow({ where: { id }, include: signatureSourceInclude });
+      const source = reviewSource(row);
+      const candidate = candidateFixture(`transfer-signature-${randomUUID()}`);
+      const documents = candidate.resource!.documents as { fields: { documentNumber: { value: string } } }[];
+      documents[0].fields.documentNumber.value = row.titular!.nroDocumento!;
+      const steps = candidate.resource!.steps as { id: string; data: { signedDocumentDetails?: { customVariables: { request: { value: string }; amount: { value: string } } }[] } }[];
+      const vars = steps.find(step => step.id === "electronic-signature-document-validation")!.data.signedDocumentDetails![0].customVariables;
+      vars.request.value = row.legacyOid!;
+      vars.amount.value = "$ 1.000,01";
+      const assessment = assess(source, [candidate]);
+      assert.equal(assessment.decision, "approve");
+      const attachment = await db.solicitudAdjunto.create({ data: {
+        solicitudId: id, archivoNombre: "signed-test-legajo.pdf", archivoPath: `test/${id}/${randomUUID()}.pdf`,
+        archivoMimeType: "application/pdf", archivoSizeBytes: BigInt(pdf.length), storageBucket: "test-signatures",
+        tipoAdjunto: "Legajo Digital", estadoAdjunto: "Cargado", uploadedBy: reviewer.id,
+      } });
+      const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+      const review = await db.solicitudDocumentReview.create({ data: {
+        solicitudId: id, evaluationKey: randomUUID(), policyVersion: REVIEW_POLICY_VERSION,
+        sourceFingerprint: digest(source), providerFingerprint: providerFingerprint([candidate]),
+        sourceSnapshot: json(source), assessment: json(assessment), systemDecision: "approve",
+        selectedVerificationId: candidate.verificationId, legajoAdjuntoId: attachment.id,
+        evidencePath: `test/${id}/signature-evidence.json`,
+      } });
+      await db.solicitudDocumentDecision.create({ data: {
+        reviewId: review.id, requestId: randomUUID(), humanDecision: "approve", systemDecision: "approve",
+        verificationId: candidate.verificationId, attemptSystemDecision: "approve", disagreesWithSystem: false,
+        overridesAttempt: false, reason: "", decidedBy: reviewer.id, actorName: "Legajos de prueba",
+        actingAudit: {}, legajoAdjuntoId: attachment.id,
+      } });
     }
     async function fixture() {
       const source = await sourceFixture();
@@ -182,6 +222,13 @@ test(
       cbu: memberCbu,
       cuit: memberCuit,
       confirmedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await t.test("a plan prepared before an explicit re-sign request cannot reserve funds", async () => {
+      const { source, service, input } = await fixture();
+      await db.solicitud.update({ where: { id: source.id }, data: { signatureCycleId: randomUUID(), signatureRequestedAt: new Date(), signatureRequestReason: "Repetir firma" } });
+      await assert.rejects(service.reserve(source.id, input, actor), /firma vigente aprobada/);
+      assert.equal(await db.transferenciaDesembolso.count({ where: { solicitudId: source.id } }), 0);
     });
 
     await t.test(
@@ -484,7 +531,7 @@ test(
         );
         assert.equal(
           await db.solicitudAdjunto.count({
-            where: { solicitudId: source.id },
+            where: { solicitudId: source.id, tipoAdjunto: "Comprobante de transferencia" },
           }),
           0,
         );
@@ -507,7 +554,7 @@ test(
         assert.deepEqual(completed[0]!.receipt, completed[1]!.receipt);
         assert.equal(
           await db.solicitudAdjunto.count({
-            where: { solicitudId: source.id },
+            where: { solicitudId: source.id, tipoAdjunto: "Comprobante de transferencia" },
           }),
           1,
         );
@@ -593,11 +640,7 @@ test(
           where: { solicitudId: source.id },
           data: { nombre: "Changed" },
         });
-        await assert.rejects(
-          service.reserve(source.id, input, actor),
-          (e: unknown) =>
-            e instanceof IntegrationError && e.code === "PLAN_CHANGED",
-        );
+        await assert.rejects(service.reserve(source.id, input, actor), /firma vigente aprobada/);
       },
     );
 
@@ -740,7 +783,7 @@ test(
       assert(saved.completedAt);
       assert.equal(saved.payments[0]!.bankTransactionId, order.payments[0]!.bankTransactionId);
       assert.equal(saved.payments[0]!.confirmedAt, null);
-      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: source.id } }), 1);
+      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: source.id, tipoAdjunto: "Comprobante de transferencia" } }), 1);
       assert.equal(await db.solicitudPagoExterno.count({ where: { solicitudId: source.id } }), 1);
       const history = await db.solicitudEstadoHistorial.findFirstOrThrow({ where: { solicitudId: source.id, actionCode: "pagar" } });
       assert.equal(history.changedBy, user.id);
@@ -814,7 +857,7 @@ test(
       assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: f.source.id } })).estadoActualId, transfer.id);
       assert.equal((await f.service.get(order.id, actor)).status, "RESERVED");
       assert.equal(await db.solicitudPagoExterno.count({ where: { solicitudId: f.source.id } }), 0);
-      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: f.source.id } }), 0);
+      assert.equal(await db.solicitudAdjunto.count({ where: { solicitudId: f.source.id, tipoAdjunto: "Comprobante de transferencia" } }), 0);
       assert.equal(await db.solicitudEstadoHistorial.count({ where: { solicitudId: f.source.id } }), 0);
     });
   },

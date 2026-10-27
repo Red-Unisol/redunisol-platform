@@ -1,9 +1,16 @@
 # Revisión documental de BEEX
 
-Cuando una solicitud está en `VerificarFirmaYDocumentacion`, BEEX consulta los
-intentos de MetaMap, propone una decisión y genera un legajo propio. La solicitud
-permanece en ese estado hasta que una persona responsable decide. El worker no
-ejecuta transiciones.
+La firma del legajo digital se gestiona en paralelo al análisis, desde que existe
+un préstamo asociado y hasta su transferencia. BEEX consulta los intentos de
+MetaMap, propone una decisión y conserva la aprobación humana de Legajos Digitales.
+La generación del préstamo sigue separada del cierre del análisis.
+El worker registra evidencia y avisos; nunca aprueba firmas por sí solo.
+
+El vendedor ve un resumen sin evidencia biométrica: enlace vigente, cantidad de
+envíos completos, fecha del último y aprobación. La primera tilde requiere un
+envío terminado (`completedAt` válido); abrir o iniciar un intento no alcanza.
+La segunda requiere una aprobación humana vigente. La bandeja de Legajos incluye
+préstamos activos aún no transferidos, también los que esperan firma o análisis.
 
 ## Reglas de la propuesta
 
@@ -41,16 +48,27 @@ de la evaluación y todas las alternativas quedan conservadas.
 ## Decisión humana y concurrencia
 
 El panel muestra la propuesta, sus razones, los cruces de datos y los intentos.
-Solo el owner del estado actual o un administrador puede decidir:
+Solo el área `LEGAJOS_DIGITALES` o un administrador puede decidir, sin depender
+del owner actual de la solicitud:
 
-- Aprobar: guarda la decisión humana, legajo final y avance a `Transferir`.
-- Desaprobar: exige motivo, guarda la decisión y devuelve a `Liquidada` para
-  corregir o volver a firmar.
+- Aprobar: guarda decisión y legajo final. Si el análisis ya terminó, avanza a
+  `Transferir` en la misma transacción; si está pendiente, conserva la aprobación
+  sin cambiar el estado general.
+- Solicitar nueva firma: exige motivo, conserva la decisión anterior e inicia un
+  ciclo nuevo. Los intentos ya existentes y los envíos anteriores al pedido no
+  satisfacen ese ciclo. No devuelve la solicitud al análisis ni altera su avance.
 
-Diferir de la propuesta o aprobar un intento individual no conforme exige
-motivo. Se registran por separado la disparidad con la propuesta global y la
-excepción sobre el intento elegido. Una aprobación requiere evidencia y legajo
-completos incluso si es una excepción humana.
+Finalizar el análisis ofrece `Mandar a revisar firma` cuando falta una aprobación
+o `Mandar a transferir` cuando ya existe. Liquidada histórica se reconoce como un
+análisis ya entregado. La transferencia requiere ambos controles y mantiene sus
+guardas financieras. Una reserva o pago ya iniciado impide modificar la gestión
+de firma. Aprobar habilita la instancia de transferencia, sin ejecutar el pago.
+
+Diferir de la propuesta o aprobar un intento individual no conforme exige motivo.
+Se registran por separado la disparidad global y la excepción sobre el intento.
+Una aprobación requiere envío completo, evidencia y legajo completos incluso si
+es una excepción humana. La referencia de préstamo, DNI y condiciones financieras
+firmadas deben coincidir; esos controles no admiten excepción manual.
 
 Antes de aprobar se consulta MetaMap nuevamente, y otra vez después de compilar
 el legajo. La firma elegida debe conservar su evidencia y estado; la propuesta
@@ -59,11 +77,17 @@ fallido ajeno a la firma elegida no invalida la aprobación y queda en la eviden
 de la decisión. Un cambio de la firma o de la propuesta exige revisar una nueva
 evaluación. Las URLs temporales no se consideran cambios de evidencia.
 
-En la transacción se bloquean solicitud y titular y se comprueban los datos, el
-ciclo de verificación, el estado y los permisos. Decisión, adjunto final e
-historial de transición se guardan juntos. `requestId` permite reintentar la
-misma decisión sin duplicarla. Los endpoints genéricos no permiten saltarse el
-panel, tampoco como administrador, mientras el flujo está habilitado.
+En la transacción se bloquean solicitud y titular y se comprueban datos, ciclo,
+disponibilidad financiera y permisos. Decisión, adjunto final, avisos y avance
+correspondiente se guardan juntos. `requestId` permite reintentar sin duplicar.
+El ciclo es estable entre estados del análisis y pertenece al préstamo vinculado:
+un reemplazo nunca hereda la validez de la firma del préstamo anterior.
+
+Las firmas extra espontáneas no retiran una aprobación válida del mismo ciclo.
+Un pedido explícito de nueva firma sí la retira. Los avisos repetidos de un intento
+viejo no reabren ni completan ese pedido. Las notificaciones persistentes de BEEX
+avisan al vendedor cuando hay enlace o nueva firma solicitada, y a Legajos por
+cada envío completo nuevo. Leer un aviso no resuelve la gestión pendiente.
 
 ## Evidencia y auditoría
 
@@ -104,9 +128,11 @@ Todas las rutas usan la sesión autenticada existente y `Cache-Control: no-store
 
 | Método y ruta                                           | Resultado                                                       |
 | ------------------------------------------------------- | --------------------------------------------------------------- |
+| `GET /solicitudes/document-review/inbox` | Bandeja de Legajos; filtros `status`, `offset`, `limit` |
+| `POST /solicitudes/:id/document-review/request-signature` | Solicita nueva firma con `requestId` y `reason` obligatorios |
 | `GET /solicitudes/:id/document-review`                  | Evaluación vigente, historial y permiso para decidir            |
 | `POST /solicitudes/:id/document-review/evaluate`        | Consulta y conserva una evaluación nueva si cambió la evidencia |
-| `POST /solicitudes/:id/document-review/decisions`       | Decisión humana y transición atómica                            |
+| `POST /solicitudes/:id/document-review/decisions`       | Decisión humana y avance cuando el análisis terminó                            |
 | `GET /solicitudes/:id/document-review/:reviewId/legajo` | PDF de propuesta                                                |
 | Misma descarga con `?decisionId=<uuid>`                 | PDF de la decisión humana                                       |
 
@@ -135,6 +161,52 @@ los accesos: `DOCUMENT_REVIEW_SERVER_BASE_URL`, `DOCUMENT_REVIEW_SERVER_CLIENT_I
 `DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET`. Los ambientes VPS reciben estos valores
 del env cifrado Git-managed; no se guardan credenciales en esta documentación.
 
+La puesta en marcha de este circuito requiere habilitar esa configuración y
+asignar los usuarios revisores al nuevo owner `LEGAJOS_DIGITALES` desde la
+administración de usuarios. La migración crea el área y cambia el owner de
+`VerificarFirmaYDocumentacion`, pero no reasigna personas automáticamente.
+Tesorería conserva `Transferir`. Las guardas de firma para transferir son
+obligatorias aun si el módulo está deshabilitado: apagarlo no permite eludir la
+aprobación. Preparar la configuración y los revisores antes del despliegue.
+
+El camino habitual nuevo cierra el análisis desde `Confirmada` y elige en el
+servidor entre `VerificarFirmaYDocumentacion` y `Transferir`, según la aprobación
+vigente. `Liquidada` se conserva para solicitudes históricas; no se eliminan
+estados ni historiales existentes. Riesgo y administradores conservan el retorno
+habitual de `Confirmada` a `Revisar` con motivo, sin desasociar el préstamo.
+
+## Préstamo, monto y recuperación
+
+`Generar préstamo` permanece separado de finalizar el análisis y sólo opera
+desde `Confirmada`. Un préstamo activo de igual monto se reutiliza. Si el monto
+es distinto se bloquea; una anulación comprobada en Vimarx habilita editar el
+monto y regenerar desde Confirmada. El préstamo anulado se reemplaza incluso si
+el monto coincide. Los permisos y controles previos sobre otros campos se
+conservan. Las devoluciones no liberan el monto de un préstamo vigente.
+
+La generación reserva el intento antes de llamar a Vimarx. Una respuesta incierta
+o un fallo de vinculación conserva el intento y bloquea nuevas generaciones.
+El administrador puede usar `Recuperar préstamo generado` en la solicitud: el
+endpoint `POST /solicitudes/:id/loan-generation/recover` recibe `requestId`,
+`expectedUpdatedAt`, `newLoanId` y `reason`; comprueba el préstamo real y lo vincula
+sin generar otro. La reserva se consulta en `linked-loan-status` sólo como admin.
+
+La conciliación previa a finalizar el análisis verifica titular, monto, cuotas,
+línea, vencimiento y cancelaciones contra Vimarx, conserva evidencia y responsable,
+y sólo se completa si todos coinciden. La consulta pública de datos para firmar
+hace la misma comprobación de sólo lectura y no modifica la solicitud, de modo
+que la firma pueda continuar mientras se analiza una devolución.
+
+Los avisos se guardan por destinatario y evento, con deduplicación transaccional.
+La API de Beex ofrece `GET /api/notifications` con `offset`, `limit` y
+`unreadOnly`, `POST /api/notifications/:id/read` y `POST /api/notifications/read-all`.
+Cada usuario accede únicamente a sus avisos. La lectura no cierra la gestión de
+firma. El vendedor recibe el enlace al estar disponible y los pedidos de repetir
+la firma; Legajos recibe un aviso por cada envío completo nuevo. El correo al
+socio queda fuera de esta entrega.
+
+## Límites y ejecución
+
 El timeout por petición es `DOCUMENT_REVIEW_TIMEOUT_MS` (20 s por defecto). Los
 legajos tienen su propio límite `DOCUMENT_REVIEW_MAX_PDF_BYTES` (64 MiB), porque
 incluyen páginas reproducidas y originales embebidos. No cambia el límite de las
@@ -142,7 +214,8 @@ cargas manuales. Cada original descargado admite 32 MiB; los originales suman
 hasta 64 MiB y 150 páginas. Solo se descargan recursos HTTPS de hosts de MetaMap
 permitidos, sin seguir redirecciones.
 
-El worker consulta pendientes cada 15 s en lotes de cinco, con leases en la base,
+El worker consulta préstamos activos sin transferencia reservada cada 15 s en
+lotes de cinco, con leases en la base, independientemente del estado de análisis,
 y agenda cada solicitud aproximadamente cada minuto. Las consultas manuales
 comparten la ejecución en curso en el proceso. Las observaciones idénticas se
 reutilizan; una recuperación de error o cambio de estado genera otra observación.

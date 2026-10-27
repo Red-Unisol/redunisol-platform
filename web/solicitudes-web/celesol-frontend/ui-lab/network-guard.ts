@@ -1,9 +1,16 @@
-import { INSTALLMENTS, SAMPLE_REQUEST } from "./scenarios.ts";
+import { INSTALLMENTS, SAMPLE_REQUEST } from "./header-sample.ts";
+import { SCENARIOS } from "./scenarios.ts";
 import {
   HEADER_DOCUMENT_REVIEW_FIXTURE,
   HEADER_SAMPLE,
   HEADER_SESSION_FIXTURE,
 } from "./header-fixtures.ts";
+import {
+  productionFixture,
+  type ProductionFixtureOptions,
+} from "./production-fixtures.ts";
+
+type UiLabFixtureOptions = { production?: ProductionFixtureOptions };
 
 /** Fixture-only transport for the UI lab. No request ever reaches a real API. */
 export const UI_LAB_API_ORIGIN = "http://beex-ui-lab.local";
@@ -50,7 +57,9 @@ const revisionFixture = {
   },
 };
 
-export function createUiLabFetch(): typeof fetch {
+export function createUiLabFetch(
+  options: UiLabFixtureOptions = {},
+): typeof fetch {
   return async (input, init) => {
     const request = input instanceof Request ? input : null;
     const url = new URL(request?.url ?? String(input), UI_LAB_API_ORIGIN);
@@ -65,8 +74,16 @@ export function createUiLabFetch(): typeof fetch {
     )
       throw new UiLabNetworkBlockedError(method, url.pathname);
     const base = `/solicitudes/${UI_LAB_SOLICITUD_ID}`;
+    const production = options.production
+      ? productionFixture(url.pathname, options.production)
+      : { found: false as const };
     let body: unknown;
-    if (url.pathname === `${base}/revision-prestamo`) body = revisionFixture;
+    if (production.found) body = production.body;
+    else if (url.pathname === "/fixtures/scenarios") body = SCENARIOS;
+    else if (url.pathname === "/api/notifications")
+      body = { items: [], unreadCount: 0, total: 0, offset: 0, limit: 8 };
+    else if (url.pathname === `${base}/revision-prestamo`)
+      body = revisionFixture;
     else if (url.pathname === `${base}/cancelaciones`) body = [];
     else if (url.pathname === "/auth/me") body = HEADER_SESSION_FIXTURE;
     else if (url.pathname === `${base}/datos-rapidos/socio`)
@@ -93,9 +110,10 @@ export function createUiLabFetch(): typeof fetch {
 /** Install before importing any production component that may capture fetch. */
 export function installUiLabNetworkGuard(
   target: { fetch: typeof fetch } = globalThis,
+  options: UiLabFixtureOptions = {},
 ): () => void {
   const previous = target.fetch;
-  const fixtureFetch = createUiLabFetch();
+  const fixtureFetch = createUiLabFetch(options);
   target.fetch = fixtureFetch;
   return () => {
     if (target.fetch === fixtureFetch) target.fetch = previous;

@@ -1,5 +1,6 @@
-import { assertAdministrativeActor } from "../../infrastructure/services/AdministrativeCorrectionService";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
+import { assertLinkedLoanReady, type LinkedLoanReader } from "../services/LinkedLoanRules";
+import type { InitialLoanGenerationService } from "../../infrastructure/services/InitialLoanGenerationService";
 import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
@@ -54,6 +55,9 @@ type Dependencies = {
     "getVendedorLegacyId"
   >;
   today: () => string;
+  linkedLoanReader?: LinkedLoanReader;
+  initialGeneration?: Pick<InitialLoanGenerationService, "create">;
+  replaceCancelledLoan?: (input: CreatePrestamoLegacyInput, solicitud: SolicitudCore) => Promise<SolicitudCore>;
 };
 
 export class CreatePrestamoLegacyUseCase {
@@ -79,6 +83,9 @@ export class CreatePrestamoLegacyUseCase {
     "getVendedorLegacyId"
   >;
   private readonly today: () => string;
+  private readonly linkedLoanReader?: LinkedLoanReader;
+  private readonly initialGeneration?: Pick<InitialLoanGenerationService, "create">;
+  private readonly replaceCancelledLoan?: Dependencies["replaceCancelledLoan"];
 
   constructor(dependencies: Dependencies) {
     this.archivarEvaluacion = dependencies.archivarEvaluacion;
@@ -100,10 +107,25 @@ export class CreatePrestamoLegacyUseCase {
     this.repository = dependencies.repository;
     this.solicitudesLegacyGateway = dependencies.solicitudesLegacyGateway;
     this.today = dependencies.today;
+    this.linkedLoanReader = dependencies.linkedLoanReader;
+    this.initialGeneration = dependencies.initialGeneration;
+    this.replaceCancelledLoan = dependencies.replaceCancelledLoan;
   }
 
   async execute(input: CreatePrestamoLegacyInput): Promise<SolicitudCore> {
+    const current = await this.repository.findById(input.solicitudId);
+    if (!current) throw new SolicitudCoreNotFoundError();
+    this.assertCanGenerate(current, input);
+    if (current.legacyOid) {
+      if (!this.linkedLoanReader) throw new SolicitudLegacyOidAlreadyExistsError();
+      const loan = await this.linkedLoanReader(current);
+      if (loan.status === "cancelled" && this.replaceCancelledLoan)
+        return this.replaceCancelledLoan(input, current);
+      assertLinkedLoanReady(loan);
+      return current;
+    }
     const prepared = await this.prepare(input);
+    if (this.initialGeneration) return this.initialGeneration.create(prepared, input);
     const result = await this.gateway.crear(prepared.coreInput);
     return this.repository.update(input.solicitudId, { solicitud: {
       legacyOid: result.id, lineaPrestamoCodigoMutual: prepared.codigoMutual,
@@ -112,8 +134,15 @@ export class CreatePrestamoLegacyUseCase {
   }
 
   async prepareReplacement(input: CreatePrestamoLegacyInput) {
-    assertAdministrativeActor(input.currentUser);
     return this.prepare(input, true);
+  }
+
+  private assertCanGenerate(solicitud: SolicitudCore, input: CreatePrestamoLegacyInput) {
+    if (!input.currentUser.isSystemAdmin &&
+      (!solicitud.estadoActual.ownerId || solicitud.estadoActual.ownerId !== input.currentUser.workflowOwnerId))
+      throw new ForbiddenSolicitudAccessError();
+    if (solicitud.estadoActual.code !== "Confirmada")
+      throw new AdministrativeCorrectionError("El préstamo se genera o regenera desde Confirmada. Primero completá la revisión y confirmá la solicitud.");
   }
 
   private async prepare(input: CreatePrestamoLegacyInput, replacement = false) {
@@ -122,6 +151,7 @@ export class CreatePrestamoLegacyUseCase {
     if (!solicitud) {
       throw new SolicitudCoreNotFoundError();
     }
+    this.assertCanGenerate(solicitud, input);
 
     if (solicitud.legacyOid && !replacement) {
       throw new SolicitudLegacyOidAlreadyExistsError();
@@ -237,7 +267,7 @@ export class CreatePrestamoLegacyUseCase {
     const nroLote = await this.buildNroLoteCancelaciones(input.solicitudId,
       replacement || huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
     await this.archivarEvaluacion?.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "generacion"});
-    return { solicitud, codigoMutual: lineaPrestamo.codigoMutual,
+    return { solicitud: huboAjuste ? (await this.repository.findById(input.solicitudId)) ?? solicitud : solicitud, codigoMutual: lineaPrestamo.codigoMutual,
       coreInput: {
         cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
         integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],

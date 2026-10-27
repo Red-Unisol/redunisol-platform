@@ -4,7 +4,7 @@ import type {
   DocumentReviewResponse,
   ReviewAttempt,
 } from "../src/modules/solicitudes-core/services/document-review-api";
-import { SAMPLE_REQUEST } from "./scenarios.ts";
+import { SAMPLE_REQUEST } from "./header-sample.ts";
 
 /** Fictional identifiers only; never replace these with customer records. */
 export const HEADER_SAMPLE = {

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
+  Bell,
+  FileCheck2,
   Calculator,
   ClipboardList,
   FileChartColumn,
@@ -28,6 +30,8 @@ import {
 } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
 
 const TITLE_BY_PATH: Record<string, string> = {
+  "/notificaciones": "Notificaciones",
+  "/legajos/firmas": "Legajos Digitales",
   "/404": "Página no encontrada",
   "/dev/loader-preview": "Preview Loader",
   "/listados/creditos-por-vendedor": "Créditos por Vendedor",
@@ -61,6 +65,8 @@ const TITLE_BY_PATH: Record<string, string> = {
 };
 
 const TITLE_ICON_BY_PATH: Record<string, LucideIcon> = {
+  "/notificaciones": Bell,
+  "/legajos/firmas": FileCheck2,
   "/404": History,
   "/dev/loader-preview": ClipboardList,
   "/listados/creditos-por-vendedor": BarChart3,
@@ -100,6 +106,9 @@ export function AppLayout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const origen = searchParams.get("origen");
+  const compactHeader =
+    pathname.startsWith("/solicitudes/core/detalle/") ||
+    pathname.startsWith("/solicitudes/actual/detalle/");
 
   const title = useMemo(() => {
     if (
@@ -138,6 +147,8 @@ export function AppLayout() {
     return TITLE_ICON_BY_PATH[pathname];
   }, [pathname]);
   const isScrollableContentRoute =
+    pathname === "/notificaciones" ||
+    pathname === "/legajos/firmas" ||
     pathname === "/solicitudes/core/precarga/nueva" ||
     pathname === "/solicitudes/core/precarga" ||
     pathname.startsWith("/solicitudes/core/detalle/") ||
@@ -182,8 +193,11 @@ export function AppLayout() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main
+      className={`app-layout flex h-dvh min-h-0 flex-col bg-background text-foreground ${compactHeader ? "has-compact-header" : ""}`}
+    >
       <AppTopbar
+        compact={compactHeader}
         onToggleSidebar={() =>
           setIsSidebarOpen((currentState) => !currentState)
         }
@@ -192,14 +206,14 @@ export function AppLayout() {
         titleIcon={titleIcon}
       />
 
-      <div className="relative flex h-[calc(100vh-4rem)]">
+      <div className="relative flex min-h-0 flex-1">
         <AppSidebar
           isDesktop={isDesktop}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
         <section
-          className={`relative flex-1 p-2 md:p-1 ${
+          className={`relative min-w-0 flex-1 p-2 md:p-1 ${
             isScrollableContentRoute
               ? "overflow-y-auto overflow-x-hidden"
               : "overflow-hidden"

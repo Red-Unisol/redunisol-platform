@@ -315,6 +315,8 @@ export type AnalistaDashboardStatsV2Result = {
 export type UpdateSolicitudCoreGuard = {
   expectedEstadoActualId: string;
   enforceMontoAprobadoRiesgo: boolean;
+  expectedLegacyOid?: string | null;
+  cancelledLoanId?: string;
 };
 
 export type SolicitudesCoreRepository = {

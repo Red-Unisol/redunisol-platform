@@ -24,18 +24,22 @@ import {
 } from "../services/SolicitudFieldAccess";
 import { canEditSolicitud } from "../services/SolicitudPermissions";
 import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
+import { assertLinkedLoanAmountEditable, type LinkedLoanReader } from "../services/LinkedLoanRules";
+import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 
 type Dependencies = {
   fieldAccessRulesRepository: SolicitudFieldAccessRulesRepository;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
   repository: SolicitudesCoreRepository;
   simularCuotaSolicitud: Pick<SimularCuotaSolicitud, "execute">;
+  linkedLoanReader?: LinkedLoanReader;
 };
 
 export class UpdateSolicitudUseCase {
   private readonly fieldAccessRulesRepository: SolicitudFieldAccessRulesRepository;
   private readonly lineasPrestamoCatalog: LineasPrestamoCatalog;
   private readonly repository: SolicitudesCoreRepository;
+  private readonly linkedLoanReader?: LinkedLoanReader;
   private readonly simularCuotaSolicitud: Pick<
     SimularCuotaSolicitud,
     "execute"
@@ -45,6 +49,7 @@ export class UpdateSolicitudUseCase {
     this.fieldAccessRulesRepository = dependencies.fieldAccessRulesRepository;
     this.lineasPrestamoCatalog = dependencies.lineasPrestamoCatalog;
     this.repository = dependencies.repository;
+    this.linkedLoanReader = dependencies.linkedLoanReader;
     this.simularCuotaSolicitud = dependencies.simularCuotaSolicitud;
   }
 
@@ -205,6 +210,21 @@ export class UpdateSolicitudUseCase {
       }));
     }
 
+    // Includes implicit changes caused by a new line's maximum. No permission,
+    // including administrator, can bypass a live loan's frozen amount.
+    const changesAmount = patch.solicitud?.montoAFinanciar !== undefined &&
+      patch.solicitud.montoAFinanciar !== solicitud.montoAFinanciar;
+    let cancelledLoanId: string | undefined;
+    if (changesAmount && solicitud.legacyOid) {
+      if (!this.linkedLoanReader)
+        throw new AdministrativeCorrectionError("No se pudo verificar la anulación del préstamo en Vimarx. El monto permanece bloqueado.");
+      const loan = await this.linkedLoanReader(solicitud);
+      assertLinkedLoanAmountEditable(loan);
+      if (loan.status !== "cancelled" || loan.currentLoanId !== solicitud.legacyOid)
+        throw new AdministrativeCorrectionError("La verificación del préstamo cambió. Actualizá antes de editar el monto.");
+      cancelledLoanId = solicitud.legacyOid;
+    }
+
     await this.recalcularCuotaResultante(patch, solicitud);
 
     // La simulacion queda fuera del bloqueo. El repositorio vuelve a validar
@@ -212,6 +232,7 @@ export class UpdateSolicitudUseCase {
     return this.repository.update(input.id, patch, {
       expectedEstadoActualId: solicitud.estadoActual.id,
       enforceMontoAprobadoRiesgo,
+      ...(changesAmount ? { expectedLegacyOid: solicitud.legacyOid, cancelledLoanId } : {}),
     });
   }
 
