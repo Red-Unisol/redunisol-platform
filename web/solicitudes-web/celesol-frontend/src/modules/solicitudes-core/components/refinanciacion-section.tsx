@@ -84,7 +84,10 @@ export function RefinanciacionSection({
     (prestamo) =>
       prestamo.legacyId &&
       clasificarEstadoPrestamo(prestamo) === "activos" &&
-      (prestamo.saldo ?? 0) > 0,
+      // Vimarx da el Saldo del prestamo en negativo cuando hay deuda
+      // (-332462,42 con SaldoPrestamo 332462,42): solo se descarta el cero.
+      // Sin dato se muestra igual; las cuotas dicen si queda algo pendiente.
+      prestamo.saldo !== 0,
   );
   const cantidadCuotas = Object.values(seleccion).reduce(
     (total, nros) => total + nros.length,
@@ -292,7 +295,10 @@ function PrestamoRefinanciacion({
           Préstamo {prestamo.nroCuenta || PLACEHOLDER} ·{" "}
           {prestamo.lineaPrestamoDescripcion || PLACEHOLDER}
           <span className="font-normal text-foreground-secondary">
-            · Saldo {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
+            · Saldo{" "}
+            {formatNullableAmount(
+              prestamo.saldo === null ? null : Math.abs(prestamo.saldo),
+            ) || PLACEHOLDER}
             {isLoading ? "" : ` · ${pendientes.length} cuotas pendientes`}
           </span>
         </button>
