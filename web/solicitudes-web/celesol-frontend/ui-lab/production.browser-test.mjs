@@ -223,6 +223,25 @@ async function checkScroll(page) {
 
 async function exercise(page, item, result) {
   await checkHeader(page, false);
+  // The compact header must retain the account number from dev. Loan controls
+  // moved into the scrolling body in main and must not be duplicated above it.
+  const linkedLoanText = /Préstamo 999001 vigente por/;
+  assert.equal(await page.getByText(linkedLoanText).count(), 1);
+  assert.equal(
+    await page
+      .locator("#solicitud-encabezado-completo")
+      .getByText(linkedLoanText)
+      .count(),
+    0,
+  );
+  if (item.role === "vendedor") {
+    assert.equal(
+      await page.getByText("DEMO-100241", { exact: true }).count(),
+      0,
+    );
+  } else {
+    await page.getByText("DEMO-100241", { exact: true }).waitFor();
+  }
   result.compact = await measure(page);
   assert.equal(
     result.compact.topbarHeight,
@@ -277,7 +296,9 @@ async function exercise(page, item, result) {
     );
   } else {
     await page.getByRole("button", { name: "CredixSA", exact: true }).click();
-    await page.getByText("Sin alertas.", { exact: true }).waitFor();
+    await page
+      .getByRole("heading", { name: "Datos filiatorios", exact: true })
+      .waitFor();
     await toggleTwice(page);
     await capture(page, `${item.id}-credixsa`, result);
     await page.getByRole("button", { name: "Evaluación", exact: true }).click();

@@ -17,6 +17,7 @@ import type {
 } from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import {
   ForbiddenSolicitudAccessError,
+  ConvenioSocioConflictError,
   SolicitudCancelacionesFueraDeRangoError,
   SolicitudCoreNotFoundError,
   SolicitudLegacyOidAlreadyExistsError,
@@ -862,4 +863,207 @@ it("blocks an existing different amount and delegates proven cancellation to con
 it("generation and regeneration require Confirmada, including for administrators", async () => {
   const uc = buildLinkedUseCase({ repository: solicitudesRepository({ findById: async () => solicitud({ estadoActual: { code: "RevisionRiesgo", name: "Revisión", id: "risk", ownerId: "owner-2" } }) }) });
   await assert.rejects(uc.execute({ ...linkedInput, currentUser: { ...linkedInput.currentUser, isSystemAdmin: true } }), /desde Confirmada/);
+});
+
+describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
+  const VIMARX = {
+    beneficio: "733767/0",
+    caja40: 100,
+    convAux: null,
+    nroSocio: "90999",
+    observaciones: null,
+  };
+
+  function buildUseCase(calls: string[], ediciones: unknown[], editarError?: Error,
+    overrides: Partial<ConstructorParameters<typeof CreatePrestamoLegacyUseCase>[0]> = {}) {
+    return new CreatePrestamoLegacyUseCase({
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+      simularCuotaSolicitud: { execute: async () => null },
+      linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+      lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(),
+      authRepository: authRepository(),
+      cancelacionesRepository: cancelacionesRepository(),
+      convenioSocioGateway: { getConvenioSocioByLegacyId: async () => VIMARX },
+      editarSocioGateway: {
+        editar: async (socioLegacyId, campos) => {
+          calls.push("editar");
+          ediciones.push({ socioLegacyId, campos });
+          if (editarError) throw editarError;
+        },
+      },
+      gateway: fakeGateway({
+        crear: async () => {
+          calls.push("crear");
+          return { id: "555000" };
+        },
+      }),
+      repository: solicitudesRepository(),
+      sociosRepository: socioRepository(),
+      solicitudesLegacyGateway: solicitudesLegacyGateway(),
+      today: () => TODAY,
+      ...overrides,
+    });
+  }
+
+  const currentUser = { id: "user-1", workflowOwnerId: "owner-2" };
+
+  it("writes only the changed fields to the socio before creating the prestamo", async () => {
+    const calls: string[] = [];
+    const ediciones: unknown[] = [];
+
+    await buildUseCase(calls, ediciones).execute({
+      convenio: {
+        caja40: { original: 100, valor: 110 },
+        convAux: { original: null, valor: 80 },
+        observaciones: { original: null, valor: "  Depositar en Nación " },
+      },
+      currentUser,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(calls, ["editar", "crear"]);
+    assert.deepEqual(ediciones, [
+      {
+        campos: {
+          Observaciones: "Depositar en Nación",
+          "SocAux.Caja40": "110",
+          "SocAux.ConvAux": "80",
+        },
+        socioLegacyId: "143471",
+      },
+    ]);
+  });
+
+  it("does not call EditarObjeto when nothing changed", async () => {
+    const calls: string[] = [];
+
+    await buildUseCase(calls, []).execute({
+      convenio: {},
+      currentUser,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(calls, ["crear"]);
+  });
+
+  it("clears a text field with an empty string", async () => {
+    const ediciones: unknown[] = [];
+
+    await buildUseCase([], ediciones).execute({
+      convenio: { beneficio: { original: "733767/0", valor: null } },
+      currentUser,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(ediciones, [
+      { campos: { "SocAux.Beneficio": "" }, socioLegacyId: "143471" },
+    ]);
+  });
+
+  // Vimarx guarda 0 si se manda vacio en un numero de SocAux.
+  it("rejects clearing a numeric field that has a value, without creating the prestamo", async () => {
+    const calls: string[] = [];
+
+    await assert.rejects(
+      buildUseCase(calls, []).execute({
+        convenio: { caja40: { original: 100, valor: null } },
+        currentUser,
+        solicitudId: "sol-1",
+      }),
+      /Caja 40 no se puede borrar/,
+    );
+    assert.deepEqual(calls, []);
+  });
+
+  it("does not create the prestamo when Vimarx rejects the convenio", async () => {
+    const calls: string[] = [];
+
+    await assert.rejects(
+      buildUseCase(calls, [], new Error("rechazado")).execute({
+        convenio: { caja40: { original: 100, valor: 120 } },
+        currentUser,
+        solicitudId: "sol-1",
+      }),
+      /rechazado/,
+    );
+    assert.deepEqual(calls, ["editar"]);
+  });
+
+  it("preserves concurrent changes to fields omitted by the operator", async () => {
+    const ediciones: unknown[] = [];
+    await buildUseCase([], ediciones, undefined, {
+      convenioSocioGateway: { getConvenioSocioByLegacyId: async () => ({ ...VIMARX,
+        beneficio: "otro beneficio", observaciones: "Texto nuevo de Vimarx", convAux: 99 }) },
+    }).execute({ convenio: { caja40: { original: 100, valor: 110 } }, currentUser, solicitudId: "sol-1" });
+    assert.deepEqual(ediciones, [{ socioLegacyId: "143471", campos: { "SocAux.Caja40": "110" } }]);
+  });
+
+  it("rejects conflicts on edited text and numbers with 409 before any edit or loan creation", async () => {
+    for (const convenio of [
+      { caja40: { original: 90, valor: 110 } },
+      { beneficio: { original: "anterior", valor: "nuevo" } },
+      { observaciones: { original: "texto anterior", valor: "texto nuevo" } },
+      { convAux: { original: 70, valor: 80 } },
+    ]) {
+      const calls: string[] = [];
+      const ediciones: unknown[] = [];
+      await assert.rejects(
+        buildUseCase(calls, ediciones).execute({ convenio, currentUser, solicitudId: "sol-1" }),
+        (error: unknown) => error instanceof ConvenioSocioConflictError && error.statusCode === 409 && /Cerrá y volvé a abrir/.test(error.message),
+      );
+      assert.deepEqual(calls, []);
+      assert.deepEqual(ediciones, []);
+    }
+  });
+
+  it("does not partially write valid edits when another edited field conflicts", async () => {
+    const ediciones: unknown[] = [];
+    await assert.rejects(buildUseCase([], ediciones).execute({
+      convenio: { beneficio: { original: "733767/0", valor: "nuevo" }, caja40: { original: 90, valor: 110 } },
+      currentUser, solicitudId: "sol-1",
+    }), ConvenioSocioConflictError);
+    assert.deepEqual(ediciones, []);
+  });
+
+  it("allows retrying an edit already saved in Vimarx without rewriting it", async () => {
+    const calls: string[] = [];
+    await buildUseCase(calls, []).execute({ convenio: { caja40: { original: 90, valor: 100 } }, currentUser, solicitudId: "sol-1" });
+    assert.deepEqual(calls, ["crear"]);
+  });
+
+  it("ignores reverted fields even when their current Vimarx value changed", async () => {
+    const calls: string[] = [];
+    await buildUseCase(calls, []).execute({ convenio: {
+      caja40: { original: 90, valor: 90 }, observaciones: { original: "viejo", valor: "viejo" },
+    }, currentUser, solicitudId: "sol-1" });
+    assert.deepEqual(calls, ["crear"]);
+  });
+
+  it("skips the convenio read entirely when no fields were edited", async () => {
+    const uc = buildUseCase([], [], undefined, { convenioSocioGateway: {
+      getConvenioSocioByLegacyId: async () => { throw new Error("must not read"); },
+    } });
+    for (const convenio of [undefined, {}]) await uc.execute({ convenio, currentUser, solicitudId: "sol-1" });
+  });
+
+  it("does not write the convenio when cancellation validation blocks generation", async () => {
+    const calls: string[] = [];
+    await assert.rejects(buildUseCase(calls, [], undefined, {
+      cancelacionesRepository: cancelacionesRepository([cancelacion({ monto: 21474836.48 })]),
+    }).execute({ convenio: { caja40: { original: 100, valor: 110 } }, currentUser, solicitudId: "sol-1" }), SolicitudCancelacionesFueraDeRangoError);
+    assert.deepEqual(calls, []);
+  });
+
+  it("applies the same conflict check to cancelled-loan replacement preflight", async () => {
+    const calls: string[] = [];
+    await assert.rejects(buildUseCase(calls, [], undefined, {
+      repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: "443417" }) }),
+    }).prepareReplacement({ convenio: { caja40: { original: 90, valor: 110 } }, currentUser, solicitudId: "sol-1" }), ConvenioSocioConflictError);
+    assert.deepEqual(calls, []);
+  });
+
+  it("rejects edits instead of silently ignoring them when reusing an active loan", async () => {
+    const uc = buildLinkedUseCase({ linkedLoanReader: async () => linkedStatus });
+    await assert.rejects(uc.execute({ ...linkedInput, convenio: { caja40: { original: 100, valor: 110 } } }), /ya está generado/);
+  });
 });

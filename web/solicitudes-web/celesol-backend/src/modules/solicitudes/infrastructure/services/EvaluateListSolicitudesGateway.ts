@@ -482,8 +482,8 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   }
 
   // Datos del convenio del socio (SocAux: Mudon = Beneficio, AMEJUCA =
-  // ConvAux, Caja 40) y sus observaciones, para verlos al generar el
-  // prestamo. Solo lectura: la edicion de SocAux todavia no tiene llamada.
+  // ConvAux, Caja 40) y sus observaciones, para el modal de Generar prestamo.
+  // Se editan con EditarSocioMutualGateway (EditarObjeto).
   // socioLegacyId es el ID de F.Module.SocioMutual (lo que Sol Web guarda como
   // nroSocioLegacy), no el NroSocio: el socio 1707 tiene ID 143254.
   async getConvenioSocioByLegacyId(socioLegacyId: string): Promise<{

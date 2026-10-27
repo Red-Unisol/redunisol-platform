@@ -103,6 +103,7 @@ import { useSolicitudCoreAdjuntosQuery } from "@/modules/solicitudes-core/hooks/
 import { CredixsaInformeSection } from "@/modules/solicitudes-core/components/credixsa-informe-section";
 import { GenerarPrestamoDialog } from "@/modules/solicitudes-core/components/generar-prestamo-dialog";
 import { PrestamoDelSocioDialog } from "@/modules/solicitudes-core/components/prestamo-del-socio-dialog";
+import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
@@ -116,6 +117,7 @@ import { useLineasPrestamoQuery } from "@/modules/solicitudes-core/hooks/use-lin
 import { useSociosCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-socios-cancelaciones-query";
 import { useSolicitudCoreTransitionsQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-transitions-query";
 import {
+  type ConvenioSocioRequest,
   uploadSolicitudCoreAdjunto,
   uploadSolicitudCoreAdjuntosLote,
 } from "@/modules/solicitudes-core/services/solicitudes-core-api";
@@ -156,6 +158,7 @@ import { canManageSolicitudAssignment } from "@/modules/solicitudes-core/utils/s
 import { calculateAge } from "@/modules/solicitudes-editor/utils/calculate-age";
 import { buildSocioPrefillFromTitular } from "@/modules/solicitudes-core/utils/build-socio-prefill-from-titular";
 import { getSolicitudCoreDetailOriginPath } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
+import { LocalidadSelect } from "@/modules/socios/components/localidad-select";
 import { SocioFormDialog } from "@/modules/socios/components/socio-form-dialog";
 import { createSocio } from "@/modules/socios/services/socios-api";
 import { useCreatePrestamoLegacyMutation } from "@/modules/solicitudes-core/hooks/use-create-prestamo-legacy-mutation";
@@ -1123,6 +1126,49 @@ function EditableSelectInput({
   );
 }
 
+// Localidad: siempre del buscador de localidades de Vimarx, el mismo del alta
+// de la solicitud y del alta de socio. No se puede escribir texto libre. Se
+// guarda el nombre, como en el alta: el finalizar y la revision documental
+// leen la localidad de la solicitud como texto.
+function EditableLocalidadInput({
+  appearanceStyle,
+  disabled = false,
+  highlightReadOnly = false,
+  isEditing,
+  label,
+  onChange,
+  readOnlyValue,
+  value,
+}: {
+  appearanceStyle?: CSSProperties;
+  disabled?: boolean;
+  highlightReadOnly?: boolean;
+  isEditing: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  readOnlyValue: ReactNode;
+  value: string;
+}) {
+  return (
+    <EditableField
+      appearanceStyle={appearanceStyle}
+      editor={
+        <LocalidadSelect
+          disabled={disabled}
+          onClear={() => onChange("")}
+          onPick={(localidad) => onChange(localidad.nombre)}
+          value=""
+          valueLabel={value}
+        />
+      }
+      highlightReadOnly={highlightReadOnly}
+      isEditing={isEditing}
+      label={label}
+      value={readOnlyValue}
+    />
+  );
+}
+
 function EditableDateInput({
   appearanceStyle,
   disabled = false,
@@ -1846,7 +1892,7 @@ function TitularFields({
         readOnlyValue={formatText(titular.nroPuerta)}
         value={values.nroPuerta}
       />
-      <EditableTextInput
+      <EditableLocalidadInput
         {...getReadonlyProps("titular.localidad")}
         disabled={!isFieldEditableByKey("titular.localidad")}
         isEditing={isEditing}
@@ -2129,7 +2175,7 @@ function DatosLaboralesFields({
         readOnlyValue={formatText(datosLaborales.domicilioLaboralPisoDepto)}
         value={values.domicilioLaboralPisoDepto}
       />
-      <EditableTextInput
+      <EditableLocalidadInput
         {...getReadonlyProps("datosLaborales.domicilioLaboralLocalidad")}
         disabled={
           !isFieldEditableByKey("datosLaborales.domicilioLaboralLocalidad")
@@ -3443,6 +3489,16 @@ export function SolicitudesActualDetallePage() {
       );
     },
   );
+  // legacyOid es el ID interno del prestamo en Vimarx; operativamente se usa
+  // su NroCuenta, que se consulta en vivo. Vendedores no tienen acceso.
+  const canViewPrestamoGenerado =
+    Boolean(currentUser) && canViewPrestamosDelSocio(currentUser);
+  const prestamoGeneradoQuery = usePrestamoDelSocioQuery(
+    solicitudId,
+    canViewPrestamoGenerado ? (solicitud?.legacyOid ?? null) : null,
+  );
+  const nroCuentaPrestamo =
+    prestamoGeneradoQuery.data?.prestamo.nroCuenta ?? null;
   if (!solicitudId) {
     return (
       <ErrorState
@@ -3985,12 +4041,12 @@ export function SolicitudesActualDetallePage() {
     });
   }
 
-  async function handleCreatePrestamoLegacy() {
+  async function handleCreatePrestamoLegacy(convenio?: ConvenioSocioRequest) {
     toast.dismiss(CREATE_PRESTAMO_LEGACY_ERROR_TOAST_ID);
     toast.dismiss(CREATE_PRESTAMO_LEGACY_SUCCESS_TOAST_ID);
 
     try {
-      await createPrestamoLegacyMutation.mutateAsync();
+      await createPrestamoLegacyMutation.mutateAsync(convenio);
       setIsGenerarPrestamoModalOpen(false);
       toast.success("Préstamo creado en el legado correctamente.", {
         duration: 3500,
@@ -4004,7 +4060,11 @@ export function SolicitudesActualDetallePage() {
           : "No se pudo crear el préstamo en el legado.";
 
       toast.error(message, {
-        duration: 3500,
+        duration:
+          error instanceof ApiError &&
+          error.code === "ConvenioSocioConflictError"
+            ? Infinity
+            : 3500,
         icon: <CircleAlert className="size-5" />,
         id: CREATE_PRESTAMO_LEGACY_ERROR_TOAST_ID,
       });
@@ -4338,21 +4398,29 @@ export function SolicitudesActualDetallePage() {
                 </span>
                 <IdChip value={resolvedSolicitud.id} />
               </div>
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <span className="text-xs font-medium text-foreground-muted">
-                  Préstamo
-                </span>
-                {resolvedSolicitud.legacyOid ? (
-                  <IdChip
-                    value={resolvedSolicitud.legacyOid}
-                    variant="accent"
-                  />
-                ) : (
-                  <Badge icon={<Clock className="size-3" />} variant="neutral">
-                    Sin generar
-                  </Badge>
-                )}
-              </div>
+              {canViewPrestamoGenerado ? (
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <span className="text-xs font-medium text-foreground-muted">
+                    Préstamo
+                  </span>
+                  {!resolvedSolicitud.legacyOid ? (
+                    <Badge
+                      icon={<Clock className="size-3" />}
+                      variant="neutral"
+                    >
+                      Sin generar
+                    </Badge>
+                  ) : nroCuentaPrestamo ? (
+                    <IdChip value={nroCuentaPrestamo} variant="accent" />
+                  ) : (
+                    <Badge variant="neutral">
+                      {prestamoGeneradoQuery.isLoading
+                        ? "Consultando..."
+                        : "No disponible"}
+                    </Badge>
+                  )}
+                </div>
+              ) : null}
             </div>
             <Badge
               className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
@@ -4899,7 +4967,7 @@ export function SolicitudesActualDetallePage() {
         isPending={createPrestamoLegacyMutation.isPending}
         lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}
         montoAFinanciar={resolvedSolicitud.montoAFinanciar}
-        onConfirm={() => void handleCreatePrestamoLegacy()}
+        onConfirm={(convenio) => void handleCreatePrestamoLegacy(convenio)}
         onOpenChange={setIsGenerarPrestamoModalOpen}
         open={isGenerarPrestamoModalOpen}
         solicitudId={solicitudId}

@@ -6,7 +6,35 @@ import {
   listSolicitudesQuerySchema,
   createSolicitudBodySchema,
   patchSolicitudBodySchema,
+  createPrestamoLegacyBodySchema,
 } from "./SolicitudesCoreRequest.schema";
+
+describe("createPrestamoLegacyBodySchema convenio patch", () => {
+  it("accepts a single edit with its original value and preserves omitted fields", () => {
+    assert.deepEqual(createPrestamoLegacyBodySchema.parse({ convenio: { caja40: { original: 100, valor: 110 } } }), {
+      convenio: { caja40: { original: 100, valor: 110 } },
+    });
+    assert.deepEqual(createPrestamoLegacyBodySchema.parse({}), {});
+    assert.deepEqual(createPrestamoLegacyBodySchema.parse({ convenio: {} }), { convenio: {} });
+  });
+
+  it("requires the original value and rejects the old full-snapshot format", () => {
+    for (const convenio of [
+      { caja40: { valor: 110 } }, { caja40: { original: 100 } },
+      { beneficio: "733767/0", caja40: 100, convAux: null, observaciones: null },
+      { campoDesconocido: { original: null, valor: "x" } },
+      { caja40: { original: 100, valor: 110, extra: true } },
+    ]) assert.equal(createPrestamoLegacyBodySchema.safeParse({ convenio }).success, false);
+  });
+
+  it("normalizes text and preserves null and zero without accepting invalid numbers", () => {
+    assert.deepEqual(createPrestamoLegacyBodySchema.parse({ convenio: {
+      beneficio: { original: " viejo ", valor: "  " }, convAux: { original: null, valor: 0 },
+    } }), { convenio: { beneficio: { original: "viejo", valor: null }, convAux: { original: null, valor: 0 } } });
+    for (const valor of [-1, 1.5, 2147483648, "110"])
+      assert.equal(createPrestamoLegacyBodySchema.safeParse({ convenio: { caja40: { original: 100, valor } } }).success, false);
+  });
+});
 
 function isoDateYearsAgo(years: number): string {
   const date = new Date();

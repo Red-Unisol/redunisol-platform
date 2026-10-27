@@ -27,6 +27,7 @@ it("serves explicit real-page read fixtures with role controls while rejecting w
     `${route}/history`,
     `${route}/lineas-prestamo`,
     `${route}/linked-loan-status`,
+    `${route}/prestamos-socio/${HEADER_SAMPLE.loanId}`,
     `${route}/admin-loan-replacements`,
     `${route}/admin-state-correction`,
     `${route}/pago-externo`,
@@ -43,6 +44,14 @@ it("serves explicit real-page read fixtures with role controls while rejecting w
   }
   const saved = await get(
     `/api/riesgo/calculadora/core/${UI_LAB_SOLICITUD_ID}/evaluacion`,
+  );
+  const generatedLoan = await get(
+    `${route}/prestamos-socio/${HEADER_SAMPLE.loanId}`,
+  );
+  assert.equal(generatedLoan.prestamo.nroCuenta, "DEMO-100241");
+  await assert.rejects(
+    () => get(`${route}/prestamos-socio/unknown-loan`),
+    UiLabNetworkBlockedError,
   );
   assert.ok(
     Object.values(saved.evaluacion.snapshot.sheets).some(

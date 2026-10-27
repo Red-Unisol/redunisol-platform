@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test src/shared/services/http/session-fetch.test.ts",
+    "test": "node --experimental-strip-types --test src/shared/services/http/session-fetch.test.ts src/modules/solicitudes-core/utils/convenio-edicion.test.ts",
     "preview": "vite preview",
     "format": "prettier --write .",
     "prepare": "husky",

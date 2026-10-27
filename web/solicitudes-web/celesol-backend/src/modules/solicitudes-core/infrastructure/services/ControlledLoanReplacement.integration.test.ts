@@ -10,10 +10,28 @@ import { SolicitudesCorePrismaDatasource } from "../datasources/SolicitudesCoreP
 import { SolicitudCancelacionesPrismaDatasource } from "../../cancelaciones/infrastructure/datasources/SolicitudCancelacionesPrismaDatasource";
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
+import { ConvenioSocioConflictError } from "../../domain/solicitudes-core-errors";
 
 const enabled = Boolean(process.env.BEEX_TEST_DATABASE_URL);
 const db = new PrismaClient({ datasourceUrl: process.env.BEEX_TEST_DATABASE_URL });
 after(() => db.$disconnect());
+
+it("forwards convenio edits during regeneration and stops before reservation when their original values conflict", { skip: !enabled }, async () => {
+  const f = await fixture();
+  const convenio = { caja40: { original: 100, valor: 110 } };
+  try {
+    const service = new ControlledLoanReplacementService({ ...f.deps, prepare: {
+      prepareReplacement: async input => {
+        assert.deepEqual(input.convenio, convenio);
+        throw new ConvenioSocioConflictError(["Caja 40"]);
+      },
+    } });
+    await assert.rejects(service.replace(f.s.id, f.actor, { ...f.input, convenio }), ConvenioSocioConflictError);
+    assert.equal(f.calls(), 0);
+    assert.equal(await db.solicitudPrestamoReplacement.count({ where: { solicitudId: f.s.id } }), 0);
+    assert.equal((await administrativeSource(db, f.s.id)).legacyOid, "443417");
+  } finally { await f.clean(); }
+});
 async function fixture() {
   const url = new URL(process.env.BEEX_TEST_DATABASE_URL!);
   assert(["127.0.0.1", "localhost"].includes(url.hostname) && url.pathname.endsWith("_test"));

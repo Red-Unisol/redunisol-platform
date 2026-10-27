@@ -176,6 +176,25 @@ export class PrestamoLegacyUnavailableError extends SolicitudesError {
   }
 }
 
+// Vimarx rechazo la edicion de los datos del convenio del socio (SocAux u
+// Observaciones) que se hace antes de generar el prestamo.
+export class ConvenioSocioLegacyRechazadoError extends SolicitudesError {
+  constructor(message: string) {
+    super(`No se pudieron guardar los datos del convenio en Vimarx: ${message}`, 422);
+    this.name = "ConvenioSocioLegacyRechazadoError";
+  }
+}
+
+export class ConvenioSocioConflictError extends SolicitudesError {
+  constructor(campos: string[]) {
+    super(
+      `Los datos del convenio cambiaron en Vimarx: ${campos.join(", ")}. Cerrá y volvé a abrir Generar préstamo para revisar los valores actuales.`,
+      409,
+    );
+    this.name = "ConvenioSocioConflictError";
+  }
+}
+
 export class SolicitudLegacyOidAlreadyExistsError extends SolicitudesError {
   constructor() {
     super(

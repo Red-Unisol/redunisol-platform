@@ -1,13 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { createPrestamoLegacy } from "@/modules/solicitudes-core/services/solicitudes-core-api";
+import {
+  createPrestamoLegacy,
+  type ConvenioSocioRequest,
+} from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 
 export function useCreatePrestamoLegacyMutation(solicitudId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => createPrestamoLegacy(solicitudId),
+    mutationFn: (convenio?: ConvenioSocioRequest) =>
+      createPrestamoLegacy(solicitudId, convenio),
     onSettled: async (updatedSolicitud) => {
       if (updatedSolicitud)
         queryClient.setQueryData(

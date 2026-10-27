@@ -347,6 +347,21 @@ export function productionFixture(
       amountEditable: false,
       recovery: null,
     };
+  else if (pathname === `${base}/prestamos-socio/${HEADER_SAMPLE.loanId}`)
+    body = {
+      prestamo: {
+        legacyId: HEADER_SAMPLE.loanId,
+        nroCuenta: "DEMO-100241",
+        cuotas: SAMPLE_REQUEST.cuotas,
+        asiento: null,
+        cobrador: "Convenio de ejemplo",
+        destino: "Ejemplo",
+        lineaPrestamoDescripcion: HEADER_SAMPLE.convenio,
+        ordenCompra: null,
+        tasaInicial: null,
+      },
+      cuotas: [],
+    };
   else if (pathname === `${base}/admin-loan-replacements`)
     body = {
       canAdmin: false,
