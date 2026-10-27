@@ -11,6 +11,17 @@ envíos completos, fecha del último y aprobación. La primera tilde requiere un
 envío terminado (`completedAt` válido); abrir o iniciar un intento no alcanza.
 La segunda requiere una aprobación humana vigente. La bandeja de Legajos incluye
 préstamos activos aún no transferidos, también los que esperan firma o análisis.
+La bandeja excluye estados terminales, solicitudes archivadas y cualquier
+desembolso reservado o pago externo registrado en BEEX. Antes de filtrar por
+firma y paginar, consulta en lotes Vimarx para omitir préstamos anulados o
+inactivos y solicitudes históricas marcadas como `Pagada`. Los préstamos creados
+directamente se consultan por su ID; los vínculos históricos se resuelven desde
+su solicitud original, sin confundir ambos espacios de IDs. Un saldo, una fila
+contable de desembolso o el estado `Normal` no se interpretan como prueba de pago.
+Si Vimarx falla o no permite verificar un préstamo, la bandeja devuelve un error
+de consulta en lugar de mostrarlo como pendiente o devolver una lista vacía.
+Estas lecturas no cambian vínculos, estados ni historiales. El préstamo anulado
+permanece en el detalle para su trazabilidad y eventual reemplazo controlado.
 
 ## Reglas de la propuesta
 

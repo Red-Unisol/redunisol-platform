@@ -21,6 +21,7 @@ import {
 } from "./domain";
 import type { EvidenceGateway } from "./MetaMapGateway";
 import type { HumanReport, LegajoBuilder } from "./LegajoPdf";
+import type { SignatureInboxLoanState } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 import {
   canManageSignature, completedSignatureAttempts, eligibleSignatureCandidates, getSignatureApproval, getSignatureApprovals,
   isAnalysisReady, isLegajosUser, reviewSource,
@@ -63,6 +64,7 @@ type Dependencies = {
   now?: () => Date;
   onSignatureEvent?: (tx: Prisma.TransactionClient, event: SignatureEvent) => Promise<void>;
   financialPreflight?: (id: string, user: AuthUser) => Promise<SignatureFinancialProof>;
+  inboxLoanStates?: (rows: SignatureSourceRow[]) => Promise<ReadonlyMap<string, SignatureInboxLoanState>>;
 };
 const sourceInclude = signatureSourceInclude;
 type SourceRow = SignatureSourceRow;
@@ -187,11 +189,34 @@ export class DocumentReviewService {
   }
   async inbox(user: AuthUser, status?: SignatureStatus, offset = 0, limit = 50) {
     if (!isLegajosUser(user)) throw new DocumentReviewError("Solo Legajos Digitales puede acceder a esta bandeja.", 403);
-    const rows = await this.deps.db.solicitud.findMany({
-      where: { legacyOid: { not: null }, archivedAt: null, estadoActual: { isTerminal: false } },
+    const candidates = await this.deps.db.solicitud.findMany({
+      where: {
+        legacyOid: { not: null }, archivedAt: null, estadoActual: { isTerminal: false },
+        desembolso: null, pagoExterno: null,
+      },
       include: { ...sourceInclude, vendedor: true, creator: true },
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     });
+    const open = candidates.filter(canManageSignature);
+    let rows = open;
+    if (open.length) {
+      try {
+        if (!this.deps.inboxLoanStates) throw new Error("Loan reader not configured");
+        const states = await this.deps.inboxLoanStates(open);
+        rows = open.filter(row => {
+          const state = states.get(row.id), loan = state?.lifecycle;
+          if (typeof state?.transferred !== "boolean")
+            throw new Error("Loan status could not be verified");
+          if (state.transferred) return false;
+          if (!loan?.id || !Number.isInteger(loan.estado))
+            throw new Error("Loan status could not be verified");
+          return loan.estado === 0 &&
+            !/anulad[oa]/i.test(`${loan.estadoLabel ?? ""} ${loan.estadoPrestamoLabel ?? ""}`);
+        });
+      } catch {
+        throw new DocumentReviewError("No se pudo verificar en Vimarx qué préstamos siguen pendientes de firma. Volvé a intentar.", 503);
+      }
+    }
     const summaries = await getSignatureApprovals(this.deps.db, rows);
     const matching = rows.filter(row => !status || summaries.get(row.id)?.status === status);
     return {

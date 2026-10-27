@@ -1,4 +1,5 @@
 import type { SolicitudDelTitular } from "../../../solicitudes-core/domain/services/HistorialSolicitudesGateway";
+import type { CoreLoanLifecycle } from "../../../solicitudes-core/infrastructure/services/ControlledLoanReplacementService";
 import { LegacySolicitudesUnavailableError } from "../../domain/solicitudes-errors";
 import type { SolicitudesLegacyGateway } from "../../domain/services/SolicitudesLegacyGateway";
 import type {
@@ -63,6 +64,26 @@ type Fetcher = (
   json(): Promise<unknown>;
   ok: boolean;
 }>;
+
+export type SignatureInboxLoanReference = {
+  legacyOid: string;
+  directLoanId?: boolean;
+};
+
+export type SignatureInboxLoanState = {
+  lifecycle: CoreLoanLifecycle | null;
+  transferred: boolean;
+};
+
+export function signatureInboxLoanKey(reference: SignatureInboxLoanReference) {
+  return `${reference.directLoanId ? "loan" : "request"}:${reference.legacyOid}`;
+}
+
+const SIGNATURE_INBOX_LOAN_BATCH_SIZE = 120;
+const CORE_LOAN_LIFECYCLE_FIELDS = [
+  "ID", "NroCuenta", "Estado", "ToStr([Estado])", "EstadoPrestamo",
+  "ToStr([EstadoPrestamo])", "Vigente", "Saldo",
+] as const;
 
 export const SOLICITUDES_PRECARGA_DEFAULT_MAX = 100;
 export const SOLICITUDES_RECIENTES_DEFAULT_MAX = 100;
@@ -531,6 +552,76 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return this.executeEvaluateList(buildSocioMutualDefinitionByDni(dni), 2);
   }
 
+  /** Fresh, bounded reads for the inbox; a missing historical request alone permits direct-ID fallback. */
+  async getSignatureInboxLoanStates(
+    references: SignatureInboxLoanReference[],
+  ): Promise<Map<string, SignatureInboxLoanState>> {
+    const historicalIds = new Set<string>();
+    const directIds = new Set<string>();
+    for (const reference of references) {
+      const id = signatureInboxId(reference.legacyOid);
+      if (id === null) throw new LegacySolicitudesUnavailableError();
+      (reference.directLoanId ? directIds : historicalIds).add(id);
+    }
+
+    const historical = new Map<string, SignatureInboxLoanState>();
+    const historicalFields = [
+      "Oid", "Estado.Descripcion", "Prestamo.ID", "Prestamo.NroCuenta", "Prestamo.Estado",
+      "ToStr([Prestamo.Estado])", "Prestamo.EstadoPrestamo", "ToStr([Prestamo.EstadoPrestamo])",
+      "Prestamo.Vigente", "Prestamo.Saldo",
+    ];
+    for (const ids of signatureInboxChunks([...historicalIds])) {
+      const expectedIds = new Set(ids);
+      const rows = await this.executeEvaluateList({
+        tipo: "PreSolicitud.Module.Solicitud",
+        buildCmd: () => ids.map(id => `[Oid]=${id}`).join(" Or "),
+        fields: historicalFields,
+        defaultMax: ids.length + 1,
+        mapRow: row => {
+          if (row.length !== historicalFields.length) throw new LegacySolicitudesUnavailableError();
+          const id = signatureInboxId(row[0]);
+          if (id === null || !expectedIds.has(id)) throw new LegacySolicitudesUnavailableError();
+          return { id, state: { lifecycle: signatureInboxLifecycle(row.slice(2)), transferred: signatureInboxTransferred(row[1]) } };
+        },
+      }, ids.length + 1, true);
+      for (const row of rows) {
+        if (historical.has(row.id)) throw new LegacySolicitudesUnavailableError();
+        historical.set(row.id, row.state);
+      }
+      for (const id of ids) if (!historical.has(id)) directIds.add(id);
+    }
+
+    const direct = new Map<string, SignatureInboxLoanState>();
+    const directFields = [...CORE_LOAN_LIFECYCLE_FIELDS, "Solicitud.Estado.Descripcion"];
+    for (const ids of signatureInboxChunks([...directIds])) {
+      const expectedIds = new Set(ids);
+      const rows = await this.executeEvaluateList({
+        tipo: "F.Module.Cuentas.Prestamos.Prestamo",
+        buildCmd: () => ids.map(id => `[ID]=${id}`).join(" Or "),
+        fields: directFields,
+        defaultMax: ids.length + 1,
+        mapRow: row => {
+          if (row.length !== directFields.length) throw new LegacySolicitudesUnavailableError();
+          const id = signatureInboxId(row[0]);
+          if (id === null || !expectedIds.has(id)) throw new LegacySolicitudesUnavailableError();
+          return { id, state: { lifecycle: signatureInboxLifecycle(row.slice(0, CORE_LOAN_LIFECYCLE_FIELDS.length)), transferred: signatureInboxTransferred(row[8]) } };
+        },
+      }, ids.length + 1, true);
+      for (const row of rows) {
+        if (direct.has(row.id)) throw new LegacySolicitudesUnavailableError();
+        direct.set(row.id, row.state);
+      }
+    }
+
+    const result = new Map<string, SignatureInboxLoanState>();
+    for (const reference of references) {
+      const id = signatureInboxId(reference.legacyOid)!;
+      const state = reference.directLoanId ? direct.get(id) : historical.get(id) ?? direct.get(id);
+      result.set(signatureInboxLoanKey(reference), state ?? { lifecycle: null, transferred: false });
+    }
+    return result;
+  }
+
   async getCoreLoanLifecycle(legacyOid: string, directLoanId = false) {
     if (!/^\d+$/.test(legacyOid)) throw new LegacySolicitudesUnavailableError();
     const historical = directLoanId ? null : await this.executeEvaluateObj({
@@ -854,6 +945,66 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
   private buildEvaluateObjUrl() {
     return new URL("/api/Empresa/EvaluateObj", this.baseUrl).toString();
   }
+}
+
+function signatureInboxChunks(ids: string[]) {
+  const chunks: string[][] = [];
+  for (let offset = 0; offset < ids.length; offset += SIGNATURE_INBOX_LOAN_BATCH_SIZE)
+    chunks.push(ids.slice(offset, offset + SIGNATURE_INBOX_LOAN_BATCH_SIZE));
+  return chunks;
+}
+
+function signatureInboxId(value: EvaluateListPrimitive | undefined): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if ((typeof value !== "string" && typeof value !== "number") ||
+    (typeof value === "number" && (!Number.isSafeInteger(value) || value < 0)) ||
+    !/^\d+$/.test(String(value))) throw new LegacySolicitudesUnavailableError();
+  return String(value).replace(/^0+(?=\d)/, "");
+}
+
+function signatureInboxText(value: EvaluateListPrimitive | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") throw new LegacySolicitudesUnavailableError();
+  return value.trim() || null;
+}
+
+function signatureInboxNumber(value: EvaluateListPrimitive | undefined, integer = false): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  if ((typeof value !== "number" && typeof value !== "string") ||
+    (typeof value === "string" && !value.trim())) throw new LegacySolicitudesUnavailableError();
+  const number = Number(value);
+  if (!Number.isFinite(number) || (integer && !Number.isInteger(number))) throw new LegacySolicitudesUnavailableError();
+  return number;
+}
+
+function signatureInboxBoolean(value: EvaluateListPrimitive | undefined): boolean | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "boolean") return value;
+  if (value === 1 || (typeof value === "string" && /^(1|true)$/i.test(value.trim()))) return true;
+  if (value === 0 || (typeof value === "string" && /^(0|false)$/i.test(value.trim()))) return false;
+  throw new LegacySolicitudesUnavailableError();
+}
+
+function signatureInboxLifecycle(row: EvaluateListRow): CoreLoanLifecycle | null {
+  const id = signatureInboxId(row[0]);
+  const account = row[1] === null || row[1] === undefined ? null :
+    typeof row[1] === "number" && Number.isFinite(row[1]) ? String(row[1]) : signatureInboxText(row[1]);
+  const estado = signatureInboxNumber(row[2], true);
+  const estadoLabel = signatureInboxText(row[3]);
+  const estadoPrestamo = signatureInboxNumber(row[4], true);
+  const estadoPrestamoLabel = signatureInboxText(row[5]);
+  const vigente = signatureInboxBoolean(row[6]);
+  const saldo = signatureInboxNumber(row[7]);
+  if (id === null) {
+    if ([account, estado, estadoLabel, estadoPrestamo, estadoPrestamoLabel, vigente, saldo].some(v => v !== null))
+      throw new LegacySolicitudesUnavailableError();
+    return null;
+  }
+  return { id, account, estado, estadoLabel, estadoPrestamo, estadoPrestamoLabel, vigente, saldo };
+}
+
+function signatureInboxTransferred(value: EvaluateListPrimitive | undefined) {
+  return signatureInboxText(value)?.toLowerCase() === "pagada";
 }
 
 export function buildEvaluateListRequest<TResult>(
