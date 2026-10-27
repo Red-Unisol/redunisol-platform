@@ -55,3 +55,5 @@ Artisan::command('edna:prune {--days=30 : Retention of delivered payloads in day
 
     return 0;
 })->purpose('Remove old delivered Edna payloads while preserving deduplication');
+
+Schedule::command('edna:intake prune --apply')->dailyAt('04:30')->withoutOverlapping();
