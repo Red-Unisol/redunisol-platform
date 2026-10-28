@@ -22,6 +22,35 @@ laboral, CUIL y email opcional. Para jubilados de Córdoba pregunta Caja/ANSES/a
 Caja no exige banco. Los demás casos preguntan banco de cobro (Bancor, Nación,
 otro o necesito ayuda). Los campos ocultos de otras ramas se ignoran.
 
+### Tres opciones adicionales para Córdoba (28/10/2026)
+
+La [versión siguiente del JSON](whatsapp-website-intake-cordoba-v2.flow.json)
+agrega únicamente **DASPU**, **Empleado público municipal** y **Jubilado municipal**
+al campo de situación laboral de Córdoba. Conserva los campos, las cuatro opciones
+de provincia y todas las demás ramas del formulario publicado. El JSON original
+anterior sigue representando la versión 1; no se modifica el Router histórico.
+
+| Opción en WhatsApp | Situación en Bitrix | Regla comercial existente |
+| --- | --- | --- |
+| DASPU | DASPU (`4073`) | Se evalúa como DASPU de Córdoba, circuito UNC/DASPU. |
+| Empleado público municipal | Empleado Público Municipal (`1273`) | Requiere Bancor para precalificar; circuito Córdoba General. |
+| Jubilado municipal | Jubilado Municipal (`3129`) | Requiere Bancor para precalificar; circuito Córdoba Jubilados. |
+
+Las tres opciones utilizan `banco_cordoba`; no pasan por Caja/ANSES y se ignoran
+los valores ocultos de esa rama. No se agregan criterios de aprobación: los datos
+se guardan con la categoría exacta y pasan por el prefill y la precalificación
+habituales. CUIL inválido, email inválido o banco "necesito ayuda" conservan sus
+derivaciones manuales. Catamarca y CABA no aceptan estas tres opciones.
+
+El backend es compatible con las respuestas de la versión 1. Desplegarlo no
+modifica por sí solo el formulario publicado en Meta. La versión 2 debe validarse
+y publicarse como un Flow nuevo antes de ofrecer esas opciones; el ID activo y
+la tanda actuales no se cambian en esta entrega. No cambiar el ID de una tanda
+existente ni reiniciar su contador. Al preparar una activación de la versión 2,
+resolver también la aceptación explícita de ambos IDs en el procesador Kestra:
+hoy `EDNA_INTAKE_FLOW_ID` admite un solo ID y cambiarlo sin ese paso bloquearía
+las respuestas pendientes de la versión 1.
+
 Cada respuesta autenticada del formulario se conserva como lead, también cuando
 el CUIL falta o es inválido. Sólo un CUIL de 11 dígitos con checksum válido se usa
 en el campo canónico y para buscar identidad. El valor inválido se conserva en

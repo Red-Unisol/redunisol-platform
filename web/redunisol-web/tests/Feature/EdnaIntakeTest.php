@@ -152,6 +152,29 @@ test('one correlated reply stores encrypted identity and queues intake without l
     expect(DB::table('edna_intake_requests')->count())->toBe(1);
 });
 
+test('new Cordoba employment options reach the dedicated intake without a legacy landing or another slot', function (string $situation) {
+    $request = intakeReply(['messageContent' => ['text' => json_encode(['provincia' => 'cordoba',
+        'situacion_cordoba' => $situation, 'banco_cordoba' => 'bancor', 'cuil' => '20301234563'])]]);
+    expect(DB::table('edna_incoming_events')->find($request->response_event_id)->outcome)->toBe('website_intake')
+        ->and(DB::table('edna_router_results')->count())->toBe(0)
+        ->and(DB::table('edna_assistance_cases')->count())->toBe(0);
+    Queue::assertPushed(ProcessEdnaIntake::class, 1);
+    Queue::assertNotPushed(SendEdnaLanding::class);
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'queued', 'lead_id' => '77', 'contact_id' => '88',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    (new ProcessEdnaIntake($request->id))->handle();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($r) => $r['answer']['situacion_cordoba'] === $situation
+        && $r['answer']['banco_cordoba'] === 'bancor' && $r['answer']['provincia'] === 'cordoba');
+    expect(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('synced')
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1)
+        ->and(DB::table('edna_intake_admissions')->count())->toBe(1)
+        ->and(DB::table('edna_flow_sends')->count())->toBe(1);
+    Queue::assertPushed(SendEdnaFlow::class, 1); // Only the original reservation.
+})->with(['daspu', 'empleado_publico_municipal', 'jubilado_municipal']);
+
 test('a second submission of the same confirmed Flow is acknowledged without another CRM job', function () {
     $request = intakeReply();
     $send = DB::table('edna_flow_sends')->find($request->flow_send_id);

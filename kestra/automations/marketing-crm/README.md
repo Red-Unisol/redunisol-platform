@@ -39,7 +39,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `docs/archive/`, `docs/audits/` y `docs/reports/`: evidencia histórica no normativa.
 - `tests/`: reservado para tests del dominio fuera del package si mas adelante conviene separarlos.
 
-El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-intake.md) usa `flows/bitrix24_whatsapp_intake.yaml`, CUIL obligatorio y el escritor de identidad del intake asistido. Conserva las reglas comerciales y el prefill existentes.
+El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-intake.md) usa `flows/bitrix24_whatsapp_intake.yaml`, CUIL obligatorio y un escritor dedicado con búsqueda de identidad por CUIL. Su siguiente versión agrega DASPU, empleado público municipal y jubilado municipal a las opciones de Córdoba. Conserva las reglas comerciales y el prefill existentes.
 
 ## Criterio
 
