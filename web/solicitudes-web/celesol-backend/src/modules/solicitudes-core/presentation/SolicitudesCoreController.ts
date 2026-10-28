@@ -30,6 +30,7 @@ import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPre
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
 import type { SimularRefinanciacionUseCase } from "../application/use-cases/SimularRefinanciacion.use-case";
+import type { DescargarSimulacionRefinanciacionPdfUseCase } from "../application/use-cases/DescargarSimulacionRefinanciacionPdf.use-case";
 import type { GetSolicitudRefinanciacionUseCase } from "../application/use-cases/GetSolicitudRefinanciacion.use-case";
 import type { GuardarSolicitudRefinanciacionUseCase } from "../application/use-cases/GuardarSolicitudRefinanciacion.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
@@ -100,6 +101,7 @@ type Dependencies = {
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
   simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
+  descargarSimulacionRefinanciacionPdfUseCase: DescargarSimulacionRefinanciacionPdfUseCase;
   getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
   guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -130,6 +132,7 @@ export class SolicitudesCoreController {
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
   private readonly simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
+  private readonly descargarSimulacionRefinanciacionPdfUseCase: DescargarSimulacionRefinanciacionPdfUseCase;
   private readonly getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
   private readonly guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
@@ -167,6 +170,8 @@ export class SolicitudesCoreController {
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
     this.simularRefinanciacionUseCase =
       dependencies.simularRefinanciacionUseCase;
+    this.descargarSimulacionRefinanciacionPdfUseCase =
+      dependencies.descargarSimulacionRefinanciacionPdfUseCase;
     this.getSolicitudRefinanciacionUseCase =
       dependencies.getSolicitudRefinanciacionUseCase;
     this.guardarSolicitudRefinanciacionUseCase =
@@ -474,6 +479,44 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(simulacion);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // La simulacion en PDF, con "SIMULACION" cruzado, para mostrarle al socio.
+  // Mismo acceso que la simulacion.
+  descargarSimulacionRefinanciacionPdf = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<SimularRefinanciacionBody>(
+        simularRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const pdf = await this.descargarSimulacionRefinanciacionPdfUseCase.execute({
+        prestamos: body.prestamos,
+        solicitudId: params.id,
+      });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="Simulacion refinanciacion.pdf"',
+      );
+      res.status(200).send(pdf);
     } catch (error) {
       next(error);
     }

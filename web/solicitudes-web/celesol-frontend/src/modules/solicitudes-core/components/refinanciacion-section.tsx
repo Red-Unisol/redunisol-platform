@@ -7,11 +7,12 @@ import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-p
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { useSimularRefinanciacionMutation } from "@/modules/solicitudes-core/hooks/use-simular-refinanciacion-mutation";
 import { useSolicitudRefinanciacionQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-refinanciacion-query";
-import type {
-  CuotaPrestamoResponse,
-  PrestamoDelSocioResponse,
-  RefinanciacionPrestamoRequest,
-  RefinanciacionSimuladaResponse,
+import {
+  descargarSimulacionRefinanciacionPdf,
+  type CuotaPrestamoResponse,
+  type PrestamoDelSocioResponse,
+  type RefinanciacionPrestamoRequest,
+  type RefinanciacionSimuladaResponse,
 } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { diaDeNegocio, diaLegacy, estadoCobro } from "@/modules/solicitudes-core/utils/cuotas-cobro";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
@@ -73,6 +74,7 @@ export function RefinanciacionSection({
   const [borrador, setBorrador] = useState<Seleccion | null>(null);
   const [simulacion, setSimulacion] =
     useState<RefinanciacionSimuladaResponse | null>(null);
+  const [descargando, setDescargando] = useState(false);
 
   const guardada = useMemo(
     () => aSeleccion(guardadaQuery.data?.prestamos ?? []),
@@ -93,7 +95,8 @@ export function RefinanciacionSection({
     (total, nros) => total + nros.length,
     0,
   );
-  const ocupado = guardarMutation.isPending || simularMutation.isPending;
+  const ocupado =
+    guardarMutation.isPending || simularMutation.isPending || descargando;
   // Un intento de generar el prestamo ya cobro cuotas en Vimarx: la seleccion
   // queda fija (el backend tampoco deja cambiarla).
   const yaCobrada = (guardadaQuery.data?.prestamos ?? []).some(
@@ -123,6 +126,33 @@ export function RefinanciacionSection({
       },
       onSuccess: setSimulacion,
     });
+  }
+
+  // El mismo comprobante del cobro con "SIMULACION" cruzado, como el de Vimarx,
+  // para mostrarle al socio. No cobra nada.
+  async function descargarSimulacion() {
+    setDescargando(true);
+
+    try {
+      const blob = await descargarSimulacionRefinanciacionPdf(
+        solicitudId,
+        aRequest(seleccion),
+      );
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+
+      anchor.href = objectUrl;
+      anchor.download = "Simulacion refinanciacion.pdf";
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
+    } catch (error) {
+      toast.error(mensajeDeError(error, "No se pudo descargar la simulación."));
+    } finally {
+      setDescargando(false);
+    }
   }
 
   function guardar() {
@@ -227,6 +257,14 @@ export function RefinanciacionSection({
             variant="outline"
           >
             {simularMutation.isPending ? "Calculando..." : "Calcular total"}
+          </Button>
+          <Button
+            disabled={cantidadCuotas === 0 || ocupado}
+            onClick={() => void descargarSimulacion()}
+            type="button"
+            variant="outline"
+          >
+            {descargando ? "Descargando..." : "Descargar simulación (PDF)"}
           </Button>
           {editable ? (
             <Button

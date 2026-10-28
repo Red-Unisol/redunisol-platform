@@ -29,6 +29,7 @@ describe("SolicitudesCoreRoutes", () => {
         listTransitions: () => undefined,
         simular: () => undefined,
         simularRefinanciacion: () => undefined,
+        descargarSimulacionRefinanciacionPdf: () => undefined,
         getRefinanciacion: () => undefined,
         guardarRefinanciacion: () => undefined,
         update: () => undefined,
@@ -53,7 +54,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 27), [
+    assert.deepEqual(routePaths.slice(0, 28), [
       "/",
       "/",
       "/stats",
@@ -71,6 +72,7 @@ describe("SolicitudesCoreRoutes", () => {
       "/:id/prestamos-socio",
       "/:id/prestamos-socio/:prestamoId",
       "/:id/refinanciacion/simulacion",
+      "/:id/refinanciacion/simulacion/pdf",
       "/:id/refinanciacion",
       "/:id/refinanciacion",
       "/:id/credixsa",
