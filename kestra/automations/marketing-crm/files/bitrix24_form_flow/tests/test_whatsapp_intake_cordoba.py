@@ -27,7 +27,7 @@ def cordoba_answer(situation, bank='bancor', **kwargs):
 
 
 class CordobaOptionsTests(unittest.TestCase):
-    def test_next_flow_changes_only_three_choices_in_the_existing_cordoba_field(self):
+    def test_next_flow_preserves_fields_adds_three_choices_and_clarifies_out_of_scope_message(self):
         root = next(p for p in Path(__file__).resolve().parents if (p / 'docs/whatsapp-website-intake.flow.json').exists())
         previous = json.loads((root / 'docs/whatsapp-website-intake.flow.json').read_text(encoding='utf8'))
         updated = json.loads((root / 'docs/whatsapp-website-intake-cordoba-v2.flow.json').read_text(encoding='utf8'))
@@ -44,6 +44,8 @@ class CordobaOptionsTests(unittest.TestCase):
         self.assertEqual({c['id'] for c in new_choices}, INTAKE_SEGMENTS['cordoba'])
         self.assertEqual([c for c in new_choices if c not in added], old_choices)
         old_choices[-1:-1] = added
+        next(f for f in old_fields if f.get('condition') == "${form.provincia} == 'otra'")['then'][1]['text'] = (
+            'Registraremos tu consulta. Esta opción no ingresa al circuito interno.')
         self.assertEqual(updated, previous)  # Every other field, branch and payload is identical.
 
     def test_only_the_single_intake_accepts_new_cordoba_options(self):

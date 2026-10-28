@@ -59,10 +59,11 @@ class ProcessEdnaIntake implements ShouldQueue
                 return;
             }
             if (! $response->successful() || ($result['ok'] ?? null) !== true || ($result['case_id'] ?? '') !== $send->request_id
-                || ! in_array($action, ['queued', 'manual_review', 'already_processed', 'disabled', 'review'], true)) {
+                || ! in_array($action, ['queued', 'manual_review', 'already_processed', 'rejected', 'disabled', 'review'], true)
+                || ($action === 'rejected' && ! preg_match('/^[1-9][0-9]*$/D', (string) ($result['lead_id'] ?? '')))) {
                 throw new RuntimeException('Invalid intake acknowledgement.');
             }
-            $this->record(['state' => in_array($action, ['queued', 'already_processed'], true) ? 'synced' : 'review',
+            $this->record(['state' => in_array($action, ['queued', 'already_processed', 'rejected'], true) ? 'synced' : 'review',
                 'lead_id' => $result['lead_id'] ?? null, 'contact_id' => $result['contact_id'] ?? null,
                 'reason' => $result['reason'] ?? $action]);
             try {

@@ -5,6 +5,7 @@ from html import escape
 import re
 from uuid import UUID
 
+from edna_incoming.intake import REJECTION_LABELS
 from .attribution import CRM_FIELDS, lead_fields as attribution_fields, normalize_attribution
 from .bitrix_client import BitrixClient
 from .catalogs import BANCOS, ORIGENES_LEAD, PROVINCIAS, SITUACIONES_LABORALES
@@ -29,6 +30,8 @@ REVIEW_LABELS = {
     "existing_form_requires_review": "Hay otro formulario o lead activo de esta persona. Revisar su continuidad.",
     "ambiguous_guest": "Hay varios ingresos sin identidad para este WhatsApp. Se conserva esta consulta por separado.",
     "identity_search_too_large": "La búsqueda de identidad supera el límite de revisión automática.",
+    "province_not_eligible": "Solicitud rechazada: seleccionó Otra provincia, fuera del circuito interno.",
+    "employment_status_not_eligible": "Solicitud rechazada: seleccionó Otra situación laboral, fuera de las categorías del circuito interno.",
 }
 
 
@@ -62,6 +65,9 @@ def persist(payload, answer, *, env, client=None):
                 or (lead.get(INVALID_CUIL_FIELD) or "") != answer["reported_cuil"]):
             raise ValueError("Intake case provenance requires reconciliation.")
         state = lead.get("UF_CRM_WA_ASSISTANCE_STATE")
+        if state in REJECTION_LABELS:
+            return dict(result, action="rejected", reason=state, lead_id=str(lead["ID"]),
+                        contact_id=str(lead.get("CONTACT_ID") or ""))
         if state != "ready":
             return dict(result, action="manual_review", reason=lead.get(REVIEW_REASON_FIELD) or state or "pending_data",
                         lead_id=str(lead["ID"]), contact_id=str(lead.get("CONTACT_ID") or ""))
@@ -69,7 +75,12 @@ def persist(payload, answer, *, env, client=None):
                     contact_id=str(lead.get("CONTACT_ID") or ""))
 
     contact, guest, reason, related = _resolve(api, config, answer, phone)
-    if answer["cuil_status"] != "valid":
+    rejected = bool(answer["rejection_reason"])
+    if rejected:
+        # An explicit out-of-scope selection does not need identity correction
+        # to reject this inquiry. Keep invalid identity data isolated anyway.
+        reason = answer["rejection_reason"]
+    elif answer["cuil_status"] != "valid":
         reason = "pending_cuil"
     elif answer["email_status"] == "invalid" and not reason:
         reason = "invalid_email"
@@ -77,12 +88,13 @@ def persist(payload, answer, *, env, client=None):
         reason = "pending_data"
     automatic = not reason
     state = "ready" if automatic else reason
-    status = config.lead_statuses.new if automatic else CUIL_REVIEW_STATUS if reason == "pending_cuil" else review_status
+    status = config.lead_statuses.rejected if rejected else (
+        config.lead_statuses.new if automatic else CUIL_REVIEW_STATUS if reason == "pending_cuil" else review_status)
     fields = _lead_fields(api, config, payload, answer, env, case_id, phone, contact, guest, status, state, reason, related)
 
     # Invalid/missing CUIL never inherits a person's identity from a shared phone.
     # Ambiguous identities remain an unbound manual lead; no contact is guessed.
-    create_contact = answer["cuil"] and not contact and reason not in {
+    create_contact = not rejected and answer["cuil"] and not contact and reason not in {
         "ambiguous_cuil_contact", "ambiguous_cuil_lead", "contact_lead_conflict", "identity_search_too_large"}
     if create_contact:
         new = {"PHONE": [{"VALUE": phone, "VALUE_TYPE": "WORK"}], config.fields.contact_cuil: answer["cuil"]}
@@ -107,18 +119,21 @@ def persist(payload, answer, *, env, client=None):
         lead_id = str(api.call("crm.lead.add", {"fields": fields}))
     verified = api.call("crm.lead.get", {"id": lead_id})
     if (str(verified.get("UF_CRM_WA_ASSISTANCE_ID")) != case_id or not _same_phone(verified, phone)
+            or verified.get("UF_CRM_WA_ASSISTANCE_STATE") != state
             or str(verified.get("CONTACT_ID") or "") != str(fields.get("CONTACT_ID") or "")
-            or (verified.get(REVIEW_REASON_FIELD) or "") != (reason or "")
+            or (verified.get(REVIEW_REASON_FIELD) or "") != fields[REVIEW_REASON_FIELD]
             or (not automatic and verified.get("STATUS_ID") != status)):
         raise RuntimeError("Intake lead write requires reconciliation.")
+    if rejected and str(verified.get(config.fields.lead_rejection_reason)) != str(fields[config.fields.lead_rejection_reason]):
+        raise RuntimeError("Intake rejection requires reconciliation.")
     if answer["cuil"]:
         if _cuil(verified, config.fields.lead_cuil) != answer["cuil"]:
             raise RuntimeError("Intake CUIL requires reconciliation.")
     elif (verified.get(config.fields.lead_cuil) or verified.get("CONTACT_ID")
           or (verified.get(INVALID_CUIL_FIELD) or "") != answer["reported_cuil"]
-          or verified.get("STATUS_ID") != CUIL_REVIEW_STATUS):
+          or verified.get("STATUS_ID") != status):
         raise RuntimeError("Unverified intake identity requires reconciliation.")
-    return dict(result, action="queued" if automatic else "manual_review", reason=state,
+    return dict(result, action="rejected" if rejected else "queued" if automatic else "manual_review", reason=state,
                 lead_id=lead_id, contact_id=str((contact or {}).get("ID") or ""))
 
 
@@ -221,6 +236,8 @@ def _validate_schema(api, config, review_status):
             raise ValueError("Provision a non-automatic intake review stage before enabling writes.")
     if review_status == CUIL_REVIEW_STATUS:
         raise ValueError("CUIL correction requires a distinct review stage.")
+    if not any(s.get("STATUS_ID") == config.lead_statuses.rejected and s.get("SEMANTICS") == "F" for s in statuses):
+        raise ValueError("Configure a failed lead stage before enabling intake writes.")
     schema = api.call("crm.lead.fields", {})
     if not isinstance(schema, dict):
         raise ValueError("Invalid intake field metadata.")
@@ -230,6 +247,7 @@ def _validate_schema(api, config, review_status):
 
 
 def _lead_fields(api, config, payload, answer, env, case_id, phone, contact, guest, status, state, reason, related):
+    rejected = reason in REJECTION_LABELS
     attribution = normalize_attribution(payload["attribution"])
     last = attribution["last"]
     source_name = {"google": "Google", "facebook": "Facebook", "fb": "Facebook", "meta": "Facebook", "instagram": "Instagram", "ig": "Instagram"}.get(
@@ -248,12 +266,14 @@ def _lead_fields(api, config, payload, answer, env, case_id, phone, contact, gue
         "UF_CRM_WA_FLOW": "web_whatsapp_intake", "UF_CRM_WA_FLOW_ID": payload["flow_id"],
         "UF_CRM_WA_PROVINCE": answer["province_key"], "UF_CRM_WA_SEGMENT": answer["segment"],
         "UF_CRM_WA_ENTRY": "website", "UF_CRM_WA_TIMESTAMP": payload["received_at"],
-        INVALID_CUIL_FIELD: answer["reported_cuil"], REVIEW_REASON_FIELD: reason or "",
+        INVALID_CUIL_FIELD: answer["reported_cuil"], REVIEW_REASON_FIELD: "" if rejected else reason or "",
         config.fields.lead_province: PROVINCIAS.resolve(answer["province"], "province").bitrix_id,
         config.fields.lead_source: source_id,
-        config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(api, config, "manual" if reason else "kestra"),
+        config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(api, config, "manual" if reason and not rejected else "kestra"),
         config.fields.lead_processing_policy: resolve_processing_policy_enum_id(api, config, "skip"),
     }
+    if rejected:
+        fields[config.fields.lead_rejection_reason] = _resolve_enum_id(api, config.fields.lead_rejection_reason, REJECTION_LABELS[reason])
     fields.update(attribution_fields(api, attribution, source_label=source_item.label, source_id=source_id))
     for n in CRM_FIELDS:
         fields.setdefault(n, "")

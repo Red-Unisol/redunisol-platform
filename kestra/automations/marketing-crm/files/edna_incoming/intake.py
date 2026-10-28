@@ -22,6 +22,10 @@ EMPLOYMENT = {
 }
 BANKS = {"bancor": "Banco de la Provincia de Cordoba S.A.",
          "nacion": "Banco de la Nacion Argentina", "otro": "Otros"}
+REJECTION_LABELS = {
+    "province_not_eligible": "OTRA PROVINCIA",
+    "employment_status_not_eligible": "NO CUMPLE REQUISITOS PARA CONVENIO",
+}
 
 
 def normalize_answer(data, *, retain_invalid_identity=False):
@@ -64,10 +68,13 @@ def normalize_answer(data, *, retain_invalid_identity=False):
     segment = "cordoba_jubilado" if situation == "jubilado_pensionado" else (
         "otra_provincia" if province == "otra" else province + "_" + situation)
     automatic = bool(cuil) and not email_invalid and bool(employment) and (organism == "caja_cordoba" or bank in BANKS)
+    rejection = "province_not_eligible" if province == "otra" else (
+        "employment_status_not_eligible" if situation == "otra" else "")
     return {"version": VERSION, "province": PROVINCES[province], "province_key": province,
             "segment": segment, "organism": organism, "employment_status": employment,
             "bank": bank, "payment_bank": BANKS.get(bank, ""), "continuity": "whatsapp",
-            "action": "intake" if automatic else "review", "cuil": cuil, "email": email,
+            "action": "rejected" if rejection else "intake" if automatic else "review",
+            "rejection_reason": rejection, "cuil": cuil, "email": email,
             "cuil_status": cuil_status, "email_status": email_status,
             "reported_cuil": _reported_value(reported_cuil) if cuil_status != "valid" else "",
             "reported_email": _reported_value(reported_email) if email_invalid else ""}

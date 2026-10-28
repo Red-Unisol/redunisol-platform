@@ -32,6 +32,12 @@ class IntakeCrm(Crm):
         super().__init__(**kwargs)
         self.deals = deals or []
 
+    def get_lead_field(self, name):
+        if name == self.config.fields.lead_rejection_reason:
+            return {'items': [{'ID': '3933', 'VALUE': 'OTRA PROVINCIA'}, {'ID': '3965', 'VALUE': 'NO CUMPLE REQUISITOS PARA CONVENIO'},
+                              {'ID': '3939', 'VALUE': 'OTRO BANCO'}]}
+        return super().get_lead_field(name)
+
     def call(self, method, body):
         if method == 'crm.duplicate.findbycomm':
             store = self.contacts if body['entity_type'] == 'CONTACT' else self.leads
@@ -39,7 +45,7 @@ class IntakeCrm(Crm):
             ids = [i for i, r in store.items() if any(re.sub(r'\D', '', p['VALUE']) == digits for p in r.get('PHONE', []))]
             return {body['entity_type']: ids} if ids else []
         if method == 'crm.status.list':
-            return super().call(method, body) + [{'STATUS_ID': CUIL_REVIEW_STATUS, 'SEMANTICS': ''}]
+            return super().call(method, body) + [{'STATUS_ID': CUIL_REVIEW_STATUS, 'SEMANTICS': ''}, {'STATUS_ID': 'JUNK', 'SEMANTICS': 'F'}]
         if method == 'crm.lead.fields':
             return {**super().call(method, body), **{n: {'type': 'string', 'isMultiple': False}
                     for n in [INVALID_CUIL_FIELD, REVIEW_REASON_FIELD]}}
@@ -98,7 +104,7 @@ class IntakeTests(unittest.TestCase):
                         self.assertEqual(value['cuil'], CUIL)
                         self.assertNotEqual(value['action'], 'landing')
                         self.assertEqual(value['province'], PROVINCES[province])
-                        self.assertEqual(value['action'], 'review' if situation == 'otra' else 'intake')
+                        self.assertEqual(value['action'], 'rejected' if situation == 'otra' else 'intake')
 
     def test_invalid_or_missing_cuil_is_a_visible_unbound_lead_in_a_correction_stage(self):
         for cuil in [None, '', '123', CUIL[:-1] + '0', 20301234563, True]:

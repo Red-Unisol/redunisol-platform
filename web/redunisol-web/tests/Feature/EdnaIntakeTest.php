@@ -229,6 +229,34 @@ test('processing forwards the bound attribution and acknowledges a CRM result on
     Http::assertSentCount(1); // Http::fake resets the recording before the CRM call.
 });
 
+test('commercial rejection is synchronized with its lead and never stays in review or consumes another slot', function (string $reason) {
+    $request = intakeReply(['messageContent' => ['text' => json_encode(['provincia' => 'otra', 'banco_otra' => 'nacion', 'cuil' => '123'])]]);
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'rejected', 'reason' => $reason, 'lead_id' => '77', 'contact_id' => '',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    (new ProcessEdnaIntake($request->id))->handle();
+    $saved = DB::table('edna_intake_requests')->find($request->id);
+    expect($saved->state)->toBe('synced')->and($saved->reason)->toBe($reason)->and($saved->lead_id)->toBe('77')
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1)
+        ->and(DB::table('edna_intake_admissions')->count())->toBe(1)
+        ->and(DB::table('edna_flow_sends')->count())->toBe(1);
+    Http::assertSentCount(1);
+    Queue::assertNotPushed(SendEdnaLanding::class);
+    Queue::assertPushed(SendEdnaFlow::class, 1);
+})->with(['province_not_eligible', 'employment_status_not_eligible']);
+
+test('a rejection without a persisted lead is an uncertain result and is never retried', function () {
+    $request = intakeReply();
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'rejected', 'reason' => 'province_not_eligible',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    (new ProcessEdnaIntake($request->id))->handle();
+    expect(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('unknown');
+    Http::assertSentCount(1);
+});
+
 test('a CRM timeout never replays a potentially completed write', function () {
     $request = intakeReply();
     $attempts = 0;

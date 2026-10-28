@@ -27,7 +27,8 @@ otro o necesito ayuda). Los campos ocultos de otras ramas se ignoran.
 La [versión siguiente del JSON](whatsapp-website-intake-cordoba-v2.flow.json)
 agrega únicamente **DASPU**, **Empleado público municipal** y **Jubilado municipal**
 al campo de situación laboral de Córdoba. Conserva los campos, las cuatro opciones
-de provincia y todas las demás ramas del formulario publicado. El JSON original
+de provincia y todas las demás ramas del formulario publicado. El texto de
+"Otra provincia" aclara que no ingresa al circuito interno. El JSON original
 anterior sigue representando la versión 1; no se modifica el Router histórico.
 
 | Opción en WhatsApp | Situación en Bitrix | Regla comercial existente |
@@ -54,15 +55,42 @@ las respuestas pendientes de la versión 1.
 Cada respuesta autenticada del formulario se conserva como lead, también cuando
 el CUIL falta o es inválido. Sólo un CUIL de 11 dígitos con checksum válido se usa
 en el campo canónico y para buscar identidad. El valor inválido se conserva en
-`UF_CRM_WA_CUIL_INVALID` ("CUIL informado inválido (no usar como identidad)") y el
-lead queda en **WHATSAPP - CORREGIR CUIL** (`UC_WA_CUIL_REVIEW`), con owner manual
+`UF_CRM_WA_CUIL_INVALID` ("CUIL informado inválido (no usar como identidad)"). En
+un caso interno, el lead queda en **WHATSAPP - CORREGIR CUIL** (`UC_WA_CUIL_REVIEW`), con owner manual
 y sin contacto inferido por teléfono, prefill ni clasificación automática.
 `UF_CRM_WA_REVIEW_REASON=pending_cuil` identifica el motivo. No se corrige ningún
 dígito ni se confirma identidad mediante el checksum. El original completo sigue
 cifrado en el ledger; el campo operativo conserva hasta 255 caracteres.
 
-«Otra provincia», «otra situación», organismo/banco "ayuda" o email inválido
-generan un lead manual sin precalificación. El email inválido se conserva como
+**"Otra provincia" y "Otra situación laboral" se guardan como leads rechazados**
+en RESULTADO PERDIDO (`BITRIX24_LEAD_STATUS_REJECTED`), nunca en revisión manual:
+
+| Selección | Motivo existente de Bitrix | Estado del caso |
+| --- | --- | --- |
+| Otra provincia | OTRA PROVINCIA (`3933`) | `province_not_eligible` |
+| Otra situación, en Córdoba/Catamarca/CABA | NO CUMPLE REQUISITOS PARA CONVENIO (`3965`) | `employment_status_not_eligible` |
+
+El rechazo explícito tiene prioridad sobre CUIL/email inválidos, ayuda en banco
+o conflictos de identidad. El CUIL inválido sigue aislado, nunca se completa en
+el campo canónico ni se toma de un contacto por teléfono. Un rechazo no crea ni
+modifica contactos; puede vincular el contacto único por CUIL si ya existe. No
+sobrescribe gestiones anteriores ni crea negociaciones. El campo de revisión queda
+vacío y los comentarios explican el rechazo y las referencias previas. Un callback
+repetido devuelve el mismo lead y rechazo sin nuevas escrituras. El acuse
+`rejected` con un ID válido deja la solicitud en `synced`; ese estado expresa
+persistencia confirmada, no elegibilidad comercial. Un rechazo sin ID es incierto.
+
+El 28/10/2026 se concilió por API el lead `417119` del piloto: pasó de revisión a
+RESULTADO PERDIDO con motivo OTRA PROVINCIA. Se verificaron ausencia de negociación
+activa vinculada, identidad y UUID sin cambios, y lectura posterior del rechazo.
+La conciliación actualiza el CRM; conserva el acuse original del receptor y no
+reenvía formularios ni consume otra admisión. Es evidencia histórica, no una regla
+para reprocesar otros leads sin auditar su estado actual.
+
+**"Otro banco" no es un rechazo global:** conserva las reglas del segmento
+(Catamarca puede precalificar con otro banco; Córdoba aplica sus restricciones).
+En un caso interno, organismo/banco "ayuda" o email inválido generan un lead
+manual sin precalificación. El email inválido se conserva como
 dato sin validar en los comentarios, nunca en EMAIL del lead/contacto. Contratos,
 procedencia o estructuras inválidas siguen rechazándose antes de escribir.
 Las respuestas completas reutilizan las reglas comerciales vigentes; este
