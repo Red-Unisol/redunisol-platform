@@ -26,6 +26,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -74,6 +75,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -135,6 +137,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -185,6 +188,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -230,6 +234,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -282,6 +287,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -343,6 +349,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -404,6 +411,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -459,6 +467,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -532,6 +541,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase:
         createSolicitudUseCase as never,
       getCurrentUserUseCase: {
@@ -637,6 +647,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -711,6 +722,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -765,6 +777,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       createPrestamoLegacyUseCase: {
         execute: async (input: unknown) => {
@@ -818,6 +831,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       simularPrestamoUseCase: {
         execute: async (input: unknown) => {
@@ -866,6 +880,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       getRevisionPrestamoUseCase: {
         execute: async (input: unknown) => {
@@ -919,6 +934,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       listAssignableSolicitudAgentsUseCase: {
         execute: async (input: unknown) => {
@@ -973,6 +989,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -1021,6 +1038,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -1075,6 +1093,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async (input: unknown) => {
@@ -1130,6 +1149,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -1172,6 +1192,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -1223,6 +1244,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -1287,6 +1309,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1349,6 +1372,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1418,6 +1442,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1480,6 +1505,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1582,6 +1608,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -1649,6 +1676,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1714,6 +1742,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1754,6 +1783,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({ ...authenticatedUser(), isSystemAdmin: true }),
@@ -1794,6 +1824,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1841,6 +1872,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsUseCase: {
         execute: async (input: unknown) => {
@@ -1889,6 +1921,7 @@ describe("SolicitudesCoreController", () => {
       descargarSimulacionRefinanciacionPdfUseCase: {} as never,
       getSolicitudRefinanciacionUseCase: {} as never,
       guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsV2UseCase: {
         execute: async (input: unknown) => {

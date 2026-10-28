@@ -15,15 +15,12 @@ import {
   MOTIVO_COBRO_REFINANCIACION,
   type SimularRefinanciacionUseCase,
 } from "../use-cases/SimularRefinanciacion.use-case";
-import type { ArchivarComprobanteRefinanciacion } from "./ArchivarComprobanteRefinanciacion";
 import {
   hoyEnArgentina,
   planCobroRefinanciacion,
 } from "./PlanCobroRefinanciacion";
 
 type Dependencies = {
-  // El comprobante de cada cobro, en los adjuntos de la solicitud.
-  archivarComprobante?: Pick<ArchivarComprobanteRefinanciacion, "execute">;
   cobrarPrestamoGateway: Pick<CobrarPrestamoGateway, "cobrar">;
   hoy?: () => string;
   legacyGateway: Pick<SolicitudesLegacyGateway, "listCuotasDelPrestamo">;
@@ -102,11 +99,7 @@ export class CobrarRefinanciacionSolicitud {
     };
   }
 
-  async cobrar(
-    solicitudId: string,
-    preparada: RefinanciacionPreparada,
-    actorId: string | null = null,
-  ) {
+  async cobrar(solicitudId: string, preparada: RefinanciacionPreparada) {
     const hoy = this.hoy();
     const tramos = [];
 
@@ -159,25 +152,6 @@ export class CobrarRefinanciacionSolicitud {
         prestamoId: tramo.prestamoId,
         solicitudId,
       });
-
-      // El cobro ya esta hecho: si el comprobante no se puede guardar no se
-      // frena el prestamo. Queda en el log para generarlo de nuevo.
-      try {
-        await this.dependencies.archivarComprobante?.execute({
-          actorId,
-          cobroId: cobro.cobroId,
-          cuotas: cobro.cuotas,
-          prestamoId: tramo.prestamoId,
-          solicitudId,
-        });
-      } catch (error) {
-        console.error("refinanciacion_comprobante_failed", {
-          cobroId: cobro.cobroId,
-          error: error instanceof Error ? error.message : String(error),
-          prestamoId: tramo.prestamoId,
-          solicitudId,
-        });
-      }
     }
   }
 }

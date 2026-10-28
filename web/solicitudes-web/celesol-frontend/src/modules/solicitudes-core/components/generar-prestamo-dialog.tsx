@@ -147,7 +147,7 @@ function RevisionPrestamoDialog({
   );
   const refinanciacion = useRefinanciacionTotalQuery(solicitudId, open);
   const totalRefinanciacion = refinanciacion.data?.total ?? 0;
-  const hayRefinanciacion = (refinanciacion.data?.cantidadPrestamos ?? 0) > 0;
+  const hayRefinanciacion = (refinanciacion.data?.detalle.length ?? 0) > 0;
   const montoEnMano =
     montoRevision === null ||
     isLoading ||
@@ -169,8 +169,6 @@ function RevisionPrestamoDialog({
             ? "La refinanciación y las cancelaciones superan el monto a desembolsar."
             : "Las cancelaciones superan el monto a desembolsar."
           : null;
-  // Con una sola cancelacion su monto es el total: repetirlo confunde.
-  const detallarMontos = cancelaciones.length > 1;
 
   return (
     <ConfirmDialog
@@ -420,6 +418,45 @@ function RevisionPrestamoDialog({
             label="Monto a desembolsar"
             value={formatMoneyAmount(montoRevision)}
           />
+          {/* Lo que se descuenta del desembolso, cada cosa con su detalle:
+              en mano = desembolso - refinanciacion - cancelaciones. */}
+          <div>
+            <Dato
+              label="Refinanciación"
+              value={
+                refinanciacion.isLoading
+                  ? "Calculando en Vimarx..."
+                  : refinanciacion.isError
+                    ? null
+                    : formatMoneyAmount(totalRefinanciacion)
+              }
+            />
+            {hayRefinanciacion ? (
+              <ul className="mt-1 space-y-0.5 pl-3 text-xs text-foreground-secondary">
+                {refinanciacion.data?.detalle.map((prestamo) => (
+                  <li
+                    className="flex justify-between gap-3"
+                    key={prestamo.prestamoId}
+                  >
+                    <span className="break-words">
+                      Préstamo {prestamo.nroCuenta ?? prestamo.prestamoId} ·{" "}
+                      {prestamo.nrosCuota.length === 1 ? "cuota" : "cuotas"}{" "}
+                      {prestamo.nrosCuota.join(", ")}
+                    </span>
+                    <span className="shrink-0">
+                      {prestamo.total === null
+                        ? PLACEHOLDER
+                        : formatMoneyAmount(prestamo.total)}
+                    </span>
+                  </li>
+                ))}
+                <li>
+                  Con punitorios y el cargo de la línea, a hoy. Se cobran en
+                  Vimarx al generar el préstamo.
+                </li>
+              </ul>
+            ) : null}
+          </div>
           <div>
             <Dato
               label="Cancelaciones"
@@ -439,40 +476,14 @@ function RevisionPrestamoDialog({
                     key={cancelacion.id}
                   >
                     <span className="break-words">{cancelacion.socio}</span>
-                    {detallarMontos ? (
-                      <span className="shrink-0">
-                        {formatMoneyAmount(cancelacion.monto)}
-                      </span>
-                    ) : null}
+                    <span className="shrink-0">
+                      {formatMoneyAmount(cancelacion.monto)}
+                    </span>
                   </li>
                 ))}
               </ul>
             ) : null}
           </div>
-          {hayRefinanciacion || refinanciacion.isLoading ? (
-            <div>
-              <Dato
-                label="Refinanciación"
-                value={
-                  refinanciacion.isLoading
-                    ? "Calculando en Vimarx..."
-                    : refinanciacion.isError
-                      ? null
-                      : formatMoneyAmount(totalRefinanciacion)
-                }
-              />
-              {hayRefinanciacion ? (
-                <p className="mt-1 pl-3 text-xs text-foreground-secondary">
-                  Cuotas de {refinanciacion.data?.cantidadPrestamos}{" "}
-                  {refinanciacion.data?.cantidadPrestamos === 1
-                    ? "préstamo"
-                    : "préstamos"}{" "}
-                  del socio, con punitorios y el cargo de la línea, a hoy. Se
-                  cobran en Vimarx al generar el préstamo.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
           <div className="border-t border-border pt-2 text-lg font-semibold">
             <Dato
               label="Monto en mano"

@@ -32,6 +32,7 @@ describe("SolicitudesCoreRoutes", () => {
         descargarSimulacionRefinanciacionPdf: () => undefined,
         getRefinanciacion: () => undefined,
         guardarRefinanciacion: () => undefined,
+        generarComprobanteRefinanciacion: () => undefined,
         update: () => undefined,
       } as never,
       {
@@ -54,7 +55,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 28), [
+    assert.deepEqual(routePaths.slice(0, 29), [
       "/",
       "/",
       "/stats",
@@ -75,6 +76,7 @@ describe("SolicitudesCoreRoutes", () => {
       "/:id/refinanciacion/simulacion/pdf",
       "/:id/refinanciacion",
       "/:id/refinanciacion",
+      "/:id/refinanciacion/comprobante",
       "/:id/credixsa",
       "/:id/lineas-prestamo",
       "/:id/assignment/agents",
