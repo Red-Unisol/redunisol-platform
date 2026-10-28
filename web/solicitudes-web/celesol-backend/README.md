@@ -19,6 +19,13 @@ El contrato de la API, reservas, comprobantes y recuperación está en
 [docs/transferencias-api.md](docs/transferencias-api.md).
 La integración está deshabilitada por defecto y requiere una identidad de servicio.
 
+## Diagnóstico técnico de préstamos
+
+Las peticiones y respuestas de Vimarx, la correlación de intentos y la consulta
+operativa privada están en
+[docs/technical-loan-diagnostics.md](docs/technical-loan-diagnostics.md).
+Estos registros se guardan en PostgreSQL y no se muestran al vendedor.
+
 ## Edición del convenio al generar préstamos
 
 `POST /solicitudes/:id/prestamo-legacy` admite, por ejemplo,

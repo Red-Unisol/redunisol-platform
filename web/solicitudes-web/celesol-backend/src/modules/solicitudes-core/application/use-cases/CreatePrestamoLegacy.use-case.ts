@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { actingContext } from "../../../auth/impersonation/context";
+import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 import { assertLinkedLoanReady, type LinkedLoanReader } from "../services/LinkedLoanRules";
 import type { InitialLoanGenerationService } from "../../infrastructure/services/InitialLoanGenerationService";
@@ -67,6 +70,7 @@ type Dependencies = {
   linkedLoanReader?: LinkedLoanReader;
   initialGeneration?: Pick<InitialLoanGenerationService, "create">;
   replaceCancelledLoan?: (input: CreatePrestamoLegacyInput, solicitud: SolicitudCore) => Promise<SolicitudCore>;
+  diagnostics?: LoanDiagnosticWriter;
 };
 
 export class CreatePrestamoLegacyUseCase {
@@ -97,6 +101,7 @@ export class CreatePrestamoLegacyUseCase {
   private readonly linkedLoanReader?: LinkedLoanReader;
   private readonly initialGeneration?: Pick<InitialLoanGenerationService, "create">;
   private readonly replaceCancelledLoan?: Dependencies["replaceCancelledLoan"];
+  private readonly diagnostics?: LoanDiagnosticWriter;
 
   constructor(dependencies: Dependencies) {
     this.archivarEvaluacion = dependencies.archivarEvaluacion;
@@ -123,6 +128,11 @@ export class CreatePrestamoLegacyUseCase {
     this.linkedLoanReader = dependencies.linkedLoanReader;
     this.initialGeneration = dependencies.initialGeneration;
     this.replaceCancelledLoan = dependencies.replaceCancelledLoan;
+    this.diagnostics = dependencies.diagnostics;
+  }
+
+  private async diagnostic(context: LoanDiagnosticContext, stage: string, data: unknown) {
+    try { await this.diagnostics?.(context, { stage, data }); } catch { /* Diagnostics must not change the loan result. */ }
   }
 
   async execute(input: CreatePrestamoLegacyInput): Promise<SolicitudCore> {
@@ -141,11 +151,28 @@ export class CreatePrestamoLegacyUseCase {
     }
     const prepared = await this.prepare(input);
     if (this.initialGeneration) return this.initialGeneration.create(prepared, input);
-    const result = await this.gateway.crear(prepared.coreInput);
-    return this.repository.update(input.solicitudId, { solicitud: {
-      legacyOid: result.id, lineaPrestamoCodigoMutual: prepared.codigoMutual,
-      linkFirmaDigital: buildLinkFirmaDigital(this.linkFirmaDigitalBaseUrl, result.id, prepared.codigoMutual),
-    } });
+    const context: LoanDiagnosticContext = {
+      operationId: randomUUID(), solicitudId: input.solicitudId, actorId: input.currentUser.id,
+      realActorId: actingContext.getStore()?.administrator.id ?? input.currentUser.id, operation: "loan_generation",
+    };
+    let newLoanId: string;
+    try { newLoanId = (await this.gateway.crear(prepared.coreInput, context)).id; }
+    catch (error) {
+      await this.diagnostic(context, "ERROR", { phase: "REMOTE_CREATION", error });
+      throw error;
+    }
+    await this.diagnostic(context, "CREATED_REMOTE", { newLoanId });
+    try {
+      const linked = await this.repository.update(input.solicitudId, { solicitud: {
+        legacyOid: newLoanId, lineaPrestamoCodigoMutual: prepared.codigoMutual,
+        linkFirmaDigital: buildLinkFirmaDigital(this.linkFirmaDigitalBaseUrl, newLoanId, prepared.codigoMutual),
+      } });
+      await this.diagnostic(context, "LINKED", { newLoanId });
+      return linked;
+    } catch (error) {
+      await this.diagnostic(context, "LINK_FAILED", { newLoanId, error });
+      throw error;
+    }
   }
 
   async prepareReplacement(input: CreatePrestamoLegacyInput) {

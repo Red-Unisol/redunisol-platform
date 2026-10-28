@@ -26,6 +26,7 @@ import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
 import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
+import { createLoanDiagnosticWriter } from "../technical-diagnostics/LoanDiagnostics";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
 import { AuthPrismaDatasource } from "../auth/infrastructure/datasources/AuthPrismaDatasource";
 import { AuthRepositoryImpl } from "../auth/infrastructure/repositories/AuthRepositoryImpl";
@@ -183,9 +184,11 @@ export function createSolicitudesCoreRouter(
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
+  const loanDiagnostics = createLoanDiagnosticWriter(prisma);
   const crearPrestamoGateway = new CrearPrestamoGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    diagnostics: loanDiagnostics,
   });
   const editarSocioGateway = new EditarSocioMutualGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
@@ -313,12 +316,14 @@ export function createSolicitudesCoreRouter(
   });
   const initialGeneration = new InitialLoanGenerationService({
     db: prisma, repository: solicitudesCoreRepository, gateway: crearPrestamoGateway, linkedLoanReader,
+    diagnostics: loanDiagnostics,
     loanSnapshot: loanGateways.loanSnapshot,
     makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
     linkedLoanReader, initialGeneration,
+    diagnostics: loanDiagnostics,
     replaceCancelledLoan: async (input, solicitud) => {
       const actor = await prisma.user.findUniqueOrThrow({ where: { id: input.currentUser.id }, include: { workflowOwner: true } });
       const source = await administrativeSource(prisma, solicitud.id);
@@ -515,6 +520,7 @@ export function createSolicitudesCoreRouter(
   );
   const replacementService: ControlledLoanReplacementService = new ControlledLoanReplacementService({ db: prisma, creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS, prepare: createPrestamoLegacyUseCase,
       gateway: crearPrestamoGateway,
+      diagnostics: loanDiagnostics,
       lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
       loanSnapshot: (id, documento, direct) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento, direct),
       makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),

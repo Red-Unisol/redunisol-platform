@@ -11,6 +11,7 @@ import { SolicitudCancelacionesPrismaDatasource } from "../../cancelaciones/infr
 import type { AuthUser } from "../../../auth/domain/entities/User.entity";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
 import { ConvenioSocioConflictError } from "../../domain/solicitudes-core-errors";
+import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 
 const enabled = Boolean(process.env.BEEX_TEST_DATABASE_URL);
 const db = new PrismaClient({ datasourceUrl: process.env.BEEX_TEST_DATABASE_URL });
@@ -48,16 +49,19 @@ async function fixture() {
   const actor = { ...admin, workflowOwner: null } as unknown as AuthUser;
   const newId = String(Date.now()) + String(Math.floor(Math.random() * 100000));
   let calls = 0;
+  const gatewayContexts: (LoanDiagnosticContext | undefined)[] = [];
+  const diagnostics: { context: LoanDiagnosticContext; event: Parameters<LoanDiagnosticWriter>[1] }[] = [];
   const deps: ConstructorParameters<typeof ControlledLoanReplacementService>[0] = {
     db, creationTimeoutMs: 50,
     prepare: { prepareReplacement: async () => ({ solicitud: null as unknown as SolicitudCore, codigoMutual: "amejuca", coreInput: {
       cuotas: 12, fechaEmision: "2026-10-23", integrantes: [{ socio: "90", tipoRelacion: "Titular" }],
       lineaPrestamo: "77", montoDeseado: 600000, nroLote: 1000000, vendedor: "5",
     } }) },
-    gateway: { crear: async () => { calls++; return { id: newId }; } },
+    gateway: { crear: async (_input, context) => { calls++; gatewayContexts.push(context); return { id: newId }; } },
     lifecycle: async () => ({ id: "443417", account: "1016127", estado: 3, estadoLabel: "Anulada", estadoPrestamo: 0, estadoPrestamoLabel: "Anulado", vigente: false, saldo: 0 }),
     loanSnapshot: async (id, doc) => { assert.equal(doc, "12345678"); return { id, estado: 0, amount: 600000, cuotas: 12, lineaId: "77", primerVencimiento: null, cancelacionesCentavos: 1000000 }; },
     makeSignatureLink: id => `https://example.test/new-signature?sol=${id}`,
+    diagnostics: async (context, event) => { diagnostics.push({ context, event }); },
   };
   const service = new ControlledLoanReplacementService(deps);
   const input = { requestId: randomUUID(), expectedUpdatedAt: s.updatedAt.toISOString(), previousLoanId: "443417", reason: "Corregir monto luego de anulación confirmada" };
@@ -69,8 +73,71 @@ async function fixture() {
     await db.solicitud.delete({ where: { id: s.id } });
     await db.user.delete({ where: { id: admin.id } });
   };
-  return { s, actor, deps, service, input, newId, calls: () => calls, clean };
+  return { s, actor, deps, service, input, newId, diagnostics, gatewayContexts, calls: () => calls, clean };
 }
+
+it("replacement diagnostics correlate the persisted request, remote ID and successful link", { skip: !enabled }, async () => {
+  const f = await fixture();
+  try {
+    await f.service.replace(f.s.id, f.actor, f.input);
+    assert.deepEqual(f.gatewayContexts, [{ operationId: f.input.requestId, solicitudId: f.s.id,
+      actorId: f.actor.id, realActorId: f.actor.id, operation: "loan_replacement" }]);
+    assert.deepEqual(f.diagnostics.map(entry => entry.event.stage), ["CREATED_REMOTE", "LINKED"]);
+    assert(f.diagnostics.every(entry => entry.context.operationId === f.input.requestId));
+    assert.equal((f.diagnostics[0].event.data as { newLoanId: string }).newLoanId, f.newId);
+  } finally { await f.clean(); }
+});
+
+it("replacement records technical remote causes while preserving the safe uncertain error and retry blockade", { skip: !enabled }, async () => {
+  const f = await fixture(), failure = new Error("remote timeout", { cause: new Error("technical socket failure") });
+  try {
+    const create = f.deps.gateway.crear;
+    f.deps.gateway.crear = async (...args) => { await create(...args); throw failure; };
+    await assert.rejects(f.service.replace(f.s.id, f.actor, f.input), error => {
+      assert(error instanceof Error);
+      assert.match(error.message, /no confirmó/);
+      assert.doesNotMatch(error.message, /remote timeout|socket failure/);
+      return true;
+    });
+    const record = f.diagnostics.find(entry => entry.event.stage === "ERROR")!;
+    assert.equal((record.event.data as { error: Error }).error, failure);
+    assert.equal((record.event.data as { error: Error }).error.cause, failure.cause);
+    assert.equal((await db.solicitudPrestamoReplacement.findUniqueOrThrow({ where: { id: f.input.requestId } })).status, "UNCERTAIN");
+    await assert.rejects(f.service.replace(f.s.id, f.actor, f.input), /No lo repitas/);
+    assert.equal(f.calls(), 1);
+  } finally { await f.clean(); }
+});
+
+it("replacement link failure and subsequent recovery retain the original operation and never create another loan", { skip: !enabled }, async () => {
+  const f = await fixture(), failure = new Error("link storage error", { cause: new Error("nested technical detail") });
+  try {
+    const makeLink = f.deps.makeSignatureLink;
+    f.deps.makeSignatureLink = () => { throw failure; };
+    await assert.rejects(f.service.replace(f.s.id, f.actor, f.input), error => error === failure);
+    const failed = f.diagnostics.find(entry => entry.event.stage === "LINK_FAILED")!;
+    assert.equal((failed.event.data as { error: Error }).error, failure);
+    assert.equal((failed.event.data as { newLoanId: string }).newLoanId, f.newId);
+    const pending = await administrativeSource(db, f.s.id);
+    f.deps.makeSignatureLink = makeLink;
+    await f.service.recover(f.s.id, f.actor, { requestId: f.input.requestId,
+      expectedUpdatedAt: pending.updatedAt.toISOString(), newLoanId: f.newId, reason: "Verified existing remote loan" });
+    const linked = f.diagnostics.find(entry => entry.event.stage === "LINKED")!;
+    assert.equal(linked.context.operationId, failed.context.operationId);
+    assert.equal(linked.context.operation, "loan_recovery");
+    assert.equal((await administrativeSource(db, f.s.id)).legacyOid, f.newId);
+    assert.equal(f.calls(), 1);
+  } finally { await f.clean(); }
+});
+
+it("a rejected optional diagnostic writer does not alter a successful replacement", { skip: !enabled }, async () => {
+  const f = await fixture();
+  try {
+    f.deps.diagnostics = async () => { throw new Error("diagnostics unavailable"); };
+    await f.service.replace(f.s.id, f.actor, f.input);
+    assert.equal((await administrativeSource(db, f.s.id)).legacyOid, f.newId);
+    assert.equal(f.calls(), 1);
+  } finally { await f.clean(); }
+});
 
 it("reserves before Core creation, atomically replaces the active link and preserves traceability; retries are idempotent", { skip: !enabled }, async () => {
   const f = await fixture();

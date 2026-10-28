@@ -785,3 +785,24 @@ model SolicitudPrestamoReplacement {
   @@unique([solicitudId, previousLoanId])
   @@map("solicitud_prestamo_replacements")
 }
+
+// Private support diagnostics. No application API exposes these payloads.
+// Identifiers are snapshots so diagnostics survive rollback or archival.
+model TechnicalDiagnosticEvent {
+  id BigInt @id @default(autoincrement())
+  operationId String @map("operation_id") @db.Uuid
+  solicitudId String? @map("solicitud_id") @db.Uuid
+  actorId String? @map("actor_id") @db.Uuid
+  realActorId String? @map("real_actor_id") @db.Uuid
+  operation String
+  stage String
+  callId String? @map("call_id") @db.Uuid
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  elapsedMs Int? @map("elapsed_ms")
+  data Json
+
+  @@index([operationId, id])
+  @@index([solicitudId, id])
+  @@index([recordedAt])
+  @@map("technical_diagnostic_events")
+}
