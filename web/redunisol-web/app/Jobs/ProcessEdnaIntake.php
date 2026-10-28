@@ -46,6 +46,7 @@ class ProcessEdnaIntake implements ShouldQueue
         try {
             $response = Http::asJson()->acceptJson()->connectTimeout(5)->timeout(85)->withoutRedirecting()->post($url, [
                 'contract' => EdnaIntake::CONTRACT, 'case_id' => $send->request_id, 'flow_id' => $send->flow_id,
+                'acknowledgement_version' => 2,
                 'phone' => Crypt::decryptString($send->recipient), 'dry_run' => false,
                 'answer' => json_decode(Crypt::decryptString($request->answer), true, 16, JSON_THROW_ON_ERROR),
                 'received_at' => CarbonImmutable::parse($request->received_at)->toIso8601String(),
@@ -59,10 +60,11 @@ class ProcessEdnaIntake implements ShouldQueue
                 return;
             }
             if (! $response->successful() || ($result['ok'] ?? null) !== true || ($result['case_id'] ?? '') !== $send->request_id
-                || ! in_array($action, ['queued', 'manual_review', 'already_processed', 'disabled', 'review'], true)) {
+                || ! in_array($action, ['queued', 'manual_review', 'already_processed', 'rejected', 'disabled', 'review'], true)
+                || ($action === 'rejected' && ! preg_match('/^[1-9][0-9]*$/D', (string) ($result['lead_id'] ?? '')))) {
                 throw new RuntimeException('Invalid intake acknowledgement.');
             }
-            $this->record(['state' => in_array($action, ['queued', 'already_processed'], true) ? 'synced' : 'review',
+            $this->record(['state' => in_array($action, ['queued', 'already_processed', 'rejected'], true) ? 'synced' : 'review',
                 'lead_id' => $result['lead_id'] ?? null, 'contact_id' => $result['contact_id'] ?? null,
                 'reason' => $result['reason'] ?? $action]);
             try {

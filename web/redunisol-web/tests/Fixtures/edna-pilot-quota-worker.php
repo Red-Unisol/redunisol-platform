@@ -11,6 +11,7 @@ $app->make(Kernel::class)->bootstrap();
 $input = json_decode(stream_get_contents(STDIN), true, 8, JSON_THROW_ON_ERROR);
 config()->set('app.key', 'base64:'.base64_encode(str_repeat('i', 32)));
 config()->set('edna.intake_pilot_id', EdnaIntakePilot::DEFAULT_NAME);
+config()->set('edna.intake_pilot_limit', $input['capacity'] ?? 10);
 config()->set('database.connections.pilot_race', ['driver' => 'sqlite', 'database' => $input['database'],
     'foreign_key_constraints' => true, 'busy_timeout' => 10000]);
 DB::setDefaultConnection('pilot_race');

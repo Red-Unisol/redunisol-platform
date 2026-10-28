@@ -14,7 +14,7 @@ use Throwable;
 
 class EdnaIntakeCommand extends Command
 {
-    protected $signature = 'edna:intake {action=status : status, pilot, recover or prune} {id?}
+    protected $signature = 'edna:intake {action=status : status, pilot, recover, rescue or prune} {id?}
         {--expected-case= : Original request UUID, required to recover}
         {--confirmed-no-writes : Operator verified the failed execution made no CRM writes}
         {--apply : Apply the selected recovery or retention operation}';
@@ -25,9 +25,9 @@ class EdnaIntakeCommand extends Command
     {
         if ($this->argument('action') === 'pilot') {
             $this->line(json_encode([
-                'limit' => EdnaIntakePilot::CAPACITY,
+                'limit' => (new EdnaIntakePilot)->capacity(),
                 'pilots' => DB::table('edna_intake_pilots')->latest('created_at')->limit(50)
-                    ->get(['id', 'name', 'subject_id', 'flow_id', 'admitted', 'created_at']),
+                    ->get(['id', 'name', 'subject_id', 'flow_id', 'capacity', 'admitted', 'created_at']),
                 'participants' => DB::table('edna_intake_admissions as a')
                     ->leftJoin('edna_flow_sends as s', 's.intake_admission_id', '=', 'a.id')
                     ->leftJoin('edna_intake_requests as r', 'r.flow_send_id', '=', 's.id')
@@ -37,7 +37,7 @@ class EdnaIntakeCommand extends Command
 
             return self::SUCCESS;
         }
-        if ($this->argument('action') === 'recover') {
+        if (in_array($this->argument('action'), ['recover', 'rescue'], true)) {
             return $this->recover();
         }
         $query = DB::table('edna_intake_requests');
@@ -93,8 +93,13 @@ class EdnaIntakeCommand extends Command
                 if ($request->state === 'synced') {
                     return $result + ['action' => 'already_synced'];
                 }
-                if ($request->state !== 'unknown' || $request->reason !== 'crm_acknowledgement_uncertain'
-                    || ! $request->answer || $send->state !== 'completed'
+                $eligible = $this->argument('action') === 'rescue'
+                    ? $request->state === 'review' && ! $request->lead_id && ! $request->contact_id
+                        && in_array($request->reason, ['invalid_intake_response', 'ambiguous_contact', 'ambiguous_lead',
+                            'cuil_phone_conflict', 'ambiguous_cuil_contact', 'ambiguous_cuil_lead', 'contact_lead_conflict',
+                            'existing_management', 'existing_form_requires_review'], true)
+                    : $request->state === 'unknown' && $request->reason === 'crm_acknowledgement_uncertain';
+                if (! $eligible || ! $request->answer || $send->state !== 'completed'
                     || (int) $send->response_event_id !== (int) $request->response_event_id
                     || ! config('edna.intake_crm_enabled') || ! (new EdnaIntake)->canSend($send)) {
                     throw new RuntimeException('Stored intake is not eligible for pre-write recovery.');

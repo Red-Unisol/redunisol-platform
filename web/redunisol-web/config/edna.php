@@ -7,6 +7,7 @@ return [
     'intake_flow_id' => (string) env('EDNA_INTAKE_FLOW_ID', ''),
     'intake_start_at' => env('EDNA_INTAKE_START_AT', ''),
     'intake_pilot_id' => env('EDNA_INTAKE_PILOT_ID', 'website-intake-10-v1'),
+    'intake_pilot_limit' => env('EDNA_INTAKE_PILOT_LIMIT', 10),
     'intake_recipients' => array_values(array_filter(array_map('trim', explode(',', env('EDNA_INTAKE_RECIPIENTS', ''))))),
     'intake_processing_url' => env('KESTRA_EDNA_INTAKE_WEBHOOK_URL', ''),
     // Three independent gates. An empty pilot list always denies assistance.
