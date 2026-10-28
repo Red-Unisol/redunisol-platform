@@ -171,11 +171,14 @@ describe("GuardarSolicitudRefinanciacionUseCase", () => {
     const useCase = buildUseCase({
       cobrados: [
         {
-          cobro: {
-            cobradoAt: new Date(0),
-            cobroId: "18868290",
-            totalCobrado: 1194285.46,
-          },
+          cobros: [
+            {
+              cobradoAt: new Date(0),
+              cobroId: "18868290",
+              nrosCuota: [22, 23],
+              totalCobrado: 1194285.46,
+            },
+          ],
           nrosCuota: [22, 23],
           prestamoId: "416209",
         },
@@ -286,7 +289,7 @@ function buildUseCase(
         return {
           prestamos: input.prestamos.map((prestamo) => ({
             ...prestamo,
-            cobro: null,
+            cobros: [],
           })),
           updatedAt: new Date(0),
         };

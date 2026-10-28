@@ -100,7 +100,7 @@ export class GuardarSolicitudRefinanciacionUseCase {
         input.solicitudId,
       );
 
-    if (actual.prestamos.some((prestamo) => prestamo.cobro !== null)) {
+    if (actual.prestamos.some((prestamo) => prestamo.cobros.length > 0)) {
       throw new SolicitudRefinanciacionYaCobradaError();
     }
 

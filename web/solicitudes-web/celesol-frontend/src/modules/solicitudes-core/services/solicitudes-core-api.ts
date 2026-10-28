@@ -355,12 +355,16 @@ export type RefinanciacionSimuladaResponse = {
 
 export type SolicitudRefinanciacionResponse = {
   prestamos: (RefinanciacionPrestamoRequest & {
-    /** Cobro en Vimarx al generar el prestamo; null mientras no se cobro. */
-    cobro?: {
+    /**
+     * Cobros en Vimarx al generar el prestamo: uno o dos por prestamo (las
+     * vencidas aparte). Vacia mientras no se cobro nada.
+     */
+    cobros?: {
       cobradoAt: string;
       cobroId: string;
+      nrosCuota: number[];
       totalCobrado: number;
-    } | null;
+    }[];
   })[];
   updatedAt: string | null;
 };

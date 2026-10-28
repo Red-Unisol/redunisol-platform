@@ -23,13 +23,22 @@ export function useRefinanciacionTotalQuery(id: string, enabled: boolean) {
     gcTime: 0,
     queryFn: async (): Promise<RefinanciacionTotal> => {
       const guardada = await getSolicitudRefinanciacion(id);
-      const cobrado = guardada.prestamos.reduce(
-        (total, prestamo) => total + (prestamo.cobro?.totalCobrado ?? 0),
-        0,
-      );
-      const pendientes = guardada.prestamos.filter(
-        (prestamo) => !prestamo.cobro,
-      );
+      const cobrado = guardada.prestamos
+        .flatMap((prestamo) => prestamo.cobros ?? [])
+        .reduce((total, cobro) => total + cobro.totalCobrado, 0);
+      // Lo elegido que todavia no se cobro (un reintento despues de un fallo).
+      const pendientes = guardada.prestamos
+        .map((prestamo) => {
+          const cobradas = new Set(
+            (prestamo.cobros ?? []).flatMap((cobro) => cobro.nrosCuota),
+          );
+
+          return {
+            nrosCuota: prestamo.nrosCuota.filter((nro) => !cobradas.has(nro)),
+            prestamoId: prestamo.prestamoId,
+          };
+        })
+        .filter((prestamo) => prestamo.nrosCuota.length > 0);
 
       if (pendientes.length === 0) {
         return {
@@ -39,13 +48,7 @@ export function useRefinanciacionTotalQuery(id: string, enabled: boolean) {
         };
       }
 
-      const simulacion = await simularRefinanciacion(
-        id,
-        pendientes.map((prestamo) => ({
-          nrosCuota: prestamo.nrosCuota,
-          prestamoId: prestamo.prestamoId,
-        })),
-      );
+      const simulacion = await simularRefinanciacion(id, pendientes);
       const rechazo = simulacion.prestamos.find((prestamo) => !prestamo.ok);
 
       return {

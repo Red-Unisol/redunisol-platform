@@ -42,8 +42,9 @@ describe("SimularRefinanciacionUseCase", () => {
       {
         cobradorId: COBRADOR_REFINANCIACION_ID,
         motivo: MOTIVO_COBRO_REFINANCIACION,
-        // Ordenadas: el legado exige cobrar de la mas vieja a la mas nueva.
         nrosCuota: [24, 25],
+        // Sin fecha conocida no estan vencidas: van fuera de orden.
+        permitePagoFueraDeOrden: true,
         prestamoId: "414805",
         simulacion: true,
       },
@@ -51,6 +52,7 @@ describe("SimularRefinanciacionUseCase", () => {
         cobradorId: COBRADOR_REFINANCIACION_ID,
         motivo: MOTIVO_COBRO_REFINANCIACION,
         nrosCuota: [3],
+        permitePagoFueraDeOrden: true,
         prestamoId: "420000",
         simulacion: true,
       },
@@ -59,6 +61,48 @@ describe("SimularRefinanciacionUseCase", () => {
     assert.equal(MOTIVO_COBRO_REFINANCIACION, 1);
     assert.equal(result.total, 58945.67);
     assert.equal(result.prestamos.length, 2);
+  });
+
+  it("charges overdue cuotas in order and the rest out of order", async () => {
+    // Con "pago fuera de orden" Vimarx no cobra punitorios: las vencidas van
+    // aparte, sin esa opcion. Caso real de FapiTest: prestamo 416228.
+    const cobros: CobrarPrestamoInput[] = [];
+    const useCase = buildUseCase({
+      cobrar: async (input) => {
+        cobros.push(input);
+        return input.permitePagoFueraDeOrden
+          ? { ...cobro(205167.66), otros: 191527.98 }
+          : { ...cobro(142811.53), otros: 3483.21, punitorios: 7096.44 };
+      },
+      cuotas: [
+        { fecha: "2026-09-30", nroCuota: 22 },
+        { fecha: "2026-10-31", nroCuota: 23 },
+        { fecha: "2026-11-30", nroCuota: 24 },
+        { fecha: "2026-12-31", nroCuota: 25 },
+      ],
+    });
+
+    const result = await useCase.execute({
+      prestamos: [{ nrosCuota: [25, 22, 24, 23], prestamoId: "416228" }],
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(
+      cobros.map((item) => [item.nrosCuota, item.permitePagoFueraDeOrden]),
+      [
+        [[22], false],
+        [[23, 24, 25], true],
+      ],
+    );
+    assert.equal(result.total, 347979.19);
+    assert.deepEqual(result.prestamos[0], {
+      cuotas: [],
+      ok: true,
+      otros: 195011.19,
+      prestamoId: "416228",
+      punitorios: 7096.44,
+      totalPago: 347979.19,
+    });
   });
 
   it("reports a legacy rejection on its prestamo and leaves the total empty", async () => {
@@ -195,6 +239,7 @@ function cobro(totalPago: number) {
 function buildUseCase(
   overrides: {
     cobrar?: (input: CobrarPrestamoInput) => Promise<ReturnType<typeof cobro>>;
+    cuotas?: { fecha: string | null; nroCuota: number | null }[];
     getPrestamoDelSocio?: (
       socioLegacyId: string,
       prestamoLegacyId: string,
@@ -213,11 +258,13 @@ function buildUseCase(
     cobrarPrestamoGateway: {
       cobrar: overrides.cobrar ?? (async () => cobro(0)),
     },
+    hoy: () => "2026-10-28",
     legacyGateway: {
       getPrestamoDelSocio: (overrides.getPrestamoDelSocio ??
         (async (_socio: string, prestamoId: string) => ({
           legacyId: prestamoId,
         }))) as never,
+      listCuotasDelPrestamo: (async () => overrides.cuotas ?? []) as never,
       // El socio del titular se busca en el padron de Vimarx.
       lookupSocioRapido: async () => socios,
     },

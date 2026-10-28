@@ -137,4 +137,32 @@ describe("CobrarPrestamoGateway", () => {
       PrestamoLegacyUnavailableError,
     );
   });
+  // Sin la opcion no se manda el campo: el cobro de las vencidas va en orden
+  // para que Vimarx cobre los punitorios.
+  it("sends permitePagoFueraDeOrden only when asked", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const gateway = new CobrarPrestamoGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return {
+          json: async () => ({ CobroId: 0, Cuotas: [], Success: true, TotalPago: 1 }),
+          ok: true,
+        };
+      },
+    );
+    const base = {
+      cobradorId: 65,
+      motivo: 1,
+      nrosCuota: [22],
+      prestamoId: "416228",
+      simulacion: true,
+    };
+
+    await gateway.cobrar({ ...base, permitePagoFueraDeOrden: true });
+    await gateway.cobrar({ ...base, permitePagoFueraDeOrden: false });
+
+    assert.equal(bodies[0]?.permitePagoFueraDeOrden, true);
+    assert.equal("permitePagoFueraDeOrden" in (bodies[1] ?? {}), false);
+  });
 });

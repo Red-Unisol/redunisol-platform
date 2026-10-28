@@ -1,8 +1,16 @@
 import type { DbClient } from "../../../../db/prisma";
 import type {
   SolicitudRefinanciacion,
+  SolicitudRefinanciacionCobro,
   SolicitudRefinanciacionRepository,
 } from "../../domain/repositories/SolicitudRefinanciacionRepository";
+
+type CobroGuardado = {
+  cobradoAt: string;
+  cobroId: string;
+  nrosCuota: number[];
+  totalCobrado: number;
+};
 
 export class SolicitudRefinanciacionPrismaRepository
   implements SolicitudRefinanciacionRepository
@@ -13,26 +21,37 @@ export class SolicitudRefinanciacionPrismaRepository
     this.prisma = prisma;
   }
 
-  async findBySolicitudId(solicitudId: string) {
-    return this.load(this.prisma, solicitudId);
+  async agregarCobro(
+    input: Parameters<SolicitudRefinanciacionRepository["agregarCobro"]>[0],
+  ) {
+    const where = {
+      solicitudId_prestamoLegacyId: {
+        prestamoLegacyId: input.prestamoId,
+        solicitudId: input.solicitudId,
+      },
+    };
+
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.solicitudRefinanciacion.findUniqueOrThrow({
+        select: { cobros: true },
+        where,
+      });
+      const cobro: CobroGuardado = {
+        cobradoAt: new Date().toISOString(),
+        cobroId: input.cobro.cobroId,
+        nrosCuota: input.cobro.nrosCuota,
+        totalCobrado: input.cobro.totalCobrado,
+      };
+
+      await tx.solicitudRefinanciacion.update({
+        data: { cobros: [...leerCobros(row.cobros), cobro] },
+        where,
+      });
+    });
   }
 
-  async marcarCobrado(
-    input: Parameters<SolicitudRefinanciacionRepository["marcarCobrado"]>[0],
-  ) {
-    await this.prisma.solicitudRefinanciacion.update({
-      data: {
-        cobradoAt: new Date(),
-        cobroLegacyId: input.cobroId,
-        totalCobrado: input.totalCobrado,
-      },
-      where: {
-        solicitudId_prestamoLegacyId: {
-          prestamoLegacyId: input.prestamoId,
-          solicitudId: input.solicitudId,
-        },
-      },
-    });
+  async findBySolicitudId(solicitudId: string) {
+    return this.load(this.prisma, solicitudId);
   }
 
   async replace(
@@ -69,14 +88,14 @@ export class SolicitudRefinanciacionPrismaRepository
 
     return {
       prestamos: rows.map((row) => ({
-        cobro:
-          row.cobroLegacyId && row.cobradoAt
-            ? {
-                cobradoAt: row.cobradoAt,
-                cobroId: row.cobroLegacyId,
-                totalCobrado: row.totalCobrado?.toNumber() ?? 0,
-              }
-            : null,
+        cobros: leerCobros(row.cobros).map(
+          (cobro): SolicitudRefinanciacionCobro => ({
+            cobradoAt: new Date(cobro.cobradoAt),
+            cobroId: cobro.cobroId,
+            nrosCuota: cobro.nrosCuota,
+            totalCobrado: cobro.totalCobrado,
+          }),
+        ),
         nrosCuota: [...row.nrosCuota].sort((a, b) => a - b),
         prestamoId: row.prestamoLegacyId,
       })),
@@ -86,4 +105,32 @@ export class SolicitudRefinanciacionPrismaRepository
       ),
     };
   }
+}
+
+// La columna es JSON: se descarta lo que no tenga la forma esperada en lugar
+// de romper la lectura de toda la refinanciacion.
+function leerCobros(value: unknown): CobroGuardado[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    const cobro = (item ?? {}) as Record<string, unknown>;
+
+    return typeof cobro.cobroId === "string" &&
+      typeof cobro.totalCobrado === "number" &&
+      Array.isArray(cobro.nrosCuota)
+      ? [
+          {
+            cobradoAt:
+              typeof cobro.cobradoAt === "string" ? cobro.cobradoAt : "",
+            cobroId: cobro.cobroId,
+            nrosCuota: cobro.nrosCuota.filter(
+              (nro): nro is number => typeof nro === "number",
+            ),
+            totalCobrado: cobro.totalCobrado,
+          },
+        ]
+      : [];
+  });
 }

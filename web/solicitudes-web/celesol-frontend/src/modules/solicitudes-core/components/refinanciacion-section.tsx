@@ -97,7 +97,7 @@ export function RefinanciacionSection({
   // Un intento de generar el prestamo ya cobro cuotas en Vimarx: la seleccion
   // queda fija (el backend tampoco deja cambiarla).
   const yaCobrada = (guardadaQuery.data?.prestamos ?? []).some(
-    (prestamo) => prestamo.cobro,
+    (prestamo) => (prestamo.cobros ?? []).length > 0,
   );
   const editable = canEdit && !yaCobrada;
 
@@ -279,14 +279,15 @@ function PrestamoRefinanciacion({
     pendientes.length > 0 &&
     pendientes.every((cuota) => seleccionadas.has(cuota.nroCuota));
 
-  // Vimarx cobra en orden: tildar una cuota tilda las anteriores impagas, y
-  // destildarla destilda las siguientes.
+  // Cada cuota se elige suelta: se cobran con "pago fuera de orden", como lo
+  // hacen los analistas. Las vencidas van aparte y en orden (para que lleven
+  // punitorios), asi que esas si tienen que ir desde la mas vieja: si no,
+  // Vimarx lo avisa al calcular.
   function alternar(nroCuota: number, marcar: boolean) {
-    const nros = pendientes.map((cuota) => cuota.nroCuota);
     onChange(
-      marcar
-        ? nros.filter((nro) => nro <= nroCuota || seleccionadas.has(nro))
-        : nros.filter((nro) => nro < nroCuota && seleccionadas.has(nro)),
+      pendientes
+        .map((cuota) => cuota.nroCuota)
+        .filter((nro) => (nro === nroCuota ? marcar : seleccionadas.has(nro))),
     );
   }
 

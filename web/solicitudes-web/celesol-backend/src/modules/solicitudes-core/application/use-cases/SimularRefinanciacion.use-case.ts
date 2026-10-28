@@ -1,5 +1,9 @@
 import { FindSolicitudTitularSocioLegacyId } from "../services/FindSolicitudTitularSocioLegacyId";
 import {
+  hoyEnArgentina,
+  planCobroRefinanciacion,
+} from "../services/PlanCobroRefinanciacion";
+import {
   PrestamoDelSocioNotFoundError,
   PrestamoLegacyRechazadoError,
   SolicitudCoreNotFoundError,
@@ -28,7 +32,10 @@ export const MOTIVO_COBRO_REFINANCIACION = 1;
  */
 export const COBRADOR_REFINANCIACION_ID = 65;
 
-type LegacyGateway = Pick<SolicitudesLegacyGateway, "getPrestamoDelSocio"> & {
+type LegacyGateway = Pick<
+  SolicitudesLegacyGateway,
+  "getPrestamoDelSocio" | "listCuotasDelPrestamo"
+> & {
   lookupSocioRapido(
     documento: string,
     tipoDocumento?: string,
@@ -37,6 +44,8 @@ type LegacyGateway = Pick<SolicitudesLegacyGateway, "getPrestamoDelSocio"> & {
 
 type Dependencies = {
   cobrarPrestamoGateway: Pick<CobrarPrestamoGateway, "cobrar">;
+  /** "YYYY-MM-DD" en Argentina; separa las cuotas vencidas. */
+  hoy?: () => string;
   legacyGateway: LegacyGateway;
   repository: Pick<SolicitudesCoreRepository, "findById">;
 };
@@ -76,11 +85,13 @@ export type RefinanciacionSimulada = {
 export class SimularRefinanciacionUseCase {
   private readonly cobrarPrestamoGateway: Pick<CobrarPrestamoGateway, "cobrar">;
   private readonly findSocioLegacyId: FindSolicitudTitularSocioLegacyId;
+  private readonly hoy: () => string;
   private readonly legacyGateway: LegacyGateway;
   private readonly repository: Pick<SolicitudesCoreRepository, "findById">;
 
   constructor(dependencies: Dependencies) {
     this.cobrarPrestamoGateway = dependencies.cobrarPrestamoGateway;
+    this.hoy = dependencies.hoy ?? (() => hoyEnArgentina());
     this.findSocioLegacyId = new FindSolicitudTitularSocioLegacyId({
       gateway: dependencies.legacyGateway,
     });
@@ -124,26 +135,38 @@ export class SimularRefinanciacionUseCase {
     }
 
     const prestamos: RefinanciacionPrestamoSimulado[] = [];
+    const hoy = this.hoy();
 
     for (const item of input.prestamos) {
       const prestamoId = item.prestamoId.trim();
+      const cuotas = await this.legacyGateway.listCuotasDelPrestamo(prestamoId);
+      // Uno o dos cobros, como en la pantalla: las vencidas con punitorios y
+      // el resto fuera de orden. Se informan juntos, por prestamo.
+      const tramos = planCobroRefinanciacion(item.nrosCuota, cuotas, hoy);
 
       try {
-        const cobro = await this.cobrarPrestamoGateway.cobrar({
-          cobradorId: COBRADOR_REFINANCIACION_ID,
-          motivo: MOTIVO_COBRO_REFINANCIACION,
-          nrosCuota: [...item.nrosCuota].sort((a, b) => a - b),
-          prestamoId,
-          simulacion: true,
-        });
+        const cobros = [];
+
+        for (const tramo of tramos) {
+          cobros.push(
+            await this.cobrarPrestamoGateway.cobrar({
+              cobradorId: COBRADOR_REFINANCIACION_ID,
+              motivo: MOTIVO_COBRO_REFINANCIACION,
+              nrosCuota: tramo.nrosCuota,
+              permitePagoFueraDeOrden: tramo.permitePagoFueraDeOrden,
+              prestamoId,
+              simulacion: true,
+            }),
+          );
+        }
 
         prestamos.push({
-          cuotas: cobro.cuotas,
+          cuotas: cobros.flatMap((cobro) => cobro.cuotas),
           ok: true,
-          otros: cobro.otros,
+          otros: roundToCents(sumar(cobros, "otros")),
           prestamoId,
-          punitorios: cobro.punitorios,
-          totalPago: cobro.totalPago,
+          punitorios: roundToCents(sumar(cobros, "punitorios")),
+          totalPago: roundToCents(sumar(cobros, "totalPago")),
         });
       } catch (error) {
         // Un rechazo de Vimarx se informa en su prestamo, para que el
@@ -171,4 +194,11 @@ export class SimularRefinanciacionUseCase {
 
 function roundToCents(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function sumar(
+  cobros: { otros: number; punitorios: number; totalPago: number }[],
+  campo: "otros" | "punitorios" | "totalPago",
+) {
+  return cobros.reduce((total, cobro) => total + cobro[campo], 0);
 }
