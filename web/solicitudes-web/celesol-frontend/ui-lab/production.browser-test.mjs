@@ -152,6 +152,8 @@ async function capture(page, name, result) {
 }
 
 async function checkHeader(page, expanded) {
+  await page.getByRole("heading", { name: "Solicitud 500001", exact: true }).waitFor();
+  assert.equal(await page.getByText("Solicitud ID", { exact: true }).count(), 0);
   const article = page.locator("article[data-header-expanded]");
   assert.equal(
     await article.getAttribute("data-header-expanded"),
@@ -223,6 +225,10 @@ async function checkScroll(page) {
 
 async function exercise(page, item, result) {
   await checkHeader(page, false);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("heading", { name: "Solicitud 500001", exact: true })
+    .getByRole("button", { name: "Copiar", exact: true }).click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "500001");
   // The compact header must retain the account number from dev. Loan controls
   // moved into the scrolling body in main and must not be duplicated above it.
   const linkedLoanText = /Préstamo 999001 vigente por/;

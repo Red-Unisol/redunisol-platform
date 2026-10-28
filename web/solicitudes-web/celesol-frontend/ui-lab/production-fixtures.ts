@@ -312,6 +312,7 @@ export function productionFixture(
   const riskBase = `/api/riesgo/calculadora/core/${HEADER_SAMPLE.id}`;
   let body: unknown;
   if (pathname === "/auth/me") body = productionSession(options.role);
+  else if (pathname === "/solicitudes") body = [{ ...PRODUCTION_SOLICITUD, ultimaNovedad: null }];
   else if (pathname === "/api/notifications")
     body = { items: [], unreadCount: 0, total: 0, offset: 0, limit: 8 };
   else if (pathname === base)

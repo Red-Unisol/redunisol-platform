@@ -348,6 +348,24 @@ export class SolicitudesCorePrismaDatasource {
     return user.legacyUser.trim() || null;
   }
 
+  private static buildSearchFilter(search?: string): Prisma.SolicitudWhereInput {
+    const terms = search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    if (!terms.length) return {};
+    return {
+      AND: terms.map((term) => {
+        const contains = term.replace(/[\\%_]/g, "\\$&");
+        return { OR: [
+          { nroSolicitud: { contains, mode: "insensitive" as const } },
+          { titular: { OR: [
+            { nombre: { contains, mode: "insensitive" as const } },
+            { apellidoDenominacion: { contains, mode: "insensitive" as const } },
+            { nroDocumento: { contains, mode: "insensitive" as const } },
+          ] } },
+        ] };
+      }),
+    };
+  }
+
   private static buildWorkflowStateFilter(input: {
     estado?: string;
     excludeEstado?: string;
@@ -452,6 +470,7 @@ export class SolicitudesCorePrismaDatasource {
   async listByOwner(input: ListSolicitudesByOwnerInput) {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         archivedAt: null,
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: SolicitudesCorePrismaDatasource.buildWorkflowStateFilter({
@@ -657,6 +676,7 @@ export class SolicitudesCorePrismaDatasource {
   async listTracking(input: ListSolicitudesTrackingInput) {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         OR: [
           {
             createdBy: input.userId,
@@ -715,21 +735,10 @@ export class SolicitudesCorePrismaDatasource {
   }
 
   async listRecientes(input: ListSolicitudesRecientesInput) {
-    // Cada palabra debe coincidir con algún dato del titular, sin depender del
-    // orden nombre/apellido. Escapar comodines para buscar texto literal.
-    const terms = input.search?.trim().split(/\s+/).filter(Boolean) ?? [];
-    const searchConditions: Prisma.SolicitudWhereInput[] = terms.map((term) => {
-      const contains = term.replace(/[\\%_]/g, "\\$&");
-      return { titular: { OR: [
-        { nombre: { contains, mode: "insensitive" } },
-        { apellidoDenominacion: { contains, mode: "insensitive" } },
-        { nroDocumento: { contains, mode: "insensitive" } },
-      ] } };
-    });
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
-        ...(searchConditions.length ? { AND: searchConditions } : {}),
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         ...(input.estadoOwnerId || input.estado
           ? {
@@ -807,6 +816,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         OR: [
           {

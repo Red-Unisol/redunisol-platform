@@ -31,6 +31,7 @@ export type CreateSolicitudCoreRecord = {
 };
 
 export type ListSolicitudesByOwnerInput = {
+  search?: string;
   /** Solo las creadas por estos usuarios (visibilidad de Vendedores). */
   creadoPorIn?: string[];
   createdFrom?: string;
@@ -44,6 +45,7 @@ export type ListSolicitudesByOwnerInput = {
 };
 
 export type ListSolicitudesTrackingInput = {
+  search?: string;
   createdFrom?: string;
   createdTo?: string;
   excludeEstado?: string;
@@ -68,6 +70,7 @@ export type ListSolicitudesRecientesInput = {
 };
 
 export type ListSolicitudesHistoricasInput = {
+  search?: string;
   creadoPorIn?: string[];
   limit: number;
   nroDocumento?: string;

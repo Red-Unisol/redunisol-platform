@@ -27,6 +27,7 @@ export class ListSolicitudesUseCase {
 
       return this.repository
         .listHistoricas({
+          ...(input.search?.trim() ? { search: input.search.trim() } : {}),
           ...(input.creadoresVisibles
             ? { creadoPorIn: input.creadoresVisibles }
             : {}),
@@ -78,6 +79,7 @@ export class ListSolicitudesUseCase {
 
       return this.repository
         .listTracking({
+          ...(input.search?.trim() ? { search: input.search.trim() } : {}),
           createdFrom: input.createdFrom,
           createdTo: input.createdTo,
           ...(input.excludeEstado
@@ -96,6 +98,7 @@ export class ListSolicitudesUseCase {
 
     return this.repository
       .listByOwner({
+        ...(input.search?.trim() ? { search: input.search.trim() } : {}),
         ...(input.creadoresVisibles
           ? { creadoPorIn: input.creadoresVisibles }
           : {}),

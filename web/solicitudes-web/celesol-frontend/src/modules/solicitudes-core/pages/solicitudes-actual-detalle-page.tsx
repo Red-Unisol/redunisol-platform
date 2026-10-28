@@ -4387,17 +4387,22 @@ export function SolicitudesActualDetallePage() {
                 <ArrowLeft className="size-4" />
               </Button>
               <FileText className="size-4 shrink-0 text-primary" />
-              <h1 className="truncate text-[1.375rem] leading-tight font-semibold text-foreground">
-                Detalle de Solicitud
+              <h1
+                aria-label={`Solicitud ${resolvedSolicitud.nroSolicitud ?? "sin número"}`}
+                className="flex min-w-0 flex-wrap items-center gap-x-2 text-[1.375rem] leading-tight font-semibold text-foreground"
+              >
+                Solicitud
+                {resolvedSolicitud.nroSolicitud ? (
+                  <IdChip
+                    className="border-0 bg-transparent p-0 font-sans text-[1.375rem] font-semibold text-foreground"
+                    value={resolvedSolicitud.nroSolicitud}
+                  />
+                ) : (
+                  <span>sin número</span>
+                )}
               </h1>
             </div>
             <div className="flex max-w-full flex-wrap items-center gap-x-5 gap-y-2">
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <span className="text-xs font-medium text-foreground-muted">
-                  Solicitud ID
-                </span>
-                <IdChip value={resolvedSolicitud.id} />
-              </div>
               {canViewPrestamoGenerado ? (
                 <div className="flex items-center gap-2 whitespace-nowrap">
                   <span className="text-xs font-medium text-foreground-muted">

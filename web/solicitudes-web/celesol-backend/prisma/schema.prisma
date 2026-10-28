@@ -151,7 +151,7 @@ model Solicitud {
   signatureRequestedAt      DateTime?                  @map("signature_requested_at")
   signatureRequestReason    String?                    @map("signature_request_reason")
   signatureExcludedVerificationIds Json?               @map("signature_excluded_verification_ids")
-  nroSolicitud             String?                    @unique @map("nro_solicitud")
+  nroSolicitud             String?                    @unique @default(dbgenerated("(nextval('solicitudes_nro_solicitud_seq'::regclass))::text")) @map("nro_solicitud")
   fechaPrimerVencimiento   DateTime?                  @map("fecha_primer_vencimiento") @db.Date
   estadoActualId           String                     @map("estado_actual_id") @db.Uuid
   lineaPrestamoLegacyOid   String                     @map("linea_prestamo_legacy_oid")

@@ -44,6 +44,12 @@ jobs:
           npx prisma migrate deploy
       - name: Build backend
         run: npm run build
+      - name: Test Beex request numbering and list search
+        run: >-
+          npx tsx --test
+          src/modules/solicitudes-core/infrastructure/datasources/SolicitudNumber.db.test.ts
+          src/modules/solicitudes-core/infrastructure/datasources/SolicitudesCorePrismaDatasource.test.ts
+          src/modules/solicitudes-core/application/use-cases/ListSolicitudes.use-case.test.ts
       - name: Test authentication and session recovery
         run: npx tsx --test "src/modules/auth/**/*.test.ts"
       - name: Test risk amount limits and concurrent saves
