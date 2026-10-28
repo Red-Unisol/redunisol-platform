@@ -95,6 +95,13 @@ listados reales con la solicitud ficticia `500001` en la primera columna. La
 ficha usa ese número como título y permite copiarlo sin prefijo ni separadores.
 Los listados del laboratorio no simulan la búsqueda del servidor.
 
+La sección Novedades de `/production` usa la tabla real con cuatro movimientos
+ficticios: pago, confirmación de análisis con observación larga y multilínea,
+asignación automática sin cambio de estado y corrección administrativa. Permite
+revisar fecha/hora de Argentina, autor, motivo y cambios de área visibles sin
+abrir eventos. En escritorio presenta cuatro columnas; en móvil apila los datos
+de cada movimiento sin truncar la observación.
+
 La barra global del detalle mide 40 px en escritorio y 48 px con puntero táctil. Los datos
 comienzan plegados y el navegador recuerda Mostrar/Ocultar encabezado. Las acciones siguen
 disponibles y los avisos operativos forman parte del contenido desplazable de Solicitud.
