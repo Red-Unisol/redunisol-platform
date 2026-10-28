@@ -400,6 +400,72 @@ test('parallel database workers cannot exceed ten distinct admissions or double 
     }
 });
 
+test('audited review rescue keeps the original answer UUID and quota and records a manual lead', function (string $reason) {
+    $request = intakeReply(['messageContent' => ['text' => json_encode(['provincia' => 'catamarca',
+        'situacion_catamarca' => 'policia', 'banco_catamarca' => 'nacion', 'cuil' => '123'])]]);
+    $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
+    DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => 'review', 'reason' => $reason]);
+    $args = ['action' => 'rescue', 'id' => $request->id, '--apply' => true,
+        '--expected-case' => $send->request_id, '--confirmed-no-writes' => true];
+    Queue::fake();
+    $this->artisan('edna:intake', ['action' => 'rescue', 'id' => $request->id])->assertSuccessful();
+    Queue::assertNothingPushed();
+    $this->artisan('edna:intake', $args)->assertSuccessful();
+    $this->artisan('edna:intake', $args)->assertFailed();
+    Queue::assertPushed(ProcessEdnaIntake::class, 1);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'manual_review',
+        'reason' => 'pending_cuil', 'lead_id' => '77', 'contact_id' => '',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    (new ProcessEdnaIntake($request->id))->handle();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($r) => $r['case_id'] === $send->request_id && $r['answer']['cuil'] === '123');
+    $saved = DB::table('edna_intake_requests')->find($request->id);
+    expect($saved->state)->toBe('review')->and($saved->lead_id)->toBe('77')
+        ->and($saved->reason)->toBe('pending_cuil')->and($saved->answer)->toBe($request->answer)
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1)
+        ->and(DB::table('edna_intake_admissions')->count())->toBe(1)
+        ->and(DB::table('edna_flow_sends')->count())->toBe(1)
+        ->and(DB::table('edna_intake_requests')->count())->toBe(1);
+    $this->artisan('edna:intake', $args)->assertFailed(); // A visible manual lead is never replayed.
+})->with(['invalid_intake_response', 'ambiguous_contact']);
+
+test('review rescue requires the audit and refuses any recorded CRM identity or uncertain processing', function (string $condition) {
+    $request = intakeReply();
+    $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
+    DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => 'review', 'reason' => 'ambiguous_contact']);
+    $args = ['action' => 'rescue', 'id' => $request->id, '--apply' => true,
+        '--expected-case' => $send->request_id, '--confirmed-no-writes' => true];
+    match ($condition) {
+        'lead', 'contact' => DB::table('edna_intake_requests')->where('id', $request->id)->update([$condition.'_id' => '77']),
+        'unknown', 'processing', 'pending' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => $condition]),
+        'reason' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['reason' => 'pending_cuil']),
+        'audit' => $args['--confirmed-no-writes'] = false,
+        'case' => $args['--expected-case'] = '00000000-0000-4000-8000-000000000001',
+        'answer' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['answer' => null]),
+        'response' => DB::table('edna_flow_sends')->where('id', $send->id)->update(['response_event_id' => 99999]),
+        'expired' => DB::table('attribution_journeys')->where('id', $send->journey_id)->update(['expires_at' => now()->subDay()]),
+        'disabled' => config()->set('edna.intake_crm_enabled', false),
+    };
+    Queue::fake();
+    $this->artisan('edna:intake', $args)->assertFailed();
+    Queue::assertNothingPushed();
+})->with(['lead', 'contact', 'unknown', 'processing', 'pending', 'reason', 'audit', 'case', 'answer', 'response', 'expired', 'disabled']);
+
+test('review rescue rolls back when enqueueing fails', function () {
+    $request = intakeReply();
+    $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
+    DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => 'review', 'reason' => 'invalid_intake_response']);
+    Queue::shouldReceive('connection')->with('edna')->andReturnSelf();
+    Queue::shouldReceive('push')->once()->andThrow(new RuntimeException('private'));
+    $this->artisan('edna:intake', ['action' => 'rescue', 'id' => $request->id, '--apply' => true,
+        '--expected-case' => $send->request_id, '--confirmed-no-writes' => true])->assertFailed();
+    expect(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('review')
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1);
+});
+
 test('prewrite recovery previews and requires explicit case and audit confirmation', function () {
     $request = intakeReply();
     $send = DB::table('edna_flow_sends')->find($request->flow_send_id);

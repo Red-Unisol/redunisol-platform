@@ -22,11 +22,22 @@ laboral, CUIL y email opcional. Para jubilados de Córdoba pregunta Caja/ANSES/a
 Caja no exige banco. Los demás casos preguntan banco de cobro (Bancor, Nación,
 otro o necesito ayuda). Los campos ocultos de otras ramas se ignoran.
 
-El backend exige CUIL de 11 dígitos con checksum válido antes de consultar el CRM.
-Un callback inválido queda para revisión. «Otra provincia», «otra situación» o
-datos de organismo/banco desconocidos generan un lead manual con CUIL y sin
-precalificación automática. Las respuestas completas reutilizan las reglas
-comerciales vigentes; este desarrollo no cambia elegibilidad ni distribución.
+Cada respuesta autenticada del formulario se conserva como lead, también cuando
+el CUIL falta o es inválido. Sólo un CUIL de 11 dígitos con checksum válido se usa
+en el campo canónico y para buscar identidad. El valor inválido se conserva en
+`UF_CRM_WA_CUIL_INVALID` ("CUIL informado inválido (no usar como identidad)") y el
+lead queda en **WHATSAPP - CORREGIR CUIL** (`UC_WA_CUIL_REVIEW`), con owner manual
+y sin contacto inferido por teléfono, prefill ni clasificación automática.
+`UF_CRM_WA_REVIEW_REASON=pending_cuil` identifica el motivo. No se corrige ningún
+dígito ni se confirma identidad mediante el checksum. El original completo sigue
+cifrado en el ledger; el campo operativo conserva hasta 255 caracteres.
+
+«Otra provincia», «otra situación», organismo/banco "ayuda" o email inválido
+generan un lead manual sin precalificación. El email inválido se conserva como
+dato sin validar en los comentarios, nunca en EMAIL del lead/contacto. Contratos,
+procedencia o estructuras inválidas siguen rechazándose antes de escribir.
+Las respuestas completas reutilizan las reglas comerciales vigentes; este
+desarrollo no cambia elegibilidad ni distribución.
 
 ## Piloto de los próximos 10 ingresos únicos
 
@@ -66,14 +77,27 @@ teléfono, canal, Flow y ventana de conversación antes de aceptar una respuesta
 El ledger separa el cooldown por admisión en el piloto y por Flow en el recorrido anterior; el nuevo intake guarda una sola
 respuesta cifrada por envío en `edna_intake_requests` y encola un trabajo atómico.
 
-El webhook `bitrix24_whatsapp_intake` reutiliza la búsqueda por CUIL/teléfono y
-el escritor del intake asistido. Actualiza un Guest activo inequívoco, preserva
-emails existentes y vincula el contacto. Conflictos de identidad, formularios ya
-completos o gestiones abiertas en Ventas/Atención al Socio quedan para revisión,
-sin sobrescribir la gestión. Una respuesta repetida no crea un segundo lead.
+El webhook `bitrix24_whatsapp_intake` tiene un escritor dedicado. Primero busca
+por el CUIL válido en contactos y leads activos; el teléfono es un canal compartido,
+no una identidad única. Un contacto inequívoco por CUIL puede conservar varios
+números y un número puede pertenecer a varias personas. Una identidad nueva con
+CUIL válido obtiene un contacto separado. No se fusionan contactos históricos.
 
-Se reutilizan los campos de asistencia existentes; no se hacen obligatorios
-globalmente en Bitrix. `WA_FLOW=web_whatsapp_intake`,
+La búsqueda por teléfono sólo permite completar un Guest activo, sin nombre
+personal, contacto, CUIL, owner comercial ni datos de formulario. Si hay varios
+Guests no se elige uno: se crea un lead para el caso. Un formulario nuevo nunca
+sobrescribe el lead de otra persona ni una gestión existente. Con varios contactos
+del mismo CUIL, conflictos de vinculación o una gestión abierta, se guarda un lead
+manual y se anotan los IDs relacionados para continuar la gestión. Una gestión
+abierta no se duplica como negociación. Un único contacto por CUIL puede vincularse
+al lead manual; una identidad ambigua queda sin contacto.
+
+El UUID original se comprueba antes de cualquier escritura. Un reenvío del mismo
+caso devuelve el mismo lead sin escribir; si el caso era manual conserva ese
+estado. UUID con teléfono, Flow o identidad distintos requiere reconciliación.
+
+Se reutilizan los campos de asistencia y se agregan los dos campos de revisión
+anteriores; ninguno se hace obligatorio globalmente en Bitrix. `WA_FLOW=web_whatsapp_intake`,
 `WA_SUBFLOW=website_single_intake`, `WA_CONTINUIDAD=whatsapp` y
 `WA_ASSISTANCE_ID=requestId` identifican el recorrido. Se preservan first/last touch,
 campaña, referencia y fecha de respuesta. El CUIL puede completar el nombre a
@@ -134,6 +158,33 @@ cambiar el ID para reutilizar callbacks de un Flow diferente.
 
 ## Operación y validación
 
+### Preparación de la revisión de CUIL (28/10/2026)
+
+Antes de desplegar el escritor, ejecutar desde los namespace files y con las
+variables Bitrix operativas disponibles en el entorno:
+
+```bash
+python -m bitrix24_form_flow.form_processor.whatsapp_intake_schema
+python -m bitrix24_form_flow.form_processor.whatsapp_intake_schema --apply
+```
+
+El primer comando sólo inspecciona; el segundo crea únicamente los campos y la
+etapa ausentes y relee el resultado. No modifica leads, contactos, negociaciones,
+robots ni etapas existentes. Un tipo incompatible exige reconciliación y detiene
+la operación antes de escribir. No reintentar escrituras inciertas. El escritor
+valida campos y etapas antes de aceptar mutaciones. Después se despliegan Web y
+Kestra por CI; no hay que republicar el Flow ni reiniciar el cupo.
+
+El 28/10/2026 se crearon por este procedimiento los dos campos y la etapa en
+producción. La relectura confirmó ambos campos como string simple y el preview
+posterior sin elementos pendientes. Es evidencia de preparación del CRM, no de
+despliegue del nuevo escritor ni de rescate de formularios.
+
+Para corregir un caso, confirmar primero el CUIL con la persona/fuente autorizada,
+resolver la identidad por CUIL y recién completar el campo canónico y su contacto.
+Conservar el dato inválido como evidencia; el pase al circuito automático requiere
+una revisión explícita, no sucede al editar el campo inválido.
+
 `php artisan edna:intake pilot` muestra tandas, cupos ocupados, posiciones y
 los IDs de envíos/leads/contactos de los participantes, sin teléfonos ni sus hashes.
 `php artisan edna:intake status [ID]` muestra sólo IDs/estados, sin CUIL, email ni
@@ -173,6 +224,21 @@ cambio. No crea un evento, envío, admisión ni cupo; conserva la respuesta y la
 originales. Una segunda llamada no vuelve a encolar un caso pendiente/en proceso,
 y un caso `synced` es un no-op. El escritor vuelve a comprobar el UUID, teléfono,
 CUIL y gestiones previas antes de persistir; un caso ya registrado no crea otro lead.
+
+### Rescate de formularios retenidos sin lead
+
+`php artisan edna:intake rescue ID` muestra el mismo preview. Luego del despliegue
+del nuevo escritor, admite `rescue ID --expected-case=UUID --confirmed-no-writes --apply`
+sólo para un `review` sin lead/contacto registrados y con un motivo conocido del
+escritor anterior: respuesta inválida, identidad ambigua/conflictiva o gestión
+previa. Exige la misma auditoría de ausencia de **intentos** de escritura que
+`recover`; un estado `review` sin IDs no basta para demostrarlo.
+
+El rescate encola el procesamiento del formulario cifrado original, con su fecha,
+UUID, envío y admisión. No envía WhatsApp ni consume otro cupo. Una solicitud
+pendiente/en proceso, incierta o ya visible como lead manual no se puede rescatar
+por esta vía. El resultado manual queda en `review` con ID de lead y motivo; no se
+reintenta automáticamente. Un fallo de cola revierte la transición.
 
 Pruebas: `tests/Feature/EdnaIntakeTest.php`, suites de Router/asistencia/atribución,
 `test_whatsapp_intake.py`, suites del dominio y validador de estructura Kestra.

@@ -8,6 +8,7 @@ from unittest.mock import Mock
 from edna_incoming.intake import BANKS, PROVINCES, VERSION, normalize_answer
 from edna_incoming.receiver import SEGMENTS
 from bitrix24_form_flow.form_processor.whatsapp_intake import process
+from bitrix24_form_flow.form_processor.whatsapp_intake_crm import CUIL_REVIEW_STATUS, INVALID_CUIL_FIELD, REVIEW_REASON_FIELD
 from bitrix24_form_flow.form_processor.lead_service import build_prequalification_input_from_lead
 from bitrix24_form_flow.form_processor.qualification import evaluate_prequalification
 from test_whatsapp_assistance import CASE, CUIL, ENV, PHONE, Crm
@@ -32,8 +33,24 @@ class IntakeCrm(Crm):
         self.deals = deals or []
 
     def call(self, method, body):
+        if method == 'crm.duplicate.findbycomm':
+            store = self.contacts if body['entity_type'] == 'CONTACT' else self.leads
+            digits = re.sub(r'\D', '', body['values'][0])
+            ids = [i for i, r in store.items() if any(re.sub(r'\D', '', p['VALUE']) == digits for p in r.get('PHONE', []))]
+            return {body['entity_type']: ids} if ids else []
+        if method == 'crm.status.list':
+            return super().call(method, body) + [{'STATUS_ID': CUIL_REVIEW_STATUS, 'SEMANTICS': ''}]
+        if method == 'crm.lead.fields':
+            return {**super().call(method, body), **{n: {'type': 'string', 'isMultiple': False}
+                    for n in [INVALID_CUIL_FIELD, REVIEW_REASON_FIELD]}}
         if method == 'crm.deal.list':
-            return copy.deepcopy(self.deals)
+            rows = self.deals
+            for key, value in body['filter'].items():
+                rows = [r for r in rows if str(r.get(key.lstrip('=@'))) in {str(v) for v in (value if isinstance(value, list) else [value])}]
+            return copy.deepcopy(rows[body.get('start', 0):body.get('start', 0) + 50])
+        if method.endswith('.list'):
+            rows = super().call(method, body)
+            return rows[body.get('start', 0):body.get('start', 0) + 50]
         return super().call(method, body)
 
 
@@ -83,12 +100,22 @@ class IntakeTests(unittest.TestCase):
                         self.assertEqual(value['province'], PROVINCES[province])
                         self.assertEqual(value['action'], 'review' if situation == 'otra' else 'intake')
 
-    def test_cuil_is_required_and_checksum_validated_before_any_crm_access(self):
+    def test_invalid_or_missing_cuil_is_a_visible_unbound_lead_in_a_correction_stage(self):
         for cuil in [None, '', '123', CUIL[:-1] + '0', 20301234563, True]:
-            api = Mock()
-            with self.subTest(value=cuil), self.assertRaises(ValueError):
-                process(payload(cuil=cuil), env=CONFIG, client=api)
-            api.call.assert_not_called()
+            api = IntakeCrm(contact={'ID': '1', 'PHONE': [{'VALUE': PHONE}], 'UF_CONTACT_CUIL': CUIL})
+            before = copy.deepcopy(api.contacts)
+            with self.subTest(value=cuil):
+                result = process(payload(cuil=cuil), env=CONFIG, client=api)
+                lead = api.leads[result['lead_id']]
+                self.assertEqual((result['action'], result['reason']), ('manual_review', 'pending_cuil'))
+                self.assertEqual(lead['STATUS_ID'], CUIL_REVIEW_STATUS)
+                self.assertNotIn(api.config.fields.lead_cuil, lead)
+                self.assertNotIn('CONTACT_ID', lead)
+                self.assertEqual(lead[INVALID_CUIL_FIELD], normalize_answer(payload(cuil=cuil)['answer'], retain_invalid_identity=True)['reported_cuil'])
+                self.assertEqual(api.contacts, before)
+                count = len(api.writes)
+                self.assertEqual(process(payload(cuil=cuil), env=CONFIG, client=api)['lead_id'], result['lead_id'])
+                self.assertEqual(len(api.writes), count)
 
     def test_email_optional_but_invalid_values_are_not_silently_accepted(self):
         self.assertIsNone(normalize_answer(payload()['answer'])['email'])
@@ -114,7 +141,7 @@ class IntakeTests(unittest.TestCase):
             self.assertEqual(api.leads[result['lead_id']]['STATUS_ID'], 'ASSISTANCE_REVIEW')
 
     def test_valid_response_upgrades_guest_without_web_form_and_preserves_email(self):
-        api = IntakeCrm(lead={'ID': '10', 'STATUS_SEMANTIC_ID': 'P', 'PHONE': [{'VALUE': PHONE}],
+        api = IntakeCrm(lead={'ID': '10', 'STATUS_SEMANTIC_ID': 'P', 'STATUS_ID': 'UC_PWTVG6', 'PHONE': [{'VALUE': PHONE}],
                              'EMAIL': [{'VALUE': 'known@example.test'}]})
         result = process(payload(), env=CONFIG, client=api)
         self.assertEqual((result['action'], result['lead_id']), ('queued', '10'))
@@ -143,8 +170,8 @@ class IntakeTests(unittest.TestCase):
         self.assertEqual(len(api.writes), writes)
 
     def test_invalid_duplicate_search_shape_stops_before_any_identity_write(self):
-        for bad in [[1], None, {'CONTACT': None}, {'CONTACT': '12'}, {'CONTACT': [True]}, {'CONTACT': ['bad']}]:
-            for entity in ['CONTACT', 'LEAD']:
+        for bad in [[1], None, {'LEAD': None}, {'LEAD': '12'}, {'LEAD': [True]}, {'LEAD': ['bad']}]:
+            for entity in ['LEAD']:
                 api = IntakeCrm()
                 original = api.call
 
@@ -166,11 +193,16 @@ class IntakeTests(unittest.TestCase):
         self.assertIsNone(submission.payment_bank)
         self.assertTrue(evaluate_prequalification(submission).qualified)
 
-    def test_open_management_is_preserved_before_any_mutation(self):
-        api = IntakeCrm(contact={'ID': '1', 'PHONE': [{'VALUE': PHONE}]},
+    def test_open_management_is_preserved_and_new_inquiry_is_visible_for_review(self):
+        api = IntakeCrm(contact={'ID': '1', 'UF_CONTACT_CUIL': CUIL, 'PHONE': [{'VALUE': PHONE}]},
                         deals=[{'ID': '99', 'CONTACT_ID': '1', 'CATEGORY_ID': '1', 'STAGE_SEMANTIC_ID': 'P'}])
-        self.assertEqual(process(payload(), env=CONFIG, client=api)['reason'], 'existing_management')
-        self.assertEqual(api.writes, [])
+        before = copy.deepcopy(api.contacts)
+        result = process(payload(), env=CONFIG, client=api)
+        self.assertEqual(result['reason'], 'existing_management')
+        self.assertEqual(api.leads[result['lead_id']]['CONTACT_ID'], '1')
+        self.assertIn('99', api.leads[result['lead_id']]['COMMENTS'])
+        self.assertEqual(api.contacts, before)
+        self.assertEqual([m for m, _ in api.writes], ['crm.lead.add'])
 
     def test_provenance_gates_and_dry_run_do_not_touch_crm(self):
         for changes in [{'attribution': None}, {'flow_id': '1850162769693486'}, {'contract': 'other'},

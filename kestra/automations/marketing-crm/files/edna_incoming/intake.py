@@ -1,4 +1,5 @@
 """Single website-origin WhatsApp intake. No web-form continuation branches."""
+import json
 import re
 
 from .assistance import valid_cuil
@@ -16,7 +17,7 @@ BANKS = {"bancor": "Banco de la Provincia de Cordoba S.A.",
          "nacion": "Banco de la Nacion Argentina", "otro": "Otros"}
 
 
-def normalize_answer(data):
+def normalize_answer(data, *, retain_invalid_identity=False):
     if not isinstance(data, dict):
         raise ValueError("Invalid WhatsApp intake answer.")
     province = data.get("provincia")
@@ -25,16 +26,21 @@ def normalize_answer(data):
     situation = "otra" if province == "otra" else data.get("situacion_" + province)
     if not isinstance(situation, str) or (province != "otra" and situation not in SEGMENTS[province]):
         raise ValueError("Invalid intake situation.")
-    cuil = data.get("cuil")
-    cuil = re.sub(r"[\s.-]", "", cuil.strip()) if isinstance(cuil, str) and len(cuil) <= 32 else ""
-    if not valid_cuil(cuil):
+    reported_cuil = data.get("cuil")
+    cuil = re.sub(r"[\s.-]", "", reported_cuil.strip()) if isinstance(reported_cuil, str) and len(reported_cuil) <= 32 else ""
+    cuil_status = "valid" if valid_cuil(cuil) else "missing" if reported_cuil in (None, "") else "invalid"
+    if cuil_status != "valid" and not retain_invalid_identity:
         raise ValueError("A valid CUIL is required.")
+    cuil = cuil if cuil_status == "valid" else None
     email = data.get("email")
-    if email is not None and not isinstance(email, str):
+    reported_email = email
+    email = email.strip().lower() if isinstance(email, str) else ""
+    email_invalid = reported_email is not None and not isinstance(reported_email, str)
+    email_invalid = email_invalid or bool(email and (len(email) > 254 or re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) is None))
+    if email_invalid and not retain_invalid_identity:
         raise ValueError("Invalid optional email.")
-    email = (email or "").strip().lower()
-    if email and (len(email) > 254 or re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) is None):
-        raise ValueError("Invalid optional email.")
+    email_status = "invalid" if email_invalid else "valid" if email else "missing"
+    email = None if email_invalid else email or None
     organism = ""
     employment = EMPLOYMENT.get(situation, "")
     if province == "cordoba" and situation == "jubilado_pensionado":
@@ -50,9 +56,15 @@ def normalize_answer(data):
             raise ValueError("Invalid intake bank.")
     segment = "cordoba_jubilado" if situation == "jubilado_pensionado" else (
         "otra_provincia" if province == "otra" else province + "_" + situation)
-    automatic = bool(employment) and (organism == "caja_cordoba" or bank in BANKS)
+    automatic = bool(cuil) and not email_invalid and bool(employment) and (organism == "caja_cordoba" or bank in BANKS)
     return {"version": VERSION, "province": PROVINCES[province], "province_key": province,
             "segment": segment, "organism": organism, "employment_status": employment,
             "bank": bank, "payment_bank": BANKS.get(bank, ""), "continuity": "whatsapp",
-            "action": "intake" if automatic else "review", "cuil": cuil, "email": email or None,
-            "cuil_status": "valid", "email_status": "valid" if email else "missing"}
+            "action": "intake" if automatic else "review", "cuil": cuil, "email": email,
+            "cuil_status": cuil_status, "email_status": email_status,
+            "reported_cuil": _reported_value(reported_cuil) if cuil_status != "valid" else "",
+            "reported_email": _reported_value(reported_email) if email_invalid else ""}
+
+
+def _reported_value(value):
+    return (value if isinstance(value, str) else json.dumps(value, ensure_ascii=False) if value is not None else "")[:255]
