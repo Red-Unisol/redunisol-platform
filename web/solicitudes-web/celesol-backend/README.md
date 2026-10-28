@@ -43,6 +43,22 @@ y escritura atómica frente a cambios externos ocurridos entre ambas llamadas.
 Frontend y backend deben desplegarse juntos: el formato anterior con el convenio
 completo sin valores originales se rechaza para evitar sobrescrituras.
 
+## Número de solicitud Beex
+
+`nroSolicitud` es la referencia propia de Beex, independiente de las solicitudes
+del core. PostgreSQL la asigna al crear la solicitud mediante una secuencia desde
+`500001`, como texto de dígitos sin prefijo ni separadores. La API de alta y edición
+no permite elegirla ni modificarla. Los UUID siguen siendo las claves técnicas de
+las rutas y relaciones. Las reservas, avisos y nuevos PDFs usan el mismo número.
+
+La migración completa los números ausentes por fecha de creación e ID, conserva
+las referencias ya asignadas y continúa por encima del máximo numérico existente
+(como mínimo `500001`). Incluye solicitudes archivadas. Bloquea las escrituras
+durante la asignación y restaura la protección de las reservas antes del commit.
+Los PDFs ya emitidos conservan su contenido original. La secuencia puede tener
+saltos por transacciones fallidas o eliminaciones; esos números no se reutilizan.
+Este rango inicial no reserva números en sistemas externos.
+
 ## Tech Stack
 
 - Node.js 22+

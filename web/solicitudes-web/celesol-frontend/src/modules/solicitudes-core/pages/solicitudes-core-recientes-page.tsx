@@ -47,6 +47,7 @@ const SimuladorPrestamoModal = lazy(() =>
 );
 
 const CORE_RECIENTES_COLUMNS: SolicitudesTableColumn[] = [
+  { key: "nroSolicitud", label: "Nº Solicitud", minWidth: "min-w-28", filterable: true },
   {
     key: "vendedorSolicitud",
     label: "Vendedor Solicitud",
@@ -327,7 +328,7 @@ function RecientesList({ user }: { user: AuthUser }) {
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm"
     >
       <SolicitudesToolbar
-        searchPlaceholder="Buscar por DNI, nombre o apellido"
+        searchPlaceholder="Buscar por solicitud, DNI, nombre o apellido"
         viewControl={user.workflowOwner?.code !== "TESORERIA" && (
           <div
             className="flex flex-wrap items-center gap-2"

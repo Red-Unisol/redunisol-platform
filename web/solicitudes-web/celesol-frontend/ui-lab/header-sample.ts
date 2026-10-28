@@ -1,7 +1,7 @@
 /** Fictional data shared by header previews and the isolated real-page harness. */
 export const SAMPLE_REQUEST = {
   id: "00000000-0000-4000-8000-000000000001",
-  number: "BEEX-0241",
+  number: "500001",
   name: "MARÍA EJEMPLO",
   member: "DEMO-0241",
   amount: 600000,

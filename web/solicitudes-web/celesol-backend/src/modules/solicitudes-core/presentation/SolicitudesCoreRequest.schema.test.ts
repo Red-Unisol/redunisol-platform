@@ -9,6 +9,14 @@ import {
   createPrestamoLegacyBodySchema,
 } from "./SolicitudesCoreRequest.schema";
 
+it("rejects changing the assigned request number through an ordinary edit", () => {
+  const result = patchSolicitudBodySchema.safeParse({ observaciones: "Nota", nroSolicitud: "600000" });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert(result.error.issues.some(issue => issue.code === "unrecognized_keys" && issue.keys.includes("nroSolicitud")));
+  }
+});
+
 describe("createPrestamoLegacyBodySchema convenio patch", () => {
   it("accepts a single edit with its original value and preserves omitted fields", () => {
     assert.deepEqual(createPrestamoLegacyBodySchema.parse({ convenio: { caja40: { original: 100, valor: 110 } } }), {

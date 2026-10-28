@@ -90,6 +90,11 @@ fixtures, incluyendo Evaluación y CredixSA reales. `role=vendedor` o `role=admi
 revisar otros permisos; `payment=external` agrega el aviso de una transferencia de ejemplo
 y `edit=1` permite probar el modo de edición sin habilitar escrituras en el transporte.
 
+`/production?list=precarga`, `?list=recientes` y `?list=historicas` muestran los
+listados reales con la solicitud ficticia `500001` en la primera columna. La
+ficha usa ese número como título y permite copiarlo sin prefijo ni separadores.
+Los listados del laboratorio no simulan la búsqueda del servidor.
+
 La barra global del detalle mide 40 px en escritorio y 48 px con puntero táctil. Los datos
 comienzan plegados y el navegador recuerda Mostrar/Ocultar encabezado. Las acciones siguen
 disponibles y los avisos operativos forman parte del contenido desplazable de Solicitud.
