@@ -23,18 +23,17 @@ import { AppTopbar } from "@/app/layouts/app-topbar";
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { getDefaultAuthenticatedRoute } from "@/modules/auth/utils/auth-user";
 import {
-  getSolicitudCoreDetailOriginLabel,
+  getSolicitudCoreDetailOriginLink,
   getSolicitudDetailOriginLabel,
 } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
 
 const TITLE_BY_PATH: Record<string, string> = {
   "/404": "Página no encontrada",
   "/dev/loader-preview": "Preview Loader",
-  "/listados/creditos-por-vendedor": "Créditos por Vendedor",
-  "/listados/resumen-estado-credito-dni": "Resumen Estado Crédito por DNI",
-  "/admin/solicitudes/field-access-rules":
-    "Administración de permisos de edición",
-  "/admin/solicitudes/workflow-transitions": "Administración de transiciones",
+  "/listados/creditos-por-vendedor": "Créditos por vendedor",
+  "/listados/resumen-estado-credito-dni": "Estado de créditos por DNI",
+  "/admin/solicitudes/field-access-rules": "Permisos de edición",
+  "/admin/solicitudes/workflow-transitions": "Transiciones",
   "/admin/solicitudes/reconocimiento-recibos": "Reconocimiento de recibos",
   "/socios": "Socios",
   "/dashboard": "Dashboard",
@@ -43,21 +42,20 @@ const TITLE_BY_PATH: Record<string, string> = {
   "/admin/users": "Usuarios",
   "/admin/users/pending": "Usuarios pendientes",
   "/riesgo/calculadora": "Calculadora Mutual",
-  "/solicitudes/core/detalle/:id": "Sistema Actual - Detalle de Solicitud",
-  "/solicitudes/core/historicas": "Sistema Actual - Solicitudes Históricas",
-  "/solicitudes/core/precarga": "Sistema Actual - Solicitudes Precarga",
-  "/solicitudes/core/precarga/nueva": "Sistema Actual - Nueva Solicitud",
-  "/solicitudes/core/recientes": "Sistema Actual - Solicitudes Recientes",
-  "/solicitudes/actual/detalle/:id": "Sistema Actual - Detalle de Solicitud",
-  "/solicitudes/actual/historicas": "Sistema Actual - Solicitudes Históricas",
-  "/solicitudes/actual/precarga": "Sistema Actual - Solicitudes Precarga",
-  "/solicitudes/actual/precarga/nueva": "Sistema Actual - Nueva Solicitud",
-  "/solicitudes/actual/recientes": "Sistema Actual - Solicitudes Recientes",
-  "/solicitudes/anterior/historicas":
-    "Sistema Anterior - Solicitudes Históricas",
-  "/solicitudes/anterior/precarga": "Sistema Anterior - Solicitudes Precarga",
-  "/solicitudes/anterior/recientes": "Sistema Anterior - Solicitudes Recientes",
-  "/solicitudes/detalle": "Detalle de Solicitud",
+  "/solicitudes/core/detalle/:id": "Detalle de la solicitud",
+  "/solicitudes/core/historicas": "Solicitudes históricas",
+  "/solicitudes/core/precarga": "Precarga",
+  "/solicitudes/core/precarga/nueva": "Nueva solicitud",
+  "/solicitudes/core/recientes": "Solicitudes recientes",
+  "/solicitudes/actual/detalle/:id": "Detalle de la solicitud",
+  "/solicitudes/actual/historicas": "Solicitudes históricas",
+  "/solicitudes/actual/precarga": "Precarga",
+  "/solicitudes/actual/precarga/nueva": "Nueva solicitud",
+  "/solicitudes/actual/recientes": "Solicitudes recientes",
+  "/solicitudes/anterior/historicas": "Históricas del sistema anterior",
+  "/solicitudes/anterior/precarga": "Precarga del sistema anterior",
+  "/solicitudes/anterior/recientes": "Recientes del sistema anterior",
+  "/solicitudes/detalle": "Detalle de la solicitud",
 };
 
 const TITLE_ICON_BY_PATH: Record<string, LucideIcon> = {
@@ -101,27 +99,28 @@ export function AppLayout() {
   const [searchParams] = useSearchParams();
   const origen = searchParams.get("origen");
 
+  const isCoreDetalle =
+    pathname.startsWith("/solicitudes/core/detalle/") ||
+    pathname.startsWith("/solicitudes/actual/detalle/");
+  // En el detalle, la barra lleva "← Precarga" (o la lista de origen) y el título.
+  const backLink = useMemo(
+    () => (isCoreDetalle ? getSolicitudCoreDetailOriginLink(origen) : null),
+    [isCoreDetalle, origen],
+  );
   const title = useMemo(() => {
-    if (
-      pathname === "/solicitudes/detalle" ||
-      pathname.startsWith("/solicitudes/core/detalle/") ||
-      pathname.startsWith("/solicitudes/actual/detalle/")
-    ) {
+    if (isCoreDetalle) {
+      return "Detalle de la solicitud";
+    }
+
+    if (pathname === "/solicitudes/detalle") {
       return null;
     }
 
     return TITLE_BY_PATH[pathname];
-  }, [pathname]);
+  }, [isCoreDetalle, pathname]);
   const titleBadge = useMemo(() => {
     if (pathname === "/solicitudes/detalle") {
       return getSolicitudDetailOriginLabel(origen);
-    }
-
-    if (
-      pathname.startsWith("/solicitudes/core/detalle/") ||
-      pathname.startsWith("/solicitudes/actual/detalle/")
-    ) {
-      return getSolicitudCoreDetailOriginLabel(origen);
     }
 
     return null;
@@ -187,19 +186,21 @@ export function AppLayout() {
         onToggleSidebar={() =>
           setIsSidebarOpen((currentState) => !currentState)
         }
+        backLink={backLink}
         titleBadge={titleBadge}
         title={title}
         titleIcon={titleIcon}
       />
 
-      <div className="relative flex h-[calc(100vh-4rem)]">
+      {/* Fondo marino detrás del contenido: la esquina redondeada lo deja ver como un marco. */}
+      <div className="relative flex h-[calc(100vh-4rem)] bg-marino">
         <AppSidebar
           isDesktop={isDesktop}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
         <section
-          className={`relative flex-1 p-2 md:p-1 ${
+          className={`relative flex-1 bg-background p-2 md:rounded-tl-2xl md:p-1 ${
             isScrollableContentRoute
               ? "overflow-y-auto overflow-x-hidden"
               : "overflow-hidden"

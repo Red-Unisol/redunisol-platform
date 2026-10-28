@@ -42,7 +42,7 @@ describe("getDefaultAuthenticatedRoute", () => {
     );
   });
 
-  it("routes admins to the admin dashboard", () => {
+  it("routes admins to precarga", () => {
     const routeResolver = (authUserModule as Record<string, unknown>)[
       "getDefaultAuthenticatedRoute"
     ];
@@ -52,11 +52,11 @@ describe("getDefaultAuthenticatedRoute", () => {
       (routeResolver as (user: AuthUser) => string)(
         buildUser({ isSystemAdmin: true }),
       ),
-      "/dashboard",
+      "/solicitudes/core/precarga",
     );
   });
 
-  it("routes admins to the admin dashboard even without a workflow owner", () => {
+  it("routes admins to precarga even without a workflow owner", () => {
     const routeResolver = (authUserModule as Record<string, unknown>)[
       "getDefaultAuthenticatedRoute"
     ];
@@ -70,11 +70,11 @@ describe("getDefaultAuthenticatedRoute", () => {
           workflowOwnerId: null,
         }),
       ),
-      "/dashboard",
+      "/solicitudes/core/precarga",
     );
   });
 
-  it("routes regular users to the dashboard home", () => {
+  it("routes regular users to precarga", () => {
     const routeResolver = (authUserModule as Record<string, unknown>)[
       "getDefaultAuthenticatedRoute"
     ];
@@ -82,7 +82,7 @@ describe("getDefaultAuthenticatedRoute", () => {
     assert.equal(typeof routeResolver, "function");
     assert.equal(
       (routeResolver as (user: AuthUser) => string)(buildUser()),
-      "/dashboard",
+      "/solicitudes/core/precarga",
     );
   });
 });

@@ -13,7 +13,6 @@ import {
   Clock,
   Download,
   Eye,
-  FileText,
   Maximize2,
   Minimize2,
   Pencil,
@@ -4170,33 +4169,31 @@ export function SolicitudesActualDetallePage() {
       }`}
     >
       <div id="solicitud-encabezado-completo" className={analisisActivo ? "hidden" : "contents"}>
-      <header className="border-b border-border bg-surface px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex min-w-0 max-w-full items-center gap-2.5">
-            <Button
-              className="shrink-0 text-foreground-secondary"
-              onClick={() => navigate(originPath)}
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-            >
-              <ArrowLeft className="size-4" />
-            </Button>
-            <FileText className="size-4 shrink-0 text-primary" />
-            <h1 className="truncate text-[2rem] leading-none font-semibold text-foreground">
-              Detalle de Solicitud
-            </h1>
-          </div>
-          <div className="flex max-w-full flex-wrap items-center gap-x-5 gap-y-2">
+      {/* El título y "volver" están en la barra superior; acá solo los datos de la solicitud. */}
+      <DatosRapidosSolicitante
+        estado={
+          <Badge
+            className="shrink-0 font-semibold"
+            dot
+            variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}
+          >
+            {formatText(
+              resolvedSolicitud.estadoActual.name ||
+                resolvedSolicitud.estadoActual.code,
+            )}
+          </Badge>
+        }
+        meta={
+          <>
             <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-xs font-medium text-foreground-muted">
-                Solicitud ID
+              <span className="text-sm text-foreground-secondary">
+                Solicitud
               </span>
               <IdChip value={resolvedSolicitud.id} />
             </div>
             {canViewPrestamoGenerado ? (
               <div className="flex items-center gap-2 whitespace-nowrap">
-                <span className="text-xs font-medium text-foreground-muted">
+                <span className="text-sm text-foreground-secondary">
                   Préstamo
                 </span>
                 {!resolvedSolicitud.legacyOid ? (
@@ -4214,21 +4211,8 @@ export function SolicitudesActualDetallePage() {
                 )}
               </div>
             ) : null}
-          </div>
-          <Badge
-            className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
-            dot
-            variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}
-          >
-            {formatText(
-              resolvedSolicitud.estadoActual.code ||
-                resolvedSolicitud.estadoActual.name,
-            )}
-          </Badge>
-        </div>
-      </header>
-
-      <DatosRapidosSolicitante
+          </>
+        }
         key={resolvedSolicitud.id}
         solicitudId={resolvedSolicitud.id}
         titular={resolvedSolicitud.titular}

@@ -2,12 +2,19 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/montserrat";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
+  --font-marca: "Montserrat Variable", "Segoe UI", system-ui, sans-serif;
+  --color-marino: var(--marino);
+  --color-marino-2: var(--marino-2);
+  --color-marino-foreground-secondary: var(--marino-foreground-secondary);
+  --color-verde: var(--verde);
+  --color-verde-claro: var(--verde-claro);
   --color-surface: var(--surface);
   --color-foreground-secondary: var(--foreground-secondary);
   --color-foreground-muted: var(--foreground-muted);
@@ -73,9 +80,10 @@
   --foreground-muted: #8a8a8a;
   --border: #d9d9d9;
   --border-soft: #e6e6e6;
-  --primary: #f97316;
-  --primary-hover: #ea580c;
-  --primary-soft: #fb923c;
+  /* Primario = verde de la marca (antes naranja #f97316). */
+  --primary: #468269;
+  --primary-hover: #3a6d58;
+  --primary-soft: #6baf92;
   --danger: #f31225;
   --danger-foreground: #ffffff;
   --success: #b7f0b1;
@@ -84,9 +92,16 @@
   --warning-foreground: #92400e;
   --input-background: #ffffff;
   --input-border: #d6d6d6;
-  --input-focus: #f59e0b;
+  --input-focus: #468269;
   --disabled-background: #efefef;
   --disabled-foreground: #9a9a9a;
+
+  /* Marca Redunisol (layout) */
+  --marino: #1e2d3d;
+  --marino-2: #2a3e53;
+  --marino-foreground-secondary: #c6d3de;
+  --verde: #468269;
+  --verde-claro: #6baf92;
 
   --card: var(--surface);
   --card-foreground: var(--foreground);
