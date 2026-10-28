@@ -419,16 +419,19 @@ export async function descargarSimulacionRefinanciacionPdf(
   }
 }
 
-export function guardarSolicitudRefinanciacion(
+// Guarda las cuotas y deja el comprobante en los adjuntos de la solicitud.
+// Sin cuotas, quita la refinanciacion y su comprobante.
+export function generarComprobanteRefinanciacion(
   solicitudId: string,
   prestamos: RefinanciacionPrestamoRequest[],
 ) {
   return withAreaForbiddenMessage(
-    apiClient.put<
+    apiClient.post<
       SolicitudRefinanciacionResponse & {
+        adjuntoId: string | null;
         simulacion: RefinanciacionSimuladaResponse | null;
       }
-    >(`/solicitudes/${solicitudId}/refinanciacion`, { prestamos }),
+    >(`/solicitudes/${solicitudId}/refinanciacion/comprobante`, { prestamos }),
   );
 }
 

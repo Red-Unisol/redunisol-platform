@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
-import { useGuardarRefinanciacionMutation } from "@/modules/solicitudes-core/hooks/use-guardar-refinanciacion-mutation";
+import { useGenerarComprobanteRefinanciacionMutation } from "@/modules/solicitudes-core/hooks/use-generar-comprobante-refinanciacion-mutation";
 import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
 import { usePrestamosDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamos-del-socio-query";
 import { useSimularRefinanciacionMutation } from "@/modules/solicitudes-core/hooks/use-simular-refinanciacion-mutation";
@@ -68,7 +68,8 @@ export function RefinanciacionSection({
 }: RefinanciacionSectionProps) {
   const prestamosQuery = usePrestamosDelSocioQuery(solicitudId, isActive);
   const guardadaQuery = useSolicitudRefinanciacionQuery(solicitudId, isActive);
-  const guardarMutation = useGuardarRefinanciacionMutation(solicitudId);
+  const generarMutation =
+    useGenerarComprobanteRefinanciacionMutation(solicitudId);
   const simularMutation = useSimularRefinanciacionMutation(solicitudId);
   // null: sin cambios locales, se muestra lo guardado.
   const [borrador, setBorrador] = useState<Seleccion | null>(null);
@@ -96,7 +97,7 @@ export function RefinanciacionSection({
     0,
   );
   const ocupado =
-    guardarMutation.isPending || simularMutation.isPending || descargando;
+    generarMutation.isPending || simularMutation.isPending || descargando;
   // Un intento de generar el prestamo ya cobro cuotas en Vimarx: la seleccion
   // queda fija (el backend tampoco deja cambiarla).
   const yaCobrada = (guardadaQuery.data?.prestamos ?? []).some(
@@ -155,11 +156,13 @@ export function RefinanciacionSection({
     }
   }
 
-  function guardar() {
-    guardarMutation.mutate(aRequest(seleccion), {
+  // Guarda las cuotas y deja el comprobante en Adjuntos, con los importes de
+  // hoy. Se puede volver a generar: reemplaza al anterior.
+  function generarPdf() {
+    generarMutation.mutate(aRequest(seleccion), {
       onError: (error) => {
         toast.error(
-          mensajeDeError(error, "No se pudo guardar la refinanciación."),
+          mensajeDeError(error, "No se pudo generar el comprobante."),
           { id: GUARDAR_ERROR_TOAST_ID },
         );
       },
@@ -167,9 +170,9 @@ export function RefinanciacionSection({
         setBorrador(null);
         setSimulacion(resultado.simulacion);
         toast.success(
-          resultado.prestamos.length > 0
-            ? "Refinanciación guardada."
-            : "Se quitó la refinanciación.",
+          resultado.adjuntoId
+            ? "Comprobante generado y guardado en Adjuntos."
+            : "Se quitó la refinanciación y su comprobante.",
         );
       },
     });
@@ -194,8 +197,9 @@ export function RefinanciacionSection({
   return (
     <div className="space-y-3">
       <p className="text-sm text-foreground-secondary">
-        Seleccioná las cuotas a cancelar con la refinanciación. Se cobran en
-        Vimarx al generar el préstamo, con el importe de ese día.
+        Seleccioná las cuotas a cancelar con la refinanciación y generá el
+        PDF: guarda la selección y deja el comprobante en Adjuntos. Las cuotas
+        se cobran en Vimarx al generar el préstamo.
       </p>
       {yaCobrada ? (
         <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
@@ -232,7 +236,7 @@ export function RefinanciacionSection({
             {cantidadCuotas === 0
               ? "No hay cuotas seleccionadas."
               : `${cantidadCuotas} cuota${cantidadCuotas === 1 ? "" : "s"} seleccionada${cantidadCuotas === 1 ? "" : "s"}.`}
-            {hayCambios ? " Hay cambios sin guardar." : ""}
+            {hayCambios ? " Hay cambios sin generar el PDF." : ""}
           </div>
           <div className="font-medium">
             Total a refinanciar:{" "}
@@ -268,11 +272,15 @@ export function RefinanciacionSection({
           </Button>
           {editable ? (
             <Button
-              disabled={!hayCambios || ocupado}
-              onClick={guardar}
+              disabled={(cantidadCuotas === 0 && !hayCambios) || ocupado}
+              onClick={generarPdf}
               type="button"
             >
-              {guardarMutation.isPending ? "Guardando..." : "Guardar"}
+              {generarMutation.isPending
+                ? "Generando..."
+                : cantidadCuotas === 0
+                  ? "Quitar refinanciación"
+                  : "Generar PDF"}
             </Button>
           ) : null}
         </div>

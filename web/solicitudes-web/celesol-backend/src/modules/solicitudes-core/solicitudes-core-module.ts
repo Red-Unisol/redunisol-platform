@@ -43,6 +43,7 @@ import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPresta
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
 import { SimularRefinanciacionUseCase } from "./application/use-cases/SimularRefinanciacion.use-case";
 import { DescargarSimulacionRefinanciacionPdfUseCase } from "./application/use-cases/DescargarSimulacionRefinanciacionPdf.use-case";
+import { GenerarComprobanteRefinanciacionUseCase } from "./application/use-cases/GenerarComprobanteRefinanciacion.use-case";
 import { GetSolicitudRefinanciacionUseCase } from "./application/use-cases/GetSolicitudRefinanciacion.use-case";
 import { GuardarSolicitudRefinanciacionUseCase } from "./application/use-cases/GuardarSolicitudRefinanciacion.use-case";
 import { SolicitudRefinanciacionPrismaRepository } from "./infrastructure/repositories/SolicitudRefinanciacionPrismaRepository";
@@ -318,12 +319,6 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
   });
   const cobrarRefinanciacionSolicitud = new CobrarRefinanciacionSolicitud({
-    archivarComprobante: new ArchivarComprobanteRefinanciacion({
-      adjuntos: solicitudAdjuntoRepository,
-      bucket: env.MINIO_BUCKET_SOLICITUDES,
-      comprobante: comprobanteRefinanciacion,
-      storage: adjuntosObjectStorage,
-    }),
     cobrarPrestamoGateway,
     legacyGateway: solicitudesLegacyGateway,
     refinanciacionRepository: solicitudRefinanciacionRepository,
@@ -480,6 +475,16 @@ export function createSolicitudesCoreRouter(
       }),
     getSolicitudRefinanciacionUseCase,
     guardarSolicitudRefinanciacionUseCase,
+    generarComprobanteRefinanciacionUseCase:
+      new GenerarComprobanteRefinanciacionUseCase({
+        archivar: new ArchivarComprobanteRefinanciacion({
+          adjuntos: solicitudAdjuntoRepository,
+          bucket: env.MINIO_BUCKET_SOLICITUDES,
+          storage: adjuntosObjectStorage,
+        }),
+        comprobante: comprobanteRefinanciacion,
+        guardar: guardarSolicitudRefinanciacionUseCase,
+      }),
     listLineasPrestamoDeSolicitudUseCase,
     listSolicitudesDelTitularUseCase: new ListSolicitudesDelTitularUseCase({ repository: solicitudesCoreRepository, legacyGateway: solicitudesLegacyGateway }),
     listPrestamosDelSocioUseCase,

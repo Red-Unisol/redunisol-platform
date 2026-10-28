@@ -33,6 +33,7 @@ import type { SimularRefinanciacionUseCase } from "../application/use-cases/Simu
 import type { DescargarSimulacionRefinanciacionPdfUseCase } from "../application/use-cases/DescargarSimulacionRefinanciacionPdf.use-case";
 import type { GetSolicitudRefinanciacionUseCase } from "../application/use-cases/GetSolicitudRefinanciacion.use-case";
 import type { GuardarSolicitudRefinanciacionUseCase } from "../application/use-cases/GuardarSolicitudRefinanciacion.use-case";
+import type { GenerarComprobanteRefinanciacionUseCase } from "../application/use-cases/GenerarComprobanteRefinanciacion.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
 import {
   ForbiddenSolicitudAccessError,
@@ -104,6 +105,7 @@ type Dependencies = {
   descargarSimulacionRefinanciacionPdfUseCase: DescargarSimulacionRefinanciacionPdfUseCase;
   getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
   guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
+  generarComprobanteRefinanciacionUseCase: GenerarComprobanteRefinanciacionUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
 };
 
@@ -135,6 +137,7 @@ export class SolicitudesCoreController {
   private readonly descargarSimulacionRefinanciacionPdfUseCase: DescargarSimulacionRefinanciacionPdfUseCase;
   private readonly getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
   private readonly guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
+  private readonly generarComprobanteRefinanciacionUseCase: GenerarComprobanteRefinanciacionUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
 
   constructor(dependencies: Dependencies) {
@@ -176,6 +179,8 @@ export class SolicitudesCoreController {
       dependencies.getSolicitudRefinanciacionUseCase;
     this.guardarSolicitudRefinanciacionUseCase =
       dependencies.guardarSolicitudRefinanciacionUseCase;
+    this.generarComprobanteRefinanciacionUseCase =
+      dependencies.generarComprobanteRefinanciacionUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
   }
 
@@ -546,6 +551,46 @@ export class SolicitudesCoreController {
         });
 
       res.status(200).json(refinanciacion);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Boton "Generar PDF": guarda las cuotas y deja el comprobante en los
+  // adjuntos de la solicitud (lista vacia = quita la refinanciacion y su PDF).
+  generarComprobanteRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<GuardarRefinanciacionBody>(
+        guardarRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const resultado =
+        await this.generarComprobanteRefinanciacionUseCase.execute({
+          currentUser: {
+            id: user.id,
+            workflowOwnerCode: user.workflowOwner?.code ?? null,
+            workflowOwnerId: user.workflowOwnerId,
+            ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+          },
+          prestamos: body.prestamos,
+          solicitudId: params.id,
+        });
+
+      res.status(200).json(resultado);
     } catch (error) {
       next(error);
     }

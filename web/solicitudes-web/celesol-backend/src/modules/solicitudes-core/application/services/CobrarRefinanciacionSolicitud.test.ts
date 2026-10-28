@@ -133,60 +133,6 @@ describe("CobrarRefinanciacionSolicitud", () => {
     ]);
   });
 
-  it("saves the comprobante of each cobro, with the user that generated the prestamo", async () => {
-    const archivados: unknown[] = [];
-    const servicio = build({
-      archivar: async (input) => {
-        archivados.push(input);
-      },
-      cobrar: async (input) => ({ cobroId: `PG-${input.nrosCuota.join("-")}`, totalPago: 100 }),
-    });
-
-    await servicio.cobrar(
-      "sol-1",
-      { pendientes: [{ nrosCuota: [22, 23], prestamoId: "416228" }], total: 200 },
-      "user-1",
-    );
-
-    assert.deepEqual(archivados, [
-      { actorId: "user-1", cobroId: "PG-22", cuotas: [], prestamoId: "416228", solicitudId: "sol-1" },
-      { actorId: "user-1", cobroId: "PG-23", cuotas: [], prestamoId: "416228", solicitudId: "sol-1" },
-    ]);
-  });
-
-  it("does not stop the cobros when the comprobante cannot be saved", async () => {
-    // El cobro ya esta hecho en Vimarx: frenar ahi dejaria el prestamo nuevo
-    // sin generar por un PDF.
-    const registrados: string[] = [];
-    const servicio = build({
-      archivar: async () => {
-        throw new Error("S3 caido");
-      },
-      cobrar: async (input) => ({ cobroId: `PG-${input.nrosCuota.join("-")}`, totalPago: 100 }),
-      onAgregarCobro: (input) => registrados.push(input.cobro.cobroId),
-    });
-    const errorOriginal = console.error;
-    const logs: unknown[] = [];
-    console.error = (...args: unknown[]) => {
-      logs.push(args[0]);
-    };
-
-    try {
-      await servicio.cobrar("sol-1", {
-        pendientes: [{ nrosCuota: [22, 23], prestamoId: "416228" }],
-        total: 200,
-      });
-    } finally {
-      console.error = errorOriginal;
-    }
-
-    assert.deepEqual(registrados, ["PG-22", "PG-23"]);
-    assert.deepEqual(logs, [
-      "refinanciacion_comprobante_failed",
-      "refinanciacion_comprobante_failed",
-    ]);
-  });
-
   it("keeps what was charged and reports the cobro that failed", async () => {
     const registrados: number[][] = [];
     const servicio = build({
@@ -265,7 +211,6 @@ function ok(prestamoId: string, totalPago: number) {
 
 function build(
   overrides: {
-    archivar?: (input: unknown) => Promise<void>;
     cobrar?: (
       input: CobrarPrestamoInput,
     ) => Promise<{ cobroId: string; totalPago: number }>;
@@ -279,9 +224,6 @@ function build(
   } = {},
 ) {
   return new CobrarRefinanciacionSolicitud({
-    ...(overrides.archivar
-      ? { archivarComprobante: { execute: overrides.archivar } }
-      : {}),
     cobrarPrestamoGateway: {
       cobrar: (async (input: CobrarPrestamoInput) => {
         const resultado = await (overrides.cobrar ??
