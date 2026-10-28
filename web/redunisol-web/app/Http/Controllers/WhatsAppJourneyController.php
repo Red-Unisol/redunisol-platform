@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\AttributionJourney;
+use App\Services\JourneyLedger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
@@ -32,6 +33,10 @@ class WhatsAppJourneyController
                     }, 60);
                 // Rate limiting affects recording only; contact always remains available.
                 if ($journey) {
+                    app(JourneyLedger::class)->record('whatsapp.handoff', [
+                        'parent_journey_id' => $request->cookie(AttributionJourney::COOKIE),
+                        'acquisition' => (new AttributionJourney)->snapshot($journey),
+                    ], ['journey_id' => $journey->id] + app(JourneyLedger::class)->context($request));
                     $text = preg_replace('/\s*\(ref:\s*'.AttributionJourney::REFERENCE_PATTERN.'\)/i', '', $text).' (ref: '.$journey->id.')';
                 }
             } catch (Throwable) {

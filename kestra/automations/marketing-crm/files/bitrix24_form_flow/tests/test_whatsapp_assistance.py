@@ -43,7 +43,8 @@ class Crm:
             return {n: {"type": "datetime" if n.endswith(("TIMESTAMP", "FECHA_ORIGEN")) else "string", "isMultiple": False} for n in names}
         if method == "crm.duplicate.findbycomm":
             store = self.contacts if body["entity_type"] == "CONTACT" else self.leads
-            return {body["entity_type"]: [k for k, r in store.items() if r.get("PHONE")]}
+            ids = [k for k, r in store.items() if r.get("PHONE")]
+            return {body["entity_type"]: ids} if ids else []  # Actual Bitrix empty result shape.
         entity = method.split(".")[1]
         store = self.contacts if entity == "contact" else self.leads
         op = method.split(".")[2]

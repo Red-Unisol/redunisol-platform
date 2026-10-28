@@ -186,6 +186,7 @@ export class SolicitudAdjuntosController {
       const adjuntos = await this.listSolicitudAdjuntosUseCase.execute({
         currentUser: {
           id: user.id,
+          ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
           workflowOwnerId: user.workflowOwnerId,
         },
         solicitudId: params.id,
@@ -222,6 +223,7 @@ export class SolicitudAdjuntosController {
           adjuntoId: params.adjuntoId,
           currentUser: {
             id: user.id,
+            ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
             workflowOwnerId: user.workflowOwnerId,
           },
           solicitudId: params.id,

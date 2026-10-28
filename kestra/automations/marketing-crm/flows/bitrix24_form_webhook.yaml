@@ -44,6 +44,9 @@ tasks:
       - python -m bitrix24_form_flow.kestra_form_intake_entrypoint
 
 outputs:
+  - id: execution_id
+    type: STRING
+    value: "{{ execution.id }}"
   - id: ok
     type: BOOL
     value: "{{ outputs.cargar_formulario.vars.ok }}"

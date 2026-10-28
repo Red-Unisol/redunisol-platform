@@ -1,3 +1,9 @@
+import { randomUUID } from "node:crypto";
+import { actingContext } from "../../../auth/impersonation/context";
+import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
+import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
+import { assertLinkedLoanReady, type LinkedLoanReader } from "../services/LinkedLoanRules";
+import type { InitialLoanGenerationService } from "../../infrastructure/services/InitialLoanGenerationService";
 import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
@@ -6,6 +12,7 @@ import type { CobrarRefinanciacionSolicitud } from "../services/CobrarRefinancia
 import {
   LegacyLineaPrestamoUnavailableError,
   InvalidSolicitudesCoreRequestError,
+  ConvenioSocioConflictError,
 } from "../../domain/solicitudes-core-errors";
 import type { CreatePrestamoLegacyInput } from "../dtos/CreatePrestamoLegacy.dto";
 import { buildLinkFirmaDigital } from "../services/buildLinkFirmaDigital";
@@ -14,7 +21,7 @@ import { FindSolicitudTitularSocio } from "../services/FindSolicitudTitularSocio
 import type { CrearPrestamoGateway } from "../../infrastructure/services/CrearPrestamoGateway";
 import type { EditarSocioMutualGateway } from "../../infrastructure/services/EditarSocioMutualGateway";
 import type {
-  ConvenioSocio,
+  ConvenioSocioEdicion,
   ConvenioSocioGateway,
 } from "../../domain/services/ConvenioSocioGateway";
 import type { SolicitudCore } from "../../domain/entities/SolicitudCore.entity";
@@ -66,6 +73,10 @@ type Dependencies = {
     "getVendedorLegacyId"
   >;
   today: () => string;
+  linkedLoanReader?: LinkedLoanReader;
+  initialGeneration?: Pick<InitialLoanGenerationService, "create">;
+  replaceCancelledLoan?: (input: CreatePrestamoLegacyInput, solicitud: SolicitudCore) => Promise<SolicitudCore>;
+  diagnostics?: LoanDiagnosticWriter;
 };
 
 export class CreatePrestamoLegacyUseCase {
@@ -97,6 +108,10 @@ export class CreatePrestamoLegacyUseCase {
     "getVendedorLegacyId"
   >;
   private readonly today: () => string;
+  private readonly linkedLoanReader?: LinkedLoanReader;
+  private readonly initialGeneration?: Pick<InitialLoanGenerationService, "create">;
+  private readonly replaceCancelledLoan?: Dependencies["replaceCancelledLoan"];
+  private readonly diagnostics?: LoanDiagnosticWriter;
 
   constructor(dependencies: Dependencies) {
     this.archivarEvaluacion = dependencies.archivarEvaluacion;
@@ -121,16 +136,78 @@ export class CreatePrestamoLegacyUseCase {
     this.repository = dependencies.repository;
     this.solicitudesLegacyGateway = dependencies.solicitudesLegacyGateway;
     this.today = dependencies.today;
+    this.linkedLoanReader = dependencies.linkedLoanReader;
+    this.initialGeneration = dependencies.initialGeneration;
+    this.replaceCancelledLoan = dependencies.replaceCancelledLoan;
+    this.diagnostics = dependencies.diagnostics;
+  }
+
+  private async diagnostic(context: LoanDiagnosticContext, stage: string, data: unknown) {
+    try { await this.diagnostics?.(context, { stage, data }); } catch { /* Diagnostics must not change the loan result. */ }
   }
 
   async execute(input: CreatePrestamoLegacyInput): Promise<SolicitudCore> {
+    const current = await this.repository.findById(input.solicitudId);
+    if (!current) throw new SolicitudCoreNotFoundError();
+    this.assertCanGenerate(current, input);
+    if (current.legacyOid) {
+      if (!this.linkedLoanReader) throw new SolicitudLegacyOidAlreadyExistsError();
+      const loan = await this.linkedLoanReader(current);
+      if (loan.status === "cancelled" && this.replaceCancelledLoan)
+        return this.replaceCancelledLoan(input, current);
+      assertLinkedLoanReady(loan);
+      if (input.convenio && Object.keys(input.convenio).length > 0)
+        throw new InvalidSolicitudesCoreRequestError("El préstamo ya está generado. Los datos del convenio deben editarse en Vimarx.");
+      return current;
+    }
+    const prepared = await this.prepare(input);
+    if (this.initialGeneration) return this.initialGeneration.create(prepared, input);
+    const context: LoanDiagnosticContext = {
+      operationId: randomUUID(), solicitudId: input.solicitudId, actorId: input.currentUser.id,
+      realActorId: actingContext.getStore()?.administrator.id ?? input.currentUser.id, operation: "loan_generation",
+    };
+    let newLoanId: string;
+    await prepared.antesDeCrear?.();
+    try { newLoanId = (await this.gateway.crear(prepared.coreInput, context)).id; }
+    catch (error) {
+      await this.diagnostic(context, "ERROR", { phase: "REMOTE_CREATION", error });
+      throw error;
+    }
+    await this.diagnostic(context, "CREATED_REMOTE", { newLoanId });
+    try {
+      const linked = await this.repository.update(input.solicitudId, { solicitud: {
+        legacyOid: newLoanId, lineaPrestamoCodigoMutual: prepared.codigoMutual,
+        linkFirmaDigital: buildLinkFirmaDigital(this.linkFirmaDigitalBaseUrl, newLoanId, prepared.codigoMutual),
+      } });
+      await this.diagnostic(context, "LINKED", { newLoanId });
+      return linked;
+    } catch (error) {
+      await this.diagnostic(context, "LINK_FAILED", { newLoanId, error });
+      throw error;
+    }
+  }
+
+  async prepareReplacement(input: CreatePrestamoLegacyInput) {
+    return this.prepare(input, true);
+  }
+
+  private assertCanGenerate(solicitud: SolicitudCore, input: CreatePrestamoLegacyInput) {
+    if (!input.currentUser.isSystemAdmin &&
+      (!solicitud.estadoActual.ownerId || solicitud.estadoActual.ownerId !== input.currentUser.workflowOwnerId))
+      throw new ForbiddenSolicitudAccessError();
+    if (solicitud.estadoActual.code !== "Confirmada")
+      throw new AdministrativeCorrectionError("El préstamo se genera o regenera desde Confirmada. Primero completá la revisión y confirmá la solicitud.");
+  }
+
+  private async prepare(input: CreatePrestamoLegacyInput, replacement = false) {
     const solicitud = await this.repository.findById(input.solicitudId);
 
     if (!solicitud) {
       throw new SolicitudCoreNotFoundError();
     }
+    this.assertCanGenerate(solicitud, input);
 
-    if (solicitud.legacyOid) {
+    if (solicitud.legacyOid && !replacement) {
       throw new SolicitudLegacyOidAlreadyExistsError();
     }
 
@@ -238,11 +315,11 @@ export class CreatePrestamoLegacyUseCase {
       throw new InvalidSolicitudesCoreRequestError(
         "La refinanciación y las cancelaciones superan el monto a desembolsar.",
       );
-    // Antes del prestamo: si Vimarx rechaza el convenio, no se genera.
-    await this.actualizarConvenioSocio(socio.nroSocioLegacy, input.convenio);
     const huboAjuste =
       efectivos.cuotas !== solicitud.cuotas ||
       efectivos.montoAFinanciar !== solicitud.montoAFinanciar;
+    if (replacement && huboAjuste)
+      throw new AdministrativeCorrectionError("La línea exige ajustar el monto o las cuotas. Guardá las condiciones corregidas antes de reemplazar.");
     if (huboAjuste) {
       const calculo = await this.simularCuotaSolicitud.execute({
         ...efectivos,
@@ -257,49 +334,48 @@ export class CreatePrestamoLegacyUseCase {
       });
     }
     const nroLote = await this.buildNroLoteCancelaciones(input.solicitudId,
-      huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
+      replacement || huboAjuste ? (efectivos.montoAFinanciar as number) : undefined);
     await this.archivarEvaluacion?.execute({solicitudId: input.solicitudId, actorId: input.currentUser.id, etapa: "generacion"});
-    // Ultimo paso antes del prestamo. CrearPrestamo toma lo cobrado por
-    // refinanciacion del socio y lo descuenta del en mano.
-    if (refinanciacion && refinanciacion.pendientes.length > 0) {
-      await this.refinanciacion?.cobrar(input.solicitudId, refinanciacion);
-    }
-    const result = await this.gateway.crear({
-      cuotas: efectivos.cuotas as number,
-      fechaEmision: this.today(),
-      integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" }],
-      lineaPrestamo: lineaPrestamo.id,
-      montoDeseado: efectivos.montoAFinanciar as number,
-      ...nroLote,
-      ...(hayRefinanciacion ? { destino: DESTINO_REFINANCIACION_ID } : {}),
-      vendedor: String(vendedorLegacyId),
-    });
-
-    const linkFirmaDigital = buildLinkFirmaDigital(
-      this.linkFirmaDigitalBaseUrl,
-      result.id,
-      lineaPrestamo.codigoMutual,
-    );
-
-    return this.repository.update(input.solicitudId, {
-      solicitud: {
-        legacyOid: result.id,
-        // Se guarda ademas de usarse en el link: el finalizar lo necesita
-        // para elegir el documento sin depender del parametro de la URL.
-        lineaPrestamoCodigoMutual: lineaPrestamo.codigoMutual,
-        linkFirmaDigital,
+    // Validar las condiciones antes de escribir en el socio. Un conflicto o
+    // rechazo del convenio detiene la generacion antes de CrearPrestamo.
+    await this.actualizarConvenioSocio(socio.nroSocioLegacy, input.convenio);
+    // Las cuotas de la pestaña Refinanciacion se cobran justo antes de
+    // CrearPrestamo, que toma lo cobrado y lo descuenta del en mano. En un
+    // reemplazo ya se cobraron con el prestamo original.
+    const pendientesRefinanciacion =
+      !replacement && refinanciacion && refinanciacion.pendientes.length > 0
+        ? refinanciacion
+        : null;
+    return { solicitud: huboAjuste ? (await this.repository.findById(input.solicitudId)) ?? solicitud : solicitud, codigoMutual: lineaPrestamo.codigoMutual,
+      coreInput: {
+        cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
+        integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],
+        lineaPrestamo: lineaPrestamo.id, montoDeseado: efectivos.montoAFinanciar as number,
+        ...nroLote,
+        ...(hayRefinanciacion ? { destino: DESTINO_REFINANCIACION_ID } : {}),
+        vendedor: String(vendedorLegacyId),
       },
-    });
+      ...(pendientesRefinanciacion
+        ? {
+            antesDeCrear: async () => {
+              await this.refinanciacion?.cobrar(
+                input.solicitudId,
+                pendientesRefinanciacion,
+              );
+            },
+          }
+        : {}),
+    };
   }
 
-  // Escribe en el socio solo lo que difiere de lo que tiene Vimarx ahora, asi
-  // el modal no pisa con valores viejos lo que alguien cambio en Vimarx
-  // mientras tanto.
+  // Compara solo los campos editados contra su valor original. La lectura y
+  // escritura remotas son llamadas separadas: detecta conflictos previos al
+  // envio, sin constituir una transaccion con la escritura remota.
   private async actualizarConvenioSocio(
     socioLegacyId: string,
-    convenio: ConvenioSocio | undefined,
+    convenio: ConvenioSocioEdicion | undefined,
   ) {
-    if (!convenio) return;
+    if (!convenio || Object.keys(convenio).length === 0) return;
 
     if (!this.convenioSocioGateway || !this.editarSocioGateway) {
       throw new Error("Falta configurar la edicion del convenio del socio.");
@@ -315,25 +391,36 @@ export class CreatePrestamoLegacyUseCase {
     }
 
     const campos: Record<string, string> = {};
+    const conflictos: string[] = [];
     const textos = [
-      ["beneficio", "SocAux.Beneficio"],
-      ["observaciones", "Observaciones"],
+      ["beneficio", "SocAux.Beneficio", "Mudon (beneficio)"],
+      ["observaciones", "Observaciones", "Observaciones"],
     ] as const;
     const numeros = [
       ["caja40", "SocAux.Caja40", "Caja 40"],
       ["convAux", "SocAux.ConvAux", "AMEJUCA"],
     ] as const;
 
-    for (const [key, campo] of textos) {
-      const nuevo = convenio[key]?.trim() || null;
-
-      if (nuevo !== actual[key]) campos[campo] = nuevo ?? "";
+    for (const [key, campo, label] of textos) {
+      const cambio = convenio[key];
+      if (!cambio) continue;
+      const nuevo = cambio.valor?.trim() || null;
+      const original = cambio.original?.trim() || null;
+      // Revertir un cambio en el modal no autoriza a escribir el campo.
+      if (nuevo === original || nuevo === actual[key]) continue;
+      if (original !== actual[key]) conflictos.push(label);
+      else campos[campo] = nuevo ?? "";
     }
 
     for (const [key, campo, label] of numeros) {
-      const nuevo = convenio[key];
-
-      if (nuevo === actual[key]) continue;
+      const cambio = convenio[key];
+      if (!cambio) continue;
+      const nuevo = cambio.valor;
+      if (nuevo === cambio.original || nuevo === actual[key]) continue;
+      if (cambio.original !== actual[key]) {
+        conflictos.push(label);
+        continue;
+      }
 
       // Vacio en un numero de SocAux Vimarx lo guarda como 0, no como vacio.
       if (nuevo === null) {
@@ -347,6 +434,7 @@ export class CreatePrestamoLegacyUseCase {
       campos[campo] = String(nuevo);
     }
 
+    if (conflictos.length > 0) throw new ConvenioSocioConflictError(conflictos);
     if (Object.keys(campos).length === 0) return;
 
     await this.editarSocioGateway.editar(socioLegacyId, campos);

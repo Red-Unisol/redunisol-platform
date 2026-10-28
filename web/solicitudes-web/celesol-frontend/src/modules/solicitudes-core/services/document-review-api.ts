@@ -61,7 +61,51 @@ export type DocumentReviewResponse = {
   state?: string;
   currentReview: DocumentReview | null;
   history: DocumentReview[];
+  signature?: SignatureSummary | null;
+  analysisReady?: boolean;
 };
+export type SignatureSummary = {
+  status: "waiting" | "to_review" | "requested_again" | "approved";
+  completedAttempts: number;
+  lastCompletedAt: string | null;
+  approved: boolean;
+  reason: string | null;
+  link: string | null;
+  cycle: string;
+  decisionId: string | null;
+};
+export type SignatureInboxItem = {
+  solicitudId: string;
+  nroSolicitud: string | null;
+  prestamoId: string;
+  socio: string;
+  vendedor: string | null;
+  monto: number | null;
+  status: SignatureSummary["status"];
+  completedAttempts: number;
+  lastCompletedAt: string | null;
+  analysisReady: boolean;
+  reason: string | null;
+};
+export const signatureInboxKey = ["signature-inbox"] as const;
+export function useSignatureInbox(
+  status: SignatureSummary["status"] | "all",
+  offset = 0,
+) {
+  return useQuery({
+    queryKey: [...signatureInboxKey, status, offset],
+    queryFn: () =>
+      apiClient.get<{
+        items: SignatureInboxItem[];
+        total: number;
+        offset: number;
+        limit: number;
+      }>(
+        `/solicitudes/document-review/inbox?offset=${offset}&limit=50${status === "all" ? "" : `&status=${status}`}`,
+      ),
+    refetchInterval: 15000,
+  });
+}
 export const documentReviewKey = (id: string) =>
   ["solicitudes-core", "document-review", id] as const;
 export function useDocumentReview(id: string) {
@@ -72,12 +116,19 @@ export function useDocumentReview(id: string) {
       apiClient.get<DocumentReviewResponse>(
         `/solicitudes/${id}/document-review`,
       ),
-    refetchInterval: (query) =>
-      query.state.data?.enabled &&
-      query.state.data.state === "VerificarFirmaYDocumentacion"
-        ? 15000
-        : false,
+    refetchInterval: (query) => (query.state.data?.enabled ? 15000 : false),
   });
+}
+export function requestNewSignature(
+  id: string,
+  reason: string,
+  requestId: string,
+) {
+  return apiClient.post<DocumentReviewResponse>(
+    `/solicitudes/${id}/document-review/request-signature`,
+    { requestId, reason },
+    300000,
+  );
 }
 export function evaluateDocumentReview(id: string) {
   return apiClient.post<DocumentReviewResponse>(

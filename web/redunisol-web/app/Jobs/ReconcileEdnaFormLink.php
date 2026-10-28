@@ -15,6 +15,7 @@ use Throwable;
 class ReconcileEdnaFormLink implements ShouldQueue
 {
     use Queueable;
+    use \App\Jobs\Middleware\TracksJourney;
 
     public int $tries = 8;
 

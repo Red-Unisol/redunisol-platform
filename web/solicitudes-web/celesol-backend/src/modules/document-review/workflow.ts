@@ -11,8 +11,14 @@ import { SolicitudAdjuntoRepositoryImpl } from "../solicitudes-core/adjuntos/inf
 import { SociosPrismaDatasource } from "../socios/infrastructure/datasources/SociosPrismaDatasource";
 import { SocioRepositoryImpl } from "../socios/infrastructure/repositories/SocioRepositoryImpl";
 import { DocumentReviewError } from "./domain";
+import { assertWorkflowFinancialReady } from "../solicitudes-core/infrastructure/services/WorkflowFinancialGuard";
+import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
+import { assertCoreReconciled, coreConditionsFingerprint } from "../solicitudes-core/domain/workflow/AdministrativeCorrection";
+import type { SignatureFinancialProof } from "./DocumentReviewService";
 
-export function createDocumentReviewWorkflow(db: PrismaClient) {
+export function createDocumentReviewWorkflow(db: PrismaClient, dependencies: {
+  financialGuard?: typeof assertWorkflowFinancialReady;
+} = {}) {
   const solicitudesRepository = new SolicitudesCoreRepositoryImpl(
     new SolicitudesCorePrismaDatasource(db),
   );
@@ -29,6 +35,7 @@ export function createDocumentReviewWorkflow(db: PrismaClient) {
     decisionId: string,
     action: "transferir" | "devolver_a_liquidada",
     comment: string,
+    financialProof?: SignatureFinancialProof,
   ) => {
     const repository = new SolicitudWorkflowRepositoryImpl(
       new SolicitudWorkflowPrismaDatasource(db, tx),
@@ -38,6 +45,13 @@ export function createDocumentReviewWorkflow(db: PrismaClient) {
       sociosRepository,
       solicitudesRepository,
       now: () => new Date(),
+      authorizeFinancialOperation: async () => {
+        if (!financialProof) return (dependencies.financialGuard ?? assertWorkflowFinancialReady)(tx, solicitudId, user.id);
+        const current = await administrativeSource(tx, solicitudId);
+        assertCoreReconciled(current, action);
+        if (current.legacyOid !== financialProof.loanId || coreConditionsFingerprint(current) !== financialProof.conditionsFingerprint)
+          throw new DocumentReviewError("El préstamo o sus condiciones cambiaron después de la comprobación financiera. Actualizá la revisión.");
+      },
       engine: new SolicitudWorkflowEngine({ repository }),
       authorizeDocumentReview: async () => {
         const approval = await tx.solicitudDocumentDecision.findFirst({

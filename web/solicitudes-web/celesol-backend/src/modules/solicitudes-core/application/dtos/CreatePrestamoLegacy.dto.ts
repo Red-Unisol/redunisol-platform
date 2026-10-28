@@ -1,11 +1,11 @@
-import type { ConvenioSocio } from "../../domain/services/ConvenioSocioGateway";
+import type { ConvenioSocioEdicion } from "../../domain/services/ConvenioSocioGateway";
 
 export type CreatePrestamoLegacyInput = {
   /**
-   * Datos del convenio como deben quedar en Vimarx, editados en el modal de
-   * Generar prestamo. Sin el campo, no se toca el socio.
+   * Solo campos editados, con su valor original para detectar conflictos.
+   * Sin el campo, no se toca el socio.
    */
-  convenio?: ConvenioSocio;
+  convenio?: ConvenioSocioEdicion;
   currentUser: {
     id: string;
     isSystemAdmin?: boolean;

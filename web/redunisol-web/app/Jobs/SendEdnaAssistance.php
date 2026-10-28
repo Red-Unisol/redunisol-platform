@@ -16,6 +16,7 @@ use Throwable;
 class SendEdnaAssistance implements ShouldQueue
 {
     use Queueable;
+    use \App\Jobs\Middleware\TracksJourney;
 
     public int $tries = 3;
 

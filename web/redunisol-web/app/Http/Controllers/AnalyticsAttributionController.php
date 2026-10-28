@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\AttributionJourney;
+use App\Services\JourneyLedger;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -29,6 +30,7 @@ class AnalyticsAttributionController
             (new AttributionJourney)->recordAnalytics(
                 $request->cookie(AttributionJourney::COOKIE), $input,
             );
+            app(JourneyLedger::class)->record('analytics.identity', $input);
         } catch (Throwable) {
             logger()->warning('Analytics attribution unavailable.');
         }

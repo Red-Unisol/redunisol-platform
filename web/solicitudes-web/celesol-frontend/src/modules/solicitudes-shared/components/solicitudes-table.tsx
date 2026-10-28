@@ -196,7 +196,7 @@ export function SolicitudesTable({
                           : undefined
                       }
                     >
-                      <div className="max-w-full whitespace-normal break-words leading-snug">
+                      <div className={`max-w-full whitespace-normal break-words leading-snug ${column.key === "nroSolicitud" ? "font-semibold tabular-nums" : ""}`}>
                         {row[column.key] || (
                           <span className="text-foreground-muted">&nbsp;</span>
                         )}

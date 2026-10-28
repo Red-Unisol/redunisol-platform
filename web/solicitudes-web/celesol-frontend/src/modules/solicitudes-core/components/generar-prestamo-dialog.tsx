@@ -6,6 +6,11 @@ import type {
   RevisionPrestamoResponse,
 } from "../services/solicitudes-core-api";
 import { formatLegacyDate } from "../utils/legacy-date-format";
+import {
+  toConvenioForm,
+  toConvenioRequest,
+  type ConvenioForm,
+} from "../utils/convenio-edicion";
 import { Button } from "@/shared/components/ui/button";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
 import { useRefinanciacionTotalQuery } from "@/modules/solicitudes-core/hooks/use-refinanciacion-total-query";
@@ -18,16 +23,6 @@ const BENEFICIO_MAX_LENGTH = 50;
 const OBSERVACIONES_MAX_LENGTH = 500;
 
 type Convenio = NonNullable<RevisionPrestamoResponse["convenio"]>;
-type ConvenioForm = Record<keyof Convenio, string>;
-
-function toConvenioForm(convenio: Convenio): ConvenioForm {
-  return {
-    beneficio: convenio.beneficio ?? "",
-    caja40: convenio.caja40 === null ? "" : String(convenio.caja40),
-    convAux: convenio.convAux === null ? "" : String(convenio.convAux),
-    observaciones: convenio.observaciones ?? "",
-  };
-}
 
 // Mismas reglas que el alta de socio, mas una: un numero de SocAux con valor
 // no se puede vaciar, porque Vimarx lo guardaria en 0. El backend lo vuelve a
@@ -57,27 +52,13 @@ function getConvenioErrors(form: ConvenioForm, original: Convenio) {
   };
 }
 
-function toConvenioRequest(form: ConvenioForm): ConvenioSocioRequest {
-  const texto = (value: string) => value.trim() || null;
-  const numero = (value: string) =>
-    value.trim().length > 0 ? Number(value.trim()) : null;
-
-  return {
-    beneficio: texto(form.beneficio),
-    caja40: numero(form.caja40),
-    convAux: numero(form.convAux),
-    observaciones: texto(form.observaciones),
-  };
-}
-
 type GenerarPrestamoDialogProps = {
   condicionesKey: string;
   cuotas: number | null;
   isPending: boolean;
   lineaPrestamoDescripcion: string;
   montoAFinanciar: number | null;
-  // convenio: los datos del convenio como deben quedar en Vimarx; undefined si
-  // no se tocaron.
+  // Solo campos editados con su valor original; undefined si no hay cambios.
   onConfirm: (convenio?: ConvenioSocioRequest) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -117,12 +98,15 @@ function RevisionPrestamoDialog({
   const calculo = data?.calculo;
   // null hasta que el analista edita algo: mientras tanto se muestra lo que
   // tiene Vimarx.
-  const [convenioEditado, setConvenioEditado] = useState<ConvenioForm | null>(
-    null,
-  );
-  const convenioOriginal = data?.convenio ?? null;
+  const [convenioEditado, setConvenioEditado] = useState<{
+    original: Convenio;
+    form: ConvenioForm;
+  } | null>(null);
+  // Fijar el original al empezar a editar: una recarga de fondo no debe
+  // convertir en actuales los valores viejos que el operador sigue viendo.
+  const convenioOriginal = convenioEditado?.original ?? data?.convenio ?? null;
   const convenioForm =
-    convenioEditado ??
+    convenioEditado?.form ??
     (convenioOriginal ? toConvenioForm(convenioOriginal) : null);
   const convenioErrors =
     convenioForm && convenioOriginal
@@ -132,10 +116,15 @@ function RevisionPrestamoDialog({
     ? Object.values(convenioErrors).some(Boolean)
     : false;
   const editarConvenio = (campo: keyof ConvenioForm, value: string) => {
-    if (!convenioForm) return;
-    setConvenioEditado({ ...convenioForm, [campo]: value });
+    if (!convenioForm || !convenioOriginal) return;
+    setConvenioEditado({
+      original: convenioOriginal,
+      form: { ...convenioForm, [campo]: value },
+    });
   };
-  const montoRevision = data ? data.condiciones.montoAFinanciar : montoAFinanciar;
+  const montoRevision = data
+    ? data.condiciones.montoAFinanciar
+    : montoAFinanciar;
   const {
     data: cancelaciones = [],
     error,
@@ -185,7 +174,7 @@ function RevisionPrestamoDialog({
       onConfirm={() =>
         onConfirm(
           convenioEditado && convenioOriginal
-            ? toConvenioRequest(convenioEditado)
+            ? toConvenioRequest(convenioEditado.form, convenioEditado.original)
             : undefined,
         )
       }
@@ -237,8 +226,9 @@ function RevisionPrestamoDialog({
           >
             <h3 className="mb-1 text-sm font-semibold">Datos del convenio</h3>
             <p className="mb-2 text-xs text-foreground-secondary">
-              Del socio en Vimarx. Si cambiás algo, se guarda en Vimarx al
-              generar el préstamo.
+              Del socio en Vimarx. Solo se guardan los campos que cambies al
+              generar el préstamo. Si alguien modificó esos mismos datos,
+              tendrás que volver a revisarlos.
             </p>
             {convenioForm && convenioErrors ? (
               <div className="grid gap-3 text-sm sm:grid-cols-3">
@@ -293,9 +283,7 @@ function RevisionPrestamoDialog({
             />
             <Campo
               label="Monto a financiar"
-              value={formatMoneyAmount(
-                montoRevision,
-              )}
+              value={formatMoneyAmount(montoRevision)}
             />
             <Campo
               label="Tasa del cálculo"

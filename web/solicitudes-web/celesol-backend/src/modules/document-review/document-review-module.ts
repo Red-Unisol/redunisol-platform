@@ -7,9 +7,14 @@ import { ACCESS_TOKEN_COOKIE } from "../auth/presentation/AuthCookies";
 import { MinioAdjuntosObjectStorage } from "../solicitudes-core/adjuntos/infrastructure/services/MinioAdjuntosObjectStorage";
 import { DocumentReviewService } from "./DocumentReviewService";
 import { DocumentReviewError } from "./domain";
+import { isLegajosUser } from "./signature-workflow";
 import { MetaMapGateway } from "./MetaMapGateway";
 import { createLegajoBuilder } from "./LegajoPdf";
-import { createDocumentReviewWorkflow } from "./workflow";
+import { createDocumentReviewWorkflow } from "./workflow";import { notifySignatureEvent } from "../notifications/SignatureNotifications";
+import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "../solicitudes-core/infrastructure/services/WorkflowFinancialGuard";
+import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
+import { isAnalysisReady } from "./signature-workflow";
+import { EvaluateListSolicitudesGateway, signatureInboxLoanKey } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 
 let service: DocumentReviewService | null = null;
 function getService() {
@@ -27,6 +32,9 @@ function getService() {
       clientSecret: env.DOCUMENT_REVIEW_METAMAP_CLIENT_SECRET,
       timeoutMs: env.DOCUMENT_REVIEW_TIMEOUT_MS,
     });
+    const loans = new EvaluateListSolicitudesGateway({
+      baseUrl: env.LEGACY_API_BASE_URL, timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    });
     service = new DocumentReviewService({
       db: prisma,
       gateway,
@@ -41,7 +49,21 @@ function getService() {
       bucket: env.MINIO_BUCKET_SOLICITUDES,
       maxPdfBytes: env.DOCUMENT_REVIEW_MAX_PDF_BYTES,
       buildLegajo: createLegajoBuilder(gateway),
-      transition: createDocumentReviewWorkflow(prisma),
+      transition: createDocumentReviewWorkflow(prisma),      onSignatureEvent: notifySignatureEvent,
+      inboxLoanStates: async (rows) => {
+        const refs = rows.map(row => {
+          const control = row.administrativeCoreControl as Record<string, unknown> | null;
+          return { legacyOid: row.legacyOid!, directLoanId: Boolean(control?.replacementId || control?.generatedLoanId) };
+        });
+        const states = await loans.getSignatureInboxLoanStates(refs);
+        return new Map(rows.map((row, index) => [row.id, states.get(signatureInboxLoanKey(refs[index]))!]));
+      },
+      financialPreflight: async (id, user) => {
+        const proof = await assertSignatureLinkFinancialReady(prisma, id);
+        if (isAnalysisReady(await administrativeSource(prisma, id)))
+          await assertWorkflowFinancialReady(prisma, id, user.id);
+        return proof;
+      },
     });
   }
   return service;
@@ -61,16 +83,22 @@ const decisionSchema = z
 
 export function createDocumentReviewRouter(auth: GetCurrentUserUseCase) {
   const router = Router();
-  router.use("/:id/document-review", async (req, _res, next) => {
+  router.use(["/:id/document-review", "/document-review/inbox"], async (req, res, next) => {
     try {
-      const user = await auth.execute(req.cookies?.[ACCESS_TOKEN_COOKIE]);
-      // Follows the application's existing ability to view a solicitud, but
-      // mutations are separately restricted to its current workflow owner.
-      _res.locals.documentReviewUser = user;
+      res.locals.documentReviewUser = await auth.execute(req.cookies?.[ACCESS_TOKEN_COOKIE]);
       next();
-    } catch (e) {
-      next(e);
-    }
+    } catch (e) { next(e); }
+  });
+  router.get("/document-review/inbox", async (req, res, next) => {
+    try {
+      const query = z.object({
+        status: z.enum(["waiting", "to_review", "requested_again", "approved"]).optional(),
+        offset: z.coerce.number().int().min(0).default(0),
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+      }).parse(req.query);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await getService().inbox(res.locals.documentReviewUser, query.status, query.offset, query.limit));
+    } catch (e) { next(e instanceof z.ZodError ? new DocumentReviewError("Filtro inválido.", 400) : e); }
   });
   router.get("/:id/document-review", async (req, res, next) => {
     try {
@@ -84,6 +112,8 @@ export function createDocumentReviewRouter(auth: GetCurrentUserUseCase) {
               canDecide: false,
               currentReview: null,
               history: [],
+              signature: null,
+              analysisReady: false,
             },
       );
     } catch (e) {
@@ -106,6 +136,14 @@ export function createDocumentReviewRouter(auth: GetCurrentUserUseCase) {
           : e,
       );
     }
+  });
+  router.post("/:id/document-review/request-signature", async (req, res, next) => {
+    try {
+      const id = z.uuid().parse(req.params.id);
+      const input = z.object({ requestId: z.uuid(), reason: z.string().trim().min(1).max(4000) }).strict().parse(req.body);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await getService().requestSignature(id, res.locals.documentReviewUser, input));
+    } catch (e) { next(e instanceof z.ZodError ? new DocumentReviewError("Indicá el motivo de la nueva firma.", 400) : e); }
   });
   router.post("/:id/document-review/decisions", async (req, res, next) => {
     try {
@@ -130,6 +168,7 @@ export function createDocumentReviewRouter(auth: GetCurrentUserUseCase) {
     "/:id/document-review/:reviewId/legajo",
     async (req, res, next) => {
       try {
+        if (!isLegajosUser(res.locals.documentReviewUser)) throw new DocumentReviewError("Solo Legajos Digitales puede descargar esta evidencia.", 403);
         const id = z.uuid().parse(req.params.id),
           reviewId = z.uuid().parse(req.params.reviewId);
         const decisionId =

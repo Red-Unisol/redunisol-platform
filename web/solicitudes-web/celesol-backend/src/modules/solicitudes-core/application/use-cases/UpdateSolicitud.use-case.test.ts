@@ -18,6 +18,7 @@ import type {
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import { EDITABLE_FIELDS } from "../services/SolicitudFieldAccess";
 import { UpdateSolicitudUseCase } from "./UpdateSolicitud.use-case";
+import type { LinkedLoanReader } from "../services/LinkedLoanRules";
 
 describe("UpdateSolicitudUseCase", () => {
   it("permite correcciones de Riesgo en Vendedores respetando campos y asignación", async () => {
@@ -884,6 +885,7 @@ describe("tope del monto aprobado por Riesgo", () => {
 });
 
 function buildUseCase(overrides?: {
+  linkedLoanReader?: LinkedLoanReader;
   fieldAccessRulesRepository?: SolicitudFieldAccessRulesRepository;
   findById?: SolicitudesCoreRepository["findById"];
   findWorkflowOwnerCodeById?: SolicitudesCoreRepository["findWorkflowOwnerCodeById"];
@@ -920,6 +922,7 @@ function buildUseCase(overrides?: {
   };
 
   return new UpdateSolicitudUseCase({
+    linkedLoanReader: overrides?.linkedLoanReader,
       simularCuotaSolicitud: { execute: async () => null },
     fieldAccessRulesRepository:
       overrides?.fieldAccessRulesRepository ?? buildFieldAccessRulesRepository(),
@@ -933,6 +936,38 @@ function buildUseCase(overrides?: {
     repository,
   });
 }
+
+describe("monto congelado por préstamo vinculado", () => {
+  const linked = () => solicitudCore({ legacyOid: "444" });
+  const status = { status: "active" as const, currentLoanId: "444", resolvedLoanId: "444", amount: 100000, requestedAmount: 100000, matchesAmount: true, amountEditable: false };
+
+  for (const isSystemAdmin of [false, true]) it(`bloquea cambios con préstamo vigente también para admin=${isSystemAdmin}`, async () => {
+    let writes = 0;
+    const uc = buildUseCase({ findById: async () => linked(), linkedLoanReader: async () => status,
+      update: async () => { writes++; return linked(); } });
+    await assert.rejects(uc.execute(updateInput({ currentUser: { id: "operator-1", workflowOwnerId: "owner-1", isSystemAdmin }, solicitud: { montoAFinanciar: 50000 } })), /congelado.*444/);
+    assert.equal(writes, 0);
+  });
+
+  it("permite monto nuevo tras anulación probada y entrega el guard de préstamo verificado", async () => {
+    let savedGuard: unknown;
+    const uc = buildUseCase({ findById: async () => linked(), linkedLoanReader: async () => ({ ...status, status: "cancelled", amountEditable: true }),
+      update: async (_id, _patch, guard) => { savedGuard = guard; return linked(); } });
+    await uc.execute(updateInput({ solicitud: { montoAFinanciar: 50000 } }));
+    assert.deepEqual(savedGuard, { expectedEstadoActualId: "state-1", enforceMontoAprobadoRiesgo: true, expectedLegacyOid: "444", cancelledLoanId: "444" });
+  });
+
+  it("sin poder verificar Vimarx no modifica el monto", async () => {
+    const uc = buildUseCase({ findById: async () => linked() });
+    await assert.rejects(uc.execute(updateInput({ solicitud: { montoAFinanciar: 50000 } })), /permanece bloqueado/);
+  });
+
+  it("un ajuste implícito por máximo de línea también respeta el congelamiento", async () => {
+    const uc = buildUseCase({ findById: async () => linked(), linkedLoanReader: async () => status,
+      lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 50000, cantidadMaximaCuotas: 48 }) } });
+    await assert.rejects(uc.execute(updateInput({ solicitud: { observaciones: "Otro dato" } })), /congelado/);
+  });
+});
 
 // Regla del estado state-1 con todos los campos menos la linea.
 function reglaSinLinea(): SolicitudFieldAccessRulesRepository {

@@ -43,14 +43,14 @@ export const solicitudesCoreQueryKeys = {
     "socios-cancelaciones",
   ] as const,
   precargaAll: solicitudesCorePrecargaRootKey,
-  precarga: (input: { limit: number; nroDocumento?: string; offset: number }) =>
+  precarga: (input: { limit: number; search?: string; offset: number }) =>
     [...solicitudesCorePrecargaRootKey, input] as const,
   tiposAdjunto: [...solicitudesCoreRootKey, "tipos-adjunto"] as const,
   recientesAll: solicitudesCoreRecientesRootKey,
   historicasAll: solicitudesCoreHistoricasRootKey,
   historicas: (input: {
     limit: number;
-    nroDocumento?: string;
+    search?: string;
     offset: number;
   }) => [...solicitudesCoreHistoricasRootKey, input] as const,
   recientes: (input: {

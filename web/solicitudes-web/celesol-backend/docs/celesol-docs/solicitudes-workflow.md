@@ -61,6 +61,7 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `RevisionRiesgo` | `confirmar` | `Confirmar` | `Confirmada` | no |
 | `Confirmada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
 | `Confirmada` | `liquidar` | `Liquidada` | `Liquidada` | no |
+| `Confirmada` | `revisar` | `Devolver a Revisar` | `Revisar` | yes |
 | `Liquidada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
 | `Liquidada` | `verificar_firma` | `Verificar Firma y Documentación` | `VerificarFirmaYDocumentacion` | no |
 | `VerificarFirmaYDocumentacion` | `devolver_a_liquidada` | `Devolver a Liquidada` | `Liquidada` | yes |
@@ -92,7 +93,6 @@ No deben quedar activas:
 - `RevisionRiesgo -> VerificarFirmaYDocumentacion`;
 - `Revisar -> VerificarFirmaYDocumentacion`;
 - `Confirmada -> Rechazada`;
-- `Confirmada -> Revisar`;
 - `Confirmada -> VerificarFirmaYDocumentacion`;
 - `Confirmada -> Vencida`.
 
@@ -130,3 +130,117 @@ Reproceso desde verificacion:
 ```text
 Liquidada -> VerificarFirmaYDocumentacion -> Liquidada
 ```
+
+
+## Corrección administrativa excepcional (2026-10-23)
+
+En el detalle de la solicitud, debajo de la barra de herramientas, los administradores
+ven **Administración → Corregir estado**. La primera versión admite exclusivamente
+`Confirmada → Revisar` (owner `VENDEDORES`). Este control se mantiene por compatibilidad.
+Desde el 2026-10-26 también existe la devolución habitual mediante el selector normal,
+con las mismas barreras financieras y sin exigir rol administrador.
+
+- Requiere sesión propia de administrador activo, motivo de 10 a 2000 caracteres,
+  UUID de operación y la versión `updatedAt` observada al abrir el formulario.
+- Rechaza solicitudes archivadas, reservas de desembolso, pagos externos y solicitudes
+  cuyo historial haya llegado a Liquidada, VerificarFirmaYDocumentacion, Transferir o Pagada.
+- Se ejecuta por `ChangeSolicitudStateUseCase → SolicitudWorkflowEngine`; la persistencia
+  bloquea la solicitud y guarda estado e historial en una única transacción.
+- Conserva préstamo Core, firma, adjuntos, ejecutivo y asignación. Al entrar a Revisar
+  actualiza el tope de Riesgo al monto actual, igual que las devoluciones habituales.
+- Registra `ADMIN_CORRECTION_TO_REVISAR` con motivo, administrador real y snapshots de
+  estados/áreas; no borra ni reescribe historia ni genera préstamos u operaciones bancarias.
+
+Si existe un préstamo vinculado, la corrección deja pendiente su conciliación. Se bloquean
+`liquidar`, `verificar_firma`, `transferir`, `pagar` y la provisión de datos para firma
+(`finSolicitud`) hasta verificar las condiciones. El administrador usa
+**Conciliar préstamo Core**, en la misma barra, con un motivo obligatorio. La verificación
+consulta el Core sin modificarlo y compara socio, monto deseado, cuotas, línea resuelta,
+vencimiento explícito y cancelaciones en centavos. Si hay diferencias o falta información,
+no se libera el bloqueo; las correcciones en el Core requieren su propio procedimiento.
+
+La conciliación registra evidencia e historial. Un cambio posterior en el vínculo,
+identificación del socio, monto, cuotas, línea, vencimiento o cancelaciones invalida
+la conciliación automáticamente. El historial anterior de firma se conserva como evidencia;
+una conciliación de condiciones no sustituye una nueva firma/documentación si corresponde.
+
+API autenticada (con el guard de visibilidad habitual):
+
+- `GET /solicitudes/:id/admin-state-correction`: disponibilidad, versión y conciliación pendiente.
+- `POST /solicitudes/:id/admin-state-correction`: `targetStateCode: Revisar`, `reason`, `expectedUpdatedAt`, `requestId`.
+- `POST /solicitudes/:id/admin-core-reconciliation`: `reason`, `expectedUpdatedAt`.
+
+Las dos escrituras validan privilegios en backend, rechazan modo de suplantación y no
+aceptan identidad ni privilegios enviados por el cliente. No hay un selector de estados libre.
+
+
+## Reemplazo controlado de préstamo anulado (2026-10-23)
+
+En una solicitud devuelta con la corrección administrativa, el administrador puede
+abrir **Conciliación del préstamo Core pendiente → Reemplazo excepcional de préstamo
+anulado → Reemplazar préstamo anulado**, debajo de la barra del detalle.
+Primero debe guardar las condiciones corregidas. El modal muestra monto, cuotas,
+cálculo actualizado, cancelaciones y neto, y exige un motivo.
+
+- Es excepcional: exige administrador activo en sesión propia, préstamo vinculado,
+  estado Revisar/RevisionRiesgo/PreAprobada/Confirmada, sin archivo, liquidación previa,
+  reserva de desembolso ni pago externo. No agrega transiciones al flujo habitual.
+- Vimarx debe confirmar ambos estados como Anulada/Anulado, sin vigencia y saldo cero.
+  Beex no anula préstamos. La consulta del préstamo anulado admite que Vimarx haya
+  retirado a sus integrantes y resuelve el vínculo histórico antes del ID directo.
+- Reutiliza las validaciones de generación: titular completo, socio, vendedor, línea
+  vigente y máximos actuales. Rechaza ajustes silenciosos de monto/cuotas y cancelaciones
+  superiores al monto. Es necesario guardar y revisar esas condiciones antes de generar.
+- Antes de llamar a CrearPrestamo registra un intento durable y único por solicitud y
+  préstamo anterior. Conserva el vínculo y firma anteriores hasta tener el ID nuevo.
+  Mientras hay un intento pendiente bloquea ediciones, cancelaciones, workflow y firma.
+- Al recibir el ID, cambia vínculo y enlace de firma en una transacción y registra
+  ADMIN_LOAN_REPLACED sin alterar estado, asignación, documentos ni historia anterior.
+  Conserva ID, firma anterior, evidencia de anulación, condiciones enviadas, motivo,
+  administrador real y fechas en solicitud_prestamo_replacements e historial.
+- El nuevo préstamo exige conciliación antes de liquidar. La conciliación rechaza
+  préstamos anulados aunque sus condiciones económicas coincidan.
+
+Un error HTTP o timeout no prueba que Vimarx no haya creado el préstamo. No se repite
+la creación automáticamente. La UI muestra el intento y permite **Vincular préstamo
+generado**: se ingresa el ID real, y Beex verifica titular, estado activo, monto,
+cuotas, línea y cancelaciones contra el intento antes de enlazarlo. Un intento aún
+en curso espera el timeout configurado más 60 segundos antes de permitir recuperación.
+Si no existe préstamo o hay resultados contradictorios, corresponde investigar la
+operación; no hay un botón para borrar el intento ni generar nuevamente a ciegas.
+
+API autenticada con visibilidad habitual y validaciones propias de administrador:
+
+- GET /solicitudes/:id/admin-loan-replacements: disponibilidad y últimos intentos.
+- POST /solicitudes/:id/admin-loan-replacements: requestId UUID, expectedUpdatedAt,
+  previousLoanId y reason; nunca recibe monto/cuotas ni flags para saltear verificaciones.
+- POST /solicitudes/:id/admin-loan-replacements/recover: requestId, expectedUpdatedAt,
+  newLoanId y reason. No crea operaciones en el Core.
+
+La migración es aditiva. Los registros no se eliminan en cascada al borrar una solicitud.
+La base garantiza un único intento por préstamo anterior y un ID nuevo sin duplicados.
+Las pruebas de integración usan exclusivamente una base local cuyo nombre termina en _test.
+
+
+## Devolución habitual Confirmada → Revisar (2026-10-26)
+
+El selector normal de acciones de una solicitud Confirmada incorpora **Devolver a Revisar**
+(actionCode `revisar`). Lo puede ejecutar el área a cargo de Confirmada (`RIESGO`) o un
+administrador activo, con un motivo obligatorio. No necesita usar Corregir estado.
+
+La transición pasa por el mismo use case, engine, policy, plan y transacción del workflow.
+Conserva préstamo Core, firma, documentos, asignación e historial; actualiza el tope de
+Riesgo al monto actual como las otras devoluciones a Vendedores. Registra el usuario
+operativo y el actor real, incluido el administrador si se trabaja como otro usuario.
+
+Se bloquea para solicitudes archivadas, con antecedentes de Liquidada, VerificarFirmaYDocumentacion,
+Transferir o Pagada, con reserva de desembolso o pago externo, y durante reemplazos pendientes
+con resultado incierto. El selector informa el bloqueo y el backend lo vuelve a validar con
+el registro bloqueado antes de escribir estado y auditoría juntos.
+
+Si existe préstamo, se conserva el vínculo y queda pendiente **Conciliar préstamo Core**
+antes de liquidar. El control conserva `replacementId` y la referencia al préstamo anterior;
+el evento de devolución identifica `correctionId`, por lo que sigue siendo compatible con
+el reemplazo controlado exclusivamente para administradores. Si no existe préstamo, no se
+introduce conciliación. La devolución no anula ni genera préstamos, ni cambia la firma o el
+orden del circuito actual. La corrección administrativa anterior se mantiene por compatibilidad.

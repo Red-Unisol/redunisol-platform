@@ -1,4 +1,9 @@
+import { isConfirmedReturnToReview, prepareConfirmedReturnToReview } from "../services/ConfirmedReturnToReview";
+import { administrativeSource, correctionBlockedReason, applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
+import { ADMIN_CORRECTION_ACTION, assertCoreReconciled, coreReconciliationPending, CORE_RECONCILIATION_REASON, CORE_GUARDED_ACTIONS } from "../../domain/workflow/AdministrativeCorrection";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
+import { getSignatureApproval } from "../../../document-review/signature-workflow";
+import { assertSignatureTransferReady, finalizationAction } from "../../../document-review/signature-transfer-guard";
 import type { Prisma } from "@prisma/client";
 
 import type { DbClient } from "../../../../db/prisma";
@@ -38,6 +43,7 @@ const solicitudCoreInclude = {
 } satisfies Prisma.SolicitudInclude;
 
 const solicitudWithOwnerInclude = {
+  titular: true, cancelaciones: true,
   estadoActual: {
     include: {
       owner: true,
@@ -64,6 +70,7 @@ type WorkflowExecutor = Pick<
   | "solicitudCredixsaInforme"
   | "solicitudEstadoHistorial"
   | "workflowTransition"
+  | "workflowState"
   | "user"
   | "workflowAssignmentCursor"
   | "$queryRaw"
@@ -130,6 +137,14 @@ export class SolicitudWorkflowPrismaDatasource {
       };
     }
 
+    if (input.actionCode === ADMIN_CORRECTION_ACTION) {
+      const target = await this.db.workflowState.findUnique({ where: { code: "Revisar" } });
+      return { solicitud: { estadoActualId: solicitud.estadoActualId, ownerId: solicitud.estadoActual.ownerId },
+        transition: target && solicitud.estadoActual.code === "Confirmada" ? {
+          isActive: true, requiresComment: true, toStateCode: target.code,
+          toStateId: target.id, toStateIsActive: target.isActive, toStateOwnerCode: "VENDEDORES",
+        } : null };
+    }
     const transition = await this.db.workflowTransition.findFirst({
       where: {
         actionCode: input.actionCode,
@@ -141,6 +156,7 @@ export class SolicitudWorkflowPrismaDatasource {
     return {
       solicitud: {
         estadoActualId: solicitud.estadoActualId,
+        stateCode: solicitud.estadoActual.code,
         ownerId: solicitud.estadoActual.ownerId,
       },
       transition: transition
@@ -165,6 +181,15 @@ export class SolicitudWorkflowPrismaDatasource {
       throw new WorkflowExecutionPlanNotExecutableError(issues);
     }
 
+    if (input.plan.command.actionCode === ADMIN_CORRECTION_ACTION) {
+      return this.inTransaction(async tx => {
+        await applyAdministrativeCorrection(tx, input.plan.command);
+        const s = await this.loadSolicitudCoreById(tx, input.plan.command.solicitudId);
+        return { solicitud: SolicitudCoreMapper.toDomain(s),
+          transitions: await this.loadActiveTransitions(tx, s.estadoActualId) };
+      });
+    }
+
     this.logWorkflowEvent("workflow_plan_execution_started", {
       expectedStateFromStateId: input.plan.expectedState.fromStateId,
       solicitudId: input.plan.command.solicitudId,
@@ -181,6 +206,8 @@ export class SolicitudWorkflowPrismaDatasource {
 
     try {
       const result = await this.inTransaction(async (tx) => {
+        // Finalization, re-signing and approval serialize on the same source row.
+        await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${input.plan.command.solicitudId}::uuid FOR UPDATE`;
         const executor = tx as WorkflowExecutor;
         const domainSteps = input.plan.steps.filter(
           (step) => step.kind === "domain-transition",
@@ -263,7 +290,8 @@ export class SolicitudWorkflowPrismaDatasource {
             throw new WorkflowExecutionPlanStateConflictError();
           }
 
-          const transition = await executor.workflowTransition.findFirst({
+          assertCoreReconciled(solicitud, step.actionCode);
+          let transition = await executor.workflowTransition.findFirst({
             where: {
               actionCode: step.actionCode,
               fromStateId: solicitud.estadoActualId,
@@ -287,6 +315,22 @@ export class SolicitudWorkflowPrismaDatasource {
           if (!transition.toState.isActive) {
             throw new SolicitudWorkflowDestinationInactiveError();
           }
+
+          // Both routes are real catalog transitions. Resolve under the source
+          // lock so an approval racing with the analyst's click cannot be lost.
+          if (["liquidar", "liquidar_con_firma"].includes(step.actionCode)) {
+            const approval = await getSignatureApproval(tx, solicitud.id);
+            const action = finalizationAction(approval.approved);
+            if (action !== transition.actionCode) {
+              const resolved = await executor.workflowTransition.findFirst({ where: {
+                fromStateId: solicitud.estadoActualId, actionCode: action, isActive: true,
+              }, include: transitionInclude });
+              if (!resolved || !resolved.toState.isActive) throw new SolicitudWorkflowTransitionNotAllowedError();
+              transition = resolved;
+            }
+          }
+          if (transition.toState.code === "Transferir" || step.actionCode === "pagar")
+            await assertSignatureTransferReady(tx, solicitud.id, ["liquidar", "liquidar_con_firma"].includes(step.actionCode));
 
           if (step.kind === "domain-transition") {
             updatedSolicitud = await this.applyTransition({
@@ -370,6 +414,7 @@ export class SolicitudWorkflowPrismaDatasource {
         },
         "error",
       );
+      if ((error as { code?: string }).code === "P2025") throw new WorkflowExecutionPlanStateConflictError();
       throw error;
     }
   }
@@ -556,13 +601,26 @@ export class SolicitudWorkflowPrismaDatasource {
     solicitud: SolicitudWithOwner;
     transition: WorkflowTransitionWithToState;
   }) {
+    const confirmedReturn = isConfirmedReturnToReview(input.solicitud.estadoActual.code, input.transition.toState.code)
+      ? await prepareConfirmedReturnToReview(input.executor as Prisma.TransactionClient, {
+        solicitudId: input.solicitud.id, changedBy: input.changedBy, comment: input.comentario,
+        now: input.now, expectedUpdatedAt: input.solicitud.updatedAt,
+      }) : null;
     const updateData: Prisma.SolicitudUpdateInput = {
+      ...(confirmedReturn?.control ? { administrativeCoreControl: confirmedReturn.control } : {}),
       estadoActual: {
         connect: {
           id: input.transition.toStateId,
         },
       },
     };
+    if (["liquidar", "liquidar_con_firma"].includes(input.transition.actionCode)) {
+      updateData.analisisFinalizadoAt = input.now;
+      updateData.analisisFinalizadoBy = input.changedBy;
+    } else if (["Revisar", "RevisionRiesgo", "PreAprobada", "Confirmada"].includes(input.transition.toState.code)) {
+      updateData.analisisFinalizadoAt = null;
+      updateData.analisisFinalizadoBy = null;
+    }
 
     // Riesgo se la devuelve al vendedor: el monto de este momento queda como
     // tope. Si vuelve a pasar por Riesgo, se pisa con el nuevo.
@@ -573,6 +631,8 @@ export class SolicitudWorkflowPrismaDatasource {
     const updatedSolicitud = await input.executor.solicitud.update({
       where: {
         id: input.solicitud.id,
+        estadoActualId: input.solicitud.estadoActualId,
+        updatedAt: input.solicitud.updatedAt,
       },
       data: updateData,
       include: solicitudCoreInclude,
@@ -581,6 +641,7 @@ export class SolicitudWorkflowPrismaDatasource {
     await input.executor.solicitudEstadoHistorial.create({
       data: {
         ...actingHistoryFields(),
+        ...(confirmedReturn?.audit ?? {}),
         actionCode: input.transition.actionCode,
         actionLabel: input.transition.actionLabel,
         changedAt: input.now,
@@ -633,7 +694,18 @@ export class SolicitudWorkflowPrismaDatasource {
       this.validateWorkflowOwner(input.workflowOwnerId, solicitud);
     }
 
-    return this.loadActiveTransitions(this.db, solicitud.estadoActualId);
+    if ((solicitud.administrativeCoreControl as Prisma.JsonObject | null)?.replacementPending) return [];
+    const transitions = await this.loadActiveTransitions(this.db, solicitud.estadoActualId);
+    const returnBlocked = transitions.some(t => isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code))
+      ? await correctionBlockedReason(this.db, await administrativeSource(this.db, solicitud.id)) : null;
+    return transitions.filter(t => t.actionCode !== "liquidar_con_firma").map(t => {
+      if (isConfirmedReturnToReview(solicitud.estadoActual.code, t.toState.code) && returnBlocked)
+        return { ...t, blockedReason: returnBlocked };
+      // Closing analysis runs the authoritative financial reconciliation first.
+      // Other paths retain the block until that verification has succeeded.
+      return t.actionCode !== "liquidar" && coreReconciliationPending(solicitud) && CORE_GUARDED_ACTIONS.has(t.actionCode)
+        ? { ...t, blockedReason: CORE_RECONCILIATION_REASON } : t;
+    });
   }
 
   async listHistory(

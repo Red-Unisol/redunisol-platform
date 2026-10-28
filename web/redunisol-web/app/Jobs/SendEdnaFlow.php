@@ -2,7 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\TracksJourney;
 use App\Services\EdnaApi;
+use App\Services\EdnaFlowRouter;
+use App\Services\EdnaIntake;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -15,6 +18,7 @@ use Throwable;
 class SendEdnaFlow implements ShouldQueue
 {
     use Queueable;
+    use TracksJourney;
 
     public int $tries = 8;
 
@@ -50,6 +54,12 @@ class SendEdnaFlow implements ShouldQueue
 
                 return;
             }
+            $intake = $send->flow_id !== EdnaFlowRouter::FLOW_ID;
+            if ($intake && ! (new EdnaIntake)->canSend($send)) {
+                $this->closePending('cancelled', 'intake_context_changed');
+
+                return;
+            }
             $api = new EdnaApi;
             $phone = Crypt::decryptString($send->recipient);
             $allowed = config('edna.router_recipients', []);
@@ -63,7 +73,9 @@ class SendEdnaFlow implements ShouldQueue
                 'cascadeId' => $send->cascade_id, 'subscriberFilter' => ['address' => $phone, 'type' => 'PHONE'],
                 'content' => ['whatsappContent' => ['contentType' => 'FLOW', 'flowId' => (int) $send->flow_id,
                     'action' => 'navigate', 'caption' => 'Completar datos',
-                    'text' => 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.']],
+                    'text' => $intake
+                        ? 'Completá tu solicitud acá en WhatsApp. Necesitamos tu CUIL; el email es opcional.'
+                        : 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.']],
             ];
             // Commit the claim before any external side effect. One worker alone can win it.
             $claimed = DB::table('edna_flow_sends')->where('id', $send->id)->where('state', 'pending')->update([

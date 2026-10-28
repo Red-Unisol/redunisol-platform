@@ -1,4 +1,5 @@
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
+import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 import {
   SolicitudCoreNotFoundError,
   SolicitudPrestamoNoGeneradoError,
@@ -56,6 +57,7 @@ export type FinSolicitudDatosResponse = {
 };
 
 type Dependencies = {
+  ensureCoreReconciled?: (id: string) => Promise<void | { loanId: string; conditionsFingerprint: string }>;
   legacyGateway: SolicitudesLegacyGateway;
   repository: SolicitudesCoreRepository;
 };
@@ -71,10 +73,12 @@ function toNullableInteger(value: string | null): number | null {
 }
 
 export class GetFinSolicitudDatosUseCase {
+  private readonly ensureCoreReconciled?: Dependencies["ensureCoreReconciled"];
   private readonly legacyGateway: SolicitudesLegacyGateway;
   private readonly repository: SolicitudesCoreRepository;
 
   constructor(dependencies: Dependencies) {
+    this.ensureCoreReconciled = dependencies.ensureCoreReconciled;
     this.legacyGateway = dependencies.legacyGateway;
     this.repository = dependencies.repository;
   }
@@ -96,12 +100,20 @@ export class GetFinSolicitudDatosUseCase {
       throw new SolicitudPrestamoNoGeneradoError();
     }
 
+    const proof = await this.ensureCoreReconciled?.(solicitud.id);
+    if (proof && proof.loanId !== solicitud.legacyOid)
+      throw new AdministrativeCorrectionError("El préstamo cambió. Usá el enlace de firma vigente.");
     const prestamo = await this.legacyGateway.getPrestamoOtorgadoByLegacyOid(
       solicitud.legacyOid,
     );
 
     if (!prestamo) {
       throw new SolicitudPrestamoNoGeneradoError();
+    }
+    if (this.ensureCoreReconciled) {
+      const current = await this.repository.findById(solicitud.id);
+      if (!current || current.legacyOid !== solicitud.legacyOid || current.updatedAt.getTime() !== solicitud.updatedAt.getTime())
+        throw new AdministrativeCorrectionError("La solicitud cambió durante la consulta. Usá el enlace de firma vigente e intentá nuevamente.");
     }
 
     const nombreSocio = [

@@ -1,3 +1,17 @@
+import { addControlledLoanReplacementRoutes } from "./presentation/ControlledLoanReplacementRoutes";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { ACCESS_TOKEN_COOKIE } from "../auth/presentation/AuthCookies";
+import { createDocumentReviewRouter } from "../document-review/document-review-module";
+import { InitialLoanGenerationService } from "./infrastructure/services/InitialLoanGenerationService";
+import { addInitialLoanGenerationRoutes } from "./presentation/InitialLoanGenerationRoutes";
+import { assertWorkflowFinancialReady, assertSignatureLinkFinancialReady } from "./infrastructure/services/WorkflowFinancialGuard";
+import { inspectLinkedLoan, type LinkedLoanReader } from "./application/services/LinkedLoanRules";
+import { ControlledLoanReplacementService } from "./infrastructure/services/ControlledLoanReplacementService";
+import { buildLinkFirmaDigital } from "./application/services/buildLinkFirmaDigital";
+import { addAdministrativeCorrectionRoutes } from "./presentation/AdministrativeCorrectionRoutes";
+import { assertNoLoanReplacementPending } from "./domain/workflow/AdministrativeCorrection";
+import { AdministrativeCorrectionService, administrativeSource } from "./infrastructure/services/AdministrativeCorrectionService";
 import { createReconocimientoRecibosRoutes } from "./adjuntos/reconocimiento/presentation/ReconocimientoRecibosRoutes";
 import { ConfiguracionReconocimientoPrisma } from "./adjuntos/reconocimiento/infrastructure/ConfiguracionReconocimientoPrisma";
 import { MistralReciboGateway } from "./adjuntos/reconocimiento/infrastructure/MistralReciboGateway";
@@ -12,6 +26,7 @@ import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
 import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
+import { createLoanDiagnosticWriter } from "../technical-diagnostics/LoanDiagnostics";
 import type { GetCurrentUserUseCase } from "../auth/application/use-cases/GetCurrentUser.use-case";
 import { AuthPrismaDatasource } from "../auth/infrastructure/datasources/AuthPrismaDatasource";
 import { AuthRepositoryImpl } from "../auth/infrastructure/repositories/AuthRepositoryImpl";
@@ -142,6 +157,14 @@ export function createSolicitudesCoreRouter(
   const solicitudesCoreRepository = new SolicitudesCoreRepositoryImpl(
     solicitudesCoreDatasource,
   );
+  const loanGateways = {
+    lifecycle: (id: string, direct?: boolean) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
+    loanSnapshot: (id: string, documento: string, direct?: boolean) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento, direct),
+  };
+  const linkedLoanReader: LinkedLoanReader = async source => {
+    const raw = source.legacyOid ? await prisma.solicitud.findUnique({ where: { legacyOid: source.legacyOid }, include: { titular: true } }) : null;
+    return inspectLinkedLoan(raw ?? source, loanGateways);
+  };
   const sociosRepository = new SocioRepositoryImpl(sociosDatasource);
   const solicitudWorkflowRepository = new SolicitudWorkflowRepositoryImpl(
     solicitudWorkflowDatasource,
@@ -171,9 +194,11 @@ export function createSolicitudesCoreRouter(
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
+  const loanDiagnostics = createLoanDiagnosticWriter(prisma);
   const crearPrestamoGateway = new CrearPrestamoGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    diagnostics: loanDiagnostics,
   });
   const editarSocioGateway = new EditarSocioMutualGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
@@ -255,6 +280,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
   });
   const updateSolicitudUseCase = new UpdateSolicitudUseCase({
+    linkedLoanReader,
     fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
     lineasPrestamoCatalog,
     repository: solicitudesCoreRepository,
@@ -268,15 +294,16 @@ export function createSolicitudesCoreRouter(
     bucket: env.MINIO_BUCKET_SOLICITUDES,
   });
   const changeSolicitudStateUseCase = new ChangeSolicitudStateUseCase({
+    authorizeFinancialOperation: input => assertWorkflowFinancialReady(prisma, input.solicitudId, input.currentUser.id),
     archivarEvaluacion,
     adjuntoRepository: solicitudAdjuntoRepository,
     engine: workflowEngine,
     now: () => new Date(),
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
-    authorizeDocumentReview: env.DOCUMENT_REVIEW_ENABLED ? async () => {
-      throw new DocumentReviewError("Registrá la aprobación o desaprobación humana en Revisión de firma.");
-    } : undefined,
+    authorizeDocumentReview: async () => {
+      throw new DocumentReviewError("Registrá la aprobación o el pedido de nueva firma en Legajos Digitales.");
+    },
   });
   const listLineasPrestamoDeSolicitudUseCase =
     new ListLineasPrestamoDeSolicitudUseCase({
@@ -330,7 +357,26 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository, sociosRepository,
     lineaPrestamoLegacyIdResolver, gateway: prestamosSimulacionGateway,
   });
+  const initialGeneration = new InitialLoanGenerationService({
+    db: prisma, repository: solicitudesCoreRepository, gateway: crearPrestamoGateway, linkedLoanReader,
+    diagnostics: loanDiagnostics,
+    loanSnapshot: loanGateways.loanSnapshot,
+    makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
+    creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
+    linkedLoanReader, initialGeneration,
+    diagnostics: loanDiagnostics,
+    replaceCancelledLoan: async (input, solicitud) => {
+      const actor = await prisma.user.findUniqueOrThrow({ where: { id: input.currentUser.id }, include: { workflowOwner: true } });
+      const source = await administrativeSource(prisma, solicitud.id);
+      await replacementService.replace(solicitud.id, actor, {
+        requestId: randomUUID(), expectedUpdatedAt: source.updatedAt.toISOString(),
+        previousLoanId: source.legacyOid!, reason: "Regeneración de préstamo anulado desde Generar préstamo.",
+        convenio: input.convenio,
+      });
+      return (await solicitudesCoreRepository.findById(solicitud.id))!;
+    },
     archivarEvaluacion,
     lineasPrestamoCatalog, simularCuotaSolicitud,
     authRepository,
@@ -350,7 +396,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudWorkflowRepository,
     sociosRepository,
     solicitudesRepository: solicitudesCoreRepository,
-    documentReviewRequired: env.DOCUMENT_REVIEW_ENABLED,
+    documentReviewRequired: true,
   });
   const listSolicitudHistoryUseCase = new ListSolicitudHistoryUseCase({
     repository: solicitudWorkflowRepository,
@@ -534,6 +580,39 @@ export function createSolicitudesCoreRouter(
       visibilidadVendedorResolver,
     }),
   );
+  const replacementService: ControlledLoanReplacementService = new ControlledLoanReplacementService({ db: prisma, creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS, prepare: createPrestamoLegacyUseCase,
+      gateway: crearPrestamoGateway,
+      diagnostics: loanDiagnostics,
+      lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
+      loanSnapshot: (id, documento, direct) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento, direct),
+      makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
+    });
+  addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
+  addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
+  router.get("/:id/linked-loan-status", async (req, res, next) => {
+    try {
+      const id = z.uuid().parse(req.params.id);
+      const user = await dependencies.getCurrentUserUseCase.execute(req.cookies?.[ACCESS_TOKEN_COOKIE]);
+      await getSolicitudByIdUseCase.execute({ id, currentUser: user });
+      res.setHeader("Cache-Control", "no-store");
+      const source = await administrativeSource(prisma, id);
+      const generation = (source.administrativeCoreControl as Record<string, unknown> | null)?.generationPending as {
+        requestId: string; status: string; newLoanId?: string;
+      } | undefined;
+      try { assertNoLoanReplacementPending(source); res.json(await linkedLoanReader(source)); }
+      catch (error) { res.json({ status: "unavailable", currentLoanId: source.legacyOid, amount: null,
+        requestedAmount: source.montoAFinanciar === null ? null : Number(source.montoAFinanciar), matchesAmount: false, amountEditable: false,
+        reason: error instanceof Error ? error.message : "No se pudo verificar el préstamo.",
+        ...(user.isSystemAdmin && generation ? { recovery: { requestId: generation.requestId, status: generation.status,
+          knownLoanId: generation.newLoanId ?? null, expectedUpdatedAt: source.updatedAt.toISOString() } } : {}),
+      }); }
+    } catch (error) { next(error); }
+  });
+  addAdministrativeCorrectionRoutes(router, { auth: dependencies.getCurrentUserUseCase,
+    service: new AdministrativeCorrectionService({ db: prisma, changeState: changeSolicitudStateUseCase,
+      loanSnapshot: (id, documento, direct) => solicitudesLegacyGateway.getCoreReconciliationSnapshot(id, documento, direct),
+      lineResolver: lineaPrestamoLegacyIdResolver }),
+  });
   addExternalPaymentRoutes(router, {
     auth: dependencies.getCurrentUserUseCase,
     service: new ExternalPaymentService({ db: prisma, storage: adjuntosObjectStorage,
@@ -542,6 +621,9 @@ export function createSolicitudesCoreRouter(
     maxFileBytes: env.ADJUNTOS_MAX_FILE_SIZE_BYTES,
   });
   const combined = Router();
+  combined.use("/:id", crearVisibilidadVendedorGuard({ getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
+    repository: solicitudesCoreRepository, visibilidadVendedorResolver }));
+  combined.use(createDocumentReviewRouter(dependencies.getCurrentUserUseCase));
   const configuracion = new ConfiguracionReconocimientoPrisma(prisma);
   combined.use("/reconocimiento-recibos", createReconocimientoRecibosRoutes({
     getCurrentUserUseCase: dependencies.getCurrentUserUseCase,
@@ -630,6 +712,7 @@ export function createFinSolicitudRouter() {
     solicitudesCoreDatasource,
   );
   const getFinSolicitudDatosUseCase = new GetFinSolicitudDatosUseCase({
+    ensureCoreReconciled: async id => assertSignatureLinkFinancialReady(prisma, id),
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });

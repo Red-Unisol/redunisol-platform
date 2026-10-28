@@ -1,0 +1,372 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "SOLICITUD",
+      "title": "Solicitud Red Unisol",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "solicitud",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Tu solicitud en WhatsApp"
+              },
+              {
+                "type": "TextBody",
+                "text": "Completá tus datos para que evaluemos tu consulta. El CUIL es obligatorio; el email es opcional."
+              },
+              {
+                "type": "Dropdown",
+                "name": "provincia",
+                "label": "Provincia",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "cordoba",
+                    "title": "Córdoba"
+                  },
+                  {
+                    "id": "catamarca",
+                    "title": "Catamarca"
+                  },
+                  {
+                    "id": "caba",
+                    "title": "Ciudad de Buenos Aires"
+                  },
+                  {
+                    "id": "otra",
+                    "title": "Otra provincia"
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.provincia} == 'cordoba'",
+                "then": [
+                  {
+                    "type": "Dropdown",
+                    "name": "situacion_cordoba",
+                    "label": "Situación laboral",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "jubilado_pensionado",
+                        "title": "Jubilado / pensionado"
+                      },
+                      {
+                        "id": "empleado_publico",
+                        "title": "Empleado público"
+                      },
+                      {
+                        "id": "policia_cordoba",
+                        "title": "Policía de Córdoba"
+                      },
+                      {
+                        "id": "docente",
+                        "title": "Docente"
+                      },
+                      {
+                        "id": "salud",
+                        "title": "Personal de salud"
+                      },
+                      {
+                        "id": "unc",
+                        "title": "Empleado de la UNC"
+                      },
+                      {
+                        "id": "daspu",
+                        "title": "DASPU"
+                      },
+                      {
+                        "id": "empleado_publico_municipal",
+                        "title": "Empleado público municipal"
+                      },
+                      {
+                        "id": "jubilado_municipal",
+                        "title": "Jubilado municipal"
+                      },
+                      {
+                        "id": "otra",
+                        "title": "Otra situación"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "If",
+                    "condition": "${form.situacion_cordoba} == 'jubilado_pensionado'",
+                    "then": [
+                      {
+                        "type": "Dropdown",
+                        "name": "organismo",
+                        "label": "Origen de haberes",
+                        "required": true,
+                        "data-source": [
+                          {
+                            "id": "caja_cordoba",
+                            "title": "Caja de Jubilaciones Córdoba"
+                          },
+                          {
+                            "id": "anses",
+                            "title": "ANSES"
+                          },
+                          {
+                            "id": "ayuda",
+                            "title": "Necesito ayuda"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "If",
+                        "condition": "${form.organismo} == 'caja_cordoba'",
+                        "then": [
+                          {
+                            "type": "TextBody",
+                            "text": "Para Caja de Jubilaciones de Córdoba no necesitamos el banco de cobro."
+                          }
+                        ],
+                        "else": [
+                          {
+                            "type": "Dropdown",
+                            "name": "banco_jubilado",
+                            "label": "Banco de cobro",
+                            "required": true,
+                            "data-source": [
+                              {
+                                "id": "bancor",
+                                "title": "Bancor"
+                              },
+                              {
+                                "id": "nacion",
+                                "title": "Banco Nación"
+                              },
+                              {
+                                "id": "otro",
+                                "title": "Otro banco"
+                              },
+                              {
+                                "id": "ayuda",
+                                "title": "Necesito ayuda"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "else": [
+                      {
+                        "type": "Dropdown",
+                        "name": "banco_cordoba",
+                        "label": "Banco de cobro",
+                        "required": true,
+                        "data-source": [
+                          {
+                            "id": "bancor",
+                            "title": "Bancor"
+                          },
+                          {
+                            "id": "nacion",
+                            "title": "Banco Nación"
+                          },
+                          {
+                            "id": "otro",
+                            "title": "Otro banco"
+                          },
+                          {
+                            "id": "ayuda",
+                            "title": "Necesito ayuda"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.provincia} == 'catamarca'",
+                "then": [
+                  {
+                    "type": "Dropdown",
+                    "name": "situacion_catamarca",
+                    "label": "Situación laboral",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "empleado_publico",
+                        "title": "Empleado público"
+                      },
+                      {
+                        "id": "policia",
+                        "title": "Policía"
+                      },
+                      {
+                        "id": "docente",
+                        "title": "Docente"
+                      },
+                      {
+                        "id": "salud",
+                        "title": "Personal de salud"
+                      },
+                      {
+                        "id": "otra",
+                        "title": "Otra situación"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "Dropdown",
+                    "name": "banco_catamarca",
+                    "label": "Banco de cobro",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "bancor",
+                        "title": "Bancor"
+                      },
+                      {
+                        "id": "nacion",
+                        "title": "Banco Nación"
+                      },
+                      {
+                        "id": "otro",
+                        "title": "Otro banco"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "Necesito ayuda"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.provincia} == 'caba'",
+                "then": [
+                  {
+                    "type": "Dropdown",
+                    "name": "situacion_caba",
+                    "label": "Situación laboral",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "pfa",
+                        "title": "Policía Federal"
+                      },
+                      {
+                        "id": "otra",
+                        "title": "Otra situación"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "Dropdown",
+                    "name": "banco_caba",
+                    "label": "Banco de cobro",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "bancor",
+                        "title": "Bancor"
+                      },
+                      {
+                        "id": "nacion",
+                        "title": "Banco Nación"
+                      },
+                      {
+                        "id": "otro",
+                        "title": "Otro banco"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "Necesito ayuda"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "If",
+                "condition": "${form.provincia} == 'otra'",
+                "then": [
+                  {
+                    "type": "Dropdown",
+                    "name": "banco_otra",
+                    "label": "Banco de cobro",
+                    "required": true,
+                    "data-source": [
+                      {
+                        "id": "bancor",
+                        "title": "Bancor"
+                      },
+                      {
+                        "id": "nacion",
+                        "title": "Banco Nación"
+                      },
+                      {
+                        "id": "otro",
+                        "title": "Otro banco"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "Necesito ayuda"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "TextBody",
+                    "text": "Registraremos tu consulta. Esta opción no ingresa al circuito interno."
+                  }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "cuil",
+                "label": "CUIL",
+                "input-type": "text",
+                "required": true,
+                "helper-text": "11 dígitos, sin puntos ni guiones.",
+                "pattern": "^[0-9]{11}$"
+              },
+              {
+                "type": "TextInput",
+                "name": "email",
+                "label": "Email",
+                "input-type": "email",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Enviar solicitud",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "provincia": "${form.provincia}",
+                    "situacion_cordoba": "${form.situacion_cordoba}",
+                    "situacion_catamarca": "${form.situacion_catamarca}",
+                    "situacion_caba": "${form.situacion_caba}",
+                    "organismo": "${form.organismo}",
+                    "banco_cordoba": "${form.banco_cordoba}",
+                    "banco_jubilado": "${form.banco_jubilado}",
+                    "banco_catamarca": "${form.banco_catamarca}",
+                    "banco_caba": "${form.banco_caba}",
+                    "banco_otra": "${form.banco_otra}",
+                    "cuil": "${form.cuil}",
+                    "email": "${form.email}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

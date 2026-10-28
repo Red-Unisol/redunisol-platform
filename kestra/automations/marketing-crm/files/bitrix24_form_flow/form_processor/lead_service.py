@@ -201,7 +201,7 @@ def build_prequalification_input_from_lead(
 ) -> PrequalificationInput:
     # Only the explicit assisted Caja route allows an absent payment bank.
     # The ordinary form and every other segment retain their existing validation.
-    if (lead.get("UF_CRM_WA_SUBFLOW") == "jubilados_cordoba_continuidad"
+    if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake"}
             and lead.get("UF_CRM_WA_ORGANISMO") == "caja_cordoba"
             and not lead.get(config.fields.lead_payment_bank)):
         from .catalogs import PROVINCIAS, SITUACIONES_LABORALES

@@ -14,6 +14,7 @@ use Throwable;
 class ReconcileEdnaLanding implements ShouldQueue
 {
     use Queueable;
+    use \App\Jobs\Middleware\TracksJourney;
 
     public int $tries = 8;
 

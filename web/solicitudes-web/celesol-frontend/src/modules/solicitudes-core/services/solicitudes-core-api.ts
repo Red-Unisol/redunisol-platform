@@ -1,3 +1,4 @@
+import type { ConvenioSocioRequest } from "../utils/convenio-edicion";
 import { apiClient, fetchConSesion } from "@/shared/services/http/api-client";
 import { ApiError } from "@/shared/services/http/api-error";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "@/shared/services/http/http.constants";
@@ -132,14 +133,7 @@ export function assignSolicitudToUser(
   );
 }
 
-// Datos del convenio como deben quedar en el socio de Vimarx (null = sin
-// cargar). El backend solo escribe lo que difiere de Vimarx.
-export type ConvenioSocioRequest = {
-  beneficio: string | null;
-  caja40: number | null;
-  convAux: number | null;
-  observaciones: string | null;
-};
+export type { ConvenioSocioRequest } from "../utils/convenio-edicion";
 
 export function createPrestamoLegacy(
   solicitudId: string,

@@ -32,6 +32,7 @@ import {
 import { useSolicitudesCorePrecargaQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-precarga-query";
 
 const CORE_PRECARGA_COLUMNS: SolicitudesTableColumn[] = [
+  { key: "nroSolicitud", label: "Nº Solicitud", minWidth: "min-w-28" },
   {
     key: "vendedorSolicitud",
     label: "Vendedor Solicitud",
@@ -161,7 +162,7 @@ export function SolicitudesActualPrecargaPage() {
   const isRefreshPendingRef = useRef(false);
   const { data, error, isFetching, isLoading, refetch } =
     useSolicitudesCorePrecargaQuery({
-      nroDocumento: searchTerm,
+      search: searchTerm,
       page,
       pageSize,
     });
@@ -251,6 +252,7 @@ export function SolicitudesActualPrecargaPage() {
         }}
         rightActions={rightActions}
         searchTerm={searchTerm}
+        searchPlaceholder="Buscar por solicitud, DNI, nombre o apellido"
       />
 
       <div className="min-h-0 flex-1">

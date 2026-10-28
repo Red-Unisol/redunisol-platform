@@ -17,6 +17,7 @@ import type {
 } from "../../domain/services/LineaPrestamoLegacyIdResolver";
 import {
   ForbiddenSolicitudAccessError,
+  ConvenioSocioConflictError,
   SolicitudCancelacionesFueraDeRangoError,
   SolicitudCoreNotFoundError,
   SolicitudRefinanciacionCobroIncompletoError,
@@ -28,6 +29,8 @@ import {
   SolicitudVendedorLegacyRequiredError,
 } from "../../domain/solicitudes-core-errors";
 import { CreatePrestamoLegacyUseCase } from "./CreatePrestamoLegacy.use-case";
+import { actingContext } from "../../../auth/impersonation/context";
+import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 
 const LINK_FIRMA_BASE_URL = "https://redunisol.com.ar/finalizar.php";
 const TODAY = "2026-07-22";
@@ -979,6 +982,121 @@ it("rechecks current legacy maxima and persists adjusted values before the exist
   assert.equal(generated.cuotas, 3); assert.equal(generated.montoDeseado, 5000);
 });
 
+it("replacement preflight retains required data checks and rejects unsaved maxima or excess cancellations without creating", async () => {
+  let max = 10000000;
+  let total = 0;
+  let createCalls = 0;
+  let writes = 0;
+  const useCase = new CreatePrestamoLegacyUseCase({
+    authRepository: authRepository(), cancelacionesRepository: { listBySolicitudId: async () => total ? [cancelacion({ monto: total })] : [] },
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: max, cantidadMaximaCuotas: 48 }) },
+    simularCuotaSolicitud: { execute: async () => { throw new Error("must not silently adjust"); } },
+    repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: "443417" }), update: async () => { writes++; return solicitud(); } }),
+    gateway: fakeGateway({ crear: async () => { createCalls++; return { id: "999" }; } }),
+    lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(), linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+    sociosRepository: socioRepository(), solicitudesLegacyGateway: solicitudesLegacyGateway(), today: () => TODAY,
+  });
+  const input = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2", isSystemAdmin: true } };
+  assert.equal((await useCase.prepareReplacement(input)).coreInput.montoDeseado, 10000);
+  max = 5000;
+  await assert.rejects(() => useCase.prepareReplacement(input), /Guardá las condiciones/);
+  max = 10000000; total = 10001;
+  await assert.rejects(() => useCase.prepareReplacement(input), /cancelaciones superan/);
+  total = 0;
+  assert.equal((await useCase.prepareReplacement({ ...input, currentUser: { ...input.currentUser, isSystemAdmin: false } })).coreInput.montoDeseado, 10000);
+  await assert.rejects(() => useCase.prepareReplacement({ ...input, currentUser: { ...input.currentUser, isSystemAdmin: false, workflowOwnerId: "otro" } }), ForbiddenSolicitudAccessError);
+  assert.equal(createCalls, 0); assert.equal(writes, 0);
+});
+
+function buildLinkedUseCase(overrides: Partial<ConstructorParameters<typeof CreatePrestamoLegacyUseCase>[0]> = {}) {
+  return new CreatePrestamoLegacyUseCase({
+    authRepository: authRepository(), cancelacionesRepository: cancelacionesRepository(),
+    lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
+    simularCuotaSolicitud: { execute: async () => null }, repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: "444" }) }),
+    gateway: fakeGateway({ crear: async () => { throw new Error("must not create twice"); } }),
+    lineaPrestamoLegacyIdResolver: lineaPrestamoResolver(), linkFirmaDigitalBaseUrl: LINK_FIRMA_BASE_URL,
+    sociosRepository: socioRepository(), solicitudesLegacyGateway: solicitudesLegacyGateway(), today: () => TODAY,
+    ...overrides,
+  });
+}
+
+it("legacy creation fallback correlates gateway and link diagnostics without exposing technical data", async () => {
+  let gatewayContext: LoanDiagnosticContext | undefined;
+  const events: { context: LoanDiagnosticContext; event: Parameters<LoanDiagnosticWriter>[1] }[] = [];
+  const uc = buildLinkedUseCase({
+    repository: solicitudesRepository({ update: async () => solicitud({ legacyOid: "555000" }) }),
+    gateway: fakeGateway({ crear: async (_input, context) => { gatewayContext = context; return { id: "555000" }; } }),
+    diagnostics: async (context, event) => { events.push({ context, event }); },
+  });
+  const result = await actingContext.run({
+    sessionId: "session", auditId: "audit", administrator: { id: "real-admin" } as AuthUser,
+    selectedUser: { id: "user-1" } as AuthUser,
+  }, () => uc.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } }));
+  assert.match(gatewayContext!.operationId, /^[0-9a-f-]{36}$/);
+  assert.equal(gatewayContext!.solicitudId, "sol-1");
+  assert.equal(gatewayContext!.actorId, "user-1");
+  assert.equal(gatewayContext!.realActorId, "real-admin");
+  assert.equal(gatewayContext!.operation, "loan_generation");
+  assert.deepEqual(events.map(entry => entry.event.stage), ["CREATED_REMOTE", "LINKED"]);
+  assert(events.every(entry => entry.context === gatewayContext));
+  assert.equal((events[0].event.data as { newLoanId: string }).newLoanId, "555000");
+  assert.equal(result.legacyOid, "555000");
+  assert.equal("diagnostics" in result, false);
+});
+
+it("legacy fallback records the original remote or linking cause and never retries inside the operation", async () => {
+  for (const phase of ["remote", "link"] as const) {
+    const failure = new Error(`${phase} technical failure`, { cause: new Error("underlying technical detail") });
+    const events: Parameters<LoanDiagnosticWriter>[1][] = [];
+    let calls = 0;
+    const uc = buildLinkedUseCase({
+      repository: solicitudesRepository({ update: async () => { throw failure; } }),
+      gateway: fakeGateway({ crear: async () => { calls++; if (phase === "remote") throw failure; return { id: "555000" }; } }),
+      diagnostics: async (_context, event) => { events.push(event); },
+    });
+    await assert.rejects(uc.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } }), error => error === failure);
+    assert.equal(calls, 1);
+    const record = events.find(event => event.stage === (phase === "remote" ? "ERROR" : "LINK_FAILED"))!;
+    assert.equal((record.data as { error: Error }).error, failure);
+    assert.equal((record.data as { error: Error }).error.cause, failure.cause);
+    if (phase === "link") assert.equal((record.data as { newLoanId: string }).newLoanId, "555000");
+  }
+});
+
+it("legacy fallback succeeds even when its optional diagnostic writer rejects", async () => {
+  let calls = 0;
+  const uc = buildLinkedUseCase({
+    repository: solicitudesRepository({ update: async () => solicitud({ legacyOid: "555000" }) }),
+    gateway: fakeGateway({ crear: async () => { calls++; return { id: "555000" }; } }),
+    diagnostics: async () => { throw new Error("diagnostics unavailable"); },
+  });
+  const result = await uc.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } });
+  assert.equal(result.legacyOid, "555000");
+  assert.equal(calls, 1);
+});
+const linkedInput = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } };
+const linkedStatus = { status: "active" as const, currentLoanId: "444", resolvedLoanId: "444", amount: 10000, requestedAmount: 10000, matchesAmount: true, amountEditable: false };
+
+it("reuses an existing active loan at the same amount without generating again", async () => {
+  const uc = buildLinkedUseCase({ linkedLoanReader: async () => linkedStatus });
+  assert.equal((await uc.execute(linkedInput)).legacyOid, "444");
+});
+
+it("blocks an existing different amount and delegates proven cancellation to controlled replacement", async () => {
+  const mismatch = buildLinkedUseCase({ linkedLoanReader: async () => ({ ...linkedStatus, amount: 9000, matchesAmount: false }) });
+  await assert.rejects(mismatch.execute(linkedInput), /monto distinto.*444/);
+  let replaced = false;
+  const cancelled = buildLinkedUseCase({ linkedLoanReader: async () => ({ ...linkedStatus, status: "cancelled", amountEditable: true }),
+    replaceCancelledLoan: async () => { replaced = true; return solicitud({ legacyOid: "555" }); } });
+  assert.equal((await cancelled.execute(linkedInput)).legacyOid, "555");
+  assert.equal(replaced, true);
+});
+
+it("generation and regeneration require Confirmada, including for administrators", async () => {
+  const uc = buildLinkedUseCase({ repository: solicitudesRepository({ findById: async () => solicitud({ estadoActual: { code: "RevisionRiesgo", name: "Revisión", id: "risk", ownerId: "owner-2" } }) }) });
+  await assert.rejects(uc.execute({ ...linkedInput, currentUser: { ...linkedInput.currentUser, isSystemAdmin: true } }), /desde Confirmada/);
+});
+
 describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
   const VIMARX = {
     beneficio: "733767/0",
@@ -988,7 +1106,8 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
     observaciones: null,
   };
 
-  function buildUseCase(calls: string[], ediciones: unknown[], editarError?: Error) {
+  function buildUseCase(calls: string[], ediciones: unknown[], editarError?: Error,
+    overrides: Partial<ConstructorParameters<typeof CreatePrestamoLegacyUseCase>[0]> = {}) {
     return new CreatePrestamoLegacyUseCase({
       lineasPrestamoCatalog: { findByLegacyUserAndOid: async () => ({ descripcion: "Personal", legacyOid: "LP-1", vigente: true, montoMaximo: 10000000, cantidadMaximaCuotas: 48 }) },
       simularCuotaSolicitud: { execute: async () => null },
@@ -1014,6 +1133,7 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
       sociosRepository: socioRepository(),
       solicitudesLegacyGateway: solicitudesLegacyGateway(),
       today: () => TODAY,
+      ...overrides,
     });
   }
 
@@ -1025,10 +1145,9 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
 
     await buildUseCase(calls, ediciones).execute({
       convenio: {
-        beneficio: "733767/0",
-        caja40: 110,
-        convAux: 80,
-        observaciones: "  Depositar en Nación ",
+        caja40: { original: 100, valor: 110 },
+        convAux: { original: null, valor: 80 },
+        observaciones: { original: null, valor: "  Depositar en Nación " },
       },
       currentUser,
       solicitudId: "sol-1",
@@ -1051,7 +1170,7 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
     const calls: string[] = [];
 
     await buildUseCase(calls, []).execute({
-      convenio: { beneficio: "733767/0", caja40: 100, convAux: null, observaciones: null },
+      convenio: {},
       currentUser,
       solicitudId: "sol-1",
     });
@@ -1063,7 +1182,7 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
     const ediciones: unknown[] = [];
 
     await buildUseCase([], ediciones).execute({
-      convenio: { beneficio: null, caja40: 100, convAux: null, observaciones: null },
+      convenio: { beneficio: { original: "733767/0", valor: null } },
       currentUser,
       solicitudId: "sol-1",
     });
@@ -1079,7 +1198,7 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
 
     await assert.rejects(
       buildUseCase(calls, []).execute({
-        convenio: { beneficio: "733767/0", caja40: null, convAux: null, observaciones: null },
+        convenio: { caja40: { original: 100, valor: null } },
         currentUser,
         solicitudId: "sol-1",
       }),
@@ -1093,12 +1212,90 @@ describe("CreatePrestamoLegacyUseCase convenio del socio", () => {
 
     await assert.rejects(
       buildUseCase(calls, [], new Error("rechazado")).execute({
-        convenio: { beneficio: "733767/0", caja40: 120, convAux: null, observaciones: null },
+        convenio: { caja40: { original: 100, valor: 120 } },
         currentUser,
         solicitudId: "sol-1",
       }),
       /rechazado/,
     );
     assert.deepEqual(calls, ["editar"]);
+  });
+
+  it("preserves concurrent changes to fields omitted by the operator", async () => {
+    const ediciones: unknown[] = [];
+    await buildUseCase([], ediciones, undefined, {
+      convenioSocioGateway: { getConvenioSocioByLegacyId: async () => ({ ...VIMARX,
+        beneficio: "otro beneficio", observaciones: "Texto nuevo de Vimarx", convAux: 99 }) },
+    }).execute({ convenio: { caja40: { original: 100, valor: 110 } }, currentUser, solicitudId: "sol-1" });
+    assert.deepEqual(ediciones, [{ socioLegacyId: "143471", campos: { "SocAux.Caja40": "110" } }]);
+  });
+
+  it("rejects conflicts on edited text and numbers with 409 before any edit or loan creation", async () => {
+    for (const convenio of [
+      { caja40: { original: 90, valor: 110 } },
+      { beneficio: { original: "anterior", valor: "nuevo" } },
+      { observaciones: { original: "texto anterior", valor: "texto nuevo" } },
+      { convAux: { original: 70, valor: 80 } },
+    ]) {
+      const calls: string[] = [];
+      const ediciones: unknown[] = [];
+      await assert.rejects(
+        buildUseCase(calls, ediciones).execute({ convenio, currentUser, solicitudId: "sol-1" }),
+        (error: unknown) => error instanceof ConvenioSocioConflictError && error.statusCode === 409 && /Cerrá y volvé a abrir/.test(error.message),
+      );
+      assert.deepEqual(calls, []);
+      assert.deepEqual(ediciones, []);
+    }
+  });
+
+  it("does not partially write valid edits when another edited field conflicts", async () => {
+    const ediciones: unknown[] = [];
+    await assert.rejects(buildUseCase([], ediciones).execute({
+      convenio: { beneficio: { original: "733767/0", valor: "nuevo" }, caja40: { original: 90, valor: 110 } },
+      currentUser, solicitudId: "sol-1",
+    }), ConvenioSocioConflictError);
+    assert.deepEqual(ediciones, []);
+  });
+
+  it("allows retrying an edit already saved in Vimarx without rewriting it", async () => {
+    const calls: string[] = [];
+    await buildUseCase(calls, []).execute({ convenio: { caja40: { original: 90, valor: 100 } }, currentUser, solicitudId: "sol-1" });
+    assert.deepEqual(calls, ["crear"]);
+  });
+
+  it("ignores reverted fields even when their current Vimarx value changed", async () => {
+    const calls: string[] = [];
+    await buildUseCase(calls, []).execute({ convenio: {
+      caja40: { original: 90, valor: 90 }, observaciones: { original: "viejo", valor: "viejo" },
+    }, currentUser, solicitudId: "sol-1" });
+    assert.deepEqual(calls, ["crear"]);
+  });
+
+  it("skips the convenio read entirely when no fields were edited", async () => {
+    const uc = buildUseCase([], [], undefined, { convenioSocioGateway: {
+      getConvenioSocioByLegacyId: async () => { throw new Error("must not read"); },
+    } });
+    for (const convenio of [undefined, {}]) await uc.execute({ convenio, currentUser, solicitudId: "sol-1" });
+  });
+
+  it("does not write the convenio when cancellation validation blocks generation", async () => {
+    const calls: string[] = [];
+    await assert.rejects(buildUseCase(calls, [], undefined, {
+      cancelacionesRepository: cancelacionesRepository([cancelacion({ monto: 21474836.48 })]),
+    }).execute({ convenio: { caja40: { original: 100, valor: 110 } }, currentUser, solicitudId: "sol-1" }), SolicitudCancelacionesFueraDeRangoError);
+    assert.deepEqual(calls, []);
+  });
+
+  it("applies the same conflict check to cancelled-loan replacement preflight", async () => {
+    const calls: string[] = [];
+    await assert.rejects(buildUseCase(calls, [], undefined, {
+      repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: "443417" }) }),
+    }).prepareReplacement({ convenio: { caja40: { original: 90, valor: 110 } }, currentUser, solicitudId: "sol-1" }), ConvenioSocioConflictError);
+    assert.deepEqual(calls, []);
+  });
+
+  it("rejects edits instead of silently ignoring them when reusing an active loan", async () => {
+    const uc = buildLinkedUseCase({ linkedLoanReader: async () => linkedStatus });
+    await assert.rejects(uc.execute({ ...linkedInput, convenio: { caja40: { original: 100, valor: 110 } } }), /ya está generado/);
   });
 });
