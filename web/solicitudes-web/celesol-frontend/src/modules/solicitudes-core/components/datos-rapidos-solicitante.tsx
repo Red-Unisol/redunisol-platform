@@ -80,10 +80,20 @@ export function DatosRapidosSolicitante({
               .filter(Boolean)
               .join(" ") || "Nombre no informado"}
           </h2>
-          <p className="mt-0.5 text-xs text-foreground-secondary">
-            {titular.tipoDocumento?.trim() || "Documento"}{" "}
-            {titular.nroDocumento?.trim() || "No informado"}
-          </p>
+          <dl className="mt-0.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-foreground-secondary">
+            <div className="flex gap-1.5">
+              <dt>{titular.tipoDocumento?.trim() || "Documento"}</dt>
+              <dd className="font-medium tabular-nums text-foreground">
+                {titular.nroDocumento?.trim() || "No informado"}
+              </dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt>CUIT</dt>
+              <dd className="font-medium tabular-nums text-foreground">
+                {titular.cuit?.trim() || "No informado"}
+              </dd>
+            </div>
+          </dl>
         </div>
         <div
           aria-live="polite"
