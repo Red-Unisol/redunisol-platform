@@ -42,10 +42,13 @@ import { ListLineasPrestamoDeSolicitudUseCase } from "./application/use-cases/Li
 import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
 import { SimularRefinanciacionUseCase } from "./application/use-cases/SimularRefinanciacion.use-case";
+import { DescargarSimulacionRefinanciacionPdfUseCase } from "./application/use-cases/DescargarSimulacionRefinanciacionPdf.use-case";
 import { GetSolicitudRefinanciacionUseCase } from "./application/use-cases/GetSolicitudRefinanciacion.use-case";
 import { GuardarSolicitudRefinanciacionUseCase } from "./application/use-cases/GuardarSolicitudRefinanciacion.use-case";
 import { SolicitudRefinanciacionPrismaRepository } from "./infrastructure/repositories/SolicitudRefinanciacionPrismaRepository";
 import { CobrarRefinanciacionSolicitud } from "./application/services/CobrarRefinanciacionSolicitud";
+import { ComprobanteRefinanciacionService } from "./application/services/ComprobanteRefinanciacion";
+import { ArchivarComprobanteRefinanciacion } from "./application/services/ArchivarComprobanteRefinanciacion";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
@@ -310,7 +313,17 @@ export function createSolicitudesCoreRouter(
       repository: solicitudesCoreRepository,
       simularRefinanciacion: simularRefinanciacionUseCase,
     });
+  const comprobanteRefinanciacion = new ComprobanteRefinanciacionService({
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+  });
   const cobrarRefinanciacionSolicitud = new CobrarRefinanciacionSolicitud({
+    archivarComprobante: new ArchivarComprobanteRefinanciacion({
+      adjuntos: solicitudAdjuntoRepository,
+      bucket: env.MINIO_BUCKET_SOLICITUDES,
+      comprobante: comprobanteRefinanciacion,
+      storage: adjuntosObjectStorage,
+    }),
     cobrarPrestamoGateway,
     legacyGateway: solicitudesLegacyGateway,
     refinanciacionRepository: solicitudRefinanciacionRepository,
@@ -460,6 +473,11 @@ export function createSolicitudesCoreRouter(
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
     simularRefinanciacionUseCase,
+    descargarSimulacionRefinanciacionPdfUseCase:
+      new DescargarSimulacionRefinanciacionPdfUseCase({
+        comprobante: comprobanteRefinanciacion,
+        simularRefinanciacion: simularRefinanciacionUseCase,
+      }),
     getSolicitudRefinanciacionUseCase,
     guardarSolicitudRefinanciacionUseCase,
     listLineasPrestamoDeSolicitudUseCase,

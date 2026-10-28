@@ -45,6 +45,10 @@ export class SolicitudesCoreRoutes {
       "/:id/refinanciacion/simulacion",
       controller.simularRefinanciacion,
     );
+    router.post(
+      "/:id/refinanciacion/simulacion/pdf",
+      controller.descargarSimulacionRefinanciacionPdf,
+    );
     router.get("/:id/refinanciacion", controller.getRefinanciacion);
     router.put("/:id/refinanciacion", controller.guardarRefinanciacion);
     router.get("/:id/credixsa", controller.getCredixsa);

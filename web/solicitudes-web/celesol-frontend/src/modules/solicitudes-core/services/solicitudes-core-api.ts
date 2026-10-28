@@ -386,6 +386,39 @@ export function simularRefinanciacion(
   );
 }
 
+// La simulacion en PDF, con "SIMULACION" cruzado, para mostrarle al socio.
+export async function descargarSimulacionRefinanciacionPdf(
+  solicitudId: string,
+  prestamos: RefinanciacionPrestamoRequest[],
+): Promise<Blob> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    DEFAULT_HTTP_TIMEOUT_MS,
+  );
+
+  try {
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/refinanciacion/simulacion/pdf`,
+      {
+        body: JSON.stringify({ prestamos }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new ApiError(resolveErrorMessage(responseText), response.status);
+    }
+
+    return await response.blob();
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 export function guardarSolicitudRefinanciacion(
   solicitudId: string,
   prestamos: RefinanciacionPrestamoRequest[],

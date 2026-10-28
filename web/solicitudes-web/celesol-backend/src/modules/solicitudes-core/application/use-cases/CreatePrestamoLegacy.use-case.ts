@@ -262,7 +262,11 @@ export class CreatePrestamoLegacyUseCase {
     // Ultimo paso antes del prestamo. CrearPrestamo toma lo cobrado por
     // refinanciacion del socio y lo descuenta del en mano.
     if (refinanciacion && refinanciacion.pendientes.length > 0) {
-      await this.refinanciacion?.cobrar(input.solicitudId, refinanciacion);
+      await this.refinanciacion?.cobrar(
+        input.solicitudId,
+        refinanciacion,
+        input.currentUser.id,
+      );
     }
     const result = await this.gateway.crear({
       cuotas: efectivos.cuotas as number,
