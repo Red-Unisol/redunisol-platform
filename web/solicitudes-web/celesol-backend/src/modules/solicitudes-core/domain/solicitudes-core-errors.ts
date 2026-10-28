@@ -428,3 +428,25 @@ export class SolicitudRefinanciacionInvalidaError extends SolicitudesError {
     this.name = "SolicitudRefinanciacionInvalidaError";
   }
 }
+
+export class SolicitudRefinanciacionYaCobradaError extends SolicitudesError {
+  constructor() {
+    super(
+      "Ya se cobraron en Vimarx cuotas de esta refinanciación: no se puede cambiar. Terminá de generar el préstamo.",
+      409,
+    );
+    this.name = "SolicitudRefinanciacionYaCobradaError";
+  }
+}
+
+// Al generar el prestamo se cobraron algunos prestamos de la refinanciacion
+// y otro fallo. Lo cobrado queda registrado: reintentar no lo vuelve a cobrar.
+export class SolicitudRefinanciacionCobroIncompletoError extends SolicitudesError {
+  constructor(input: { cobrados: number; motivo: string; total: number }) {
+    super(
+      `Se cobraron ${input.cobrados} de ${input.total} préstamos de la refinanciación y el préstamo nuevo no se generó. ${input.motivo} Al reintentar no se vuelve a cobrar lo ya cobrado.`,
+      502,
+    );
+    this.name = "SolicitudRefinanciacionCobroIncompletoError";
+  }
+}

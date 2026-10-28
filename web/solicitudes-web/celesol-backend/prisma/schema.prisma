@@ -526,6 +526,11 @@ model SolicitudRefinanciacion {
   /// ID del prestamo en Vimarx (F.Module.Cuentas.Prestamos.Prestamo), no el NroCuenta.
   prestamoLegacyId String    @map("prestamo_legacy_id")
   nrosCuota        Int[]     @map("nros_cuota")
+  /// Cobro en Vimarx (CuotaPrestamo "PG ..."), al generar el prestamo. Con el
+  /// cobro hecho, un reintento no lo vuelve a cobrar.
+  cobroLegacyId    String?   @map("cobro_legacy_id")
+  totalCobrado     Decimal?  @map("total_cobrado") @db.Decimal(18, 2)
+  cobradoAt        DateTime? @map("cobrado_at")
   updatedBy        String?   @map("updated_by") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")

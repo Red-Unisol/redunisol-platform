@@ -8,8 +8,12 @@ import {
   SolicitudRefinanciacionInvalidaError,
   SolicitudRefinanciacionNoEditableError,
   SolicitudRefinanciacionPrestamoGeneradoError,
+  SolicitudRefinanciacionYaCobradaError,
 } from "../../domain/solicitudes-core-errors";
-import type { SolicitudRefinanciacionPrestamo } from "../../domain/repositories/SolicitudRefinanciacionRepository";
+import type {
+  SolicitudRefinanciacionPrestamo,
+  SolicitudRefinanciacionPrestamoGuardado,
+} from "../../domain/repositories/SolicitudRefinanciacionRepository";
 
 const OWNER_RIESGO = "owner-riesgo";
 
@@ -162,6 +166,37 @@ describe("GuardarSolicitudRefinanciacionUseCase", () => {
     assert.deepEqual(result.prestamos, []);
   });
 
+  it("rejects changes once some cuotas were already charged in Vimarx", async () => {
+    let guardo = false;
+    const useCase = buildUseCase({
+      cobrados: [
+        {
+          cobro: {
+            cobradoAt: new Date(0),
+            cobroId: "18868290",
+            totalCobrado: 1194285.46,
+          },
+          nrosCuota: [22, 23],
+          prestamoId: "416209",
+        },
+      ],
+      onReplace: () => {
+        guardo = true;
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.execute({
+          currentUser: riesgoUser(),
+          prestamos: [],
+          solicitudId: "sol-1",
+        }),
+      SolicitudRefinanciacionYaCobradaError,
+    );
+    assert.equal(guardo, false);
+  });
+
   it("throws when the solicitud does not exist", async () => {
     const useCase = buildUseCase({ solicitud: null });
 
@@ -219,6 +254,7 @@ function simulacionOk(): RefinanciacionSimulada {
 function buildUseCase(
   overrides: {
     canManageAttachments?: boolean;
+    cobrados?: SolicitudRefinanciacionPrestamoGuardado[];
     onReplace?: (input: {
       prestamos: SolicitudRefinanciacionPrestamo[];
       solicitudId: string;
@@ -241,9 +277,19 @@ function buildUseCase(
         }) as never,
     },
     refinanciacionRepository: {
+      findBySolicitudId: async () => ({
+        prestamos: overrides.cobrados ?? [],
+        updatedAt: null,
+      }),
       replace: async (input) => {
         overrides.onReplace?.(input);
-        return { prestamos: input.prestamos, updatedAt: new Date(0) };
+        return {
+          prestamos: input.prestamos.map((prestamo) => ({
+            ...prestamo,
+            cobro: null,
+          })),
+          updatedAt: new Date(0),
+        };
       },
     },
     repository: { findById: async () => target } as never,

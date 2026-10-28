@@ -45,6 +45,7 @@ import { SimularRefinanciacionUseCase } from "./application/use-cases/SimularRef
 import { GetSolicitudRefinanciacionUseCase } from "./application/use-cases/GetSolicitudRefinanciacion.use-case";
 import { GuardarSolicitudRefinanciacionUseCase } from "./application/use-cases/GuardarSolicitudRefinanciacion.use-case";
 import { SolicitudRefinanciacionPrismaRepository } from "./infrastructure/repositories/SolicitudRefinanciacionPrismaRepository";
+import { CobrarRefinanciacionSolicitud } from "./application/services/CobrarRefinanciacionSolicitud";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
@@ -286,11 +287,12 @@ export function createSolicitudesCoreRouter(
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });
+  const cobrarPrestamoGateway = new CobrarPrestamoGateway({
+    baseUrl: env.LEGACY_API_BASE_URL,
+    timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
   const simularRefinanciacionUseCase = new SimularRefinanciacionUseCase({
-    cobrarPrestamoGateway: new CobrarPrestamoGateway({
-      baseUrl: env.LEGACY_API_BASE_URL,
-      timeoutMs: env.LEGACY_API_TIMEOUT_MS,
-    }),
+    cobrarPrestamoGateway,
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });
@@ -308,6 +310,11 @@ export function createSolicitudesCoreRouter(
       repository: solicitudesCoreRepository,
       simularRefinanciacion: simularRefinanciacionUseCase,
     });
+  const cobrarRefinanciacionSolicitud = new CobrarRefinanciacionSolicitud({
+    cobrarPrestamoGateway,
+    refinanciacionRepository: solicitudRefinanciacionRepository,
+    simularRefinanciacion: simularRefinanciacionUseCase,
+  });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
     convenioSocioGateway: solicitudesLegacyGateway,
     lineasPrestamoCatalog,
@@ -324,6 +331,7 @@ export function createSolicitudesCoreRouter(
     gateway: crearPrestamoGateway,
     lineaPrestamoLegacyIdResolver,
     linkFirmaDigitalBaseUrl: env.FINALIZAR_FIRMA_DIGITAL_BASE_URL,
+    refinanciacion: cobrarRefinanciacionSolicitud,
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,
