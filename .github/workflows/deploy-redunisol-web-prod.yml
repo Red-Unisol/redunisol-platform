@@ -182,11 +182,17 @@ jobs:
           cd "$target_dir"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm queue-worker edna-worker scheduler web
+          if [ "${JOURNEY_ENABLED:-false}" = "true" ]; then
+            mountpoint -q /srv/redunisol-tracking
+            test -f /srv/redunisol-tracking/.redunisol-tracking-volume
+            # SSH feeds this shell through stdin; Compose must not consume the remaining script.
+            docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" run --rm --no-deps --interactive=false --entrypoint php php-fpm artisan journey:storage initialize < /dev/null
+          fi
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" up -d --remove-orphans
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps
 
           echo "Waiting for built assets and HTTP 200 from $app_host"
-          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm test -f /var/www/public/build/manifest.json < /dev/null
           worker_services=(queue-worker edna-worker scheduler)
           if [[ ",${COMPOSE_PROFILES:-}," == *",whatsapp-assistance,"* ]]; then
             worker_services+=(edna-assistance-worker)
@@ -205,6 +211,22 @@ jobs:
               exit 1
             fi
           done
+
+          # A healthy old container is not evidence that this revision was deployed.
+          for runtime_service in php-fpm web "${worker_services[@]}"; do
+            container_id="$(docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" ps -q "$runtime_service")"
+            test -n "$container_id"
+            expected_image="$APP_IMAGE"
+            if [ "$runtime_service" = "web" ]; then expected_image="$WEB_IMAGE"; fi
+            actual_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+            if [ "$actual_image" != "$expected_image" ]; then
+              echo "Image mismatch for $runtime_service: expected $expected_image, running $actual_image" >&2
+              exit 1
+            fi
+          done
+          if [ "${JOURNEY_ENABLED:-false}" = "true" ]; then
+            docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" exec -T php-fpm php artisan journey:storage status < /dev/null
+          fi
 
           status_code=""
           for attempt in $(seq 1 12); do

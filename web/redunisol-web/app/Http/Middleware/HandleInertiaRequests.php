@@ -48,6 +48,8 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'attributionEnabled' => (bool) config('attribution.enabled'),
+            'journeyEnabled' => (bool) config('journey.enabled'),
+            'journeyPageId' => $request->attributes->get('journey_context', [])['page_id'] ?? null,
             'ga4MeasurementId' => config('attribution.ga4_measurement_id'),
             'auth' => [
                 'user' => $request->user(),

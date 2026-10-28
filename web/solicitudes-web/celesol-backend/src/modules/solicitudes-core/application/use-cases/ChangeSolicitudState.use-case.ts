@@ -18,12 +18,13 @@ type Dependencies = {
   sociosRepository: SocioRepository;
   solicitudesRepository: SolicitudesCoreRepository;
   authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
+  authorizeFinancialOperation?: (input: ChangeSolicitudStateInput) => Promise<void>;
 };
 
 // La transicion "pagar" (Transferir -> Pagada) puede ejecutarla, ademas del
 // owner actual, cualquier usuario del owner RIESGO. Necesitamos el codigo de
 // owner (no solo el id) para verificarlo en SolicitudTransitionPolicy.
-const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
+const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar", "transferir"]);
 
 export class ChangeSolicitudStateUseCase {
   private readonly archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
@@ -36,10 +37,12 @@ export class ChangeSolicitudStateUseCase {
   private readonly now: () => Date;
   private readonly solicitudesRepository: SolicitudesCoreRepository;
   private readonly authorizeDocumentReview?: (input: ChangeSolicitudStateInput) => Promise<void>;
+  private readonly authorizeFinancialOperation?: (input: ChangeSolicitudStateInput) => Promise<void>;
 
   constructor(dependencies: Dependencies) {
     this.archivarEvaluacion = dependencies.archivarEvaluacion;
     this.authorizeDocumentReview = dependencies.authorizeDocumentReview;
+    this.authorizeFinancialOperation = dependencies.authorizeFinancialOperation;
     this.solicitudesRepository = dependencies.solicitudesRepository;
     this.annotateSolicitudTransitionsBlockedReason =
       new AnnotateSolicitudTransitionsBlockedReason({
@@ -65,6 +68,8 @@ export class ChangeSolicitudStateUseCase {
   }
 
   async execute(input: ChangeSolicitudStateInput) {
+    if (["liquidar", "liquidar_con_firma", "transferir", "pagar"].includes(input.actionCode))
+      await this.authorizeFinancialOperation?.(input);
     if (["transferir", "devolver_a_liquidada"].includes(input.actionCode)) {
       await this.authorizeDocumentReview?.(input);
     }
@@ -78,7 +83,7 @@ export class ChangeSolicitudStateUseCase {
     // single actionCode that moves a solicitud out of Confirmada into Liquidada.
     // A solicitud can reach and stay in Confirmada without a socio; it just can't
     // advance to Liquidada until one exists. "confirmar" never requires a socio.
-    if (input.actionCode === "liquidar") {
+    if (["liquidar", "liquidar_con_firma"].includes(input.actionCode)) {
       await this.ensureSolicitudTitularSocioExists.execute(input.solicitudId);
       await this.ensureSolicitudHasPrestamoLegacy.execute(input.solicitudId);
     }
@@ -109,6 +114,7 @@ export class ChangeSolicitudStateUseCase {
         : null;
 
     const result = await this.engine.execute({
+      ...(input.administrativeCorrection ? { administrativeCorrection: input.administrativeCorrection } : {}),
       actionCode: input.actionCode,
       changedBy: input.currentUser.id,
       comment: input.comment,

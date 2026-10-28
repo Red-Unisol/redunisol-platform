@@ -214,16 +214,20 @@ const convenioTextoSchema = (max: number) =>
     z.string().trim().max(max).nullable(),
   );
 
-// Datos del convenio editados en el modal de Generar prestamo, como deben
-// quedar en Vimarx. Caja 40 y AMEJUCA son Int32 en SocAux.
+const convenioNumeroSchema = z.number().int().min(0).max(2147483647).nullable();
+const convenioCambioSchema = <T extends z.ZodType>(value: T) =>
+  z.object({ original: value, valor: value }).strict().optional();
+
+// Cada campo lleva la edicion y su valor original. Los omitidos no se escriben.
+// Caja 40 y AMEJUCA son Int32 en SocAux.
 export const createPrestamoLegacyBodySchema = z
   .object({
     convenio: z
       .object({
-        beneficio: convenioTextoSchema(50),
-        caja40: z.number().int().min(0).max(2147483647).nullable(),
-        convAux: z.number().int().min(0).max(2147483647).nullable(),
-        observaciones: convenioTextoSchema(500),
+        beneficio: convenioCambioSchema(convenioTextoSchema(50)),
+        caja40: convenioCambioSchema(convenioNumeroSchema),
+        convAux: convenioCambioSchema(convenioNumeroSchema),
+        observaciones: convenioCambioSchema(convenioTextoSchema(500)),
       })
       .strict()
       .optional(),

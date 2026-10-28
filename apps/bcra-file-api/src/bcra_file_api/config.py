@@ -20,8 +20,14 @@ class Config:
     refresh_start_hour: int | None = None
     refresh_end_hour: int = 7
     refresh_timezone: str = "America/Argentina/Buenos_Aires"
+    extended_enabled: bool = False
+    min_extended_rows: int = 100_000
+    min_free_bytes: int = 20 * 1024**3
+    max_build_bytes: int = 35 * 1024**3
 
     def __post_init__(self) -> None:
+        if self.min_extended_rows < 1 or self.min_free_bytes < 0 or self.max_build_bytes <= 0:
+            raise ValueError("Invalid BCRA extended import budget")
         if self.refresh_start_hour is not None and (
             not 0 <= self.refresh_start_hour < 24
             or not 0 <= self.refresh_end_hour < 24
@@ -48,4 +54,8 @@ class Config:
             ),
             refresh_end_hour=int(os.environ.get("BCRA_FILE_REFRESH_END_HOUR", "7")),
             refresh_timezone=os.environ.get("BCRA_FILE_REFRESH_TIMEZONE", "America/Argentina/Buenos_Aires"),
+            extended_enabled=os.environ.get("BCRA_FILE_EXTENDED_ENABLED", "false").lower() == "true",
+            min_extended_rows=int(os.environ.get("BCRA_FILE_MIN_EXTENDED_ROWS", "100000")),
+            min_free_bytes=int(os.environ.get("BCRA_FILE_MIN_FREE_BYTES", str(20 * 1024**3))),
+            max_build_bytes=int(os.environ.get("BCRA_FILE_MAX_BUILD_BYTES", str(35 * 1024**3))),
         )

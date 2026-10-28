@@ -1,0 +1,5 @@
+/* Same tokens, fonts and shared components as the production application. */
+@import "../src/app/styles/globals.css";
+/* Explicit sources keep shared component utilities available with this Vite root. */
+@source "../src";
+@source "./";

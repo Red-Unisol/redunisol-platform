@@ -20,21 +20,31 @@ TEST_CONTRACT_VERSION = "isolated-test-v1"
 
 
 def process(payload, *, env=None, client=None):
-    source = dict(os.environ if env is None else env)
     if not isinstance(payload, dict):
         raise ValueError("Invalid assisted intake.")
+    return _persist(payload, normalize_answer(payload.get("answer")), env=env, client=client)
+
+
+def _persist(payload, answer, *, env=None, client=None, intake=False):
+    source = dict(os.environ if env is None else env)
     case_id = str(UUID(str(payload.get("case_id", ""))))
     phone = normalize_whatsapp(payload.get("phone"))
-    answer = normalize_answer(payload.get("answer"))
+    flow_id = source.get("EDNA_INTAKE_FLOW_ID", "") if intake else FLOW_ID
+    province = answer["province"] if intake else "Cordoba"
+    province_key = answer["province_key"] if intake else "cordoba"
+    segment = answer["segment"] if intake else "cordoba_jubilado"
+    subflow = "website_single_intake" if intake else "jubilados_cordoba_continuidad"
     result = {"ok": True, "case_id": case_id, "lead_id": "", "contact_id": "",
               "action": "dry_run", "reason": answer["action"],
               "has_cuil": bool(answer["cuil"]), "has_email": bool(answer["email"])}
     if payload.get("dry_run") is not False:
         return result
-    pilot = [p.strip() for p in source.get("EDNA_ASSISTANCE_RECIPIENTS", "").split(",") if p.strip()]
-    if source.get("EDNA_ASSISTANCE_CRM_ENABLED", "").lower() not in {"true", "1"} or phone.lstrip("+") not in pilot:
+    prefix = "EDNA_INTAKE" if intake else "EDNA_ASSISTANCE"
+    pilot = [p.strip() for p in source.get(prefix + "_RECIPIENTS", "").split(",") if p.strip()]
+    if (source.get(prefix + "_CRM_ENABLED", "").lower() not in {"true", "1"}
+            or ((not intake or pilot) and phone.lstrip("+") not in pilot)):
         return dict(result, action="disabled", reason="disabled_or_outside_pilot")
-    test_mode = source.get("EDNA_ASSISTANCE_TEST_MODE", "").lower() in {"true", "1"}
+    test_mode = not intake and source.get("EDNA_ASSISTANCE_TEST_MODE", "").lower() in {"true", "1"}
     if not isinstance(payload.get("test_mode", False), bool) or payload.get("test_mode", False) != test_mode:
         return dict(result, action="disabled", reason="pilot_mode_mismatch")
     if answer["action"] == "landing":
@@ -77,7 +87,7 @@ def process(payload, *, env=None, client=None):
     records = {}
     for entity in ("contact", "lead"):
         matches = api.call("crm.duplicate.findbycomm", {"entity_type": entity.upper(), "type": "PHONE", "values": [phone]})
-        ids = list(dict.fromkeys(str(i) for i in matches.get(entity.upper(), [])))
+        ids = _duplicate_ids(matches, entity.upper())
         if len(ids) > 50:
             return dict(result, action="review", reason="identity_search_too_large")
         rows = [api.call("crm." + entity + ".get", {"id": i}) for i in ids]
@@ -111,6 +121,21 @@ def process(payload, *, env=None, client=None):
         if len(matches) > 1 or (lead and matches and str(lead["ID"]) != str(matches[0]["ID"])):
             return dict(result, action="review", reason="ambiguous_cuil_lead")
         lead = lead or (matches[0] if matches else None)
+    if intake:
+        # Query every known binding separately; the portal does not honor nested OR.
+        for field, record in (("CONTACT_ID", contact), ("LEAD_ID", lead)):
+            if not record:
+                continue
+            deals = api.call("crm.deal.list", {"filter": {"=" + field: record["ID"],
+                             "=STAGE_SEMANTIC_ID": "P", "@CATEGORY_ID": [1, 5]},
+                             "select": ["ID", field, "STAGE_SEMANTIC_ID", "CATEGORY_ID"]})
+            for deal in deals:
+                if (str(deal.get(field)) != str(record["ID"])
+                        or deal.get("STAGE_SEMANTIC_ID") != "P" or str(deal.get("CATEGORY_ID")) not in {"1", "5"}):
+                    raise ValueError("CRM management identity requires review.")
+            if deals:
+                return dict(result, action="review", reason="existing_management",
+                            lead_id=str((lead or {}).get("ID") or ""), contact_id=str((contact or {}).get("ID") or ""))
     if lead and lead.get("UF_CRM_WA_ASSISTANCE_ID") and lead["UF_CRM_WA_ASSISTANCE_ID"] != case_id:
         return dict(result, action="review", reason="existing_assisted_case")
     if lead and contact and lead.get("CONTACT_ID") and str(lead["CONTACT_ID"]) != str(contact["ID"]):
@@ -121,6 +146,8 @@ def process(payload, *, env=None, client=None):
 
     automatic = bool(cuil) and answer["action"] == "intake"
     state = "ready" if automatic else "pending_identity" if not cuil else "pending_organism"
+    if intake and not automatic:
+        state = "pending_data"
     if answer["action"] == "bank_rejected":
         state = "bank_rejected"
     status = config.lead_statuses.new if automatic else review_status
@@ -129,7 +156,7 @@ def process(payload, *, env=None, client=None):
     attribution = normalize_attribution(payload.get("attribution")) or {
         "version": 1, "first": {}, "last": {}, "status": "unknown", "wa_assisted": True, "wa": {}}
     last = attribution["last"]
-    source_name = {"google": "Google", "facebook": "Facebook", "meta": "Facebook", "instagram": "Instagram"}.get(
+    source_name = {"google": "Google", "facebook": "Facebook", "fb": "Facebook", "meta": "Facebook", "instagram": "Instagram", "ig": "Instagram"}.get(
         str(last.get("utm_source") or "").strip().lower(), "Sin origen")
     source_item = ORIGENES_LEAD.resolve(source_name, "lead_source")
     source_id = (_resolve_enum_id(api, config.fields.lead_source, "Sin origen")
@@ -137,10 +164,10 @@ def process(payload, *, env=None, client=None):
     fields = {
         "STATUS_ID": status, "ASSIGNED_BY_ID": int(source.get("BITRIX24_ASSISTANCE_REVIEW_USER_ID", "57")),
         "UF_CRM_WA_ASSISTANCE_ID": case_id, "UF_CRM_WA_ASSISTANCE_STATE": state,
-        "UF_CRM_WA_SUBFLOW": "jubilados_cordoba_continuidad", "UF_CRM_WA_SUBFLOW_ID": FLOW_ID,
+        "UF_CRM_WA_SUBFLOW": subflow, "UF_CRM_WA_SUBFLOW_ID": flow_id,
         "UF_CRM_WA_ORGANISMO": answer["organism"], "UF_CRM_WA_BANCO": answer["bank"],
         "UF_CRM_WA_CONTINUIDAD": answer["continuity"],
-        config.fields.lead_province: PROVINCIAS.resolve("Cordoba", "province").bitrix_id,
+        config.fields.lead_province: PROVINCIAS.resolve(province, "province").bitrix_id,
         config.fields.lead_source: source_id,
         config.fields.lead_commercial_owner: resolve_commercial_owner_enum_id(api, config, "kestra" if automatic else "manual"),
         config.fields.lead_processing_policy: resolve_processing_policy_enum_id(api, config, "skip"),
@@ -149,9 +176,13 @@ def process(payload, *, env=None, client=None):
     # A new un-attributed inquiry must not retain campaign/click IDs from an older Guest.
     for name in CRM_FIELDS:
         fields.setdefault(name, "")
-    fields.update(UF_CRM_WA_ASSISTED="SI", UF_CRM_WA_FLOW="web_whatsapp_router", UF_CRM_WA_FLOW_ID="1850162769693486",
-                  UF_CRM_WA_PROVINCE="cordoba", UF_CRM_WA_SEGMENT="cordoba_jubilado")
-    if (lead or {}).get("UF_CRM_WA_ENTRY") in {"website", "google_ads", "whatsapp_directo"}:
+    fields.update(UF_CRM_WA_ASSISTED="SI", UF_CRM_WA_FLOW="web_whatsapp_intake" if intake else "web_whatsapp_router",
+                  UF_CRM_WA_FLOW_ID=flow_id if intake else "1850162769693486",
+                  UF_CRM_WA_PROVINCE=province_key, UF_CRM_WA_SEGMENT=segment)
+    if intake:
+        fields["UF_CRM_WA_ENTRY"] = "website"
+        fields["UF_CRM_WA_TIMESTAMP"] = payload["received_at"]
+    if not intake and (lead or {}).get("UF_CRM_WA_ENTRY") in {"website", "google_ads", "whatsapp_directo"}:
         fields["UF_CRM_WA_ENTRY"] = lead["UF_CRM_WA_ENTRY"]
     for key in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"):
         fields[key.upper()] = str(last.get(key) or "")
@@ -159,14 +190,16 @@ def process(payload, *, env=None, client=None):
         fields[config.fields.lead_cuil] = cuil
     if answer["employment_status"]:
         fields[config.fields.lead_employment_status] = SITUACIONES_LABORALES.resolve(answer["employment_status"], "employment_status").bitrix_id
-    if answer["bank"] == "bancor":
+    if intake and answer["payment_bank"]:
+        fields[config.fields.lead_payment_bank] = [BANCOS.resolve(answer["payment_bank"], "bank").bitrix_id]
+    elif answer["bank"] == "bancor":
         fields[config.fields.lead_payment_bank] = [BANCOS.resolve("Banco de la Provincia de Cordoba S.A.", "bank").bitrix_id]
     if state == "bank_rejected":
         fields[config.fields.lead_rejection_reason] = _resolve_enum_id(api, config.fields.lead_rejection_reason, "OTRO BANCO")
     if contact:
         fields["CONTACT_ID"] = str(contact["ID"])
     name = " ".join(str((contact or lead or {}).get(k) or "").strip() for k in ("NAME", "LAST_NAME")).strip()
-    fields["TITLE"] = (name or "Consulta asistida") + " - Cordoba"
+    fields["TITLE"] = (name or "Consulta WhatsApp") + " - " + province if intake else (name or "Consulta asistida") + " - Cordoba"
     if name:
         fields["NAME"] = name
     fields["PHONE"] = _merge((lead or {}).get("PHONE"), phone)
@@ -203,6 +236,19 @@ def process(payload, *, env=None, client=None):
         raise RuntimeError("Assisted lead write requires reconciliation.")
     return dict(result, action="queued" if automatic else "manual_review" if state != "bank_rejected" else "rejected",
                 reason=state, lead_id=lead_id, contact_id=str((contact or {}).get("ID") or ""))
+
+
+def _duplicate_ids(matches, entity):
+    # Bitrix returns [] (not {}) when a filtered duplicate search has no matches.
+    if isinstance(matches, list) and not matches:
+        return []
+    if not isinstance(matches, dict) or (matches and entity not in matches):
+        raise ValueError("Invalid CRM duplicate search result; requires review.")
+    ids = matches.get(entity, [])
+    if not isinstance(ids, list) or any(isinstance(i, bool) or not isinstance(i, (int, str))
+                                      or not re.fullmatch(r"[1-9][0-9]{0,63}", str(i)) for i in ids):
+        raise ValueError("Invalid CRM duplicate identities; requires review.")
+    return list(dict.fromkeys(str(i) for i in ids))
 
 
 def _create_test_lead(api, config, source, payload, answer, phone, case_id, status, result):

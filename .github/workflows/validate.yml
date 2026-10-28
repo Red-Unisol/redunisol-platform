@@ -44,6 +44,12 @@ jobs:
           npx prisma migrate deploy
       - name: Build backend
         run: npm run build
+      - name: Test Beex request numbering and list search
+        run: >-
+          npx tsx --test
+          src/modules/solicitudes-core/infrastructure/datasources/SolicitudNumber.db.test.ts
+          src/modules/solicitudes-core/infrastructure/datasources/SolicitudesCorePrismaDatasource.test.ts
+          src/modules/solicitudes-core/application/use-cases/ListSolicitudes.use-case.test.ts
       - name: Test authentication and session recovery
         run: npx tsx --test "src/modules/auth/**/*.test.ts"
       - name: Test risk amount limits and concurrent saves
@@ -53,6 +59,20 @@ jobs:
           src/modules/solicitudes-core/infrastructure/datasources/MontoAprobadoRiesgo.integration.test.ts
           src/modules/solicitudes-core/infrastructure/datasources/SolicitudWorkflowPrismaDatasource.test.ts
           src/modules/solicitudes-core/infrastructure/mappers/SolicitudCore.mapper.test.ts
+      - name: Test administrative state correction and Core reconciliation
+        run: >-
+          npx tsx --test
+          src/modules/solicitudes-core/domain/workflow/AdministrativeCorrection.test.ts
+          src/modules/solicitudes-core/presentation/AdministrativeCorrectionRoutes.test.ts
+          src/modules/solicitudes-core/presentation/ControlledLoanReplacementRoutes.test.ts
+          src/modules/solicitudes-core/infrastructure/services/ControlledLoanReplacement.integration.test.ts
+          src/modules/solicitudes-core/infrastructure/services/ControlledLoanReplacement.test.ts
+          src/modules/solicitudes-core/application/use-cases/CreatePrestamoLegacy.use-case.test.ts
+          src/modules/solicitudes-core/presentation/SolicitudesCoreRequest.schema.test.ts
+          src/modules/solicitudes-core/infrastructure/services/EditarSocioMutualGateway.test.ts
+          src/modules/solicitudes-core/infrastructure/services/AdministrativeCorrection.integration.test.ts
+          src/modules/solicitudes-core/infrastructure/services/ConfirmedReturnToReview.integration.test.ts
+          src/modules/solicitudes/infrastructure/services/CoreReconciliationSnapshot.test.ts
       - name: Test Transferencias API contract and recovery
         run: npx tsx --test "src/modules/transferencias-integration/*.test.ts"
       - name: Test and build frontend
@@ -63,6 +83,11 @@ jobs:
           npm ci --ignore-scripts
           npm test
           npm run build
+      - name: Test and build isolated UI lab
+        working-directory: web/solicitudes-web/celesol-frontend
+        run: |
+          npm run ui:test
+          npm run ui:build
 
   validate:
     runs-on: ubuntu-latest
@@ -236,7 +261,7 @@ jobs:
           php artisan package:discover
           php artisan key:generate --force
       - name: Test Edna HTTP inbox and delivery worker
-        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaAssistanceTest.php tests/Feature/EdnaRouterTest.php tests/Feature/EdnaResultsTest.php tests/Feature/EdnaFormLinksTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php tests/Feature/FormSubmissionTest.php tests/Feature/AttributionJourneyTest.php
+        run: php vendor/bin/pest tests/Feature/EdnaIncomingTest.php tests/Feature/EdnaIntakeTest.php tests/Feature/EdnaAssistanceTest.php tests/Feature/EdnaRouterTest.php tests/Feature/EdnaResultsTest.php tests/Feature/EdnaFormLinksTest.php tests/Feature/EdnaProbeTest.php tests/Feature/EdnaOutOfHoursTest.php tests/Feature/EdnaOutOfHoursRecoveryTest.php tests/Feature/WhatsAppSalesContextTest.php tests/Feature/FormSubmissionTest.php tests/Feature/AttributionJourneyTest.php
       - name: Test private report downloads and regeneration
         run: php vendor/bin/pest tests/Unit/ReportCatalogTest.php tests/Unit/ReportRepositoryTest.php tests/Unit/ReportRegeneratorTest.php tests/Unit/AdminReportsTest.php
       - name: Test notice references and evaluation recovery on PostgreSQL

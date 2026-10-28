@@ -16,6 +16,7 @@ use Throwable;
 class ProcessEdnaAssistance implements ShouldQueue
 {
     use Queueable;
+    use \App\Jobs\Middleware\TracksJourney;
 
     // A CRM timeout may already have created a lead. An operator must reconcile it.
     public int $tries = 1;

@@ -6,17 +6,17 @@ import { listSolicitudesCore } from "@/modules/solicitudes-core/services/solicit
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 
 type UseSolicitudesCoreHistoricasQueryOptions = {
-  nroDocumento?: string;
+  search?: string;
   page: number;
   pageSize: number;
 };
 
 export function useSolicitudesCoreHistoricasQuery({
-  nroDocumento,
+  search,
   page,
   pageSize,
 }: UseSolicitudesCoreHistoricasQueryOptions) {
-  const normalizedDocument = nroDocumento?.trim() || undefined;
+  const normalizedSearch = search?.trim() || undefined;
   const limit = pageSize;
   const offset = (page - 1) * pageSize;
 
@@ -24,13 +24,13 @@ export function useSolicitudesCoreHistoricasQuery({
     queryFn: () =>
       listSolicitudesCore({
         limit,
-        nroDocumento: normalizedDocument,
+        search: normalizedSearch,
         offset,
         scope: "historicas",
       }),
     queryKey: solicitudesCoreQueryKeys.historicas({
       limit,
-      nroDocumento: normalizedDocument,
+      search: normalizedSearch,
       offset,
     }),
     refetchInterval: LISTAS_REFRESCO_AUTOMATICO_MS,

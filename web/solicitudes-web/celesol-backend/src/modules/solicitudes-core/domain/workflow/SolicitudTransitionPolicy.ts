@@ -1,3 +1,4 @@
+import { ADMIN_CORRECTION_ACTION, AdministrativeCorrectionError } from "./AdministrativeCorrection";
 import {
   ForbiddenSolicitudAccessError,
   MissingWorkflowOwnerAssignmentError,
@@ -15,6 +16,12 @@ const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
 
 export class SolicitudTransitionPolicy {
   validate(context: WorkflowValidationContext) {
+    if (context.command.actionCode === ADMIN_CORRECTION_ACTION) {
+      if (!context.command.isSystemAdmin || !context.command.administrativeCorrection)
+        throw new ForbiddenSolicitudAccessError();
+      if (!context.command.comment?.trim())
+        throw new AdministrativeCorrectionError("Indicá el motivo de la corrección administrativa.", 400);
+    }
     const solicitud = context.transitionValidation.solicitud;
 
     if (!solicitud) {
@@ -30,8 +37,11 @@ export class SolicitudTransitionPolicy {
       const isRiesgoException =
         RIESGO_OWNER_ACTION_EXCEPTIONS.has(context.command.actionCode) &&
         context.command.workflowOwnerCode === "RIESGO";
+      const isLegajosException = context.command.actionCode === "transferir" &&
+        context.command.workflowOwnerCode === "LEGAJOS_DIGITALES" &&
+        ["Liquidada", "VerificarFirmaYDocumentacion"].includes(solicitud.stateCode ?? "");
 
-      if (!isOwnerMatch && !isRiesgoException) {
+      if (!isOwnerMatch && !isRiesgoException && !isLegajosException) {
         throw new ForbiddenSolicitudAccessError();
       }
     }

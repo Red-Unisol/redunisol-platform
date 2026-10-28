@@ -411,6 +411,7 @@ export type SolicitudCoreGarantiaResponse = {
 };
 
 export type SolicitudCoreResponse = {
+  loanReplacementPending?: boolean;
   assignedToUser: SolicitudCoreAssignedUserResponse | null;
   assignedToUserId: string | null;
   appearance?: SolicitudCoreAppearance;

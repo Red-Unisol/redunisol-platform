@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Connection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +11,8 @@ use Illuminate\Support\Str;
 
 class AttributionJourney
 {
+    private bool $storageUnavailable = false;
+
     public const REFERENCE_PATTERN = '(?:[A-Za-z0-9]{10}|[a-f0-9]{24})';
 
     public const COOKIE = 'ru_attribution';
@@ -20,13 +23,47 @@ class AttributionJourney
 
     public const CRM_FIELDS = ['JOURNEY_ID', 'ATTR_JSON', 'ATTR_STATUS', 'GCLID', 'GBRAID', 'WBRAID', 'FBCLID', 'LANDING_ORIGEN', 'FECHA_ORIGEN'];
 
+    public function database(): Connection
+    {
+        if (config('attribution.connection') === 'journey') {
+            app(JourneyLedger::class)->directory();
+        }
+
+        return DB::connection(config('attribution.connection'));
+    }
+
     public function find(mixed $id): ?object
+    {
+        try {
+            return $this->lookup($id);
+        } catch (\Throwable $error) {
+            if (config('attribution.connection') !== 'journey') {
+                throw $error;
+            }
+            $this->storageUnavailable = true;
+            logger()->warning('Volume attribution lookup unavailable.');
+
+            return null;
+        }
+    }
+
+    private function lookup(mixed $id): ?object
     {
         if (! is_string($id) || ! preg_match('/^'.self::REFERENCE_PATTERN.'$/D', $id)) {
             return null;
         }
 
-        return DB::table('attribution_journeys')->where('id', $id)->where('expires_at', '>', now())->first();
+        $row = $this->database()->table('attribution_journeys')->where('id', $id)->where('expires_at', '>', now())->first();
+        if (! $row && config('attribution.connection') === 'journey') {
+            // Read-through cutover: old WhatsApp links stay valid without a blocking full migration.
+            $legacy = DB::connection()->table('attribution_journeys')->where('id', $id)->where('expires_at', '>', now())->first();
+            if ($legacy) {
+                $this->database()->table('attribution_journeys')->insertOrIgnore((array) $legacy);
+                $row = $this->database()->table('attribution_journeys')->where('id', $id)->first();
+            }
+        }
+
+        return $row;
     }
 
     public function snapshot(object $journey): array
@@ -39,12 +76,14 @@ class AttributionJourney
         for ($attempt = 0; $attempt < 5; $attempt++) {
             $id = Str::random(10);
             // The primary key arbitrates collisions atomically, including concurrent requests.
-            $inserted = DB::table('attribution_journeys')->insertOrIgnore([
+            $inserted = $this->database()->table('attribution_journeys')->insertOrIgnore([
                 'id' => $id, 'snapshot' => Crypt::encryptString(json_encode($snapshot, JSON_THROW_ON_ERROR)),
                 'expires_at' => now()->addDays(config('attribution.days', 30)),
                 'created_at' => now(), 'updated_at' => now(),
             ]);
             if ($inserted) {
+                app(JourneyLedger::class)->record('attribution.created', ['snapshot' => $snapshot], ['journey_id' => $id] + app(JourneyLedger::class)->context());
+
                 return $this->find($id);
             }
         }
@@ -76,8 +115,9 @@ class AttributionJourney
             return;
         }
 
-        DB::transaction(function () use ($id, $input) {
-            $journey = DB::table('attribution_journeys')->where('id', $id)
+        $this->find($id); // Import a legacy reference before entering the volume transaction.
+        $this->database()->transaction(function () use ($id, $input) {
+            $journey = $this->database()->table('attribution_journeys')->where('id', $id)
                 ->where('expires_at', '>', now())->lockForUpdate()->first();
             if (! $journey) {
                 return;
@@ -93,7 +133,7 @@ class AttributionJourney
                 return;
             }
             $snapshot = $enriched;
-            DB::table('attribution_journeys')->where('id', $id)->update([
+            $this->database()->table('attribution_journeys')->where('id', $id)->update([
                 'snapshot' => Crypt::encryptString(json_encode($snapshot, JSON_THROW_ON_ERROR)),
                 'updated_at' => now(),
             ]);
@@ -122,15 +162,30 @@ class AttributionJourney
 
     public function bind(string $text, string $phone, string $subject): ?string
     {
+        try {
+            return $this->bindReference($text, $phone, $subject);
+        } catch (\Throwable $error) {
+            if (config('attribution.connection') !== 'journey') {
+                throw $error;
+            }
+            logger()->warning('Volume attribution binding unavailable.');
+
+            return null;
+        }
+    }
+
+    private function bindReference(string $text, string $phone, string $subject): ?string
+    {
         if (! config('attribution.enabled') || ! preg_match('/\(ref:\s*('.self::REFERENCE_PATTERN.')\)/i', $text, $match)) {
             return null;
         }
 
         // Legacy hex references were case-insensitive; new base62 references are not.
         $id = strlen($match[1]) === 24 ? strtolower($match[1]) : $match[1];
+        $this->find($id);
 
-        return DB::transaction(function () use ($id, $phone, $subject) {
-            $journey = DB::table('attribution_journeys')->where('id', $id)
+        return $this->database()->transaction(function () use ($id, $phone, $subject) {
+            $journey = $this->database()->table('attribution_journeys')->where('id', $id)
                 ->where('expires_at', '>', now())->lockForUpdate()->first();
             if (! $journey) {
                 return null;
@@ -140,9 +195,10 @@ class AttributionJourney
                 return null;
             }
             if (! $journey->recipient_hash) {
-                DB::table('attribution_journeys')->where('id', $journey->id)->update([
+                $this->database()->table('attribution_journeys')->where('id', $journey->id)->update([
                     'recipient_hash' => $hash, 'subject_id' => $subject, 'bound_at' => now(), 'updated_at' => now(),
                 ]);
+                app(JourneyLedger::class)->record('identity.whatsapp_bound', [], ['journey_id' => $journey->id, 'phone_hash' => $hash, 'subject_id' => $subject]);
             }
 
             return $journey->id;
@@ -180,10 +236,10 @@ class AttributionJourney
         if ($valid) {
             $snapshot = $this->snapshot($journey);
             $status = 'resolved';
-        } elseif ($ref) {
+        } elseif ($this->storageUnavailable || $ref) {
             // An invalid, expired or shared reference must not fall back to unrelated cookies.
             $snapshot = ['version' => 1, 'first' => [], 'last' => []];
-            $status = 'unresolved_ref';
+            $status = $this->storageUnavailable ? 'storage_unavailable' : 'unresolved_ref';
         } else {
             $touch = $this->acquisition($input, (string) ($input['landing_url'] ?? ''));
             $snapshot = ['version' => 1, 'first' => $touch, 'last' => $touch];

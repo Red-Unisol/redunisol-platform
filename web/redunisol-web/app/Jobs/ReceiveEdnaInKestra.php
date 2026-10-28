@@ -2,10 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\TracksJourney;
 use App\Services\EdnaAssistance;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFormLink;
+use App\Services\EdnaIntake;
 use App\Services\EdnaRouterResult;
+use App\Services\JourneyLedger;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Crypt;
@@ -17,6 +20,7 @@ use Throwable;
 class ReceiveEdnaInKestra implements ShouldQueue
 {
     use Queueable;
+    use TracksJourney;
 
     public int $tries = 8;
 
@@ -43,6 +47,14 @@ class ReceiveEdnaInKestra implements ShouldQueue
                     throw new RuntimeException('Edna receiver is not configured.');
                 }
                 $payload = json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR);
+                if ((new EdnaIntake)->receive($event, $payload)) {
+                    DB::table('edna_incoming_events')->where('id', $event->id)->update([
+                        'status' => 'delivered', 'outcome' => 'website_intake',
+                        'delivered_at' => now(), 'updated_at' => now(),
+                    ]);
+
+                    return;
+                }
                 if (config('edna.assistance_enabled') && (new EdnaAssistance)->receive($event, $payload)) {
                     DB::table('edna_incoming_events')->where('id', $event->id)->update([
                         'status' => 'delivered', 'outcome' => 'jubilados_assistance',
@@ -67,6 +79,11 @@ class ReceiveEdnaInKestra implements ShouldQueue
                     throw new RuntimeException('Kestra did not acknowledge the Edna event.');
                 }
                 (new EdnaFormLink)->capture($event, $payload, $result['kind']);
+                DB::afterCommit(function () use ($event, $result): void {
+                    app(JourneyLedger::class)->record('whatsapp.kestra_processed', [
+                        'kind' => $result['kind'], 'flow_id_verified' => $result['flow_id_verified'] ?? null,
+                    ], ['edna_incoming_events_id' => $event->id, 'execution_id' => $result['execution_id'] ?? null], 'kestra.edna');
+                });
                 if ($result['kind'] === 'router_entry') {
                     $router->start($event, $payload);
                 } elseif ($context && $result['kind'] === 'flow_response') {

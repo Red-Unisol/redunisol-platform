@@ -116,7 +116,7 @@ export function EvaluacionRecibosView({
     setLeftPercent(Math.max(35, Math.min(75, value)));
   };
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-h-72 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
         <Button variant="outline" size="sm" onClick={onOpen}>
           Ver recibos de sueldo

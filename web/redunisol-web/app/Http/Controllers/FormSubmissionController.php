@@ -7,7 +7,9 @@ use App\Http\Requests\FormSubmissionRequest;
 use App\Jobs\PersistFormSubmission;
 use App\Services\AttributionJourney;
 use App\Services\EdnaAssistance;
+use App\Services\JourneyLedger;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
 use Throwable;
 
 class FormSubmissionController extends Controller
@@ -19,6 +21,23 @@ class FormSubmissionController extends Controller
     public function __invoke(FormSubmissionRequest $request): JsonResponse
     {
         $input = (new AttributionJourney)->resolveForm($request, $request->validated());
+        $input['_journey_links'] = app(JourneyLedger::class)->context($request) + [
+            'submission_id' => (string) Str::uuid(),
+            'phone_hash' => (new AttributionJourney)->phoneHash((string) ($input['celular'] ?? '')),
+        ];
+        $input['_journey_links']['journey_id'] = $input['attribution']['journey_id'] ?? null;
+        if (! empty($input['journey_page_id'])) {
+            $input['_journey_links']['page_id'] = $input['journey_page_id'];
+        }
+        unset($input['journey_page_id']);
+        $trackingInput = array_diff_key($input, array_flip(['_journey_links', 'recibo_url']));
+        if (isset($trackingInput['landing_url'])) {
+            $trackingInput['landing_url'] = JourneyLedger::url($trackingInput['landing_url']);
+        }
+        app(JourneyLedger::class)->record('form.received', [
+            'input' => $trackingInput,
+            'receipt_present' => ! empty($input['recibo_url']),
+        ], $input['_journey_links']);
         $prequalificationResponse = null;
 
         try {
@@ -36,6 +55,12 @@ class FormSubmissionController extends Controller
             && ($prequalification['prequalified'] ?? false) === true;
         $routeToWhatsapp = $qualified
             && ($prequalification['route_to_whatsapp'] ?? true) === true;
+        app(JourneyLedger::class)->record('form.prequalified', [
+            'available' => $prequalificationAvailable, 'qualified' => $qualified,
+            'route_to_whatsapp' => $routeToWhatsapp,
+            'reason' => $prequalificationAvailable ? ($prequalification['reason'] ?? '') : 'prequalification_unavailable',
+            'rule_version' => $prequalification['rule_version'] ?? null,
+        ], $input['_journey_links']);
 
         try {
             PersistFormSubmission::dispatch(
@@ -59,6 +84,7 @@ class FormSubmissionController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
+            app(JourneyLedger::class)->record('form.queue_failed', [], $input['_journey_links']);
             return $this->loadFailure(503);
         }
 

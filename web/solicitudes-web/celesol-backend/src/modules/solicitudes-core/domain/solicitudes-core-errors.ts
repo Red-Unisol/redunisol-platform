@@ -185,6 +185,16 @@ export class ConvenioSocioLegacyRechazadoError extends SolicitudesError {
   }
 }
 
+export class ConvenioSocioConflictError extends SolicitudesError {
+  constructor(campos: string[]) {
+    super(
+      `Los datos del convenio cambiaron en Vimarx: ${campos.join(", ")}. Cerrá y volvé a abrir Generar préstamo para revisar los valores actuales.`,
+      409,
+    );
+    this.name = "ConvenioSocioConflictError";
+  }
+}
+
 export class SolicitudLegacyOidAlreadyExistsError extends SolicitudesError {
   constructor() {
     super(

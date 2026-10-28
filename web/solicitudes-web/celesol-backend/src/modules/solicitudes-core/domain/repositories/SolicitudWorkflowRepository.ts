@@ -12,6 +12,7 @@ export type {
 export type SolicitudTransitionValidationContext = {
   solicitud: {
     estadoActualId: string;
+    stateCode?: string;
     ownerId: string | null;
   } | null;
   transition: {

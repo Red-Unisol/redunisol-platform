@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import {
   canAccessRiesgoTools,
+  canReviewSignatures,
   canCreateSolicitud,
   canManageUsers,
   getDefaultAuthenticatedRoute,
@@ -107,5 +108,15 @@ export function PrecargaRoute({ children }: AuthGuardProps) {
   if (!query.data) return <Navigate replace to="/login" />;
   if (!canCreateSolicitud(query.data))
     return <Navigate replace to="/solicitudes/core/recientes" />;
+  return <>{children}</>;
+}
+
+export function LegajosOnlyRoute({ children }: AuthGuardProps) {
+  const query = useAuthSessionQuery();
+  const status = sessionStatus(query);
+  if (status) return status;
+  if (!query.data) return <Navigate replace to="/login" />;
+  if (!canReviewSignatures(query.data))
+    return <Navigate replace to={getDefaultAuthenticatedRoute(query.data)} />;
   return <>{children}</>;
 }

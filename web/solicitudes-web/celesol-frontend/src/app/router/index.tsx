@@ -16,6 +16,7 @@ import {
   ProtectedRoute,
   PublicOnlyRoute,
   RiesgoOnlyRoute,
+  LegajosOnlyRoute,
 } from "@/modules/auth/components/auth-route-guards";
 import { LoginPage } from "@/modules/auth/pages/login-page";
 import { PendingAreaPage } from "@/modules/auth/pages/pending-area-page";
@@ -111,7 +112,11 @@ const AdminUsersPage = lazy(() =>
     default: module.AdminUsersPage,
   })),
 );
-const AdminReconocimientoRecibosPage = lazy(() => import("@/modules/solicitudes-core/pages/admin-reconocimiento-recibos-page").then(m => ({ default: m.AdminReconocimientoRecibosPage })));
+const AdminReconocimientoRecibosPage = lazy(() =>
+  import("@/modules/solicitudes-core/pages/admin-reconocimiento-recibos-page").then(
+    (m) => ({ default: m.AdminReconocimientoRecibosPage }),
+  ),
+);
 const AdminFieldAccessRulesPage = lazy(() =>
   import("@/modules/solicitudes-core/pages/admin-field-access-rules-page").then(
     (module) => ({
@@ -134,6 +139,16 @@ const CalculadoraRiesgoPage = lazy(() =>
 const DashboardHomePage = lazy(() =>
   import("@/modules/dashboard/pages/dashboard-home-page").then((module) => ({
     default: module.DashboardHomePage,
+  })),
+);
+const SignatureInboxPage = lazy(() =>
+  import("@/modules/solicitudes-core/pages/signature-inbox-page").then(
+    (module) => ({ default: module.SignatureInboxPage }),
+  ),
+);
+const NotificationsPage = lazy(() =>
+  import("@/modules/notifications/notification-center").then((module) => ({
+    default: module.NotificationsPage,
   })),
 );
 function RouteFallback() {
@@ -254,10 +269,30 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/legajos/firmas"
+          element={
+            <LegajosOnlyRoute>
+              <Suspense fallback={<RouteFallback />}>
+                <SignatureInboxPage />
+              </Suspense>
+            </LegajosOnlyRoute>
+          }
+        />
+        <Route
+          path="/notificaciones"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <NotificationsPage />
+            </Suspense>
+          }
+        />
+        <Route
           path="/solicitudes/core/precarga"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <PrecargaRoute><SolicitudesActualPrecargaPage /></PrecargaRoute>
+              <PrecargaRoute>
+                <SolicitudesActualPrecargaPage />
+              </PrecargaRoute>
             </Suspense>
           }
         />
@@ -265,7 +300,9 @@ export function AppRouter() {
           path="/solicitudes/core/precarga/nueva"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <PrecargaRoute><SolicitudesNuevaPage /></PrecargaRoute>
+              <PrecargaRoute>
+                <SolicitudesNuevaPage />
+              </PrecargaRoute>
             </Suspense>
           }
         />
@@ -289,7 +326,9 @@ export function AppRouter() {
           path="/solicitudes/anterior/precarga"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <PrecargaRoute><SolicitudesPrecargaPage /></PrecargaRoute>
+              <PrecargaRoute>
+                <SolicitudesPrecargaPage />
+              </PrecargaRoute>
             </Suspense>
           }
         />
@@ -403,7 +442,13 @@ export function AppRouter() {
         />
         <Route
           path="/admin/solicitudes/reconocimiento-recibos"
-          element={<AdminOnlyRoute><Suspense fallback={<RouteFallback />}><AdminReconocimientoRecibosPage /></Suspense></AdminOnlyRoute>}
+          element={
+            <AdminOnlyRoute>
+              <Suspense fallback={<RouteFallback />}>
+                <AdminReconocimientoRecibosPage />
+              </Suspense>
+            </AdminOnlyRoute>
+          }
         />
         <Route
           path="/admin/solicitudes/field-access-rules"

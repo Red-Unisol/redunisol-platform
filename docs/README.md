@@ -7,6 +7,7 @@ Documentacion tecnica transversal de la repo.
 - `architecture.md`: arquitectura general, capas, carpetas y modelo dominio/namespace
 - `agent-systems.md`: mapa operativo para agentes, fuentes de verdad, accesos y limites entre sistemas
 - `ci-cd.md`: validacion, deploy, workflows y promocion entre ambientes
+- `ui-prototyping.md`: proceso de maquetado local con datos ficticios y galería de escenarios para revisar interfaces antes de conectarlas a operaciones reales
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
 - `kestra-worker-delivery-20260921.md`: diagnostico reproducible de tareas SUBMITTED, mitigacion de reconexiones y limites de recuperacion en Kestra 2.0.0
 - `reportes-operativos.md`: patrón recurrente para generar, publicar y reejecutar informes diarios
@@ -16,6 +17,7 @@ Documentacion tecnica transversal de la repo.
 - `redunisol-web-operating-model.md`: modelo operativo de `web/redunisol-web` con infraestructura Git-managed y datos runtime persistentes fuera de Git
 - `redunisol-web-deploy-runbook.md`: runbook operativo de `web/redunisol-web`, circuitos de `.env`, limites entre desarrollo e integracion y estado validado del deploy
 - `redunisol-web-overview.md`: guia de onboarding tecnico para entender como funciona `web/redunisol-web`, como se modifica y por donde ampliarla
+- `journey-data.md`: captura del recorrido web/WhatsApp/Kestra/CRM en volumen dedicado, límites de I/O y exportación JSONL autenticada para Marketing e IA
 - `redunisol-web-production-cutover.md`: runbook de corte productivo de `redunisol.com.ar`, preservando mail en la VPS anterior
 - `whatsapp-out-of-hours.md`: aviso de Ventas fuera de horario, edición de Marketing, recuperación y activación coordinada con Bitrix
 

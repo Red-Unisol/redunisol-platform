@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { Prisma } from "@prisma/client";
+import { assess, digest } from "../../../document-review/domain";
+import { candidateFixture } from "../../../document-review/fixtures";
+import { reviewSource, type SignatureSourceRow } from "../../../document-review/signature-workflow";
 
 import {
   ForbiddenSolicitudAccessError,
@@ -124,6 +127,7 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
       },
     });
     assert.deepEqual(prisma.solicitudUpdateCalls[1]?.data, {
+      analisisFinalizadoAt: null, analisisFinalizadoBy: null,
       estadoActual: {
         connect: {
           id: "state-riesgo",
@@ -1079,6 +1083,40 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     assert.equal(history.length, 1);
   });
 
+  it("finishes analysis without a signature and sends to review under the source lock", async () => {
+    const now = new Date("2026-10-26T12:00:00Z");
+    const prisma = finalizationFixture(false);
+    const result = await executeDomainStepPlan(new SolicitudWorkflowPrismaDatasource(prisma.client()), {
+      actionCode: "liquidar", changedBy: "analyst-1", expectedFromStateId: "state-confirmada",
+      expectedToStateId: "state-verificacion", now, solicitudId: "sol-1", workflowOwnerId: "owner-riesgo",
+    });
+    assert.equal(result.solicitud.estadoActual.code, "VerificarFirmaYDocumentacion");
+    assert.equal(prisma.lockCount, 1);
+    const saved = prisma.solicitudUpdateCalls[0].data as { analisisFinalizadoAt: Date; analisisFinalizadoBy: string };
+    assert.equal(saved.analisisFinalizadoAt, now);
+    assert.equal(saved.analisisFinalizadoBy, "analyst-1");
+  });
+
+  it("resolves a stale review button to Transferir when the signature was already approved", async () => {
+    const prisma = finalizationFixture(true);
+    const result = await executeDomainStepPlan(new SolicitudWorkflowPrismaDatasource(prisma.client()), {
+      actionCode: "liquidar", changedBy: "analyst-1", expectedFromStateId: "state-confirmada",
+      expectedToStateId: "state-verificacion", now: new Date(), solicitudId: "sol-1", workflowOwnerId: "owner-riesgo",
+    });
+    assert.equal(result.solicitud.estadoActual.code, "Transferir");
+    assert.equal((prisma.historyCreateCalls[0].data as { actionCode: string }).actionCode, "liquidar_con_firma");
+  });
+
+  it("blocks a direct transfer plan without an approved current signature and preserves the state", async () => {
+    const prisma = new FakeWorkflowPrisma({ currentSolicitud: solicitudRecord({ estadoActual: resolveStateById("state-verificacion"), legacyOid: "101" }), activeTransition: transitionRecord({ actionCode: "transferir", fromStateId: "state-verificacion", toState: resolveStateById("state-transferir"), toStateId: "state-transferir" }) });
+    await assert.rejects(() => executeDomainStepPlan(new SolicitudWorkflowPrismaDatasource(prisma.client()), {
+      actionCode: "transferir", changedBy: "reviewer", expectedFromStateId: "state-verificacion", expectedToStateId: "state-transferir",
+      now: new Date(), solicitudId: "sol-1", workflowOwnerId: "owner-legajos",
+    }), /firma vigente aprobada/);
+    assert.equal(prisma.currentSolicitudStateId(), "state-verificacion");
+    assert.equal(prisma.historyCreateCalls.length, 0);
+  });
+
   it("rejects missing solicitud with the shared not found error", async () => {
     const datasource = new SolicitudWorkflowPrismaDatasource(
       new FakeWorkflowPrisma({ currentSolicitud: null }).client(),
@@ -1147,6 +1185,16 @@ async function executeDomainStepPlan(
   });
 }
 
+function finalizationFixture(approved: boolean) {
+  const pending = transitionRecord({ id: "finalize-review", actionCode: "liquidar", fromStateId: "state-confirmada", toState: resolveStateById("state-verificacion"), toStateId: "state-verificacion" });
+  return new FakeWorkflowPrisma({
+    signatureApproved: approved,
+    currentSolicitud: solicitudRecord({ estadoActual: resolveStateById("state-confirmada"), legacyOid: "101", cuotas: 6, cuotaResultante: "200,00", titular: { nombre: "Persona", apellidoDenominacion: "de Prueba", nroDocumento: "30123456" } }),
+    activeTransition: pending,
+    alternateTransitions: [transitionRecord({ id: "finalize-transfer", actionCode: "liquidar_con_firma", fromStateId: "state-confirmada", toState: resolveStateById("state-transferir"), toStateId: "state-transferir" })],
+  });
+}
+
 type HistoryRecord = Omit<ReturnType<typeof defaultHistoryRecord>, "changedByUser"> & {
   changedByUser?: {
     firstName: string | null;
@@ -1159,6 +1207,8 @@ type FakeWorkflowPrismaOptions = {
   currentSolicitud?: ReturnType<typeof solicitudRecord> | null;
   enableMotorTransition?: boolean;
   historyRecords?: HistoryRecord[];
+  signatureApproved?: boolean;
+  alternateTransitions?: ReturnType<typeof transitionRecord>[];
 };
 
 class FakeWorkflowPrisma {
@@ -1168,6 +1218,7 @@ class FakeWorkflowPrisma {
   solicitudFindUniqueCalls: Array<{ where: { id: string } }> = [];
   solicitudUpdateCalls: Array<{ data: unknown; where: { id: string } }> = [];
   transactionCount = 0;
+  lockCount = 0;
   transitionFindFirstCalls: Array<unknown> = [];
   transitionFindManyCalls: Array<{
     where: { fromStateId: string; isActive: boolean };
@@ -1177,8 +1228,12 @@ class FakeWorkflowPrisma {
   private readonly enableMotorTransition: boolean;
   private currentSolicitud: ReturnType<typeof solicitudRecord> | null;
   private readonly historyRecords: HistoryRecord[];
+  private readonly signatureApproved: boolean;
+  private readonly alternateTransitions: ReturnType<typeof transitionRecord>[];
 
   constructor(options: FakeWorkflowPrismaOptions = {}) {
+    this.signatureApproved = options.signatureApproved ?? false;
+    this.alternateTransitions = options.alternateTransitions ?? [];
     this.activeTransition =
       options.activeTransition === undefined
         ? transitionRecord()
@@ -1199,6 +1254,9 @@ class FakeWorkflowPrisma {
 
   client() {
     return {
+      $queryRaw: async () => { this.lockCount += 1; return []; },
+      solicitudDocumentReview: { findMany: async () => this.signatureApproved ? [this.signatureReview()] : [] },
+      solicitudDocumentDecision: { findMany: async () => this.signatureApproved ? [{ id: "approval-1", humanDecision: "approve", legajoAdjuntoId: "legajo-1", verificationId: "valid-1", review: this.signatureReview() }] : [] },
       solicitud: {
         findUnique: async (args: { where: { id: string } }) => {
           this.solicitudFindUniqueCalls.push(args);
@@ -1210,6 +1268,8 @@ class FakeWorkflowPrisma {
 
           const data = args.data as {
             assignedToUser?: { disconnect?: boolean };
+            analisisFinalizadoAt?: Date | null;
+            analisisFinalizadoBy?: string | null;
             estadoActual: { connect: { id: string } };
           };
           const toStateId = data.estadoActual.connect.id;
@@ -1218,6 +1278,8 @@ class FakeWorkflowPrisma {
           this.currentSolicitud = this.currentSolicitud
             ? {
                 ...this.currentSolicitud,
+                ...("analisisFinalizadoAt" in data ? { analisisFinalizadoAt: data.analisisFinalizadoAt } : {}),
+                ...("analisisFinalizadoBy" in data ? { analisisFinalizadoBy: data.analisisFinalizadoBy } : {}),
                 assignedToUserId:
                   data.assignedToUser?.disconnect
                     ? null
@@ -1230,6 +1292,7 @@ class FakeWorkflowPrisma {
             : null;
 
           return solicitudRecord({
+            ...this.currentSolicitud,
             assignedToUserId: this.currentSolicitud?.assignedToUserId ?? null,
             estadoActual: toState,
             estadoActualId: toState.id,
@@ -1289,7 +1352,7 @@ class FakeWorkflowPrisma {
             });
           }
 
-          return this.activeTransition;
+          return this.alternateTransitions.find(t => t.actionCode === args.where.actionCode && t.fromStateId === args.where.fromStateId) ?? this.activeTransition;
         },
         findMany: async (args: { where: { fromStateId: string; isActive: boolean } }) => {
           this.transitionFindManyCalls.push(args);
@@ -1351,6 +1414,11 @@ class FakeWorkflowPrisma {
         }
       },
     } as never;
+  }
+
+  private signatureReview() {
+    const source = reviewSource(this.currentSolicitud as unknown as SignatureSourceRow);
+    return { id: "review-1", solicitudId: this.currentSolicitud!.id, sourceFingerprint: digest(source), assessment: assess(source, [candidateFixture()]) };
   }
 
   currentSolicitudStateId() {
@@ -1460,6 +1528,10 @@ function solicitudRecord(
       : stateRecord();
 
   return {
+    analisisFinalizadoAt: null as Date | null, analisisFinalizadoBy: null as string | null,
+    signatureCycleId: null, signatureRequestedAt: null, signatureRequestReason: null,
+    signatureExcludedVerificationIds: null, desembolso: null, pagoExterno: null,
+    linkFirmaDigital: null, lineaPrestamoCodigoMutual: null,
     archivedAt: null,
     assignedToUser: null,
     assignedToUserId: null,
@@ -1543,6 +1615,10 @@ function resolveStateById(stateId: string) {
           name: "Vendedores",
         }),
       });
+    case "state-verificacion":
+      return stateRecord({ code: "VerificarFirmaYDocumentacion", id: stateId, owner: ownerRecord({ code: "LEGAJOS_DIGITALES", id: "owner-legajos", name: "Legajos Digitales" }) });
+    case "state-transferir":
+      return stateRecord({ code: "Transferir", id: stateId, owner: ownerRecord({ code: "TESORERIA", id: "owner-tesoreria", name: "Tesorería" }) });
     case "state-desestimada":
       return stateRecord({
         code: "Desestimada",

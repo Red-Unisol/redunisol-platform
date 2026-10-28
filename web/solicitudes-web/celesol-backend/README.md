@@ -19,6 +19,46 @@ El contrato de la API, reservas, comprobantes y recuperación está en
 [docs/transferencias-api.md](docs/transferencias-api.md).
 La integración está deshabilitada por defecto y requiere una identidad de servicio.
 
+## Diagnóstico técnico de préstamos
+
+Las peticiones y respuestas de Vimarx, la correlación de intentos y la consulta
+operativa privada están en
+[docs/technical-loan-diagnostics.md](docs/technical-loan-diagnostics.md).
+Estos registros se guardan en PostgreSQL y no se muestran al vendedor.
+
+## Edición del convenio al generar préstamos
+
+`POST /solicitudes/:id/prestamo-legacy` admite, por ejemplo,
+`{"convenio":{"caja40":{"original":100,"valor":110}}}`. Solo se escriben los
+campos editados; cada campo requiere el valor mostrado al empezar a editar.
+Si ese campo cambió en Vimarx, devuelve `409 ConvenioSocioConflictError` sin
+editar el socio ni generar el préstamo. El operador debe cerrar y reabrir el
+modal para revisar los valores actuales. Los reintentos cuyo valor ya quedó
+guardado no vuelven a escribirlo.
+
+El frontend conserva la referencia original durante las recargas de fondo.
+El backend compara con una lectura nueva antes de editar. Lectura y escritura
+en Vimarx son llamadas separadas, por lo que este control no es una comparación
+y escritura atómica frente a cambios externos ocurridos entre ambas llamadas.
+Frontend y backend deben desplegarse juntos: el formato anterior con el convenio
+completo sin valores originales se rechaza para evitar sobrescrituras.
+
+## Número de solicitud Beex
+
+`nroSolicitud` es la referencia propia de Beex, independiente de las solicitudes
+del core. PostgreSQL la asigna al crear la solicitud mediante una secuencia desde
+`500001`, como texto de dígitos sin prefijo ni separadores. La API de alta y edición
+no permite elegirla ni modificarla. Los UUID siguen siendo las claves técnicas de
+las rutas y relaciones. Las reservas, avisos y nuevos PDFs usan el mismo número.
+
+La migración completa los números ausentes por fecha de creación e ID, conserva
+las referencias ya asignadas y continúa por encima del máximo numérico existente
+(como mínimo `500001`). Incluye solicitudes archivadas. Bloquea las escrituras
+durante la asignación y restaura la protección de las reservas antes del commit.
+Los PDFs ya emitidos conservan su contenido original. La secuencia puede tener
+saltos por transacciones fallidas o eliminaciones; esos números no se reutilizan.
+Este rango inicial no reserva números en sistemas externos.
+
 ## Tech Stack
 
 - Node.js 22+
