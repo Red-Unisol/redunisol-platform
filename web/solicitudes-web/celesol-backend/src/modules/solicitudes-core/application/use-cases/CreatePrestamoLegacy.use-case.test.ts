@@ -28,6 +28,8 @@ import {
   SolicitudVendedorLegacyRequiredError,
 } from "../../domain/solicitudes-core-errors";
 import { CreatePrestamoLegacyUseCase } from "./CreatePrestamoLegacy.use-case";
+import { actingContext } from "../../../auth/impersonation/context";
+import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 
 const LINK_FIRMA_BASE_URL = "https://redunisol.com.ar/finalizar.php";
 const TODAY = "2026-07-22";
@@ -842,6 +844,61 @@ function buildLinkedUseCase(overrides: Partial<ConstructorParameters<typeof Crea
     ...overrides,
   });
 }
+
+it("legacy creation fallback correlates gateway and link diagnostics without exposing technical data", async () => {
+  let gatewayContext: LoanDiagnosticContext | undefined;
+  const events: { context: LoanDiagnosticContext; event: Parameters<LoanDiagnosticWriter>[1] }[] = [];
+  const uc = buildLinkedUseCase({
+    repository: solicitudesRepository({ update: async () => solicitud({ legacyOid: "555000" }) }),
+    gateway: fakeGateway({ crear: async (_input, context) => { gatewayContext = context; return { id: "555000" }; } }),
+    diagnostics: async (context, event) => { events.push({ context, event }); },
+  });
+  const result = await actingContext.run({
+    sessionId: "session", auditId: "audit", administrator: { id: "real-admin" } as AuthUser,
+    selectedUser: { id: "user-1" } as AuthUser,
+  }, () => uc.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } }));
+  assert.match(gatewayContext!.operationId, /^[0-9a-f-]{36}$/);
+  assert.equal(gatewayContext!.solicitudId, "sol-1");
+  assert.equal(gatewayContext!.actorId, "user-1");
+  assert.equal(gatewayContext!.realActorId, "real-admin");
+  assert.equal(gatewayContext!.operation, "loan_generation");
+  assert.deepEqual(events.map(entry => entry.event.stage), ["CREATED_REMOTE", "LINKED"]);
+  assert(events.every(entry => entry.context === gatewayContext));
+  assert.equal((events[0].event.data as { newLoanId: string }).newLoanId, "555000");
+  assert.equal(result.legacyOid, "555000");
+  assert.equal("diagnostics" in result, false);
+});
+
+it("legacy fallback records the original remote or linking cause and never retries inside the operation", async () => {
+  for (const phase of ["remote", "link"] as const) {
+    const failure = new Error(`${phase} technical failure`, { cause: new Error("underlying technical detail") });
+    const events: Parameters<LoanDiagnosticWriter>[1][] = [];
+    let calls = 0;
+    const uc = buildLinkedUseCase({
+      repository: solicitudesRepository({ update: async () => { throw failure; } }),
+      gateway: fakeGateway({ crear: async () => { calls++; if (phase === "remote") throw failure; return { id: "555000" }; } }),
+      diagnostics: async (_context, event) => { events.push(event); },
+    });
+    await assert.rejects(uc.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } }), error => error === failure);
+    assert.equal(calls, 1);
+    const record = events.find(event => event.stage === (phase === "remote" ? "ERROR" : "LINK_FAILED"))!;
+    assert.equal((record.data as { error: Error }).error, failure);
+    assert.equal((record.data as { error: Error }).error.cause, failure.cause);
+    if (phase === "link") assert.equal((record.data as { newLoanId: string }).newLoanId, "555000");
+  }
+});
+
+it("legacy fallback succeeds even when its optional diagnostic writer rejects", async () => {
+  let calls = 0;
+  const uc = buildLinkedUseCase({
+    repository: solicitudesRepository({ update: async () => solicitud({ legacyOid: "555000" }) }),
+    gateway: fakeGateway({ crear: async () => { calls++; return { id: "555000" }; } }),
+    diagnostics: async () => { throw new Error("diagnostics unavailable"); },
+  });
+  const result = await uc.execute({ solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } });
+  assert.equal(result.legacyOid, "555000");
+  assert.equal(calls, 1);
+});
 const linkedInput = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } };
 const linkedStatus = { status: "active" as const, currentLoanId: "444", resolvedLoanId: "444", amount: 10000, requestedAmount: 10000, matchesAmount: true, amountEditable: false };
 

@@ -131,7 +131,7 @@ describe("CrearPrestamoGateway", () => {
     assert.ok(!sinCancelaciones.includes('"NroLote"'));
   });
 
-  it("throws PrestamoLegacyRechazadoError with the legacy message when Ok is false", async () => {
+  it("throws a generic PrestamoLegacyRechazadoError when Ok is false", async () => {
     const gateway = new CrearPrestamoGateway(
       { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
       async () => ({
@@ -158,7 +158,7 @@ describe("CrearPrestamoGateway", () => {
         assert.ok(error instanceof PrestamoLegacyRechazadoError);
         assert.equal(
           error.message,
-          "Errores de validacion: Ingrese un Celular Valido",
+          "Vimarx rechazó la generación del préstamo. Un administrador debe revisar el diagnóstico de la operación.",
         );
         return true;
       },
@@ -188,7 +188,7 @@ describe("CrearPrestamoGateway", () => {
         assert.ok(error instanceof PrestamoLegacyRechazadoError);
         assert.equal(
           error.message,
-          "No se pudo dar de alta el préstamo en el legado.",
+          "Vimarx rechazó la generación del préstamo. Un administrador debe revisar el diagnóstico de la operación.",
         );
         return true;
       },

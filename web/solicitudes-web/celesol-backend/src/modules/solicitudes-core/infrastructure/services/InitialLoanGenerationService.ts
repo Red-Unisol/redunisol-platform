@@ -9,6 +9,7 @@ import type { CrearPrestamoGateway, CrearPrestamoInput } from "./CrearPrestamoGa
 import { notifySignatureLinkAvailable } from "../../../notifications/SignatureNotifications";
 import { actingContext } from "../../../auth/impersonation/context";
 import { assertLinkedLoanReady, type LinkedLoanReader } from "../../application/services/LinkedLoanRules";
+import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 
 export type PreparedInitialLoan = { solicitud: SolicitudCore; codigoMutual: string | null; coreInput: CrearPrestamoInput };
 type Reservation = {
@@ -29,7 +30,12 @@ export class InitialLoanGenerationService {
     loanSnapshot: (id: string, documento: string, direct?: boolean) => Promise<CoreLoanSnapshot | null>;
     makeSignatureLink: (id: string, codigoMutual: string | null) => string;
     creationTimeoutMs?: number;
+    diagnostics?: LoanDiagnosticWriter;
   }) {}
+
+  private async diagnostic(context: LoanDiagnosticContext, stage: string, data: unknown) {
+    try { await this.deps.diagnostics?.(context, { stage, data }); } catch { /* Diagnostics must not change the loan result. */ }
+  }
 
   private async result(id: string) {
     const result = await this.deps.repository.findById(id);
@@ -83,86 +89,118 @@ export class InitialLoanGenerationService {
       assertLinkedLoanReady(await this.deps.linkedLoanReader(s));
       return this.result(id);
     }
+    const context: LoanDiagnosticContext = {
+      operationId: pending.requestId, solicitudId: id, actorId: pending.actorId,
+      realActorId: actingContext.getStore()?.administrator.id ?? pending.actorId, operation: "loan_generation",
+    };
     let newLoanId: string;
     try {
-      newLoanId = (await this.deps.gateway.crear(prepared.coreInput)).id;
+      newLoanId = (await this.deps.gateway.crear(prepared.coreInput, context)).id;
       if (!/^[1-9]\d*$/.test(newLoanId)) throw new Error("Invalid loan ID");
-    } catch {
+    } catch (error) {
+      await this.diagnostic(context, "ERROR", { phase: "REMOTE_CREATION", error });
+      try {
+        await this.deps.db.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
+          const s = await administrativeSource(tx, id);
+          const current = reservation(s.administrativeCoreControl);
+          if (current?.requestId !== pending.requestId || current.status !== "CREATING") return;
+          await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: {
+            ...control(s.administrativeCoreControl), generationPending: json({ ...current, status: "UNCERTAIN" }),
+          } } });
+          await this.audit(tx, s, pending.actorId, "LOAN_GENERATION_UNCERTAIN", { requestId: pending.requestId });
+        });
+      } catch (persistenceError) {
+        await this.diagnostic(context, "PERSISTENCE_FAILED", { phase: "MARK_UNCERTAIN", error: persistenceError, remoteError: error });
+        throw persistenceError;
+      }
+      throw new AdministrativeCorrectionError("Vimarx no confirmó la generación. No generes otro préstamo: un administrador debe verificar y recuperar el resultado.");
+    }
+    await this.diagnostic(context, "CREATED_REMOTE", { newLoanId });
+    try {
       await this.deps.db.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
         const s = await administrativeSource(tx, id);
         const current = reservation(s.administrativeCoreControl);
-        if (current?.requestId !== pending.requestId || current.status !== "CREATING") return;
+        if (current?.requestId !== pending.requestId || !["CREATING", "UNCERTAIN"].includes(current.status))
+          throw new AdministrativeCorrectionError(`Vimarx generó el préstamo ${newLoanId}, pero la reserva cambió. No repitas la generación; solicitá recuperación.`);
         await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: {
-          ...control(s.administrativeCoreControl), generationPending: json({ ...current, status: "UNCERTAIN" }),
+          ...control(s.administrativeCoreControl), generationPending: json({ ...current, status: "CREATED", newLoanId }),
         } } });
-        await this.audit(tx, s, pending.actorId, "LOAN_GENERATION_UNCERTAIN", { requestId: pending.requestId });
       });
-      throw new AdministrativeCorrectionError("Vimarx no confirmó la generación. No generes otro préstamo: un administrador debe verificar y recuperar el resultado.");
+    } catch (error) {
+      await this.diagnostic(context, "PERSISTENCE_FAILED", { phase: "STORE_CREATED", newLoanId, error });
+      throw error;
     }
-    await this.deps.db.$transaction(async tx => {
-      await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
-      const s = await administrativeSource(tx, id);
-      const current = reservation(s.administrativeCoreControl);
-      if (current?.requestId !== pending.requestId || !["CREATING", "UNCERTAIN"].includes(current.status))
-        throw new AdministrativeCorrectionError(`Vimarx generó el préstamo ${newLoanId}, pero la reserva cambió. No repitas la generación; solicitá recuperación.`);
-      await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: {
-        ...control(s.administrativeCoreControl), generationPending: json({ ...current, status: "CREATED", newLoanId }),
-      } } });
-    });
-    return this.link(id, pending.requestId, newLoanId, pending.actorId);
+    return this.link(id, pending.requestId, newLoanId, pending.actorId, context);
   }
 
-  private async link(id: string, requestId: string, newLoanId: string, actorId: string, reason: string | null = null) {
-    await this.deps.db.$transaction(async tx => {
-      await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
-      const s = await administrativeSource(tx, id);
-      const pending = reservation(s.administrativeCoreControl);
-      if (s.legacyOid === newLoanId && control(s.administrativeCoreControl).generationRequestId === requestId) return;
-      if (s.legacyOid || pending?.requestId !== requestId ||
-        coreConditionsFingerprint(s) !== pending.sourceFingerprint || s.archivedAt ||
-        s.estadoActual.code !== "Confirmada" || s.desembolso || s.pagoExterno)
-        throw new AdministrativeCorrectionError("La solicitud cambió. El préstamo generado quedó reservado para recuperación; no generes otro.");
-      const actor = await tx.user.findFirst({ where: { id: actorId, state: 1, deletedAt: null } });
-      if (!actor || (reason ? !actor.isSystemAdmin : (!actor.isSystemAdmin && actor.workflowOwnerId !== s.estadoActual.ownerId)))
-        throw new AdministrativeCorrectionError("El responsable ya no tiene permiso para vincular el préstamo; solicitá recuperación administrativa.", 403);
-      if (await tx.solicitud.findFirst({ where: { id: { not: id }, legacyOid: newLoanId }, select: { id: true } }))
-        throw new AdministrativeCorrectionError("El préstamo ya está vinculado a otra solicitud. Solicitá una revisión administrativa.");
-      await tx.solicitud.update({ where: { id }, data: {
-        legacyOid: newLoanId, lineaPrestamoCodigoMutual: pending.codigoMutual,
-        linkFirmaDigital: this.deps.makeSignatureLink(newLoanId, pending.codigoMutual),
-        analisisFinalizadoAt: null, analisisFinalizadoBy: null,
-        signatureCycleId: null, signatureRequestedAt: null, signatureRequestReason: null,
-        signatureExcludedVerificationIds: Prisma.DbNull,
-        administrativeCoreControl: { ...control(s.administrativeCoreControl), generationPending: null,
-          generatedLoanId: newLoanId, generationRequestId: requestId, loanId: newLoanId,
-          reconciledFingerprint: coreConditionsFingerprint({ ...s, legacyOid: newLoanId }),
-        },
-      } });
-      await this.audit(tx, s, actorId, "LOAN_GENERATED", { requestId, newLoanId, recovered: Boolean(reason) }, reason);
-      await notifySignatureLinkAvailable(tx, id);
-    });
+  private async link(id: string, requestId: string, newLoanId: string, actorId: string, context: LoanDiagnosticContext, reason: string | null = null) {
+    try {
+      await this.deps.db.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
+        const s = await administrativeSource(tx, id);
+        const pending = reservation(s.administrativeCoreControl);
+        if (s.legacyOid === newLoanId && control(s.administrativeCoreControl).generationRequestId === requestId) return;
+        if (s.legacyOid || pending?.requestId !== requestId ||
+          coreConditionsFingerprint(s) !== pending.sourceFingerprint || s.archivedAt ||
+          s.estadoActual.code !== "Confirmada" || s.desembolso || s.pagoExterno)
+          throw new AdministrativeCorrectionError("La solicitud cambió. El préstamo generado quedó reservado para recuperación; no generes otro.");
+        const actor = await tx.user.findFirst({ where: { id: actorId, state: 1, deletedAt: null } });
+        if (!actor || (reason ? !actor.isSystemAdmin : (!actor.isSystemAdmin && actor.workflowOwnerId !== s.estadoActual.ownerId)))
+          throw new AdministrativeCorrectionError("El responsable ya no tiene permiso para vincular el préstamo; solicitá recuperación administrativa.", 403);
+        if (await tx.solicitud.findFirst({ where: { id: { not: id }, legacyOid: newLoanId }, select: { id: true } }))
+          throw new AdministrativeCorrectionError("El préstamo ya está vinculado a otra solicitud. Solicitá una revisión administrativa.");
+        await tx.solicitud.update({ where: { id }, data: {
+          legacyOid: newLoanId, lineaPrestamoCodigoMutual: pending.codigoMutual,
+          linkFirmaDigital: this.deps.makeSignatureLink(newLoanId, pending.codigoMutual),
+          analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+          signatureCycleId: null, signatureRequestedAt: null, signatureRequestReason: null,
+          signatureExcludedVerificationIds: Prisma.DbNull,
+          administrativeCoreControl: { ...control(s.administrativeCoreControl), generationPending: null,
+            generatedLoanId: newLoanId, generationRequestId: requestId, loanId: newLoanId,
+            reconciledFingerprint: coreConditionsFingerprint({ ...s, legacyOid: newLoanId }),
+          },
+        } });
+        await this.audit(tx, s, actorId, "LOAN_GENERATED", { requestId, newLoanId, recovered: Boolean(reason) }, reason);
+        await notifySignatureLinkAvailable(tx, id);
+      });
+    } catch (error) {
+      await this.diagnostic(context, "LINK_FAILED", { newLoanId, error });
+      throw error;
+    }
+    await this.diagnostic(context, "LINKED", { newLoanId, recovered: Boolean(reason) });
     return this.result(id);
   }
 
   async recover(id: string, user: CreatePrestamoLegacyInput["currentUser"], input: {
     requestId: string; expectedUpdatedAt: string; newLoanId: string; reason: string;
   }) {
-    assertAdministrativeActor(user);
-    const s = await administrativeSource(this.deps.db, id);
-    if (s.legacyOid === input.newLoanId && control(s.administrativeCoreControl).generationRequestId === input.requestId) return this.result(id);
-    const pending = reservation(s.administrativeCoreControl);
-    if (!pending || pending.requestId !== input.requestId || s.updatedAt.toISOString() !== input.expectedUpdatedAt || !s.titular?.nroDocumento)
-      throw new AdministrativeCorrectionError("La reserva de generación cambió. Actualizá el detalle antes de recuperar.");
-    if (pending.status === "CREATING" && Date.now() - new Date(pending.createdAt).getTime() <= (this.deps.creationTimeoutMs ?? 30000) + 60000)
-      throw new AdministrativeCorrectionError("La llamada de generación todavía puede estar en curso. Esperá antes de recuperar.");
-    if (pending.newLoanId && pending.newLoanId !== input.newLoanId)
-      throw new AdministrativeCorrectionError("El ID no coincide con la respuesta registrada de Vimarx.");
-    const loan = await this.deps.loanSnapshot(input.newLoanId, s.titular.nroDocumento, true);
-    if (!loan || loan.id !== input.newLoanId || loan.estado !== 0 || loan.amount !== pending.coreInput.montoDeseado ||
-      loan.cuotas !== pending.coreInput.cuotas || loan.lineaId !== pending.coreInput.lineaPrestamo ||
-      loan.cancelacionesCentavos !== (pending.coreInput.nroLote ?? 0))
-      throw new AdministrativeCorrectionError("El préstamo no está activo o no coincide con el titular y las condiciones reservadas.");
-    return this.link(id, input.requestId, input.newLoanId, user.id, input.reason);
+    const context: LoanDiagnosticContext = {
+      operationId: input.requestId, solicitudId: id, actorId: user.id,
+      realActorId: actingContext.getStore()?.administrator.id ?? user.id, operation: "loan_recovery",
+    };
+    await this.diagnostic(context, "RECOVERY_STARTED", { newLoanId: input.newLoanId });
+    try {
+      assertAdministrativeActor(user);
+      const s = await administrativeSource(this.deps.db, id);
+      if (s.legacyOid === input.newLoanId && control(s.administrativeCoreControl).generationRequestId === input.requestId) return this.result(id);
+      const pending = reservation(s.administrativeCoreControl);
+      if (!pending || pending.requestId !== input.requestId || s.updatedAt.toISOString() !== input.expectedUpdatedAt || !s.titular?.nroDocumento)
+        throw new AdministrativeCorrectionError("La reserva de generación cambió. Actualizá el detalle antes de recuperar.");
+      if (pending.status === "CREATING" && Date.now() - new Date(pending.createdAt).getTime() <= (this.deps.creationTimeoutMs ?? 30000) + 60000)
+        throw new AdministrativeCorrectionError("La llamada de generación todavía puede estar en curso. Esperá antes de recuperar.");
+      if (pending.newLoanId && pending.newLoanId !== input.newLoanId)
+        throw new AdministrativeCorrectionError("El ID no coincide con la respuesta registrada de Vimarx.");
+      const loan = await this.deps.loanSnapshot(input.newLoanId, s.titular.nroDocumento, true);
+      if (!loan || loan.id !== input.newLoanId || loan.estado !== 0 || loan.amount !== pending.coreInput.montoDeseado ||
+        loan.cuotas !== pending.coreInput.cuotas || loan.lineaId !== pending.coreInput.lineaPrestamo ||
+        loan.cancelacionesCentavos !== (pending.coreInput.nroLote ?? 0))
+        throw new AdministrativeCorrectionError("El préstamo no está activo o no coincide con el titular y las condiciones reservadas.");
+      return await this.link(id, input.requestId, input.newLoanId, user.id, context, input.reason);
+    } catch (error) {
+      await this.diagnostic(context, "ERROR", { phase: "RECOVERY", newLoanId: input.newLoanId, error });
+      throw error;
+    }
   }
 }
