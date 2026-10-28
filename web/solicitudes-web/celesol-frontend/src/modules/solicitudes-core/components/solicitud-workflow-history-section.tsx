@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { CalendarDays, ChevronDown, UserRound } from "lucide-react";
 import { Section } from "@/modules/solicitudes-editor/components/fields/base";
 import type {
   SolicitudCoreWorkflowHistoryItem,
@@ -16,179 +14,83 @@ type SolicitudWorkflowHistorySectionProps = {
 };
 
 function formatText(value: string | null | undefined) {
-  const normalizedValue = value?.trim();
-
-  return normalizedValue ? normalizedValue : PLACEHOLDER;
+  return value?.trim() || PLACEHOLDER;
 }
 
 function formatDateTime(value: string) {
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
 
   return new Intl.DateTimeFormat("es-AR", {
     day: "2-digit",
     hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
     month: "2-digit",
     year: "numeric",
+    timeZone: "America/Argentina/Buenos_Aires",
   }).format(date);
 }
 
 function formatState(state: SolicitudWorkflowHistoryStateSnapshot) {
-  return formatText(state.name ?? state.code);
+  return formatText(state.name?.trim() || state.code);
 }
 
 function formatOwner(state: SolicitudWorkflowHistoryStateSnapshot) {
-  const ownerName = state.ownerName?.trim();
-  const ownerCode = state.ownerCode?.trim();
-
-  if (ownerName && ownerCode) {
-    return `${ownerName} (${ownerCode})`;
-  }
-
-  return ownerName ?? ownerCode ?? PLACEHOLDER;
+  const name = state.ownerName?.trim();
+  const code = state.ownerCode?.trim();
+  return name && code ? `${name} (${code})` : name || code || PLACEHOLDER;
 }
 
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
-
-function formatChangedBy(value: string | null | undefined) {
-  const normalizedValue = value?.trim();
-
-  if (!normalizedValue) {
-    return PLACEHOLDER;
+function formatChangedBy(item: SolicitudCoreWorkflowHistoryItem) {
+  const fullName = item.changedByFullName?.trim();
+  if (fullName) return fullName;
+  const raw = item.changedBy?.trim();
+  if (!raw) return PLACEHOLDER;
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      raw,
+    )
+  ) {
+    return `${raw.slice(0, 8)}...${raw.slice(-4)}`;
   }
-
-  if (!isUuid(normalizedValue)) {
-    return normalizedValue;
-  }
-
-  return `${normalizedValue.slice(0, 8)}...${normalizedValue.slice(-4)}`;
-}
-
-function formatChangedByDisplay(
-  fullName: string | null | undefined,
-  rawValue: string | null | undefined,
-) {
-  const normalizedFullName = fullName?.trim();
-
-  if (normalizedFullName) {
-    return normalizedFullName;
-  }
-
-  return formatChangedBy(rawValue);
-}
-
-function stateChipClassName(variantClassName?: string) {
-  const chipVariant =
-    variantClassName ?? "border-border bg-background text-foreground-secondary";
-
-  return `inline-flex items-center rounded-sm border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${chipVariant}`;
+  return raw;
 }
 
 function getStateVariantClassName(stateLabel: string) {
-  const normalizedState = stateLabel.toLowerCase().trim();
-
+  const state = stateLabel.toLowerCase().trim();
   if (
-    normalizedState.includes("rechazada") ||
-    normalizedState.includes("rechazo") ||
-    normalizedState.includes("revisar")
+    state.includes("rechazada") ||
+    state.includes("rechazo") ||
+    state.includes("revisar")
   ) {
     return "border-red-200 bg-red-50 text-red-700";
   }
-
-  if (
-    normalizedState.includes("revision riesgo") ||
-    normalizedState.includes("riesgo")
-  ) {
+  if (state.includes("revision riesgo") || state.includes("riesgo")) {
     return "border-blue-200 bg-blue-50 text-blue-700";
   }
-
-  if (normalizedState.includes("preaprob")) {
+  if (state.includes("preaprob")) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
-
-  if (normalizedState.includes("carga vendedor")) {
+  if (state.includes("carga vendedor")) {
     return "border-slate-200 bg-slate-50 text-slate-700";
   }
-
   return "border-primary/35 bg-primary/10 text-foreground";
 }
 
-function getStateDotClassName(stateLabel: string) {
-  const normalizedState = stateLabel.toLowerCase().trim();
-
-  if (
-    normalizedState.includes("rechazada") ||
-    normalizedState.includes("rechazo") ||
-    normalizedState.includes("revisar")
-  ) {
-    return "bg-red-600";
+function mapOperationalCode(value: string | null | undefined) {
+  switch (value?.trim()) {
+    case "ASSIGNMENT_AUTO":
+      return "Asignación automática";
+    case "ASSIGNMENT_SET":
+      return "Solicitud asignada";
+    case "ASSIGNMENT_CLEARED_ON_OWNER_CHANGE":
+      return "Asignación removida";
+    case "ADMINISTRATIVE_CORRECTION":
+      return "Corrección administrativa";
+    default:
+      return null;
   }
-
-  if (
-    normalizedState.includes("revision riesgo") ||
-    normalizedState.includes("riesgo")
-  ) {
-    return "bg-blue-600";
-  }
-
-  return "bg-foreground-muted";
-}
-
-function getCommentAccentClassName(stateLabel: string) {
-  const normalizedState = stateLabel.toLowerCase().trim();
-
-  if (
-    normalizedState.includes("rechazada") ||
-    normalizedState.includes("rechazo") ||
-    normalizedState.includes("revisar")
-  ) {
-    return "border-l-red-300";
-  }
-
-  if (
-    normalizedState.includes("revision riesgo") ||
-    normalizedState.includes("riesgo")
-  ) {
-    return "border-l-blue-300";
-  }
-
-  return "border-l-border";
-}
-
-function mapWorkflowOperationalCode(value: string | null | undefined) {
-  const normalized = value?.trim();
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === "ASSIGNMENT_SET") {
-    return "Solicitud asignada";
-  }
-
-  if (normalized === "ASSIGNMENT_CLEARED_ON_OWNER_CHANGE") {
-    return "Asignacion removida";
-  }
-
-  return null;
-}
-
-function resolveHistoryActionLabel(item: SolicitudCoreWorkflowHistoryItem) {
-  const mappedCode = mapWorkflowOperationalCode(item.actionCode);
-
-  if (mappedCode) {
-    return mappedCode;
-  }
-
-  return formatText(item.actionLabel ?? item.actionCode);
 }
 
 export function SolicitudWorkflowHistorySection({
@@ -196,168 +98,161 @@ export function SolicitudWorkflowHistorySection({
   history,
   isLoading = false,
 }: SolicitudWorkflowHistorySectionProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-
-  const toggleItem = (id: string) => {
-    setExpandedIds((current) => {
-      const next = new Set(current);
-
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-
-      return next;
-    });
-  };
+  const cellClassName =
+    "block min-w-0 px-3 py-2.5 align-top [overflow-wrap:anywhere] md:table-cell";
+  const labelClassName =
+    "mb-1 block text-xs font-semibold text-foreground-secondary md:hidden";
 
   return (
-    <Section title="Historial de estados">
+    <Section title="Novedades">
       {isLoading ? (
         <p className="text-sm text-foreground-secondary">
-          Cargando historial...
+          Cargando novedades...
         </p>
       ) : null}
 
       {!isLoading && errorMessage ? (
-        <p className="rounded-md border border-danger bg-danger px-3 py-2 text-sm text-danger-foreground">
+        <p
+          role="alert"
+          className="rounded-md border border-danger bg-danger px-3 py-2 text-sm text-danger-foreground"
+        >
           {errorMessage}
         </p>
       ) : null}
 
       {!isLoading && !errorMessage && history.length === 0 ? (
-        <TableEmptyState message="Sin historial de estados para mostrar." />
+        <TableEmptyState message="Sin novedades para mostrar." />
       ) : null}
 
       {!isLoading && !errorMessage && history.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-          <ul className="space-y-4 p-6">
-            {history.map((item) => {
-              const isExpanded = expandedIds.has(item.id);
-              const detailId = `historial-detalle-${item.id}`;
-
-              return (
-                <li
-                  className="grid grid-cols-[1rem_minmax(0,1fr)] gap-4"
-                  key={item.id}
+        <div className="overflow-hidden rounded-md border border-border">
+          <table
+            role="table"
+            aria-label="Historial de estados de la solicitud"
+            className="block w-full text-left text-sm md:table md:table-fixed"
+          >
+            <caption className="sr-only">
+              Movimientos más recientes primero. Fecha y hora de Argentina.
+            </caption>
+            <thead
+              role="rowgroup"
+              className="sr-only bg-background md:not-sr-only md:table-header-group"
+            >
+              <tr role="row">
+                <th
+                  role="columnheader"
+                  scope="col"
+                  className="w-[16%] px-3 py-2.5 font-semibold"
                 >
-                  <div className="relative">
-                    <div className="absolute top-2 bottom-0 left-1/2 w-px -translate-x-1/2 bg-blue-100" />
-                    <span
-                      className={`absolute top-1 left-1/2 inline-flex size-3 -translate-x-1/2 rounded-full ring-4 ring-surface ${getStateDotClassName(
-                        formatState(item.estadoNuevo),
-                      )}`}
-                    />
-                  </div>
+                  Fecha
+                </th>
+                <th
+                  role="columnheader"
+                  scope="col"
+                  className="w-[28%] px-3 py-2.5 font-semibold"
+                >
+                  Cambio de estado
+                </th>
+                <th
+                  role="columnheader"
+                  scope="col"
+                  className="w-[36%] px-3 py-2.5 font-semibold"
+                >
+                  Observación
+                </th>
+                <th
+                  role="columnheader"
+                  scope="col"
+                  className="w-[20%] px-3 py-2.5 font-semibold"
+                >
+                  Usuario
+                </th>
+              </tr>
+            </thead>
+            <tbody role="rowgroup" className="block md:table-row-group">
+              {history.map((item) => {
+                const action =
+                  mapOperationalCode(item.actionCode) ||
+                  formatText(item.actionLabel?.trim() || item.actionCode);
+                const reason =
+                  mapOperationalCode(item.motivo) || item.motivo?.trim();
+                const previousOwner = formatOwner(item.estadoAnterior);
+                const nextOwner = formatOwner(item.estadoNuevo);
+                const comment = item.comentario?.trim();
 
-                  <div className="relative min-w-0">
-                    <button
-                      aria-controls={detailId}
-                      aria-expanded={isExpanded}
-                      className="flex w-full cursor-pointer flex-wrap items-center justify-between gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      onClick={() => toggleItem(item.id)}
-                      type="button"
+                return (
+                  <tr
+                    role="row"
+                    key={item.id}
+                    className="block border-t border-border even:bg-background/50 md:table-row"
+                  >
+                    <td
+                      role="cell"
+                      className={`${cellClassName} tabular-nums text-foreground-secondary`}
                     >
-                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                        <span className={stateChipClassName()}>
-                          {formatState(item.estadoAnterior)}
-                        </span>
-                        <span className="text-base text-foreground-muted">
-                          -&gt;
+                      <span aria-hidden="true" className={labelClassName}>
+                        Fecha
+                      </span>
+                      <time dateTime={item.changedAt}>
+                        {formatDateTime(item.changedAt)}
+                      </time>
+                    </td>
+                    <td role="cell" className={cellClassName}>
+                      <span aria-hidden="true" className={labelClassName}>
+                        Cambio de estado
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{formatState(item.estadoAnterior)}</span>
+                        <span aria-label="a" className="text-foreground-muted">
+                          →
                         </span>
                         <span
-                          className={stateChipClassName(
-                            getStateVariantClassName(
-                              formatState(item.estadoNuevo),
-                            ),
-                          )}
+                          className={`inline-flex rounded-sm border px-1.5 py-0.5 text-xs font-semibold ${getStateVariantClassName(formatState(item.estadoNuevo))}`}
                         >
                           {formatState(item.estadoNuevo)}
                         </span>
                       </div>
-
-                      <div className="inline-flex items-center gap-1.5 text-xs text-foreground-secondary">
-                        <CalendarDays className="size-3.5" />
-                        <div>{formatDateTime(item.changedAt)}</div>
-                        <ChevronDown
-                          className={`ml-1 size-4 shrink-0 transition-transform ${
-                            isExpanded ? "rotate-180" : ""
-                          }`}
-                        />
-                      </div>
-                    </button>
-
-                    {isExpanded ? (
-                      <div id={detailId}>
-                        <div className="mt-2 text-sm text-foreground">
-                          <span className="font-bold text-foreground">
-                            Accion:
-                          </span>{" "}
-                          <span>{resolveHistoryActionLabel(item)}</span>
-                        </div>
-
-                        <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-xs text-foreground-secondary">
-                          <UserRound className="size-3.5 text-foreground-muted" />
-                          <span>Cambio Ejecutivo:</span>{" "}
-                          <span className="text-foreground">
-                            {formatOwner(item.estadoAnterior)}
-                          </span>{" "}
-                          <span>-&gt;</span>{" "}
-                          <span className="text-foreground">
-                            {formatOwner(item.estadoNuevo)}
-                          </span>
-                          <span className="mx-1 text-foreground-muted">·</span>
-                          <span>Usuario:</span>{" "}
-                          <span
-                            className="inline-block rounded-sm bg-background px-1.5 py-0.5 text-[12px] text-foreground-muted"
-                            title={formatText(
-                              item.changedBy ?? item.changedByFullName,
-                            )}
-                          >
-                            {formatChangedByDisplay(
-                              item.changedByFullName,
-                              item.changedBy,
-                            )}
-                          </span>
-                        </div>
-
-                        {item.motivo || item.comentario ? (
-                          <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
-                            {item.motivo ? (
-                              <div className="rounded-md border border-border/50 bg-background/70 px-3 py-3">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-                                  Motivo
-                                </div>
-                                <p className="mt-1 italic text-foreground">
-                                  {mapWorkflowOperationalCode(item.motivo) ??
-                                    formatText(item.motivo)}
-                                </p>
-                              </div>
-                            ) : null}
-                            {item.comentario ? (
-                              <div
-                                className={`rounded-md border border-border/50 border-l-4 bg-background/80 px-3 py-3 ${getCommentAccentClassName(
-                                  formatState(item.estadoNuevo),
-                                )}`}
-                              >
-                                <div className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-                                  Comentario
-                                </div>
-                                <p className="mt-1 italic text-foreground">
-                                  {item.comentario}
-                                </p>
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                      {action !== PLACEHOLDER ? (
+                        <p className="mt-1 text-xs text-foreground-secondary">
+                          {action}
+                        </p>
+                      ) : null}
+                      {previousOwner !== nextOwner ? (
+                        <p className="mt-1 text-xs text-foreground-secondary">
+                          Área: {previousOwner} → {nextOwner}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td role="cell" className={cellClassName}>
+                      <span aria-hidden="true" className={labelClassName}>
+                        Observación
+                      </span>
+                      <p className="whitespace-pre-wrap">
+                        {comment || PLACEHOLDER}
+                      </p>
+                      {reason && reason !== comment && reason !== action ? (
+                        <p className="mt-1 whitespace-pre-wrap text-xs text-foreground-secondary">
+                          Motivo: {reason}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td role="cell" className={cellClassName}>
+                      <span aria-hidden="true" className={labelClassName}>
+                        Usuario
+                      </span>
+                      <span
+                        title={formatText(
+                          item.changedBy || item.changedByFullName,
+                        )}
+                      >
+                        {formatChangedBy(item)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ) : null}
     </Section>
