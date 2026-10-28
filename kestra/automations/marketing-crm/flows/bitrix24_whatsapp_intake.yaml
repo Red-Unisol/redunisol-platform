@@ -30,6 +30,7 @@ tasks:
       EDNA_INTAKE_CRM_ENABLED: "{{ envs.edna_intake_crm_enabled ?? 'false' }}"
       EDNA_INTAKE_RECIPIENTS: "{{ envs.edna_intake_recipients ?? '' }}"
       EDNA_INTAKE_FLOW_ID: "{{ envs.edna_intake_flow_id ?? '' }}"
+      EDNA_INTAKE_ACCEPTED_FLOW_IDS: "{{ envs.edna_intake_accepted_flow_ids ?? '' }}"
       BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW: "{{ envs.bitrix24_lead_status_assistance_review ?? '' }}"
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"

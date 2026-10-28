@@ -3,8 +3,9 @@
 Definición acordada el 22/10 y ampliada el 27/10/2026: todos los segmentos del Router
 actual, exclusivamente para una entrada desde el botón de la web con referencia
 vigente y vinculada al teléfono/canal. CUIL obligatorio y email opcional.
-El alcance inicial es una tanda persistente de **10 números de WhatsApp únicos**;
-el resto continúa por el Router anterior y su formulario web.
+La primera tanda tiene **10 números de WhatsApp únicos**. La siguiente prepara
+**20 números únicos**, con su propio ID y cupo persistente; el resto continúa por
+el Router anterior y su formulario web.
 
 ## Recorrido
 
@@ -43,14 +44,28 @@ se guardan con la categoría exacta y pasan por el prefill y la precalificación
 habituales. CUIL inválido, email inválido o banco "necesito ayuda" conservan sus
 derivaciones manuales. Catamarca y CABA no aceptan estas tres opciones.
 
-El backend es compatible con las respuestas de la versión 1. Desplegarlo no
-modifica por sí solo el formulario publicado en Meta. La versión 2 debe validarse
-y publicarse como un Flow nuevo antes de ofrecer esas opciones; el ID activo y
-la tanda actuales no se cambian en esta entrega. No cambiar el ID de una tanda
-existente ni reiniciar su contador. Al preparar una activación de la versión 2,
-resolver también la aceptación explícita de ambos IDs en el procesador Kestra:
-hoy `EDNA_INTAKE_FLOW_ID` admite un solo ID y cambiarlo sin ese paso bloquearía
-las respuestas pendientes de la versión 1.
+Meta publicó la versión 2 como **Solicitud web | CUIL | Córdoba ampliado | Piloto
+20 v2**, ID `995212369590508`, el 28/10/2026. El JSON pasó la validación sin errores
+y se revisaron las opciones en la vista previa. La versión 1 conserva su ID
+`3298964390491520` y sus participantes.
+
+Kestra acepta `EDNA_INTAKE_FLOW_ID` y los IDs adicionales declarados en
+`EDNA_INTAKE_ACCEPTED_FLOW_IDS`; se validan como IDs de intake dedicados, nunca
+como Router o asistencia. La configuración cifrada prepara ambos IDs. El receptor
+Web verifica cada respuesta contra su envío/admisión original, aunque la tanda
+actual haya cambiado. La atribución conserva el ID del Flow respondido.
+
+La publicación no envía WhatsApp ni activa una tanda. Primero se despliega el
+código y se comprueba Web/Kestra en runtime; luego se cambia sólo la configuración
+Web a la tanda `website-intake-20-v2`, su ID de Flow y cupo 20. El procesador sigue
+admitiendo la versión 1. No cambiar el Flow ni reiniciar el contador de una tanda
+existente. Desarrollo mantiene el intake deshabilitado.
+
+Durante el despliegue gradual, el puente nuevo declara
+`acknowledgement_version=2`. Un puente anterior recibe `already_processed` para un
+rechazo ya persistido, con su motivo e ID, y no lo convierte en resultado incierto.
+El puente nuevo recibe `rejected`. Ninguna de las dos respuestas vuelve a escribir
+un caso repetido.
 
 Cada respuesta autenticada del formulario se conserva como lead, también cuando
 el CUIL falta o es inválido. Sólo un CUIL de 11 dígitos con checksum válido se usa
@@ -96,21 +111,21 @@ procedencia o estructuras inválidas siguen rechazándose antes de escribir.
 Las respuestas completas reutilizan las reglas comerciales vigentes; este
 desarrollo no cambia elegibilidad ni distribución.
 
-## Piloto de los próximos 10 ingresos únicos
+## Tandas con cupo persistente
 
-Al activar el piloto, las próximas 10 personas elegibles desde la web reciben el
-nuevo Flow. La identidad única se calcula por número normalizado de WhatsApp,
+Al activar una tanda, los próximos números elegibles desde la web hasta completar
+su cupo reciben el nuevo Flow. La identidad única se calcula por número normalizado de WhatsApp,
 con HMAC; varios mensajes, referencias web o visitas del mismo teléfono no ocupan
 otro lugar. Una persona que abandona cuenta como participante.
 
 La reserva se hace en `edna_intake_pilots` / `edna_intake_admissions`, dentro de la
 misma transacción que guarda el envío y su trabajo en cola. El bloqueo de la fila
-de la tanda, el incremento condicionado a menos de 10 y las claves únicas impiden
+de la tanda, el incremento condicionado a su capacidad y las claves únicas impiden
 superar el cupo ante entradas simultáneas. Si el encolado falla, todo se revierte.
 Un envío ya reservado fallido, cancelado o incierto conserva su lugar; no se
 reciclan cupos automáticamente.
 
-Al llegar a 10, el ingreso único número 11 y los posteriores reciben el Router
+Al agotar el cupo, el ingreso único siguiente y los posteriores reciben el Router
 anterior y conservan el enlace al formulario web. También siguen ese recorrido
 los ingresos sin referencia válida, anteriores al corte o fuera de la lista de
 prueba. No se apaga el procesamiento del nuevo Flow al agotar el cupo: los
@@ -125,6 +140,15 @@ nuevo por el circuito Git-managed. Los envíos de la tanda anterior siguen
 identificados por su admisión; no borrar filas ni cambiar el ID del Flow en Meta
 para reiniciar una prueba. La lista de Kestra debe seguir admitiendo a quienes
 están completando su solicitud.
+
+`EDNA_INTAKE_PILOT_LIMIT` define el cupo **al crear** una tanda (entero de 1 a
+1000, por defecto 10). Se persiste en `edna_intake_pilots.capacity` y no se modifica
+al cambiar la configuración. La migración asigna 10 a las tandas existentes. Un
+valor inválido no admite números nuevos y conserva la continuidad de quienes ya
+tienen admisión. La tanda original queda en 10/10; la segunda tiene sus propios
+20 lugares. El número 11 de la primera o el 21 de la segunda usa el Router anterior.
+El mismo teléfono cuenta una sola vez dentro de cada tanda; completar o abandonar
+el formulario no libera su lugar.
 
 ## Persistencia y trazabilidad
 
@@ -192,13 +216,13 @@ ni activa mensajes para clientes por sí solo.
    por CI. Se usa el worker `edna` existente; el trabajo tiene un solo intento y
    timeout de 105 segundos, inferior a los 120 segundos de visibilidad de la cola.
 3. Configurar en Web, por el circuito cifrado Git-managed:
-   `EDNA_INTAKE_FLOW_ID`, `EDNA_INTAKE_START_AT`, `EDNA_INTAKE_PILOT_ID` y
+   `EDNA_INTAKE_FLOW_ID`, `EDNA_INTAKE_START_AT`, `EDNA_INTAKE_PILOT_ID`, `EDNA_INTAKE_PILOT_LIMIT` y
    `KESTRA_EDNA_INTAKE_WEBHOOK_URL` (endpoint dedicado, HTTPS).
    Activar `EDNA_INTAKE_ENABLED` y `EDNA_INTAKE_CRM_ENABLED`.
    `EDNA_INTAKE_RECIPIENTS` permite restringir los candidatos; vacía considera
    cualquier teléfono con origen web válido, siempre con el máximo de 10. Los
    demás conservan el Router anterior. No usar el endpoint del piloto aislado.
-4. Configurar en Kestra `ENV_EDNA_INTAKE_FLOW_ID`,
+4. Configurar en Kestra `ENV_EDNA_INTAKE_FLOW_ID`, `ENV_EDNA_INTAKE_ACCEPTED_FLOW_IDS`,
    `ENV_EDNA_INTAKE_CRM_ENABLED`, `ENV_EDNA_INTAKE_RECIPIENTS` y el destino manual
    existente `ENV_BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW`. El ID y la lista deben
    coincidir con Web. El webhook conserva la clave de formulario existente.
@@ -244,6 +268,8 @@ una revisión explícita, no sucede al editar el campo inválido.
 
 `php artisan edna:intake pilot` muestra tandas, cupos ocupados, posiciones y
 los IDs de envíos/leads/contactos de los participantes, sin teléfonos ni sus hashes.
+`limit` indica el cupo configurado para tandas nuevas; cada fila de tanda incluye
+su `capacity` persistida, que es el límite efectivo de esa tanda.
 `php artisan edna:intake status [ID]` muestra sólo IDs/estados, sin CUIL, email ni
 teléfono. `unknown` o `processing` interrumpido requieren buscar el
 `WA_ASSISTANCE_ID` del envío en Bitrix antes de intervenir. Nunca repetir un POST

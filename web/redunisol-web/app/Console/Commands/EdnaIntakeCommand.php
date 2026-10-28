@@ -25,9 +25,9 @@ class EdnaIntakeCommand extends Command
     {
         if ($this->argument('action') === 'pilot') {
             $this->line(json_encode([
-                'limit' => EdnaIntakePilot::CAPACITY,
+                'limit' => (new EdnaIntakePilot)->capacity(),
                 'pilots' => DB::table('edna_intake_pilots')->latest('created_at')->limit(50)
-                    ->get(['id', 'name', 'subject_id', 'flow_id', 'admitted', 'created_at']),
+                    ->get(['id', 'name', 'subject_id', 'flow_id', 'capacity', 'admitted', 'created_at']),
                 'participants' => DB::table('edna_intake_admissions as a')
                     ->leftJoin('edna_flow_sends as s', 's.intake_admission_id', '=', 'a.id')
                     ->leftJoin('edna_intake_requests as r', 'r.flow_send_id', '=', 's.id')

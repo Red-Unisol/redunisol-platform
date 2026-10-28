@@ -18,7 +18,7 @@ CONFIG = {**ENV, 'EDNA_INTAKE_CRM_ENABLED': 'true', 'EDNA_INTAKE_FLOW_ID': FLOW}
 
 
 def payload(**answer):
-    return {'contract': VERSION, 'case_id': CASE, 'flow_id': FLOW, 'phone': PHONE, 'dry_run': False,
+    return {'contract': VERSION, 'acknowledgement_version': 2, 'case_id': CASE, 'flow_id': FLOW, 'phone': PHONE, 'dry_run': False,
             'received_at': '2026-10-27T11:00:00-03:00',
             'answer': {'provincia': 'catamarca', 'situacion_catamarca': 'policia',
                        'banco_catamarca': 'nacion', 'cuil': CUIL, **answer},

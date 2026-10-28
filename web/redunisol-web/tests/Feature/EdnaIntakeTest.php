@@ -376,7 +376,73 @@ test('a participant admission cannot be reused for another phone', function () {
     expect((new EdnaIntake)->canSend(DB::table('edna_flow_sends')->find($other->id)))->toBeFalse();
 });
 
-test('parallel database workers cannot exceed ten distinct admissions or double count one phone', function () {
+test('a new batch admits twenty unique numbers keeps the first batch and sends number twenty one to the legacy route', function () {
+    for ($i = 1; $i <= 10; $i++) {
+        $old = intakeReserve(sprintf('5493511%06d', $i));
+    }
+    $oldBatch = DB::table('edna_intake_pilots')->first();
+    DB::table('edna_flow_sends')->where('id', $old->id)->update(['state' => 'confirmed', 'outgoing_message_id' => '900', 'send_started_at' => now()]);
+    config()->set('edna.intake_pilot_id', 'website-intake-20-v2');
+    config()->set('edna.intake_pilot_limit', 20);
+    config()->set('edna.intake_flow_id', '888000111222333');
+    for ($i = 1; $i <= 21; $i++) {
+        $phone = sprintf('5493512%06d', $i);
+        $new = intakeReserve($phone);
+        expect($new->flow_id)->toBe($i <= 20 ? '888000111222333' : EdnaFlowRouter::FLOW_ID);
+        if ($i <= 20) {
+            $again = intakeReserve($phone);
+            expect($again->id)->toBe($new->id); // Duplicate messages/visits do not consume quota.
+        }
+    }
+    $nextBatch = DB::table('edna_intake_pilots')->where('name', 'website-intake-20-v2')->first();
+    expect($nextBatch->capacity)->toBe(20)->and($nextBatch->admitted)->toBe(20)
+        ->and(DB::table('edna_intake_pilots')->find($oldBatch->id)->capacity)->toBe(10)
+        ->and(DB::table('edna_intake_pilots')->find($oldBatch->id)->admitted)->toBe(10)
+        ->and(DB::table('edna_intake_admissions')->count())->toBe(30);
+    $reply = intakeInbound(['subscriber' => ['identifier' => sprintf('5493511%06d', 10)],
+        'replyOutMessageId' => '900', 'replyOutMessageExternalRequestId' => $old->request_id,
+        'messageContent' => ['type' => 'FLOW', 'text' => json_encode(['provincia' => 'catamarca',
+            'situacion_catamarca' => 'policia', 'banco_catamarca' => 'nacion', 'cuil' => '20301234563'])]]);
+    (new ReceiveEdnaInKestra($reply->id))->handle();
+    $request = DB::table('edna_intake_requests')->where('flow_send_id', $old->id)->first();
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'queued', 'lead_id' => '77',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    Http::assertSent(fn ($r) => $r['flow_id'] === '999000111222333' && $r['attribution']['wa']['WA_FLOW_ID'] === '999000111222333');
+    expect(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('synced')
+        ->and(DB::table('edna_intake_pilots')->find($nextBatch->id)->admitted)->toBe(20);
+});
+
+test('a stored batch capacity cannot be enlarged or reduced by a later environment change', function () {
+    intakeReserve();
+    config()->set('edna.intake_pilot_limit', 20);
+    for ($i = 1; $i <= 10; $i++) {
+        $send = intakeReserve(sprintf('549351%07d', $i));
+    }
+    expect($send->flow_id)->toBe(EdnaFlowRouter::FLOW_ID)
+        ->and(DB::table('edna_intake_pilots')->first()->capacity)->toBe(10)
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(10);
+    config()->set('edna.intake_pilot_id', 'new-twenty');
+    intakeReserve('5493512000000');
+    config()->set('edna.intake_pilot_limit', 1);
+    for ($i = 1; $i <= 20; $i++) {
+        $send = intakeReserve(sprintf('5493512%06d', $i));
+    }
+    expect($send->flow_id)->toBe(EdnaFlowRouter::FLOW_ID)
+        ->and(DB::table('edna_intake_pilots')->where('name', 'new-twenty')->first()->capacity)->toBe(20)
+        ->and(DB::table('edna_intake_pilots')->where('name', 'new-twenty')->first()->admitted)->toBe(20);
+});
+
+test('invalid new capacity fails closed while existing participants can continue', function ($limit) {
+    $send = intakeReserve();
+    config()->set('edna.intake_pilot_limit', $limit);
+    expect(intakeReserve('5493519999999')->flow_id)->toBe(EdnaFlowRouter::FLOW_ID)
+        ->and((new EdnaIntakePilot)->reserve('2423', '5493510000000', $send->flow_id, true)->id)->toBe($send->intake_admission_id)
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1);
+})->with([0, -1, 1001, 'bad', '20.5', true, null]);
+
+test('parallel database workers cannot exceed a batch capacity or double count one phone', function (int $capacity) {
     $file = tempnam(sys_get_temp_dir(), 'edna-quota-');
     $gate = $file.'.go';
     $processes = [];
@@ -390,15 +456,18 @@ test('parallel database workers cannot exceed ten distinct admissions or double 
         Schema::create('edna_flow_sends', fn ($table) => $table->id());
         $migration = require database_path('migrations/2026_10_27_150000_create_edna_intake_pilot_admissions.php');
         $migration->up();
+        $capacityMigration = require database_path('migrations/2026_10_28_170000_add_capacity_to_edna_intake_pilots.php');
+        $capacityMigration->up();
+        config()->set('edna.intake_pilot_limit', $capacity);
         $first = (new EdnaIntakePilot)->reserve('2423', '5493510000000', '999000111222333', true);
         DB::setDefaultConnection($default);
-        $phones = [...array_map(fn ($i) => sprintf('549351%07d', $i), range(1, 12)),
+        $phones = [...array_map(fn ($i) => sprintf('549351%07d', $i), range(1, $capacity + 2)),
             '5493510000000', '5493510000000', '5493510000000'];
         $extensions = PHP_OS_FAMILY === 'Windows' ? ['-d', 'extension=php_pdo_sqlite.dll', '-d', 'extension=php_intl.dll'] : [];
         foreach ($phones as $phone) {
             $process = new Process([PHP_BINARY, ...$extensions, base_path('tests/Fixtures/edna-pilot-quota-worker.php')], base_path(),
                 ['APP_ENV' => 'testing', 'APP_URL' => 'https://example.test'],
-                json_encode(['database' => $file, 'phone' => $phone, 'gate' => $gate]), 90);
+                json_encode(['database' => $file, 'phone' => $phone, 'gate' => $gate, 'capacity' => $capacity]), 90);
             $process->start();
             $processes[] = $process;
         }
@@ -428,9 +497,9 @@ test('parallel database workers cannot exceed ten distinct admissions or double 
                 expect($result['admission_id'])->toBe($first->id);
             }
         }
-        expect(DB::connection('pilot_race')->table('edna_intake_pilots')->value('admitted'))->toBe(10);
-        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->count())->toBe(10);
-        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->orderBy('slot')->pluck('slot')->all())->toBe(range(1, 10));
+        expect(DB::connection('pilot_race')->table('edna_intake_pilots')->value('admitted'))->toBe($capacity);
+        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->count())->toBe($capacity);
+        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->orderBy('slot')->pluck('slot')->all())->toBe(range(1, $capacity));
         DB::setDefaultConnection('pilot_race');
         $migration->down();
         expect(Schema::hasTable('edna_intake_pilots'))->toBeFalse();
@@ -449,7 +518,7 @@ test('parallel database workers cannot exceed ten distinct admissions or double 
             }
         }
     }
-});
+})->with([10, 20]);
 
 test('audited review rescue keeps the original answer UUID and quota and records a manual lead', function (string $reason) {
     $request = intakeReply(['messageContent' => ['text' => json_encode(['provincia' => 'catamarca',
