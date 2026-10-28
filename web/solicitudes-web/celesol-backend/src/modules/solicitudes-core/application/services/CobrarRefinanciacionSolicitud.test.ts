@@ -12,14 +12,26 @@ import type { SolicitudRefinanciacionPrestamoGuardado } from "../../domain/repos
 import type { CobrarPrestamoInput } from "../../infrastructure/services/CobrarPrestamoGateway";
 import type { RefinanciacionSimulada } from "../use-cases/SimularRefinanciacion.use-case";
 
+// Plan del prestamo 416228 de FapiTest: la 22 vencida, la 23 del mes y las
+// siguientes futuras, con "hoy" = 28/10/2026.
+const CUOTAS_416228 = [
+  { fecha: "2026-09-30", nroCuota: 22 },
+  { fecha: "2026-10-31", nroCuota: 23 },
+  { fecha: "2026-11-30", nroCuota: 24 },
+  { fecha: "2026-12-31", nroCuota: 25 },
+];
+
 describe("CobrarRefinanciacionSolicitud", () => {
-  it("prepares only what was not charged yet and adds what was", async () => {
+  it("prepares only the cuotas not charged yet and adds what was", async () => {
     const simulados: unknown[] = [];
     const servicio = build({
-      guardados: [cobrado("416209", 1194285.46), pendiente("414805", [24, 25])],
+      guardados: [
+        guardado("416209", [22, 23], [cobro("18868290", [22, 23], 1194285.46)]),
+        guardado("416228", [22, 23, 24], [cobro("18868400", [22], 142811.53)]),
+      ],
       simular: async (input) => {
         simulados.push(input);
-        return { prestamos: [ok("414805", 57945.57)], total: 57945.57 };
+        return { prestamos: [ok("416228", 164350.88)], total: 164350.88 };
       },
     });
 
@@ -27,21 +39,20 @@ describe("CobrarRefinanciacionSolicitud", () => {
 
     assert.deepEqual(simulados, [
       {
-        prestamos: [{ nrosCuota: [24, 25], prestamoId: "414805" }],
+        prestamos: [{ nrosCuota: [23, 24], prestamoId: "416228" }],
         solicitudId: "sol-1",
       },
     ]);
-    assert.deepEqual(
-      preparada.pendientes.map((prestamo) => prestamo.prestamoId),
-      ["414805"],
-    );
-    assert.equal(preparada.total, 1252231.03);
+    assert.deepEqual(preparada.pendientes, [
+      { nrosCuota: [23, 24], prestamoId: "416228" },
+    ]);
+    assert.equal(preparada.total, 1501447.87);
   });
 
-  it("does not simulate when there is nothing pending", async () => {
+  it("does not simulate when everything was already charged", async () => {
     let simulo = false;
     const servicio = build({
-      guardados: [],
+      guardados: [guardado("416209", [22], [cobro("1", [22], 100)])],
       simular: async () => {
         simulo = true;
         return { prestamos: [], total: 0 };
@@ -51,12 +62,12 @@ describe("CobrarRefinanciacionSolicitud", () => {
     const preparada = await servicio.preparar("sol-1");
 
     assert.equal(simulo, false);
-    assert.deepEqual(preparada, { pendientes: [], total: 0 });
+    assert.deepEqual(preparada, { pendientes: [], total: 100 });
   });
 
   it("stops before charging when Vimarx would reject a prestamo", async () => {
     const servicio = build({
-      guardados: [pendiente("414805", [25])],
+      guardados: [guardado("414805", [25])],
       simular: async () => ({
         prestamos: [
           {
@@ -79,104 +90,112 @@ describe("CobrarRefinanciacionSolicitud", () => {
     );
   });
 
-  it("charges each pending prestamo for real and records it", async () => {
+  it("charges overdue cuotas apart, with punitorios, and records each cobro", async () => {
     const cobros: CobrarPrestamoInput[] = [];
     const registrados: unknown[] = [];
     const servicio = build({
       cobrar: async (input) => {
         cobros.push(input);
-        return { cobroId: `PG-${input.prestamoId}`, totalPago: 100 };
+        return { cobroId: `PG-${input.nrosCuota.join("-")}`, totalPago: 100 };
       },
-      onMarcarCobrado: (input) => registrados.push(input),
+      onAgregarCobro: (input) => registrados.push(input),
     });
 
     await servicio.cobrar("sol-1", {
-      pendientes: [pendiente("414805", [24, 25]), pendiente("416209", [22])],
+      pendientes: [{ nrosCuota: [22, 23, 24, 25], prestamoId: "416228" }],
       total: 200,
     });
 
     assert.deepEqual(
-      cobros.map((cobro) => [
-        cobro.prestamoId,
-        cobro.simulacion,
-        cobro.motivo,
-        cobro.cobradorId,
+      cobros.map((item) => [
+        item.nrosCuota,
+        item.permitePagoFueraDeOrden,
+        item.simulacion,
+        item.motivo,
+        item.cobradorId,
       ]),
       [
-        ["414805", false, 1, 65],
-        ["416209", false, 1, 65],
+        [[22], false, false, 1, 65],
+        [[23, 24, 25], true, false, 1, 65],
       ],
     );
     assert.deepEqual(registrados, [
-      { cobroId: "PG-414805", prestamoId: "414805", solicitudId: "sol-1", totalCobrado: 100 },
-      { cobroId: "PG-416209", prestamoId: "416209", solicitudId: "sol-1", totalCobrado: 100 },
+      {
+        cobro: { cobroId: "PG-22", nrosCuota: [22], totalCobrado: 100 },
+        prestamoId: "416228",
+        solicitudId: "sol-1",
+      },
+      {
+        cobro: { cobroId: "PG-23-24-25", nrosCuota: [23, 24, 25], totalCobrado: 100 },
+        prestamoId: "416228",
+        solicitudId: "sol-1",
+      },
     ]);
   });
 
-  it("keeps what was charged and reports the one that failed", async () => {
-    const registrados: string[] = [];
+  it("keeps what was charged and reports the cobro that failed", async () => {
+    const registrados: number[][] = [];
     const servicio = build({
       cobrar: async (input) => {
-        if (input.prestamoId === "416209") {
+        if (input.permitePagoFueraDeOrden) {
           throw new PrestamoLegacyRechazadoError("No se pudo cobrar.");
         }
 
         return { cobroId: "PG-1", totalPago: 100 };
       },
-      onMarcarCobrado: (input) => registrados.push(input.prestamoId),
+      onAgregarCobro: (input) => registrados.push(input.cobro.nrosCuota),
     });
 
     await assert.rejects(
       () =>
         servicio.cobrar("sol-1", {
-          pendientes: [pendiente("414805", [24]), pendiente("416209", [22])],
+          pendientes: [{ nrosCuota: [22, 23], prestamoId: "416228" }],
           total: 200,
         }),
       (error: unknown) =>
         error instanceof SolicitudRefinanciacionCobroIncompletoError &&
-        error.message.startsWith("Se cobraron 1 de 2 préstamos") &&
-        error.message.includes("Vimarx rechazó el préstamo 416209"),
+        error.message.startsWith("Se hicieron 1 de 2 cobros") &&
+        error.message.includes("Vimarx rechazó las cuotas 23 del préstamo 416228"),
     );
-    assert.deepEqual(registrados, ["414805"]);
+    assert.deepEqual(registrados, [[22]]);
   });
 
   it("asks to check Vimarx when the answer of a cobro is lost", async () => {
     // Sin respuesta no se sabe si Vimarx lo registro: no se marca cobrado.
+    let registro = false;
     const servicio = build({
       cobrar: async () => {
         throw new PrestamoLegacyUnavailableError();
+      },
+      onAgregarCobro: () => {
+        registro = true;
       },
     });
 
     await assert.rejects(
       () =>
         servicio.cobrar("sol-1", {
-          pendientes: [pendiente("414805", [24])],
+          pendientes: [{ nrosCuota: [24], prestamoId: "416228" }],
           total: 100,
         }),
       (error: unknown) =>
         error instanceof SolicitudRefinanciacionCobroIncompletoError &&
-        error.message.includes("revisá en Vimarx si sus cuotas quedaron cobradas"),
+        error.message.includes("revisá en Vimarx si quedaron cobradas"),
     );
+    assert.equal(registro, false);
   });
 });
 
-function pendiente(
-  prestamoId: string,
-  nrosCuota: number[],
-): SolicitudRefinanciacionPrestamoGuardado {
-  return { cobro: null, nrosCuota, prestamoId };
+function cobro(cobroId: string, nrosCuota: number[], totalCobrado: number) {
+  return { cobradoAt: new Date(0), cobroId, nrosCuota, totalCobrado };
 }
 
-function cobrado(
+function guardado(
   prestamoId: string,
-  totalCobrado: number,
+  nrosCuota: number[],
+  cobros: ReturnType<typeof cobro>[] = [],
 ): SolicitudRefinanciacionPrestamoGuardado {
-  return {
-    cobro: { cobradoAt: new Date(0), cobroId: "18868290", totalCobrado },
-    nrosCuota: [22, 23],
-    prestamoId,
-  };
+  return { cobros, nrosCuota, prestamoId };
 }
 
 function ok(prestamoId: string, totalPago: number) {
@@ -196,11 +215,10 @@ function build(
       input: CobrarPrestamoInput,
     ) => Promise<{ cobroId: string; totalPago: number }>;
     guardados?: SolicitudRefinanciacionPrestamoGuardado[];
-    onMarcarCobrado?: (input: {
-      cobroId: string;
+    onAgregarCobro?: (input: {
+      cobro: { cobroId: string; nrosCuota: number[]; totalCobrado: number };
       prestamoId: string;
       solicitudId: string;
-      totalCobrado: number;
     }) => void;
     simular?: (input: unknown) => Promise<RefinanciacionSimulada>;
   } = {},
@@ -208,28 +226,32 @@ function build(
   return new CobrarRefinanciacionSolicitud({
     cobrarPrestamoGateway: {
       cobrar: (async (input: CobrarPrestamoInput) => {
-        const cobro = await (overrides.cobrar ??
+        const resultado = await (overrides.cobrar ??
           (async () => ({ cobroId: "PG-1", totalPago: 0 })))(input);
 
         return {
           capital: 0,
-          cobroId: cobro.cobroId,
+          cobroId: resultado.cobroId,
           cuotas: [],
           interes: 0,
           otros: 0,
           punitorios: 0,
-          totalPago: cobro.totalPago,
+          totalPago: resultado.totalPago,
         };
       }) as never,
     },
+    hoy: () => "2026-10-28",
+    legacyGateway: {
+      listCuotasDelPrestamo: (async () => CUOTAS_416228) as never,
+    },
     refinanciacionRepository: {
+      agregarCobro: async (input) => {
+        overrides.onAgregarCobro?.(input);
+      },
       findBySolicitudId: async () => ({
         prestamos: overrides.guardados ?? [],
         updatedAt: null,
       }),
-      marcarCobrado: async (input) => {
-        overrides.onMarcarCobrado?.(input);
-      },
     },
     simularRefinanciacion: {
       execute: (overrides.simular ??

@@ -22,6 +22,12 @@ export type CobrarPrestamoInput = {
   /** Enum MotivoAjuste de Vimarx: 0 Normal, 1 Refinanciacion, 2 Cancelacion anticipada. */
   motivo: number;
   nrosCuota: number[];
+  /**
+   * "Permite pago fuera de orden" de la pantalla de cobro. Ojo: con esta
+   * opcion Vimarx no cobra punitorios (verificado 28/10/2026): las vencidas
+   * se cobran sin ella.
+   */
+  permitePagoFueraDeOrden?: boolean;
   /** ID del prestamo en Vimarx (no el NroCuenta). */
   prestamoId: string;
   simulacion: boolean;
@@ -63,8 +69,8 @@ const COBRAR_PRESTAMO_PATH = "/api/Prestamo/cobrar";
  *
  * Verificado en FapiTest el 27/10/2026 (version 26.1.1008.8). El cobrador va
  * en "cobradorId": con "idCobrador", el nombre de PagoDeuda, lo ignora y usa
- * CAJA sin avisar. Exige el orden de las cuotas (empezar por la impaga mas
- * vieja) y no se encontro como saltearlo.
+ * CAJA sin avisar. Sin permitePagoFueraDeOrden exige el orden: las vencidas
+ * desde la mas vieja y las futuras desde la ultima hacia atras.
  */
 export class CobrarPrestamoGateway {
   private readonly baseUrl: string;
@@ -93,6 +99,9 @@ export class CobrarPrestamoGateway {
             motivo: input.motivo,
             nrosCuota: input.nrosCuota,
             pagoTotal: true,
+            ...(input.permitePagoFueraDeOrden
+              ? { permitePagoFueraDeOrden: true }
+              : {}),
             simulacion: input.simulacion,
           }),
           headers: {

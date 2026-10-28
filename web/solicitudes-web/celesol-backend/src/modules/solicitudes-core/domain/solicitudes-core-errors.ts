@@ -444,7 +444,7 @@ export class SolicitudRefinanciacionYaCobradaError extends SolicitudesError {
 export class SolicitudRefinanciacionCobroIncompletoError extends SolicitudesError {
   constructor(input: { cobrados: number; motivo: string; total: number }) {
     super(
-      `Se cobraron ${input.cobrados} de ${input.total} préstamos de la refinanciación y el préstamo nuevo no se generó. ${input.motivo} Al reintentar no se vuelve a cobrar lo ya cobrado.`,
+      `Se hicieron ${input.cobrados} de ${input.total} cobros de la refinanciación y el préstamo nuevo no se generó. ${input.motivo} Al reintentar no se vuelve a cobrar lo ya cobrado.`,
       502,
     );
     this.name = "SolicitudRefinanciacionCobroIncompletoError";

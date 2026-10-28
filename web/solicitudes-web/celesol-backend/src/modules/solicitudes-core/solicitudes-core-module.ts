@@ -312,6 +312,7 @@ export function createSolicitudesCoreRouter(
     });
   const cobrarRefinanciacionSolicitud = new CobrarRefinanciacionSolicitud({
     cobrarPrestamoGateway,
+    legacyGateway: solicitudesLegacyGateway,
     refinanciacionRepository: solicitudRefinanciacionRepository,
     simularRefinanciacion: simularRefinanciacionUseCase,
   });
