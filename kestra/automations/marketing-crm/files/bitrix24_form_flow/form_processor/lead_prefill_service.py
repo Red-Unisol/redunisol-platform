@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
 
-from edna_incoming.test_reference import test_title
+from ..lead_test_markers import test_title
 
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
