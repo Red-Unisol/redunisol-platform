@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
 
+from edna_incoming.test_reference import test_title
+
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import AppConfig, load_config
@@ -460,7 +462,7 @@ def _apply_arca_output(
 
     lead_fields: dict[str, Any] = {}
     if full_name:
-        lead_fields["TITLE"] = full_name
+        lead_fields["TITLE"] = test_title(lead, full_name)
         lead_fields["NAME"] = full_name
         lead_fields["LAST_NAME"] = ""
     if birthdate and config.fields.lead_birthdate:
@@ -496,7 +498,7 @@ def _apply_bcra_name_fallback(
     update_lead_fields(
         client,
         int(str(lead["ID"])),
-        {"TITLE": resolved_name, "NAME": resolved_name, "LAST_NAME": ""},
+        {"TITLE": test_title(lead, resolved_name), "NAME": resolved_name, "LAST_NAME": ""},
     )
     return True
 

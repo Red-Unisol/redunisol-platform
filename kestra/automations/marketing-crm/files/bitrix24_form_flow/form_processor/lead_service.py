@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from edna_incoming.test_reference import test_title
+
 from .attribution import lead_fields as attribution_lead_fields, source_from_lead
 from .bcra_client import BcraConsultationResult
 from .bitrix_client import BitrixClient
@@ -311,7 +313,7 @@ def prequalification_title_from_lead(
             return full_name or None
 
     if full_name:
-        return f"{full_name} - {submission.province.label}"
+        return test_title(lead, f"{full_name} - {submission.province.label}")
     return None
 
 

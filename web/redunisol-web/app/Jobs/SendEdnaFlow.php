@@ -63,7 +63,7 @@ class SendEdnaFlow implements ShouldQueue
             $api = new EdnaApi;
             $phone = Crypt::decryptString($send->recipient);
             $allowed = config('edna.router_recipients', []);
-            if ($allowed && ! in_array($phone, $allowed, true)) {
+            if (! ($send->intake_test ?? false) && $allowed && ! in_array($phone, $allowed, true)) {
                 $this->closePending('cancelled', 'outside_pilot');
 
                 return;
@@ -73,9 +73,11 @@ class SendEdnaFlow implements ShouldQueue
                 'cascadeId' => $send->cascade_id, 'subscriberFilter' => ['address' => $phone, 'type' => 'PHONE'],
                 'content' => ['whatsappContent' => ['contentType' => 'FLOW', 'flowId' => (int) $send->flow_id,
                     'action' => 'navigate', 'caption' => 'Completar datos',
-                    'text' => $intake
+                    'text' => ($send->intake_test ?? false)
+                        ? 'PRUEBA COMPLETA: esta solicitud se registra en Bitrix y ejecuta la evaluación real. Completá tu CUIL; el email es opcional.'
+                        : ($intake
                         ? 'Completá tu solicitud acá en WhatsApp. Necesitamos tu CUIL; el email es opcional.'
-                        : 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.']],
+                        : 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.')]],
             ];
             // Commit the claim before any external side effect. One worker alone can win it.
             $claimed = DB::table('edna_flow_sends')->where('id', $send->id)->where('state', 'pending')->update([

@@ -13,6 +13,30 @@ class EdnaIntake
 {
     public const CONTRACT = 'website-intake-v1';
 
+    public const TEST_REFERENCE = 'PRUEBAFORM';
+
+    public const TEST_CONTRACT = 'website-intake-e2e-v1';
+
+    public function isTestEntry(string $text): bool
+    {
+        preg_match_all('/\(ref:\s*([^)]*)\)/i', $text, $matches);
+
+        return count($matches[1]) === 1 && strtoupper(trim($matches[1][0])) === self::TEST_REFERENCE;
+    }
+
+    public function testJourney(string $phone, string $subject): ?string
+    {
+        if (! config('attribution.enabled')) {
+            return null;
+        }
+        $journeys = new AttributionJourney;
+        $touch = ['utm_source' => 'test', 'utm_medium' => 'whatsapp', 'utm_campaign' => 'whatsapp_intake_e2e'];
+        $journey = $journeys->create(['version' => 1, 'first' => $touch, 'last' => $touch,
+            'test_reference' => self::TEST_REFERENCE]);
+
+        return $journeys->bind('(ref: '.$journey->id.')', $phone, $subject);
+    }
+
     public function flowId(): ?string
     {
         $id = (string) config('edna.intake_flow_id');
@@ -56,8 +80,17 @@ class EdnaIntake
 
     public function canSend(object $send): bool
     {
-        return config('edna.enabled') && config('edna.intake_enabled')
-            && (new EdnaIntakePilot)->contains($send) && $this->attribution($send) !== null;
+        if (! config('edna.enabled') || ! config('edna.intake_enabled')) {
+            return false;
+        }
+        $attribution = $this->attribution($send);
+        $test = (bool) ($send->intake_test ?? false);
+        $context = $test
+            ? ! $send->intake_admission_id && $send->flow_id === $this->flowId()
+                && ($attribution['test_reference'] ?? null) === self::TEST_REFERENCE
+            : (new EdnaIntakePilot)->contains($send) && ! isset($attribution['test_reference']);
+
+        return $context && $attribution !== null;
     }
 
     // Runs under the authenticated inbox transaction. The send ledger proves Flow identity.
