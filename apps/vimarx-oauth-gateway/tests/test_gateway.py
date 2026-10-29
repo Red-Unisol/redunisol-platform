@@ -304,7 +304,10 @@ def test_consent_cancel_preserves_state_and_issuer(bridge):
     assert query["state"] == ["cancel-state"]
 
 
-def test_login_rate_limit_and_spoofed_host(bridge):
+def test_login_rate_limit_and_spoofed_host(bridge, monkeypatch):
+    # Keep all attempts in one bucket even when the suite crosses a real minute.
+    now = time.time()
+    monkeypatch.setattr("gateway.app.time.time", lambda: now)
     _, client, _ = bridge
     for _ in range(8):
         reg = register(client)
