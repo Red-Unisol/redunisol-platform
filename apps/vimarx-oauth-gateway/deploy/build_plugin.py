@@ -5,13 +5,13 @@ import json
 from pathlib import Path
 import re
 import zipfile
-import xml.etree.ElementTree as ET
+import struct
 
 import yaml
 
 PACKAGE = Path(__file__).resolve().parents[1] / "plugin/vimarx-celesol"
 FILES = (
-    "README.md", "assets/icon.svg", "mcp.json", "plugin.json",
+    "README.md", "assets/icon.png", "mcp.json", "plugin.json",
     "skills/consultar-vimarx/SKILL.md", "skills/consultar-vimarx/agents/openai.yaml",
 )
 
@@ -36,17 +36,19 @@ def validate(folder):
     for field in ("logo", "composerIcon"):
         path = (folder / interface[field]).resolve()
         assert path.is_relative_to(folder) and path.is_file()
-    icon = ET.parse(folder / "assets/icon.svg").getroot()
-    assert int(icon.attrib["width"]) >= 48 and int(icon.attrib["height"]) >= 48
-    assert all(element.tag.split("}")[-1] not in {"script", "foreignObject"} for element in icon.iter())
+    icon = (folder / "assets/icon.png").read_bytes()
+    assert 24 <= len(icon) <= 5 * 1024 * 1024
+    assert icon[:8] == b"\x89PNG\r\n\x1a\n" and icon[12:16] == b"IHDR"
+    width, height = struct.unpack(">II", icon[16:24])
+    assert 48 <= width == height <= 4096
     mcp = json.loads((folder / "mcp.json").read_text(encoding="utf-8"))
     assert mcp["$schema"] == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
     server = mcp["mcpServers"]["vimarx-celesol"]
     assert server["type"] == "streamable-http"
     assert server["url"] == "https://mcp.redunisol.com.ar/mcp"
-    assert server["extensions"]["com.openai"]["auth"] == {
-        "type": "oauth", "client": {"mode": "dcr"}, "baseScopes": ["mcp:read"]}
-    assert set(server) == {"type", "url", "extensions"}
+    # The installed desktop parser accepts transport fields only. OAuth is
+    # discovered from the HTTPS challenge and protected-resource metadata.
+    assert set(server) == {"type", "url"}, "Unsupported desktop MCP options"
     for relative in ("plugin.json", "mcp.json"):
         content = (folder / relative).read_text(encoding="utf-8")
         assert "asdk_app_" not in content and "clientSecret" not in content
@@ -70,7 +72,10 @@ def build(output, folder=PACKAGE):
             entry = zipfile.ZipInfo(folder.name + "/" + relative, date_time=(2026, 1, 1, 0, 0, 0))
             entry.external_attr = 0o100644 << 16
             entry.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(entry, (folder / relative).read_text(encoding="utf-8").replace("\r\n", "\n").encode("utf-8"))
+            data = (folder / relative).read_bytes()
+            if not relative.endswith(".png"):
+                data = data.decode("utf-8").replace("\r\n", "\n").encode("utf-8")
+            archive.writestr(entry, data)
     with zipfile.ZipFile(output) as archive:
         assert archive.testzip() is None
         assert len(archive.namelist()) == len(FILES)

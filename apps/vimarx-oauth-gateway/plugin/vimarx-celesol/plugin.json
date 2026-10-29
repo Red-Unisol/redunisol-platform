@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "vimarx-celesol",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Consultas de Mutual Celesol en Vimarx con los permisos de cada usuario.",
   "author": {
     "name": "Red Unisol"
@@ -17,15 +17,15 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "Vimarx · Celesol",
+        "displayName": "Celesol · Vimarx",
         "shortDescription": "Consultas de Mutual Celesol",
         "longDescription": "Consultá solicitudes, socios, préstamos y cuentas de Mutual Celesol con tu usuario de Vimarx. Conexión OAuth individual y acceso de solo lectura.",
         "developerName": "Red Unisol",
         "category": "Finance",
         "capabilities": [],
-        "brandColor": "#146C50",
-        "logo": "./assets/icon.svg",
-        "composerIcon": "./assets/icon.svg",
+        "brandColor": "#19243F",
+        "logo": "./assets/icon.png",
+        "composerIcon": "./assets/icon.png",
         "defaultPrompt": [
           "Mostrame las últimas 3 solicitudes.",
           "Buscá un socio por nombre o documento.",
