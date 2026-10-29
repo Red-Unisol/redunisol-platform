@@ -1,3 +1,7 @@
 :root{font-family:system-ui,-apple-system,sans-serif;color:#18312e;background:#edf4f1;font-size:16px}
 *{box-sizing:border-box}body{margin:0;padding:48px 20px}main{max-width:520px;margin:0 auto;background:white;border:1px solid #d6e5df;border-radius:20px;padding:36px;box-shadow:0 12px 32px #16372c0a}
 .brand{font-size:12px;font-weight:800;letter-spacing:.18em;color:#207e61}h1{font-size:30px;line-height:1.15;margin:16px 0 24px}p{line-height:1.6}label{display:block;font-weight:650;margin:22px 0 8px}input{font:inherit;width:100%;padding:12px;border:1px solid #8fa79d;border-radius:8px}button{font:inherit;font-weight:650;width:100%;margin-top:24px;border:0;border-radius:8px;padding:14px;background:#146c50;color:white;cursor:pointer}.secondary{background:#edf4f1;color:#214739;margin-top:10px}.note{font-size:13px;color:#596d66;margin-top:26px}.error{background:#fff0ec;border-left:3px solid #b64423;padding:12px;color:#852b14}code{overflow-wrap:anywhere;font-size:13px}input:focus,button:focus{outline:3px solid #6bc4a6;outline-offset:3px}@media(max-width:500px){body{padding:20px 12px}main{padding:24px}}
+
+.checkbox{display:flex;gap:10px;align-items:center;font-weight:600}.checkbox input{width:20px;height:20px;flex-shrink:0}.hint{font-size:13px;color:#596d66;margin:8px 0}a{color:#146c50}
+
+button[aria-disabled="true"]{pointer-events:none;opacity:.65;cursor:wait}

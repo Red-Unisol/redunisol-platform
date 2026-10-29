@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew only the dedicated Vimarx MCP certificate
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+ExecStart=/usr/bin/env certbot renew --cert-name mcp.redunisol.com.ar --quiet --deploy-hook "/opt/apache/bin/apachectl graceful"

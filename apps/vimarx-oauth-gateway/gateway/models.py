@@ -45,9 +45,36 @@ class Code(db.Model, OAuth2AuthorizationCodeMixin):
 
 
 class Token(db.Model, OAuth2TokenMixin):
+    def is_revoked(self):
+        # Rotating a refresh token must not interrupt in-flight access tokens.
+        return self.access_token_revoked_at
+
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(64), nullable=False)
     resource = db.Column(db.Text, nullable=False)
+
+
+class PersistentSession(db.Model):
+    """Opt-in credential custody. No change to the legacy session schema."""
+    user_id = db.Column(db.String(64), primary_key=True)
+    account_key = db.Column(db.String(64), nullable=False, index=True)
+    credentials = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.Integer, nullable=False)
+    linked_at = db.Column(db.Integer, nullable=False, default=0)
+    last_used_at = db.Column(db.Integer, nullable=False)
+    revoked_at = db.Column(db.Integer, nullable=False, default=0)
+    lease_id = db.Column(db.String(64), nullable=False, default="")
+    lease_until = db.Column(db.Integer, nullable=False, default=0)
+    retry_after = db.Column(db.Integer, nullable=False, default=0)
+
+
+class RefreshResponse(db.Model):
+    """Short encrypted retry cache; refresh token hashes stay in Token."""
+    token_hash = db.Column(db.String(64), primary_key=True)
+    user_id = db.Column(db.String(64), nullable=False, index=True)
+    client_id = db.Column(db.String(48), nullable=False)
+    ciphertext = db.Column(db.Text, nullable=False)
+    expires_at = db.Column(db.Integer, nullable=False)
 
 
 class RateBucket(db.Model):
