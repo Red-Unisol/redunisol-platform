@@ -549,13 +549,14 @@ def _required_lead_value(lead: dict[str, Any], field_name: str) -> Any:
 
 def _optional_lead_value(lead: dict[str, Any], field_name: str) -> Any | None:
     value = lead.get(field_name)
-    if value is None:
-        return None
-
     if isinstance(value, list):
         if not value:
             return None
-        return value[0]
+        value = value[0]
+
+    # Bitrix also represents unset fields as JSON false, including list values.
+    if value is None or value is False:
+        return None
 
     if str(value).strip() == "":
         return None

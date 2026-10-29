@@ -1860,7 +1860,7 @@ class BusinessLogicTests(unittest.TestCase):
             "UF_CRM_LEAD_1711458190312": ["459"],
         }
         for field in required:
-            for empty in (None, "", "  ", []):
+            for empty in (None, "", "  ", [], False, [False], [None], [""], ["  "]):
                 with self.subTest(field=field, empty=empty):
                     client = FakeBitrixClient()
                     client.leads[303] = {
@@ -1894,6 +1894,33 @@ class BusinessLogicTests(unittest.TestCase):
                     self.assertTrue(result["ok"])
                     self.assertEqual(result["action"], "qualified")
                     self.assertEqual(client.leads[303]["STATUS_ID"], "QUALIFIED")
+
+    def test_lead_update_keeps_invalid_catalog_values_as_errors(self) -> None:
+        required = {
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1714071903": "1269",
+            "UF_CRM_LEAD_1711458190312": ["459"],
+        }
+        for field in required:
+            for invalid in (0, True, "False", "unsupported"):
+                with self.subTest(field=field, invalid=invalid):
+                    client = FakeBitrixClient()
+                    client.leads[303] = {
+                        "ID": "303", "STATUS_ID": "NEW", "ASSIGNED_BY_ID": "57",
+                        "DATE_CREATE": "2026-09-23T10:00:00-03:00",
+                        **required, field: invalid,
+                    }
+                    original = dict(client.leads[303])
+                    result = process_lead_update_event(
+                        self.make_lead_update_event(303), env=self.env, bitrix_client=client,
+                        expected_application_token="app-token", logger=SilentLogger(),
+                    )
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["action"], "error")
+                    self.assertNotEqual(result["reason"], "missing_required_field")
+                    self.assertEqual(client.leads[303], original)
+                    self.assertEqual(client.deals, {})
+                    self.assertNotIn("crm.lead.update", [method for method, _ in client.calls])
 
     def test_lead_update_does_not_treat_other_exceptions_as_missing_data(self) -> None:
         for error in (
