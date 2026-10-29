@@ -63,6 +63,8 @@ El deployer ahora instala las dependencias de intake primero y verifica cada
 archivo por SHA-256 antes de actualizar los flows. Un acuse HTTP 500 o de red se
 concilia por lectura antes de repetir el envío idempotente del mismo archivo;
 los reintentos son acotados. Un archivo no verificado detiene el despliegue.
+La relectura usa `Accept: application/octet-stream`: el endpoint de archivos
+devuelve 406 si hereda el `Accept: application/json` de las consultas de metadatos.
 Esto no vuelve atómica la actualización de un namespace compartido: el contrato
 vacío y la verificación completa siguen siendo necesarios antes de admitir casos.
 
