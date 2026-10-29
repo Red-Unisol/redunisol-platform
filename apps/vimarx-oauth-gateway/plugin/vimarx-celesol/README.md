@@ -1,11 +1,11 @@
-# Vimarx · Celesol
+# Celesol · Vimarx
 
 Paquete privado para distribuir la conexión al MCP de Mutual Celesol.
 
 ## Instalar en ChatGPT
 
 1. Abrir Complementos y seleccionar **Agregar → Cargar archivo del complemento**.
-2. Elegir el ZIP e instalar Vimarx · Celesol.
+2. Elegir el ZIP e instalar Celesol · Vimarx.
 3. Conectar la cuenta con el usuario habitual de Vimarx.
 4. Marcar Mantener conectado para autorizar que Red Unisol conserve las
    credenciales cifradas y renueve el acceso automáticamente.
@@ -15,8 +15,10 @@ El servidor está en `https://mcp.redunisol.com.ar/mcp`. OAuth usa registro
  dinámico DCR y el scope `mcp:read`; no hay que copiar tokens ni configurar una VPS.
 Cada persona necesita acceso propio a Vimarx. El ZIP no otorga permisos sobre datos.
 No contiene contraseñas, tokens, IDs privados de la cuenta del autor ni código del
-servidor. La configuración está orientada al flujo OAuth de ChatGPT; no declara
-compatibilidad probada con clientes OAuth locales de otros productos.
+servidor. La conexión usa discovery OAuth del servidor, sin opciones de
+autenticación embebidas que versiones anteriores de escritorio rechazan.
+Se admiten callbacks web de ChatGPT y callbacks loopback del cliente de escritorio;
+no se declara compatibilidad probada con otros productos.
 
 ## Compartir
 
@@ -36,3 +38,13 @@ Cambios de contraseña o revocaciones pueden requerir volver a conectar.
 
 El paquete describe una conexión ya desplegada; importar el archivo no autentica
 la cuenta ni sustituye la comprobación real de OAuth y consultas.
+
+## Actualización 2.0.1 y marca
+
+El nombre interno `vimarx-celesol` se conserva para actualizar la instalación
+existente. El nombre visible pasa a **Celesol · Vimarx**. Después de importar el
+ZIP actualizado, completar la conexión OAuth desde el plugin y abrir una
+conversación nueva. El servidor debe aparecer entre los MCP disponibles.
+
+Ícono oficial de Red Unisol, reutilizado sin modificaciones desde
+https://www.redunisol.com.ar/apple-touch-icon.png (29/10/2026).

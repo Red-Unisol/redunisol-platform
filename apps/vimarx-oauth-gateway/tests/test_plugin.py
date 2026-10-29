@@ -40,3 +40,37 @@ def test_packaging_refuses_archive_inside_source():
     module = builder()
     with pytest.raises(ValueError):
         module.build(module.PACKAGE / "nested.zip")
+
+
+
+def test_zip_preserves_official_binary_logo_and_updated_presentation(tmp_path):
+    import hashlib
+    import json
+
+    module = builder()
+    module.build(tmp_path / "plugin.zip")
+    with zipfile.ZipFile(tmp_path / "plugin.zip") as archive:
+        logo = archive.read("vimarx-celesol/assets/icon.png")
+        assert logo == (module.PACKAGE / "assets/icon.png").read_bytes()
+        assert hashlib.sha256(logo).hexdigest() == "cbfd5e0ccd30bacf043d2f31f5260a5e500de20679630b720301262eb657c4df"
+        manifest = json.loads(archive.read("vimarx-celesol/plugin.json"))
+        assert manifest["name"] == "vimarx-celesol"
+        assert manifest["version"] == "2.0.1"
+        interface = manifest["extensions"]["com.openai"]["interface"]
+        assert interface["displayName"] == "Celesol · Vimarx"
+        assert interface["logo"] == interface["composerIcon"] == "./assets/icon.png"
+
+
+def test_packaging_rejects_options_that_break_installed_desktop_parser(tmp_path):
+    import json
+
+    module = builder()
+    copied = tmp_path / "vimarx-celesol"
+    shutil.copytree(module.PACKAGE, copied)
+    path = copied / "mcp.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["mcpServers"]["vimarx-celesol"]["extensions"] = {
+        "com.openai": {"auth": {"type": "oauth"}}}
+    path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(AssertionError, match="Unsupported desktop MCP options"):
+        module.build(tmp_path / "incompatible.zip", copied)

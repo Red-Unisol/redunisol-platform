@@ -345,8 +345,20 @@ def create_app(config=None, upstream=None):
             return True
         try:
             p = urlsplit(uri)
+            port = p.port
         except ValueError:
             return False
+        if (p.query or p.fragment or p.username is not None or p.password is not None
+                or any(ord(char) <= 32 or ord(char) == 127 for char in uri)):
+            return False
+        # Native desktop OAuth listeners choose an ephemeral loopback port.
+        # Accept only literal loopback/localhost and Codex's callback paths;
+        # Authlib still binds authorization and token exchange to the exact URI
+        # registered by that client, in addition to mandatory PKCE S256.
+        if (p.scheme == "http" and p.hostname in {"127.0.0.1", "localhost", "::1"}
+                and (port is None or port > 0) and not p.netloc.endswith(":")
+                and re.fullmatch(r"/callback(?:/[A-Za-z0-9_-]{1,128})?", p.path)):
+            return True
         return (p.scheme == "https" and p.netloc == "chatgpt.com"
                 and not p.query and not p.fragment and (
                     p.path == "/connector_platform_oauth_redirect"
@@ -380,7 +392,7 @@ def create_app(config=None, upstream=None):
         secret = secrets.token_urlsafe(32) if method != "none" else ""
         client = Client(client_id=secrets.token_urlsafe(24), client_id_issued_at=int(time.time()),
                         client_secret=generate_password_hash(secret) if secret else "")
-        metadata = dict(client_name="ChatGPT · Vimarx Celesol", redirect_uris=uris,
+        metadata = dict(client_name="Celesol · Vimarx", redirect_uris=uris,
                         token_endpoint_auth_method=method, grant_types=["authorization_code", "refresh_token"],
                         response_types=["code"], scope=SCOPE)
         client.set_client_metadata(metadata)

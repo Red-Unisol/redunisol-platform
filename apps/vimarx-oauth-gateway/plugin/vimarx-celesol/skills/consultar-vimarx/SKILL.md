@@ -5,7 +5,7 @@ description: "Usar para consultar solicitudes, socios, préstamos, cuotas y cuen
 
 # Consultar Mutual Celesol
 
-Usar el servidor Vimarx · Celesol conectado. Es un entorno de datos reales:
+Usar el servidor Celesol · Vimarx conectado. Es un entorno de datos reales:
 resolver las consultas con herramientas y no inventar registros ni resultados.
 Este plugin permite lectura; no crear, modificar, cobrar, aprobar ni borrar datos.
 

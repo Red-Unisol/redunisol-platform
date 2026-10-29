@@ -435,3 +435,64 @@ def test_invalid_consent_does_not_expand_form_action(bridge, redirect_uri):
     policy = result.headers["Content-Security-Policy"]
     assert "form-action 'self';" in policy
     assert redirect_uri not in policy
+
+
+
+@pytest.mark.parametrize("redirect_uri", [
+    "http://127.0.0.1:49321/callback", "http://127.0.0.1:65535/callback/server-id_123",
+    "http://localhost:49152/callback", "http://[::1]:49321/callback",
+    "http://127.0.0.1/callback", "http://localhost/callback/server-id_123",
+])
+def test_desktop_loopback_login_refresh_and_tool_call(bridge, redirect_uri):
+    _, client, upstream = bridge
+    registration = register(client, redirects=[redirect_uri])
+    response = consent(client, registration, remember=True, redirect_uri=redirect_uri)
+    assert response.status_code == 302
+    assert response.location.split("?")[0] == redirect_uri
+    policy = response.headers["Content-Security-Policy"]
+    assert "form-action 'self' " + redirect_uri + ";" in policy
+    query = parse_qs(urlsplit(response.location).query)
+    assert query["iss"] == [ISSUER]
+    assert query["state"] == ["opaque-client-state"]
+    result = exchange(client, registration, query["code"][0], redirect_uri=redirect_uri)
+    assert result.status_code == 200
+    replacement = send(client, "POST", "/vimarx-oauth/token", data=dict(
+        grant_type="refresh_token", client_id=registration["client_id"],
+        refresh_token=result.json["refresh_token"], resource=RESOURCE))
+    assert replacement.status_code == 200
+    assert rpc(client, replacement.json["access_token"]).status_code == 200
+    assert upstream.calls[-1][0] == "upstream-jwt-for-test-user"
+
+
+@pytest.mark.parametrize("redirect_uri", [
+    "http://127.0.0.1.evil.example:49152/callback", "http://localhost.evil.example/callback",
+    "http://192.168.1.5:49152/callback", "http://0.0.0.0:49152/callback",
+    "http://127.1:49152/callback", "http://2130706433:49152/callback",
+    "http://user@127.0.0.1:49152/callback", "http://localhost:49152/callback?next=evil",
+    "http://localhost:49152/callback#fragment", "http://localhost:0/callback",
+    "http://localhost:65536/callback", "http://localhost:/callback",
+    "http://localhost:49152/another-path", "http://localhost:49152/callback/../evil",
+    "http://localhost:49152/callback/%2Fevil", "http://local\nhost:49152/callback",
+    "http://[::]:49152/callback", "http://[::1%25eth0]:49152/callback",
+])
+def test_desktop_registration_rejects_non_loopback_and_malformed_callbacks(bridge, redirect_uri):
+    _, client, _ = bridge
+    response = send(client, "POST", "/vimarx-oauth/register", json=dict(redirect_uris=[redirect_uri]))
+    assert response.status_code == 400
+    assert response.json["error"] == "invalid_redirect_uri"
+
+
+def test_desktop_authorization_and_exchange_are_bound_to_registered_port(bridge):
+    _, client, _ = bridge
+    registered = "http://127.0.0.1:49321/callback"
+    other = "http://127.0.0.1:49322/callback"
+    registration = register(client, redirects=[registered])
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest()).rstrip(b"=").decode()
+    path = "/vimarx-oauth/authorize?" + urlencode(dict(
+        client_id=registration["client_id"], redirect_uri=other, response_type="code",
+        scope="mcp:read", resource=RESOURCE, code_challenge=challenge, code_challenge_method="S256"))
+    assert send(client, "GET", path).status_code == 400
+    response = consent(client, registration, redirect_uri=registered)
+    code = parse_qs(urlsplit(response.location).query)["code"][0]
+    assert exchange(client, registration, code, redirect_uri=other).status_code == 400
+    assert exchange(client, registration, code, redirect_uri=registered).status_code == 200

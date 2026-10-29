@@ -40,7 +40,11 @@ intento de login. Un cambio de credenciales puede requerir conectar otra vez.
 
 Authlib implementa Authorization Code, PKCE S256 obligatorio, DCR y refresh. El
 cliente, callback, scope `mcp:read` y resource quedan ligados a cada transacción.
-Los callbacks permitidos son únicamente las rutas HTTPS conocidas de ChatGPT.
+Los callbacks permitidos son las rutas HTTPS conocidas de ChatGPT y las rutas
+`/callback` o `/callback/<id>` sobre HTTP loopback (`127.0.0.1`, `localhost` o
+`[::1]`) para escritorio. Se admiten puertos efímeros, sin userinfo, query ni
+fragmento. Cada autorización e intercambio de código exige la URI exacta
+registrada para ese cliente y PKCE S256.
 Discovery RFC8414/RFC9728 y respuesta `iss` RFC9207 usan el issuer dedicado.
 
 Los access/refresh tokens se almacenan como SHA-256. El JWT y las credenciales
@@ -152,12 +156,13 @@ Fuentes del contrato:
 
 ## Paquete privado distribuible
 
-Fuente del paquete: `plugin/vimarx-celesol/`. Usa Agent Plugins 1.0, OAuth DCR y
+Nombre visible: **Celesol · Vimarx**. Fuente del paquete: `plugin/vimarx-celesol/`.
+Usa Agent Plugins 1.0, discovery OAuth DCR y
 el endpoint verificado del servicio. No incluye credenciales, App IDs personales,
 código del servidor ni tokens. Cada destinatario autentica su propia cuenta.
 
 ```sh
-python deploy/build_plugin.py --output /ruta/de/salida/vimarx-celesol-2.0.0.zip
+python deploy/build_plugin.py --output /ruta/de/salida/celesol-vimarx-2.0.1.zip
 ```
 
 El builder valida JSON/YAML, componentes y assets, crea un ZIP reproducible con
@@ -166,3 +171,10 @@ una sola carpeta raíz y rechaza archivos no previstos. En ChatGPT: Complementos
 compartirse una versión del workspace con su equipo. La importación puede estar
 restringida por políticas del workspace. El ZIP no publica en el directorio público.
 El plugin personal anterior no se cambia ni se comparte al generar este archivo.
+
+La versión 2.0.1 evita `extensions.com.openai.auth` dentro de `mcp.json`:
+el cliente de escritorio instalado rechaza ese campo y descarta todo el MCP,
+aunque muestra la ficha y las skills. Se usa el transporte mínimo compatible
+y el cliente descubre OAuth desde el servicio. El PNG oficial de Unisol se
+conserva byte por byte; el builder empaqueta assets binarios sin convertirlos
+a texto. La marca proviene de https://www.redunisol.com.ar/apple-touch-icon.png.

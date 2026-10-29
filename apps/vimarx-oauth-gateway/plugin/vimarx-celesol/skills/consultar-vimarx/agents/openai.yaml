@@ -2,6 +2,6 @@ interface:
   display_name: "Consultar Vimarx"
   short_description: "Solicitudes, socios y préstamos de Celesol"
   default_prompt: "Consultá Vimarx de Mutual Celesol para resolver mi pedido con datos reales."
-  brand_color: "#146C50"
+  brand_color: "#19243F"
 policy:
   allow_implicit_invocation: true
