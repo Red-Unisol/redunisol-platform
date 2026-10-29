@@ -6,6 +6,7 @@ import type { DownloadSolicitudAdjuntoInput } from "../dtos/DownloadSolicitudAdj
 import type { SolicitudAdjuntoRepository } from "../../domain/repositories/SolicitudAdjuntoRepository";
 import type { AdjuntosObjectStorage } from "../../domain/services/AdjuntosObjectStorage";
 import {
+  ForbiddenSolicitudAdjuntoAccessError,
   SolicitudAdjuntoNotFoundError,
   SolicitudAdjuntoStorageUnavailableError,
 } from "../../domain/solicitudes-adjuntos-errors";
@@ -21,6 +22,38 @@ const downloadInput = (): DownloadSolicitudAdjuntoInput => ({
     workflowOwnerId: "owner-1",
   },
   workflowOwnerId: "owner-1",
+});
+
+it("the generic download cannot bypass generated review evidence permissions", async () => {
+  for (const role of ["VENDEDORES", "RIESGO", "TESORERIA", "LEGAJOS_DIGITALES", "ADMIN"]) {
+    let streamed = false;
+    const uc = new DownloadSolicitudAdjuntoUseCase({
+      repository: { findById: async () => storedAdjunto({ tipoAdjunto: "Legajo Digital", archivoPath: "solicitudes/sol-1/revision-documental/review/legajo.pdf" }) } as unknown as SolicitudAdjuntoRepository,
+      solicitudesRepository: {
+        findById: async () => ownedSolicitud(),
+        findWorkflowOwnerCodeById: async (id: string) => { assert.equal(id, "owner-1"); return role; },
+      } as unknown as SolicitudesCoreRepository,
+      objectStorage: { getObjectStream: async () => { streamed = true; return new PassThrough(); } } as unknown as AdjuntosObjectStorage,
+    });
+    const input = downloadInput();
+    if (role === "ADMIN") input.currentUser.isSystemAdmin = true;
+    if (role === "ADMIN" || role === "LEGAJOS_DIGITALES") {
+      await uc.execute(input);
+      assert.equal(streamed, true);
+    } else {
+      await assert.rejects(uc.execute(input), ForbiddenSolicitudAdjuntoAccessError);
+      assert.equal(streamed, false);
+    }
+  }
+});
+
+it("manual Legajo Digital uploads remain downloadable through the normal attachment permissions", async () => {
+  const uc = new DownloadSolicitudAdjuntoUseCase({
+    repository: { findById: async () => storedAdjunto({ tipoAdjunto: "Legajo Digital", archivoPath: "solicitudes/sol-1/adjuntos/manual.pdf" }) } as unknown as SolicitudAdjuntoRepository,
+    solicitudesRepository: { findById: async () => ownedSolicitud() } as unknown as SolicitudesCoreRepository,
+    objectStorage: { getObjectStream: async () => new PassThrough() } as unknown as AdjuntosObjectStorage,
+  });
+  assert.equal((await uc.execute(downloadInput())).adjunto.tipoAdjunto, "Legajo Digital");
 });
 
 describe("DownloadSolicitudAdjuntoUseCase", () => {

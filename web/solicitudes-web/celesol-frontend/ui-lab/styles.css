@@ -1,0 +1,210 @@
+.lab-shell {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 32px;
+  color: var(--foreground);
+}
+.lab-heading {
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 26px;
+}
+.lab-heading > div {
+  order: -1;
+  flex: 1;
+}
+.lab-heading h1 {
+  font-size: 28px;
+  font-weight: 650;
+  margin: 8px 0;
+}
+.lab-heading p,
+.lab-box p {
+  color: var(--foreground-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.lab-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+}
+.lab-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+.lab-controls label,
+.lab-review label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.lab-controls select,
+.lab-review textarea,
+.lab-amount input {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.lab-controls select {
+  min-width: 230px;
+}
+.lab-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+}
+.lab-detail,
+.lab-box,
+.lab-case {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.lab-detail-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.lab-detail-heading h2,
+.lab-box h2,
+.lab-case h2 {
+  font-weight: 600;
+  font-size: 16px;
+}
+.lab-detail-heading p {
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  margin-top: 5px;
+}
+.lab-detail-heading > span {
+  font-size: 12px;
+  color: var(--primary);
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  padding: 6px 12px;
+}
+.lab-padding {
+  padding: 20px;
+  display: grid;
+  gap: 20px;
+}
+.lab-amount {
+  display: grid;
+  gap: 5px;
+  width: 240px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.lab-amount input:disabled {
+  opacity: 0.65;
+  background: var(--background);
+}
+.lab-review {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.lab-review textarea {
+  min-height: 80px;
+}
+.lab-review button {
+  justify-self: start;
+}
+.lab-box {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+.lab-box h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lab-notification {
+  text-align: left;
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--background);
+}
+.lab-notification.read {
+  opacity: 0.65;
+  border-left-color: var(--border);
+}
+.lab-notification small {
+  color: var(--foreground-secondary);
+}
+.lab-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.lab-case {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+.lab-case > button {
+  justify-self: start;
+}
+.lab-notice {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--background);
+}
+.lab-padding details {
+  font-size: 13px;
+  color: var(--foreground-secondary);
+}
+.lab-padding details ul {
+  margin: 12px 0 0 20px;
+  list-style: disc;
+}
+@media (max-width: 1000px) {
+  .lab-columns {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .lab-shell {
+    padding: 16px;
+  }
+  .lab-heading {
+    flex-direction: column;
+  }
+  .lab-comparison {
+    grid-template-columns: 1fr;
+  }
+  .lab-controls label,
+  .lab-controls select {
+    width: 100%;
+  }
+}

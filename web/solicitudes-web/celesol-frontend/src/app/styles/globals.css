@@ -1,10 +1,26 @@
-@import "tailwindcss";
+@import "tailwindcss" source("../../");
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/montserrat";
 
 @custom-variant dark (&:is(.dark *));
+
+.app-layout {
+  --app-topbar-height: 4rem;
+}
+.app-layout.has-compact-header {
+  --app-topbar-height: 2.5rem;
+}
+@media (pointer: coarse) {
+  .app-layout.has-compact-header {
+    --app-topbar-height: 3rem;
+  }
+  .app-topbar[data-compact] button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
 
 @theme inline {
   --font-heading: var(--font-sans);

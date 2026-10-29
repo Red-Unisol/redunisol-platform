@@ -7,10 +7,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test src/shared/services/http/session-fetch.test.ts",
+    "test": "node --experimental-strip-types --test src/shared/services/http/session-fetch.test.ts src/modules/solicitudes-core/utils/convenio-edicion.test.ts",
     "preview": "vite preview",
     "format": "prettier --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "ui:dev": "vite --config ui-lab/vite.config.ts --mode ui-lab",
+    "ui:check": "tsc --noEmit -p tsconfig.ui-lab.json",
+    "ui:build": "npm run ui:check && vite build --config ui-lab/vite.config.ts --mode ui-lab",
+    "ui:test": "node --experimental-strip-types --test ui-lab/network-guard.test.ts",
+    "ui:preview": "vite preview --config ui-lab/vite.config.ts --mode ui-lab",
+    "ui:visual": "node ui-lab/header-gallery.browser-test.mjs",
+    "ui:visual:production": "node ui-lab/production.browser-test.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -30,6 +37,7 @@
     "@zwight/luckyexcel": "^1.1.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "flag-icons": "^7.6.0",
     "lucide-react": "^1.8.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
@@ -59,6 +67,7 @@
     "globals": "^17.4.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
+    "playwright": "^1.64.1",
     "prettier": "^3.8.2",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",

@@ -5,6 +5,8 @@ import {
   CircleDot,
   ClipboardList,
   FileChartColumn,
+  FileCheck2,
+  Bell,
   History,
   LayoutDashboard,
   Shield,
@@ -15,7 +17,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
-import { canCreateSolicitud, canManageUsers } from "@/modules/auth/utils/auth-user";
+import {
+  canCreateSolicitud,
+  canManageUsers,
+  canReviewSignatures,
+} from "@/modules/auth/utils/auth-user";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 
 type SidebarGroup = {
@@ -45,6 +51,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
         label: "Dashboard",
         to: "/dashboard",
       },
+      { icon: Bell, label: "Notificaciones", to: "/notificaciones" },
     ],
   },
   {
@@ -116,13 +123,32 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
   const sessionQuery = useAuthSessionQuery();
   const user = sessionQuery.data;
   const sidebarGroups: SidebarGroup[] = [
-    ...SIDEBAR_GROUPS.map(group => ({
+    ...SIDEBAR_GROUPS.map((group) => ({
       ...group,
-      sections: group.sections?.map(section => ({
+      sections: group.sections?.map((section) => ({
         ...section,
-        items: section.items.filter(item => item.to !== "/solicitudes/core/precarga" || canCreateSolicitud(user)),
+        items: section.items.filter(
+          (item) =>
+            item.to !== "/solicitudes/core/precarga" ||
+            canCreateSolicitud(user),
+        ),
       })),
     })),
+    ...(canReviewSignatures(user)
+      ? [
+          {
+            id: "legajos",
+            label: "Legajos Digitales",
+            items: [
+              {
+                icon: FileCheck2,
+                label: "Bandeja de firmas",
+                to: "/legajos/firmas",
+              },
+            ],
+          },
+        ]
+      : []),
     ...(canManageUsers(user)
       ? [
           {
@@ -144,7 +170,11 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                 label: "Permisos de edición",
                 to: "/admin/solicitudes/field-access-rules",
               },
-              { label: "Reconocimiento de recibos", icon: Shield, to: "/admin/solicitudes/reconocimiento-recibos" },
+              {
+                label: "Reconocimiento de recibos",
+                icon: Shield,
+                to: "/admin/solicitudes/reconocimiento-recibos",
+              },
               {
                 icon: Shield,
                 label: "Transiciones",
@@ -173,7 +203,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
       {!isDesktop && isOpen ? (
         <button
           aria-label="Cerrar menú lateral"
-          className="fixed inset-0 z-30 bg-black/40 opacity-100 transition-opacity duration-200 md:hidden"
+          className="fixed inset-0 top-[var(--app-topbar-height,4rem)] z-30 bg-black/40 opacity-100 transition-opacity duration-200 md:hidden"
           onClick={onClose}
           type="button"
         />
@@ -184,7 +214,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
         className={`shrink-0 bg-linear-to-b from-marino to-marino-2 font-marca text-white origin-left transition-[width,opacity] duration-300 ease-out ${
           isDesktop
             ? `${isOpen ? "w-52 opacity-100" : "w-0 opacity-0"} overflow-hidden`
-            : `fixed top-16 bottom-0 left-0 z-40 w-64 shadow-lg transition-transform duration-300 ease-out ${
+            : `fixed top-[var(--app-topbar-height,4rem)] bottom-0 left-0 z-40 w-64 shadow-lg transition-transform duration-300 ease-out ${
                 isOpen ? "translate-x-0" : "-translate-x-full"
               }`
         }`}
@@ -239,9 +269,15 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                                 }
                                 key={item.to}
                                 onClick={() => {
-                                  const listaKey = LISTA_QUERY_KEY_POR_RUTA[item.to];
-                                  if (listaKey && location.pathname === item.to) {
-                                    void queryClient.invalidateQueries({ queryKey: listaKey });
+                                  const listaKey =
+                                    LISTA_QUERY_KEY_POR_RUTA[item.to];
+                                  if (
+                                    listaKey &&
+                                    location.pathname === item.to
+                                  ) {
+                                    void queryClient.invalidateQueries({
+                                      queryKey: listaKey,
+                                    });
                                   }
                                   if (!isDesktop) onClose();
                                 }}

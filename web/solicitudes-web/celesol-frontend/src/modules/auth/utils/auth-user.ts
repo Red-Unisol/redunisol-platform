@@ -44,6 +44,13 @@ export function canAccessRiesgoTools(user: AuthUser | null | undefined) {
   return user?.isSystemAdmin === true || user?.workflowOwner?.code === "RIESGO";
 }
 
+export function canReviewSignatures(user: AuthUser | null | undefined) {
+  return (
+    user?.isSystemAdmin === true ||
+    user?.workflowOwner?.code === "LEGAJOS_DIGITALES"
+  );
+}
+
 // Los prestamos que el socio ya tiene con la mutual son informacion para
 // analizar, no para cargar: Vendedores no los ve. El backend hace el mismo
 // chequeo, esto solo evita mostrar una pestaña que va a dar 403.

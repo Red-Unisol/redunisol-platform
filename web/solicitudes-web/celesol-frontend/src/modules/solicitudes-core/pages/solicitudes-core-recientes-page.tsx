@@ -181,6 +181,7 @@ function RecientesList({ user }: { user: AuthUser }) {
         estado: item.estadoActual.name ?? "",
         estadoCode: item.estadoActual.code ?? "",
         fecha: formatFechaLista(item.createdAt),
+        nroSolicitud: item.nroSolicitud ?? "",
         id: item.id,
         lineaPrestamo: item.lineaPrestamoDescripcion ?? "",
         linkFirmaDigital: item.linkFirmaDigital ?? "",
@@ -325,7 +326,7 @@ function RecientesList({ user }: { user: AuthUser }) {
 
         <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
           <label className="relative min-w-0 flex-1 sm:w-80 sm:flex-none">
-            <span className="sr-only">Buscar por DNI, nombre o apellido</span>
+            <span className="sr-only">Buscar por solicitud, DNI, nombre o apellido</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-foreground-muted" />
             <input
               className="h-10 w-full rounded-full border border-border bg-surface pr-4 pl-10 text-sm outline-none placeholder:text-foreground-muted focus:border-input-focus focus:ring-2 focus:ring-input-focus/20"
@@ -333,7 +334,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 setSearchTerm(event.target.value);
                 setPage(1);
               }}
-              placeholder="Buscar por DNI, nombre o apellido"
+              placeholder="Buscar por solicitud, DNI, nombre o apellido"
               type="search"
               value={searchTerm}
             />
@@ -431,6 +432,11 @@ function RecientesList({ user }: { user: AuthUser }) {
                 >
                   <td className="px-3 py-3 whitespace-nowrap text-foreground-secondary tabular-nums">
                     {row.fecha}
+                    {row.nroSolicitud ? (
+                      <p className="text-xs text-foreground-muted">
+                        Nº {row.nroSolicitud}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="min-w-40 px-3 py-3">
                     <p className="font-semibold text-foreground">

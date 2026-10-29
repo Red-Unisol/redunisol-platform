@@ -10,11 +10,10 @@ import type { AdjuntosObjectStorage } from "../solicitudes-core/adjuntos/domain/
 import {
   assess,
   decisionDisparity,
-  digest,
+  digest,  hasMatchingSignedOperation,
   DocumentReviewError,
   providerFingerprint,
   REVIEW_POLICY_VERSION,
-  REVIEW_STATE,
   type Assessment,
   type Decision,
   type ProviderCandidate,
@@ -22,6 +21,28 @@ import {
 } from "./domain";
 import type { EvidenceGateway } from "./MetaMapGateway";
 import type { HumanReport, LegajoBuilder } from "./LegajoPdf";
+import type { SignatureInboxLoanState } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
+import {
+  canManageSignature, completedSignatureAttempts, eligibleSignatureCandidates, getSignatureApproval, getSignatureApprovals,
+  isAnalysisReady, isLegajosUser, reviewSource,
+  signatureSourceInclude, type SignatureSourceRow, type SignatureStatus,
+} from "./signature-workflow";
+export { reviewSource } from "./signature-workflow";
+
+export type SignatureEvent = {
+  type: "signature_received" | "signature_requested";
+  solicitudId: string;
+  loanId: string;
+  cycleId: string;
+  verificationId?: string;
+  reason?: string;
+  requestId?: string;
+};
+
+export type SignatureFinancialProof = {
+  loanId: string;
+  conditionsFingerprint: string;
+};
 
 type Transition = (
   tx: Prisma.TransactionClient,
@@ -30,6 +51,7 @@ type Transition = (
   decisionId: string,
   action: "transferir" | "devolver_a_liquidada",
   comment: string,
+  financialProof?: SignatureFinancialProof,
 ) => Promise<void>;
 type Dependencies = {
   db: PrismaClient;
@@ -40,17 +62,12 @@ type Dependencies = {
   transition: Transition;
   maxPdfBytes: number;
   now?: () => Date;
+  onSignatureEvent?: (tx: Prisma.TransactionClient, event: SignatureEvent) => Promise<void>;
+  financialPreflight?: (id: string, user: AuthUser) => Promise<SignatureFinancialProof>;
+  inboxLoanStates?: (rows: SignatureSourceRow[]) => Promise<ReadonlyMap<string, SignatureInboxLoanState>>;
 };
-const sourceInclude = {
-  titular: true,
-  estadoActual: { include: { owner: true } },
-  estadoHistorial: {
-    where: { toStateCodeSnapshot: REVIEW_STATE },
-    orderBy: { changedAt: "desc" as const },
-    take: 1,
-  },
-} satisfies Prisma.SolicitudInclude;
-type SourceRow = Prisma.SolicitudGetPayload<{ include: typeof sourceInclude }>;
+const sourceInclude = signatureSourceInclude;
+type SourceRow = SignatureSourceRow;
 const json = (v: unknown): Prisma.InputJsonValue =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 const assessmentDigest = (assessment: Assessment) =>
@@ -61,30 +78,6 @@ const assessmentDigest = (assessment: Assessment) =>
       documents: a.documents.map(({ url: _url, ...d }) => d),
     })),
   });
-
-export function reviewSource(s: SourceRow): ReviewSource {
-  const t = s.titular;
-  return {
-    solicitudId: s.id,
-    nroSolicitud: s.nroSolicitud,
-    prestamoId: s.legacyOid,
-    cycleId: s.estadoHistorial[0]?.id ?? `${s.id}:${s.createdAt.toISOString()}`,
-    line: s.lineaPrestamoDescripcion,
-    mutual: s.lineaPrestamoCodigoMutual,
-    name: [t?.apellidoDenominacion, t?.nombre].filter(Boolean).join(" "),
-    dni: t?.nroDocumento ?? null,
-    amount: s.montoAFinanciar?.toString() ?? null,
-    installments: s.cuotas,
-    installmentAmount: s.cuotaResultante,
-    birthDate: t?.fechaNacimiento?.toISOString().slice(0, 10) ?? null,
-    address:
-      [t?.domicilioCalle, t?.nroPuerta, t?.localidad]
-        .filter(Boolean)
-        .join(" ") || null,
-    phone: t?.celular ?? null,
-    email: t?.email ?? null,
-  };
-}
 
 export class DocumentReviewService {
   private inFlight = new Map<string, Promise<SolicitudDocumentReview>>();
@@ -106,14 +99,10 @@ export class DocumentReviewService {
     return row;
   }
   private canDecide(row: SourceRow, user: AuthUser) {
-    return (
-      row.estadoActual.code === REVIEW_STATE &&
-      (user.isSystemAdmin ||
-        Boolean(
-          user.workflowOwnerId &&
-          row.estadoActual.ownerId === user.workflowOwnerId,
-        ))
-    );
+    return canManageSignature(row) && isLegajosUser(user);
+  }
+  private canInspect(user: AuthUser) {
+    return isLegajosUser(user);
   }
   private async discovered(source: ReviewSource) {
     if (!source.prestamoId)
@@ -138,6 +127,11 @@ export class DocumentReviewService {
   async view(id: string, user: AuthUser) {
     const row = await this.source(id);
     const fingerprint = digest(reviewSource(row));
+    const signature = await getSignatureApproval(this.deps.db, id);
+    if (!this.canInspect(user)) return {
+      enabled: true, canDecide: false, state: row.estadoActual.code,
+      currentReview: null, history: [], signature, analysisReady: isAnalysisReady(row),
+    };
     const records = await this.deps.db.solicitudDocumentReview.findMany({
       where: { solicitudId: id },
       orderBy: [{ evaluatedAt: "desc" }, { id: "desc" }],
@@ -186,11 +180,77 @@ export class DocumentReviewService {
       enabled: true,
       canDecide: this.canDecide(row, user),
       state: row.estadoActual.code,
+      signature,
+      analysisReady: isAnalysisReady(row),
       currentReview:
         publicRecords.find((r) => r.sourceFingerprint === fingerprint) ?? null,
       history: publicRecords,
     };
   }
+  async inbox(user: AuthUser, status?: SignatureStatus, offset = 0, limit = 50) {
+    if (!isLegajosUser(user)) throw new DocumentReviewError("Solo Legajos Digitales puede acceder a esta bandeja.", 403);
+    const candidates = await this.deps.db.solicitud.findMany({
+      where: {
+        legacyOid: { not: null }, archivedAt: null, estadoActual: { isTerminal: false },
+        desembolso: null, pagoExterno: null,
+      },
+      include: { ...sourceInclude, vendedor: true, creator: true },
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    });
+    const open = candidates.filter(canManageSignature);
+    let rows = open;
+    if (open.length) {
+      try {
+        if (!this.deps.inboxLoanStates) throw new Error("Loan reader not configured");
+        const states = await this.deps.inboxLoanStates(open);
+        rows = open.filter(row => {
+          const state = states.get(row.id), loan = state?.lifecycle;
+          if (typeof state?.transferred !== "boolean")
+            throw new Error("Loan status could not be verified");
+          if (state.transferred) return false;
+          if (!loan?.id || !Number.isInteger(loan.estado))
+            throw new Error("Loan status could not be verified");
+          return loan.estado === 0 &&
+            !/anulad[oa]/i.test(`${loan.estadoLabel ?? ""} ${loan.estadoPrestamoLabel ?? ""}`);
+        });
+      } catch {
+        throw new DocumentReviewError("No se pudo verificar en Vimarx qué préstamos siguen pendientes de firma. Volvé a intentar.", 503);
+      }
+    }
+    const summaries = await getSignatureApprovals(this.deps.db, rows);
+    const matching = rows.filter(row => !status || summaries.get(row.id)?.status === status);
+    return {
+      items: matching.slice(offset, offset + limit).map(row => {
+        const summary = summaries.get(row.id)!;
+        const seller = row.vendedor ?? row.creator;
+        return {
+          solicitudId: row.id, nroSolicitud: row.nroSolicitud, prestamoId: row.legacyOid,
+          socio: [row.titular?.apellidoDenominacion, row.titular?.nombre].filter(Boolean).join(" "),
+          vendedor: [seller.firstName, seller.lastName].filter(Boolean).join(" ") || seller.legacyUser,
+          monto: row.montoAFinanciar?.toString() ?? null,
+          status: summary.status, completedAttempts: summary.completedAttempts,
+          lastCompletedAt: summary.lastCompletedAt, analysisReady: isAnalysisReady(row), reason: summary.reason,
+        };
+      }),
+      total: matching.length, offset, limit,
+    };
+  }
+
+  async requestSignature(id: string, user: AuthUser, input: { requestId: string; reason: string }) {
+    const reason = input.reason.trim();
+    if (!reason) throw new DocumentReviewError("Indicá por qué el socio debe firmar nuevamente.", 400);
+    const row = await this.source(id);
+    if (!this.canDecide(row, user)) throw new DocumentReviewError("No tenés permisos para solicitar una nueva firma.", 403);
+    const duplicate = await this.deps.db.solicitudDocumentDecision.findUnique({ where: { requestId: input.requestId }, include: { review: true } });
+    if (duplicate) {
+      if (duplicate.review.solicitudId !== id || duplicate.decidedBy !== user.id || duplicate.humanDecision !== "not_approve" || duplicate.reason !== reason)
+        throw new DocumentReviewError("La clave de esta solicitud ya fue utilizada con otros datos.");
+      return this.view(id, user);
+    }
+    const review = await this.evaluate(id);
+    return this.decide(id, user, { reviewId: review.id, requestId: input.requestId, decision: "not_approve", verificationId: null, reason });
+  }
+
   async refresh(id: string, user: AuthUser) {
     const row = await this.source(id);
     if (!this.canDecide(row, user))
@@ -212,13 +272,14 @@ export class DocumentReviewService {
   }
   private async evaluateOnce(id: string) {
     const row = await this.source(id);
-    if (row.estadoActual.code !== REVIEW_STATE)
+    if (!canManageSignature(row))
       throw new DocumentReviewError(
-        "La solicitud ya no está en verificación de firma y documentación.",
+        "La solicitud no tiene un préstamo disponible para gestionar su firma.",
       );
     const source = reviewSource(row),
       sourceFingerprint = digest(source);
-    const { candidates, error } = await this.discovered(source);
+    const discovered = await this.discovered(source);
+    const candidates = eligibleSignatureCandidates(row, discovered.candidates), error = discovered.error;
     const providerHash = providerFingerprint(candidates),
       assessment = assess(source, candidates, error);
     const previous = await this.deps.db.solicitudDocumentReview.findFirst({
@@ -315,7 +376,7 @@ export class DocumentReviewService {
         await this.lockSource(tx, id);
         const current = await this.source(id, tx);
         if (
-          current.estadoActual.code !== REVIEW_STATE ||
+          !canManageSignature(current) ||
           digest(reviewSource(current)) !== sourceFingerprint
         ) {
           throw new DocumentReviewError(
@@ -332,7 +393,7 @@ export class DocumentReviewService {
             verificationId: attempt?.verificationId ?? null,
             title: "Legajo digital - propuesta del sistema",
           });
-        return tx.solicitudDocumentReview.create({
+        const savedReview = await tx.solicitudDocumentReview.create({
           data: {
             id: reviewId,
             solicitudId: id,
@@ -350,6 +411,14 @@ export class DocumentReviewService {
             legajoAdjuntoId: pdfSaved ? adjuntoId : null,
           },
         });
+        for (const attempt of completedSignatureAttempts(assessment)) {
+          await this.deps.onSignatureEvent?.(tx, {
+            type: "signature_received", solicitudId: id,
+            loanId: source.prestamoId!, cycleId: source.cycleId,
+            verificationId: attempt.verificationId,
+          });
+        }
+        return savedReview;
       });
       return review;
     } catch (e) {
@@ -483,7 +552,7 @@ export class DocumentReviewService {
     }
     if (
       input.decision === "approve" &&
-      (!attempt?.evidenceAvailable ||
+      (!attempt?.evidenceAvailable || !attempt.completedAt || !Number.isFinite(Date.parse(attempt.completedAt)) ||
         review.artifactError ||
         !review.evidencePath ||
         !review.legajoAdjuntoId)
@@ -492,13 +561,24 @@ export class DocumentReviewService {
         "Para aprobar se requiere un intento firmado con evidencia y legajo completos. Actualizá la revisión.",
       );
     }
+    if (input.decision === "approve" && !hasMatchingSignedOperation(attempt, { requireCycle: Boolean(source.signatureRequestedAt) })) {
+      throw new DocumentReviewError(        "La firma debe corresponder al préstamo, titular y condiciones vigentes. Estos controles no admiten una excepción manual.",      );    }    const financialProof = input.decision === "approve"
+      ? await this.deps.financialPreflight?.(id, user)
+      : undefined;
+    if (financialProof) {
+      // The preflight may reconcile metadata, but must not change the signed
+      // operation or signing cycle. No external request runs under the row lock.
+      const afterPreflight = await this.source(id);
+      if (!this.canDecide(afterPreflight, user) || digest(reviewSource(afterPreflight)) !== fingerprint)
+        throw new DocumentReviewError("La solicitud cambió durante la comprobación financiera. Actualizá la revisión.");
+    }
     let candidates: ProviderCandidate[] = [];
     let decisionAssessment = assessment;
     const validateFresh = (fresh: {
       candidates: ProviderCandidate[];
       error: string | null;
     }) => {
-      const checked = assess(source, fresh.candidates, fresh.error);
+      const checked = assess(source, eligibleSignatureCandidates(row, fresh.candidates), fresh.error);
       const selected = checked.attempts.find(
         (a) => a.verificationId === attempt?.verificationId,
       );
@@ -510,7 +590,7 @@ export class DocumentReviewService {
     };
     if (input.decision === "approve") {
       const fresh = await this.discovered(source);
-      candidates = fresh.candidates;
+      candidates = eligibleSignatureCandidates(row, fresh.candidates);
       if (!validateFresh(fresh)) {
         await this.evaluate(id);
         throw new DocumentReviewError(
@@ -575,7 +655,7 @@ export class DocumentReviewService {
           "MetaMap cambió mientras se generaba el legajo. Actualizá la revisión antes de aprobar.",
         );
       }
-      candidates = confirmed.candidates;
+      candidates = eligibleSignatureCandidates(row, confirmed.candidates);
       decisionAssessment = assess(source, candidates);
     }
     if (input.decision === "not_approve") {
@@ -655,6 +735,17 @@ export class DocumentReviewService {
       await this.deps.db.$transaction(
         async (tx) => {
           await this.lockSource(tx, id);
+          const currentActor = await tx.user.findFirst({
+            where: { id: user.id, state: 1, deletedAt: null },
+            include: { workflowOwner: true },
+          });
+          if (!currentActor || !isLegajosUser(currentActor) ||
+            (!currentActor.isSystemAdmin && !currentActor.workflowOwner?.isActive)) {
+            throw new DocumentReviewError(
+              "Tus permisos para revisar firmas cambiaron. No se registró la decisión.",
+              403,
+            );
+          }
           const replay = await tx.solicitudDocumentDecision.findUnique({
             where: { requestId: input.requestId },
           });
@@ -674,7 +765,7 @@ export class DocumentReviewService {
           }
           const current = await this.source(id, tx);
           if (
-            !this.canDecide(current, user) ||
+            !this.canDecide(current, currentActor) ||
             digest(reviewSource(current)) !== fingerprint
           ) {
             throw new DocumentReviewError(
@@ -728,16 +819,31 @@ export class DocumentReviewService {
               legajoAdjuntoId: saved ? adjuntoId : null,
             },
           });
-          await this.deps.transition(
-            tx,
-            id,
-            user,
-            decisionId,
-            input.decision === "approve"
-              ? "transferir"
-              : "devolver_a_liquidada",
-            `Revisión documental ${decisionId}. Decisión humana: ${input.decision === "approve" ? "aprobada" : "no aprobada"}. Propuesta del sistema: ${assessment.decision}. ${reason}`,
-          );
+          if (input.decision === "not_approve") {
+            // The old observation/decision stays immutable. An explicit request
+            // starts a new cycle; old callbacks cannot satisfy it.
+            const excluded = [...new Set([
+              ...(Array.isArray(current.signatureExcludedVerificationIds)
+                ? current.signatureExcludedVerificationIds.filter((v): v is string => typeof v === "string") : []),
+              ...assessment.attempts.map(a => a.verificationId),
+            ])];
+            const cycleId = randomUUID();
+            await tx.solicitud.update({ where: { id }, data: {
+              signatureCycleId: cycleId, signatureRequestedAt: decidedAt,
+              signatureRequestReason: reason,
+              signatureExcludedVerificationIds: excluded,
+            } });
+            await this.deps.onSignatureEvent?.(tx, {
+              type: "signature_requested", solicitudId: id,
+              loanId: current.legacyOid!, cycleId, reason, requestId: input.requestId,
+            });
+          } else if (isAnalysisReady(current) && current.estadoActual.code !== "Transferir") {
+            await this.deps.transition(
+              tx, id, currentActor, decisionId, "transferir",
+              `Firma aprobada ${decisionId}; análisis finalizado. ${reason}`,
+              financialProof,
+            );
+          }
         },
         { timeout: 20000 },
       );
@@ -807,13 +913,18 @@ export class DocumentReviewService {
 
   async poll(limit = 5) {
     const now = this.now();
+    // Prisma stores these timestamp-without-zone values in UTC. Raw Date
+    // parameters are timestamptz, so compare explicitly even on a local-zone DB.
     const pending = await this.deps.db.$queryRaw<{ id: string }[]>`
       SELECT s.id FROM solicitudes s
       JOIN workflow_states state ON state.id=s.estado_actual_id
       LEFT JOIN solicitud_document_review_jobs job ON job.solicitud_id=s.id
-      WHERE state.code=${REVIEW_STATE}
-        AND (job.next_check_at IS NULL OR job.next_check_at<=${now})
-        AND (job.lease_until IS NULL OR job.lease_until<${now})
+      WHERE s.legacy_oid IS NOT NULL AND s.archived_at IS NULL
+        AND state.is_terminal=false
+        AND NOT EXISTS (SELECT 1 FROM transferencia_desembolsos d WHERE d.solicitud_id=s.id)
+        AND NOT EXISTS (SELECT 1 FROM solicitud_pagos_externos p WHERE p.solicitud_id=s.id)
+        AND (job.next_check_at IS NULL OR job.next_check_at AT TIME ZONE 'UTC'<=${now}::timestamptz)
+        AND (job.lease_until IS NULL OR job.lease_until AT TIME ZONE 'UTC'<${now}::timestamptz)
       ORDER BY COALESCE(job.next_check_at, 'epoch'::timestamp), s.updated_at, s.id
       LIMIT ${limit}`;
     for (const s of pending) {

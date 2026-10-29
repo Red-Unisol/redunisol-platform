@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export type SolicitudRefinanciacionPrestamo = {
   nrosCuota: number[];
   /** ID del prestamo en Vimarx. */
@@ -29,19 +31,26 @@ export type SolicitudRefinanciacion = {
 };
 
 export interface SolicitudRefinanciacionRepository {
-  /** Registra un cobro en Vimarx de cuotas de un prestamo. */
-  agregarCobro(input: {
-    cobro: Omit<SolicitudRefinanciacionCobro, "cobradoAt">;
-    prestamoId: string;
-    solicitudId: string;
-  }): Promise<void>;
   findBySolicitudId(solicitudId: string): Promise<SolicitudRefinanciacion>;
   /** Reemplaza la seleccion entera; una lista vacia la borra. */
   replace(input: {
+    expectedSolicitudUpdatedAt: Date;
+    expectedVersion: string;
     prestamos: SolicitudRefinanciacionPrestamo[];
     solicitudId: string;
     updatedBy: string;
   }): Promise<SolicitudRefinanciacion>;
+}
+
+/** Includes confirmed charges and row revisions, even when the selection is unchanged. */
+export function refinanciacionVersion(value: SolicitudRefinanciacion) {
+  return createHash("sha256").update(JSON.stringify({
+    updatedAt: value.updatedAt?.toISOString() ?? null,
+    prestamos: [...value.prestamos].sort((a, b) => a.prestamoId.localeCompare(b.prestamoId)).map(p => ({
+      prestamoId: p.prestamoId, nrosCuota: [...p.nrosCuota].sort((a, b) => a - b),
+      cobros: p.cobros.map(c => [c.cobroId, c.totalCobrado, [...c.nrosCuota].sort((a, b) => a - b)]),
+    })),
+  })).digest("hex");
 }
 
 /** Cuotas elegidas que todavia no se cobraron en Vimarx. */

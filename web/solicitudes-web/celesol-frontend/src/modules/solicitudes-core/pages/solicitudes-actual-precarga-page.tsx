@@ -74,6 +74,7 @@ type PrecargaRow = {
   cuotas: string;
   dni: string;
   fecha: string;
+  nroSolicitud: string;
   id: string;
   linea: string;
   monto: string;
@@ -129,6 +130,7 @@ export function SolicitudesActualPrecargaPage() {
         cuotas: item.cuotas !== null ? String(item.cuotas) : "",
         dni: item.titular.nroDocumento ?? "",
         fecha: formatFechaLista(item.createdAt),
+        nroSolicitud: item.nroSolicitud ?? "",
         id: item.id,
         linea: item.lineaPrestamoDescripcion ?? "",
         monto: formatMontoLista(item.montoAFinanciar),
@@ -371,6 +373,11 @@ export function SolicitudesActualPrecargaPage() {
                 >
                   <td className="px-3 py-3 whitespace-nowrap text-foreground-secondary tabular-nums">
                     {row.fecha}
+                    {row.nroSolicitud ? (
+                      <p className="text-xs text-foreground-muted">
+                        Nº {row.nroSolicitud}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-3 py-3">
                     <p className="font-semibold text-foreground">

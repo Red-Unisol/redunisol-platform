@@ -38,6 +38,7 @@ it('queues form persistence after receiving commercial prequalification', functi
         'landing_url' => 'https://dev.redunisol.com.ar/prestamos-para-policias?utm_source=google',
         'utm_source' => 'google',
         'recibo_url' => 'https://cdn.example.test/recibos/archivo.pdf',
+        'journey_page_id' => 'c7aa9165-e5c9-49aa-8db7-97e1b449f90e',
     ]);
 
     $response->assertOk()->assertJson([
@@ -55,7 +56,8 @@ it('queues form persistence after receiving commercial prequalification', functi
             && $job->input['provincia'] === 'Córdoba'
             && $job->input['situacion_laboral'] === 'Policia'
             && $job->input['banco'] === 'Banco de la Nacion Argentina'
-            && $job->input['landing_slug'] === '/prestamos-para-policias';
+            && $job->input['landing_slug'] === '/prestamos-para-policias'
+            && $job->input['_journey_links']['page_id'] === 'c7aa9165-e5c9-49aa-8db7-97e1b449f90e';
     });
 
     Http::assertSent(fn ($request) => $request->url() === 'https://kestra.example.test/prequalification'

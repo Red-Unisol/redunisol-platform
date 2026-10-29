@@ -26,7 +26,11 @@ type PrismaSolicitudShape = Prisma.SolicitudGetPayload<{
 describe("SolicitudCoreMapper", () => {
   it("maps canonical persisted fields into the domain model", () => {
     const record: PrismaSolicitudShape = {
+      administrativeCoreControl: null,
       archivedAt: null,
+      analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+      signatureCycleId: null, signatureRequestedAt: null,
+      signatureRequestReason: null, signatureExcludedVerificationIds: null,
       assignedToUser: null,
       assignedToUserId: null,
       conyuge: {
@@ -138,7 +142,11 @@ describe("SolicitudCoreMapper", () => {
   it("maps assignedToUser fields when solicitud has individual assignee", () => {
     const record: PrismaSolicitudShape = {
       ...({
-        archivedAt: null,
+        administrativeCoreControl: null,
+      archivedAt: null,
+      analisisFinalizadoAt: null, analisisFinalizadoBy: null,
+      signatureCycleId: null, signatureRequestedAt: null,
+      signatureRequestReason: null, signatureExcludedVerificationIds: null,
         assignedToUser: {
           email: "assignee@example.com",
           firstName: "Riesgo",

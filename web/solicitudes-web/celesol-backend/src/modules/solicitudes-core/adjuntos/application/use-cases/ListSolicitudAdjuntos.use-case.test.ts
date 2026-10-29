@@ -16,6 +16,32 @@ const listInput = (): ListSolicitudAdjuntosInput => ({
   workflowOwnerId: "owner-1",
 });
 
+it("generated review evidence is listed only for Legajos/admin, while manual attachments keep their existing visibility", async () => {
+  for (const role of ["VENDEDORES", "RIESGO", "TESORERIA", "LEGAJOS_DIGITALES", "ADMIN"]) {
+    const evidence = storedAdjunto({ id: "review", tipoAdjunto: "Legajo Digital", archivoPath: "solicitudes/sol-1/revision-documental/review/legajo.pdf" });
+    const manual = storedAdjunto({ id: "manual", tipoAdjunto: "Legajo Digital", archivoPath: "solicitudes/sol-1/adjuntos/manual.pdf" });
+    const uc = new ListSolicitudAdjuntosUseCase({
+      repository: { listBySolicitudId: async () => [storedAdjunto(), evidence, manual] } as unknown as SolicitudAdjuntoRepository,
+      solicitudesRepository: {
+        findById: async () => ownedSolicitud(),
+        findWorkflowOwnerCodeById: async (id: string) => { assert.equal(id, "owner-1"); return role; },
+      } as unknown as SolicitudesCoreRepository,
+    });
+    const input = listInput();
+    if (role === "ADMIN") input.currentUser.isSystemAdmin = true;
+    const result = await uc.execute(input);
+    assert.deepEqual(result.map(a => a.id), role === "LEGAJOS_DIGITALES" || role === "ADMIN" ? ["adj-1", "review", "manual"] : ["adj-1", "manual"]);
+  }
+});
+
+it("unresolved owner cannot see generated review evidence", async () => {
+  const uc = new ListSolicitudAdjuntosUseCase({
+    repository: { listBySolicitudId: async () => [storedAdjunto({ tipoAdjunto: "Legajo Digital", archivoPath: "solicitudes/sol-1/revision-documental/r/decision.pdf" })] } as unknown as SolicitudAdjuntoRepository,
+    solicitudesRepository: { findById: async () => ownedSolicitud() } as unknown as SolicitudesCoreRepository,
+  });
+  assert.deepEqual(await uc.execute(listInput()), []);
+});
+
 describe("ListSolicitudAdjuntosUseCase", () => {
   it("filters out soft-deleted rows returned by the repository", async () => {
     const solicitudesRepository: SolicitudesCoreRepository = {

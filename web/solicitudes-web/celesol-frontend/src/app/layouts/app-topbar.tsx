@@ -22,8 +22,10 @@ import {
   PopoverTrigger,
 } from "@/shared/components/ui/popover";
 import { Separator } from "@/shared/components/ui/separator";
+import { NotificationBell } from "@/modules/notifications/notification-center";
 
 type AppTopbarProps = {
+  compact?: boolean;
   titleIcon: LucideIcon;
   title?: string | null;
   titleBadge?: string | null;
@@ -46,6 +48,7 @@ function getInitials(
 }
 
 export function AppTopbar({
+  compact = false,
   titleIcon: TitleIcon,
   title,
   titleBadge,
@@ -89,7 +92,12 @@ export function AppTopbar({
   }
 
   return (
-    <header className="flex h-16 items-center justify-between bg-marino pr-4 font-marca text-white">
+    <header
+      data-compact={compact || undefined}
+      className={`app-topbar flex shrink-0 items-center justify-between bg-marino pr-4 font-marca text-white ${
+        compact ? "h-[var(--app-topbar-height,2.5rem)]" : "h-16"
+      }`}
+    >
       <div className="flex min-w-0 items-center">
         {/* Mismo ancho que el menú lateral (w-52) para que el título arranque sobre el contenido. */}
         <div className="flex shrink-0 items-center gap-2 px-3 md:w-52">
@@ -101,7 +109,8 @@ export function AppTopbar({
           >
             <Menu className="size-5" />
           </button>
-          <div className="hidden leading-tight md:block">
+          {/* En el detalle (barra compacta) solo queda el menu, para ganar alto. */}
+          <div className={`hidden leading-tight ${compact ? "" : "md:block"}`}>
             <p className="text-[0.95rem] font-bold">Redunisol</p>
             <p className="text-[0.62rem] font-bold tracking-[0.14em] text-verde-claro uppercase">
               Solicitudes
@@ -141,7 +150,10 @@ export function AppTopbar({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div
+        className={`flex shrink-0 items-center ${compact ? "gap-1" : "gap-2"}`}
+      >
+        <NotificationBell />
         <PopoverRoot>
           <PopoverTrigger asChild>
             <button

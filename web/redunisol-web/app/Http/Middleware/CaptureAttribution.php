@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Services\AttributionJourney;
+use App\Services\JourneyLedger;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -14,13 +15,14 @@ class CaptureAttribution
     {
         $response = $next($request);
         if (! config('attribution.enabled') || ! $request->isMethod('GET') || $response->getStatusCode() !== 200
-            || $request->is('admin*', 'api/*', 'dashboard*', 'settings*', 'login', 'register', 'finalizar*', 'health', 'whatsapp/*')
+            || $request->is(...[...JourneyLedger::PRIVATE_PATHS, 'finalizar*', 'whatsapp/*'])
             || (! str_contains((string) $response->headers->get('Content-Type'), 'text/html') && ! $request->header('X-Inertia'))) {
             return $response;
         }
         try {
             $journey = (new AttributionJourney)->touch($request);
             if ($journey) {
+                $request->attributes->set('journey_reference', $journey->id);
                 $response->headers->setCookie(cookie(AttributionJourney::COOKIE, $journey->id, config('attribution.days', 30) * 1440, '/', null, $request->isSecure(), true, false, 'lax'));
             } elseif ($request->query->has('ref')) {
                 $response->headers->setCookie(cookie()->forget(AttributionJourney::COOKIE));

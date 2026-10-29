@@ -1,6 +1,11 @@
+import { useSolicitudHeaderPreference } from "../hooks/use-solicitud-header-preference";
+import { AdministrativeStateControl } from "../components/administrative-state-control";
 import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
 import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
-import { ajustarMontoTexto, ajustarCuotasTexto } from "@/modules/solicitudes-shared/utils/maximos-linea";
+import {
+  ajustarMontoTexto,
+  ajustarCuotasTexto,
+} from "@/modules/solicitudes-shared/utils/maximos-linea";
 import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-calculada";
 import { LinkFirmaDigital } from "../components/link-firma-digital";
 import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
@@ -13,8 +18,9 @@ import {
   Clock,
   Download,
   Eye,
-  Maximize2,
-  Minimize2,
+  FileText,
+  ChevronDown,
+  ChevronUp,
   Pencil,
   Plus,
   Trash2,
@@ -28,7 +34,12 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
+import {
+  useNavigate,
+  useOutletContext,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -38,7 +49,8 @@ import {
   getTopeMontoRiesgo,
 } from "@/modules/solicitudes-core/utils/tope-monto-riesgo";
 import { authQueryKeys } from "@/modules/auth/hooks/use-auth-session";
-import { canViewPrestamosDelSocio,
+import {
+  canViewPrestamosDelSocio,
   canAccessRiesgoTools,
   canCreateSocio,
   isVendedor,
@@ -59,6 +71,9 @@ import { SolicitudWorkflowActionDialog } from "@/modules/solicitudes-core/compon
 import { ExternalPaymentControl } from "@/modules/solicitudes-core/components/external-payment-control";
 import { SolicitudWorkflowHistorySection } from "@/modules/solicitudes-core/components/solicitud-workflow-history-section";
 import { DocumentReviewPanel } from "@/modules/solicitudes-core/components/document-review-panel";
+import { LinkedLoanStatusBanner } from "../components/linked-loan-status-banner";
+import { ControlledLoanReplacementControl } from "../components/controlled-loan-replacement-control";
+import { useLinkedLoanStatus } from "../services/linked-loan-status-api";
 import { useDocumentReview } from "@/modules/solicitudes-core/services/document-review-api";
 import {
   RequiredMark,
@@ -328,11 +343,26 @@ function PrestamosDelSocioSection({
     isActive,
   );
   const prestamos = data?.prestamos ?? [];
-  const [filtro, setFiltro] = useState<"activos" | "otros" | "desconocidos" | "todos">("activos");
-  const activos = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "activos");
-  const otros = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "otros");
-  const desconocidos = prestamos.filter((prestamo) => clasificarEstadoPrestamo(prestamo) === "desconocidos");
-  const prestamosVisibles = filtro === "activos" ? activos : filtro === "otros" ? otros : filtro === "desconocidos" ? desconocidos : [...activos, ...otros, ...desconocidos];
+  const [filtro, setFiltro] = useState<
+    "activos" | "otros" | "desconocidos" | "todos"
+  >("activos");
+  const activos = prestamos.filter(
+    (prestamo) => clasificarEstadoPrestamo(prestamo) === "activos",
+  );
+  const otros = prestamos.filter(
+    (prestamo) => clasificarEstadoPrestamo(prestamo) === "otros",
+  );
+  const desconocidos = prestamos.filter(
+    (prestamo) => clasificarEstadoPrestamo(prestamo) === "desconocidos",
+  );
+  const prestamosVisibles =
+    filtro === "activos"
+      ? activos
+      : filtro === "otros"
+        ? otros
+        : filtro === "desconocidos"
+          ? desconocidos
+          : [...activos, ...otros, ...desconocidos];
   // Id en Vimarx del prestamo abierto en el modal; null con el modal cerrado.
   const [prestamoAbiertoId, setPrestamoAbiertoId] = useState<string | null>(
     null,
@@ -340,13 +370,19 @@ function PrestamosDelSocioSection({
 
   return (
     <div className="space-y-3">
-      <div aria-label="Filtrar préstamos por estado" className="flex flex-wrap gap-2" role="group">
-        {([
-          ["activos", "Activos", activos.length],
-          ["otros", "Otros estados", otros.length],
-          ["desconocidos", "Sin verificar", desconocidos.length],
-          ["todos", "Todos", prestamos.length],
-        ] as const).map(([value, label, count]) => (
+      <div
+        aria-label="Filtrar préstamos por estado"
+        className="flex flex-wrap gap-2"
+        role="group"
+      >
+        {(
+          [
+            ["activos", "Activos", activos.length],
+            ["otros", "Otros estados", otros.length],
+            ["desconocidos", "Sin verificar", desconocidos.length],
+            ["todos", "Todos", prestamos.length],
+          ] as const
+        ).map(([value, label, count]) => (
           <Button
             aria-pressed={filtro === value}
             key={value}
@@ -355,109 +391,115 @@ function PrestamosDelSocioSection({
             type="button"
             variant={filtro === value ? "default" : "outline"}
           >
-            {label}{!isLoading && !error ? ` (${count})` : ""}
+            {label}
+            {!isLoading && !error ? ` (${count})` : ""}
           </Button>
         ))}
       </div>
       <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] border-collapse text-sm">
-        <thead className="bg-background text-left text-xs text-foreground-secondary">
-          <tr>
-            {PRESTAMOS_TABLE_COLUMNS.map((column) => (
-              <th
-                className="border-r border-border px-3 py-2 font-medium"
-                key={column}
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr className="border-t border-border">
-              <td
-                className="px-3 py-4 text-foreground-secondary"
-                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
-              >
-                Consultando préstamos...
-              </td>
+        <table className="w-full min-w-[900px] border-collapse text-sm">
+          <thead className="bg-background text-left text-xs text-foreground-secondary">
+            <tr>
+              {PRESTAMOS_TABLE_COLUMNS.map((column) => (
+                <th
+                  className="border-r border-border px-3 py-2 font-medium"
+                  key={column}
+                >
+                  {column}
+                </th>
+              ))}
             </tr>
-          ) : error ? (
-            <tr className="border-t border-border">
-              <td
-                className="px-3 py-4 text-foreground-secondary"
-                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
-              >
-                No se pudieron consultar los préstamos del socio.
-              </td>
-            </tr>
-          ) : prestamosVisibles.length > 0 ? (
-            prestamosVisibles.map((prestamo) => (
-              <tr
-                // Otros estados no equivalen a créditos pagados ni libres de mora.
-                className={[
-                  "border-t border-border",
-                  clasificarEstadoPrestamo(prestamo) === "otros" ? "text-foreground-secondary" : "",
-                  prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                key={prestamo.legacyId ?? prestamo.nroCuenta}
-                onClick={() => {
-                  if (prestamo.legacyId) {
-                    setPrestamoAbiertoId(prestamo.legacyId);
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && prestamo.legacyId) {
-                    setPrestamoAbiertoId(prestamo.legacyId);
-                  }
-                }}
-                tabIndex={prestamo.legacyId ? 0 : undefined}
-                title={prestamo.legacyId ? "Ver detalle del préstamo" : undefined}
-              >
-                <td className="border-r border-border px-3 py-2">
-                  {prestamo.nroCuenta || PLACEHOLDER}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {prestamo.lineaPrestamoDescripcion || PLACEHOLDER}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatLegacyDate(prestamo.fechaEmision)}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatNullableAmount(prestamo.montoPrestamo) || PLACEHOLDER}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {prestamo.montoADesembolsar
-                    ? formatNullableAmount(prestamo.montoADesembolsar)
-                    : PLACEHOLDER}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
-                </td>
-                <td className="px-3 py-2">
-                  {formatLegacyDate(prestamo.vencimiento)}
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr className="border-t border-border">
+                <td
+                  className="px-3 py-4 text-foreground-secondary"
+                  colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+                >
+                  Consultando préstamos...
                 </td>
               </tr>
-            ))
-          ) : (
-            <tr className="border-t border-border">
-              <td
-                className="px-3 py-4 text-foreground-secondary"
-                colSpan={PRESTAMOS_TABLE_COLUMNS.length}
-              >
-                {prestamos.length === 0
-                  ? "El socio no tiene préstamos registrados."
-                  : filtro === "activos"
-                    ? "No hay préstamos activos. Podés consultar los otros estados o los pendientes de verificación."
-                    : "No hay préstamos en este filtro."}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            ) : error ? (
+              <tr className="border-t border-border">
+                <td
+                  className="px-3 py-4 text-foreground-secondary"
+                  colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+                >
+                  No se pudieron consultar los préstamos del socio.
+                </td>
+              </tr>
+            ) : prestamosVisibles.length > 0 ? (
+              prestamosVisibles.map((prestamo) => (
+                <tr
+                  // Otros estados no equivalen a créditos pagados ni libres de mora.
+                  className={[
+                    "border-t border-border",
+                    clasificarEstadoPrestamo(prestamo) === "otros"
+                      ? "text-foreground-secondary"
+                      : "",
+                    prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={prestamo.legacyId ?? prestamo.nroCuenta}
+                  onClick={() => {
+                    if (prestamo.legacyId) {
+                      setPrestamoAbiertoId(prestamo.legacyId);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && prestamo.legacyId) {
+                      setPrestamoAbiertoId(prestamo.legacyId);
+                    }
+                  }}
+                  tabIndex={prestamo.legacyId ? 0 : undefined}
+                  title={
+                    prestamo.legacyId ? "Ver detalle del préstamo" : undefined
+                  }
+                >
+                  <td className="border-r border-border px-3 py-2">
+                    {prestamo.nroCuenta || PLACEHOLDER}
+                  </td>
+                  <td className="border-r border-border px-3 py-2">
+                    {prestamo.lineaPrestamoDescripcion || PLACEHOLDER}
+                  </td>
+                  <td className="border-r border-border px-3 py-2">
+                    {formatLegacyDate(prestamo.fechaEmision)}
+                  </td>
+                  <td className="border-r border-border px-3 py-2">
+                    {formatNullableAmount(prestamo.montoPrestamo) ||
+                      PLACEHOLDER}
+                  </td>
+                  <td className="border-r border-border px-3 py-2">
+                    {prestamo.montoADesembolsar
+                      ? formatNullableAmount(prestamo.montoADesembolsar)
+                      : PLACEHOLDER}
+                  </td>
+                  <td className="border-r border-border px-3 py-2">
+                    {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
+                  </td>
+                  <td className="px-3 py-2">
+                    {formatLegacyDate(prestamo.vencimiento)}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr className="border-t border-border">
+                <td
+                  className="px-3 py-4 text-foreground-secondary"
+                  colSpan={PRESTAMOS_TABLE_COLUMNS.length}
+                >
+                  {prestamos.length === 0
+                    ? "El socio no tiene préstamos registrados."
+                    : filtro === "activos"
+                      ? "No hay préstamos activos. Podés consultar los otros estados o los pendientes de verificación."
+                      : "No hay préstamos en este filtro."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
       <PrestamoDelSocioDialog
         onOpenChange={(open) => {
@@ -1301,7 +1343,11 @@ function DetailCard({
   children: ReactNode;
   title: string;
 }) {
-  return <Section id={id} title={title}>{children}</Section>;
+  return (
+    <Section id={id} title={title}>
+      {children}
+    </Section>
+  );
 }
 
 // La linea se cambia donde la regla del estado lo habilita (pensado para que
@@ -1483,7 +1529,9 @@ function SolicitudSection({
             value={values.montoAFinanciar}
           />
           {isEditing && montoTopeError ? (
-            <span role="alert" className="text-xs text-danger">{montoTopeError}</span>
+            <span role="alert" className="text-xs text-danger">
+              {montoTopeError}
+            </span>
           ) : null}
         </div>
         <EditableTextInput
@@ -1504,11 +1552,15 @@ function SolicitudSection({
             disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
             isEditing={isEditing}
             label="Cuota resultante"
-            onChange={value => onChange("cuotaResultante", value)}
+            onChange={(value) => onChange("cuotaResultante", value)}
             readOnlyValue={values.cuotaResultante || "Cálculo no disponible"}
             value={values.cuotaResultante}
           />
-          {isEditing && cuotaCalculoMensaje ? <p role="status" className="mt-1 text-xs text-foreground-secondary">{cuotaCalculoMensaje}</p> : null}
+          {isEditing && cuotaCalculoMensaje ? (
+            <p role="status" className="mt-1 text-xs text-foreground-secondary">
+              {cuotaCalculoMensaje}
+            </p>
+          ) : null}
         </div>
         <EditableTextInput
           {...getReadonlyProps("solicitud.motivo")}
@@ -2305,7 +2357,11 @@ function AdjuntosSection({
   }
 
   const content = (
-    <div id="solicitud-adjuntos" tabIndex={-1} className="space-y-3 scroll-mt-36">
+    <div
+      id="solicitud-adjuntos"
+      tabIndex={-1}
+      className="space-y-3 scroll-mt-36"
+    >
       {canCreateAdjunto || canDownloadAdjunto || canDeleteAdjunto ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -3079,6 +3135,7 @@ export function SolicitudesActualDetallePage() {
   } = useSolicitudCoreDetailQuery(solicitudId);
   const { data: currentUser } = useAuthSessionQuery();
   const documentReview = useDocumentReview(solicitudId);
+  const linkedLoan = useLinkedLoanStatus(solicitudId);
   const canViewCalculadora = canAccessRiesgoTools(currentUser);
   const solicitudCapabilities = solicitud?.capabilities;
   const canChangeState = solicitudCapabilities?.canChangeState ?? false;
@@ -3135,6 +3192,11 @@ export function SolicitudesActualDetallePage() {
   });
   const createPrestamoLegacyMutation =
     useCreatePrestamoLegacyMutation(solicitudId);
+  const amountLocked =
+    createPrestamoLegacyMutation.isPending ||
+    linkedLoan.isError ||
+    linkedLoan.data?.status === "unavailable" ||
+    (Boolean(solicitud?.legacyOid) && linkedLoan.data?.amountEditable !== true);
   const [isEditing, setIsEditing] = useState(false);
   const [titularErrors, setTitularErrors] = useState<
     Partial<Record<keyof EditableSolicitudCoreValues["titular"], string>>
@@ -3157,7 +3219,8 @@ export function SolicitudesActualDetallePage() {
   const [isUploadingAdjunto, setIsUploadingAdjunto] = useState(false);
   const [isGarantiaModalOpen, setIsGarantiaModalOpen] = useState(false);
   const [isSimuladorOpen, setIsSimuladorOpen] = useState(false);
-  const { data: lineasSimulador = [], isLoading: isLoadingLineasSimulador } = useLineasPrestamoQuery(solicitudId);
+  const { data: lineasSimulador = [], isLoading: isLoadingLineasSimulador } =
+    useLineasPrestamoQuery(solicitudId);
   const [datosPersonalesTab, setDatosPersonalesTab] =
     useState<DatosPersonalesTab>("datosPersonales");
   const [solicitanteNavigation, setSolicitanteNavigation] = useState(0);
@@ -3165,13 +3228,14 @@ export function SolicitudesActualDetallePage() {
     useState<SolicitanteTab>("solicitante");
   const [vistaTab, setVistaTab] =
     useState<SolicitudDetailVistaTab>("solicitud");
-  const [reciboView, setReciboView] = useState<{ solicitudId: string; selectedId: string | null } | null>(null);
+  const [reciboView, setReciboView] = useState<{
+    solicitudId: string;
+    selectedId: string | null;
+  } | null>(null);
   const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
   const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
-  const [modoAnalisis, setModoAnalisis] = useState(true);
-  const analisisActivo = canViewCalculadora && vistaTab === "evaluacion" && modoAnalisis;
-
+  const [headerExpanded, setHeaderExpanded] = useSolicitudHeaderPreference();
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
     // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
@@ -3193,7 +3257,6 @@ export function SolicitudesActualDetallePage() {
 
     if (tab === "evaluacion" && canViewCalculadora) {
       closeSidebar();
-      if (vistaTab !== "evaluacion") setModoAnalisis(true);
     }
     setVistaTab(tab);
     return true;
@@ -3242,13 +3305,17 @@ export function SolicitudesActualDetallePage() {
     solicitudCapabilities?.canDownloadAdjuntos ?? false;
   const canCreateCancelaciones =
     solicitudCapabilities?.canCreateCancelaciones ??
-    solicitudCapabilities?.canManageCancelaciones ?? false;
+    solicitudCapabilities?.canManageCancelaciones ??
+    false;
   const canManageCancelaciones =
     solicitudCapabilities?.canManageCancelaciones ?? false;
   const canManageAdjuntos = canUploadAdjuntos || canDeleteAdjuntos;
   const canEnterEditMode =
-    canEditSolicitud && (hasEditableSolicitudFields || canManageAdjuntos);
+    !solicitud?.loanReplacementPending &&
+    canEditSolicitud &&
+    (hasEditableSolicitudFields || canManageAdjuntos);
   const isSolicitudFieldEditable = (fieldKey: string) =>
+    !(fieldKey === "solicitud.montoAFinanciar" && amountLocked) &&
     isFieldEditable(
       solicitudCapabilities,
       fieldKey as Parameters<typeof isFieldEditable>[1],
@@ -3313,19 +3380,53 @@ export function SolicitudesActualDetallePage() {
   ]);
   const workflowTransitionOptions: StyledSelectOption[] = useMemo(
     () =>
-      workflowTransitions.map((transition) => ({
-        disabled: transition.blockedReason !== null || (documentReview.data?.enabled === true && ["transferir", "devolver_a_liquidada"].includes(transition.actionCode)),
-        disabledReason: documentReview.data?.enabled && ["transferir", "devolver_a_liquidada"].includes(transition.actionCode)
-          ? "Registrá la decisión humana en Revisión de firma."
-          : transition.blockedReason ?? undefined,
-        label: formatWorkflowTransitionOptionLabel(
-          transition,
-          solicitud?.estadoActual.code,
-        ),
-        value: transition.id,
-      })),
-    [solicitud?.estadoActual.code, workflowTransitions, documentReview.data?.enabled],
+      workflowTransitions
+        .filter((transition) => transition.actionCode !== "liquidar")
+        .map((transition) => ({
+          disabled:
+            transition.blockedReason !== null ||
+            (documentReview.data?.enabled === true &&
+              ["transferir", "devolver_a_liquidada"].includes(
+                transition.actionCode,
+              )),
+          disabledReason:
+            documentReview.data?.enabled &&
+            ["transferir", "devolver_a_liquidada"].includes(
+              transition.actionCode,
+            )
+              ? "Registrá la decisión humana en Revisión de firma."
+              : (transition.blockedReason ?? undefined),
+          label: formatWorkflowTransitionOptionLabel(
+            transition,
+            solicitud?.estadoActual.code,
+          ),
+          value: transition.id,
+        })),
+    [
+      solicitud?.estadoActual.code,
+      workflowTransitions,
+      documentReview.data?.enabled,
+    ],
   );
+  const analysisTransition = workflowTransitions.find(
+    (transition) => transition.actionCode === "liquidar",
+  );
+  const analysisActionLabel = documentReview.data?.signature?.approved
+    ? "Mandar a transferir"
+    : "Mandar a revisar firma";
+  const analysisBlockedReason =
+    analysisTransition?.blockedReason ??
+    (linkedLoan.isPending ||
+    linkedLoan.isError ||
+    linkedLoan.data?.status === "unavailable"
+      ? "Esperá a que se verifique el préstamo en Vimarx."
+      : linkedLoan.data?.status !== "active"
+        ? "Se requiere un préstamo vigente."
+        : !linkedLoan.data.matchesAmount
+          ? "El monto del préstamo debe coincidir con la solicitud."
+          : documentReview.isPending || documentReview.isError
+            ? "Esperá a que se compruebe la situación de firma."
+            : null);
   const ultimaNovedad = useMemo(() => {
     const latestHistoryWithComment = [...workflowHistory]
       .filter((item) => item.comentario?.trim())
@@ -3339,21 +3440,73 @@ export function SolicitudesActualDetallePage() {
     return latestComment || PLACEHOLDER;
   }, [workflowHistory]);
 
-  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(null);
+  const [cuotaObjetivoTexto, setCuotaObjetivoTexto] = useState<string | null>(
+    null,
+  );
   const condicionesEdicion = editableValues?.solicitud;
-  const lineaEdicion = lineasSimulador.find(linea => linea.oid === condicionesEdicion?.lineaPrestamoLegacyOid);
-  const cuotaEdicion = useCuotaCalculada({
-    ...(cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) > 0 ? { cuotaObjetivo: parseMoneyValue(cuotaObjetivoTexto) } : {}),
-    solicitudId, capitalPuro: false, lineaId: Number(condicionesEdicion?.lineaPrestamoLegacyOid),
-    montoAFinanciar: parseMoneyValue(cuotaObjetivoTexto !== null ? condicionesEdicion?.montoAFinanciar ?? "" : ajustarMontoTexto(condicionesEdicion?.montoAFinanciar ?? "", lineaEdicion)),
-    cuotas: Number(ajustarCuotasTexto(condicionesEdicion?.cuotas ?? "", lineaEdicion)),
-    ...(condicionesEdicion?.fechaPrimerVencimiento ? { fechaPrimerVencimiento: condicionesEdicion.fechaPrimerVencimiento } : {}),
-  }, Boolean(isEditing && (cuotaObjetivoTexto === null || parseMoneyValue(cuotaObjetivoTexto) > 0) && lineaEdicion && condicionesEdicion && Number(condicionesEdicion.cuotas) > 0 && parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0), result => {
-    if (parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !== result.montoAFinanciar || Number(condicionesEdicion?.cuotas) !== result.cuotas) void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) });
-    setEditableValues(current => current ? { ...current, solicitud: { ...current.solicitud,
-      montoAFinanciar: parseMoneyValue(current.solicitud.montoAFinanciar) === result.montoAFinanciar ? current.solicitud.montoAFinanciar : formatMoneyAmount(result.montoAFinanciar),
-      cuotas: String(result.cuotas) } } : current);
-  });
+  const lineaEdicion = lineasSimulador.find(
+    (linea) => linea.oid === condicionesEdicion?.lineaPrestamoLegacyOid,
+  );
+  const cuotaEdicion = useCuotaCalculada(
+    {
+      ...(cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) > 0
+        ? { cuotaObjetivo: parseMoneyValue(cuotaObjetivoTexto) }
+        : {}),
+      solicitudId,
+      capitalPuro: false,
+      lineaId: Number(condicionesEdicion?.lineaPrestamoLegacyOid),
+      montoAFinanciar: parseMoneyValue(
+        cuotaObjetivoTexto !== null
+          ? (condicionesEdicion?.montoAFinanciar ?? "")
+          : ajustarMontoTexto(
+              condicionesEdicion?.montoAFinanciar ?? "",
+              lineaEdicion,
+            ),
+      ),
+      cuotas: Number(
+        ajustarCuotasTexto(condicionesEdicion?.cuotas ?? "", lineaEdicion),
+      ),
+      ...(condicionesEdicion?.fechaPrimerVencimiento
+        ? { fechaPrimerVencimiento: condicionesEdicion.fechaPrimerVencimiento }
+        : {}),
+    },
+    Boolean(
+      isEditing &&
+      (cuotaObjetivoTexto === null ||
+        parseMoneyValue(cuotaObjetivoTexto) > 0) &&
+      lineaEdicion &&
+      condicionesEdicion &&
+      Number(condicionesEdicion.cuotas) > 0 &&
+      parseMoneyValue(condicionesEdicion.montoAFinanciar) > 0,
+    ),
+    (result) => {
+      if (
+        parseMoneyValue(condicionesEdicion?.montoAFinanciar ?? "") !==
+          result.montoAFinanciar ||
+        Number(condicionesEdicion?.cuotas) !== result.cuotas
+      )
+        void queryClient.invalidateQueries({
+          queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId),
+        });
+      setEditableValues((current) =>
+        current
+          ? {
+              ...current,
+              solicitud: {
+                ...current.solicitud,
+                montoAFinanciar:
+                  amountLocked ||
+                  parseMoneyValue(current.solicitud.montoAFinanciar) ===
+                    result.montoAFinanciar
+                    ? current.solicitud.montoAFinanciar
+                    : formatMoneyAmount(result.montoAFinanciar),
+                cuotas: String(result.cuotas),
+              },
+            }
+          : current,
+      );
+    },
+  );
   // legacyOid es el ID interno del prestamo en Vimarx; operativamente se usa
   // su NroCuenta, que se consulta en vivo. Vendedores no tienen acceso.
   const canViewPrestamoGenerado =
@@ -3422,7 +3575,9 @@ export function SolicitudesActualDetallePage() {
           : "Sin acciones disponibles";
   const submissionTransition =
     resolvedSolicitud.estadoActual.code === "CargaVendedor"
-      ? workflowTransitions.find((transition) => transition.toState.code === "Motor")
+      ? workflowTransitions.find(
+          (transition) => transition.toState.code === "Motor",
+        )
       : undefined;
   const workflowHistoryErrorMessage =
     workflowHistoryError instanceof ApiError &&
@@ -3453,9 +3608,18 @@ export function SolicitudesActualDetallePage() {
     }
 
     const editValues = mapSolicitudCoreToEditableValues(resolvedSolicitud);
-    const linea = lineasSimulador.find(linea => linea.oid === editValues.solicitud.lineaPrestamoLegacyOid);
-    editValues.solicitud.montoAFinanciar = ajustarMontoTexto(editValues.solicitud.montoAFinanciar, linea);
-    editValues.solicitud.cuotas = ajustarCuotasTexto(editValues.solicitud.cuotas, linea);
+    const linea = lineasSimulador.find(
+      (linea) => linea.oid === editValues.solicitud.lineaPrestamoLegacyOid,
+    );
+    if (!amountLocked)
+      editValues.solicitud.montoAFinanciar = ajustarMontoTexto(
+        editValues.solicitud.montoAFinanciar,
+        linea,
+      );
+    editValues.solicitud.cuotas = ajustarCuotasTexto(
+      editValues.solicitud.cuotas,
+      linea,
+    );
     setEditableValues(editValues);
     setEditableGarantias(null);
     setEditingGarantiaIndex(null);
@@ -3477,14 +3641,36 @@ export function SolicitudesActualDetallePage() {
     setIsEditing(false);
   }
 
-  function updateSolicitudField(field: keyof EditableSolicitudCoreValues["solicitud"], value: string) {
-    if (field === "cuotaResultante") { setCuotaObjetivoTexto(value); return; }
-    if (["montoAFinanciar", "cuotas", "lineaPrestamoLegacyOid", "fechaPrimerVencimiento"].includes(field)) setCuotaObjetivoTexto(null);
-    setEditableValues(current => {
+  function updateSolicitudField(
+    field: keyof EditableSolicitudCoreValues["solicitud"],
+    value: string,
+  ) {
+    if (
+      amountLocked &&
+      (field === "montoAFinanciar" || field === "cuotaResultante")
+    )
+      return;
+    if (field === "cuotaResultante") {
+      setCuotaObjetivoTexto(value);
+      return;
+    }
+    if (
+      [
+        "montoAFinanciar",
+        "cuotas",
+        "lineaPrestamoLegacyOid",
+        "fechaPrimerVencimiento",
+      ].includes(field)
+    )
+      setCuotaObjetivoTexto(null);
+    setEditableValues((current) => {
       if (!current) return current;
       const draft = { ...current.solicitud, [field]: value };
-      const linea = lineasSimulador.find(linea => linea.oid === draft.lineaPrestamoLegacyOid);
-      draft.montoAFinanciar = ajustarMontoTexto(draft.montoAFinanciar, linea);
+      const linea = lineasSimulador.find(
+        (linea) => linea.oid === draft.lineaPrestamoLegacyOid,
+      );
+      if (!amountLocked)
+        draft.montoAFinanciar = ajustarMontoTexto(draft.montoAFinanciar, linea);
       draft.cuotas = ajustarCuotasTexto(draft.cuotas, linea);
       return { ...current, solicitud: draft };
     });
@@ -3622,8 +3808,21 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handleSaveChanges() {
+    if (
+      amountLocked &&
+      parseMoneyValue(currentValues.solicitud.montoAFinanciar) !==
+        Number(resolvedSolicitud.montoAFinanciar)
+    ) {
+      toast.error(
+        "El monto está bloqueado por el préstamo vinculado. Anulalo en Vimarx antes de modificarlo.",
+      );
+      return;
+    }
     if (cuotaObjetivoTexto !== null && !cuotaEdicion.data) {
-      toast.error(cuotaEdicion.error?.message ?? "Esperá a que termine el cálculo de la cuota deseada.");
+      toast.error(
+        cuotaEdicion.error?.message ??
+          "Esperá a que termine el cálculo de la cuota deseada.",
+      );
       return;
     }
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
@@ -3879,7 +4078,11 @@ export function SolicitudesActualDetallePage() {
           : "No se pudo crear el préstamo en el legado.";
 
       toast.error(message, {
-        duration: 3500,
+        duration:
+          error instanceof ApiError &&
+          error.code === "ConvenioSocioConflictError"
+            ? Infinity
+            : 3500,
         icon: <CircleAlert className="size-5" />,
         id: CREATE_PRESTAMO_LEGACY_ERROR_TOAST_ID,
       });
@@ -3887,7 +4090,11 @@ export function SolicitudesActualDetallePage() {
   }
 
   async function handlePreviewAdjunto(adjunto: SolicitudCoreAdjuntoResponse) {
-    if (canViewCalculadora && adjunto.tipoAdjunto === "Recibo de Sueldo" && adjunto.solicitudId === solicitudId) {
+    if (
+      canViewCalculadora &&
+      adjunto.tipoAdjunto === "Recibo de Sueldo" &&
+      adjunto.solicitudId === solicitudId
+    ) {
       if (!cambiarVistaTab("evaluacion")) return;
       setReciboView({ solicitudId, selectedId: adjunto.id });
       return;
@@ -4114,6 +4321,8 @@ export function SolicitudesActualDetallePage() {
       refetchDetail(),
       refetchAdjuntos(),
       refetchWorkflowTransitions(),
+      linkedLoan.refetch(),
+      documentReview.refetch(),
     ]);
   }
 
@@ -4130,7 +4339,22 @@ export function SolicitudesActualDetallePage() {
       null;
 
     executeWorkflowTransitionMutation.reset();
-    setSelectedWorkflowTransition(transition);
+    setSelectedWorkflowTransition(
+      transition?.actionCode === "liquidar"
+        ? {
+            ...transition,
+            actionLabel: analysisActionLabel,
+            description:
+              "El análisis quedará terminado. El destino se comprobará con la firma vigente al confirmar.",
+            toState: {
+              ...transition.toState,
+              name: documentReview.data?.signature?.approved
+                ? "Para transferir"
+                : "Revisión de firma",
+            },
+          }
+        : transition,
+    );
   }
 
   function handleValidateWorkflowTransition(
@@ -4164,159 +4388,203 @@ export function SolicitudesActualDetallePage() {
 
   return (
     <article
-      className={`flex flex-col rounded-md border border-border bg-surface shadow-sm ${
-        canViewCalculadora ? "h-full" : "min-h-full"
-      }`}
+      data-header-expanded={headerExpanded}
+      className="flex h-full min-h-0 flex-col rounded-md border border-border bg-surface shadow-sm"
     >
-      <div id="solicitud-encabezado-completo" className={analisisActivo ? "hidden" : "contents"}>
-      {/* El título y "volver" están en la barra superior; acá solo los datos de la solicitud. */}
-      <DatosRapidosSolicitante
-        estado={
-          <Badge
-            className="shrink-0 font-semibold"
-            dot
-            variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}
-          >
-            {formatText(
-              resolvedSolicitud.estadoActual.name ||
-                resolvedSolicitud.estadoActual.code,
-            )}
-          </Badge>
-        }
-        meta={
-          <>
-            <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-sm text-foreground-secondary">
+      <div id="solicitud-encabezado-completo" className="contents">
+        <header className="shrink-0 border-b border-border bg-surface px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <div className="flex min-w-0 max-w-full items-center gap-2.5">
+              <Button
+                className="shrink-0 text-foreground-secondary"
+                onClick={() => navigate(originPath)}
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+              >
+                <ArrowLeft className="size-4" />
+              </Button>
+              <FileText className="size-4 shrink-0 text-primary" />
+              <h1
+                aria-label={`Solicitud ${resolvedSolicitud.nroSolicitud ?? "sin número"}`}
+                className="flex min-w-0 flex-wrap items-center gap-x-2 text-[1.375rem] leading-tight font-semibold text-foreground"
+              >
                 Solicitud
-              </span>
-              <IdChip value={resolvedSolicitud.id} />
-            </div>
-            {canViewPrestamoGenerado ? (
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <span className="text-sm text-foreground-secondary">
-                  Préstamo
-                </span>
-                {!resolvedSolicitud.legacyOid ? (
-                  <Badge icon={<Clock className="size-3" />} variant="neutral">
-                    Sin generar
-                  </Badge>
-                ) : nroCuentaPrestamo ? (
-                  <IdChip value={nroCuentaPrestamo} variant="accent" />
+                {resolvedSolicitud.nroSolicitud ? (
+                  <IdChip
+                    className="border-0 bg-transparent p-0 font-sans text-[1.375rem] font-semibold text-foreground"
+                    value={resolvedSolicitud.nroSolicitud}
+                  />
                 ) : (
-                  <Badge variant="neutral">
-                    {prestamoGeneradoQuery.isLoading
-                      ? "Consultando..."
-                      : "No disponible"}
-                  </Badge>
+                  <span>sin número</span>
                 )}
-              </div>
-            ) : null}
-          </>
-        }
-        key={resolvedSolicitud.id}
-        solicitudId={resolvedSolicitud.id}
-        titular={resolvedSolicitud.titular}
-        revision={JSON.stringify([
-          resolvedSolicitud.titular.nroDocumento,
-          resolvedSolicitud.titular.tipoDocumento,
-          resolvedSolicitud.lineaPrestamoLegacyOid,
-        ])}
-        canViewDetalle={Boolean(currentUser) && canViewPrestamosDelSocio(currentUser)}
-        onVerDetalle={() => {
-          if (!cambiarVistaTab("solicitud")) return;
-          setSolicitanteTab("prestamos");
-          setSolicitanteNavigation((value) => value + 1);
-          requestAnimationFrame(() => {
-            const target = document.getElementById("solicitante-prestamos");
-            target?.scrollIntoView({ behavior: "smooth", block: "start" });
-            target?.focus({ preventScroll: true });
-          });
-        }}
-      />
+              </h1>
+            </div>
+            <div className="flex max-w-full flex-wrap items-center gap-x-5 gap-y-2">
+              {canViewPrestamoGenerado ? (
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <span className="text-xs font-medium text-foreground-muted">
+                    Préstamo
+                  </span>
+                  {!resolvedSolicitud.legacyOid ? (
+                    <Badge
+                      icon={<Clock className="size-3" />}
+                      variant="neutral"
+                    >
+                      Sin generar
+                    </Badge>
+                  ) : nroCuentaPrestamo ? (
+                    <IdChip value={nroCuentaPrestamo} variant="accent" />
+                  ) : (
+                    <Badge variant="neutral">
+                      {prestamoGeneradoQuery.isLoading
+                        ? "Consultando..."
+                        : "No disponible"}
+                    </Badge>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <Badge
+              className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
+              dot
+              variant={getEstadoBadgeVariant(
+                resolvedSolicitud.estadoActual.code,
+              )}
+            >
+              {formatText(
+                resolvedSolicitud.estadoActual.code ||
+                  resolvedSolicitud.estadoActual.name,
+              )}
+            </Badge>
+          </div>
+        </header>
 
-      <SolicitudDetailToolbar
-        canEdit={canEnterEditMode}
-        isCreatePrestamoLegacyPending={createPrestamoLegacyMutation.isPending}
-        isEditing={isEditing}
-        isSaveDisabled={
-          patchSolicitudCoreMutation.isPending ||
-          (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
-          Boolean(montoTopeError) ||
-          (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
-        }
-        isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
-        onCreatePrestamoLegacy={
-          canCreateSocio(currentUser)
-            ? () => setIsGenerarPrestamoModalOpen(true)
-            : undefined
-        }
-        onCreateSocio={
-          canCreateSocio(currentUser)
-            ? () => setIsCreateSocioModalOpen(true)
-            : undefined
-        }
-        onOpenSimulador={() => setIsSimuladorOpen(true)}
-        onPreloadSimulador={loadSimuladorPrestamoModal}
-        onRefresh={handleRefresh}
-        onSave={handleSaveToolbarAction}
-        onStartEdit={handleStartEditing}
-        submitAction={
-          canChangeState && submissionTransition
-            ? {
-                onClick: () => handleWorkflowTransitionChange(submissionTransition.id),
-                disabled:
-                  isLoadingWorkflowTransitions ||
-                  workflowTransitionSelectorErrorMessage !== null ||
-                  executeWorkflowTransitionMutation.isPending ||
-                  submissionTransition.blockedReason !== null,
-                disabledReason: submissionTransition.blockedReason ?? undefined,
-              }
-            : undefined
-        }
-        attachmentsAction={{
-          count: isLoadingAdjuntos || adjuntosError ? undefined : adjuntos.length,
-          onClick: () => {
+        <DatosRapidosSolicitante
+          compact={!headerExpanded}
+          key={resolvedSolicitud.id}
+          solicitudId={resolvedSolicitud.id}
+          titular={resolvedSolicitud.titular}
+          revision={JSON.stringify([
+            resolvedSolicitud.titular.nroDocumento,
+            resolvedSolicitud.titular.tipoDocumento,
+            resolvedSolicitud.lineaPrestamoLegacyOid,
+          ])}
+          canViewDetalle={
+            Boolean(currentUser) && canViewPrestamosDelSocio(currentUser)
+          }
+          onVerDetalle={() => {
             if (!cambiarVistaTab("solicitud")) return;
-            setSolicitanteTab("adjuntos");
+            setSolicitanteTab("prestamos");
             setSolicitanteNavigation((value) => value + 1);
             requestAnimationFrame(() => {
-              const target = document.getElementById("solicitud-adjuntos");
+              const target = document.getElementById("solicitante-prestamos");
               target?.scrollIntoView({ behavior: "smooth", block: "start" });
               target?.focus({ preventScroll: true });
             });
-          },
-        }}
-        transitionControl={
-          <StyledSelect
-            className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
-            disabled={
-              !canChangeState ||
-              isLoadingWorkflowTransitions ||
-              workflowTransitionSelectorErrorMessage !== null ||
-              executeWorkflowTransitionMutation.isPending ||
-              workflowTransitionOptions.length === 0
-            }
-            onChange={handleWorkflowTransitionChange}
-            options={workflowTransitionOptions}
-            placeholder={workflowTransitionPlaceholder}
-            value={selectedWorkflowTransition?.id ?? ""}
-          />
-        }
-      />
+          }}
+        />
 
-      {(["Transferir", "Pagada"].includes(resolvedSolicitud.estadoActual.code) &&
-        (currentUser?.isSystemAdmin || ["TESORERIA", "RIESGO"].includes(currentUser?.workflowOwner?.code ?? ""))) ? (
-        <ExternalPaymentControl key={solicitudId} solicitudId={solicitudId} isPaid={resolvedSolicitud.estadoActual.code === "Pagada"} />
-      ) : null}
+        <SolicitudDetailToolbar
+          analysisAction={
+            canChangeState && analysisTransition
+              ? {
+                  label: analysisActionLabel,
+                  onClick: () =>
+                    handleWorkflowTransitionChange(analysisTransition.id),
+                  disabled:
+                    isEditing ||
+                    isLoadingWorkflowTransitions ||
+                    executeWorkflowTransitionMutation.isPending ||
+                    Boolean(analysisBlockedReason),
+                  disabledReason: isEditing
+                    ? "Guardá los cambios antes de terminar el análisis."
+                    : (analysisBlockedReason ?? undefined),
+                }
+              : undefined
+          }
+          canEdit={canEnterEditMode}
+          isCreatePrestamoLegacyPending={
+            createPrestamoLegacyMutation.isPending ||
+            linkedLoan.isError ||
+            linkedLoan.data?.status === "unavailable"
+          }
+          isEditing={isEditing}
+          isSaveDisabled={
+            patchSolicitudCoreMutation.isPending ||
+            (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
+            Boolean(montoTopeError) ||
+            (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
+          }
+          isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
+          onCreatePrestamoLegacy={
+            canCreateSocio(currentUser) &&
+            linkedLoan.data?.status !== "cancelled"
+              ? () => setIsGenerarPrestamoModalOpen(true)
+              : undefined
+          }
+          onCreateSocio={
+            canCreateSocio(currentUser)
+              ? () => setIsCreateSocioModalOpen(true)
+              : undefined
+          }
+          onOpenSimulador={() => setIsSimuladorOpen(true)}
+          onPreloadSimulador={loadSimuladorPrestamoModal}
+          onRefresh={handleRefresh}
+          onSave={handleSaveToolbarAction}
+          onStartEdit={handleStartEditing}
+          submitAction={
+            canChangeState && submissionTransition
+              ? {
+                  onClick: () =>
+                    handleWorkflowTransitionChange(submissionTransition.id),
+                  disabled:
+                    isLoadingWorkflowTransitions ||
+                    workflowTransitionSelectorErrorMessage !== null ||
+                    executeWorkflowTransitionMutation.isPending ||
+                    submissionTransition.blockedReason !== null,
+                  disabledReason:
+                    submissionTransition.blockedReason ?? undefined,
+                }
+              : undefined
+          }
+          attachmentsAction={{
+            count:
+              isLoadingAdjuntos || adjuntosError ? undefined : adjuntos.length,
+            onClick: () => {
+              if (!cambiarVistaTab("solicitud")) return;
+              setSolicitanteTab("adjuntos");
+              setSolicitanteNavigation((value) => value + 1);
+              requestAnimationFrame(() => {
+                const target = document.getElementById("solicitud-adjuntos");
+                target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                target?.focus({ preventScroll: true });
+              });
+            },
+          }}
+          transitionControl={
+            !headerExpanded &&
+            workflowTransitionOptions.length === 0 &&
+            !isLoadingWorkflowTransitions &&
+            !workflowTransitionSelectorErrorMessage ? undefined : (
+              <StyledSelect
+                className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
+                disabled={
+                  !canChangeState ||
+                  isLoadingWorkflowTransitions ||
+                  workflowTransitionSelectorErrorMessage !== null ||
+                  executeWorkflowTransitionMutation.isPending ||
+                  workflowTransitionOptions.length === 0
+                }
+                onChange={handleWorkflowTransitionChange}
+                options={workflowTransitionOptions}
+                placeholder={workflowTransitionPlaceholder}
+                value={selectedWorkflowTransition?.id ?? ""}
+              />
+            )
+          }
+        />
       </div>
-      {analisisActivo ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-sm">
-          <Button aria-label="Volver al listado" onClick={() => navigate(originPath)} size="icon-sm" variant="ghost" type="button"><ArrowLeft className="size-4" /></Button>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold"><span className="sr-only">Evaluación de </span>{[resolvedSolicitud.titular.nombre, resolvedSolicitud.titular.apellidoDenominacion].filter(Boolean).join(" ") || "Detalle de Solicitud"}</h1>
-          <Badge dot variant={getEstadoBadgeVariant(resolvedSolicitud.estadoActual.code)}>{formatText(resolvedSolicitud.estadoActual.code || resolvedSolicitud.estadoActual.name)}</Badge>
-        </div>
-      ) : null}
-
       <SolicitudWorkflowActionDialog
         errorMessage={workflowTransitionErrorMessage}
         isSubmitting={executeWorkflowTransitionMutation.isPending}
@@ -4331,10 +4599,10 @@ export function SolicitudesActualDetallePage() {
         validate={handleValidateWorkflowTransition}
       />
 
-      {canViewCalculadora ? (
-        <div className="border-b border-border bg-surface px-3 md:px-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
+      <div className="shrink-0 border-b border-border bg-surface px-3 md:px-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {canViewCalculadora &&
+            SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
               const isActive = tab.value === vistaTab;
 
               return (
@@ -4352,34 +4620,29 @@ export function SolicitudesActualDetallePage() {
                 </button>
               );
             })}
-            {vistaTab === "evaluacion" ? (
-              <Button
-                className="ml-auto my-1"
-                aria-pressed={analisisActivo}
-                aria-expanded={!analisisActivo}
-                aria-controls="solicitud-encabezado-completo"
-                title={analisisActivo ? "Mostrar el encabezado completo" : "Plegar el encabezado para ampliar Evaluación"}
-                onClick={() => {
-                  if (!modoAnalisis) closeSidebar();
-                  setModoAnalisis(value => !value);
-                }}
-                size="sm"
-                type="button"
-                variant={analisisActivo ? "default" : "outline"}
-              >
-                {analisisActivo ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-                Modo análisis
-              </Button>
-            ) : null}
-          </div>
+          <Button
+            className="my-1 ml-auto"
+            aria-expanded={headerExpanded}
+            aria-controls="solicitud-encabezado-completo"
+            onClick={() => setHeaderExpanded((value) => !value)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {headerExpanded ? (
+              <ChevronUp className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+            {headerExpanded ? "Ocultar encabezado" : "Mostrar encabezado"}
+          </Button>
         </div>
-      ) : null}
+      </div>
 
       {!canViewCalculadora || vistaTab === "solicitud" ? (
         <div
-          className={`space-y-3 p-3 pb-8 md:p-4 md:pb-10 ${
-            canViewCalculadora ? "min-h-0 flex-1 overflow-y-auto" : ""
-          }`}
+          data-testid="solicitud-reading-area"
+          className="min-h-40 flex-1 space-y-3 overflow-y-auto p-3 pb-8 md:p-4 md:pb-10"
         >
           {isEditing ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -4392,7 +4655,11 @@ export function SolicitudesActualDetallePage() {
                 Cancelar
               </Button>
               <Button
-                disabled={patchSolicitudCoreMutation.isPending || (cuotaObjetivoTexto !== null && !cuotaEdicion.data) || Boolean(montoTopeError)}
+                disabled={
+                  patchSolicitudCoreMutation.isPending ||
+                  (cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
+                  Boolean(montoTopeError)
+                }
                 onClick={() => void handleSaveChanges()}
                 type="button"
               >
@@ -4401,9 +4668,57 @@ export function SolicitudesActualDetallePage() {
               </Button>
             </div>
           ) : null}
+          <LinkedLoanStatusBanner
+            canRecover={currentUser?.isSystemAdmin === true}
+            solicitudId={solicitudId}
+            data={linkedLoan.data}
+            loading={linkedLoan.isPending}
+            failed={linkedLoan.isError}
+            retry={() => void linkedLoan.refetch()}
+            onRecovered={() =>
+              Promise.all([refetchDetail(), linkedLoan.refetch()])
+            }
+          />
+          {resolvedSolicitud.legacyOid && (
+            <div className="border-b border-border px-4 pb-3">
+              <ControlledLoanReplacementControl
+                solicitudId={solicitudId}
+                updatedAt={resolvedSolicitud.updatedAt}
+                isEditing={isEditing}
+              />
+            </div>
+          )}
+
+          <AdministrativeStateControl
+            key={`admin-state:${solicitudId}`}
+            solicitudId={solicitudId}
+            updatedAt={resolvedSolicitud.updatedAt}
+            isEditing={isEditing}
+          />
+
+          {["Transferir", "Pagada"].includes(
+            resolvedSolicitud.estadoActual.code,
+          ) &&
+          (currentUser?.isSystemAdmin ||
+            ["TESORERIA", "RIESGO"].includes(
+              currentUser?.workflowOwner?.code ?? "",
+            )) ? (
+            <ExternalPaymentControl
+              key={`external-payment:${solicitudId}`}
+              solicitudId={solicitudId}
+              isPaid={resolvedSolicitud.estadoActual.code === "Pagada"}
+            />
+          ) : null}
           <DocumentReviewPanel solicitudId={solicitudId} editing={isEditing} />
           <SolicitudSection
-            cuotaCalculoMensaje={cuotaObjetivoTexto !== null && parseMoneyValue(cuotaObjetivoTexto) <= 0 ? "Ingresá una cuota mayor a cero." : cuotaEdicion.isPending ? "Calculando..." : cuotaEdicion.error?.message}
+            cuotaCalculoMensaje={
+              cuotaObjetivoTexto !== null &&
+              parseMoneyValue(cuotaObjetivoTexto) <= 0
+                ? "Ingresá una cuota mayor a cero."
+                : cuotaEdicion.isPending
+                  ? "Calculando..."
+                  : cuotaEdicion.error?.message
+            }
             assignmentOptions={assignmentAgentOptions}
             assignmentValue={selectedAssignmentValue}
             assignmentValueLabel={assignmentValueLabel}
@@ -4419,7 +4734,25 @@ export function SolicitudesActualDetallePage() {
             readonlyAppearanceStyle={readonlyAppearanceStyle}
             solicitud={resolvedSolicitud}
             ultimaNovedad={ultimaNovedad}
-            values={{ ...currentValues.solicitud, montoAFinanciar: cuotaObjetivoTexto !== null ? currentValues.solicitud.montoAFinanciar : ajustarMontoTexto(currentValues.solicitud.montoAFinanciar, lineaEdicion), cuotas: ajustarCuotasTexto(currentValues.solicitud.cuotas, lineaEdicion), cuotaResultante: isEditing ? cuotaEdicion.data ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante) : cuotaObjetivoTexto ?? "" : currentValues.solicitud.cuotaResultante }}
+            values={{
+              ...currentValues.solicitud,
+              montoAFinanciar:
+                amountLocked || cuotaObjetivoTexto !== null
+                  ? currentValues.solicitud.montoAFinanciar
+                  : ajustarMontoTexto(
+                      currentValues.solicitud.montoAFinanciar,
+                      lineaEdicion,
+                    ),
+              cuotas: ajustarCuotasTexto(
+                currentValues.solicitud.cuotas,
+                lineaEdicion,
+              ),
+              cuotaResultante: isEditing
+                ? cuotaEdicion.data
+                  ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante)
+                  : (cuotaObjetivoTexto ?? "")
+                : currentValues.solicitud.cuotaResultante,
+            }}
           />
           <SolicitanteSection
             key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
@@ -4452,7 +4785,9 @@ export function SolicitudesActualDetallePage() {
             onDatosPersonalesTabChange={setDatosPersonalesTab}
             onDeleteAdjunto={handleDeleteAdjunto}
             onDownloadAdjunto={handleDownloadAdjunto}
-            onEditAdjunto={isEditing && canDeleteAdjuntos ? handleOpenEditAdjunto : undefined}
+            onEditAdjunto={
+              isEditing && canDeleteAdjuntos ? handleOpenEditAdjunto : undefined
+            }
             onGarantiaCreate={handleGarantiaCreate}
             onNewAdjuntosLote={handleAddAdjuntosLote}
             onPreviewAdjunto={handlePreviewAdjunto}
@@ -4481,7 +4816,7 @@ export function SolicitudesActualDetallePage() {
       ) : null}
 
       {canViewCalculadora && vistaTab === "credixsa" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-40 flex-1 overflow-y-auto">
           <CredixsaInformeSection
             isActive={vistaTab === "credixsa"}
             solicitudId={solicitudId}
@@ -4496,13 +4831,23 @@ export function SolicitudesActualDetallePage() {
           recibos={recibos}
           open={visorRecibosOpen}
           selectedId={visorRecibosOpen ? reciboView.selectedId : null}
-          onOpen={() => setReciboView({ solicitudId, selectedId: recibos[0]?.id ?? null })}
+          onOpen={() =>
+            setReciboView({ solicitudId, selectedId: recibos[0]?.id ?? null })
+          }
           onClose={() => setReciboView(null)}
-          onSelect={selectedId => setReciboView({ solicitudId, selectedId })}
+          onSelect={(selectedId) => setReciboView({ solicitudId, selectedId })}
           loading={isLoadingAdjuntos}
-          error={adjuntosError ? "No se pudo obtener el listado de recibos de sueldo." : null}
+          error={
+            adjuntosError
+              ? "No se pudo obtener el listado de recibos de sueldo."
+              : null
+          }
         >
-          <Suspense fallback={<SolicitudesContentLoader label="Cargando calculadora..." />}>
+          <Suspense
+            fallback={
+              <SolicitudesContentLoader label="Cargando calculadora..." />
+            }
+          >
             <CalculadoraMutualSheet
               className="flex-1 min-w-0"
               onCambiosSinGuardarChange={setEvaluacionConCambios}
@@ -4541,7 +4886,11 @@ export function SolicitudesActualDetallePage() {
           <SimuladorPrestamoModal
             isLoadingLineas={isLoadingLineasSimulador}
             solicitudId={solicitudId}
-            onLimitsAdjusted={() => { void queryClient.invalidateQueries({ queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId) }); }}
+            onLimitsAdjusted={() => {
+              void queryClient.invalidateQueries({
+                queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId),
+              });
+            }}
             defaultLineaOid={
               resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
             }
@@ -4549,6 +4898,16 @@ export function SolicitudesActualDetallePage() {
             onApply={
               canEnterEditMode
                 ? (valores) => {
+                    if (
+                      amountLocked &&
+                      parseMoneyValue(valores.montoAFinanciar) !==
+                        Number(resolvedSolicitud.montoAFinanciar)
+                    ) {
+                      toast.error(
+                        "El monto está bloqueado. Anulá el préstamo en Vimarx antes de aplicar otro monto.",
+                      );
+                      return;
+                    }
                     // El simulador se abre desde la barra aunque la solicitud
                     // no este en edicion. Antes, aplicar en ese caso descartaba
                     // los valores sin avisar; ahora entra en edicion con los
@@ -4621,7 +4980,12 @@ export function SolicitudesActualDetallePage() {
         socio={null}
       />
       <GenerarPrestamoDialog
-        condicionesKey={JSON.stringify([resolvedSolicitud.lineaPrestamoLegacyOid, resolvedSolicitud.montoAFinanciar, resolvedSolicitud.cuotas, resolvedSolicitud.titular])}
+        condicionesKey={JSON.stringify([
+          resolvedSolicitud.lineaPrestamoLegacyOid,
+          resolvedSolicitud.montoAFinanciar,
+          resolvedSolicitud.cuotas,
+          resolvedSolicitud.titular,
+        ])}
         cuotas={resolvedSolicitud.cuotas}
         isPending={createPrestamoLegacyMutation.isPending}
         lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}

@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+import { assertNoLoanReplacementPending } from "../../../domain/workflow/AdministrativeCorrection";
 import type { DbClient } from "../../../../../db/prisma";
 
 import type {
@@ -23,8 +25,24 @@ export class SolicitudCancelacionesPrismaDatasource {
     this.prisma = prisma;
   }
 
+  private editableWrite<T>(ids: { solicitudId?: string; cancelacionId?: string }, write: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.prisma.$transaction(async tx => {
+      const id = ids.solicitudId ?? (await tx.solicitudCancelacion.findUnique({ where: { id: ids.cancelacionId } }))?.solicitudId;
+      if (id) {
+        await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
+        const s = await tx.solicitud.findUnique({ where: { id }, select: { administrativeCoreControl: true } });
+        if (s) assertNoLoanReplacementPending(s);
+      }
+      const result = await write(tx);
+      // A cancellation changes the loan input and must invalidate forms opened
+      // against the previous parent version, even before a replacement starts.
+      if (id) await tx.solicitud.update({ where: { id }, data: { updatedAt: new Date() } });
+      return result;
+    });
+  }
+
   async create(input: CreateSolicitudCancelacionRecord) {
-    const cancelacion = await this.prisma.solicitudCancelacion.create({
+    const cancelacion = await this.editableWrite({ solicitudId: input.solicitudId }, tx => tx.solicitudCancelacion.create({
       data: {
         cbu: input.cbu,
         createdBy: input.createdBy,
@@ -38,7 +56,7 @@ export class SolicitudCancelacionesPrismaDatasource {
         solicitudId: input.solicitudId,
       },
       include: solicitudCancelacionInclude,
-    });
+    }));
 
     return SolicitudCancelacionMapper.toDomain(cancelacion);
   }
@@ -69,7 +87,7 @@ export class SolicitudCancelacionesPrismaDatasource {
   }
 
   async softDelete(input: SoftDeleteSolicitudCancelacionInput) {
-    const cancelacion = await this.prisma.solicitudCancelacion.update({
+    const cancelacion = await this.editableWrite({ cancelacionId: input.cancelacionId }, tx => tx.solicitudCancelacion.update({
       where: {
         id: input.cancelacionId,
       },
@@ -78,13 +96,13 @@ export class SolicitudCancelacionesPrismaDatasource {
         deletedBy: input.deletedBy,
       },
       include: solicitudCancelacionInclude,
-    });
+    }));
 
     return SolicitudCancelacionMapper.toDomain(cancelacion);
   }
 
   async update(input: UpdateSolicitudCancelacionInput) {
-    const cancelacion = await this.prisma.solicitudCancelacion.update({
+    const cancelacion = await this.editableWrite({ cancelacionId: input.cancelacionId }, tx => tx.solicitudCancelacion.update({
       where: {
         id: input.cancelacionId,
       },
@@ -104,7 +122,7 @@ export class SolicitudCancelacionesPrismaDatasource {
         ...(input.notas !== undefined && { notas: input.notas }),
       },
       include: solicitudCancelacionInclude,
-    });
+    }));
 
     return SolicitudCancelacionMapper.toDomain(cancelacion);
   }

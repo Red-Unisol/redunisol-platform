@@ -1543,6 +1543,36 @@
  *       junto con el link de firma digital. Requiere que el titular ya
  *       tenga socio dado de alta en el legado y que los datos de la
  *       solicitud esten completos.
+ *       `convenio` contiene solo los campos editados, cada uno con `original`
+ *       y `valor`. Los campos omitidos se conservan. Si un campo editado cambio
+ *       en Vimarx se responde 409 antes de escribir o generar. Si ya tiene el
+ *       valor solicitado, no se vuelve a escribir. Un prestamo activo se
+ *       reutiliza sin ediciones; un anulado conserva este control al regenerar.
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             properties:
+ *               convenio:
+ *                 type: object
+ *                 additionalProperties: false
+ *                 properties:
+ *                   beneficio:
+ *                     $ref: '#/components/schemas/ConvenioTextoEditado'
+ *                   observaciones:
+ *                     $ref: '#/components/schemas/ConvenioTextoEditado'
+ *                   caja40:
+ *                     $ref: '#/components/schemas/ConvenioNumeroEditado'
+ *                   convAux:
+ *                     $ref: '#/components/schemas/ConvenioNumeroEditado'
+ *           example:
+ *             convenio:
+ *               caja40:
+ *                 original: 100
+ *                 valor: 110
  *     tags:
  *       - Solicitudes Core
  *     security:
@@ -1570,10 +1600,46 @@
  *           El prestamo ya fue generado, el socio titular todavia no fue
  *           dado de alta en el legado, o no se pudo determinar el vendedor
  *           en el legado para esta solicitud.
+ *           ConvenioSocioConflictError indica que un campo editado cambio;
+ *           cerrar y reabrir el modal para revisar sus valores actuales.
  *       422:
  *         description: El legado rechazo la creacion del prestamo.
  *       503:
  *         description: No se pudo conectar con el sistema legado.
+ */
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     ConvenioTextoEditado:
+ *       type: object
+ *       additionalProperties: false
+ *       required: [original, valor]
+ *       description: Texto original y nuevo; beneficio admite 50 caracteres y observaciones 500. Null borra el texto.
+ *       properties:
+ *         original:
+ *           type: string
+ *           nullable: true
+ *         valor:
+ *           type: string
+ *           nullable: true
+ *     ConvenioNumeroEditado:
+ *       type: object
+ *       additionalProperties: false
+ *       required: [original, valor]
+ *       description: Numero original y nuevo. No se puede vaciar un numero distinto de cero.
+ *       properties:
+ *         original:
+ *           type: integer
+ *           minimum: 0
+ *           maximum: 2147483647
+ *           nullable: true
+ *         valor:
+ *           type: integer
+ *           minimum: 0
+ *           maximum: 2147483647
+ *           nullable: true
  */
 
 /**

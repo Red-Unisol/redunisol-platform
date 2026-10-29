@@ -31,6 +31,14 @@ return [
 
     'connections' => [
 
+        'journey' => [
+            'driver' => 'sqlite',
+            'database' => rtrim(env('JOURNEY_ROOT', '/var/www/journey'), '/').'/'.env('JOURNEY_ENVIRONMENT', env('APP_ENV', 'local')).'/attribution.sqlite',
+            'prefix' => '', 'foreign_key_constraints' => true,
+            'busy_timeout' => 1000, 'journal_mode' => 'WAL',
+            'synchronous' => 'NORMAL', 'transaction_mode' => 'IMMEDIATE',
+        ],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),

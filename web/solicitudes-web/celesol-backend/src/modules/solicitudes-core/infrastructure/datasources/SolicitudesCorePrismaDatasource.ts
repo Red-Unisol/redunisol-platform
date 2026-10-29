@@ -1,3 +1,4 @@
+import { AdministrativeCorrectionError, assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
 import { actingHistoryFields } from "../../../auth/impersonation/context";
 import type { DbClient } from "../../../../db/prisma";
 import type { Prisma } from "@prisma/client";
@@ -347,6 +348,24 @@ export class SolicitudesCorePrismaDatasource {
     return user.legacyUser.trim() || null;
   }
 
+  private static buildSearchFilter(search?: string): Prisma.SolicitudWhereInput {
+    const terms = search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    if (!terms.length) return {};
+    return {
+      AND: terms.map((term) => {
+        const contains = term.replace(/[\\%_]/g, "\\$&");
+        return { OR: [
+          { nroSolicitud: { contains, mode: "insensitive" as const } },
+          { titular: { OR: [
+            { nombre: { contains, mode: "insensitive" as const } },
+            { apellidoDenominacion: { contains, mode: "insensitive" as const } },
+            { nroDocumento: { contains, mode: "insensitive" as const } },
+          ] } },
+        ] };
+      }),
+    };
+  }
+
   private static buildWorkflowStateFilter(input: {
     estado?: string;
     excludeEstado?: string;
@@ -451,6 +470,7 @@ export class SolicitudesCorePrismaDatasource {
   async listByOwner(input: ListSolicitudesByOwnerInput) {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         archivedAt: null,
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         estadoActual: SolicitudesCorePrismaDatasource.buildWorkflowStateFilter({
@@ -656,6 +676,7 @@ export class SolicitudesCorePrismaDatasource {
   async listTracking(input: ListSolicitudesTrackingInput) {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         OR: [
           {
             createdBy: input.userId,
@@ -714,21 +735,10 @@ export class SolicitudesCorePrismaDatasource {
   }
 
   async listRecientes(input: ListSolicitudesRecientesInput) {
-    // Cada palabra debe coincidir con algún dato del titular, sin depender del
-    // orden nombre/apellido. Escapar comodines para buscar texto literal.
-    const terms = input.search?.trim().split(/\s+/).filter(Boolean) ?? [];
-    const searchConditions: Prisma.SolicitudWhereInput[] = terms.map((term) => {
-      const contains = term.replace(/[\\%_]/g, "\\$&");
-      return { titular: { OR: [
-        { nombre: { contains, mode: "insensitive" } },
-        { apellidoDenominacion: { contains, mode: "insensitive" } },
-        { nroDocumento: { contains, mode: "insensitive" } },
-      ] } };
-    });
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
-        ...(searchConditions.length ? { AND: searchConditions } : {}),
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         ...(input.estadoOwnerId || input.estado
           ? {
@@ -806,6 +816,7 @@ export class SolicitudesCorePrismaDatasource {
     const solicitudes = await this.prisma.solicitud.findMany({
       where: {
         archivedAt: null,
+        ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
         OR: [
           {
@@ -865,7 +876,7 @@ export class SolicitudesCorePrismaDatasource {
 
   async update(id: string, patch: UpdateSolicitudCorePatch, guard?: UpdateSolicitudCoreGuard) {
     return this.prisma.$transaction(async (tx) => {
-      if (guard) {
+      if (guard || patch.solicitud?.montoAFinanciar !== undefined || patch.solicitud?.legacyOid !== undefined) {
         // Solo se bloquea durante el guardado, nunca durante la simulacion.
         // Releer despues del lock incluye cambios que hayan terminado mientras
         // esta transaccion esperaba a otro escritor de la misma solicitud.
@@ -874,14 +885,26 @@ export class SolicitudesCorePrismaDatasource {
           where: { id },
           select: {
             estadoActualId: true,
+            administrativeCoreControl: true,
             estadoActual: { select: { code: true } },
             montoAprobadoRiesgo: true,
+            montoAFinanciar: true,
+            legacyOid: true,
           },
         });
         if (!current) throw new SolicitudCoreNotFoundError();
-        if (current.estadoActualId !== guard.expectedEstadoActualId)
+        assertNoLoanReplacementPending(current);
+        if (guard && current.estadoActualId !== guard.expectedEstadoActualId)
           throw new SolicitudEditStateConflictError();
-        if (guard.enforceMontoAprobadoRiesgo && patch.solicitud?.montoAFinanciar !== undefined) {
+        if (guard && guard.expectedLegacyOid !== undefined && current.legacyOid !== guard.expectedLegacyOid)
+          throw new SolicitudEditStateConflictError();
+        const currentAmount = current.montoAFinanciar === null ? null : Number(current.montoAFinanciar);
+        if (patch.solicitud?.montoAFinanciar !== undefined && patch.solicitud.montoAFinanciar !== currentAmount &&
+          current.legacyOid && guard?.cancelledLoanId !== current.legacyOid)
+          throw new AdministrativeCorrectionError(`El monto está congelado por el préstamo ${current.legacyOid}. Primero debe verificarse su anulación en Vimarx.`);
+        if (patch.solicitud?.legacyOid !== undefined && current.legacyOid && current.legacyOid !== patch.solicitud.legacyOid)
+          throw new AdministrativeCorrectionError("El vínculo sólo puede cambiar mediante el reemplazo controlado del préstamo anulado.");
+        if (guard?.enforceMontoAprobadoRiesgo && patch.solicitud?.montoAFinanciar !== undefined) {
           assertMontoDentroDelAprobadoPorRiesgo({
             estadoActual: current.estadoActual,
             montoAprobadoRiesgo: current.montoAprobadoRiesgo === null ? null : Number(current.montoAprobadoRiesgo),

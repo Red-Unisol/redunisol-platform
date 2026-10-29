@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import re
 import time
+import shutil
+from datetime import datetime
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
@@ -67,16 +69,27 @@ class CatalogParser(HTMLParser):
             self.in_form = False
 
 
-def parse_catalog(html: str) -> list[Asset]:
+def parse_catalog(html: str, *, extended: bool = False) -> list[Asset]:
     parser = CatalogParser()
     parser.feed(html)
     found: dict[tuple[str, str], Asset] = {}
     for name, url in parser.links:
         match = re.fullmatch(r"(\d{6})(DEUDORES|INFRET|INFRETPA)\.7Z", name)
-        if not match:
+        extra = re.fullmatch(r"(1DSF|24DSF)(\d{6})\.7Z", name) if extended else None
+        padron = re.fullmatch(r"(\d{8})PADRON\.7Z", name) if extended else None
+        if extra:
+            period, kind = extra[2], extra[1]
+        elif padron:
+            period, kind = padron[1], 'PADRON'
+            try:
+                datetime.strptime(period, '%Y%m%d')
+            except ValueError:
+                raise SourceError('Invalid BCRA name publication date') from None
+        elif match:
+            period, kind = match.groups()
+        else:
             continue
-        period, kind = match.groups()
-        if not 1 <= int(period[4:]) <= 12:
+        if not 1 <= int(period[4:6]) <= 12:
             raise SourceError("Invalid BCRA publication period")
         parts = urlsplit(url)
         if parts.scheme != "https" or parts.hostname != "mft.bcra.gob.ar":
@@ -90,7 +103,14 @@ def parse_catalog(html: str) -> list[Asset]:
         raise SourceError("No monthly DEUDORES archive in BCRA catalog (authentication may be required)")
     latest = max(periods)
     try:
-        return [found[latest, kind] for kind in ("DEUDORES", "INFRET", "INFRETPA")]
+        result = [found[latest, kind] for kind in ("DEUDORES", "INFRET", "INFRETPA")]
+        if extended:
+            result.extend(found[latest, kind] for kind in ('24DSF', '1DSF'))
+            name_dates = [period for period, kind in found if kind == 'PADRON']
+            if not name_dates:
+                raise KeyError('PADRON')
+            result.append(found[max(name_dates), 'PADRON'])
+        return result
     except KeyError:
         raise SourceError("Incomplete BCRA publication: missing rectification archives") from None
 
@@ -108,7 +128,7 @@ class SourceClient:
                 body = response.read(2_000_001)
             if len(body) > 2_000_000:
                 raise SourceError("BCRA catalog exceeds size limit")
-            return parse_catalog(body.decode("utf-8-sig"))
+            return parse_catalog(body.decode("utf-8-sig"), extended=self.config.extended_enabled)
         except SourceError:
             raise
         except Exception:
@@ -170,6 +190,8 @@ class SourceClient:
                     total = len(signature)
                     while chunk := response.read(1024 * 1024):
                         check_deadline(self.deadline)
+                        if self.config.extended_enabled and shutil.disk_usage(target.parent).free < self.config.min_free_bytes + len(chunk):
+                            raise SourceError('BCRA download would exceed the disk reserve')
                         total += len(chunk)
                         if total > self.config.max_download_bytes:
                             raise SourceError("BCRA archive exceeds download size limit")

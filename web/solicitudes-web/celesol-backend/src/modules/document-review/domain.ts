@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
-export const REVIEW_POLICY_VERSION = "beex-document-review/1";
+export const REVIEW_POLICY_VERSION = "beex-document-review/2";
 export const REVIEW_STATE = "VerificarFirmaYDocumentacion";
 export type Decision = "approve" | "not_approve";
 export type JsonObject = Record<string, unknown>;
@@ -10,6 +10,7 @@ export type ReviewSource = {
   nroSolicitud: string | null;
   prestamoId: string | null;
   cycleId: string;
+  signatureRequestedAt?: string;
   line: string;
   mutual: string | null;
   name: string;
@@ -248,6 +249,14 @@ export function assessAttempt(
   const currentStatus = text(object(r.identity).status);
   const pepValue = pep(r);
   const checks: Check[] = [
+    {
+      code: "cycle",
+      label: "Firma del ciclo vigente",
+      passed: !source.signatureRequestedAt || (docs.length > 0 && docs.every(d => d.signedAt && Number.isFinite(Date.parse(d.signedAt)) && Date.parse(d.signedAt) >= Date.parse(source.signatureRequestedAt!))),
+      expected: source.signatureRequestedAt ?? "Ciclo inicial",
+      actual: docs.map(d => d.signedAt).filter(Boolean).join(", ") || null,
+      reason: "La firma debe ser posterior al pedido explícito de volver a firmar.",
+    },
     compare(
       "operation",
       "Referencia de la operación",
@@ -418,4 +427,13 @@ export function decisionDisparity(
     disagreesWithSystem: system !== human,
     overridesAttempt: human === "approve" && attempt?.decision !== "approve",
   };
+}
+
+// Human judgment may resolve a biometric/provider exception, but may not
+// attach another person's or another loan's signed contract to this operation.
+export function hasMatchingSignedOperation(attempt: Attempt | null, options: { requireCycle?: boolean } = {}) {
+  const cycle = attempt?.checks.find(check => check.code === "cycle");
+  return (cycle ? cycle.passed : !options.requireCycle) && ["operation", "dni", "amount", "installments", "installmentAmount"].every(
+    code => attempt?.checks.some(check => check.code === code && check.passed),
+  );
 }

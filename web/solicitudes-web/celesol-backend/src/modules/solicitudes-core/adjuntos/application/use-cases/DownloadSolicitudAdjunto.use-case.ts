@@ -47,6 +47,14 @@ export class DownloadSolicitudAdjuntoUseCase {
       throw new SolicitudAdjuntoNotFoundError();
     }
 
+    const generatedReview = adjunto.tipoAdjunto === "Legajo Digital" &&
+      Boolean(adjunto.archivoPath?.includes("/revision-documental/"));
+    if (generatedReview && !input.currentUser.isSystemAdmin) {
+      const ownerCode = input.currentUser.workflowOwnerId && this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById
+        ? await this.dependencies.solicitudesRepository.findWorkflowOwnerCodeById(input.currentUser.workflowOwnerId) : null;
+      if (ownerCode !== "LEGAJOS_DIGITALES") throw new ForbiddenSolicitudAdjuntoAccessError();
+    }
+
     if (!adjunto.archivoPath || !adjunto.storageBucket) {
       throw new SolicitudAdjuntoStorageReferenceMissingError();
     }

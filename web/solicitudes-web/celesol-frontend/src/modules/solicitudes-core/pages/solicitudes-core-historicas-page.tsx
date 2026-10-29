@@ -33,6 +33,7 @@ import {
 } from "@/modules/solicitudes/components/solicitudes-toolbar";
 
 const CORE_HISTORICAS_COLUMNS: SolicitudesTableColumn[] = [
+  { key: "nroSolicitud", label: "Nº Solicitud", minWidth: "min-w-28", filterable: true },
   {
     key: "vendedorSolicitud",
     label: "Vendedor Solicitud",
@@ -200,7 +201,7 @@ export function SolicitudesCoreHistoricasPage() {
   const isRefreshPendingRef = useRef(false);
   const { data, error, isFetching, isLoading, refetch } =
     useSolicitudesCoreHistoricasQuery({
-      nroDocumento: searchTerm,
+      search: searchTerm,
       page,
       pageSize,
     });
@@ -290,6 +291,7 @@ export function SolicitudesCoreHistoricasPage() {
         }}
         rightActions={rightActions}
         searchTerm={searchTerm}
+        searchPlaceholder="Buscar por solicitud, DNI, nombre o apellido"
       />
 
       <div className="min-h-0 flex-1">
