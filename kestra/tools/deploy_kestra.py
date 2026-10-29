@@ -1,6 +1,8 @@
 import argparse
+import hashlib
 import os
 from pathlib import Path
+import time
 from typing import Iterable
 
 import requests
@@ -176,14 +178,32 @@ def deploy_namespace_file(
     if dry_run:
         return
 
-    with file_path.open("rb") as handle:
-        response = session.post(
-            f"{session.base_url}/api/v1/{tenant}/namespaces/{namespace}/files",
-            params={"path": target_path},
-            files={"fileContent": (file_path.name, handle)},
-            timeout=30,
-        )
-    ensure_success(response, f"Upload file {relative_path}")
+    content = file_path.read_bytes()
+    url = f"{session.base_url}/api/v1/{tenant}/namespaces/{namespace}/files"
+    expected = hashlib.sha256(content).digest()
+    for attempt in range(3):
+        try:
+            response = session.post(
+                url,
+                params={"path": target_path},
+                files={"fileContent": (file_path.name, content)},
+                timeout=30,
+            )
+            if response.status_code >= 400 and response.status_code not in {408, 429, 500, 502, 503, 504}:
+                ensure_success(response, f"Upload file {relative_path}")
+        except requests.RequestException:
+            # Setting an exact Git file is idempotent. Read it back before
+            # repeating an upload whose acknowledgement may have been lost.
+            pass
+        try:
+            saved = session.get(url, params={"path": target_path}, timeout=30)
+            if saved.status_code == 200 and hashlib.sha256(saved.content).digest() == expected:
+                return
+        except requests.RequestException:
+            pass
+        if attempt < 2:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"Namespace file {relative_path} was not verified; flows were not switched.")
 
 
 def deploy_target(
@@ -211,13 +231,19 @@ def deploy_target(
         print("  nothing to deploy")
         return
 
-    for flow_path in flow_files:
-        deploy_flow(session, tenant, flow_path, target_namespace, environment, dry_run)
+    if target == "marketing-crm":
+        # The intake processor imports edna_incoming. Keep that backwards
+        # compatible dependency ahead of its consumers during rolling updates.
+        namespace_files.sort(key=lambda path: (path.relative_to(files_root).parts[0] != "edna_incoming", path))
 
     for file_path in namespace_files:
         deploy_namespace_file(
             session, tenant, target_namespace, files_root, file_path, dry_run
         )
+
+    # A failed or partial file upload must never publish a newer flow definition.
+    for flow_path in flow_files:
+        deploy_flow(session, tenant, flow_path, target_namespace, environment, dry_run)
 
 
 def main() -> int:

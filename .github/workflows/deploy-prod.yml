@@ -69,6 +69,9 @@ jobs:
   deploy-prod-marketing-crm:
     runs-on: ubuntu-latest
     environment: kestra-prod
+    concurrency:
+      group: kestra-prod-runtime
+      cancel-in-progress: false
     needs:
       - guard-manual-prod-dispatch
       - detect-changes
@@ -81,7 +84,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5

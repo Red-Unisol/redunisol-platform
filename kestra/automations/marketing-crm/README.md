@@ -6,6 +6,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- [Recuperación de intake tras despliegue parcial](docs/technical/WHATSAPP_INTAKE_DEPLOY_RECOVERY.md): pausa de nuevas admisiones, verificación de dependencias y recuperación de respuestas originales sin consumir cupos.
+
 - [Asistencia Jubilados Córdoba (23231 / 23081)](../../../docs/whatsapp-jubilados-assistance.md): rescate a 30 minutos, CUIL obligatorio y email opcional en el Flow, simulación y piloto cerrado; apagado por defecto.
 
 - [WhatsApp fuera de horario de Ventas (23233)](../../../docs/whatsapp-out-of-hours.md): candidatos de Kestra, calendario, avisos sin enlaces y activación coordinada.
