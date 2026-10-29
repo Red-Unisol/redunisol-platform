@@ -12,3 +12,4 @@ backups/
 .pytest_cache/
 tests/
 deploy/
+plugin/

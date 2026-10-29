@@ -148,3 +148,21 @@ Fuentes del contrato:
 - https://developers.openai.com/plugins/build/auth
 - https://developers.openai.com/plugins/deploy/connect-chatgpt
 - https://docs.authlib.org/en/stable/oauth2/authorization-server/flask/authorization-server.html
+
+
+## Paquete privado distribuible
+
+Fuente del paquete: `plugin/vimarx-celesol/`. Usa Agent Plugins 1.0, OAuth DCR y
+el endpoint verificado del servicio. No incluye credenciales, App IDs personales,
+código del servidor ni tokens. Cada destinatario autentica su propia cuenta.
+
+```sh
+python deploy/build_plugin.py --output /ruta/de/salida/vimarx-celesol-2.0.0.zip
+```
+
+El builder valida JSON/YAML, componentes y assets, crea un ZIP reproducible con
+una sola carpeta raíz y rechaza archivos no previstos. En ChatGPT: Complementos
+→ Agregar → Cargar archivo del complemento, instalar y conectar. También puede
+compartirse una versión del workspace con su equipo. La importación puede estar
+restringida por políticas del workspace. El ZIP no publica en el directorio público.
+El plugin personal anterior no se cambia ni se comparte al generar este archivo.
