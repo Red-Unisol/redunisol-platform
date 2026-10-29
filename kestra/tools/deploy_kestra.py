@@ -196,7 +196,7 @@ def deploy_namespace_file(
             # repeating an upload whose acknowledgement may have been lost.
             pass
         try:
-            saved = session.get(url, params={"path": target_path}, timeout=30)
+            saved = session.get(url, params={"path": target_path}, headers={"Accept": "application/octet-stream"}, timeout=30)
             if saved.status_code == 200 and hashlib.sha256(saved.content).digest() == expected:
                 return
         except requests.RequestException:

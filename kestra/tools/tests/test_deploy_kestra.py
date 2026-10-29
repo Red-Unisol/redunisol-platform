@@ -37,6 +37,10 @@ class FakeSession:
 
     def get(self, url: str, **kwargs):
         self.calls.append(("get", url, kwargs))
+        # Kestra returns 406 when its binary file download inherits the
+        # session's JSON Accept header used by the metadata endpoints.
+        if url.endswith("/files") and kwargs.get("headers", {}).get("Accept") != "application/octet-stream":
+            return FakeResponse(406)
         result = self._get_responses.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -213,6 +217,7 @@ triggers:
         self.upload(session, path)
         self.assertEqual([c[0] for c in session.calls], ["post", "get"])
         self.assertEqual(session.calls[0][2]["files"]["fileContent"][1], path.read_bytes())
+        self.assertEqual(session.calls[1][2]["headers"]["Accept"], "application/octet-stream")
 
     def test_lost_upload_ack_is_reconciled_without_repeating_write(self):
         path = self.namespace_file()
