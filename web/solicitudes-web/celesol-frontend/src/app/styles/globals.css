@@ -77,7 +77,7 @@
   --surface: #ffffff;
   --foreground: #1f1f1f;
   --foreground-secondary: #666666;
-  --foreground-muted: #8a8a8a;
+  --foreground-muted: #6b7570; /* 4,8:1 sobre blanco (antes #8a8a8a, 3,4:1) */
   --border: #d9d9d9;
   --border-soft: #e6e6e6;
   /* Primario = verde de la marca (antes naranja #f97316). */
@@ -91,7 +91,7 @@
   --warning: #fde68a;
   --warning-foreground: #92400e;
   --input-background: #ffffff;
-  --input-border: #d6d6d6;
+  --input-border: #929b97; /* 3:1 sobre blanco (antes #d6d6d6, 1,4:1) */
   --input-focus: #468269;
   --disabled-background: #efefef;
   --disabled-foreground: #9a9a9a;

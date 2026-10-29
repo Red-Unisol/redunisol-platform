@@ -103,10 +103,13 @@ export function AppLayout() {
     pathname.startsWith("/solicitudes/core/detalle/") ||
     pathname.startsWith("/solicitudes/actual/detalle/");
   // En el detalle, la barra lleva "← Precarga" (o la lista de origen) y el título.
-  const backLink = useMemo(
-    () => (isCoreDetalle ? getSolicitudCoreDetailOriginLink(origen) : null),
-    [isCoreDetalle, origen],
-  );
+  const backLink = useMemo(() => {
+    if (isCoreDetalle) return getSolicitudCoreDetailOriginLink(origen);
+    if (pathname === "/solicitudes/core/precarga/nueva") {
+      return { label: "Precarga", to: "/solicitudes/core/precarga" };
+    }
+    return null;
+  }, [isCoreDetalle, origen, pathname]);
   const title = useMemo(() => {
     if (isCoreDetalle) {
       return "Detalle de la solicitud";

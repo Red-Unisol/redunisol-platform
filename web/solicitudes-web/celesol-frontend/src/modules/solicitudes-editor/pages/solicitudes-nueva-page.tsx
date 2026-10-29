@@ -32,7 +32,10 @@ import { ApiError } from "@/shared/services/http/api-error";
 import { ModalLoadingOverlay } from "@/shared/components/ui/modal-loading-overlay";
 
 import type { AdjuntoLoteItem } from "../components/AdjuntosLoteModal";
-import { NuevaSolicitudView } from "../components/NuevaSolicitudView";
+import {
+  NuevaSolicitudView,
+  type AvisoDocumento,
+} from "../components/NuevaSolicitudView";
 import { SolicitudDetailView } from "../components/SolicitudDetailView";
 import { useLineasPrestamo } from "../hooks/useLineasPrestamo";
 import { useSolicitudDetailHydration } from "../hooks/useSolicitudDetailHydration";
@@ -92,6 +95,9 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     normalizeSolicitudNumber(searchParams.get("nroSolicitud")) ?? "";
   const isDetailRoute = variant === "detail";
   const [isSimuladorOpen, setIsSimuladorOpen] = useState(false);
+  const [avisoDocumento, setAvisoDocumento] = useState<AvisoDocumento | null>(
+    null,
+  );
   const [createdSolicitudId, setCreatedSolicitudId] = useState<string | null>(
     null,
   );
@@ -139,7 +145,9 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     setValue,
     sexoConyugeOptions,
     sexoOptions,
-  } = useSolicitudEditorForm(lineas, () => { void refreshLineas(); });
+  } = useSolicitudEditorForm(lineas, () => {
+    void refreshLineas();
+  });
   const { detalleNroSolicitud, isLoadingLegacyData, legacyNotice } =
     useSolicitudDetailHydration({
       isDetailRoute,
@@ -528,6 +536,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
   async function handleLookupTitularByDocumento() {
     toast.dismiss(LOOKUP_SOCIO_ERROR_TOAST_ID);
     toast.dismiss(LOOKUP_SOCIO_NOTICE_TOAST_ID);
+    setAvisoDocumento(null);
 
     const documentoIngresado = normalizeLookupValue(getValues("noDocumento"));
 
@@ -542,22 +551,28 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
       );
 
       if (response.match === "none") {
-        toast("No se encontró un socio con ese documento.", {
-          duration: 2500,
-          id: LOOKUP_SOCIO_NOTICE_TOAST_ID,
+        setAvisoDocumento({
+          texto:
+            "No es socio todavía. Completá sus datos para cargar la solicitud.",
+          tipo: "info",
         });
         return;
       }
 
       if (response.match === "multiple") {
-        toast("Se encontraron múltiples socios, revise la búsqueda.", {
-          duration: 3000,
-          id: LOOKUP_SOCIO_NOTICE_TOAST_ID,
+        setAvisoDocumento({
+          texto:
+            "Hay más de un socio con ese documento. Revisá el tipo y el número.",
+          tipo: "info",
         });
         return;
       }
 
       hydrateTitularFromSocio(response.socio);
+      setAvisoDocumento({
+        texto: "Es socio: se completaron sus datos.",
+        tipo: "ok",
+      });
     } catch (error) {
       const message =
         error instanceof ApiError || error instanceof Error
@@ -575,7 +590,9 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
   const simulador = isSimuladorOpen ? (
     <Suspense fallback={<ModalLoadingOverlay label="Cargando simulador..." />}>
       <SimuladorPrestamoModal
-        onLimitsAdjusted={() => { void refreshLineas(); }}
+        onLimitsAdjusted={() => {
+          void refreshLineas();
+        }}
         defaultLineaOid={selectedLinea?.oid ?? undefined}
         isLoadingLineas={isLoadingLineas}
         lineas={lineas}
@@ -600,6 +617,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
       <>
         <NuevaSolicitudView
           adjuntos={adjuntos}
+          avisoDocumento={avisoDocumento}
           control={control}
           cuotaCalculo={cuotaCalculo}
           errors={errors}
