@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 
 from edna_incoming.intake import VERSION, normalize_answer
+from edna_incoming.test_reference import TEST_CONTRACT, TEST_REFERENCE
 from .attribution import normalize_attribution
 from .whatsapp_intake_crm import persist
 
@@ -14,7 +15,7 @@ class InvalidIntake(ValueError):
 
 def process(payload, *, env=None, client=None):
     try:
-        if not isinstance(payload, dict) or payload.get("contract") != VERSION:
+        if not isinstance(payload, dict) or payload.get("contract") not in {VERSION, TEST_CONTRACT}:
             raise ValueError("Invalid WhatsApp intake contract.")
         source = dict(os.environ if env is None else env)
         flow_id = source.get("EDNA_INTAKE_FLOW_ID", "")
@@ -31,6 +32,11 @@ def process(payload, *, env=None, client=None):
             raise ValueError("The website journey belongs to another intake Flow.")
         if payload.get("test_mode", False) is not False:
             raise ValueError("The assistance test contract cannot be used for intake.")
+        reference = payload.get("test_reference")
+        if reference not in (None, TEST_REFERENCE) or attribution.get("test_reference") != reference:
+            raise ValueError("The test reference must match the saved intake journey.")
+        if payload["contract"] != (TEST_CONTRACT if reference else VERSION):
+            raise ValueError("The intake contract must match the saved test mode.")
         ack_version = payload.get("acknowledgement_version", 1)
         if isinstance(ack_version, bool) or ack_version not in {1, 2}:
             raise ValueError("Invalid intake acknowledgement version.")

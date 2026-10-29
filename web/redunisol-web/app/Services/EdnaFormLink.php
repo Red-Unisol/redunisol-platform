@@ -21,6 +21,9 @@ class EdnaFormLink
     // Caller holds the inbox lock. No CRM calls or messages inside intake.
     public function capture(object $event, array $payload, string $kind): void
     {
+        if ((new EdnaIntake)->isTestEntry((string) ($payload['messageContent']['text'] ?? ''))) {
+            return;
+        }
         if (! config('edna.form_links_enabled') || ! config('attribution.enabled')
             || ($payload['messageContent']['type'] ?? '') !== 'TEXT'
             || ! in_array($kind, ['router_entry', 'ignored'], true)

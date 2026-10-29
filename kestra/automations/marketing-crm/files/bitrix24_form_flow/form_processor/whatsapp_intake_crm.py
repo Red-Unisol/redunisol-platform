@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from html import escape
+import json
 import re
 from uuid import UUID
 
 from edna_incoming.intake import REJECTION_LABELS
+from edna_incoming.test_reference import TEST_MARKER, TEST_REFERENCE, TEST_TITLE
 from .attribution import CRM_FIELDS, lead_fields as attribution_fields, normalize_attribution
 from .bitrix_client import BitrixClient
 from .catalogs import BANCOS, ORIGENES_LEAD, PROVINCIAS, SITUACIONES_LABORALES
@@ -38,19 +40,20 @@ REVIEW_LABELS = {
 def persist(payload, answer, *, env, client=None):
     case_id = str(UUID(str(payload.get("case_id", ""))))
     phone = normalize_whatsapp(payload.get("phone"))
+    test = payload.get("test_reference") == TEST_REFERENCE
     result = {"ok": True, "case_id": case_id, "lead_id": "", "contact_id": "",
               "action": "dry_run", "reason": answer["action"],
-              "has_cuil": bool(answer["cuil"]), "has_email": bool(answer["email"])}
+              "has_cuil": bool(answer["cuil"]), "has_email": bool(answer["email"]), "is_test": test}
     if payload.get("dry_run") is not False:
         return result
     recipients = [p.strip() for p in env.get("EDNA_INTAKE_RECIPIENTS", "").split(",") if p.strip()]
     if (env.get("EDNA_INTAKE_CRM_ENABLED", "").lower() not in {"true", "1"}
-            or (recipients and phone.lstrip("+") not in recipients)):
+            or (not test and recipients and phone.lstrip("+") not in recipients)):
         return dict(result, action="disabled", reason="disabled_or_outside_pilot")
     config = load_config(env)
     api = client or BitrixClient(config, create_logger())
     review_status = env.get("BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW", "").strip()
-    _validate_schema(api, config, review_status)
+    _validate_schema(api, config, review_status, test=test)
 
     # The UUID belongs to the original saved response, not to a phone or a CUIL.
     existing = _rows(api, "crm.lead.list", {"filter": {"=UF_CRM_WA_ASSISTANCE_ID": case_id},
@@ -60,6 +63,7 @@ def persist(payload, answer, *, env, client=None):
     if existing:
         lead = existing[0]
         if (not _same_phone(lead, phone) or lead.get("UF_CRM_WA_TEST") == "SI"
+                or (lead.get("UF_CRM_WA_TEST") == TEST_MARKER) != test
                 or str(lead.get("UF_CRM_WA_FLOW_ID")) != str(payload["flow_id"])
                 or _cuil(lead, config.fields.lead_cuil) != (answer["cuil"] or "")
                 or (lead.get(INVALID_CUIL_FIELD) or "") != answer["reported_cuil"]):
@@ -75,6 +79,9 @@ def persist(payload, answer, *, env, client=None):
                     contact_id=str(lead.get("CONTACT_ID") or ""))
 
     contact, guest, reason, related = _resolve(api, config, answer, phone)
+    if test:
+        # Each deliberate test has its own lead; never consume an ordinary Guest.
+        guest = None
     rejected = bool(answer["rejection_reason"])
     if rejected:
         # An explicit out-of-scope selection does not need identity correction
@@ -121,6 +128,7 @@ def persist(payload, answer, *, env, client=None):
     if (str(verified.get("UF_CRM_WA_ASSISTANCE_ID")) != case_id or not _same_phone(verified, phone)
             or verified.get("UF_CRM_WA_ASSISTANCE_STATE") != state
             or str(verified.get("CONTACT_ID") or "") != str(fields.get("CONTACT_ID") or "")
+            or (verified.get("UF_CRM_WA_TEST") == TEST_MARKER) != test
             or (verified.get(REVIEW_REASON_FIELD) or "") != fields[REVIEW_REASON_FIELD]
             or (not automatic and verified.get("STATUS_ID") != status)):
         raise RuntimeError("Intake lead write requires reconciliation.")
@@ -162,6 +170,16 @@ def _cuil(record, field):
     return re.sub(r"\D", "", str(record.get(field) or ""))
 
 
+def _test_record(record):
+    if record.get("UF_CRM_WA_TEST") == TEST_MARKER:
+        return True
+    try:
+        snapshot = json.loads(record.get("UF_CRM_ATTR_JSON") or "{}")
+    except (TypeError, ValueError):
+        return False
+    return isinstance(snapshot, dict) and snapshot.get("test_reference") == TEST_REFERENCE
+
+
 def _resolve(api, config, answer, phone):
     contact = None
     reason = ""
@@ -181,6 +199,9 @@ def _resolve(api, config, answer, phone):
                                               "select": ["*", "UF_*", "PHONE", "EMAIL"]})
         if any(_cuil(r, config.fields.lead_cuil) != cuil or r.get("STATUS_SEMANTIC_ID") != "P" for r in leads):
             raise ValueError("CRM lead CUIL does not match the requested identity.")
+        # Test cases must not block a new test or an ordinary inquiry. Real
+        # inquiries and open management still retain all identity protections.
+        leads = [r for r in leads if not _test_record(r)]
         related["lead_ids"] = [str(r["ID"]) for r in leads]
         if len(leads) > 1 and not reason:
             reason = "ambiguous_cuil_lead"
@@ -189,11 +210,11 @@ def _resolve(api, config, answer, phone):
         for field, records in (("CONTACT_ID", [contact] if contact else []), ("LEAD_ID", leads)):
             for record in records:
                 deals = _rows(api, "crm.deal.list", {"filter": {"=" + field: record["ID"], "=STAGE_SEMANTIC_ID": "P", "@CATEGORY_ID": [1, 5]},
-                                                      "select": ["ID", field, "STAGE_SEMANTIC_ID", "CATEGORY_ID"]})
+                                                      "select": ["ID", field, "STAGE_SEMANTIC_ID", "CATEGORY_ID", "UF_CRM_WA_TEST", "UF_CRM_ATTR_JSON"]})
                 if any(str(d.get(field)) != str(record["ID"]) or d.get("STAGE_SEMANTIC_ID") != "P"
                        or str(d.get("CATEGORY_ID")) not in {"1", "5"} for d in deals):
                     raise ValueError("CRM management does not match the requested identity.")
-                related["deal_ids"].extend(str(d["ID"]) for d in deals)
+                related["deal_ids"].extend(str(d["ID"]) for d in deals if not _test_record(d))
         if related["deal_ids"] and not reason:
             reason = "existing_management"
         elif leads and not reason:
@@ -224,7 +245,7 @@ def _empty_guest(record, config):
             and not record.get(config.fields.lead_employment_status) and not record.get(config.fields.lead_province))
 
 
-def _validate_schema(api, config, review_status):
+def _validate_schema(api, config, review_status, *, test=False):
     protected = {config.lead_statuses.new, config.lead_statuses.preclassification, config.lead_statuses.qualified,
                  config.lead_statuses.rejected, config.lead_statuses.converted, config.lead_statuses.external_referral}
     statuses = api.call("crm.status.list", {"filter": {"ENTITY_ID": "STATUS"}})
@@ -241,7 +262,8 @@ def _validate_schema(api, config, review_status):
     schema = api.call("crm.lead.fields", {})
     if not isinstance(schema, dict):
         raise ValueError("Invalid intake field metadata.")
-    for name in [*("UF_CRM_" + n for n in EXTRA_FIELDS), INVALID_CUIL_FIELD, REVIEW_REASON_FIELD]:
+    for name in [*("UF_CRM_" + n for n in EXTRA_FIELDS), INVALID_CUIL_FIELD, REVIEW_REASON_FIELD,
+                 *(["UF_CRM_WA_TEST"] if test else [])]:
         if schema.get(name, {}).get("type") != "string" or schema[name].get("isMultiple") not in (None, False, "N"):
             raise ValueError("Provision the intake review fields before enabling writes.")
 
@@ -300,4 +322,9 @@ def _lead_fields(api, config, payload, answer, env, case_id, phone, contact, gue
             notes.append("Email informado sin validar: " + answer["reported_email"])
         previous = str((guest or {}).get("COMMENTS") or "")
         fields["COMMENTS"] = previous + ("<br>" if previous else "") + "<br>".join(escape(n) for n in notes)
+    if payload.get("test_reference") == TEST_REFERENCE:
+        fields["UF_CRM_WA_TEST"] = TEST_MARKER
+        fields["TITLE"] = TEST_TITLE + fields["TITLE"]
+        note = "PRUEBA WHATSAPP E2E. Referencia: " + TEST_REFERENCE + ". Ejecuta el prefill, la evaluación y la continuidad comercial reales. Caso: " + case_id
+        fields["COMMENTS"] = escape(note) + ("<br>" + fields["COMMENTS"] if fields.get("COMMENTS") else "")
     return fields

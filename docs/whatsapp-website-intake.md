@@ -7,6 +7,52 @@ La primera tanda tiene **10 números de WhatsApp únicos**. La siguiente prepara
 **20 números únicos**, con su propio ID y cupo persistente; el resto continúa por
 el Router anterior y su formulario web.
 
+## Prueba completa por referencia
+
+Con esta versión desplegada, enviar **`(ref: PRUEBAFORM)`** al WhatsApp de Ventas
+abre el mismo Flow de ingreso configurado para la tanda actual. También se puede
+incluir en un saludo, por ejemplo `Hola, quiero probar (ref: PRUEBAFORM)`.
+Debe haber una sola referencia en el mensaje; se acepta mayúscula o minúscula.
+Está disponible para cualquier número, aunque no figure en las listas del piloto.
+
+Cada mensaje nuevo con esa referencia crea un envío, UUID y referencia de
+atribución propios. No crea admisiones, no consume ni cambia cupos del piloto y
+no aplica el cooldown de 24 horas entre pruebas. Reprocesar el mismo evento o
+reenviar el mismo callback conserva la idempotencia: no duplica envíos ni leads.
+Los ingresos ordinarios mantienen sus cupos y cooldown habituales.
+
+Es una **prueba real de extremo a extremo**: guarda un lead en Bitrix y sigue el
+prefill, la precalificación, la evaluación y la continuidad comercial normales,
+incluidas las negociaciones que correspondan. No es una simulación. El lead
+queda marcado con `UF_CRM_WA_TEST=E2E`, título `[PRUEBA WHATSAPP E2E]` y comentario
+con la referencia y el UUID. El título conserva su prefijo durante el prefill y
+la clasificación; la negociación hereda el marcador y la atribución. El origen
+es `test / whatsapp / whatsapp_intake_e2e`, sin campañas de adquisición ficticias.
+El valor `SI` del piloto aislado anterior sigue omitiendo prefill y evaluación;
+no debe usarse para estas pruebas completas.
+
+Las pruebas previas y sus negociaciones no bloquean otra prueba ni una solicitud
+ordinaria por el mismo CUIL. Se conserva la búsqueda por CUIL y el contacto único;
+no se fusionan personas ni se sobrescriben Guests o solicitudes reales para probar.
+Un CUIL inválido, identidad ambigua, formulario real previo o gestión real abierta
+mantiene su derivación normal a revisión. Para probar la evaluación automática se
+debe usar un CUIL válido sin esos conflictos reales.
+
+Se conservan las compuertas globales de recepción/router/intake/CRM, la ventana
+vigente de conversación y la correlación de teléfono, canal, requestId y mensaje
+saliente confirmado por Edna. La marca de prueba procede del ledger del envío,
+nunca de un campo agregado por el cliente a la respuesta del formulario.
+
+Desplegar primero los namespace files de Marketing CRM y luego Web con la
+migración `2026_10_29_160000_mark_edna_intake_test_sends.php`. Verificar antes que
+`UF_CRM_WA_TEST` exista como string simple en leads y negociaciones, mediante
+`php artisan edna:assistance schema` (preview; `--apply` crea campos faltantes).
+No requiere cambiar el Flow de
+Meta, reiniciar contadores ni modificar configuración por SSH. La referencia
+entra en servicio cuando esa versión queda desplegada con el intake habilitado.
+El contrato dedicado `website-intake-e2e-v1` impide que un escritor anterior
+procese una prueba como solicitud ordinaria durante un despliegue parcial.
+
 ## Recorrido
 
 Botón web → mensaje del cliente → un único Flow → persistencia en Bitrix →
