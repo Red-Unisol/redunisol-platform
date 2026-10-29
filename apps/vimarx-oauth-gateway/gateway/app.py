@@ -242,13 +242,20 @@ def create_app(config=None, upstream=None):
                 or any(not isinstance(u, str) or not allowed_redirect(u) for u in uris)):
             return jsonify(error="invalid_redirect_uri"), 400
         method = body.get("token_endpoint_auth_method", "client_secret_basic")
-        if method not in {"none", "client_secret_basic", "client_secret_post"}:
+        if not isinstance(method, str) or method not in {"none", "client_secret_basic", "client_secret_post"}:
             return jsonify(error="invalid_client_metadata"), 400
-        if body.get("grant_types", ["authorization_code"]) != ["authorization_code"]:
+        requested_grants = body.get("grant_types", ["authorization_code"])
+        if (not isinstance(requested_grants, list)
+                or "authorization_code" not in requested_grants
+                or any(not isinstance(grant, str) or grant not in {"authorization_code", "refresh_token"}
+                       for grant in requested_grants)):
             return jsonify(error="invalid_client_metadata"), 400
+        # RFC7591 section 3.2.1 permits returning supported metadata rather than
+        # echoing every requested value. ChatGPT also requests refresh_token;
+        # we register/return only authorization_code and never issue refresh tokens.
         if body.get("response_types", ["code"]) != ["code"]:
             return jsonify(error="invalid_client_metadata"), 400
-        if body.get("scope", SCOPE) != SCOPE:
+        if body.get("scope") not in (None, "", SCOPE):
             return jsonify(error="invalid_client_metadata"), 400
         secret = secrets.token_urlsafe(32) if method != "none" else ""
         client = Client(client_id=secrets.token_urlsafe(24), client_id_issued_at=int(time.time()),

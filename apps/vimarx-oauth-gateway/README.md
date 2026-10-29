@@ -26,6 +26,13 @@ mecanismo de renovación que permita hacerlo sin conservar contraseñas.
 Discovery RFC8414/RFC9728, DCR RFC7591 y respuesta `iss` RFC9207 se publican para
 ChatGPT. El registro solamente acepta callbacks HTTPS de ChatGPT con rutas
 conocidas. No hay fetch de URLs arbitrarias ni clientes CIMD en esta versión.
+El registro acepta la preferencia `refresh_token` que envía ChatGPT junto con
+`authorization_code`, pero devuelve y registra solamente `authorization_code`,
+según la negociación de metadatos de RFC7591 §3.2.1. Un scope omitido, nulo o vacío
+usa `mcp:read`. Esto no habilita refresh tokens ni cambia la duración de sesiones.
+Otros grants o scopes se rechazan. La prueba publicada reproduce esta solicitud
+real de ChatGPT, en lugar de probar sólo un cliente que pide el grant mínimo.
+
 Se admite cliente público (`none`) o secreto de cliente por POST/Basic; los
 secretos de cliente se almacenan como hash. Sólo se ofrece el scope `mcp:read`.
 

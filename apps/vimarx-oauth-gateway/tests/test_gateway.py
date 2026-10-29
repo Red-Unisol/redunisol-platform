@@ -304,7 +304,10 @@ def test_consent_cancel_preserves_state_and_issuer(bridge):
     assert query["state"] == ["cancel-state"]
 
 
-def test_login_rate_limit_and_spoofed_host(bridge):
+def test_login_rate_limit_and_spoofed_host(bridge, monkeypatch):
+    # Keep all attempts in one bucket even when the suite crosses a real minute.
+    now = time.time()
+    monkeypatch.setattr("gateway.app.time.time", lambda: now)
     _, client, _ = bridge
     for _ in range(8):
         reg = register(client)
@@ -313,3 +316,56 @@ def test_login_rate_limit_and_spoofed_host(bridge):
     assert consent(client, reg, password="bad").status_code == 429
     response = client.get("/vimarx-oauth/health", base_url="https://attacker.example")
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize("scope", ["__omitted__", None, "", "mcp:read"])
+@pytest.mark.parametrize("grants", [["authorization_code", "refresh_token"],
+                                    ["refresh_token", "authorization_code"]])
+def test_chatgpt_dcr_request_negotiates_only_supported_grant(bridge, scope, grants):
+    app, client, _ = bridge
+    body = dict(redirect_uris=[REDIRECT], grant_types=grants, response_types=["code"],
+                token_endpoint_auth_method="none")
+    if scope != "__omitted__":
+        body["scope"] = scope
+    result = send(client, "POST", "/vimarx-oauth/register", json=body)
+    assert result.status_code == 201
+    registration = result.json
+    assert registration["grant_types"] == ["authorization_code"]
+    assert registration["scope"] == "mcp:read"
+    response = consent(client, registration)
+    assert response.status_code == 302
+    code = parse_qs(urlsplit(response.location).query)["code"][0]
+    tokens = exchange(client, registration, code)
+    assert tokens.status_code == 200
+    assert "refresh_token" not in tokens.json
+    assert "result" in rpc(client, tokens.json["access_token"]).json
+    refresh = send(client, "POST", "/vimarx-oauth/token", data=dict(
+        grant_type="refresh_token", client_id=registration["client_id"],
+        refresh_token="not-a-refresh-token", resource=RESOURCE))
+    assert refresh.status_code == 400
+    assert refresh.json["error"] == "unsupported_grant_type"
+    from gateway.models import Client
+    with app.app_context():
+        saved = db.session.execute(db.select(Client)).scalar_one()
+        assert saved.check_grant_type("authorization_code")
+        assert not saved.check_grant_type("refresh_token")
+
+
+@pytest.mark.parametrize("grants", [None, [], ["refresh_token"], "authorization_code",
+                                    ["authorization_code", "client_credentials"],
+                                    ["authorization_code", "password"], ["authorization_code", {}]])
+def test_dcr_does_not_accept_unrelated_or_malformed_grants(bridge, grants):
+    _, client, _ = bridge
+    result = send(client, "POST", "/vimarx-oauth/register", json=dict(
+        redirect_uris=[REDIRECT], grant_types=grants))
+    assert result.status_code == 400
+    assert result.json["error"] == "invalid_client_metadata"
+
+
+def test_dcr_does_not_accept_unrelated_scopes(bridge):
+    _, client, _ = bridge
+    result = send(client, "POST", "/vimarx-oauth/register", json=dict(
+        redirect_uris=[REDIRECT], grant_types=["authorization_code", "refresh_token"],
+        scope="mcp:read mcp:write"))
+    assert result.status_code == 400
+    assert result.json["error"] == "invalid_client_metadata"
