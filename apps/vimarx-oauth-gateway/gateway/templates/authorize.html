@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conectar Celesol · Red Unisol</title>
+  <link rel="stylesheet" href="{{ resource.rsplit('/', 1)[0] }}/style.css">
+</head>
+<body>
+  <main>
+    <p class="brand">RED UNISOL</p>
+    <h1>Conectar Celesol</h1>
+    <p>Autorizá a <strong>{{ client_name }}</strong> a consultar Celesol con los permisos de tu usuario.</p>
+    <p>Este acceso permite consultas de solo lectura. No permite modificar datos.</p>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="username">Usuario de Vimarx</label>
+      <input id="username" name="username" autocomplete="username" maxlength="128" required autofocus>
+      <label for="password">Contraseña</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="512" required>
+      <button name="approve" value="yes">Conectar y autorizar consultas</button>
+      <button class="secondary" name="approve" value="no" formnovalidate>Cancelar</button>
+    </form>
+    <p class="note">Tu contraseña se utiliza para iniciar sesión y no se guarda. Cuando venza la sesión, tendrás que volver a conectarte.</p>
+  </main>
+</body>
+</html>
