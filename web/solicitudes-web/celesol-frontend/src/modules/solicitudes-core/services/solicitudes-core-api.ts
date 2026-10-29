@@ -315,6 +315,120 @@ export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
   }>(`/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}`);
 }
 
+export type RefinanciacionPrestamoRequest = {
+  nrosCuota: number[];
+  /** ID del prestamo en Vimarx (legacyId). */
+  prestamoId: string;
+};
+
+export type RefinanciacionCuotaSimulada = {
+  fechaVto: string | null;
+  interesPagado: number;
+  nroCuota: number;
+  otrosPagado: number;
+  punitoriosPagados: number;
+  totalPagado: number;
+};
+
+export type RefinanciacionPrestamoSimulado =
+  | {
+      cuotas: RefinanciacionCuotaSimulada[];
+      ok: true;
+      otros: number;
+      prestamoId: string;
+      punitorios: number;
+      totalPago: number;
+    }
+  | { error: string; ok: false; prestamoId: string };
+
+export type RefinanciacionSimuladaResponse = {
+  prestamos: RefinanciacionPrestamoSimulado[];
+  /** null si algun prestamo no se pudo simular. */
+  total: number | null;
+};
+
+export type SolicitudRefinanciacionResponse = {
+  prestamos: (RefinanciacionPrestamoRequest & {
+    /**
+     * Cobros en Vimarx al generar el prestamo: uno o dos por prestamo (las
+     * vencidas aparte). Vacia mientras no se cobro nada.
+     */
+    cobros?: {
+      cobradoAt: string;
+      cobroId: string;
+      nrosCuota: number[];
+      totalCobrado: number;
+    }[];
+  })[];
+  updatedAt: string | null;
+};
+
+export function getSolicitudRefinanciacion(solicitudId: string) {
+  return apiClient.get<SolicitudRefinanciacionResponse>(
+    `/solicitudes/${solicitudId}/refinanciacion`,
+  );
+}
+
+// Vimarx calcula el importe de cada cuota a la fecha de hoy, sin guardar nada.
+export function simularRefinanciacion(
+  solicitudId: string,
+  prestamos: RefinanciacionPrestamoRequest[],
+) {
+  return apiClient.post<RefinanciacionSimuladaResponse>(
+    `/solicitudes/${solicitudId}/refinanciacion/simulacion`,
+    { prestamos },
+  );
+}
+
+// La simulacion en PDF, con "SIMULACION" cruzado, para mostrarle al socio.
+export async function descargarSimulacionRefinanciacionPdf(
+  solicitudId: string,
+  prestamos: RefinanciacionPrestamoRequest[],
+): Promise<Blob> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    DEFAULT_HTTP_TIMEOUT_MS,
+  );
+
+  try {
+    const response = await fetchConSesion(
+      `/solicitudes/${solicitudId}/refinanciacion/simulacion/pdf`,
+      {
+        body: JSON.stringify({ prestamos }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new ApiError(resolveErrorMessage(responseText), response.status);
+    }
+
+    return await response.blob();
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+// Guarda las cuotas y deja el comprobante en los adjuntos de la solicitud.
+// Sin cuotas, quita la refinanciacion y su comprobante.
+export function generarComprobanteRefinanciacion(
+  solicitudId: string,
+  prestamos: RefinanciacionPrestamoRequest[],
+) {
+  return withAreaForbiddenMessage(
+    apiClient.post<
+      SolicitudRefinanciacionResponse & {
+        adjuntoId: string | null;
+        simulacion: RefinanciacionSimuladaResponse | null;
+      }
+    >(`/solicitudes/${solicitudId}/refinanciacion/comprobante`, { prestamos }),
+  );
+}
+
 export function listSolicitudCoreCancelaciones(solicitudId: string) {
   return apiClient.get<SolicitudCoreCancelacionResponse[]>(
     `/solicitudes/${solicitudId}/cancelaciones`,

@@ -29,6 +29,11 @@ import {
 import type { GetPrestamoDelSocioUseCase } from "../application/use-cases/GetPrestamoDelSocio.use-case";
 import type { ListSolicitudesUseCase } from "../application/use-cases/ListSolicitudes.use-case";
 import type { SimularPrestamoUseCase } from "../application/use-cases/SimularPrestamo.use-case";
+import type { SimularRefinanciacionUseCase } from "../application/use-cases/SimularRefinanciacion.use-case";
+import type { DescargarSimulacionRefinanciacionPdfUseCase } from "../application/use-cases/DescargarSimulacionRefinanciacionPdf.use-case";
+import type { GetSolicitudRefinanciacionUseCase } from "../application/use-cases/GetSolicitudRefinanciacion.use-case";
+import type { GuardarSolicitudRefinanciacionUseCase } from "../application/use-cases/GuardarSolicitudRefinanciacion.use-case";
+import type { GenerarComprobanteRefinanciacionUseCase } from "../application/use-cases/GenerarComprobanteRefinanciacion.use-case";
 import type { UpdateSolicitudUseCase } from "../application/use-cases/UpdateSolicitud.use-case";
 import {
   ForbiddenSolicitudAccessError,
@@ -45,6 +50,8 @@ import {
   patchSolicitudBodySchema,
   prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
+  simularRefinanciacionBodySchema,
+  guardarRefinanciacionBodySchema,
   solicitudByIdParamsSchema,
   createPrestamoLegacyBodySchema,
   type AssignSolicitudToSelfBody,
@@ -56,6 +63,8 @@ import {
   type PatchSolicitudBody,
   type PrestamoDelSocioParams,
   type SimularPrestamoBody,
+  type SimularRefinanciacionBody,
+  type GuardarRefinanciacionBody,
   type SolicitudByIdParams,
   type CreatePrestamoLegacyBody,
 } from "./SolicitudesCoreRequest.schema";
@@ -92,6 +101,11 @@ type Dependencies = {
   visibilidadVendedorResolver: VisibilidadVendedorResolver;
   listSolicitudesUseCase: ListSolicitudesUseCase;
   simularPrestamoUseCase: SimularPrestamoUseCase;
+  simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
+  descargarSimulacionRefinanciacionPdfUseCase: DescargarSimulacionRefinanciacionPdfUseCase;
+  getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
+  guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
+  generarComprobanteRefinanciacionUseCase: GenerarComprobanteRefinanciacionUseCase;
   updateSolicitudUseCase: UpdateSolicitudUseCase;
 };
 
@@ -119,6 +133,11 @@ export class SolicitudesCoreController {
   private readonly visibilidadVendedorResolver: VisibilidadVendedorResolver;
   private readonly listSolicitudesUseCase: ListSolicitudesUseCase;
   private readonly simularPrestamoUseCase: SimularPrestamoUseCase;
+  private readonly simularRefinanciacionUseCase: SimularRefinanciacionUseCase;
+  private readonly descargarSimulacionRefinanciacionPdfUseCase: DescargarSimulacionRefinanciacionPdfUseCase;
+  private readonly getSolicitudRefinanciacionUseCase: GetSolicitudRefinanciacionUseCase;
+  private readonly guardarSolicitudRefinanciacionUseCase: GuardarSolicitudRefinanciacionUseCase;
+  private readonly generarComprobanteRefinanciacionUseCase: GenerarComprobanteRefinanciacionUseCase;
   private readonly updateSolicitudUseCase: UpdateSolicitudUseCase;
 
   constructor(dependencies: Dependencies) {
@@ -152,6 +171,16 @@ export class SolicitudesCoreController {
     this.visibilidadVendedorResolver = dependencies.visibilidadVendedorResolver;
     this.listSolicitudesUseCase = dependencies.listSolicitudesUseCase;
     this.simularPrestamoUseCase = dependencies.simularPrestamoUseCase;
+    this.simularRefinanciacionUseCase =
+      dependencies.simularRefinanciacionUseCase;
+    this.descargarSimulacionRefinanciacionPdfUseCase =
+      dependencies.descargarSimulacionRefinanciacionPdfUseCase;
+    this.getSolicitudRefinanciacionUseCase =
+      dependencies.getSolicitudRefinanciacionUseCase;
+    this.guardarSolicitudRefinanciacionUseCase =
+      dependencies.guardarSolicitudRefinanciacionUseCase;
+    this.generarComprobanteRefinanciacionUseCase =
+      dependencies.generarComprobanteRefinanciacionUseCase;
     this.updateSolicitudUseCase = dependencies.updateSolicitudUseCase;
   }
 
@@ -421,6 +450,186 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(detalle);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Simula la cancelacion de las cuotas elegidas para la pestaña
+  // Refinanciacion. No escribe en Vimarx. Mismo criterio de acceso que los
+  // prestamos del socio.
+  simularRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<SimularRefinanciacionBody>(
+        simularRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const simulacion = await this.simularRefinanciacionUseCase.execute({
+        prestamos: body.prestamos,
+        solicitudId: params.id,
+      });
+
+      res.status(200).json(simulacion);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // La simulacion en PDF, con "SIMULACION" cruzado, para mostrarle al socio.
+  // Mismo acceso que la simulacion.
+  descargarSimulacionRefinanciacionPdf = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<SimularRefinanciacionBody>(
+        simularRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const pdf = await this.descargarSimulacionRefinanciacionPdfUseCase.execute({
+        prestamos: body.prestamos,
+        solicitudId: params.id,
+      });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="Simulacion refinanciacion.pdf"',
+      );
+      res.status(200).send(pdf);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Cuotas guardadas para refinanciar. Mismo acceso que los prestamos del
+  // socio: sin verlos no tiene sentido la seleccion.
+  getRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const refinanciacion =
+        await this.getSolicitudRefinanciacionUseCase.execute({
+          solicitudId: params.id,
+        });
+
+      res.status(200).json(refinanciacion);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Boton "Generar PDF": guarda las cuotas y deja el comprobante en los
+  // adjuntos de la solicitud (lista vacia = quita la refinanciacion y su PDF).
+  generarComprobanteRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<GuardarRefinanciacionBody>(
+        guardarRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const resultado =
+        await this.generarComprobanteRefinanciacionUseCase.execute({
+          currentUser: {
+            id: user.id,
+            workflowOwnerCode: user.workflowOwner?.code ?? null,
+            workflowOwnerId: user.workflowOwnerId,
+            ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+          },
+          prestamos: body.prestamos,
+          solicitudId: params.id,
+        });
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Reemplaza las cuotas guardadas para refinanciar (lista vacia = ninguna).
+  guardarRefinanciacion = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<SolicitudByIdParams>(
+        solicitudByIdParamsSchema,
+        req.params,
+      );
+      const body = this.parseRequest<GuardarRefinanciacionBody>(
+        guardarRefinanciacionBodySchema,
+        req.body ?? {},
+      );
+      const refinanciacion =
+        await this.guardarSolicitudRefinanciacionUseCase.execute({
+          currentUser: {
+            id: user.id,
+            workflowOwnerCode: user.workflowOwner?.code ?? null,
+            workflowOwnerId: user.workflowOwnerId,
+            ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
+          },
+          prestamos: body.prestamos,
+          solicitudId: params.id,
+        });
+
+      res.status(200).json(refinanciacion);
     } catch (error) {
       next(error);
     }

@@ -3,11 +3,12 @@ import { actingContext } from "../../../auth/impersonation/context";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 import { assertLinkedLoanReady, type LinkedLoanReader } from "../services/LinkedLoanRules";
-import type { InitialLoanGenerationService } from "../../infrastructure/services/InitialLoanGenerationService";
+import type { InitialLoanGenerationService, PreparedInitialLoan } from "../../infrastructure/services/InitialLoanGenerationService";
 import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
 import type { SimularCuotaSolicitud } from "../services/SimularCuotaSolicitud";
+import type { CobrarRefinanciacionSolicitud } from "../services/CobrarRefinanciacionSolicitud";
 import {
   LegacyLineaPrestamoUnavailableError,
   InvalidSolicitudesCoreRequestError,
@@ -45,6 +46,9 @@ import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/servi
 // NroLote es Int32 en el legado: 2.147.483.647 centavos.
 const MAX_CANCELACIONES_CENTAVOS = 2147483647;
 
+// DestinoPrestamo "Refinanciación" (codigo 10), mismo ID en Fapi y FapiTest.
+const DESTINO_REFINANCIACION_ID = "61";
+
 type Dependencies = {
   archivarEvaluacion?: Pick<ArchivarEvaluacionExcel, "execute">;
   lineasPrestamoCatalog: LineasPrestamoCatalog;
@@ -60,6 +64,8 @@ type Dependencies = {
   gateway: CrearPrestamoGateway;
   lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
   linkFirmaDigitalBaseUrl: string;
+  // Cuotas de la pestaña Refinanciacion: se cobran antes de crear el prestamo.
+  refinanciacion?: Pick<CobrarRefinanciacionSolicitud, "cobrar" | "preparar">;
   repository: SolicitudesCoreRepository;
   sociosRepository: SocioRepository;
   solicitudesLegacyGateway: Pick<
@@ -92,6 +98,10 @@ export class CreatePrestamoLegacyUseCase {
   private readonly gateway: CrearPrestamoGateway;
   private readonly lineaPrestamoLegacyIdResolver: LineaPrestamoLegacyIdResolver;
   private readonly linkFirmaDigitalBaseUrl: string;
+  private readonly refinanciacion?: Pick<
+    CobrarRefinanciacionSolicitud,
+    "cobrar" | "preparar"
+  >;
   private readonly repository: SolicitudesCoreRepository;
   private readonly solicitudesLegacyGateway: Pick<
     SolicitudesLegacyGateway,
@@ -122,6 +132,7 @@ export class CreatePrestamoLegacyUseCase {
     this.lineaPrestamoLegacyIdResolver =
       dependencies.lineaPrestamoLegacyIdResolver;
     this.linkFirmaDigitalBaseUrl = dependencies.linkFirmaDigitalBaseUrl;
+    this.refinanciacion = dependencies.refinanciacion;
     this.repository = dependencies.repository;
     this.solicitudesLegacyGateway = dependencies.solicitudesLegacyGateway;
     this.today = dependencies.today;
@@ -156,6 +167,7 @@ export class CreatePrestamoLegacyUseCase {
       realActorId: actingContext.getStore()?.administrator.id ?? input.currentUser.id, operation: "loan_generation",
     };
     let newLoanId: string;
+    await prepared.antesDeCrear?.(context);
     try { newLoanId = (await this.gateway.crear(prepared.coreInput, context)).id; }
     catch (error) {
       await this.diagnostic(context, "ERROR", { phase: "REMOTE_CREATION", error });
@@ -187,7 +199,7 @@ export class CreatePrestamoLegacyUseCase {
       throw new AdministrativeCorrectionError("El préstamo se genera o regenera desde Confirmada. Primero completá la revisión y confirmá la solicitud.");
   }
 
-  private async prepare(input: CreatePrestamoLegacyInput, replacement = false) {
+  private async prepare(input: CreatePrestamoLegacyInput, replacement = false): Promise<PreparedInitialLoan> {
     const solicitud = await this.repository.findById(input.solicitudId);
 
     if (!solicitud) {
@@ -288,6 +300,21 @@ export class CreatePrestamoLegacyUseCase {
     if (!limitesLinea || !limitesLinea.vigente)
       throw new LegacyLineaPrestamoUnavailableError();
     const efectivos = ajustarMaximosLinea(limitesLinea, solicitud);
+    // Antes de escribir nada en Vimarx: la refinanciacion tiene que poder
+    // cobrarse y entrar, junto con las cancelaciones, en lo que se desembolsa.
+    const refinanciacion = await this.refinanciacion?.preparar(
+      input.solicitudId,
+    );
+    const hayRefinanciacion = (refinanciacion?.total ?? 0) > 0;
+    if (
+      hayRefinanciacion &&
+      (refinanciacion?.total ?? 0) +
+        (await this.totalCancelaciones(input.solicitudId)) >
+        (efectivos.montoAFinanciar as number)
+    )
+      throw new InvalidSolicitudesCoreRequestError(
+        "La refinanciación y las cancelaciones superan el monto a desembolsar.",
+      );
     const huboAjuste =
       efectivos.cuotas !== solicitud.cuotas ||
       efectivos.montoAFinanciar !== solicitud.montoAFinanciar;
@@ -312,13 +339,34 @@ export class CreatePrestamoLegacyUseCase {
     // Validar las condiciones antes de escribir en el socio. Un conflicto o
     // rechazo del convenio detiene la generacion antes de CrearPrestamo.
     await this.actualizarConvenioSocio(socio.nroSocioLegacy, input.convenio);
+    // Las cuotas de la pestaña Refinanciacion se cobran justo antes de
+    // CrearPrestamo, que toma lo cobrado y lo descuenta del en mano. En un
+    // reemplazo ya se cobraron con el prestamo original.
+    const pendientesRefinanciacion =
+      !replacement && refinanciacion && refinanciacion.pendientes.length > 0
+        ? refinanciacion
+        : null;
     return { solicitud: huboAjuste ? (await this.repository.findById(input.solicitudId)) ?? solicitud : solicitud, codigoMutual: lineaPrestamo.codigoMutual,
+      refinanciacionVersion: refinanciacion?.version,
       coreInput: {
         cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
         integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],
         lineaPrestamo: lineaPrestamo.id, montoDeseado: efectivos.montoAFinanciar as number,
-        ...nroLote, vendedor: String(vendedorLegacyId),
+        ...nroLote,
+        ...(hayRefinanciacion ? { destino: DESTINO_REFINANCIACION_ID } : {}),
+        vendedor: String(vendedorLegacyId),
       },
+      ...(pendientesRefinanciacion
+        ? {
+            antesDeCrear: async (context: LoanDiagnosticContext) => {
+              await this.refinanciacion?.cobrar(
+                input.solicitudId,
+                pendientesRefinanciacion,
+                context,
+              );
+            },
+          }
+        : {}),
     };
   }
 
@@ -403,11 +451,7 @@ export class CreatePrestamoLegacyUseCase {
     solicitudId: string,
     montoAFinanciar?: number,
   ): Promise<{ nroLote?: number }> {
-    const cancelaciones =
-      await this.cancelacionesRepository.listBySolicitudId(solicitudId);
-    const total = cancelaciones
-      .filter((cancelacion) => cancelacion.deletedAt === null)
-      .reduce((suma, cancelacion) => suma + cancelacion.monto, 0);
+    const total = await this.totalCancelaciones(solicitudId);
 
     if (montoAFinanciar !== undefined && total > montoAFinanciar)
       throw new InvalidSolicitudesCoreRequestError(
@@ -428,5 +472,14 @@ export class CreatePrestamoLegacyUseCase {
     }
 
     return { nroLote: centavos };
+  }
+
+  private async totalCancelaciones(solicitudId: string) {
+    const cancelaciones =
+      await this.cancelacionesRepository.listBySolicitudId(solicitudId);
+
+    return cancelaciones
+      .filter((cancelacion) => cancelacion.deletedAt === null)
+      .reduce((suma, cancelacion) => suma + cancelacion.monto, 0);
   }
 }

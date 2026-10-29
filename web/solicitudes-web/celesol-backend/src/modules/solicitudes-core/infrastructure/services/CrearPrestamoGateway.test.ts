@@ -241,4 +241,30 @@ describe("CrearPrestamoGateway", () => {
       PrestamoLegacyUnavailableError,
     );
   });
+  // Las refinanciaciones van con el destino Refinanciacion, como las cargan los
+  // analistas; sin destino Vimarx deja el de la linea.
+  it("sends Destino only when there is one", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const gateway = new CrearPrestamoGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)).campos);
+        return { json: async () => ({ Error: null, ID: 1, Ok: true }), ok: true };
+      },
+    );
+    const base = {
+      cuotas: 6,
+      fechaEmision: "2026-10-27",
+      integrantes: [{ socio: "143831", tipoRelacion: "Titular" as const }],
+      lineaPrestamo: "2519",
+      montoDeseado: 2000000,
+      vendedor: "252",
+    };
+
+    await gateway.crear({ ...base, destino: "61" });
+    await gateway.crear(base);
+
+    assert.equal(bodies[0]?.Destino, "61");
+    assert.equal("Destino" in (bodies[1] ?? {}), false);
+  });
 });

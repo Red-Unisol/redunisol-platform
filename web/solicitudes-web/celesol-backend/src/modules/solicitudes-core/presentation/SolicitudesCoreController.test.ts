@@ -22,6 +22,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -66,6 +71,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -123,6 +133,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -169,6 +184,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -210,6 +230,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -258,6 +283,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -315,6 +345,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -372,6 +407,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -423,6 +463,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -492,6 +537,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase:
         createSolicitudUseCase as never,
       getCurrentUserUseCase: {
@@ -593,6 +643,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -663,6 +718,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -713,6 +773,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       createPrestamoLegacyUseCase: {
         execute: async (input: unknown) => {
@@ -762,6 +827,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       simularPrestamoUseCase: {
         execute: async (input: unknown) => {
@@ -806,6 +876,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       getRevisionPrestamoUseCase: {
         execute: async (input: unknown) => {
@@ -855,6 +930,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       listAssignableSolicitudAgentsUseCase: {
         execute: async (input: unknown) => {
@@ -905,6 +985,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -949,6 +1034,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async (input: unknown) => {
@@ -999,6 +1089,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async (input: unknown) => {
@@ -1050,6 +1145,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -1088,6 +1188,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToUserUseCase: {
         execute: async () => {
@@ -1135,6 +1240,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       ...workflowUseCases(),
       assignSolicitudToSelfUseCase: {
         execute: async () => {
@@ -1195,6 +1305,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1253,6 +1368,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1318,6 +1438,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1376,6 +1501,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1474,6 +1604,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {
         execute: async () => ({ id: "sol-1" }),
       } as never,
@@ -1537,6 +1672,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({
@@ -1598,6 +1738,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1634,6 +1779,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => ({ ...authenticatedUser(), isSystemAdmin: true }),
@@ -1670,6 +1820,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getCurrentUserUseCase: {
         execute: async () => authenticatedUser(),
@@ -1713,6 +1868,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsUseCase: {
         execute: async (input: unknown) => {
@@ -1757,6 +1917,11 @@ describe("SolicitudesCoreController", () => {
       visibilidadVendedorResolver: {} as never,
       getCredixsaSolicitudUseCase: {} as never,
       getPrestamoDelSocioUseCase: {} as never,
+      simularRefinanciacionUseCase: {} as never,
+      descargarSimulacionRefinanciacionPdfUseCase: {} as never,
+      getSolicitudRefinanciacionUseCase: {} as never,
+      guardarSolicitudRefinanciacionUseCase: {} as never,
+      generarComprobanteRefinanciacionUseCase: {} as never,
       createSolicitudUseCase: {} as never,
       getAnalistaDashboardStatsV2UseCase: {
         execute: async (input: unknown) => {
@@ -1862,6 +2027,113 @@ describe("SolicitudesCoreController.listPrestamosDelSocio", () => {
     assert.equal(response.statusCode, 200);
   });
 });
+
+describe("SolicitudesCoreController.simularRefinanciacion", () => {
+  it("rejects a VENDEDORES user", async () => {
+    let llamado = false;
+    const controller = buildRefinanciacionController("VENDEDORES", () => {
+      llamado = true;
+    });
+    let nextError: unknown;
+
+    await controller.simularRefinanciacion(
+      request({
+        body: { prestamos: [{ nrosCuota: [1], prestamoId: "414805" }] },
+        params: { id: solicitudId() },
+      }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(
+      (nextError as Error)?.name,
+      "ForbiddenSolicitudAccessError",
+    );
+    assert.equal(llamado, false);
+  });
+
+  it("passes the chosen cuotas and returns the simulation", async () => {
+    let receivedInput: unknown;
+    const controller = buildRefinanciacionController("RIESGO", (input) => {
+      receivedInput = input;
+    });
+    const response = createResponse();
+    let nextError: unknown;
+
+    await controller.simularRefinanciacion(
+      request({
+        body: { prestamos: [{ nrosCuota: [24, 25], prestamoId: "414805" }] },
+        params: { id: solicitudId() },
+      }),
+      response,
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(nextError, undefined);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { prestamos: [], total: 0 });
+    assert.deepEqual(receivedInput, {
+      prestamos: [{ nrosCuota: [24, 25], prestamoId: "414805" }],
+      solicitudId: solicitudId(),
+    });
+  });
+
+  it("rejects repeated cuotas before calling the use case", async () => {
+    let llamado = false;
+    const controller = buildRefinanciacionController("RIESGO", () => {
+      llamado = true;
+    });
+    let nextError: unknown;
+
+    await controller.simularRefinanciacion(
+      request({
+        body: { prestamos: [{ nrosCuota: [24, 24], prestamoId: "414805" }] },
+        params: { id: solicitudId() },
+      }),
+      createResponse(),
+      captureNextError((error) => {
+        nextError = error;
+      }),
+    );
+
+    assert.equal(
+      (nextError as Error)?.name,
+      "InvalidSolicitudesCoreRequestError",
+    );
+    assert.equal(llamado, false);
+  });
+});
+
+function buildRefinanciacionController(
+  ownerCode: string,
+  onExecute?: (input: unknown) => void,
+) {
+  return new SolicitudesCoreController({
+    createSolicitudUseCase: {} as never,
+    getCurrentUserUseCase: {
+      execute: async () => ({
+        ...authenticatedUser(),
+        isSystemAdmin: false,
+        workflowOwner: { code: ownerCode },
+      }),
+    } as never,
+    simularRefinanciacionUseCase: {
+      execute: async (input: unknown) => {
+        onExecute?.(input);
+
+        return { prestamos: [], total: 0 };
+      },
+    } as never,
+    ...workflowUseCases(),
+    getSolicitudByIdUseCase: {} as never,
+    listSolicitudesUseCase: {} as never,
+    updateSolicitudUseCase: {} as never,
+  } as never);
+}
 
 function buildPrestamosController(
   ownerCode: string,

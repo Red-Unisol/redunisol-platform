@@ -13,6 +13,7 @@ import {
 } from "../utils/convenio-edicion";
 import { Button } from "@/shared/components/ui/button";
 import { useSolicitudCoreCancelacionesQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-cancelaciones-query";
+import { useRefinanciacionTotalQuery } from "@/modules/solicitudes-core/hooks/use-refinanciacion-total-query";
 import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
 import { Input } from "@/shared/components/ui/input";
 import { formatMoneyAmount } from "@/shared/utils/money-format";
@@ -67,7 +68,8 @@ type GenerarPrestamoDialogProps = {
 // Confirmacion previa a crear el prestamo en Vimarx con el reparto del monto a
 // desembolsar: lo que cancela deudas con terceros y lo que recibe el socio. Es
 // la misma cuenta que el legado ([Monto En Mano] = Bco + MontoCancelaciones).
-// REFI queda afuera: hoy el prestamo creado desde aca no refinancia deuda propia.
+// La refinanciacion (cuotas de prestamos propios elegidas en su pestaña) se
+// cobra en Vimarx al confirmar, y Vimarx la descuenta del en mano igual.
 export function GenerarPrestamoDialog(props: GenerarPrestamoDialogProps) {
   // Desmontar al cerrar descarta la vista previa, incluso una consulta pendiente.
   return props.open ? (
@@ -132,26 +134,42 @@ function RevisionPrestamoDialog({
     (total, cancelacion) => total + cancelacion.monto,
     0,
   );
+  const refinanciacion = useRefinanciacionTotalQuery(solicitudId, open);
+  const totalRefinanciacion = refinanciacion.data?.total ?? 0;
+  const hayRefinanciacion = (refinanciacion.data?.detalle.length ?? 0) > 0;
   const montoEnMano =
-    montoRevision === null || isLoading || error
+    montoRevision === null ||
+    isLoading ||
+    error ||
+    refinanciacion.isLoading ||
+    refinanciacion.isError
       ? null
-      : montoRevision - totalCancelaciones;
-  // Sin las cancelaciones no se puede mostrar el reparto, y un en mano negativo
-  // es un prestamo que no alcanza para pagar a los terceros.
+      : montoRevision - totalCancelaciones - totalRefinanciacion;
+  // Sin las cancelaciones o la refinanciacion no se puede mostrar el reparto,
+  // y un en mano negativo es un prestamo que no alcanza para pagar las deudas.
   const bloqueo = error
     ? "No se pudieron consultar las cancelaciones. Reintentá antes de generar el préstamo."
-    : montoEnMano !== null && montoEnMano < 0
-      ? "Las cancelaciones superan el monto a desembolsar."
-      : null;
-  // Con una sola cancelacion su monto es el total: repetirlo confunde.
-  const detallarMontos = cancelaciones.length > 1;
+    : refinanciacion.isError
+      ? "No se pudo calcular la refinanciación en Vimarx. Reintentá antes de generar el préstamo."
+      : refinanciacion.data?.error
+        ? `Vimarx no acepta las cuotas de la refinanciación: ${refinanciacion.data.error}`
+        : montoEnMano !== null && montoEnMano < 0
+          ? hayRefinanciacion
+            ? "La refinanciación y las cancelaciones superan el monto a desembolsar."
+            : "Las cancelaciones superan el monto a desembolsar."
+          : null;
 
   return (
     <ConfirmDialog
       className="max-w-[960px] p-4 md:p-5"
       confirmLabel="Generar préstamo"
       description="Revisá el titular, el plan de cuotas y el desembolso antes de confirmar."
-      isConfirmDisabled={isLoading || bloqueo !== null || hayErrorConvenio}
+      isConfirmDisabled={
+        isLoading ||
+        refinanciacion.isLoading ||
+        bloqueo !== null ||
+        hayErrorConvenio
+      }
       isConfirming={isPending}
       onConfirm={() =>
         onConfirm(
@@ -388,6 +406,45 @@ function RevisionPrestamoDialog({
             label="Monto a desembolsar"
             value={formatMoneyAmount(montoRevision)}
           />
+          {/* Lo que se descuenta del desembolso, cada cosa con su detalle:
+              en mano = desembolso - refinanciacion - cancelaciones. */}
+          <div>
+            <Dato
+              label="Refinanciación"
+              value={
+                refinanciacion.isLoading
+                  ? "Calculando en Vimarx..."
+                  : refinanciacion.isError
+                    ? null
+                    : formatMoneyAmount(totalRefinanciacion)
+              }
+            />
+            {hayRefinanciacion ? (
+              <ul className="mt-1 space-y-0.5 pl-3 text-xs text-foreground-secondary">
+                {refinanciacion.data?.detalle.map((prestamo) => (
+                  <li
+                    className="flex justify-between gap-3"
+                    key={prestamo.prestamoId}
+                  >
+                    <span className="break-words">
+                      Préstamo {prestamo.nroCuenta ?? prestamo.prestamoId} ·{" "}
+                      {prestamo.nrosCuota.length === 1 ? "cuota" : "cuotas"}{" "}
+                      {prestamo.nrosCuota.join(", ")}
+                    </span>
+                    <span className="shrink-0">
+                      {prestamo.total === null
+                        ? PLACEHOLDER
+                        : formatMoneyAmount(prestamo.total)}
+                    </span>
+                  </li>
+                ))}
+                <li>
+                  Con punitorios y el cargo de la línea, a hoy. Se cobran en
+                  Vimarx al generar el préstamo.
+                </li>
+              </ul>
+            ) : null}
+          </div>
           <div>
             <Dato
               label="Cancelaciones"
@@ -407,11 +464,9 @@ function RevisionPrestamoDialog({
                     key={cancelacion.id}
                   >
                     <span className="break-words">{cancelacion.socio}</span>
-                    {detallarMontos ? (
-                      <span className="shrink-0">
-                        {formatMoneyAmount(cancelacion.monto)}
-                      </span>
-                    ) : null}
+                    <span className="shrink-0">
+                      {formatMoneyAmount(cancelacion.monto)}
+                    </span>
                   </li>
                 ))}
               </ul>

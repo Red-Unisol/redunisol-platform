@@ -56,6 +56,17 @@ import { CreatePrestamoLegacyUseCase } from "./application/use-cases/CreatePrest
 import { ListLineasPrestamoDeSolicitudUseCase } from "./application/use-cases/ListLineasPrestamoDeSolicitud.use-case";
 import { ListPrestamosDelSocioUseCase } from "./application/use-cases/ListPrestamosDelSocio.use-case";
 import { GetPrestamoDelSocioUseCase } from "./application/use-cases/GetPrestamoDelSocio.use-case";
+import { SimularRefinanciacionUseCase } from "./application/use-cases/SimularRefinanciacion.use-case";
+import { DescargarSimulacionRefinanciacionPdfUseCase } from "./application/use-cases/DescargarSimulacionRefinanciacionPdf.use-case";
+import { GenerarComprobanteRefinanciacionUseCase } from "./application/use-cases/GenerarComprobanteRefinanciacion.use-case";
+import { GetSolicitudRefinanciacionUseCase } from "./application/use-cases/GetSolicitudRefinanciacion.use-case";
+import { GuardarSolicitudRefinanciacionUseCase } from "./application/use-cases/GuardarSolicitudRefinanciacion.use-case";
+import { SolicitudRefinanciacionPrismaRepository } from "./infrastructure/repositories/SolicitudRefinanciacionPrismaRepository";
+import { CobrarRefinanciacionSolicitud } from "./application/services/CobrarRefinanciacionSolicitud";
+import { RefinanciacionCobrosService } from "./infrastructure/services/RefinanciacionCobrosService";
+import { addRefinanciacionCobrosRoutes } from "./presentation/RefinanciacionCobrosRoutes";
+import { ComprobanteRefinanciacionService } from "./application/services/ComprobanteRefinanciacion";
+import { ArchivarComprobanteRefinanciacion } from "./application/services/ArchivarComprobanteRefinanciacion";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
 import { AssignSolicitudToSelfUseCase } from "./application/use-cases/AssignSolicitudToSelf.use-case";
 import { AssignSolicitudToUserUseCase } from "./application/use-cases/AssignSolicitudToUser.use-case";
@@ -97,6 +108,7 @@ import { SolicitudWorkflowRepositoryImpl } from "./infrastructure/repositories/S
 import { WorkflowTransitionAdminRepositoryImpl } from "./infrastructure/repositories/WorkflowTransitionAdminRepositoryImpl";
 import { LegacyLineasPrestamoCatalog } from "./infrastructure/services/LegacyLineasPrestamoCatalog";
 import { SimularCuotaSolicitud } from "./application/services/SimularCuotaSolicitud";
+import { CobrarPrestamoGateway } from "./infrastructure/services/CobrarPrestamoGateway";
 import { CrearPrestamoGateway } from "./infrastructure/services/CrearPrestamoGateway";
 import { EditarSocioMutualGateway } from "./infrastructure/services/EditarSocioMutualGateway";
 import { EvaluateListLineaPrestamoLegacyIdResolver } from "./infrastructure/services/EvaluateListLineaPrestamoLegacyIdResolver";
@@ -308,6 +320,43 @@ export function createSolicitudesCoreRouter(
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });
+  const cobrarPrestamoGateway = new CobrarPrestamoGateway({
+    baseUrl: env.LEGACY_API_BASE_URL,
+    timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
+  const simularRefinanciacionUseCase = new SimularRefinanciacionUseCase({
+    cobrarPrestamoGateway,
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+  });
+  const solicitudRefinanciacionRepository =
+    new SolicitudRefinanciacionPrismaRepository(prisma);
+  const getSolicitudRefinanciacionUseCase =
+    new GetSolicitudRefinanciacionUseCase({
+      refinanciacionRepository: solicitudRefinanciacionRepository,
+      repository: solicitudesCoreRepository,
+    });
+  const guardarSolicitudRefinanciacionUseCase =
+    new GuardarSolicitudRefinanciacionUseCase({
+      fieldAccessRulesRepository: solicitudFieldAccessRulesRepository,
+      refinanciacionRepository: solicitudRefinanciacionRepository,
+      repository: solicitudesCoreRepository,
+      simularRefinanciacion: simularRefinanciacionUseCase,
+    });
+  const comprobanteRefinanciacion = new ComprobanteRefinanciacionService({
+    legacyGateway: solicitudesLegacyGateway,
+    repository: solicitudesCoreRepository,
+  });
+  const refinanciacionCobros = new RefinanciacionCobrosService({
+    db: prisma, legacyGateway: solicitudesLegacyGateway, timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
+  const cobrarRefinanciacionSolicitud = new CobrarRefinanciacionSolicitud({
+    registroCobros: refinanciacionCobros,
+    cobrarPrestamoGateway,
+    legacyGateway: solicitudesLegacyGateway,
+    refinanciacionRepository: solicitudRefinanciacionRepository,
+    simularRefinanciacion: simularRefinanciacionUseCase,
+  });
   const getRevisionPrestamoUseCase = new GetRevisionPrestamoUseCase({
     convenioSocioGateway: solicitudesLegacyGateway,
     lineasPrestamoCatalog,
@@ -343,6 +392,7 @@ export function createSolicitudesCoreRouter(
     gateway: crearPrestamoGateway,
     lineaPrestamoLegacyIdResolver,
     linkFirmaDigitalBaseUrl: env.FINALIZAR_FIRMA_DIGITAL_BASE_URL,
+    refinanciacion: cobrarRefinanciacionSolicitud,
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,
@@ -469,6 +519,24 @@ export function createSolicitudesCoreRouter(
     visibilidadVendedorResolver,
     getCredixsaSolicitudUseCase,
     getPrestamoDelSocioUseCase,
+    simularRefinanciacionUseCase,
+    descargarSimulacionRefinanciacionPdfUseCase:
+      new DescargarSimulacionRefinanciacionPdfUseCase({
+        comprobante: comprobanteRefinanciacion,
+        simularRefinanciacion: simularRefinanciacionUseCase,
+      }),
+    getSolicitudRefinanciacionUseCase,
+    guardarSolicitudRefinanciacionUseCase,
+    generarComprobanteRefinanciacionUseCase:
+      new GenerarComprobanteRefinanciacionUseCase({
+        archivar: new ArchivarComprobanteRefinanciacion({
+          adjuntos: solicitudAdjuntoRepository,
+          bucket: env.MINIO_BUCKET_SOLICITUDES,
+          storage: adjuntosObjectStorage,
+        }),
+        comprobante: comprobanteRefinanciacion,
+        guardar: guardarSolicitudRefinanciacionUseCase,
+      }),
     listLineasPrestamoDeSolicitudUseCase,
     listSolicitudesDelTitularUseCase: new ListSolicitudesDelTitularUseCase({ repository: solicitudesCoreRepository, legacyGateway: solicitudesLegacyGateway }),
     listPrestamosDelSocioUseCase,
@@ -527,6 +595,7 @@ export function createSolicitudesCoreRouter(
     });
   addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
   addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
+  addRefinanciacionCobrosRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: refinanciacionCobros });
   router.get("/:id/linked-loan-status", async (req, res, next) => {
     try {
       const id = z.uuid().parse(req.params.id);

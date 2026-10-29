@@ -412,3 +412,51 @@ export class CalculoConValoresEfectivosError extends SolicitudesError {
     this.effectiveValues = values;
   }
 }
+
+export class SolicitudRefinanciacionNoEditableError extends SolicitudesError {
+  constructor() {
+    super("No podés cambiar la refinanciación de esta solicitud en este estado.", 403);
+    this.name = "SolicitudRefinanciacionNoEditableError";
+  }
+}
+
+export class SolicitudRefinanciacionPrestamoGeneradoError extends SolicitudesError {
+  constructor() {
+    super(
+      "El préstamo de esta solicitud ya fue generado: la refinanciación no se puede cambiar.",
+      409,
+    );
+    this.name = "SolicitudRefinanciacionPrestamoGeneradoError";
+  }
+}
+
+// Vimarx no acepta las cuotas elegidas (por ejemplo, falta una cuota anterior
+// impaga del mismo prestamo). El mensaje es el del legado.
+export class SolicitudRefinanciacionInvalidaError extends SolicitudesError {
+  constructor(message: string) {
+    super(message, 422);
+    this.name = "SolicitudRefinanciacionInvalidaError";
+  }
+}
+
+export class SolicitudRefinanciacionYaCobradaError extends SolicitudesError {
+  constructor() {
+    super(
+      "Ya se cobraron en Vimarx cuotas de esta refinanciación: no se puede cambiar. Terminá de generar el préstamo.",
+      409,
+    );
+    this.name = "SolicitudRefinanciacionYaCobradaError";
+  }
+}
+
+// Al generar el prestamo se cobraron algunos prestamos de la refinanciacion
+// y otro fallo. Lo cobrado queda registrado: reintentar no lo vuelve a cobrar.
+export class SolicitudRefinanciacionCobroIncompletoError extends SolicitudesError {
+  constructor(input: { cobrados: number; motivo: string; total: number }) {
+    super(
+      `Se hicieron ${input.cobrados} de ${input.total} cobros de la refinanciación y el préstamo nuevo no se generó. ${input.motivo} Al reintentar no se vuelve a cobrar lo ya cobrado.`,
+      502,
+    );
+    this.name = "SolicitudRefinanciacionCobroIncompletoError";
+  }
+}

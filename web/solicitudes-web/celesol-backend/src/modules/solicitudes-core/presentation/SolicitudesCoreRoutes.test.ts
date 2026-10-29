@@ -28,6 +28,11 @@ describe("SolicitudesCoreRoutes", () => {
         listHistory: () => undefined,
         listTransitions: () => undefined,
         simular: () => undefined,
+        simularRefinanciacion: () => undefined,
+        descargarSimulacionRefinanciacionPdf: () => undefined,
+        getRefinanciacion: () => undefined,
+        guardarRefinanciacion: () => undefined,
+        generarComprobanteRefinanciacion: () => undefined,
         update: () => undefined,
       } as never,
       {
@@ -50,7 +55,7 @@ describe("SolicitudesCoreRoutes", () => {
       .filter((layer) => layer.route)
       .map((layer) => layer.route?.path);
 
-    assert.deepEqual(routePaths.slice(0, 24), [
+    assert.deepEqual(routePaths.slice(0, 29), [
       "/",
       "/",
       "/stats",
@@ -67,6 +72,11 @@ describe("SolicitudesCoreRoutes", () => {
       "/:id/solicitudes-titular",
       "/:id/prestamos-socio",
       "/:id/prestamos-socio/:prestamoId",
+      "/:id/refinanciacion/simulacion",
+      "/:id/refinanciacion/simulacion/pdf",
+      "/:id/refinanciacion",
+      "/:id/refinanciacion",
+      "/:id/refinanciacion/comprobante",
       "/:id/credixsa",
       "/:id/lineas-prestamo",
       "/:id/assignment/agents",
