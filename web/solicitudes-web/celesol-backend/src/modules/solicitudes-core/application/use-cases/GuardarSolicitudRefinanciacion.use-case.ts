@@ -13,6 +13,7 @@ import type {
   SolicitudRefinanciacionPrestamo,
   SolicitudRefinanciacionRepository,
 } from "../../domain/repositories/SolicitudRefinanciacionRepository";
+import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
 import type {
   RefinanciacionSimulada,
   SimularRefinanciacionUseCase,
@@ -125,6 +126,8 @@ export class GuardarSolicitudRefinanciacionUseCase {
     }
 
     const guardada = await this.dependencies.refinanciacionRepository.replace({
+      expectedSolicitudUpdatedAt: solicitud.updatedAt,
+      expectedVersion: refinanciacionVersion(actual),
       prestamos,
       solicitudId: input.solicitudId,
       updatedBy: user.id,

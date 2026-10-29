@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
 
 import { GuardarSolicitudRefinanciacionUseCase } from "./GuardarSolicitudRefinanciacion.use-case";
 import type { RefinanciacionSimulada } from "./SimularRefinanciacion.use-case";
@@ -38,7 +39,7 @@ describe("GuardarSolicitudRefinanciacionUseCase", () => {
     const esperado = [{ nrosCuota: [24, 25], prestamoId: "414805" }];
     assert.deepEqual(simulados, [{ prestamos: esperado, solicitudId: "sol-1" }]);
     assert.deepEqual(guardados, [
-      { prestamos: esperado, solicitudId: "sol-1", updatedBy: "user-1" },
+      { expectedSolicitudUpdatedAt: new Date(0), expectedVersion: refinanciacionVersion({prestamos: [], updatedAt: null}), prestamos: esperado, solicitudId: "sol-1", updatedBy: "user-1" },
     ]);
     assert.equal(result.simulacion?.total, 57945.57);
   });
@@ -94,7 +95,7 @@ describe("GuardarSolicitudRefinanciacionUseCase", () => {
 
     assert.equal(simulo, false);
     assert.deepEqual(guardados, [
-      { prestamos: [], solicitudId: "sol-1", updatedBy: "user-1" },
+      { expectedSolicitudUpdatedAt: new Date(0), expectedVersion: refinanciacionVersion({prestamos: [], updatedAt: null}), prestamos: [], solicitudId: "sol-1", updatedBy: "user-1" },
     ]);
     assert.equal(result.simulacion, null);
   });
@@ -234,6 +235,7 @@ function solicitud(
       ownerId: overrides.ownerId ?? OWNER_RIESGO,
     },
     id: "sol-1",
+    updatedAt: new Date(0),
     legacyOid: overrides.legacyOid ?? null,
   };
 }

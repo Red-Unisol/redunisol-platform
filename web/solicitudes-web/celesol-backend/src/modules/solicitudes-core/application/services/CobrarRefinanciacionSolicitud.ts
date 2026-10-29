@@ -5,6 +5,7 @@ import {
 } from "../../domain/solicitudes-core-errors";
 import {
   cuotasPendientesDeCobro,
+  refinanciacionVersion,
   type SolicitudRefinanciacionPrestamo,
   type SolicitudRefinanciacionRepository,
 } from "../../domain/repositories/SolicitudRefinanciacionRepository";
@@ -19,6 +20,9 @@ import {
   hoyEnArgentina,
   planCobroRefinanciacion,
 } from "./PlanCobroRefinanciacion";
+import type { RefinanciacionCobrosService } from "../../infrastructure/services/RefinanciacionCobrosService";
+import type { LoanDiagnosticContext } from "../../../technical-diagnostics/LoanDiagnostics";
+import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 
 type Dependencies = {
   cobrarPrestamoGateway: Pick<CobrarPrestamoGateway, "cobrar">;
@@ -26,12 +30,14 @@ type Dependencies = {
   legacyGateway: Pick<SolicitudesLegacyGateway, "listCuotasDelPrestamo">;
   refinanciacionRepository: Pick<
     SolicitudRefinanciacionRepository,
-    "agregarCobro" | "findBySolicitudId"
+    "findBySolicitudId"
   >;
+  registroCobros: Pick<RefinanciacionCobrosService, "iniciar" | "confirmar" | "rechazar" | "marcarIncierto">;
   simularRefinanciacion: Pick<SimularRefinanciacionUseCase, "execute">;
 };
 
 export type RefinanciacionPreparada = {
+  version: string;
   /** Por prestamo, las cuotas elegidas que todavia no se cobraron. */
   pendientes: SolicitudRefinanciacionPrestamo[];
   /** Lo cobrado + lo que Vimarx calcula hoy para lo pendiente. */
@@ -77,7 +83,7 @@ export class CobrarRefinanciacionSolicitud {
       .reduce((total, cobro) => total + cobro.totalCobrado, 0);
 
     if (pendientes.length === 0) {
-      return { pendientes, total: roundToCents(cobrado) };
+      return { pendientes, total: roundToCents(cobrado), version: refinanciacionVersion(guardada) };
     }
 
     // Tambien vuelve a verificar que cada prestamo sea del titular.
@@ -94,12 +100,13 @@ export class CobrarRefinanciacionSolicitud {
     }
 
     return {
+      version: refinanciacionVersion(guardada),
       pendientes,
       total: roundToCents(cobrado + (simulacion.total ?? 0)),
     };
   }
 
-  async cobrar(solicitudId: string, preparada: RefinanciacionPreparada) {
+  async cobrar(solicitudId: string, preparada: RefinanciacionPreparada, context?: LoanDiagnosticContext) {
     const hoy = this.hoy();
     const tramos = [];
 
@@ -119,6 +126,9 @@ export class CobrarRefinanciacionSolicitud {
     }
 
     for (const [index, tramo] of tramos.entries()) {
+      const operationId = await this.dependencies.registroCobros.iniciar({
+        solicitudId, prestamoId: tramo.prestamoId, nrosCuota: tramo.nrosCuota, context,
+      });
       let cobro;
 
       try {
@@ -131,27 +141,37 @@ export class CobrarRefinanciacionSolicitud {
           simulacion: false,
         });
       } catch (error) {
+        if (error instanceof PrestamoLegacyRechazadoError) {
+          await this.dependencies.registroCobros.rechazar(solicitudId, operationId, error.message);
+        } else {
+          // Even if this write fails, the intent persisted before the HTTP call remains locked.
+          try { await this.dependencies.registroCobros.marcarIncierto(solicitudId, operationId); } catch { /* PENDING is also uncertain. */ }
+          const blocked = new AdministrativeCorrectionError("Vimarx no confirmó el cobro de refinanciación. La solicitud quedó bloqueada: un administrador debe revisar y conciliar el cobro antes de reintentar.");
+          blocked.cause = error;
+          throw blocked;
+        }
         const cuotas = `las cuotas ${tramo.nrosCuota.join(", ")} del préstamo ${tramo.prestamoId}`;
 
         throw new SolicitudRefinanciacionCobroIncompletoError({
           cobrados: index,
-          motivo:
-            error instanceof PrestamoLegacyRechazadoError
-              ? `Vimarx rechazó ${cuotas}: ${error.message}`
-              : `No se pudo confirmar el cobro de ${cuotas}. Antes de reintentar, revisá en Vimarx si quedaron cobradas.`,
+          motivo: `Vimarx rechazó ${cuotas}: ${error.message}`,
           total: tramos.length,
         });
       }
 
-      await this.dependencies.refinanciacionRepository.agregarCobro({
-        cobro: {
-          cobroId: cobro.cobroId,
-          nrosCuota: tramo.nrosCuota,
-          totalCobrado: cobro.totalPago,
-        },
-        prestamoId: tramo.prestamoId,
-        solicitudId,
-      });
+      const confirmed = {
+        cobroId: cobro.cobroId,
+        nrosCuota: tramo.nrosCuota,
+        totalCobrado: cobro.totalPago,
+      };
+      try {
+        await this.dependencies.registroCobros.confirmar(solicitudId, operationId, confirmed);
+      } catch (error) {
+        try { await this.dependencies.registroCobros.marcarIncierto(solicitudId, operationId, confirmed); } catch { /* The durable intent must never be released. */ }
+        const blocked = new AdministrativeCorrectionError(`No se pudo registrar el cobro ${confirmed.cobroId} de refinanciación. La solicitud quedó bloqueada hasta que un administrador lo concilie.`, 502);
+        blocked.cause = error;
+        throw blocked;
+      }
     }
   }
 }
