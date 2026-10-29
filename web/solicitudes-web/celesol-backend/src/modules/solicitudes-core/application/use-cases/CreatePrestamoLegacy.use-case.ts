@@ -3,7 +3,7 @@ import { actingContext } from "../../../auth/impersonation/context";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
 import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 import { assertLinkedLoanReady, type LinkedLoanReader } from "../services/LinkedLoanRules";
-import type { InitialLoanGenerationService } from "../../infrastructure/services/InitialLoanGenerationService";
+import type { InitialLoanGenerationService, PreparedInitialLoan } from "../../infrastructure/services/InitialLoanGenerationService";
 import type { ArchivarEvaluacionExcel } from "../../../riesgo/application/services/ArchivarEvaluacionExcel";
 import { ajustarMaximosLinea } from "../services/AjustarMaximosLinea";
 import type { LineasPrestamoCatalog } from "../../domain/services/LineasPrestamoCatalog";
@@ -167,7 +167,7 @@ export class CreatePrestamoLegacyUseCase {
       realActorId: actingContext.getStore()?.administrator.id ?? input.currentUser.id, operation: "loan_generation",
     };
     let newLoanId: string;
-    await prepared.antesDeCrear?.();
+    await prepared.antesDeCrear?.(context);
     try { newLoanId = (await this.gateway.crear(prepared.coreInput, context)).id; }
     catch (error) {
       await this.diagnostic(context, "ERROR", { phase: "REMOTE_CREATION", error });
@@ -199,7 +199,7 @@ export class CreatePrestamoLegacyUseCase {
       throw new AdministrativeCorrectionError("El préstamo se genera o regenera desde Confirmada. Primero completá la revisión y confirmá la solicitud.");
   }
 
-  private async prepare(input: CreatePrestamoLegacyInput, replacement = false) {
+  private async prepare(input: CreatePrestamoLegacyInput, replacement = false): Promise<PreparedInitialLoan> {
     const solicitud = await this.repository.findById(input.solicitudId);
 
     if (!solicitud) {
@@ -347,6 +347,7 @@ export class CreatePrestamoLegacyUseCase {
         ? refinanciacion
         : null;
     return { solicitud: huboAjuste ? (await this.repository.findById(input.solicitudId)) ?? solicitud : solicitud, codigoMutual: lineaPrestamo.codigoMutual,
+      refinanciacionVersion: refinanciacion?.version,
       coreInput: {
         cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
         integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],
@@ -357,10 +358,11 @@ export class CreatePrestamoLegacyUseCase {
       },
       ...(pendientesRefinanciacion
         ? {
-            antesDeCrear: async () => {
+            antesDeCrear: async (context: LoanDiagnosticContext) => {
               await this.refinanciacion?.cobrar(
                 input.solicitudId,
                 pendientesRefinanciacion,
+                context,
               );
             },
           }

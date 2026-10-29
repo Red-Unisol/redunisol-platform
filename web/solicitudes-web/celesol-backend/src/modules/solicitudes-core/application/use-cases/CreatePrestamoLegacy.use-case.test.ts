@@ -586,7 +586,7 @@ describe("CreatePrestamoLegacyUseCase con refinanciacion", () => {
         },
         preparar: async () => {
           eventos.push("preparar");
-          return { pendientes: [prestamoGuardado()], total: 8000 };
+          return { version: "test", pendientes: [prestamoGuardado()], total: 8000 };
         },
       },
     });
@@ -613,7 +613,7 @@ describe("CreatePrestamoLegacyUseCase con refinanciacion", () => {
         cobrar: async () => {
           eventos.push("cobrar");
         },
-        preparar: async () => ({
+        preparar: async () => ({ version: "test",
           pendientes: [prestamoGuardado()],
           total: 9500,
         }),
@@ -649,7 +649,7 @@ describe("CreatePrestamoLegacyUseCase con refinanciacion", () => {
             total: 1,
           });
         },
-        preparar: async () => ({ pendientes: [prestamoGuardado()], total: 100 }),
+        preparar: async () => ({ version: "test", pendientes: [prestamoGuardado()], total: 100 }),
       },
     });
 
@@ -677,7 +677,7 @@ describe("CreatePrestamoLegacyUseCase con refinanciacion", () => {
         cobrar: async () => {
           cobro = true;
         },
-        preparar: async () => ({ pendientes: [], total: 1194.5 }),
+        preparar: async () => ({ version: "test", pendientes: [], total: 1194.5 }),
       },
     });
 
@@ -701,7 +701,7 @@ describe("CreatePrestamoLegacyUseCase con refinanciacion", () => {
         cobrar: async () => {
           throw new Error("no deberia cobrar");
         },
-        preparar: async () => ({ pendientes: [], total: 0 }),
+        preparar: async () => ({ version: "test", pendientes: [], total: 0 }),
       },
     });
 

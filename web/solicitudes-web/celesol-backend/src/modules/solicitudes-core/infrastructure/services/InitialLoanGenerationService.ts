@@ -10,15 +10,20 @@ import { notifySignatureLinkAvailable } from "../../../notifications/SignatureNo
 import { actingContext } from "../../../auth/impersonation/context";
 import { assertLinkedLoanReady, type LinkedLoanReader } from "../../application/services/LinkedLoanRules";
 import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../technical-diagnostics/LoanDiagnostics";
+import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
+import { SolicitudRefinanciacionPrismaRepository } from "../repositories/SolicitudRefinanciacionPrismaRepository";
+import type { PendingRefinanciacionCobro } from "./RefinanciacionCobrosService";
 
 export type PreparedInitialLoan = {
   solicitud: SolicitudCore; codigoMutual: string | null; coreInput: CrearPrestamoInput;
   /** Paso previo a CrearPrestamo (hoy: cobrar la refinanciacion). */
-  antesDeCrear?: () => Promise<void>;
+  antesDeCrear?: (context: LoanDiagnosticContext) => Promise<void>;
+  refinanciacionVersion?: string;
 };
 type Reservation = {
   requestId: string; actorId: string; createdAt: string; status: "CREATING" | "UNCERTAIN" | "CREATED";
   sourceFingerprint: string; coreInput: CrearPrestamoInput; codigoMutual: string | null; newLoanId?: string;
+  refinanciacionCobro?: PendingRefinanciacionCobro;
 };
 const json = (v: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(v));
 const control = (value: unknown) => (value ?? {}) as Prisma.JsonObject;
@@ -71,6 +76,9 @@ export class InitialLoanGenerationService {
         throw new AdministrativeCorrectionError("No tenés permiso para generar este préstamo.", 403);
       if (s.legacyOid) return null;
       assertNoLoanReplacementPending(s);
+      if (prepared.refinanciacionVersion !== undefined && prepared.refinanciacionVersion !==
+        refinanciacionVersion(await SolicitudRefinanciacionPrismaRepository.load(tx, id)))
+        throw new AdministrativeCorrectionError("La refinanciación cambió antes de generar. Actualizá la solicitud y volvé a revisar.");
       if (s.archivedAt || s.estadoActual.code !== "Confirmada" || s.desembolso || s.pagoExterno)
         throw new AdministrativeCorrectionError("El préstamo sólo puede generarse desde Confirmada, antes de reservar o pagar.");
       const cancellations = s.cancelaciones.filter(c => !c.deletedAt).reduce((sum, c) => sum + Number(c.monto), 0);
@@ -99,15 +107,22 @@ export class InitialLoanGenerationService {
     };
     if (prepared.antesDeCrear) {
       try {
-        await prepared.antesDeCrear();
+        await prepared.antesDeCrear(context);
       } catch (error) {
         await this.diagnostic(context, "ERROR", { phase: "BEFORE_CREATION", error });
-        // CrearPrestamo no se llamo: liberar la reserva para poder reintentar.
+        // Only release when no charge can still have an unknown result.
         await this.deps.db.$transaction(async tx => {
           await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
           const s = await administrativeSource(tx, id);
           const current = reservation(s.administrativeCoreControl);
-          if (current?.requestId !== pending.requestId || current.status !== "CREATING") return;
+          if (current?.requestId !== pending.requestId) return;
+          if (current.refinanciacionCobro) {
+            await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: {
+              ...control(s.administrativeCoreControl), generationPending: json({ ...current, status: "UNCERTAIN" }),
+            } } });
+            return;
+          }
+          if (current.status !== "CREATING") return;
           const rest = { ...control(s.administrativeCoreControl) };
           delete rest.generationPending;
           await tx.solicitud.update({ where: { id }, data: { administrativeCoreControl: json(rest) } });
@@ -208,6 +223,8 @@ export class InitialLoanGenerationService {
       const s = await administrativeSource(this.deps.db, id);
       if (s.legacyOid === input.newLoanId && control(s.administrativeCoreControl).generationRequestId === input.requestId) return this.result(id);
       const pending = reservation(s.administrativeCoreControl);
+      if (pending?.refinanciacionCobro)
+        throw new AdministrativeCorrectionError("Hay un cobro de refinanciación pendiente de conciliar. Usá la recuperación de refinanciación antes de generar el préstamo.");
       if (!pending || pending.requestId !== input.requestId || s.updatedAt.toISOString() !== input.expectedUpdatedAt || !s.titular?.nroDocumento)
         throw new AdministrativeCorrectionError("La reserva de generación cambió. Actualizá el detalle antes de recuperar.");
       if (pending.status === "CREATING" && Date.now() - new Date(pending.createdAt).getTime() <= (this.deps.creationTimeoutMs ?? 30000) + 60000)

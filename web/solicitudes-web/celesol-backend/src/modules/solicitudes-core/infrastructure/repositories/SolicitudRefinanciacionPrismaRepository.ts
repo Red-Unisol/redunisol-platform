@@ -1,4 +1,8 @@
 import type { DbClient } from "../../../../db/prisma";
+import { administrativeSource } from "../services/AdministrativeCorrectionService";
+import { AdministrativeCorrectionError, assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
+import { SolicitudRefinanciacionPrestamoGeneradoError, SolicitudRefinanciacionYaCobradaError } from "../../domain/solicitudes-core-errors";
+import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
 import type {
   SolicitudRefinanciacion,
   SolicitudRefinanciacionCobro,
@@ -21,35 +25,6 @@ export class SolicitudRefinanciacionPrismaRepository
     this.prisma = prisma;
   }
 
-  async agregarCobro(
-    input: Parameters<SolicitudRefinanciacionRepository["agregarCobro"]>[0],
-  ) {
-    const where = {
-      solicitudId_prestamoLegacyId: {
-        prestamoLegacyId: input.prestamoId,
-        solicitudId: input.solicitudId,
-      },
-    };
-
-    await this.prisma.$transaction(async (tx) => {
-      const row = await tx.solicitudRefinanciacion.findUniqueOrThrow({
-        select: { cobros: true },
-        where,
-      });
-      const cobro: CobroGuardado = {
-        cobradoAt: new Date().toISOString(),
-        cobroId: input.cobro.cobroId,
-        nrosCuota: input.cobro.nrosCuota,
-        totalCobrado: input.cobro.totalCobrado,
-      };
-
-      await tx.solicitudRefinanciacion.update({
-        data: { cobros: [...leerCobros(row.cobros), cobro] },
-        where,
-      });
-    });
-  }
-
   async findBySolicitudId(solicitudId: string) {
     return this.load(this.prisma, solicitudId);
   }
@@ -58,6 +33,15 @@ export class SolicitudRefinanciacionPrismaRepository
     input: Parameters<SolicitudRefinanciacionRepository["replace"]>[0],
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${input.solicitudId}::uuid FOR UPDATE`;
+      const solicitud = await administrativeSource(tx, input.solicitudId);
+      assertNoLoanReplacementPending(solicitud);
+      if (solicitud.legacyOid) throw new SolicitudRefinanciacionPrestamoGeneradoError();
+      const actual = await this.load(tx, input.solicitudId);
+      if (actual.prestamos.some(p => p.cobros.length > 0)) throw new SolicitudRefinanciacionYaCobradaError();
+      if (solicitud.updatedAt.getTime() !== input.expectedSolicitudUpdatedAt.getTime() ||
+        refinanciacionVersion(actual) !== input.expectedVersion)
+        throw new AdministrativeCorrectionError("La solicitud o la refinanciación cambió mientras se calculaba. Actualizá el detalle y volvé a revisar.");
       await tx.solicitudRefinanciacion.deleteMany({
         where: { solicitudId: input.solicitudId },
       });
@@ -73,11 +57,13 @@ export class SolicitudRefinanciacionPrismaRepository
         });
       }
 
+      // Invalidate preparations and saves that started before this selection.
+      await tx.solicitud.update({ where: { id: input.solicitudId }, data: { updatedAt: new Date() } });
       return this.load(tx, input.solicitudId);
     });
   }
 
-  private async load(
+  static async load(
     client: Pick<DbClient, "solicitudRefinanciacion">,
     solicitudId: string,
   ): Promise<SolicitudRefinanciacion> {
@@ -104,6 +90,10 @@ export class SolicitudRefinanciacionPrismaRepository
         null,
       ),
     };
+  }
+
+  private load(client: Pick<DbClient, "solicitudRefinanciacion">, id: string) {
+    return SolicitudRefinanciacionPrismaRepository.load(client, id);
   }
 }
 

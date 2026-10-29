@@ -63,6 +63,8 @@ import { GetSolicitudRefinanciacionUseCase } from "./application/use-cases/GetSo
 import { GuardarSolicitudRefinanciacionUseCase } from "./application/use-cases/GuardarSolicitudRefinanciacion.use-case";
 import { SolicitudRefinanciacionPrismaRepository } from "./infrastructure/repositories/SolicitudRefinanciacionPrismaRepository";
 import { CobrarRefinanciacionSolicitud } from "./application/services/CobrarRefinanciacionSolicitud";
+import { RefinanciacionCobrosService } from "./infrastructure/services/RefinanciacionCobrosService";
+import { addRefinanciacionCobrosRoutes } from "./presentation/RefinanciacionCobrosRoutes";
 import { ComprobanteRefinanciacionService } from "./application/services/ComprobanteRefinanciacion";
 import { ArchivarComprobanteRefinanciacion } from "./application/services/ArchivarComprobanteRefinanciacion";
 import { SolicitudWorkflowCapabilitiesService } from "./application/services/SolicitudWorkflowCapabilitiesService";
@@ -345,7 +347,11 @@ export function createSolicitudesCoreRouter(
     legacyGateway: solicitudesLegacyGateway,
     repository: solicitudesCoreRepository,
   });
+  const refinanciacionCobros = new RefinanciacionCobrosService({
+    db: prisma, legacyGateway: solicitudesLegacyGateway, timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+  });
   const cobrarRefinanciacionSolicitud = new CobrarRefinanciacionSolicitud({
+    registroCobros: refinanciacionCobros,
     cobrarPrestamoGateway,
     legacyGateway: solicitudesLegacyGateway,
     refinanciacionRepository: solicitudRefinanciacionRepository,
@@ -589,6 +595,7 @@ export function createSolicitudesCoreRouter(
     });
   addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
   addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
+  addRefinanciacionCobrosRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: refinanciacionCobros });
   router.get("/:id/linked-loan-status", async (req, res, next) => {
     try {
       const id = z.uuid().parse(req.params.id);

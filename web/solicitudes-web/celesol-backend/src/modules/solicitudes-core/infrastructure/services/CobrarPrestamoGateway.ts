@@ -9,6 +9,7 @@ type Fetcher = (
 ) => Promise<{
   json(): Promise<unknown>;
   ok: boolean;
+  status?: number;
 }>;
 
 type CobrarPrestamoGatewayConfig = {
@@ -116,32 +117,32 @@ export class CobrarPrestamoGateway {
       throw new PrestamoLegacyUnavailableError();
     }
 
-    clearTimeout(timeoutId);
-
     let body: unknown;
 
     try {
       body = await response.json();
     } catch {
+      clearTimeout(timeoutId);
       throw new PrestamoLegacyUnavailableError();
     }
+    clearTimeout(timeoutId);
 
-    return this.parseResponse(body);
+    if (!response.ok && ((response.status !== 400 && response.status !== 422) ||
+      (body as Record<string, unknown> | null)?.Success === true))
+      throw new PrestamoLegacyUnavailableError();
+    return this.parseResponse(body, response.status === 400 || response.status === 422);
   }
 
-  private parseResponse(body: unknown): CobrarPrestamoResult {
+  private parseResponse(body: unknown, definiteRejection: boolean): CobrarPrestamoResult {
     const row = (body ?? {}) as Record<string, unknown>;
 
     // Los rechazos vienen como {"error":{"code","message"}} con HTTP 400; el
     // mensaje es el de Vimarx ("Deben Pagarse 1 cuota/s en prt ...").
     if (row.Success !== true) {
       const error = (row.error ?? {}) as Record<string, unknown>;
-      const message =
-        typeof error.message === "string" && error.message.trim().length > 0
-          ? error.message.trim()
-          : "El sistema legado no pudo calcular el cobro.";
-
-      throw new PrestamoLegacyRechazadoError(message);
+      if (!definiteRejection || typeof error.message !== "string" || !error.message.trim())
+        throw new PrestamoLegacyUnavailableError();
+      throw new PrestamoLegacyRechazadoError(error.message.trim());
     }
 
     const cuotas = Array.isArray(row.Cuotas) ? row.Cuotas : [];

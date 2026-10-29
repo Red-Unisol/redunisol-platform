@@ -8,6 +8,20 @@ import {
 import { CobrarPrestamoGateway } from "./CobrarPrestamoGateway";
 
 describe("CobrarPrestamoGateway", () => {
+  it("treats server errors and malformed rejections as uncertain rather than releasing the charge reservation", async () => {
+    for (const response of [
+      { status: 500, ok: false, body: { error: { message: "Database failed after payment" } } },
+      { status: 400, ok: false, body: {} },
+      { status: 400, ok: false, body: { Success: true, CobroId: 123, TotalPago: 100 } },
+      { status: 200, ok: true, body: { Success: false } },
+      { status: 200, ok: true, body: null },
+    ]) {
+      const gateway = new CobrarPrestamoGateway({ baseUrl: "https://example.test", timeoutMs: 100 }, async () => ({
+        ...response, json: async () => response.body,
+      }));
+      await assert.rejects(gateway.cobrar({ cobradorId: 65, motivo: 1, nrosCuota: [24], prestamoId: "123", simulacion: false }), PrestamoLegacyUnavailableError);
+    }
+  });
   it("sends the cobro with cobradorId and maps the simulated result", async () => {
     let capturedUrl: string | undefined;
     let capturedBody: unknown;
@@ -99,6 +113,7 @@ describe("CobrarPrestamoGateway", () => {
           },
         }),
         ok: false,
+        status: 400,
       }),
     );
 

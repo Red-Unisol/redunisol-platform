@@ -19,6 +19,12 @@ El contrato de la API, reservas, comprobantes y recuperación está en
 [docs/transferencias-api.md](docs/transferencias-api.md).
 La integración está deshabilitada por defecto y requiere una identidad de servicio.
 
+## Refinanciación
+
+La protección de guardados concurrentes y la conciliación administrativa de
+cobros inciertos de refinanciación están en
+[docs/refinanciacion-recovery.md](docs/refinanciacion-recovery.md).
+
 ## Diagnóstico técnico de préstamos
 
 Las peticiones y respuestas de Vimarx, la correlación de intentos y la consulta

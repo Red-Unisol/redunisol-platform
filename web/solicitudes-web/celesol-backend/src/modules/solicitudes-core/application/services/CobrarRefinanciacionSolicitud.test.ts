@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
+import { AdministrativeCorrectionError } from "../../domain/workflow/AdministrativeCorrection";
 
 import { CobrarRefinanciacionSolicitud } from "./CobrarRefinanciacionSolicitud";
 import {
@@ -62,7 +64,7 @@ describe("CobrarRefinanciacionSolicitud", () => {
     const preparada = await servicio.preparar("sol-1");
 
     assert.equal(simulo, false);
-    assert.deepEqual(preparada, { pendientes: [], total: 100 });
+    assert.deepEqual(preparada, { pendientes: [], total: 100, version: refinanciacionVersion({ prestamos: [guardado("416209", [22], [cobro("1", [22], 100)])], updatedAt: null }) });
   });
 
   it("stops before charging when Vimarx would reject a prestamo", async () => {
@@ -102,6 +104,7 @@ describe("CobrarRefinanciacionSolicitud", () => {
     });
 
     await servicio.cobrar("sol-1", {
+      version: "test",
       pendientes: [{ nrosCuota: [22, 23, 24, 25], prestamoId: "416228" }],
       total: 200,
     });
@@ -149,6 +152,7 @@ describe("CobrarRefinanciacionSolicitud", () => {
     await assert.rejects(
       () =>
         servicio.cobrar("sol-1", {
+          version: "test",
           pendientes: [{ nrosCuota: [22, 23], prestamoId: "416228" }],
           total: 200,
         }),
@@ -175,12 +179,13 @@ describe("CobrarRefinanciacionSolicitud", () => {
     await assert.rejects(
       () =>
         servicio.cobrar("sol-1", {
+          version: "test",
           pendientes: [{ nrosCuota: [24], prestamoId: "416228" }],
           total: 100,
         }),
       (error: unknown) =>
-        error instanceof SolicitudRefinanciacionCobroIncompletoError &&
-        error.message.includes("revisá en Vimarx si quedaron cobradas"),
+        error instanceof AdministrativeCorrectionError &&
+        error.message.includes("quedó bloqueada"),
     );
     assert.equal(registro, false);
   });
@@ -244,10 +249,13 @@ function build(
     legacyGateway: {
       listCuotasDelPrestamo: (async () => CUOTAS_416228) as never,
     },
+    registroCobros: {
+      iniciar: async (input) => JSON.stringify(input),
+      confirmar: async (solicitudId, operationId, cobro) => { const input = JSON.parse(operationId); overrides.onAgregarCobro?.({ solicitudId, prestamoId: input.prestamoId, cobro }); },
+      rechazar: async () => {},
+      marcarIncierto: async () => {},
+    },
     refinanciacionRepository: {
-      agregarCobro: async (input) => {
-        overrides.onAgregarCobro?.(input);
-      },
       findBySolicitudId: async () => ({
         prestamos: overrides.guardados ?? [],
         updatedAt: null,
