@@ -369,3 +369,66 @@ def test_dcr_does_not_accept_unrelated_scopes(bridge):
         scope="mcp:read mcp:write"))
     assert result.status_code == 400
     assert result.json["error"] == "invalid_client_metadata"
+
+
+@pytest.mark.parametrize("redirect_uri", [REDIRECT, "https://chatgpt.com/connector/oauth/browser-test-123"])
+@pytest.mark.parametrize("approve", ["yes", "no"])
+def test_consent_csp_allows_only_the_validated_callback(bridge, redirect_uri, approve):
+    _, client, _ = bridge
+    callbacks = [REDIRECT, "https://chatgpt.com/connector/oauth/browser-test-123"]
+    reg = register(client, redirects=callbacks)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest()).rstrip(b"=").decode()
+    path = "/vimarx-oauth/authorize?" + urlencode(dict(
+        client_id=reg["client_id"], redirect_uri=redirect_uri, response_type="code",
+        resource=RESOURCE, scope="mcp:read", state="browser-callback-state",
+        code_challenge=challenge, code_challenge_method="S256"))
+    form = send(client, "GET", path)
+    assert form.status_code == 200
+
+    def check_policy(response):
+        policy = dict(part.strip().split(" ", 1)
+                      for part in response.headers["Content-Security-Policy"].split(";"))
+        # Chromium applies form-action to the redirect after POST as well.
+        assert policy["form-action"].split() == ["'self'", redirect_uri]
+        assert policy["default-src"] == "'none'"
+        assert policy["frame-ancestors"] == "'none'"
+        assert policy["base-uri"] == "'none'"
+
+    check_policy(form)
+    csrf = re.search(r'name="csrf" value="([^"]+)"', form.get_data(as_text=True))[1]
+    if approve == "yes":
+        rejected = send(client, "POST", path, data=dict(
+            csrf=csrf, username="test-user", password="bad", approve="yes"))
+        assert rejected.status_code == 401
+        check_policy(rejected)
+        csrf = re.search(r'name="csrf" value="([^"]+)"', rejected.get_data(as_text=True))[1]
+    response = send(client, "POST", path, data=dict(
+        csrf=csrf, username="test-user", password="correct-password", approve=approve))
+    assert response.status_code == 302
+    check_policy(response)
+    assert response.location.split("?")[0] == redirect_uri
+    query = parse_qs(urlsplit(response.location).query)
+    assert query["state"] == ["browser-callback-state"]
+    assert query["iss"] == [ISSUER]
+    assert ("code" in query) == (approve == "yes")
+    # The callback allowance is request-local, not a global policy relaxation.
+    policy = send(client, "GET", "/vimarx-oauth/health").headers["Content-Security-Policy"]
+    assert "form-action 'self';" in policy
+    assert "chatgpt.com" not in policy
+
+
+@pytest.mark.parametrize("redirect_uri", [REDIRECT, "https://chatgpt.com/connector/oauth/not-registered",
+                                          "https://evil.example/callback"])
+def test_invalid_consent_does_not_expand_form_action(bridge, redirect_uri):
+    _, client, _ = bridge
+    reg = register(client)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest()).rstrip(b"=").decode()
+    path = "/vimarx-oauth/authorize?" + urlencode(dict(
+        client_id="unknown" if redirect_uri == REDIRECT else reg["client_id"],
+        redirect_uri=redirect_uri, response_type="code", resource=RESOURCE,
+        code_challenge=challenge, code_challenge_method="S256"))
+    result = send(client, "GET", path)
+    assert result.status_code == 400
+    policy = result.headers["Content-Security-Policy"]
+    assert "form-action 'self';" in policy
+    assert redirect_uri not in policy

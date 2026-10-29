@@ -41,6 +41,9 @@ def probe(issuer, credentials_file, transport=None):
         auth_url = issuer + "/authorize?" + query
         form = client.get(auth_url)
         form.raise_for_status()
+        policies = dict(part.strip().split(" ", 1)
+                        for part in form.headers["Content-Security-Policy"].split(";"))
+        assert policies["form-action"].split() == ["'self'", redirect_uri]
         csrf = re.search(r'name="csrf" value="([^"]+)"', form.text)[1]
         result = client.post(auth_url, data=dict(csrf=csrf, username=credentials["user_name"],
                              password=credentials["user_password"], approve="yes"))

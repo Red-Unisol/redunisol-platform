@@ -17,6 +17,11 @@ SQLite y el cliente recibe un token opaco distinto, guardado solamente como hash
 Los códigos de autorización se guardan como hash y se consumen una sola vez,
 incluso con intercambios concurrentes. El cliente, callback, PKCE, scope y resource
 quedan ligados a la transacción. Hay protección CSRF y límites por IP.
+La CSP del formulario permite el sitio propio y únicamente el callback validado
+por Authlib para ese cliente y transacción. Chromium también aplica `form-action`
+al salto posterior al POST: restringirlo sólo a `self` bloqueaba el regreso a
+ChatGPT después de autorizar o cancelar. Las rutas ajenas al consentimiento y las
+solicitudes inválidas conservan `form-action 'self'`.
 
 La vigencia del token del puente es de hasta 30 minutos y nunca supera la del JWT
 de Vimarx, descontando 15 segundos de margen. No se publican refresh tokens: al
@@ -109,6 +114,11 @@ el código con PKCE, llama `get_version` y `contexto_cliente`, verifica bloqueo 
 escrituras/replay y revoca su token al terminar. No imprime credenciales ni datos
 de negocio. Esta prueba verifica el protocolo publicado; la instalación efectiva
 del plugin en una cuenta de ChatGPT es una validación separada.
+Además de la prueba HTTP, verificar en Chromium que el primer envío del formulario
+navega al callback de ChatGPT, tanto al autorizar como al cancelar. Cancelar permite
+comprobar ese salto sin ingresar credenciales; para confirmar el enlace real hace
+falta iniciar el flujo desde ChatGPT y completar la autorización. No reutilizar un
+formulario ya enviado: su protección CSRF es de un solo uso.
 
 ## Agregar a ChatGPT
 

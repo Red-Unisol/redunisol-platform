@@ -12,7 +12,7 @@ from authlib.oauth2.rfc6749 import grants
 from authlib.oauth2.rfc6749.errors import InvalidGrantError
 from authlib.oauth2.rfc7636 import CodeChallenge
 from cryptography.fernet import Fernet
-from flask import Flask, jsonify, redirect, render_template, request, session
+from flask import Flask, g, jsonify, redirect, render_template, request, session
 from sqlalchemy import delete, update
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash
@@ -179,8 +179,13 @@ def create_app(config=None, upstream=None):
         response.headers["Pragma"] = "no-cache"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        # Chromium also checks form-action when a POST redirects to the OAuth
+        # callback. Add only the URI already validated for this client/request.
+        form_action = "'self'"
+        if getattr(g, "oauth_redirect_uri", None):
+            form_action += " " + g.oauth_redirect_uri
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; style-src 'self'; form-action 'self'; "
+            "default-src 'none'; style-src 'self'; form-action " + form_action + "; "
             "frame-ancestors 'none'; base-uri 'none'"
         )
         response.headers["X-Frame-Options"] = "DENY"
@@ -303,6 +308,7 @@ def create_app(config=None, upstream=None):
             grant = server.get_consent_grant()
         except OAuth2Error as error:
             return jsonify(error=error.error, error_description=error.description), 400
+        g.oauth_redirect_uri = grant.redirect_uri
         error_message = None
         if request.method == "POST":
             if request.form.get("approve") != "yes":
