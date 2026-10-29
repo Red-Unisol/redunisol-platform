@@ -63,7 +63,7 @@ def register(client, auth="none", redirects=None):
     return response.json
 
 
-def consent(client, registration, username="test-user", password="correct-password", **overrides):
+def consent(client, registration, username="test-user", password="correct-password", remember=False, **overrides):
     challenge = base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest()).rstrip(b"=").decode()
     params = dict(client_id=registration["client_id"], redirect_uri=REDIRECT,
                   response_type="code", scope="mcp:read", state="opaque-client-state",
@@ -73,7 +73,10 @@ def consent(client, registration, username="test-user", password="correct-passwo
     response = send(client, "GET", path)
     assert response.status_code == 200, response.get_data(as_text=True)
     csrf = re.search(r'name="csrf" value="([^"]+)"', response.get_data(as_text=True))[1]
-    return send(client, "POST", path, data=dict(csrf=csrf, username=username, password=password, approve="yes"))
+    data = dict(csrf=csrf, username=username, password=password, approve="yes")
+    if remember:
+        data["remember"] = "yes"
+    return send(client, "POST", path, data=data)
 
 
 def exchange(client, registration, code, **overrides):
@@ -330,7 +333,7 @@ def test_chatgpt_dcr_request_negotiates_only_supported_grant(bridge, scope, gran
     result = send(client, "POST", "/vimarx-oauth/register", json=body)
     assert result.status_code == 201
     registration = result.json
-    assert registration["grant_types"] == ["authorization_code"]
+    assert registration["grant_types"] == ["authorization_code", "refresh_token"]
     assert registration["scope"] == "mcp:read"
     response = consent(client, registration)
     assert response.status_code == 302
@@ -343,12 +346,12 @@ def test_chatgpt_dcr_request_negotiates_only_supported_grant(bridge, scope, gran
         grant_type="refresh_token", client_id=registration["client_id"],
         refresh_token="not-a-refresh-token", resource=RESOURCE))
     assert refresh.status_code == 400
-    assert refresh.json["error"] == "unsupported_grant_type"
+    assert refresh.json["error"] == "invalid_grant"
     from gateway.models import Client
     with app.app_context():
         saved = db.session.execute(db.select(Client)).scalar_one()
         assert saved.check_grant_type("authorization_code")
-        assert not saved.check_grant_type("refresh_token")
+        assert saved.check_grant_type("refresh_token")
 
 
 @pytest.mark.parametrize("grants", [None, [], ["refresh_token"], "authorization_code",

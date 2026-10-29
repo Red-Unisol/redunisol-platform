@@ -9,6 +9,14 @@ class UpstreamError(Exception):
     """Safe error: never include credentials or upstream response bodies."""
 
 
+class UpstreamAuthenticationError(UpstreamError):
+    """Credentials were explicitly rejected; stop automatic login retries."""
+
+
+class UpstreamSessionExpired(UpstreamError):
+    """An upstream request returned 401, eligible for one read-only retry."""
+
+
 class Vimarx:
     def __init__(self, origin):
         self.origin = origin.rstrip("/")
@@ -20,11 +28,15 @@ class Vimarx:
                     self.origin + "/api/auth/login_user",
                     json={"user_name": username, "user_password": password},
                 )
+                if response.status_code in (401, 403):
+                    raise UpstreamAuthenticationError("Usuario o contraseña incorrectos o cuenta deshabilitada.")
                 response.raise_for_status()
                 result = response.json()
+            if not isinstance(result, dict):
+                raise UpstreamError("Vimarx devolvió una respuesta de login inesperada.")
             token = result.get("token")
             if result.get("error") or not isinstance(token, str):
-                raise UpstreamError("Usuario o contraseña incorrectos.")
+                raise UpstreamAuthenticationError("Usuario o contraseña incorrectos.")
             # exp is used only to shorten our session. Vimarx still verifies its JWT
             # on every request; this is not local signature validation.
             claims = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
@@ -46,8 +58,10 @@ class Vimarx:
                 with client.stream(
                     "POST", self.origin + "/api/mcp", headers=headers, json=message
                 ) as response:
-                    if response.status_code in (401, 403):
-                        raise UpstreamError("La sesión o los permisos de Vimarx no permiten esta consulta.")
+                    if response.status_code == 401:
+                        raise UpstreamSessionExpired("La sesión de Vimarx venció.")
+                    if response.status_code == 403:
+                        raise UpstreamError("Tu usuario de Vimarx no tiene permiso para esta consulta.")
                     response.raise_for_status()
                     if response.status_code == 202:
                         return None

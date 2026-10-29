@@ -1,134 +1,150 @@
 # Vimarx OAuth gateway
 
-Puente OAuth por usuario para conectar ChatGPT con el MCP de Celesol, sin cambiar
-el servidor Vimarx. Servicio independiente del resto de las aplicaciones.
+Puente de consultas por usuario entre ChatGPT y Mutual Celesol. Código y estado
+operativo deseado en Git; Docker/Apache en la VPS son el runtime.
 
-- URL MCP: `https://kestra.redunisol.com.ar/vimarx-oauth/mcp`
-- Página de conexión: `https://kestra.redunisol.com.ar/vimarx-oauth/`
+- MCP: `https://mcp.redunisol.com.ar/mcp`
+- Inicio: `https://mcp.redunisol.com.ar/`
+- Borrado de conexiones: `https://mcp.redunisol.com.ar/connections`
 - Origen fijo: `https://celesol.dyndns.org:35010`
-- Docker Compose: `/opt/vimarx-oauth-gateway`, bind interno `127.0.0.1:3060`.
+- Runtime: `/opt/vimarx-oauth-gateway`, bind interno `127.0.0.1:3060`.
+- DNS deseado: `deploy/dns.json`. El host tiene su propio certificado y vhost;
+  no comparte rutas ni issuer con Kestra.
 
-## Autenticación y permisos
+## Experiencia del usuario
 
-Authlib implementa Authorization Code con PKCE S256 obligatorio. La página de
-consentimiento valida el usuario y contraseña contra `/api/auth/login_user` de
-Vimarx. La contraseña no se guarda. El JWT de Vimarx queda cifrado con Fernet en
-SQLite y el cliente recibe un token opaco distinto, guardado solamente como hash.
-Los códigos de autorización se guardan como hash y se consumen una sola vez,
-incluso con intercambios concurrentes. El cliente, callback, PKCE, scope y resource
-quedan ligados a la transacción. Hay protección CSRF y límites por IP.
-La CSP del formulario permite el sitio propio y únicamente el callback validado
-por Authlib para ese cliente y transacción. Chromium también aplica `form-action`
-al salto posterior al POST: restringirlo sólo a `self` bloqueaba el regreso a
-ChatGPT después de autorizar o cancelar. Las rutas ajenas al consentimiento y las
-solicitudes inválidas conservan `form-action 'self'`.
+Agregar un MCP personalizado en ChatGPT, autenticación OAuth y registro dinámico
+DCR. Instalarlo y conectar el usuario habitual de Vimarx. Para recordar el acceso,
+seleccionar **Mantener conectado** en el formulario. Esa elección autoriza guardar
+las credenciales cifradas en la VPS; no se envían al modelo, cookies ni herramientas.
+Sin esa opción, la contraseña sólo se usa en el login inicial y no se conserva.
 
-La vigencia del token del puente es de hasta 30 minutos y nunca supera la del JWT
-de Vimarx, descontando 15 segundos de margen. No se publican refresh tokens: al
-vencer se vuelve a conectar la cuenta. El proveedor Vimarx no ha demostrado un
-mecanismo de renovación que permita hacerlo sin conservar contraseñas.
+El acceso de ChatGPT dura 30 minutos. Con conexión recordada se emite un refresh
+token rotatorio y se renueva sin interacción. El JWT de Vimarx se renueva mediante
+su login existente cuando quedan menos de dos minutos y se está usando el servicio.
+No hay un cron que mantenga usuarios autenticándose sin actividad.
 
-Discovery RFC8414/RFC9728, DCR RFC7591 y respuesta `iss` RFC9207 se publican para
-ChatGPT. El registro solamente acepta callbacks HTTPS de ChatGPT con rutas
-conocidas. No hay fetch de URLs arbitrarias ni clientes CIMD en esta versión.
-El registro acepta la preferencia `refresh_token` que envía ChatGPT junto con
-`authorization_code`, pero devuelve y registra solamente `authorization_code`,
-según la negociación de metadatos de RFC7591 §3.2.1. Un scope omitido, nulo o vacío
-usa `mcp:read`. Esto no habilita refresh tokens ni cambia la duración de sesiones.
-Otros grants o scopes se rechazan. La prueba publicada reproduce esta solicitud
-real de ChatGPT, en lugar de probar sólo un cliente que pide el grant mínimo.
+Sólo las llamadas reales a herramientas actualizan la actividad. Discovery,
+pings y refresh OAuth no prolongan la conexión. Tras 30 días sin consultas se
+rechaza el acceso y se eliminan las credenciales del servicio activo mediante la
+limpieza periódica. Una conexión inicial que nunca completa OAuth se elimina en
+10 minutos. El formulario de administración verifica nuevamente la contraseña de
+Vimarx antes de borrar todas las conexiones recordadas de ese usuario.
 
-Se admite cliente público (`none`) o secreto de cliente por POST/Basic; los
-secretos de cliente se almacenan como hash. Sólo se ofrece el scope `mcp:read`.
+Al cambiar la contraseña o deshabilitar el usuario, el primer login de renovación
+explícitamente rechazado revoca la conexión y borra sus credenciales. Las caídas
+transitorias conservan la conexión y aplican 30 segundos de espera antes de otro
+intento de login. Un cambio de credenciales puede requerir conectar otra vez.
 
-El proxy reenvía cada consulta con el JWT del usuario correspondiente. No usa
-tokens generales de Vimarx ni una cuenta compartida. El upstream conserva la
-decisión final sobre permisos. `READ_TOOLS` en `gateway/app.py` contiene la lista
-explícita de herramientas habilitadas (16); se filtra tanto `tools/list` como
-`tools/call`. Métodos desconocidos, batches y herramientas de escritura se
-rechazan antes de contactar Vimarx. No se publica acceso a recursos ni prompts.
-Se reconstruye el envelope JSON-RPC y se reemplazan las capacidades/instrucciones
-de inicialización. La conexión upstream es Streamable HTTP stateless, como se
-verificó en esta instalación. Un upstream que exija sesiones necesitaría soporte
-adicional antes de cambiarlo.
+## OAuth y concurrencia
 
-El frontend HTTPS conserva la validación de certificados hacia Vimarx. El
-contenedor corre sin root, filesystem de código de sólo lectura y sin capacidades
-Linux adicionales. Los logs de acceso de Gunicorn están deshabilitados y las
-rutas OAuth se excluyen del access log de Apache. No se registran credenciales ni
-cuerpos de solicitudes/respuestas. Usuarios, códigos y tokens vencidos se purgan
-cada cinco minutos con tráfico y también en cada deploy. `flask --app
-gateway.app:create_app cleanup` permite ejecutar la limpieza manualmente.
+Authlib implementa Authorization Code, PKCE S256 obligatorio, DCR y refresh. El
+cliente, callback, scope `mcp:read` y resource quedan ligados a cada transacción.
+Los callbacks permitidos son únicamente las rutas HTTPS conocidas de ChatGPT.
+Discovery RFC8414/RFC9728 y respuesta `iss` RFC9207 usan el issuer dedicado.
 
-## Configuración y deploy
+Los access/refresh tokens se almacenan como SHA-256. El JWT y las credenciales
+recordadas se cifran con Fernet. Códigos y rotación se consumen atómicamente.
+Reintentos del mismo refresh dentro de 15 segundos reciben el mismo reemplazo,
+guardado temporalmente cifrado; su vigencia restante se recalcula. Reutilizarlo
+fuera de esa ventana revoca la familia. Rotar refresh no corta access tokens que
+ya están en vuelo. Una lease atómica en SQLite serializa la renovación de Vimarx
+por conexión; no se mantiene una transacción abierta durante el login HTTP.
 
-Copiar las variables de `deploy/.env.example` a `.env` operativo, fuera de Git.
-`deploy/install.py` genera las claves al primer despliegue y las preserva después;
-rotarlas invalida las sesiones existentes. El volumen `gateway_data` contiene
-SQLite; preservar volumen y claves juntos en un backup protegido.
+Sólo un 401 de Vimarx permite renovar y repetir una consulta una vez. Los errores
+de permiso no disparan login ni reintentos. Hay CSRF, formularios simultáneos
+acotados, cookies Secure/HttpOnly/SameSite y límites por IP. La CSP permite sólo el
+sitio propio y el callback validado para esa transacción; Chromium comprueba
+`form-action` también en el salto posterior al POST.
 
-Después de subir **el contenido de esta app de una revisión Git concreta** a
-`/opt/vimarx-oauth-gateway`:
+El contenedor usa un worker Gunicorn con ocho threads, usuario sin root, código
+de sólo lectura y sin capabilities Linux. SQLite usa WAL y espera acotada por
+bloqueo. Las tablas nuevas se crean de forma aditiva: no se cambian columnas de
+sesiones existentes. Preservar el volumen y las claves al desplegar/reiniciar.
+
+## Herramientas y permisos
+
+`READ_TOOLS` contiene 26 herramientas explícitas de lectura, incluidas
+`query_entidad`, `query_socios`, búsquedas de socios y metadatos. El listado y la
+ejecución usan la misma lista. Las consultas genéricas admiten 1–200 filas, con
+50 por omisión y longitudes de criterios acotadas. El esquema publicado refleja
+ese límite. Cada herramienta anuncia OAuth y sus annotations de lectura.
+
+Para las últimas solicitudes: descubrir la entidad y propiedades con
+`get_entidades` y `get_propiedades`, después usar `query_entidad` con los campos
+correctos, orden de fecha descendente y `limit: 3`. Las instrucciones iniciales
+explican los nombres snake_case reales de las herramientas.
+
+No se habilitan escrituras, acciones de negocio, batches, recursos ni prompts.
+Cada consulta usa el JWT de su propio usuario; no hay cuenta compartida ni token
+general. Vimarx sigue validando sus permisos. El origen es fijo y HTTPS se valida;
+la respuesta upstream se limita a 8 MiB. Nunca se registran contraseñas, tokens,
+cuerpos ni URLs OAuth. Hay eventos operativos sin identificadores personales:
+`vimarx_session_renewed`, `vimarx_credentials_rejected`, `oauth_refresh_reuse_revoked`.
+
+## Despliegue y operación
+
+1. Verificar/aplicar el registro de `deploy/dns.json`.
+2. Subir **sólo el árbol de esta app de una revisión Git concreta** al runtime.
+3. Ejecutar `python3 deploy/install.py --revision FULL_GIT_COMMIT_SHA`.
+
+El instalador toma primero un snapshot consistente SQLite privado (modo 0600),
+sin copiar las claves, con retención de siete días y poda diaria; luego construye, publica el desafío ACME HTTP sin detener Apache,
+obtiene un certificado con Certbot/webroot y conserva las claves del `.env`.
+Comprueba la revisión y DB del contenedor, valida Apache y activa el vhost dedicado.
+Retira únicamente el include de la ruta anterior de Kestra. En fallo restaura el
+`.env`, vhost y publicación anteriores y vuelve a levantar la imagen anterior.
+No actualiza otros contenedores ni limpia imágenes. El certificado guarda su
+hook de reload; el timer propio `vimarx-mcp-cert-renew.timer` verifica dos veces al
+día únicamente este certificado, sin modificar la renovación de otros sitios. El timer `vimarx-oauth-cleanup.timer` ejecuta limpieza diaria aunque no
+haya tráfico; también se limpia cada cinco minutos con tráfico y en cada deploy.
+
+Verificar `/health` (revisión + DB), discovery HTTPS y el formulario publicado.
+Revisar `docker compose ... ps`, los eventos del contenedor y
+`systemctl status vimarx-oauth-cleanup.timer`. No habilitar logs de acceso para
+investigar OAuth. Para recuperar cuentas deshabilitadas, el operador puede usar
+`flask --app gateway.app:create_app revoke-account --username USUARIO`.
+
+El cifrado protege una copia aislada de SQLite; no protege contra control total
+de la VPS y su clave. Un backup debe proteger volumen y claves por separado,
+con permisos privados: el borrado del servicio activo no borra de inmediato
+copias históricas, que pueden conservar los cifrados hasta siete días. Nunca subir `.env`, SQLite, backups o credenciales a Git.
+Para rollback, volver al árbol e imagen de la revisión anterior conservando claves
+ y volumen; volver al dominio anterior requiere restaurar también su issuer y
+vhost. Las sesiones emitidas para un issuer no son intercambiables con otro.
+
+## Verificación
 
 ```sh
-python3 deploy/install.py --revision FULL_GIT_COMMIT_SHA
-```
-
-El instalador construye la imagen con el SHA, valida Compose, espera el healthcheck
-interno, instala el include `deploy/apache-route.conf` dentro del VirtualHost HTTPS
-de `kestra.redunisol.com.ar` antes del proxy catch-all y agrega `env=!dontlog` a los
-access logs para proteger las transacciones OAuth. Valida `apachectl -t` antes del
-graceful reload. Conserva una copia previa del vhost; si falla la validación,
-restaura el original. Ningún otro contenedor se actualiza ni se limpian imágenes.
-Requiere Docker/Compose y el Apache existente de `/opt/apache`.
-
-El SHA efectivo se obtiene en `/vimarx-oauth/health`. Para rollback, subir el árbol
-de una revisión anterior y ejecutar el mismo instalador con ese SHA. Las claves y
-el volumen se conservan. Para retirar la publicación, quitar el include del vhost,
-validar/reload de Apache y detener únicamente el proyecto `vimarx-oauth-gateway`.
-
-No desplegar desde archivos sin commit ni cambiar Vimarx, firewall o DNS como
-parte de este servicio. El instalador sólo agrega rutas al dominio ya publicado.
-
-## Pruebas
-
-```sh
-python -m pip install -r requirements.txt pytest
+python -m pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 
-Las pruebas aíslan el upstream y cubren OAuth/PKCE, reutilización de códigos,
-sustitución de resource/callback, CSRF, límites de login, expiración, revocación,
-aislamiento de usuarios y bloqueo de escrituras/discovery no permitido.
+Las pruebas cubren expiración, renovación con contraseña cifrada, rotación y
+reintentos concurrentes, aislamiento, revocación, inactividad, reinicios, CSRF,
+permisos, límites de lectura y rollback de despliegue. CI propio para esta app.
 
-La prueba de punta a punta contra una instalación publicada usa un JSON local
-ignorado con `user_name` y `user_password`; nunca pasar secretos como argumentos:
+Prueba publicada con un JSON privado o `--credentials-file -` para recibirlo por
+stdin (evita crear una copia plana). Nunca pasar secretos como argumentos:
 
 ```sh
-python deploy/probe.py --issuer https://kestra.redunisol.com.ar/vimarx-oauth \
-  --credentials-file /ruta/privada/probe.json
+python deploy/probe.py --issuer https://mcp.redunisol.com.ar \
+  --credentials-file /ruta/privada/probe.json --remember
 ```
 
-No sigue el callback a ChatGPT: comprueba localmente `state` e `iss`, intercambia
-el código con PKCE, llama `get_version` y `contexto_cliente`, verifica bloqueo de
-escrituras/replay y revoca su token al terminar. No imprime credenciales ni datos
-de negocio. Esta prueba verifica el protocolo publicado; la instalación efectiva
-del plugin en una cuenta de ChatGPT es una validación separada.
-Además de la prueba HTTP, verificar en Chromium que el primer envío del formulario
-navega al callback de ChatGPT, tanto al autorizar como al cancelar. Cancelar permite
-comprobar ese salto sin ingresar credenciales; para confirmar el enlace real hace
-falta iniciar el flujo desde ChatGPT y completar la autorización. No reutilizar un
-formulario ya enviado: su protección CSRF es de un solo uso.
+La prueba reproduce DCR de ChatGPT, login/PKCE, rotación con reintento, discovery,
+`get_version`, `contexto_cliente` y consulta vacía de `Solicitud`, bloqueo de
+escrituras y código repetido. Revoca y borra su conexión al finalizar. La función
+`probe(..., before_renew=hook)` permite que un operador venza **sólo su propia
+sesión de prueba** y compruebe la renovación real en la próxima consulta.
+No imprime credenciales ni datos de negocio. La renovación efectiva del cliente
+ChatGPT y sus posibles avisos se valida además en esa interfaz.
 
-## Agregar a ChatGPT
+Al migrar desde la URL de Kestra, cambiar la URL del plugin a la nueva, refrescar
+metadatos y conectar una vez seleccionando Mantener conectado. Las sesiones
+anteriores no guardaban contraseña y no se convierten silenciosamente.
 
-En ChatGPT web: Plugins → `+` → Add custom MCP server. Usar la URL MCP indicada,
-autenticación OAuth y registro dinámico (DCR), sin pegar tokens generales de
-Vimarx. Instalar el plugin y conectar la cuenta con el usuario habitual de Vimarx.
-No agregar el callback de una aplicación distinta a la lista permitida.
-
-Fuentes del contrato de integración:
-
+Fuentes del contrato:
 - https://developers.openai.com/plugins/build/auth
-- https://developers.openai.com/api/docs/guides/custom-mcp-server
+- https://developers.openai.com/plugins/deploy/connect-chatgpt
 - https://docs.authlib.org/en/stable/oauth2/authorization-server/flask/authorization-server.html

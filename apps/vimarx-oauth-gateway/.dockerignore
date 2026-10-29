@@ -6,3 +6,9 @@ deploy
 .env*
 .git
 README.md
+
+backups/
+*.db-*
+.pytest_cache/
+tests/
+deploy/
