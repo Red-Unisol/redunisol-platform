@@ -46,6 +46,8 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
 ## Criterio
 
 - El codigo Python vive bajo `files/bitrix24_form_flow/` para que el deploy a namespace files preserve el path esperado por Kestra.
+- Los servicios compartidos de ese paquete deben importar con solo `bitrix24_form_flow/**` disponible. Las marcas de prueba de los titulos viven en `lead_test_markers.py`; el contrato WhatsApp las reexporta sin agregar Edna como dependencia de los flows comerciales.
+- `tests/test_namespace_imports.py` copia los archivos declarados por cada tarea YAML y prueba sus imports en un proceso Python aislado. Se ejecuta con la suite de tests del dominio para detectar dependencias que el `PYTHONPATH` completo de desarrollo ocultaria.
 - Los secretos y variables de entorno siguen resolviendose en Kestra, no desde Git.
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.

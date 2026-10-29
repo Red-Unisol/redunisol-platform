@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from edna_incoming.test_reference import test_title
+from ..lead_test_markers import test_title
 
 from .attribution import lead_fields as attribution_lead_fields, source_from_lead
 from .bcra_client import BcraConsultationResult
