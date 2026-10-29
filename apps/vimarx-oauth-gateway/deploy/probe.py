@@ -26,9 +26,11 @@ def probe(issuer, credentials_file, transport=None):
         metadata.raise_for_status()
         assert metadata.json()["issuer"] == issuer
         registration = client.post(issuer + "/register", json=dict(
-            redirect_uris=[redirect_uri], grant_types=["authorization_code"],
-            response_types=["code"], token_endpoint_auth_method="none", scope="mcp:read"))
+            redirect_uris=[redirect_uri], grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"], token_endpoint_auth_method="none"))
         registration.raise_for_status()
+        assert registration.json()["grant_types"] == ["authorization_code"]
+        assert registration.json()["scope"] == "mcp:read"
         client_id = registration.json()["client_id"]
         verifier = secrets.token_urlsafe(48)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -50,6 +52,7 @@ def probe(issuer, credentials_file, transport=None):
                           code=callback["code"][0], code_verifier=verifier, resource=resource)
         tokens = client.post(issuer + "/token", data=token_form)
         tokens.raise_for_status()
+        assert "refresh_token" not in tokens.json()
         access_token = tokens.json()["access_token"]
         headers = {"Authorization": "Bearer " + access_token, "Accept": "application/json, text/event-stream",
                    "MCP-Protocol-Version": "2025-06-18"}
