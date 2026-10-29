@@ -58,7 +58,7 @@ def main():
     for _ in range(30):
         result = subprocess.run(
             ["curl", "-fsS", "-H", "Host: kestra.redunisol.com.ar",
-             "http://127.0.0.1:3060/vimarx-oauth/health"], capture_output=True)
+             "http://127.0.0.1:3060/vimarx-oauth/health"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
             break
         time.sleep(2)
@@ -79,7 +79,8 @@ def main():
         backup = ROOT / "frontend.previous.conf"
         shutil.copy2(FRONTEND, backup)
         FRONTEND.write_text(updated)
-    syntax = subprocess.run(["/opt/apache/bin/apachectl", "-t"], capture_output=True, text=True)
+    syntax = subprocess.run(["/opt/apache/bin/apachectl", "-t"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     if syntax.returncode:
         if changed:
             FRONTEND.write_text(text)
