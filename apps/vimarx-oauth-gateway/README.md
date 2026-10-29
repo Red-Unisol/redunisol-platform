@@ -154,27 +154,41 @@ Fuentes del contrato:
 - https://docs.authlib.org/en/stable/oauth2/authorization-server/flask/authorization-server.html
 
 
-## Paquete privado distribuible
+## Paquetes privados
 
-Nombre visible: **Celesol · Vimarx**. Fuente del paquete: `plugin/vimarx-celesol/`.
-Usa Agent Plugins 1.0, discovery OAuth DCR y
-el endpoint verificado del servicio. No incluye credenciales, App IDs personales,
-código del servidor ni tokens. Cada destinatario autentica su propia cuenta.
+Nombre visible: **Celesol · Vimarx**. Fuente: `plugin/vimarx-celesol/`.
+El símbolo se toma sin modificar de `https://redunisol.com.ar/logo.jpeg`.
+
+OpenAI marca **Desktop only** cualquier plugin importado con declaraciones MCP,
+incluso si sólo incluyen una URL HTTPS. Esa variante funciona en Codex local,
+pero no habilita herramientas en el chat normal. Se verificó al reproducir el
+problema de 2.0.1: el cliente local devuelve datos y el chat normal no recibe tools.
+
+Exportar para escritorio/Codex local:
 
 ```sh
-python deploy/build_plugin.py --output /ruta/de/salida/celesol-vimarx-2.0.1.zip
+python deploy/build_plugin.py --output /salida/celesol-vimarx-desktop-2.0.2.zip
 ```
 
-El builder valida JSON/YAML, componentes y assets, crea un ZIP reproducible con
-una sola carpeta raíz y rechaza archivos no previstos. En ChatGPT: Complementos
-→ Agregar → Cargar archivo del complemento, instalar y conectar. También puede
-compartirse una versión del workspace con su equipo. La importación puede estar
-restringida por políticas del workspace. El ZIP no publica en el directorio público.
-El plugin personal anterior no se cambia ni se comparte al generar este archivo.
+Para ChatGPT, registrar primero la conexión privada al endpoint OAuth mediante
+**Agregar servidor MCP personalizado**. Obtener su App ID real, no el plugin ID,
+y exportar la variante que referencia esa conexión registrada:
 
-La versión 2.0.1 evita `extensions.com.openai.auth` dentro de `mcp.json`:
-el cliente de escritorio instalado rechaza ese campo y descarta todo el MCP,
-aunque muestra la ficha y las skills. Se usa el transporte mínimo compatible
-y el cliente descubre OAuth desde el servicio. El PNG oficial de Unisol se
-conserva byte por byte; el builder empaqueta assets binarios sin convertirlos
-a texto. La marca proviene de https://www.redunisol.com.ar/apple-touch-icon.png.
+```sh
+python deploy/build_plugin.py --registered-app-id APP_ID_VERIFICADO \
+  --output /salida/celesol-vimarx-chatgpt-2.0.2.zip
+```
+
+El App ID se suministra al exportar y no queda fijo en Git. Esta variante contiene
+`.app.json` (dependencia requerida), manifiesto portable y overlay compatible,
+sin archivos ni declaraciones MCP. Conserva skills, prompts e identidad. Cada
+destinatario debe tener acceso a la App y completar OAuth; un App ID personal
+privado no se hace distribuible a otras cuentas por incluirlo en un ZIP.
+
+Al actualizar la importación 2.0.1 con el editor de archivos, borrar explícitamente
+`mcp.json`, `.mcp.json` y `assets/icon.png`, porque los archivos omitidos se conservan.
+El overlay actualizado ya no declara `mcpServers`; el logo pasa a `assets/icon.jpeg`.
+Verificar con una lectura posterior que no haya declaraciones MCP residuales,
+que la ficha web permita abrir el plugin y que la conexión espere OAuth del usuario.
+
+Referencia: https://learn.chatgpt.com/docs/enterprise/plugin-management
