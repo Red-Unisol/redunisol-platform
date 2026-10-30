@@ -102,15 +102,34 @@ export function AppLayout() {
     () => window.innerWidth >= 768,
   );
   const { pathname } = useLocation();
+  // Lugar en la barra superior para contenido de la pagina (p. ej. el detalle).
+  const [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null);
   const [searchParams] = useSearchParams();
   const origen = searchParams.get("origen");
-  const compactHeader =
-    pathname.startsWith("/solicitudes/core/detalle/") ||
-    pathname.startsWith("/solicitudes/actual/detalle/");
+  // El detalle usa la barra azul como cabecera (alto normal, ya no compacta).
+  const compactHeader = false;
 
   const isCoreDetalle =
     pathname.startsWith("/solicitudes/core/detalle/") ||
     pathname.startsWith("/solicitudes/actual/detalle/");
+  const esVistaDeSolicitud =
+    isCoreDetalle || pathname === "/solicitudes/detalle";
+  // Al entrar a una solicitud el menu se cierra para dar espacio (se puede
+  // abrir a mano); al volver a una lista queda como estaba antes de entrar.
+  const [enSolicitudAntes, setEnSolicitudAntes] = useState(false);
+  const [menuAntesDeLaSolicitud, setMenuAntesDeLaSolicitud] = useState<
+    boolean | null
+  >(null);
+  if (esVistaDeSolicitud !== enSolicitudAntes) {
+    setEnSolicitudAntes(esVistaDeSolicitud);
+    if (esVistaDeSolicitud) {
+      setMenuAntesDeLaSolicitud(isSidebarOpen);
+      if (isDesktop) setIsSidebarOpen(false);
+    } else if (menuAntesDeLaSolicitud !== null) {
+      if (isDesktop) setIsSidebarOpen(menuAntesDeLaSolicitud);
+      setMenuAntesDeLaSolicitud(null);
+    }
+  }
   // En el detalle, la barra lleva "← Precarga" (o la lista de origen) y el título.
   const backLink = useMemo(() => {
     if (isCoreDetalle) return getSolicitudCoreDetailOriginLink(origen);
@@ -121,7 +140,7 @@ export function AppLayout() {
   }, [isCoreDetalle, origen, pathname]);
   const title = useMemo(() => {
     if (isCoreDetalle) {
-      return "Detalle de la solicitud";
+      return null;
     }
 
     if (pathname === "/solicitudes/detalle") {
@@ -148,15 +167,15 @@ export function AppLayout() {
 
     return TITLE_ICON_BY_PATH[pathname];
   }, [pathname]);
+  // El detalle core/actual scrollea por dentro (pestanas fijas arriba): el
+  // contenedor no suma otro scroll.
   const isScrollableContentRoute =
     pathname === "/notificaciones" ||
     pathname === "/legajos/firmas" ||
     pathname === "/solicitudes/core/precarga/nueva" ||
     pathname === "/solicitudes/core/precarga" ||
-    pathname.startsWith("/solicitudes/core/detalle/") ||
     pathname === "/solicitudes/actual/precarga/nueva" ||
     pathname === "/solicitudes/actual/precarga" ||
-    pathname.startsWith("/solicitudes/actual/detalle/") ||
     pathname === "/solicitudes/detalle" ||
     pathname === "/perfil";
 
@@ -168,7 +187,8 @@ export function AppLayout() {
       setIsSidebarOpen(matches);
     };
 
-    syncSidebar(mediaQuery.matches);
+    // Al montar no hace falta: el estado inicial ya sale del ancho (y en una
+    // solicitud el menu arranca cerrado).
 
     const handleChange = (event: MediaQueryListEvent) => {
       syncSidebar(event.matches);
@@ -181,7 +201,7 @@ export function AppLayout() {
     };
   }, []);
 
-  if (!title && !titleBadge) {
+  if (!title && !titleBadge && !backLink) {
     return (
       <Navigate
         replace
@@ -200,6 +220,7 @@ export function AppLayout() {
     >
       <AppTopbar
         compact={compactHeader}
+        slotRef={setTopbarSlot}
         onToggleSidebar={() =>
           setIsSidebarOpen((currentState) => !currentState)
         }
@@ -220,11 +241,20 @@ export function AppLayout() {
           className={`relative min-w-0 flex-1 bg-background p-2 md:rounded-tl-2xl md:p-1 ${
             isScrollableContentRoute
               ? "overflow-y-auto overflow-x-hidden"
-              : "overflow-hidden"
+              : isCoreDetalle
+                ? // clip (no hidden): un scrollIntoView no puede correr el
+                  // contenedor y dejar la pagina desplazada sin scroll.
+                  "overflow-clip"
+                : "overflow-hidden"
           }`}
           id="app-content-shell"
         >
-          <Outlet context={{ closeSidebar: () => setIsSidebarOpen(false) }} />
+          <Outlet
+            context={{
+              closeSidebar: () => setIsSidebarOpen(false),
+              topbarSlot,
+            }}
+          />
           <div
             className="pointer-events-none absolute inset-0 z-50"
             id="app-content-overlays"

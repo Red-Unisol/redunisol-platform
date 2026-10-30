@@ -30,6 +30,8 @@ type AppTopbarProps = {
   title?: string | null;
   titleBadge?: string | null;
   backLink?: { label: string; to: string } | null;
+  // Contenedor que la pagina completa por portal (cabecera del detalle).
+  slotRef?: (element: HTMLDivElement | null) => void;
   onToggleSidebar: () => void;
 };
 
@@ -53,6 +55,7 @@ export function AppTopbar({
   title,
   titleBadge,
   backLink,
+  slotRef,
   onToggleSidebar,
 }: AppTopbarProps) {
   const navigate = useNavigate();
@@ -98,7 +101,7 @@ export function AppTopbar({
         compact ? "h-[var(--app-topbar-height,2.5rem)]" : "h-16"
       }`}
     >
-      <div className="flex min-w-0 items-center">
+      <div className="flex min-w-0 flex-1 items-center">
         {/* Mismo ancho que el menú lateral (w-52) para que el título arranque sobre el contenido. */}
         <div className="flex shrink-0 items-center gap-2 px-3 md:w-52">
           <button
@@ -122,15 +125,19 @@ export function AppTopbar({
             <>
               <Link
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-marino-foreground-secondary transition hover:bg-white/20 hover:text-white focus-visible:ring-2 focus-visible:ring-verde-claro focus-visible:outline-none"
+                aria-label={`Volver a ${backLink.label}`}
                 to={backLink.to}
               >
                 <ArrowLeft className="size-4" />
-                {backLink.label}
+                {/* En celular queda solo la flecha: el lugar es para la solicitud. */}
+                <span className="hidden sm:inline">{backLink.label}</span>
               </Link>
-              <ChevronRight
-                aria-hidden
-                className="hidden size-4 shrink-0 text-marino-foreground-secondary/60 sm:block"
-              />
+              {title ? (
+                <ChevronRight
+                  aria-hidden
+                  className="hidden size-4 shrink-0 text-marino-foreground-secondary/60 sm:block"
+                />
+              ) : null}
             </>
           ) : (
             <TitleIcon className="size-5 shrink-0 text-verde-claro" />
@@ -148,6 +155,7 @@ export function AppTopbar({
             ) : null}
           </div>
         </div>
+        <div className="flex min-w-0 flex-1 items-center" ref={slotRef} />
       </div>
 
       <div

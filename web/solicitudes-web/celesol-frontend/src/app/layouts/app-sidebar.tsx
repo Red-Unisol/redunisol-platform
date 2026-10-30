@@ -211,6 +211,8 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
 
       <aside
         aria-hidden={!isOpen}
+        // Cerrado no recibe foco ni clics (si no, Tab entra en links invisibles).
+        inert={!isOpen}
         className={`shrink-0 bg-linear-to-b from-marino to-marino-2 font-marca text-white origin-left transition-[width,opacity] duration-300 ease-out ${
           isDesktop
             ? `${isOpen ? "w-52 opacity-100" : "w-0 opacity-0"} overflow-hidden`

@@ -34,6 +34,7 @@ import {
   StyledSelect,
 } from "@/modules/solicitudes-editor/components/fields/base";
 import {
+  normalizarSexo,
   SEXO_OPTIONS,
   TIPO_DOCUMENTO_OPTIONS,
 } from "@/modules/solicitudes-editor/constants/legacy-options";
@@ -169,7 +170,7 @@ function buildInitialState(
     nroDocumento: socio?.tipoPersona === "FISICA" ? socio.nroDocumento : "",
     observaciones: "",
     razonSocial: socio?.tipoPersona === "JURIDICA" ? socio.razonSocial : "",
-    sexo: socio?.tipoPersona === "FISICA" ? socio.sexo : "",
+    sexo: socio?.tipoPersona === "FISICA" ? normalizarSexo(socio.sexo) : "",
     socAuxBeneficio: "",
     socAuxCaja40: "",
     socAuxConvAux: "",

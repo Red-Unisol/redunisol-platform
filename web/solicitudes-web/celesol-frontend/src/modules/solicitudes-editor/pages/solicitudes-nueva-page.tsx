@@ -9,6 +9,7 @@ import { SolicitudWorkflowActionDialog } from "@/modules/solicitudes-core/compon
 import { useExecuteSolicitudCoreTransitionMutation } from "@/modules/solicitudes-core/hooks/use-execute-solicitud-core-transition-mutation";
 import { useSolicitudCoreTransitionsQuery } from "@/modules/solicitudes-core/hooks/use-solicitud-core-transitions-query";
 import { esCbuValido } from "@/shared/utils/cbu";
+import { esCuitValido } from "@/shared/utils/cuit";
 import { parseMoneyValue } from "@/shared/utils/money-format";
 import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 import { useCreateSolicitudCoreMutation } from "@/modules/solicitudes-editor/hooks/use-create-solicitud-core-mutation";
@@ -300,7 +301,7 @@ export function SolicitudEditorPage({ variant }: SolicitudEditorPageProps) {
     },
     { name: "documento", label: "Tipo de documento" },
     { name: "noDocumento", label: "Nro. de documento" },
-    { name: "cuit", label: "CUIT" },
+    { name: "cuit", label: "CUIT", validate: esCuitValido },
     { name: "apellidoDenominacion", label: "Apellido / Denominación" },
     { name: "nombre", label: "Nombre" },
     { name: "fechaNacimiento", label: "Fecha de nacimiento" },

@@ -3,7 +3,14 @@ import { toast } from "sonner";
 
 import { Button } from "@/shared/components/ui/button";
 
-export function LinkFirmaDigital({ url }: { url: string }) {
+export function LinkFirmaDigital({
+  conWhatsapp = true,
+  url,
+}: {
+  // En la lectura del detalle no va el boton de WhatsApp.
+  conWhatsapp?: boolean;
+  url: string;
+}) {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(url);
@@ -34,17 +41,19 @@ export function LinkFirmaDigital({ url }: { url: string }) {
         <Copy aria-hidden="true" className="size-4" />
         Copiar link
       </Button>
-      <Button asChild variant="outline" size="sm">
-        <a
-          href={`https://wa.me/?text=${encodeURIComponent(`Te comparto el link para firmar digitalmente: ${url}`)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Compartir link de firma digital por WhatsApp"
-        >
-          <MessageCircle aria-hidden="true" className="size-4" />
-          Compartir por WhatsApp
-        </a>
-      </Button>
+      {conWhatsapp ? (
+        <Button asChild variant="outline" size="sm">
+          <a
+            href={`https://wa.me/?text=${encodeURIComponent(`Te comparto el link para firmar digitalmente: ${url}`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Compartir link de firma digital por WhatsApp"
+          >
+            <MessageCircle aria-hidden="true" className="size-4" />
+            Compartir por WhatsApp
+          </a>
+        </Button>
+      ) : null}
     </div>
   );
 }

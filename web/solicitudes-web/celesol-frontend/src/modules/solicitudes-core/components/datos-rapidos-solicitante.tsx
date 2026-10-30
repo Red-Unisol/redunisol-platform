@@ -17,6 +17,7 @@ export function DatosRapidosSolicitante({
   onVerDetalle,
   estado,
   meta,
+  titulo,
 }: {
   compact?: boolean;
   solicitudId: string;
@@ -33,6 +34,8 @@ export function DatosRapidosSolicitante({
   // Estado de la solicitud (junto al nombre) e identificadores (abajo a la derecha).
   estado?: ReactNode;
   meta?: ReactNode;
+  // Cabecera unica del detalle: "Solicitud 500123" arriba del titular.
+  titulo?: ReactNode;
 }) {
   // La clave cambia con la solicitud y sus datos guardados; no se reutilizan
   // resultados de otra persona ni se mezclan con reglas por convenio.
@@ -80,6 +83,12 @@ export function DatosRapidosSolicitante({
         className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border bg-background px-3 py-2 md:px-4"
       >
         <div className="min-w-0">
+          {titulo || estado ? (
+            <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {titulo}
+              {estado}
+            </div>
+          ) : null}
           <h2 className="break-words text-sm font-semibold text-foreground">
             {[titular.nombre, titular.apellidoDenominacion]
               .map((value) => value?.trim())
@@ -138,6 +147,7 @@ export function DatosRapidosSolicitante({
               Ver detalle
             </Button>
           )}
+          {meta}
         </div>
       </section>
     );

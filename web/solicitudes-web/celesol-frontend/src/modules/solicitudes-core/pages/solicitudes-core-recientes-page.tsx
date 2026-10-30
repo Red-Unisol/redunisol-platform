@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import type { AuthUser } from "@/modules/auth/services/auth-api";
+import { isVendedor } from "@/modules/auth/utils/auth-user";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/cn";
@@ -54,6 +55,7 @@ import type {
 import { getEstadoBadgeVariant } from "@/modules/solicitudes-shared/utils/estado-badge-variant";
 import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
 import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
+import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
 
 const SimuladorPrestamoModal = lazy(() =>
   loadSimuladorPrestamoModal().then((module) => ({
@@ -67,10 +69,20 @@ const PAGE_SIZE = 30;
 const FILTRO_COLUMNS: Partial<
   Record<keyof SolicitudesTableRow, SolicitudesTableColumn>
 > = {
-  asignadoA: { filterable: true, key: "asignadoA", label: "Ejecutivo", minWidth: "" },
+  asignadoA: {
+    filterable: true,
+    key: "asignadoA",
+    label: "Ejecutivo",
+    minWidth: "",
+  },
   estado: { filterable: true, key: "estado", label: "Estado", minWidth: "" },
   fecha: { filterable: true, key: "fecha", label: "Fecha", minWidth: "" },
-  lineaPrestamo: { filterable: true, key: "lineaPrestamo", label: "Línea", minWidth: "" },
+  lineaPrestamo: {
+    filterable: true,
+    key: "lineaPrestamo",
+    label: "Línea",
+    minWidth: "",
+  },
 };
 const FILTRO_COLUMNS_LIST = Object.values(FILTRO_COLUMNS).filter(
   (column): column is SolicitudesTableColumn => column !== undefined,
@@ -138,11 +150,12 @@ function RecientesList({ user }: { user: AuthUser }) {
   // arrancara en "Mi area", la solicitud se le iria al enviarla a Riesgo.
   // "Ver todas" nunca le muestra las de otros (lo limita el backend).
   const esVendedor = user.workflowOwner?.code === "VENDEDORES";
-  const areaLabel = user.workflowOwner?.code === "RIESGO"
-    ? "Riesgo"
-    : esVendedor
-      ? "Pendientes de mi lado"
-      : user.workflowOwner?.name ?? "Sin área asignada";
+  const areaLabel =
+    user.workflowOwner?.code === "RIESGO"
+      ? "Riesgo"
+      : esVendedor
+        ? "Pendientes de mi lado"
+        : (user.workflowOwner?.name ?? "Sin área asignada");
   const todasLabel = esVendedor ? "Todas mis solicitudes" : "Ver todas";
   const [vista, setVista] = useState<"mi-area" | "todas">(() =>
     !user.isSystemAdmin &&
@@ -178,7 +191,7 @@ function RecientesList({ user }: { user: AuthUser }) {
         asignadoA: resolveAssignmentLabel(item),
         cuotaResultante: formatMontoLista(item.cuotaResultante),
         cuotas: item.cuotas !== null ? String(item.cuotas) : "",
-        estado: item.estadoActual.name ?? "",
+        estado: nombreEstado(item.estadoActual.code, item.estadoActual.name),
         estadoCode: item.estadoActual.code ?? "",
         fecha: formatFechaLista(item.createdAt),
         nroSolicitud: item.nroSolicitud ?? "",
@@ -199,7 +212,10 @@ function RecientesList({ user }: { user: AuthUser }) {
   const rowStyles = useMemo(
     () =>
       new Map<string, CSSProperties | undefined>(
-        (data ?? []).map((item) => [item.id, buildRowStyleLista(item.appearance)]),
+        (data ?? []).map((item) => [
+          item.id,
+          buildRowStyleLista(item.appearance),
+        ]),
       ),
     [data],
   );
@@ -216,6 +232,8 @@ function RecientesList({ user }: { user: AuthUser }) {
   const showVendedor =
     new Set(tableRows.map((row) => row.vendedorSolicitud)).size > 1;
   const hasActiveFilters = Object.keys(columnFilters).length > 0;
+  // El ejecutivo es interno: el vendedor no lo ve, igual que en el detalle.
+  const mostrarEjecutivo = !isVendedor(user);
 
   const refreshState = resolveListRefreshState({
     hasData: data !== undefined,
@@ -326,7 +344,9 @@ function RecientesList({ user }: { user: AuthUser }) {
 
         <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
           <label className="relative min-w-0 flex-1 sm:w-80 sm:flex-none">
-            <span className="sr-only">Buscar por solicitud, DNI, nombre o apellido</span>
+            <span className="sr-only">
+              Buscar por solicitud, DNI, nombre o apellido
+            </span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-foreground-muted" />
             <input
               className="h-10 w-full rounded-full border border-border bg-surface pr-4 pl-10 text-sm outline-none placeholder:text-foreground-muted focus:border-input-focus focus:ring-2 focus:ring-input-focus/20"
@@ -380,8 +400,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 </p>
                 {vista === "mi-area" && !searchTerm.trim() ? (
                   <p className="max-w-sm text-sm text-foreground-secondary">
-                    Cuando una solicitud quede en manos de tu área, aparece
-                    acá.
+                    Cuando una solicitud quede en manos de tu área, aparece acá.
                   </p>
                 ) : null}
               </>
@@ -397,7 +416,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 {headerCell("Monto")}
                 {headerCell("Cuotas")}
                 {headerCell("Estado", "estado")}
-                {headerCell("Ejecutivo", "asignadoA")}
+                {mostrarEjecutivo ? headerCell("Ejecutivo", "asignadoA") : null}
                 {headerCell("Firma")}
               </tr>
             </thead>
@@ -406,7 +425,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 <tr>
                   <td
                     className="px-4 py-10 text-center text-foreground-secondary"
-                    colSpan={8}
+                    colSpan={mostrarEjecutivo ? 8 : 7}
                   >
                     Ninguna solicitud de esta página cumple los filtros.{" "}
                     <button
@@ -463,7 +482,8 @@ function RecientesList({ user }: { user: AuthUser }) {
                         {row.cuotas}
                         {row.cuotaResultante ? (
                           <span className="text-foreground-secondary">
-                            {" "}× {row.cuotaResultante}
+                            {" "}
+                            × {row.cuotaResultante}
                           </span>
                         ) : null}
                       </>
@@ -488,27 +508,29 @@ function RecientesList({ user }: { user: AuthUser }) {
                       </p>
                     ) : null}
                   </td>
-                  <td className="max-w-40 px-3 py-3">
-                    <p
-                      className={cn(
-                        "truncate",
-                        row.asignadoA === "Sin asignar"
-                          ? "text-foreground-muted"
-                          : "text-foreground",
-                      )}
-                      title={row.asignadoA}
-                    >
-                      {row.asignadoA}
-                    </p>
-                    {showVendedor && row.vendedorSolicitud ? (
+                  {mostrarEjecutivo ? (
+                    <td className="max-w-40 px-3 py-3">
                       <p
-                        className="truncate text-xs text-foreground-secondary"
-                        title={`Vendedor: ${row.vendedorSolicitud}`}
+                        className={cn(
+                          "truncate",
+                          row.asignadoA === "Sin asignar"
+                            ? "text-foreground-muted"
+                            : "text-foreground",
+                        )}
+                        title={row.asignadoA}
                       >
-                        Vend.: {row.vendedorSolicitud}
+                        {row.asignadoA}
                       </p>
-                    ) : null}
-                  </td>
+                      {showVendedor && row.vendedorSolicitud ? (
+                        <p
+                          className="truncate text-xs text-foreground-secondary"
+                          title={`Vendedor: ${row.vendedorSolicitud}`}
+                        >
+                          Vend.: {row.vendedorSolicitud}
+                        </p>
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td
                     className="px-3 py-3 whitespace-nowrap"
                     // Los botones de esta celda no abren el detalle.

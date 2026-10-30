@@ -22,6 +22,8 @@ export type SolicitudesToolbarAction = {
   icon?: LucideIcon;
   id: string;
   label?: string;
+  // Nombre para lectores de pantalla y tooltip cuando el boton es solo icono.
+  nombre?: string;
   primary?: boolean;
 };
 
@@ -80,7 +82,9 @@ export function SolicitudesToolbar({
 
           return (
             <Button
+              aria-label={isIconOnly ? action.nombre : undefined}
               className={action.primary ? "" : "text-foreground"}
+              title={isIconOnly ? action.nombre : undefined}
               disabled={action.disabled}
               key={action.id}
               onClick={() => onAction?.(action.id)}
@@ -118,7 +122,9 @@ export function SolicitudesToolbar({
 
           return (
             <Button
+              aria-label={isIconOnly ? action.nombre : undefined}
               className={action.primary ? "" : "text-foreground"}
+              title={isIconOnly ? action.nombre : undefined}
               disabled={action.disabled}
               key={action.id}
               onClick={() => onAction?.(action.id)}

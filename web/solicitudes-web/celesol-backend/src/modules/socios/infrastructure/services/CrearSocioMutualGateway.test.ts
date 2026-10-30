@@ -72,6 +72,35 @@ describe("CrearSocioMutualGateway", () => {
     });
   });
 
+  it("sends the sexo name when Sol Web kept the Vimarx code", async () => {
+    const sexos: unknown[] = [];
+    const gateway = new CrearSocioMutualGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        sexos.push(JSON.parse(String(init?.body)).campos.Sexo);
+        return {
+          json: async () => ({ Error: null, ID: 42, Ok: true }),
+          ok: true,
+        };
+      },
+    );
+
+    for (const sexo of ["0", "1", "3", "Masculino"]) {
+      await gateway.crear({
+        tipoPersona: "FISICA",
+        apellido: "Fernandez",
+        cuit: "27398765430",
+        domicilio: { calle: "San Martin", codigoPostal: "", localidad: "12", nroPuerta: "" },
+        fechaDeNacimiento: "1996-05-14",
+        nombre: "Marina",
+        nroDocumento: "39876543",
+        sexo,
+      });
+    }
+
+    assert.deepEqual(sexos, ["Masculino", "Femenino", "Otro", "Masculino"]);
+  });
+
   it("sends the expected body for persona juridica and returns the id on success", async () => {
     let capturedBody: unknown;
     const gateway = new CrearSocioMutualGateway(
