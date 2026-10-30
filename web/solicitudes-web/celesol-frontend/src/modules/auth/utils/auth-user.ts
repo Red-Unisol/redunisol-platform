@@ -71,7 +71,10 @@ export function getDefaultAuthenticatedRoute(user: AuthUser) {
     return "/pending-area";
   }
 
-  return "/dashboard";
+  // Se entra a Precarga; quien no puede cargar solicitudes no la tiene en el menú.
+  return canCreateSolicitud(user)
+    ? "/solicitudes/core/precarga"
+    : "/solicitudes/core/recientes";
 }
 
 export function resolveDashboardVariant(user: AuthUser): DashboardVariant {

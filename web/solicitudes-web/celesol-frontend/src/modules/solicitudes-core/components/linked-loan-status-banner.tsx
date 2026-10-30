@@ -17,6 +17,8 @@ export function LinkedLoanStatusBanner({
   solicitudId,
   onRecovered,
   canRecover = false,
+  cuenta,
+  editing = false,
 }: {
   data?: LinkedLoanStatus;
   loading: boolean;
@@ -25,7 +27,16 @@ export function LinkedLoanStatusBanner({
   solicitudId?: string;
   onRecovered?: () => void | Promise<unknown>;
   canRecover?: boolean;
+  // NroCuenta del prestamo generado: es el numero que se usa en la mutual
+  // (currentLoanId es el ID interno de Vimarx).
+  cuenta?: { loanId: string; nroCuenta: string } | null;
+  // El monto bloqueado solo importa al editar: ahi se avisa como error.
+  editing?: boolean;
 }) {
+  const prestamo = (loanId: string | null) =>
+    loanId && cuenta?.loanId === loanId
+      ? `Nº ${cuenta.nroCuenta}`
+      : `ID ${loanId ?? "desconocido"}`;
   if (loading)
     return (
       <p className="border-b border-border px-4 py-2 text-xs" role="status">
@@ -59,9 +70,11 @@ export function LinkedLoanStatusBanner({
   if (data.status === "cancelled")
     return (
       <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-        <strong>Préstamo {data.currentLoanId} anulado en Vimarx.</strong> Podés
-        editar el monto según tus permisos. Regenerá el préstamo y reemplazá el
-        anterior antes de terminar el análisis.
+        <strong>
+          Préstamo {prestamo(data.currentLoanId)} anulado en Vimarx.
+        </strong>{" "}
+        Podés editar el monto según tus permisos. Regenerá el préstamo y
+        reemplazá el anterior antes de terminar el análisis.
       </div>
     );
   if (!data.matchesAmount)
@@ -72,14 +85,19 @@ export function LinkedLoanStatusBanner({
       >
         <strong>Préstamo con monto distinto.</strong> Solicitud:{" "}
         {money(data.requestedAmount)} · Préstamo: {money(data.amount)}. Por
-        favor, anulá el préstamo preexistente {data.currentLoanId} en Vimarx
-        antes de modificar el monto o continuar.
+        favor, anulá el préstamo preexistente {prestamo(data.currentLoanId)} en
+        Vimarx antes de modificar el monto o continuar.
       </div>
     );
+  if (!editing) return null;
   return (
-    <p className="border-b border-border bg-background px-4 py-2 text-xs text-foreground-secondary">
-      Préstamo {data.currentLoanId} vigente por {money(data.amount)}. El monto
-      está bloqueado; para modificarlo, primero debe anularse en Vimarx.
+    <p
+      role="alert"
+      className="border-b border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+    >
+      No se puede modificar el monto: el préstamo {prestamo(data.currentLoanId)}{" "}
+      ya está generado en Vimarx por {money(data.amount)}. Para cambiarlo,
+      primero hay que anularlo en Vimarx.
     </p>
   );
 }

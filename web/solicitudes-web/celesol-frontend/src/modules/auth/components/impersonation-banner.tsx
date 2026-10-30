@@ -81,7 +81,8 @@ export function ImpersonationBanner({ children }: { children: ReactNode }) {
           Volver a mi usuario administrador
         </Button>
       </aside>
-      <div className="min-h-0 flex-1 overflow-auto">
+      {/* El layout ocupa el alto que deja la franja (si no, h-dvh suma un scroll). */}
+      <div className="min-h-0 flex-1 overflow-auto [&>.app-layout]:h-full">
         {stop.isPending ? (
           <p role="status" className="p-4">
             Volviendo al administrador…

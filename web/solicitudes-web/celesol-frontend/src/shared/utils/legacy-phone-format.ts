@@ -34,6 +34,12 @@ export function toDisplayPhone(rawLegacyPhone: string | null | undefined) {
     return "";
   }
 
+  // Ya viene en formato internacional (lo guarda asi el alta nueva): no se le
+  // vuelve a agregar el +54.
+  if (rawLegacyPhone?.trim().startsWith("+")) {
+    return `+${digits}`;
+  }
+
   const withoutTrunkPrefix = digits.startsWith("0") ? digits.slice(1) : digits;
 
   return `+${AR_COUNTRY_CODE}${stripMobileMarker(withoutTrunkPrefix)}`;

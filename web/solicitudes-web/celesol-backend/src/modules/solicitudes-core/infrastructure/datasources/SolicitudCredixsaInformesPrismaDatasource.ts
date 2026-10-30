@@ -5,6 +5,7 @@ import {
   ESTADOS_QUE_BORRAN_INFORME_CREDIXSA,
   type InformeCredixsaGuardado,
 } from "../../domain/repositories/SolicitudCredixsaInformeRepository";
+import { fechaNacimientoDelInforme } from "../../application/services/fechaNacimientoCredixsa";
 
 export class SolicitudCredixsaInformesPrismaDatasource {
   private readonly prisma: DbClient;
@@ -75,6 +76,23 @@ export class SolicitudCredixsaInformesPrismaDatasource {
           solicitudId,
         },
       });
+
+      // La fecha de nacimiento de CredixSA es la verdadera: pisa la que cargo
+      // el vendedor (solo si el informe es del titular).
+      const titular = await tx.solicitudTitular.findUnique({
+        select: { cuit: true, nroDocumento: true },
+        where: { solicitudId },
+      });
+      const fechaNacimiento = titular
+        ? fechaNacimientoDelInforme(informe.informe, titular)
+        : null;
+
+      if (fechaNacimiento) {
+        await tx.solicitudTitular.update({
+          data: { fechaNacimiento },
+          where: { solicitudId },
+        });
+      }
     });
   }
 }
