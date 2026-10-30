@@ -25,7 +25,7 @@ import { AppTopbar } from "@/app/layouts/app-topbar";
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { getDefaultAuthenticatedRoute } from "@/modules/auth/utils/auth-user";
 import {
-  getSolicitudCoreDetailOriginLabel,
+  getSolicitudCoreDetailOriginLink,
   getSolicitudDetailOriginLabel,
 } from "@/modules/solicitudes/utils/solicitud-detail-navigation";
 
@@ -34,11 +34,10 @@ const TITLE_BY_PATH: Record<string, string> = {
   "/legajos/firmas": "Legajos Digitales",
   "/404": "Página no encontrada",
   "/dev/loader-preview": "Preview Loader",
-  "/listados/creditos-por-vendedor": "Créditos por Vendedor",
-  "/listados/resumen-estado-credito-dni": "Resumen Estado Crédito por DNI",
-  "/admin/solicitudes/field-access-rules":
-    "Administración de permisos de edición",
-  "/admin/solicitudes/workflow-transitions": "Administración de transiciones",
+  "/listados/creditos-por-vendedor": "Créditos por vendedor",
+  "/listados/resumen-estado-credito-dni": "Estado de créditos por DNI",
+  "/admin/solicitudes/field-access-rules": "Permisos de edición",
+  "/admin/solicitudes/workflow-transitions": "Transiciones",
   "/admin/solicitudes/reconocimiento-recibos": "Reconocimiento de recibos",
   "/socios": "Socios",
   "/dashboard": "Dashboard",
@@ -47,21 +46,20 @@ const TITLE_BY_PATH: Record<string, string> = {
   "/admin/users": "Usuarios",
   "/admin/users/pending": "Usuarios pendientes",
   "/riesgo/calculadora": "Calculadora Mutual",
-  "/solicitudes/core/detalle/:id": "Sistema Actual - Detalle de Solicitud",
-  "/solicitudes/core/historicas": "Sistema Actual - Solicitudes Históricas",
-  "/solicitudes/core/precarga": "Sistema Actual - Solicitudes Precarga",
-  "/solicitudes/core/precarga/nueva": "Sistema Actual - Nueva Solicitud",
-  "/solicitudes/core/recientes": "Sistema Actual - Solicitudes Recientes",
-  "/solicitudes/actual/detalle/:id": "Sistema Actual - Detalle de Solicitud",
-  "/solicitudes/actual/historicas": "Sistema Actual - Solicitudes Históricas",
-  "/solicitudes/actual/precarga": "Sistema Actual - Solicitudes Precarga",
-  "/solicitudes/actual/precarga/nueva": "Sistema Actual - Nueva Solicitud",
-  "/solicitudes/actual/recientes": "Sistema Actual - Solicitudes Recientes",
-  "/solicitudes/anterior/historicas":
-    "Sistema Anterior - Solicitudes Históricas",
-  "/solicitudes/anterior/precarga": "Sistema Anterior - Solicitudes Precarga",
-  "/solicitudes/anterior/recientes": "Sistema Anterior - Solicitudes Recientes",
-  "/solicitudes/detalle": "Detalle de Solicitud",
+  "/solicitudes/core/detalle/:id": "Detalle de la solicitud",
+  "/solicitudes/core/historicas": "Solicitudes históricas",
+  "/solicitudes/core/precarga": "Precarga",
+  "/solicitudes/core/precarga/nueva": "Nueva solicitud",
+  "/solicitudes/core/recientes": "Solicitudes recientes",
+  "/solicitudes/actual/detalle/:id": "Detalle de la solicitud",
+  "/solicitudes/actual/historicas": "Solicitudes históricas",
+  "/solicitudes/actual/precarga": "Precarga",
+  "/solicitudes/actual/precarga/nueva": "Nueva solicitud",
+  "/solicitudes/actual/recientes": "Solicitudes recientes",
+  "/solicitudes/anterior/historicas": "Históricas del sistema anterior",
+  "/solicitudes/anterior/precarga": "Precarga del sistema anterior",
+  "/solicitudes/anterior/recientes": "Recientes del sistema anterior",
+  "/solicitudes/detalle": "Detalle de la solicitud",
 };
 
 const TITLE_ICON_BY_PATH: Record<string, LucideIcon> = {
@@ -104,33 +102,56 @@ export function AppLayout() {
     () => window.innerWidth >= 768,
   );
   const { pathname } = useLocation();
+  // Lugar en la barra superior para contenido de la pagina (p. ej. el detalle).
+  const [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null);
   const [searchParams] = useSearchParams();
   const origen = searchParams.get("origen");
-  const compactHeader =
+  // El detalle usa la barra azul como cabecera (alto normal, ya no compacta).
+  const compactHeader = false;
+
+  const isCoreDetalle =
     pathname.startsWith("/solicitudes/core/detalle/") ||
     pathname.startsWith("/solicitudes/actual/detalle/");
-
+  const esVistaDeSolicitud =
+    isCoreDetalle || pathname === "/solicitudes/detalle";
+  // Al entrar a una solicitud el menu se cierra para dar espacio (se puede
+  // abrir a mano); al volver a una lista queda como estaba antes de entrar.
+  const [enSolicitudAntes, setEnSolicitudAntes] = useState(false);
+  const [menuAntesDeLaSolicitud, setMenuAntesDeLaSolicitud] = useState<
+    boolean | null
+  >(null);
+  if (esVistaDeSolicitud !== enSolicitudAntes) {
+    setEnSolicitudAntes(esVistaDeSolicitud);
+    if (esVistaDeSolicitud) {
+      setMenuAntesDeLaSolicitud(isSidebarOpen);
+      if (isDesktop) setIsSidebarOpen(false);
+    } else if (menuAntesDeLaSolicitud !== null) {
+      if (isDesktop) setIsSidebarOpen(menuAntesDeLaSolicitud);
+      setMenuAntesDeLaSolicitud(null);
+    }
+  }
+  // En el detalle, la barra lleva "← Precarga" (o la lista de origen) y el título.
+  const backLink = useMemo(() => {
+    if (isCoreDetalle) return getSolicitudCoreDetailOriginLink(origen);
+    if (pathname === "/solicitudes/core/precarga/nueva") {
+      return { label: "Precarga", to: "/solicitudes/core/precarga" };
+    }
+    return null;
+  }, [isCoreDetalle, origen, pathname]);
   const title = useMemo(() => {
-    if (
-      pathname === "/solicitudes/detalle" ||
-      pathname.startsWith("/solicitudes/core/detalle/") ||
-      pathname.startsWith("/solicitudes/actual/detalle/")
-    ) {
+    if (isCoreDetalle) {
+      return null;
+    }
+
+    if (pathname === "/solicitudes/detalle") {
       return null;
     }
 
     return TITLE_BY_PATH[pathname];
-  }, [pathname]);
+  }, [isCoreDetalle, pathname]);
   const titleBadge = useMemo(() => {
     if (pathname === "/solicitudes/detalle") {
       return getSolicitudDetailOriginLabel(origen);
-    }
-
-    if (
-      pathname.startsWith("/solicitudes/core/detalle/") ||
-      pathname.startsWith("/solicitudes/actual/detalle/")
-    ) {
-      return getSolicitudCoreDetailOriginLabel(origen);
     }
 
     return null;
@@ -146,15 +167,15 @@ export function AppLayout() {
 
     return TITLE_ICON_BY_PATH[pathname];
   }, [pathname]);
+  // El detalle core/actual scrollea por dentro (pestanas fijas arriba): el
+  // contenedor no suma otro scroll.
   const isScrollableContentRoute =
     pathname === "/notificaciones" ||
     pathname === "/legajos/firmas" ||
     pathname === "/solicitudes/core/precarga/nueva" ||
     pathname === "/solicitudes/core/precarga" ||
-    pathname.startsWith("/solicitudes/core/detalle/") ||
     pathname === "/solicitudes/actual/precarga/nueva" ||
     pathname === "/solicitudes/actual/precarga" ||
-    pathname.startsWith("/solicitudes/actual/detalle/") ||
     pathname === "/solicitudes/detalle" ||
     pathname === "/perfil";
 
@@ -166,7 +187,8 @@ export function AppLayout() {
       setIsSidebarOpen(matches);
     };
 
-    syncSidebar(mediaQuery.matches);
+    // Al montar no hace falta: el estado inicial ya sale del ancho (y en una
+    // solicitud el menu arranca cerrado).
 
     const handleChange = (event: MediaQueryListEvent) => {
       syncSidebar(event.matches);
@@ -179,7 +201,7 @@ export function AppLayout() {
     };
   }, []);
 
-  if (!title && !titleBadge) {
+  if (!title && !titleBadge && !backLink) {
     return (
       <Navigate
         replace
@@ -198,29 +220,41 @@ export function AppLayout() {
     >
       <AppTopbar
         compact={compactHeader}
+        slotRef={setTopbarSlot}
         onToggleSidebar={() =>
           setIsSidebarOpen((currentState) => !currentState)
         }
+        backLink={backLink}
         titleBadge={titleBadge}
         title={title}
         titleIcon={titleIcon}
       />
 
-      <div className="relative flex min-h-0 flex-1">
+      {/* Fondo marino detrás del contenido: la esquina redondeada lo deja ver como un marco. */}
+      <div className="relative flex min-h-0 flex-1 bg-marino">
         <AppSidebar
           isDesktop={isDesktop}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
         <section
-          className={`relative min-w-0 flex-1 p-2 md:p-1 ${
+          className={`relative min-w-0 flex-1 bg-background p-2 md:rounded-tl-2xl md:p-1 ${
             isScrollableContentRoute
               ? "overflow-y-auto overflow-x-hidden"
-              : "overflow-hidden"
+              : isCoreDetalle
+                ? // clip (no hidden): un scrollIntoView no puede correr el
+                  // contenedor y dejar la pagina desplazada sin scroll.
+                  "overflow-clip"
+                : "overflow-hidden"
           }`}
           id="app-content-shell"
         >
-          <Outlet context={{ closeSidebar: () => setIsSidebarOpen(false) }} />
+          <Outlet
+            context={{
+              closeSidebar: () => setIsSidebarOpen(false),
+              topbarSlot,
+            }}
+          />
           <div
             className="pointer-events-none absolute inset-0 z-50"
             id="app-content-overlays"

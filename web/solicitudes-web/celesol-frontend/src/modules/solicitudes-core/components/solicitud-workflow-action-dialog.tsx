@@ -13,6 +13,7 @@ import {
   DialogRoot,
   DialogTitle,
 } from "@/shared/components/ui/dialog";
+import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
 
 type SolicitudWorkflowActionDialogProps = {
   errorMessage?: string | null;
@@ -91,7 +92,11 @@ export function SolicitudWorkflowActionDialog({
               </DialogTitle>
               {transition?.toState ? (
                 <DialogDescription className="mt-1 text-sm text-foreground-secondary">
-                  Destino: {transition.toState.name}
+                  Destino:{" "}
+                  {nombreEstado(
+                    transition.toState.code,
+                    transition.toState.name,
+                  )}
                 </DialogDescription>
               ) : null}
             </div>

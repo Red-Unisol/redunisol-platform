@@ -66,6 +66,7 @@ export function SolicitudesTablePagination({
       <div className="flex items-center gap-1">
         <Button
           disabled={currentPage === 1}
+          aria-label="Primera página"
           onClick={() => onPageChange(1)}
           size="icon-xs"
           variant="outline"
@@ -74,6 +75,7 @@ export function SolicitudesTablePagination({
         </Button>
         <Button
           disabled={currentPage === 1}
+          aria-label="Página anterior"
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
           size="icon-xs"
           variant="outline"
@@ -84,6 +86,8 @@ export function SolicitudesTablePagination({
         {pageNumbers.map((pageNumber) => (
           <Button
             className={currentPage === pageNumber ? "shadow-none" : ""}
+            aria-current={currentPage === pageNumber ? "page" : undefined}
+            aria-label={`Página ${pageNumber}`}
             key={pageNumber}
             onClick={() => onPageChange(pageNumber)}
             size="icon-xs"
@@ -95,6 +99,7 @@ export function SolicitudesTablePagination({
 
         <Button
           disabled={currentPage === pageCount}
+          aria-label="Página siguiente"
           onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
           size="icon-xs"
           variant="outline"
@@ -103,6 +108,7 @@ export function SolicitudesTablePagination({
         </Button>
         <Button
           disabled={currentPage === pageCount}
+          aria-label="Última página"
           onClick={() => onPageChange(pageCount)}
           size="icon-xs"
           variant="outline"

@@ -348,7 +348,7 @@ export function SolicitudesColumnFilter({
         aria-label={`Filtrar ${column.label}`}
         className={cn(
           "inline-flex size-5 items-center justify-center rounded-sm text-foreground-secondary transition hover:bg-muted hover:text-foreground",
-          hasActiveFilter && "bg-primary-soft text-primary",
+          hasActiveFilter && "bg-primary text-primary-foreground hover:bg-primary-hover hover:text-primary-foreground",
         )}
         ref={buttonRef}
         onClick={() => {

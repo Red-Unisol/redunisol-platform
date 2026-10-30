@@ -31,9 +31,15 @@ import {
   SolicitudesToolbar,
   type SolicitudesToolbarAction,
 } from "@/modules/solicitudes/components/solicitudes-toolbar";
+import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
 
 const CORE_HISTORICAS_COLUMNS: SolicitudesTableColumn[] = [
-  { key: "nroSolicitud", label: "Nº Solicitud", minWidth: "min-w-28", filterable: true },
+  {
+    key: "nroSolicitud",
+    label: "Nº Solicitud",
+    minWidth: "min-w-28",
+    filterable: true,
+  },
   {
     key: "vendedorSolicitud",
     label: "Vendedor Solicitud",
@@ -91,9 +97,19 @@ const CORE_HISTORICAS_LEFT_ACTIONS: SolicitudesToolbarAction[] = [];
 
 const CORE_HISTORICAS_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
   { disabled: true, id: "borrar-mover", label: "Borrar/Mover" },
-  { disabled: true, icon: Save, id: "guardar" },
-  { disabled: true, icon: FileCode, id: "exportar-xml" },
-  { disabled: true, icon: CloudDownload, id: "vimarx" },
+  { disabled: true, icon: Save, id: "guardar", nombre: "Guardar" },
+  {
+    disabled: true,
+    icon: FileCode,
+    id: "exportar-xml",
+    nombre: "Exportar XML",
+  },
+  {
+    disabled: true,
+    icon: CloudDownload,
+    id: "vimarx",
+    nombre: "Traer de Vimarx",
+  },
   {
     disabled: true,
     icon: ArchiveX,
@@ -106,8 +122,13 @@ const CORE_HISTORICAS_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
     id: "desarchivar-solicitud",
     label: "Desarchivar Solicitud",
   },
-  { icon: RefreshCw, id: "refresh" },
-  { disabled: true, icon: Ellipsis, id: "more-actions" },
+  { icon: RefreshCw, id: "refresh", nombre: "Actualizar" },
+  {
+    disabled: true,
+    icon: Ellipsis,
+    id: "more-actions",
+    nombre: "Más acciones",
+  },
 ];
 
 function formatDate(value: string) {
@@ -214,7 +235,7 @@ export function SolicitudesCoreHistoricasPage() {
     return data.map((item) => ({
       cuotaResultante: formatAmount(item.cuotaResultante),
       cuotas: item.cuotas !== null ? String(item.cuotas) : "",
-      estado: item.estadoActual.name ?? "",
+      estado: nombreEstado(item.estadoActual.code, item.estadoActual.name),
       estadoCode: item.estadoActual.code ?? "",
       fecha: formatDate(item.createdAt),
       id: item.id,

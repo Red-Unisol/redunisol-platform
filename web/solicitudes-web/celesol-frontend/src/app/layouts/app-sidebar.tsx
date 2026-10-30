@@ -9,7 +9,6 @@ import {
   Bell,
   History,
   LayoutDashboard,
-  Search,
   Shield,
   Users,
   type LucideIcon,
@@ -24,7 +23,6 @@ import {
   canReviewSignatures,
 } from "@/modules/auth/utils/auth-user";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
-import { Input } from "@/shared/components/ui/input";
 
 type SidebarGroup = {
   items?: Array<{ icon: LucideIcon; label: string; to: string }>;
@@ -89,12 +87,12 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       {
         icon: FileChartColumn,
-        label: "Resumen Estado Crédito por DNI",
+        label: "Estado de créditos por DNI",
         to: "/listados/resumen-estado-credito-dni",
       },
       {
         icon: BarChart3,
-        label: "Créditos por Vendedor",
+        label: "Créditos por vendedor",
         to: "/listados/creditos-por-vendedor",
       },
     ],
@@ -124,7 +122,6 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
   const location = useLocation();
   const sessionQuery = useAuthSessionQuery();
   const user = sessionQuery.data;
-  const [searchTerm, setSearchTerm] = useState("");
   const sidebarGroups: SidebarGroup[] = [
     ...SIDEBAR_GROUPS.map((group) => ({
       ...group,
@@ -188,9 +185,15 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
         ]
       : []),
   ];
+  // Arranca con Solicitudes abierto y el resto cerrado (más el grupo de la página actual).
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
     sidebarGroups.reduce<Record<string, boolean>>((accumulator, group) => {
-      accumulator[group.id] = true;
+      const rutas = [
+        ...(group.items ?? []),
+        ...(group.sections?.flatMap((section) => section.items) ?? []),
+      ].map((item) => item.to);
+      accumulator[group.id] =
+        group.id === "solicitudes" || rutas.includes(location.pathname);
       return accumulator;
     }, {}),
   );
@@ -200,7 +203,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
       {!isDesktop && isOpen ? (
         <button
           aria-label="Cerrar menú lateral"
-          className="fixed inset-0 top-[var(--app-topbar-height,4rem)] z-30 bg-black/30 opacity-100 transition-opacity duration-200 md:hidden"
+          className="fixed inset-0 top-[var(--app-topbar-height,4rem)] z-30 bg-black/40 opacity-100 transition-opacity duration-200 md:hidden"
           onClick={onClose}
           type="button"
         />
@@ -208,36 +211,25 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
 
       <aside
         aria-hidden={!isOpen}
-        className={`shrink-0 bg-surface origin-left transition-[width,opacity] duration-300 ease-out ${
+        // Cerrado no recibe foco ni clics (si no, Tab entra en links invisibles).
+        inert={!isOpen}
+        className={`shrink-0 bg-linear-to-b from-marino to-marino-2 font-marca text-white origin-left transition-[width,opacity] duration-300 ease-out ${
           isDesktop
-            ? `border-r border-border ${isOpen ? "w-72 opacity-100" : "w-0 opacity-0"} overflow-hidden`
-            : `fixed top-[var(--app-topbar-height,4rem)] bottom-0 left-0 z-40 w-72 border-r border-border shadow-lg transition-transform duration-300 ease-out ${
+            ? `${isOpen ? "w-52 opacity-100" : "w-0 opacity-0"} overflow-hidden`
+            : `fixed top-[var(--app-topbar-height,4rem)] bottom-0 left-0 z-40 w-64 shadow-lg transition-transform duration-300 ease-out ${
                 isOpen ? "translate-x-0" : "-translate-x-full"
               }`
         }`}
       >
         <div
-          className={`flex h-full flex-col ${isDesktop ? "w-72 min-w-72" : "w-full"}`}
+          className={`flex h-full flex-col ${isDesktop ? "w-52 min-w-52" : "w-full"}`}
         >
-          <div className="border-b border-border px-3 py-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-muted" />
-              <Input
-                aria-label="Buscar en el menú"
-                className="pl-9"
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Filtrar..."
-                value={searchTerm}
-              />
-            </div>
-          </div>
-
-          <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-4">
+          <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {sidebarGroups.map((group) => (
               <div key={group.label}>
                 <button
                   aria-expanded={openGroups[group.id]}
-                  className="mb-2 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-foreground transition hover:bg-background"
+                  className="mb-1.5 flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-verde-claro transition hover:text-white"
                   onClick={() =>
                     setOpenGroups((currentGroups) => ({
                       ...currentGroups,
@@ -247,11 +239,13 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                   type="button"
                 >
                   <ChevronDown
-                    className={`size-4 text-foreground-secondary transition-transform ${
+                    className={`size-3.5 transition-transform ${
                       openGroups[group.id] ? "rotate-0" : "-rotate-90"
                     }`}
                   />
-                  <h2 className="text-[1rem] font-medium">{group.label}</h2>
+                  <h2 className="text-[0.7rem] font-bold tracking-[0.14em] uppercase">
+                    {group.label}
+                  </h2>
                 </button>
 
                 <div
@@ -263,19 +257,16 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                 >
                   <div className="overflow-hidden">
                     {group.sections?.length ? (
-                      <div className="space-y-3 pl-4">
+                      <div className="space-y-3">
                         {group.sections.map((section) => (
                           <div className="space-y-1" key={section.id}>
-                            <p className="px-3.5 text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-                              {section.label}
-                            </p>
                             {section.items.map((item) => (
                               <NavLink
                                 className={({ isActive }) =>
-                                  `group flex min-h-9 items-center gap-2 rounded-md px-3.5 text-[1.02rem] transition ${
+                                  `group flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-sm transition ${
                                     isActive
-                                      ? "bg-primary text-primary-foreground"
-                                      : "text-foreground hover:bg-background"
+                                      ? "bg-verde font-semibold text-white"
+                                      : "text-marino-foreground-secondary hover:bg-white/10 hover:text-white"
                                   }`
                                 }
                                 key={item.to}
@@ -304,14 +295,14 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
                         ))}
                       </div>
                     ) : (
-                      <div className="space-y-1 pl-4">
+                      <div className="space-y-1">
                         {group.items?.map((item) => (
                           <NavLink
                             className={({ isActive }) =>
-                              `group flex min-h-9 items-center gap-2 rounded-md px-3.5 text-[1.02rem] transition ${
+                              `group flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-sm transition ${
                                 isActive
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-foreground hover:bg-background"
+                                  ? "bg-verde font-semibold text-white"
+                                  : "text-marino-foreground-secondary hover:bg-white/10 hover:text-white"
                               }`
                             }
                             key={item.to}
@@ -330,7 +321,7 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
             ))}
           </nav>
 
-          <footer className="border-t border-border px-3 py-4 text-xs text-foreground-muted">
+          <footer className="border-t border-white/10 px-4 py-3 text-[0.68rem] text-marino-foreground-secondary/70">
             <p>Solicitud de Préstamos Web</p>
             <p className="mt-1">Versión xxxx-xxxx</p>
             <div className="mt-3 flex items-center gap-2">
