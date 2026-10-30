@@ -87,13 +87,14 @@ def normalize_answer(data, *, retain_invalid_identity=False, flow_id=None):
                 "Jubilado Nacional" if organism == "anses" else "Jubilado Provincial")
     # Meta includes hidden values: never use organism or bank from another branch.
     bank = ""
-    if organism != "caja_cordoba":
+    caja_retirement = organism == "caja_cordoba" and situation != "pensionado"
+    if not caja_retirement:
         bank = data.get("banco_jubilado" if province == "cordoba" and retired else "banco_" + province)
         if not isinstance(bank, str) or bank not in {*BANKS, "ayuda"}:
             raise ValueError("Invalid intake bank.")
     segment = "cordoba_jubilado" if province == "cordoba" and situation in {"jubilado", "jubilado_pensionado"} else (
         "otra_provincia" if province == "otra" and not retired else province + "_" + situation)
-    automatic = bool(cuil) and not email_invalid and bool(employment) and (organism == "caja_cordoba" or bank in BANKS)
+    automatic = bool(cuil) and not email_invalid and bool(employment) and (caja_retirement or bank in BANKS)
     # Unresolved benefit/organism is manual even in another province; it may be
     # ANSES. Only an identified non-ANSES case keeps the provincial rejection.
     rejection = "province_not_eligible" if province == "otra" and (not retired or employment not in {"", "Jubilado Nacional"}) else (

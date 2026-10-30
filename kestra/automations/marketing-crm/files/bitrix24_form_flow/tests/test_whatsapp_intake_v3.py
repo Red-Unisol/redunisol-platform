@@ -1,5 +1,7 @@
 """Expanded WhatsApp payloads must reach the website's canonical CRM rules."""
+import ast
 import json
+import re
 from pathlib import Path
 import unittest
 
@@ -21,6 +23,81 @@ def answer(province, situation, bank='nacion', organism='anses'):
 
 
 class IntakeV3Tests(unittest.TestCase):
+    def test_separated_benefits_render_their_own_organism_and_bank_and_reach_identity(self):
+        root = next(p for p in Path(__file__).resolve().parents if (p / 'docs/whatsapp-website-intake-v3.flow.json').exists())
+        flow = json.loads((root / 'docs/whatsapp-website-intake-v3.flow.json').read_text(encoding='utf-8'))
+        fields = flow['screens'][0]['layout']['children'][0]['children']
+
+        def condition(expression, values):
+            expression = expression.strip('`').strip()
+            def atom(match):
+                key, operator, value = match.groups()
+                equals = values.get(key) == value
+                return str(equals if operator == '==' else not equals)
+            expression = re.sub(r"\$\{form\.([a-z_]+)\} (==|!=) '([a-z_]+)'", atom, expression)
+            tree = ast.parse(expression.replace('||', 'or').replace('&&', 'and'), mode='eval')
+            def boolean(node):
+                if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+                    return node.value
+                if isinstance(node, ast.BoolOp):
+                    return (all if isinstance(node.op, ast.And) else any)(boolean(v) for v in node.values)
+                raise AssertionError('Unexpected Flow expression')
+            return boolean(tree.body)
+
+        def visible(items, values):
+            rendered = []
+            for item in items:
+                if item['type'] == 'If':
+                    rendered.extend(visible(item.get('then' if condition(item['condition'], values) else 'else', []), values))
+                elif item.get('visible', True) is True or (
+                        isinstance(item.get('visible'), str) and condition(item['visible'], values)):
+                    rendered.append(item)
+            return rendered
+
+        for province in [*INTAKE_SEGMENTS, 'otra']:
+            for situation in ['jubilado', 'pensionado']:
+                for organism in ['anses', 'caja_cordoba' if province == 'cordoba' else 'caja_provincial', 'ayuda']:
+                    with self.subTest(province=province, benefit=situation, organism=organism):
+                        values = answer(province, situation, organism=organism)
+                        # Meta also sends stale hidden values. They cannot pick a
+                        # different province, benefit or bank in the normalizer.
+                        if province != 'cordoba':
+                            values.update(organismo='caja_cordoba', banco_jubilado='otro')
+                        rendered = visible(fields, values)
+                        jobs = next(f for f in rendered if f.get('name') == 'situacion_' + province)
+                        options = {o['id'] for o in jobs['data-source']}
+                        self.assertTrue({'jubilado', 'pensionado'} <= options)
+                        self.assertNotIn('jubilado_pensionado', options)
+                        self.assertEqual([f['name'] for f in rendered if f.get('name', '').startswith('organismo')],
+                                         ['organismo' if province == 'cordoba' else 'organismo_' + province])
+                        banks = [f['name'] for f in rendered if f.get('name', '').startswith('banco_')]
+                        caja_retirement = province == 'cordoba' and situation == 'jubilado' and organism == 'caja_cordoba'
+                        self.assertEqual(banks, [] if caja_retirement else [
+                            'banco_jubilado' if province == 'cordoba' else 'banco_' + province])
+                        self.assertFalse(any(f.get('name') in {'cuil', 'email'} for f in rendered))
+                        footer = next(f for f in rendered if f['type'] == 'Footer')
+                        self.assertEqual(footer['on-click-action']['next']['name'], 'IDENTIDAD')
+                        self.assertEqual(footer['on-click-action']['payload'], {})
+                        normalized = normalize_answer(values, flow_id='950118281197789')
+                        expected = '' if organism == 'ayuda' else 'Pensionado' if situation == 'pensionado' else (
+                            'Jubilado Nacional' if organism == 'anses' else 'Jubilado Provincial')
+                        self.assertEqual(normalized['employment_status'], expected)
+
+    def test_cordoba_pensioner_keeps_generic_category_and_bank_even_when_declaring_caja(self):
+        for organism in ['anses', 'caja_cordoba']:
+            data = answer('cordoba', 'pensionado', organism=organism)
+            api = IntakeCrm()
+            result = process(payload(**data), env=CONFIG, client=api)
+            self.assertEqual(result['action'], 'queued')
+            lead = api.leads[result['lead_id']]
+            self.assertEqual(lead[api.config.fields.lead_employment_status], '2569')
+            self.assertEqual(lead[api.config.fields.lead_payment_bank], ['439'])
+            self.assertEqual(lead['UF_CRM_WA_ORGANISMO'], organism)
+            self.assertEqual(lead['UF_CRM_WA_SEGMENT'], 'cordoba_pensionado')
+            data.pop('banco_jubilado')
+            with self.assertRaises(ValueError):
+                normalize_answer(data)
+
     def test_expanded_provinces_persist_the_same_categories_and_decisions_as_the_web(self):
         profiles = {
             'buenos_aires': ['empleado_publico', 'policia', 'docente'],
@@ -139,9 +216,16 @@ class IntakeV3Tests(unittest.TestCase):
                 visit(field.get('else', []))
         visit(fields)
         identity = second['layout']['children'][0]['children']
+        # Global form references preserve the exact callback keys without
+        # requiring undefined hidden branches as string navigation data.
+        self.assertEqual(second['data'], {})
         self.assertTrue(next(f for f in identity if f.get('name') == 'cuil')['required'])
         self.assertFalse(next(f for f in identity if f.get('name') == 'email')['required'])
-        self.assertEqual(next(f for f in identity if f['type'] == 'Footer')['on-click-action']['name'], 'complete')
+        complete = next(f for f in identity if f['type'] == 'Footer')['on-click-action']
+        self.assertEqual(complete['name'], 'complete')
+        for name, reference in complete['payload'].items():
+            scope = 'form' if name in {'cuil', 'email'} else 'screen.DATOS.form'
+            self.assertEqual(reference, '${' + scope + '.' + name + '}')
 
 
 if __name__ == '__main__':

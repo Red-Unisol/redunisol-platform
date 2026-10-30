@@ -73,8 +73,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "empleado_publico",
@@ -115,88 +119,76 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_cordoba} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_cordoba} == 'jubilado') || (${form.situacion_cordoba} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "caja_cordoba",
-                            "title": "Caja de Jubilaciones Córdoba"
-                          },
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "caja_cordoba",
+                        "title": "Caja de Jubilaciones Córdoba"
                       },
                       {
-                        "type": "If",
-                        "condition": "${form.organismo} == 'caja_cordoba'",
-                        "then": [
-                          {
-                            "type": "TextBody",
-                            "text": "Para Caja de Jubilaciones de Córdoba no necesitamos el banco de cobro."
-                          }
-                        ],
-                        "else": [
-                          {
-                            "type": "Dropdown",
-                            "name": "banco_jubilado",
-                            "label": "Banco de cobro",
-                            "required": true,
-                            "data-source": [
-                              {
-                                "id": "bancor",
-                                "title": "Bancor"
-                              },
-                              {
-                                "id": "nacion",
-                                "title": "Banco Nación"
-                              },
-                              {
-                                "id": "otro",
-                                "title": "Otro banco"
-                              },
-                              {
-                                "id": "ayuda",
-                                "title": "No sé / necesito ayuda"
-                              }
-                            ]
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
                     ],
-                    "else": [
+                    "visible": "`(${form.situacion_cordoba} == 'jubilado') || (${form.situacion_cordoba} == 'pensionado')`"
+                  },
+                  {
+                    "type": "TextBody",
+                    "text": "Para Caja de Jubilaciones de Córdoba no necesitamos el banco de cobro.",
+                    "visible": "`(${form.organismo} == 'caja_cordoba') && (${form.situacion_cordoba} == 'jubilado')`"
+                  },
+                  {
+                    "type": "Dropdown",
+                    "name": "banco_jubilado",
+                    "label": "Banco de cobro",
+                    "required": "`((${form.situacion_cordoba} == 'jubilado') || (${form.situacion_cordoba} == 'pensionado')) && ((${form.organismo} != 'caja_cordoba') || (${form.situacion_cordoba} == 'pensionado'))`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "banco_cordoba",
-                        "label": "Banco de cobro",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "bancor",
-                            "title": "Bancor"
-                          },
-                          {
-                            "id": "nacion",
-                            "title": "Banco Nación"
-                          },
-                          {
-                            "id": "otro",
-                            "title": "Otro banco"
-                          }
-                        ]
+                        "id": "bancor",
+                        "title": "Bancor"
+                      },
+                      {
+                        "id": "nacion",
+                        "title": "Banco Nación"
+                      },
+                      {
+                        "id": "otro",
+                        "title": "Otro banco"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`((${form.situacion_cordoba} == 'jubilado') || (${form.situacion_cordoba} == 'pensionado')) && ((${form.organismo} != 'caja_cordoba') || (${form.situacion_cordoba} == 'pensionado'))`"
+                  },
+                  {
+                    "type": "Dropdown",
+                    "name": "banco_cordoba",
+                    "label": "Banco de cobro",
+                    "required": "`(${form.situacion_cordoba} != 'jubilado') && (${form.situacion_cordoba} != 'pensionado')`",
+                    "data-source": [
+                      {
+                        "id": "bancor",
+                        "title": "Bancor"
+                      },
+                      {
+                        "id": "nacion",
+                        "title": "Banco Nación"
+                      },
+                      {
+                        "id": "otro",
+                        "title": "Otro banco"
+                      }
+                    ],
+                    "visible": "`(${form.situacion_cordoba} != 'jubilado') && (${form.situacion_cordoba} != 'pensionado')`"
                   }
                 ]
               },
@@ -211,8 +203,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "empleado_publico",
@@ -233,30 +229,25 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_buenos_aires} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo_buenos_aires",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_buenos_aires} == 'jubilado') || (${form.situacion_buenos_aires} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo_buenos_aires",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "caja_provincial",
-                            "title": "Caja previsional de la provincia"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "caja_provincial",
+                        "title": "Caja previsional de la provincia"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`(${form.situacion_buenos_aires} == 'jubilado') || (${form.situacion_buenos_aires} == 'pensionado')`"
                   },
                   {
                     "type": "Dropdown",
@@ -295,8 +286,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "empleado_publico",
@@ -321,30 +316,25 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_santa_fe} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo_santa_fe",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_santa_fe} == 'jubilado') || (${form.situacion_santa_fe} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo_santa_fe",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "caja_provincial",
-                            "title": "Caja previsional de la provincia"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "caja_provincial",
+                        "title": "Caja previsional de la provincia"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`(${form.situacion_santa_fe} == 'jubilado') || (${form.situacion_santa_fe} == 'pensionado')`"
                   },
                   {
                     "type": "Dropdown",
@@ -383,8 +373,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "empleado_publico",
@@ -413,30 +407,25 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_neuquen} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo_neuquen",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_neuquen} == 'jubilado') || (${form.situacion_neuquen} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo_neuquen",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "caja_provincial",
-                            "title": "Caja previsional de la provincia"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "caja_provincial",
+                        "title": "Caja previsional de la provincia"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`(${form.situacion_neuquen} == 'jubilado') || (${form.situacion_neuquen} == 'pensionado')`"
                   },
                   {
                     "type": "Dropdown",
@@ -475,8 +464,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "empleado_publico",
@@ -501,30 +494,25 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_catamarca} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo_catamarca",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_catamarca} == 'jubilado') || (${form.situacion_catamarca} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo_catamarca",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "caja_provincial",
-                            "title": "Caja previsional de la provincia"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "caja_provincial",
+                        "title": "Caja previsional de la provincia"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`(${form.situacion_catamarca} == 'jubilado') || (${form.situacion_catamarca} == 'pensionado')`"
                   },
                   {
                     "type": "Dropdown",
@@ -559,8 +547,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "pfa",
@@ -573,30 +565,25 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_caba} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo_caba",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_caba} == 'jubilado') || (${form.situacion_caba} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo_caba",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "caja_provincial",
-                            "title": "Caja previsional de la provincia"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "caja_provincial",
+                        "title": "Caja previsional de la provincia"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`(${form.situacion_caba} == 'jubilado') || (${form.situacion_caba} == 'pensionado')`"
                   },
                   {
                     "type": "Dropdown",
@@ -631,8 +618,12 @@
                     "required": true,
                     "data-source": [
                       {
-                        "id": "jubilado_pensionado",
-                        "title": "Jubilado / pensionado"
+                        "id": "jubilado",
+                        "title": "Jubilado"
+                      },
+                      {
+                        "id": "pensionado",
+                        "title": "Pensionado"
                       },
                       {
                         "id": "otra",
@@ -641,30 +632,25 @@
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${form.situacion_otra} == 'jubilado_pensionado'",
-                    "then": [
+                    "type": "Dropdown",
+                    "name": "organismo_otra",
+                    "label": "Origen de haberes",
+                    "required": "`(${form.situacion_otra} == 'jubilado') || (${form.situacion_otra} == 'pensionado')`",
+                    "data-source": [
                       {
-                        "type": "Dropdown",
-                        "name": "organismo_otra",
-                        "label": "Origen de haberes",
-                        "required": true,
-                        "data-source": [
-                          {
-                            "id": "anses",
-                            "title": "ANSES"
-                          },
-                          {
-                            "id": "caja_provincial",
-                            "title": "Caja previsional de la provincia"
-                          },
-                          {
-                            "id": "ayuda",
-                            "title": "No sé / necesito ayuda"
-                          }
-                        ]
+                        "id": "anses",
+                        "title": "ANSES"
+                      },
+                      {
+                        "id": "caja_provincial",
+                        "title": "Caja previsional de la provincia"
+                      },
+                      {
+                        "id": "ayuda",
+                        "title": "No sé / necesito ayuda"
                       }
-                    ]
+                    ],
+                    "visible": "`(${form.situacion_otra} == 'jubilado') || (${form.situacion_otra} == 'pensionado')`"
                   },
                   {
                     "type": "Dropdown",
@@ -688,7 +674,7 @@
                   },
                   {
                     "type": "TextBody",
-                    "text": "Por ahora tenemos convenios en Córdoba, Buenos Aires, Santa Fe, Neuquén, Catamarca y CABA, y atendemos a jubilados y pensionados de ANSES de todo el país. Si tu caso no entra hoy, igual registramos tu consulta para avisarte cuando sumemos tu provincia."
+                    "text": "Por ahora tenemos convenios en Córdoba, Buenos Aires, Santa Fe, Neuquén, Catamarca y CABA, y recibimos consultas de jubilados y pensionados de ANSES de todo el país. Si tu caso no entra hoy, igual registramos tu consulta para avisarte cuando sumemos tu provincia."
                   }
                 ]
               },
@@ -701,31 +687,7 @@
                     "type": "screen",
                     "name": "IDENTIDAD"
                   },
-                  "payload": {
-                    "provincia": "${form.provincia}",
-                    "situacion_cordoba": "${form.situacion_cordoba}",
-                    "situacion_buenos_aires": "${form.situacion_buenos_aires}",
-                    "situacion_santa_fe": "${form.situacion_santa_fe}",
-                    "situacion_neuquen": "${form.situacion_neuquen}",
-                    "situacion_catamarca": "${form.situacion_catamarca}",
-                    "situacion_caba": "${form.situacion_caba}",
-                    "situacion_otra": "${form.situacion_otra}",
-                    "organismo": "${form.organismo}",
-                    "organismo_buenos_aires": "${form.organismo_buenos_aires}",
-                    "organismo_santa_fe": "${form.organismo_santa_fe}",
-                    "organismo_neuquen": "${form.organismo_neuquen}",
-                    "organismo_catamarca": "${form.organismo_catamarca}",
-                    "organismo_caba": "${form.organismo_caba}",
-                    "organismo_otra": "${form.organismo_otra}",
-                    "banco_jubilado": "${form.banco_jubilado}",
-                    "banco_cordoba": "${form.banco_cordoba}",
-                    "banco_buenos_aires": "${form.banco_buenos_aires}",
-                    "banco_santa_fe": "${form.banco_santa_fe}",
-                    "banco_neuquen": "${form.banco_neuquen}",
-                    "banco_catamarca": "${form.banco_catamarca}",
-                    "banco_caba": "${form.banco_caba}",
-                    "banco_otra": "${form.banco_otra}"
-                  }
+                  "payload": {}
                 }
               }
             ]
@@ -738,100 +700,7 @@
       "title": "Red Unisol",
       "terminal": true,
       "success": true,
-      "data": {
-        "provincia": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_cordoba": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_buenos_aires": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_santa_fe": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_neuquen": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_catamarca": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_caba": {
-          "type": "string",
-          "__example__": ""
-        },
-        "situacion_otra": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo_buenos_aires": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo_santa_fe": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo_neuquen": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo_catamarca": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo_caba": {
-          "type": "string",
-          "__example__": ""
-        },
-        "organismo_otra": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_jubilado": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_cordoba": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_buenos_aires": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_santa_fe": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_neuquen": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_catamarca": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_caba": {
-          "type": "string",
-          "__example__": ""
-        },
-        "banco_otra": {
-          "type": "string",
-          "__example__": ""
-        }
-      },
+      "data": {},
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
@@ -873,29 +742,29 @@
                 "on-click-action": {
                   "name": "complete",
                   "payload": {
-                    "provincia": "${data.provincia}",
-                    "situacion_cordoba": "${data.situacion_cordoba}",
-                    "situacion_buenos_aires": "${data.situacion_buenos_aires}",
-                    "situacion_santa_fe": "${data.situacion_santa_fe}",
-                    "situacion_neuquen": "${data.situacion_neuquen}",
-                    "situacion_catamarca": "${data.situacion_catamarca}",
-                    "situacion_caba": "${data.situacion_caba}",
-                    "situacion_otra": "${data.situacion_otra}",
-                    "organismo": "${data.organismo}",
-                    "organismo_buenos_aires": "${data.organismo_buenos_aires}",
-                    "organismo_santa_fe": "${data.organismo_santa_fe}",
-                    "organismo_neuquen": "${data.organismo_neuquen}",
-                    "organismo_catamarca": "${data.organismo_catamarca}",
-                    "organismo_caba": "${data.organismo_caba}",
-                    "organismo_otra": "${data.organismo_otra}",
-                    "banco_jubilado": "${data.banco_jubilado}",
-                    "banco_cordoba": "${data.banco_cordoba}",
-                    "banco_buenos_aires": "${data.banco_buenos_aires}",
-                    "banco_santa_fe": "${data.banco_santa_fe}",
-                    "banco_neuquen": "${data.banco_neuquen}",
-                    "banco_catamarca": "${data.banco_catamarca}",
-                    "banco_caba": "${data.banco_caba}",
-                    "banco_otra": "${data.banco_otra}",
+                    "provincia": "${screen.DATOS.form.provincia}",
+                    "situacion_cordoba": "${screen.DATOS.form.situacion_cordoba}",
+                    "situacion_buenos_aires": "${screen.DATOS.form.situacion_buenos_aires}",
+                    "situacion_santa_fe": "${screen.DATOS.form.situacion_santa_fe}",
+                    "situacion_neuquen": "${screen.DATOS.form.situacion_neuquen}",
+                    "situacion_catamarca": "${screen.DATOS.form.situacion_catamarca}",
+                    "situacion_caba": "${screen.DATOS.form.situacion_caba}",
+                    "situacion_otra": "${screen.DATOS.form.situacion_otra}",
+                    "organismo": "${screen.DATOS.form.organismo}",
+                    "organismo_buenos_aires": "${screen.DATOS.form.organismo_buenos_aires}",
+                    "organismo_santa_fe": "${screen.DATOS.form.organismo_santa_fe}",
+                    "organismo_neuquen": "${screen.DATOS.form.organismo_neuquen}",
+                    "organismo_catamarca": "${screen.DATOS.form.organismo_catamarca}",
+                    "organismo_caba": "${screen.DATOS.form.organismo_caba}",
+                    "organismo_otra": "${screen.DATOS.form.organismo_otra}",
+                    "banco_jubilado": "${screen.DATOS.form.banco_jubilado}",
+                    "banco_cordoba": "${screen.DATOS.form.banco_cordoba}",
+                    "banco_buenos_aires": "${screen.DATOS.form.banco_buenos_aires}",
+                    "banco_santa_fe": "${screen.DATOS.form.banco_santa_fe}",
+                    "banco_neuquen": "${screen.DATOS.form.banco_neuquen}",
+                    "banco_catamarca": "${screen.DATOS.form.banco_catamarca}",
+                    "banco_caba": "${screen.DATOS.form.banco_caba}",
+                    "banco_otra": "${screen.DATOS.form.banco_otra}",
                     "cuil": "${form.cuil}",
                     "email": "${form.email}"
                   }

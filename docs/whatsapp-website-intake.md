@@ -9,12 +9,17 @@ el Router anterior y su formulario web.
 
 ## Versión 3: provincias ampliadas y despliegue sin cupo
 
-Estado al 30/10/2026: implementación preparada para revisión. Meta conserva el
-borrador **Solicitud web | Provincias ampliadas | v3**, ID `950118281197789`, con
-el JSON de Marketing guardado y validado sin errores. No está publicado ni
-activado. Antes de publicar se debe cerrar la separación de jubilado/pensionado
-en la interfaz o aceptar explícitamente su revisión manual. El borrador se puede
-editar; no reutilizar un ID publicado para reemplazar su contrato.
+Estado al 30/10/2026: separación de Jubilado y Pensionado aprobada por Santiago
+para las siete opciones de provincia. El JSON de Marketing del Drive fue cotejado
+con Git antes de aplicar esta separación. Meta conserva el Flow
+**Solicitud web | Provincias ampliadas | v3**, ID `950118281197789`, publicado
+el 30/10/2026 y validado sin errores de JSON. Se verificaron en la vista previa
+los campos de Jubilado/Pensionado y, en modo interactivo, el avance desde
+Jubilado de Caja Córdoba hasta CUIL y email. La UAT real queda para la activación.
+La versión incluye pruebas de visibilidad, organismo y banco; no cambia las
+reglas comerciales de pensionados ni activa envíos por sí sola.
+SHA-256 del JSON publicado, serializado con claves ordenadas, UTF-8 y sin
+espacios: `989b52e066d4950173a37ab17a46d451777556a4ecccd7801bb80ff487348e46`.
 
 El [JSON v3](whatsapp-website-intake-v3.flow.json), basado en el archivo de Marketing
 del 30/10/2026, separa `DATOS` (perfil y banco) de `IDENTIDAD` (CUIL obligatorio,
@@ -23,9 +28,10 @@ que terminan en rechazo; no agrega una landing ni una pantalla de resultado.
 
 El receptor de intake admite Buenos Aires, Santa Fe y Neuquén además de las
 provincias anteriores. `provincia_bsas`, `santa_fe` y `bpn` se resuelven contra el
-catálogo bancario existente. Para jubilados fuera de Córdoba lee exclusivamente
+catálogo bancario existente. Para jubilados y pensionados fuera de Córdoba lee exclusivamente
 `organismo_<provincia>` y `banco_<provincia>`; Córdoba conserva `organismo` y
-`banco_jubilado`. Los valores de ramas ocultas nunca completan otro perfil.
+`banco_jubilado`. Sólo Jubilado de Caja Córdoba omite el banco; Pensionado lo
+conserva aun cuando declara Caja y se guarda como Pensionado genérico. Los valores de ramas ocultas nunca completan otro perfil.
 
 `anses` con un jubilado identificado se guarda como Jubilado Nacional, incluso
 en Otra provincia y con Nación u otro banco. No se rechaza primero por provincia.
@@ -58,6 +64,41 @@ web verificado; Ads directo se mantiene en la tarea `23279`.
 
 La confirmación inmediata por segmento y el resumen privado para el asesor
 son cambios posteriores; este contrato no agrega esos mensajes.
+
+### Valores preparados para la activación
+
+El merge y despliegue de la compatibilidad preceden al cambio de ID de envío.
+Los archivos de entorno cifrados de producción no se cambian con esta preparación.
+
+| Runtime | Variable | Valor de activación |
+|---|---|---|
+| Web | `EDNA_INTAKE_FLOW_ID` | `950118281197789` |
+| Web | `EDNA_INTAKE_PILOT_ID` | `website-intake-v3` (tanda nueva) |
+| Web | `EDNA_INTAKE_PILOT_LIMIT` | `unlimited` |
+| Web | `EDNA_INTAKE_START_AT` | Instante real del corte, ISO 8601 con zona horaria |
+| Web | `EDNA_INTAKE_RECIPIENTS` | Vacío, para entradas web verificadas |
+| Web | `EDNA_INTAKE_ENABLED`, `EDNA_INTAKE_CRM_ENABLED` | `true` |
+| Kestra | `ENV_EDNA_INTAKE_FLOW_ID` | `950118281197789` |
+| Kestra | `ENV_EDNA_INTAKE_ACCEPTED_FLOW_IDS` | `3298964390491520,995212369590508,950118281197789` |
+| Kestra | `ENV_EDNA_INTAKE_CRM_ENABLED` | `true` |
+| Kestra | `ENV_EDNA_INTAKE_RECIPIENTS` | Vacío |
+
+1. Comprobar que este ID conserve el estado Publicado (verificado el 30/10/2026).
+2. Mergear y desplegar el receptor compatible y Web por los workflows existentes.
+3. En un cambio Git posterior, actualizar primero la aceptación de IDs de Kestra;
+   comprobar el runtime antes de cambiar el Flow de envío y crear la tanda v3.
+4. Mantener los IDs v1/v2 aceptados, sin tocar sus cupos ni reprocesar respuestas.
+5. Para UAT, usar la referencia de prueba documentada y revisar la correlación,
+   lead, categoría, atribución y ausencia de duplicados. Esa referencia escribe
+   datos reales de prueba en CRM; no usar respuestas históricas de clientes.
+
+La validación de Meta y la vista previa no envían mensajes, no crean leads ni
+ocupan cupos. El contrato mantiene `DATOS` → `IDENTIDAD`, CUIL obligatorio y
+email opcional. Las expresiones booleanas de visibilidad usan la sintaxis de
+[expresiones anidadas de Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/flowjson/).
+El envío final conserva las mismas claves de respuesta y obtiene el perfil
+mediante referencias globales `${screen.DATOS.form.<campo>}`; no necesita
+transferir campos de ramas ocultas como datos obligatorios de navegación.
 
 ## Prueba completa por referencia
 
