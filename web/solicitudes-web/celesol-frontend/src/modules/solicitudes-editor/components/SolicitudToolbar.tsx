@@ -83,6 +83,7 @@ export function SolicitudDetailToolbar({
   submitAction,
   attachmentsAction,
   analysisAction,
+  aviso,
 }: {
   canEdit?: boolean;
   // Dentro de la ficha del detalle: sin franja propia.
@@ -114,6 +115,8 @@ export function SolicitudDetailToolbar({
     disabled: boolean;
     disabledReason?: string;
   };
+  // Por que no se puede hacer la accion principal de la barra azul.
+  aviso?: ReactNode;
 }) {
   return (
     <div
@@ -216,6 +219,7 @@ export function SolicitudDetailToolbar({
           </div>
         ) : null}
         <div className="ml-0 flex items-center gap-1 sm:ml-auto">
+          {aviso ? <div className="mr-2">{aviso}</div> : null}
           {onRefresh ? (
             <Button
               aria-label="Actualizar"

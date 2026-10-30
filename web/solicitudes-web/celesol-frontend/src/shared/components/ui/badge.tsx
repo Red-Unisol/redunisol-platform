@@ -5,14 +5,15 @@ import { cn } from "@/shared/utils/cn";
 const BADGE_VARIANT_CLASSES = {
   success: "border-success/50 bg-success/20 text-success-foreground",
   warning: "border-warning/50 bg-warning/20 text-warning-foreground",
-  danger: "border-danger/50 bg-danger/20 text-danger-foreground",
+  // danger-foreground es blanco (para botones): sobre el rosa no se leia.
+  danger: "border-danger/40 bg-danger/10 text-[#b42318]",
   neutral: "border-input-border bg-background text-foreground-secondary",
 } as const;
 
 const BADGE_DOT_CLASSES = {
   success: "bg-success-foreground",
   warning: "bg-warning-foreground",
-  danger: "bg-danger-foreground",
+  danger: "bg-[#b42318]",
   neutral: "bg-foreground-muted",
 } as const;
 

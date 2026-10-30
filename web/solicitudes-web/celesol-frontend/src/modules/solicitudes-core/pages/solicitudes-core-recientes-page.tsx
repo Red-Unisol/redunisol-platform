@@ -7,13 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Calculator,
-  ClipboardList,
-  Copy,
-  MessageCircle,
-  Search,
-} from "lucide-react";
+import { Calculator, ClipboardList, Copy, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -24,10 +18,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/cn";
 
-import {
-  ActualizarListaButton,
-  ListaPaginacion,
-} from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
+import { ListaPaginacion } from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
 import { useLineasDelAgenteQuery } from "@/modules/solicitudes-core/hooks/use-lineas-del-agente-query";
 import { useSolicitudesCoreRecientesQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-recientes-query";
 import {
@@ -36,6 +27,7 @@ import {
   buildSocioLista,
   formatFechaLista,
   formatMontoLista,
+  hayTextoSeleccionado,
 } from "@/modules/solicitudes-core/utils/lista-solicitudes-formato";
 import {
   resolveListRefreshState,
@@ -273,13 +265,13 @@ function RecientesList({ user }: { user: AuthUser }) {
   function headerCell(
     label: string,
     columnKey?: keyof SolicitudesTableRow,
-    className = "",
+    className = "px-2.5",
   ) {
     const column = columnKey ? FILTRO_COLUMNS[columnKey] : undefined;
 
     return (
       <th
-        className={cn(LISTA_HEADER_CELL, column && "relative pr-9", className)}
+        className={cn(LISTA_HEADER_CELL, className, column && "relative pr-9")}
       >
         {label}
         {column ? (
@@ -359,11 +351,6 @@ function RecientesList({ user }: { user: AuthUser }) {
               value={searchTerm}
             />
           </label>
-          <ActualizarListaButton
-            disabled={refreshState.isRefreshActionDisabled}
-            isRefreshing={isManualRefreshPending}
-            onRefresh={() => void handleRefresh()}
-          />
         </div>
       </div>
 
@@ -407,16 +394,17 @@ function RecientesList({ user }: { user: AuthUser }) {
             )}
           </div>
         ) : (
-          <table className="w-full min-w-[60rem] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[52rem] border-separate border-spacing-0 text-sm">
             <thead>
               <tr>
                 {headerCell("Fecha", "fecha")}
+                {headerCell("Nº")}
                 {headerCell("Socio")}
                 {headerCell("Línea", "lineaPrestamo")}
                 {headerCell("Monto")}
                 {headerCell("Cuotas")}
-                {headerCell("Estado", "estado")}
                 {mostrarEjecutivo ? headerCell("Ejecutivo", "asignadoA") : null}
+                {headerCell("Estado", "estado")}
                 {headerCell("Firma")}
               </tr>
             </thead>
@@ -425,7 +413,7 @@ function RecientesList({ user }: { user: AuthUser }) {
                 <tr>
                   <td
                     className="px-4 py-10 text-center text-foreground-secondary"
-                    colSpan={mostrarEjecutivo ? 8 : 7}
+                    colSpan={mostrarEjecutivo ? 9 : 8}
                   >
                     Ninguna solicitud de esta página cumple los filtros.{" "}
                     <button
@@ -442,22 +430,22 @@ function RecientesList({ user }: { user: AuthUser }) {
                 <tr
                   className="group cursor-pointer transition-colors hover:bg-verde/5 focus-visible:bg-verde/5 focus-visible:outline-none [&>td]:border-t [&>td]:border-border-soft [&:last-child>td]:border-b"
                   key={row.id}
-                  onClick={() => abrirDetalle(row.id)}
+                  onClick={() => {
+                    if (!hayTextoSeleccionado()) abrirDetalle(row.id);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") abrirDetalle(row.id);
                   }}
                   style={rowStyles.get(row.id)}
                   tabIndex={0}
                 >
-                  <td className="px-3 py-3 whitespace-nowrap text-foreground-secondary tabular-nums">
+                  <td className="px-2.5 py-2.5 whitespace-nowrap text-foreground-secondary tabular-nums">
                     {row.fecha}
-                    {row.nroSolicitud ? (
-                      <p className="text-xs text-foreground-muted">
-                        Nº {row.nroSolicitud}
-                      </p>
-                    ) : null}
                   </td>
-                  <td className="min-w-40 px-3 py-3">
+                  <td className="px-2.5 py-2.5 whitespace-nowrap text-foreground-secondary tabular-nums">
+                    {row.nroSolicitud}
+                  </td>
+                  <td className="min-w-36 px-2.5 py-2.5">
                     <p className="font-semibold text-foreground">
                       {row.nombreCompleto || "Sin nombre"}
                     </p>
@@ -468,48 +456,28 @@ function RecientesList({ user }: { user: AuthUser }) {
                     ) : null}
                   </td>
                   <td
-                    className="max-w-32 truncate px-3 py-3"
+                    className="max-w-28 truncate px-2.5 py-2.5"
                     title={row.lineaPrestamo}
                   >
                     {row.lineaPrestamo}
                   </td>
-                  <td className="px-3 py-3 font-semibold whitespace-nowrap tabular-nums">
+                  <td className="px-2.5 py-2.5 font-semibold whitespace-nowrap tabular-nums">
                     {row.montoFinal}
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap tabular-nums">
+                  <td className="px-2.5 py-2.5 whitespace-nowrap tabular-nums">
                     {row.cuotas ? (
                       <>
                         {row.cuotas}
                         {row.cuotaResultante ? (
-                          <span className="text-foreground-secondary">
-                            {" "}
+                          <p className="text-xs text-foreground-secondary">
                             × {row.cuotaResultante}
-                          </span>
+                          </p>
                         ) : null}
                       </>
                     ) : null}
                   </td>
-                  <td className="px-3 py-3">
-                    {row.estado ? (
-                      <Badge
-                        className="whitespace-nowrap"
-                        dot
-                        variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
-                      >
-                        {row.estado}
-                      </Badge>
-                    ) : null}
-                    {novedadAporta(row.ultimaNovedad, row.estado) ? (
-                      <p
-                        className="mt-1 max-w-56 truncate text-xs text-foreground-secondary"
-                        title={row.ultimaNovedad}
-                      >
-                        {row.ultimaNovedad}
-                      </p>
-                    ) : null}
-                  </td>
                   {mostrarEjecutivo ? (
-                    <td className="max-w-40 px-3 py-3">
+                    <td className="max-w-32 px-2.5 py-2.5">
                       <p
                         className={cn(
                           "truncate",
@@ -531,8 +499,27 @@ function RecientesList({ user }: { user: AuthUser }) {
                       ) : null}
                     </td>
                   ) : null}
+                  <td className="px-2.5 py-2.5">
+                    {row.estado ? (
+                      <Badge
+                        className="max-w-44"
+                        dot
+                        variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
+                      >
+                        {row.estado}
+                      </Badge>
+                    ) : null}
+                    {novedadAporta(row.ultimaNovedad, row.estado) ? (
+                      <p
+                        className="mt-1 max-w-44 truncate text-xs text-foreground-secondary"
+                        title={row.ultimaNovedad}
+                      >
+                        {row.ultimaNovedad}
+                      </p>
+                    ) : null}
+                  </td>
                   <td
-                    className="px-3 py-3 whitespace-nowrap"
+                    className="px-2.5 py-2.5 whitespace-nowrap"
                     // Los botones de esta celda no abren el detalle.
                     onClick={(event) => event.stopPropagation()}
                     onKeyDown={(event) => event.stopPropagation()}
@@ -584,7 +571,7 @@ function RecientesList({ user }: { user: AuthUser }) {
   );
 }
 
-// El link de firma se manda al socio: copiar o compartir por WhatsApp, sin mostrar la URL entera.
+// El link de firma se manda al socio: se copia, sin mostrar la URL entera.
 function FirmaAcciones({ url }: { url: string }) {
   async function copiar() {
     try {
@@ -611,16 +598,6 @@ function FirmaAcciones({ url }: { url: string }) {
       >
         <Copy className="size-3.5" />
       </button>
-      <a
-        aria-label="Compartir link de firma digital por WhatsApp"
-        className={botonClassName}
-        href={`https://wa.me/?text=${encodeURIComponent(`Te comparto el link para firmar digitalmente: ${url}`)}`}
-        rel="noopener noreferrer"
-        target="_blank"
-        title="Compartir por WhatsApp"
-      >
-        <MessageCircle className="size-3.5" />
-      </a>
     </div>
   );
 }

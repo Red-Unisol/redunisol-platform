@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/shared/components/ui/dialog";
 import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
+import { terminaLaSolicitud } from "@/modules/solicitudes-shared/utils/acciones-de-estado";
 
 type SolicitudWorkflowActionDialogProps = {
   errorMessage?: string | null;
@@ -93,10 +94,13 @@ export function SolicitudWorkflowActionDialog({
               {transition?.toState ? (
                 <DialogDescription className="mt-1 text-sm text-foreground-secondary">
                   Destino:{" "}
-                  {nombreEstado(
-                    transition.toState.code,
-                    transition.toState.name,
-                  )}
+                  {/* Motor es un paso automatico: la solicitud termina en Riesgo. */}
+                  {transition.toState.code === "Motor"
+                    ? nombreEstado("RevisionRiesgo", null)
+                    : nombreEstado(
+                        transition.toState.code,
+                        transition.toState.name,
+                      )}
                 </DialogDescription>
               ) : null}
             </div>
@@ -167,8 +171,15 @@ export function SolicitudWorkflowActionDialog({
               disabled={!transition || isSubmitting || isCommentMissing}
               onClick={() => void handleConfirm()}
               type="button"
+              variant={
+                transition && terminaLaSolicitud(transition.actionCode)
+                  ? "destructive"
+                  : "default"
+              }
             >
-              {isSubmitting ? "Ejecutando..." : "Confirmar"}
+              {isSubmitting
+                ? "Ejecutando..."
+                : (transition?.actionLabel ?? "Confirmar")}
             </Button>
           </div>
         </footer>

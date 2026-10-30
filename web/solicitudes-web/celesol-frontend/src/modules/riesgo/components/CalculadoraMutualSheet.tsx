@@ -11,7 +11,7 @@ import { UniverSheetsDrawingPreset } from "@univerjs/preset-sheets-drawing";
 import UniverPresetSheetsDrawingEsES from "@univerjs/preset-sheets-drawing/locales/es-ES";
 import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
 import type { FUniver, IWorkbookData, Univer } from "@univerjs/presets";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -44,6 +44,8 @@ export type CalculadoraMutualSheetSource =
   | { kind: "embedded"; solicitudId: string };
 
 type CalculadoraMutualSheetProps = {
+  /** Botones de la pantalla que la contiene (p. ej. "Ver recibo"), en la misma franja. */
+  acciones?: ReactNode;
   className?: string;
   /** Avisa al detalle si hay cambios sin guardar, para frenar el cambio de pestaña. */
   onCambiosSinGuardarChange?: (hayCambios: boolean) => void;
@@ -75,6 +77,7 @@ function formatGuardada(info: EvaluacionGuardadaInfo) {
 }
 
 export function CalculadoraMutualSheet({
+  acciones,
   className,
   onCambiosSinGuardarChange,
   puedeGuardar = false,
@@ -477,8 +480,9 @@ export function CalculadoraMutualSheet({
       ) : null}
 
       {source.kind === "embedded" ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2">
-          <p className="text-sm text-foreground-secondary">
+        // Una sola franja de alto fijo, alineada con la del recibo de sueldo.
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-3">
+          <p className="min-w-0 flex-1 truncate text-sm text-foreground-secondary">
             {evaluacionGuardada
               ? formatGuardada(evaluacionGuardada)
               : "Todavía no se guardó una evaluación para esta solicitud."}
@@ -494,6 +498,7 @@ export function CalculadoraMutualSheet({
             ) : null}
           </p>
 
+          {acciones}
           {puedeGuardar ? (
             <Button
               // Apagado (naranja al 50%) hasta que haya algo para guardar.
