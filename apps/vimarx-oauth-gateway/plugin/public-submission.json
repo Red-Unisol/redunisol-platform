@@ -3,8 +3,8 @@
   "publisher": "Santiago Agustín Acosta",
   "interface": {
     "displayName": "Celesol · Vimarx",
-    "shortDescription": "Consultas de Mutual Celesol",
-    "longDescription": "Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT. Requiere una cuenta de Vimarx habilitada para esa instalación y conserva sus permisos. Ofrece consultas de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; la opción Mantener conectado permite renovar la sesión mediante credenciales cifradas en el puente. El uso del plugin no tiene cargo; los servicios del cliente pueden tener sus propios costos.",
+    "shortDescription": "Celesol account queries",
+    "longDescription": "Read Mutual Celesol member, application, loan, installment and savings-account information in ChatGPT. Requires a Vimarx account authorized for the Celesol installation and preserves its permissions. Read-only: cannot approve applications, change records, collect payments or transfer money. Each user connects through OAuth. Optional remembered login stores encrypted credentials in the gateway to renew access. The plugin has no usage fee; third-party service charges may apply. A dedicated synthetic demo account is available to reviewers, clearly marked DEMO, without access to real member data.",
     "developerName": "Santiago Agustín Acosta",
     "category": "Finance",
     "websiteURL": "https://mcp.redunisol.com.ar/",
@@ -26,31 +26,31 @@
           "description": "Synthetic gateway demo with at least three fictional Solicitud records with distinct dates. Discover the actual entity and date field before querying. Do not run against real member data.",
           "prompt": "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
           "tools_triggered": "contexto_cliente, get_entidades, get_propiedades, query_entidad",
-          "expected_behavior": "Confirm the demo tenant, discover Solicitud and its actual date property, request limit=3 and descending date order, return only those three records and explain which date determines recency. Never infer recency from IDs."
+          "expected_behavior": "Confirm the demo tenant, discover Solicitud and its actual date property, request limit=3 and descending date order, return only those three records and explain which date determines recency. Never infer recency from IDs. The fixture returns NroSolicitud 7004, 7003, 7002 using Fecha DESC."
         },
         {
           "description": "Synthetic gateway demo fixture: fictional socio 900001 exists and is visible to the demo account.",
           "prompt": "Mostrame los datos del socio número 900001.",
           "tools_triggered": "contexto_cliente, get_socio_por_numero",
-          "expected_behavior": "Call get_socio_por_numero with nroSocio=900001; display only the returned member details, preserving identifiers and dates. Do not invent missing fields."
+          "expected_behavior": "Call get_socio_por_numero with nroSocio=900001; display only the returned member details, preserving identifiers and dates. Do not invent missing fields. The fictional member is Ana Demo Ejemplo, with email ana@example.invalid."
         },
         {
-          "description": "Demo socio 900001 has fictional active and overdue loans, seeded before running this case.",
+          "description": "Synthetic gateway demo: fictional member 900001 has one overdue loan, account 910001, with outstanding balance ARS 8800. No production data is used.",
           "prompt": "¿Qué préstamos tiene el socio 900001 y cuáles tienen deuda?",
           "tools_triggered": "contexto_cliente, get_prestamos",
-          "expected_behavior": "Call get_prestamos with nroSocio=900001, distinguish returned loan statuses and balances, and summarize debt only from returned data; do not approve or change any loan."
+          "expected_behavior": "Call get_prestamos with nroSocio=900001, distinguish returned loan statuses and balances, and summarize debt only from returned data; do not approve or change any loan. Return the single overdue loan 910001 and its ARS 8800 balance."
         },
         {
           "description": "Synthetic gateway demo loan 910001 belongs to the fictional test member and has a known mix of paid and unpaid installments. Its number must be unique in the synthetic gateway demo.",
           "prompt": "Mostrame las cuotas del préstamo 910001 y su deuda al 30 de octubre de 2026.",
           "tools_triggered": "contexto_cliente, get_cuotas_prestamo",
-          "expected_behavior": "Call get_cuotas_prestamo with nroPrestamo=910001 and fecha=2026-10-30; report installment due dates, payment status and debt from that response, noting that installment balances are current and calculated interest/debt uses the requested date."
+          "expected_behavior": "Call get_cuotas_prestamo with nroPrestamo=910001 and fecha=2026-10-30; report installment due dates, payment status and debt from that response, noting that installment balances are current and calculated interest/debt uses the requested date. There are three installments: paid, overdue unpaid and unpaid; current outstanding balance is ARS 8800 and overdue balance is ARS 4400, with zero illustrative penalty interest."
         },
         {
           "description": "Demo socio 900001 has fictional AMV movements both inside and outside October 2026.",
           "prompt": "Mostrame hasta 10 movimientos de octubre de 2026 del socio 900001.",
           "tools_triggered": "contexto_cliente, get_movimientos",
-          "expected_behavior": "Call get_movimientos with nroSocio=900001, fechaDesde=2026-10-01, fechaHasta=2026-10-31 and limit=10; return at most ten matching records and use only returned amounts and currencies."
+          "expected_behavior": "Call get_movimientos with nroSocio=900001, fechaDesde=2026-10-01, fechaHasta=2026-10-31 and limit=10; return at most ten matching records and use only returned amounts and currencies. The demo returns exactly three October movements for member 900001."
         }
       ],
       "negative": [
@@ -69,10 +69,17 @@
       ]
     },
     "commerce": false,
-    "commerce_description": "El plugin es de uso interno sin cargo. Solo consulta información; no vende productos ni procesa pagos."
+    "commerce_description": "El plugin es de uso interno sin cargo. Solo consulta información; no vende productos ni procesa pagos.",
+    "demo_recording_url": "https://mcp.redunisol.com.ar/demo/"
   },
   "publication": {
     "countries": [],
-    "release_notes": "Preparación para el directorio público con OAuth individual, consultas de lectura, páginas informativas y cuenta demo sintética aislada. El demo simula datos localmente; no consulta una instalación de Vimarx."
+    "release_notes": "Preparación para el directorio público con OAuth individual, consultas de lectura, páginas informativas y cuenta demo sintética aislada. El demo simula datos localmente; no consulta una instalación de Vimarx.",
+    "translations": {
+      "es-419": {
+        "subtitle": "Consultas de Mutual Celesol",
+        "description": "Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT. Requiere una cuenta de Vimarx habilitada para esa instalación y conserva sus permisos. Ofrece consultas de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; la opción Mantener conectado permite renovar la sesión mediante credenciales cifradas en el puente. El uso del plugin no tiene cargo; los servicios del cliente pueden tener sus propios costos."
+      }
+    }
   }
 }
