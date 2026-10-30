@@ -23,13 +23,13 @@
     "test_cases": {
       "positive": [
         {
-          "description": "Demo tenant with at least three fictional Solicitud records with distinct dates. Discover the actual entity and date field before querying. Do not run against real member data.",
+          "description": "Synthetic gateway demo with at least three fictional Solicitud records with distinct dates. Discover the actual entity and date field before querying. Do not run against real member data.",
           "prompt": "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
           "tools_triggered": "contexto_cliente, get_entidades, get_propiedades, query_entidad",
           "expected_behavior": "Confirm the demo tenant, discover Solicitud and its actual date property, request limit=3 and descending date order, return only those three records and explain which date determines recency. Never infer recency from IDs."
         },
         {
-          "description": "Dedicated demo fixture: fictional socio 900001 exists and is visible to the demo account.",
+          "description": "Synthetic gateway demo fixture: fictional socio 900001 exists and is visible to the demo account.",
           "prompt": "Mostrame los datos del socio número 900001.",
           "tools_triggered": "contexto_cliente, get_socio_por_numero",
           "expected_behavior": "Call get_socio_por_numero with nroSocio=900001; display only the returned member details, preserving identifiers and dates. Do not invent missing fields."
@@ -41,7 +41,7 @@
           "expected_behavior": "Call get_prestamos with nroSocio=900001, distinguish returned loan statuses and balances, and summarize debt only from returned data; do not approve or change any loan."
         },
         {
-          "description": "Dedicated demo loan 910001 belongs to the fictional test member and has a known mix of paid and unpaid installments. Its number must be unique in the demo tenant.",
+          "description": "Synthetic gateway demo loan 910001 belongs to the fictional test member and has a known mix of paid and unpaid installments. Its number must be unique in the synthetic gateway demo.",
           "prompt": "Mostrame las cuotas del préstamo 910001 y su deuda al 30 de octubre de 2026.",
           "tools_triggered": "contexto_cliente, get_cuotas_prestamo",
           "expected_behavior": "Call get_cuotas_prestamo with nroPrestamo=910001 and fecha=2026-10-30; report installment due dates, payment status and debt from that response, noting that installment balances are current and calculated interest/debt uses the requested date."
@@ -73,6 +73,6 @@
   },
   "publication": {
     "countries": [],
-    "release_notes": "Primera preparación para el directorio público: consultas de lectura de Celesol con autenticación OAuth individual, documentación de privacidad y soporte. Requiere revisión y aprobación antes de publicarse."
+    "release_notes": "Preparación para el directorio público con OAuth individual, consultas de lectura, páginas informativas y cuenta demo sintética aislada. El demo simula datos localmente; no consulta una instalación de Vimarx."
   }
 }
