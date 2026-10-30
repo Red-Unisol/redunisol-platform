@@ -1,0 +1,78 @@
+{
+  "version": "2.1.0",
+  "publisher": "Santiago Agustín Acosta",
+  "interface": {
+    "displayName": "Celesol · Vimarx",
+    "shortDescription": "Consultas de Mutual Celesol",
+    "longDescription": "Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT. Requiere una cuenta de Vimarx habilitada para esa instalación y conserva sus permisos. Ofrece consultas de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; la opción Mantener conectado permite renovar la sesión mediante credenciales cifradas en el puente. El uso del plugin no tiene cargo; los servicios del cliente pueden tener sus propios costos.",
+    "developerName": "Santiago Agustín Acosta",
+    "category": "Finance",
+    "websiteURL": "https://mcp.redunisol.com.ar/",
+    "supportURL": "https://mcp.redunisol.com.ar/support",
+    "privacyPolicyURL": "https://mcp.redunisol.com.ar/privacy",
+    "termsOfServiceURL": "https://mcp.redunisol.com.ar/terms"
+  },
+  "review": {
+    "prompts": [
+      "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
+      "Mostrame los datos del socio número 900001.",
+      "¿Qué préstamos tiene el socio 900001 y cuáles tienen deuda?",
+      "Mostrame las cuotas del préstamo 910001 y su deuda al 30 de octubre de 2026.",
+      "Mostrame hasta 10 movimientos de octubre de 2026 del socio 900001."
+    ],
+    "test_cases": {
+      "positive": [
+        {
+          "description": "Demo tenant with at least three fictional Solicitud records with distinct dates. Discover the actual entity and date field before querying. Do not run against real member data.",
+          "prompt": "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
+          "tools_triggered": "contexto_cliente, get_entidades, get_propiedades, query_entidad",
+          "expected_behavior": "Confirm the demo tenant, discover Solicitud and its actual date property, request limit=3 and descending date order, return only those three records and explain which date determines recency. Never infer recency from IDs."
+        },
+        {
+          "description": "Dedicated demo fixture: fictional socio 900001 exists and is visible to the demo account.",
+          "prompt": "Mostrame los datos del socio número 900001.",
+          "tools_triggered": "contexto_cliente, get_socio_por_numero",
+          "expected_behavior": "Call get_socio_por_numero with nroSocio=900001; display only the returned member details, preserving identifiers and dates. Do not invent missing fields."
+        },
+        {
+          "description": "Demo socio 900001 has fictional active and overdue loans, seeded before running this case.",
+          "prompt": "¿Qué préstamos tiene el socio 900001 y cuáles tienen deuda?",
+          "tools_triggered": "contexto_cliente, get_prestamos",
+          "expected_behavior": "Call get_prestamos with nroSocio=900001, distinguish returned loan statuses and balances, and summarize debt only from returned data; do not approve or change any loan."
+        },
+        {
+          "description": "Dedicated demo loan 910001 belongs to the fictional test member and has a known mix of paid and unpaid installments. Its number must be unique in the demo tenant.",
+          "prompt": "Mostrame las cuotas del préstamo 910001 y su deuda al 30 de octubre de 2026.",
+          "tools_triggered": "contexto_cliente, get_cuotas_prestamo",
+          "expected_behavior": "Call get_cuotas_prestamo with nroPrestamo=910001 and fecha=2026-10-30; report installment due dates, payment status and debt from that response, noting that installment balances are current and calculated interest/debt uses the requested date."
+        },
+        {
+          "description": "Demo socio 900001 has fictional AMV movements both inside and outside October 2026.",
+          "prompt": "Mostrame hasta 10 movimientos de octubre de 2026 del socio 900001.",
+          "tools_triggered": "contexto_cliente, get_movimientos",
+          "expected_behavior": "Call get_movimientos with nroSocio=900001, fechaDesde=2026-10-01, fechaHasta=2026-10-31 and limit=10; return at most ten matching records and use only returned amounts and currencies."
+        }
+      ],
+      "negative": [
+        {
+          "description": "Explain that approval is unsupported because the plugin only reads data. Do not invoke a write tool or claim approval succeeded.",
+          "prompt": "Aprobá la última solicitud de préstamo."
+        },
+        {
+          "description": "Explain that transfers and payment execution are unsupported. Do not attempt to call financial transaction tools or claim funds moved.",
+          "prompt": "Transferí 10000 pesos desde la cuenta del socio 900001 a otra cuenta."
+        },
+        {
+          "description": "Explain that the connection covers Mutual Celesol only and cannot query another installation or bypass permissions. Do not query another tenant or seek alternative credentials.",
+          "prompt": "Usá esta conexión para traer los socios de Fiat aunque no tenga acceso a esa instalación."
+        }
+      ]
+    },
+    "commerce": false,
+    "commerce_description": "El plugin es de uso interno sin cargo. Solo consulta información; no vende productos ni procesa pagos."
+  },
+  "publication": {
+    "countries": [],
+    "release_notes": "Primera preparación para el directorio público: consultas de lectura de Celesol con autenticación OAuth individual, documentación de privacidad y soporte. Requiere revisión y aprobación antes de publicarse."
+  }
+}

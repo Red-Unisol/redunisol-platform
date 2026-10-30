@@ -313,6 +313,18 @@ def create_app(config=None, upstream=None):
     def home():
         return render_template("home.html", resource=resource)
 
+    @app.get(prefix + "/support")
+    def support():
+        return render_template("support.html", resource=resource)
+
+    @app.get(prefix + "/privacy")
+    def privacy():
+        return render_template("privacy.html", resource=resource)
+
+    @app.get(prefix + "/terms")
+    def terms():
+        return render_template("terms.html", resource=resource)
+
     @app.get(prefix + "/authorize.js")
     def authorize_script():
         return app.send_static_file("authorize.js")

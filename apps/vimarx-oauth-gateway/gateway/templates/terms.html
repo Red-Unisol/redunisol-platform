@@ -1,0 +1,16 @@
+{% extends "public_base.html" %}
+{% block title %}Términos de uso{% endblock %}
+{% block content %}<h1>Términos de uso</h1><p>Vigentes desde el 30 de octubre de 2026.</p>
+<p>Celesol · Vimarx es una integración publicada por Santiago Agustín Acosta para consultar información de Mutual Celesol con una cuenta autorizada de Vimarx. Contacto: <a href="mailto:info@redunisol.com.ar">info@redunisol.com.ar</a>.</p>
+<h2>Acceso y uso permitido</h2>
+<p>Usá tu propia cuenta habilitada y consultá únicamente información que estés autorizado a tratar. La disponibilidad de la ficha del plugin no otorga acceso a Vimarx. No compartas credenciales, eludas permisos ni uses la integración para extraer o divulgar datos sin autorización.</p>
+<p>El plugin permite lectura. No modifica registros, aprueba préstamos o solicitudes, efectúa cobros, transferencias o compras, ni ofrece asesoramiento financiero personalizado. No se cobra por el uso del plugin; pueden aplicarse los costos propios de los servicios que utilices, como ChatGPT.</p>
+<h2>Resultados</h2>
+<p>Las respuestas dependen de los datos y permisos de Vimarx y de su interpretación por el asistente. Verificá en el sistema fuente los importes, fechas y estados antes de adoptar una decisión operativa. No tomes una respuesta del asistente como una aprobación o una operación ejecutada.</p>
+<h2>Conexión y privacidad</h2>
+<p>La conexión usa OAuth. Si elegís Mantener conectado, autorizás al puente a conservar las credenciales cifradas para renovar la sesión según la <a href="{{ resource.rsplit('/', 1)[0] }}/privacy">política de privacidad</a>. Podés <a href="{{ resource.rsplit('/', 1)[0] }}/connections">revocar y borrar tus conexiones</a>.</p>
+<p>Protegé la información de socios también en tus conversaciones y archivos. El uso de ChatGPT, Vimarx y otros clientes está sujeto a sus propias condiciones y a las reglas de acceso de tu organización.</p>
+<h2>Disponibilidad y soporte</h2>
+<p>La integración depende de Vimarx, la infraestructura del puente y el cliente utilizado. Puede haber interrupciones o cambios de compatibilidad y puede requerirse un nuevo ingreso. Las funciones disponibles son las que el servidor y tus permisos habiliten en cada momento.</p>
+<p>Para problemas de uso o conexión, consultá la <a href="{{ resource.rsplit('/', 1)[0] }}/support">página de soporte</a>.</p>
+{% endblock %}

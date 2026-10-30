@@ -192,3 +192,27 @@ Verificar con una lectura posterior que no haya declaraciones MCP residuales,
 que la ficha web permita abrir el plugin y que la conexión espere OAuth del usuario.
 
 Referencia: https://learn.chatgpt.com/docs/enterprise/plugin-management
+
+## Preparación para el directorio público
+
+La instalación privada 2.0.3 y sus App IDs se conservan fuera de Git.
+`python deploy/build_public_plugin.py --output /ruta/celesol-vimarx-public-2.1.0-draft.zip`
+genera una copia para revisión pública, con OAuth descubierto desde el endpoint
+HTTPS, sin `.app.json`, credenciales ni referencias a la conexión privada.
+El logo es una recodificación PNG de los mismos píxeles del JPEG aprobado.
+La configuración confirmada del publicador, países, ausencia de cobros y los
+cinco casos positivos y tres negativos están en `plugin/public-submission.json`.
+Los datos del socio 900001 y préstamo 910001 son requisitos ficticios del fixture
+de demostración, no evidencia de registros existentes. Los casos no se han
+ejecutado con un fixture de revisión y no deben correrse con datos reales.
+
+Páginas: `/`, `/support`, `/privacy`, `/terms`; contacto confirmado:
+info@redunisol.com.ar. Las URL del ZIP deben comprobarse en producción tras
+desplegar esta revisión antes de considerar el paquete listo.
+
+Pendientes externos: identidad verificada de Santiago Agustín Acosta, cuenta
+de demostración sin datos reales, grabación reproducible y accesible para el
+revisor, casos ejecutados con dicha cuenta, verificación de dominio y conexión
+en el portal. El ZIP es un borrador: no enviarlo como listo ni confundir upload,
+envío a revisión y publicación. Las credenciales del revisor se ingresan solo
+en los campos seguros del portal. Nunca usar la cuenta personal de producción.

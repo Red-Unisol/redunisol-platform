@@ -1,0 +1,19 @@
+{% extends "public_base.html" %}
+{% block title %}Política de privacidad{% endblock %}
+{% block content %}<h1>Política de privacidad</h1><p>Vigente desde el 30 de octubre de 2026.</p>
+<p>Esta política describe el puente Celesol · Vimarx publicado por Santiago Agustín Acosta y alojado en mcp.redunisol.com.ar. Contacto de privacidad: <a href="mailto:info@redunisol.com.ar">info@redunisol.com.ar</a>.</p>
+<h2>Datos y finalidades</h2>
+<p>El puente recibe tu usuario y contraseña para autenticarte en Vimarx. Procesa los identificadores de conexión, tokens, fechas de creación y actividad, las consultas solicitadas y las respuestas necesarias para entregar resultados al cliente conectado. Los datos consultados pueden incluir información personal y financiera de socios de Mutual Celesol, según tus permisos.</p>
+<p>El puente transmite las consultas a Vimarx y devuelve los resultados al cliente que autorizaste, como ChatGPT. Su base de sesiones no guarda una copia de las respuestas de negocio. Si contactás a soporte, el correo enviado se procesa para atender tu solicitud.</p>
+<h2>Contraseñas y renovación</h2>
+<p>Sin <strong>Mantener conectado</strong>, la contraseña se utiliza en el ingreso y no se conserva en la base de sesiones. Si elegís esa opción, el usuario, la contraseña y el token de Vimarx se conservan cifrados en el servidor para renovar la sesión cuando uses el servicio. No se entregan al modelo como contenido de herramientas.</p>
+<p>Los tokens OAuth de acceso y renovación se almacenan mediante resúmenes criptográficos; las respuestas de renovación pueden conservarse cifradas durante 15 segundos para resolver reintentos. El cifrado no elimina el riesgo de un acceso indebido al servidor y a sus claves.</p>
+<h2>Conservación y eliminación</h2>
+<p>Una conexión recordada vence tras 30 días sin consultas reales a herramientas y sus credenciales se eliminan mediante la limpieza periódica. Los pings y renovaciones OAuth no reinician ese plazo. Una conexión que no termina la autorización se elimina en aproximadamente 10 minutos.</p>
+<p>Podés revocar y <a href="{{ resource.rsplit('/', 1)[0] }}/connections">borrar tus conexiones recordadas</a> antes de ese plazo. El borrado actúa sobre el servicio activo. Las copias de seguridad pueden conservar datos cifrados hasta siete días adicionales. No borra los datos originales de Vimarx ni los chats, memorias o archivos que gestione el cliente conectado.</p>
+<h2>Cookies, registros y otros servicios</h2>
+<p>Se utilizan cookies de sesión para el formulario de autorización y medidas contra envíos no autorizados. El puente no incorpora publicidad ni herramientas de analítica de terceros. Los registros de acceso HTTP están deshabilitados en el host dedicado; pueden existir registros técnicos de errores y datos temporales para limitar solicitudes y proteger el servicio.</p>
+<p>Intervienen Vimarx, la infraestructura que aloja el puente y el cliente que autorizaste. Cada servicio tiene sus propias condiciones y controles. El tratamiento de los resultados, conversaciones y memorias dentro de ChatGPT se rige también por las políticas y configuraciones de OpenAI. Esta política no determina su conservación.</p>
+<h2>Consultas sobre tus datos</h2>
+<p>Para solicitar información, corrección o eliminación de datos del puente, escribí a info@redunisol.com.ar. Para cambios en los registros de Mutual Celesol, acudí a sus canales habituales. No envíes contraseñas ni tokens por correo.</p>
+{% endblock %}

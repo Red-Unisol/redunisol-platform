@@ -1,0 +1,11 @@
+{% extends "public_base.html" %}
+{% block title %}Soporte{% endblock %}
+{% block content %}<h1>Soporte</h1>
+<p>Para consultas sobre Celesol · Vimarx, problemas de conexión o solicitudes relacionadas con tus datos, escribí a <a href="mailto:info@redunisol.com.ar">info@redunisol.com.ar</a>.</p>
+<p>Indicá qué intentabas hacer, la fecha y hora aproximadas y el mensaje de error. No envíes contraseñas, tokens ni datos personales o financieros de socios. Ocultalos también en las capturas.</p>
+<h2>Desconectar y eliminar credenciales</h2>
+<p>Podés <a href="{{ resource.rsplit('/', 1)[0] }}/connections">borrar tus conexiones recordadas</a> ingresando nuevamente con tu usuario de Vimarx. Esto revoca las conexiones y elimina sus credenciales del servicio activo; no elimina registros de Vimarx ni conversaciones de ChatGPT.</p>
+<p>Si no podés iniciar sesión, contactá al correo de soporte para gestionar tu solicitud y verificar tu identidad sin enviar tu contraseña.</p>
+<h2>Permisos y disponibilidad</h2>
+<p>Necesitás un usuario de Vimarx habilitado para consultar Mutual Celesol. Instalar el plugin no amplía sus permisos. La disponibilidad en ChatGPT depende también de tu cuenta y de las políticas de tu workspace.</p>
+{% endblock %}

@@ -1,16 +1,13 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Celesol · Red Unisol</title>
-  <link rel="stylesheet" href="{{ resource.rsplit('/', 1)[0] }}/style.css">
-</head>
-<body><main>
-  <p class="brand">RED UNISOL</p><h1>Celesol en ChatGPT</h1>
-  <p>Agregá un servidor MCP personalizado en ChatGPT con esta dirección:</p>
-  <p><code>{{ resource }}</code></p>
-  <p>Seleccioná autenticación OAuth. Al conectar tu cuenta, iniciá sesión con tu usuario de Vimarx.</p>
-  <p>La conexión permite consultas de solo lectura y conserva los permisos de tu usuario.</p>
-<p><a href="{{ resource.rsplit('/', 1)[0] }}/connections">Administrar conexiones guardadas</a></p>
-</main></body>
-</html>
+{% extends "public_base.html" %}
+{% block title %}Consultas de Mutual Celesol{% endblock %}
+{% block content %}
+<h1>Celesol · Vimarx</h1>
+<p>Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT con los permisos de tu usuario de Vimarx.</p>
+<p>El plugin es publicado por Santiago Agustín Acosta. Permite consultas de solo lectura; no aprueba solicitudes, modifica registros ni realiza pagos.</p>
+<h2>Conectar tu cuenta</h2>
+<p>Para una conexión MCP personalizada, usá esta dirección con autenticación OAuth:</p>
+<p><code>{{ resource }}</code></p>
+<p>Ingresá tus credenciales únicamente en el formulario HTTPS de conexión. No las escribas en una conversación.</p>
+<p>La opción <strong>Mantener conectado</strong> guarda las credenciales cifradas en el puente para renovar tu sesión. Es opcional.</p>
+<p><a href="{{ resource.rsplit('/', 1)[0] }}/connections">Administrar y borrar conexiones guardadas</a></p>
+{% endblock %}
