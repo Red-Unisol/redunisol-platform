@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any
 
 from .config import AppConfig
+from .expanded_deal_family import expanded_deal_family
+from .catalogs import PROVINCIAS
 from .lead_service import build_routing_input_from_lead
 from .qualification import is_policia_federal_caba_commercial_period
 
@@ -28,6 +30,16 @@ def resolve_routing_bucket(
     config: AppConfig,
     lead: dict[str, Any],
 ) -> RoutingResolution:
+    family = expanded_deal_family(config, lead)
+    if family:
+        key = "santa_fe_anses" if family in {"anses", "santa_fe"} else "neuquen"
+        try:
+            province_label = PROVINCIAS.resolve(lead.get(config.fields.lead_province), "province").label
+        except ValueError:
+            province_label = ""
+        return RoutingResolution(
+            bucket=routing_bucket_by_key(config, key), province=province_label, reason=f"family_{family}",
+        )
     try:
         submission = build_routing_input_from_lead(lead, config)
     except ValueError:
@@ -105,6 +117,10 @@ def resolve_routing_bucket(
 
 def routing_bucket_by_key(config: AppConfig, key: str) -> RoutingBucket | None:
     definitions = {
+        "santa_fe_anses": RoutingBucket(
+            "santa_fe_anses", "Santa Fe y ANSES", config.deal.santa_fe_anses_user_ids,
+        ),
+        "neuquen": RoutingBucket("neuquen", "Neuquen", config.deal.neuquen_user_ids),
         "policia_federal_caba": RoutingBucket(
             "policia_federal_caba",
             "CABA - Policía Federal",

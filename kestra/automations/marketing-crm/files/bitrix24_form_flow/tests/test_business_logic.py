@@ -5177,7 +5177,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-10-13-caja-morosos-23321-v1",
+            "2026-10-30-anses-santa-fe-neuquen-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
@@ -6213,7 +6213,7 @@ class BusinessLogicTests(unittest.TestCase):
             ("recurrent", "2565", recurrent, 5, "approved", "caja_morosos", "Caja Morosos"),
             ("nuevo_limpio", "2565", None, 1, "approved", "caja_nuevo", "Caja Nuevo"),
             ("irregular", "2565", None, 2, "approved", "caja_irregulares", "Caja Irregulares"),
-            ("nacional", "2567", None, 5, "rejected", "cbu_more_than_five_entities", None),
+            ("nacional", "2567", None, 5, "approved", "anses_approved", "Red Mutual - paii"),
             ("pensionado", "2569", None, 5, "rejected", "cbu_more_than_five_entities", None),
         )
         for name, employment, vimarx, situation, action, reason, line in cases:

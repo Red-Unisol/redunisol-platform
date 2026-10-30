@@ -19,9 +19,20 @@ class BitrixRoutingConfig
         110059 => 'Agustín Villagra',
         53121 => 'Gloria Fernandez',
         8057 => 'Stefania Salguero',
+        58913 => 'Ludmila Gallardo',
     ];
 
     public const BUCKETS = [
+        'santa_fe_anses' => [
+            'label' => 'Santa Fe y ANSES',
+            'description' => 'Haberes Premium de Santa Fe y Red Mutual - paii de ANSES, en un grupo compartido.',
+            'sellers' => [10451, 29, 116561],
+        ],
+        'neuquen' => [
+            'label' => 'Neuquén',
+            'description' => 'MUDON de Neuquén, con Ludmila Gallardo.',
+            'sellers' => [58913],
+        ],
         'policia_federal_caba' => [
             'label' => 'CABA — Policía Federal',
             'description' => 'Policía Federal residente en CABA, desde el 14/09/2026.',
@@ -34,7 +45,7 @@ class BitrixRoutingConfig
         ],
         'cordoba_jubilados' => [
             'label' => 'Córdoba — Jubilados y pensionados',
-            'description' => 'Jubilados provinciales, nacionales, municipales y pensionados.',
+            'description' => 'Jubilados provinciales, municipales y pensionados. Jubilado Nacional se distribuye por ANSES.',
             'sellers' => [10451, 71159, 68579, 90231, 29, 110059, 116561],
         ],
         'cordoba_unc' => [

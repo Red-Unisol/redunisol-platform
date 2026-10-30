@@ -29,7 +29,7 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_lead_event_process.yaml`: worker del receptor persistente de actualizaciones; los leads sin datos obligatorios esperan otro evento. [Arquitectura, despliegue y migracion de cola](../../../platform/bitrix-lead-receiver/README.md).
 
   Los campos vacios de Bitrix representados como `false`, directamente o dentro de una lista, se tratan como datos faltantes. Si faltan datos obligatorios, el resultado es `waiting_for_update` / `missing_required_field`: no se completa el banco ni se modifica el lead, y el receptor espera un nuevo aviso.
-- `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca y Cordoba; conserva el ID historico.
+- `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca, Cordoba, ANSES, Santa Fe y Neuquen; conserva el ID historico.
 - `flows/bitrix24_deal_assignment_queue.yaml`: reintenta por bucket las negociaciones sin vendedor y cierra el remanente semanal con Maru.
 - `flows/bitrix24_deal_chat_response.yaml`: mueve Presentación/Revisión Manual a Respuesta ante una sesión WhatsApp activa de Ventas y decisión comercial explícita no rechazada. [Campo, operación y concurrencia](docs/technical/ACTIVE_SALES_CHAT_RESPONSE.md).
 - `flows/commercial_distribution_report_daily.yaml`: genera el Excel diario auditable de clasificacion y distribucion visible en Filament.
@@ -76,7 +76,7 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
 - Los leads anteriores a ese corte no son reclamados ni clasificados por esta regla.
 - Diego Frias (`ASSIGNED_BY_ID=7`) conserva la exclusion explicita.
 - El mismo listener crea o reutiliza la negociacion cuando el lead llega a `RESULTADO GANADO`.
-- Las negociaciones internas Catamarca y Cordoba nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior clasifica y distribuye segun el resultado y el horario.
+- Las negociaciones internas Catamarca, Cordoba, ANSES, Santa Fe y Neuquen nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior clasifica y distribuye segun el resultado y el horario.
 - Cada resultado terminal publica datos auditables en la ejecucion Kestra. El reporte diario los transforma en `marketing/distribucion-negociaciones/ultimo.xlsx` y conserva una copia historica por fecha.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.
 - Aunque el dominio se llame `marketing-crm`, la integracion actual sigue siendo con Bitrix24, por eso se mantienen nombres internos `bitrix24_*` donde ya forman parte del contrato tecnico.

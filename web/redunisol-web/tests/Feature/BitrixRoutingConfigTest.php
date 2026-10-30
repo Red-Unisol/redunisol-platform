@@ -54,3 +54,29 @@ test('federal police sellers can be changed and paused without changing other po
         ->assertJsonPath('policia_federal_caba', [53121])
         ->assertJsonPath('cordoba_unc', [53121]);
 });
+
+test('the shared Santa Fe and ANSES pool and exclusive Neuquen pool have the approved sellers', function () {
+    $this->getJson('/api/internal/bitrix-routing')
+        ->assertOk()
+        ->assertJsonPath('santa_fe_anses', [10451, 29, 116561])
+        ->assertJsonPath('neuquen', [58913]);
+
+    expect(BitrixRoutingConfig::sellerOptions()[58913])->toBe('Ludmila Gallardo');
+});
+
+test('the new pools preserve explicit pauses and do not mix their assignments', function () {
+    app(BitrixRoutingConfig::class)->save([
+        'santa_fe_anses' => [
+            ['user_id' => 29, 'paused' => false],
+            ['user_id' => 10451, 'paused' => true],
+        ],
+        'neuquen' => [
+            ['user_id' => 58913, 'paused' => true],
+        ],
+    ]);
+
+    $this->getJson('/api/internal/bitrix-routing')
+        ->assertOk()
+        ->assertJsonPath('santa_fe_anses', [29])
+        ->assertJsonPath('neuquen', []);
+});

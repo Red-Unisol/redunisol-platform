@@ -10,8 +10,8 @@ realizado el 30/10/2026. Los CUIT personales no se guardan en Git.
 
 El resultado de esta capa es `GANADO`, `PERDIDO` o `NEGOCIACION CON VENDEDOR (13)`.
 No define nuevas lineas comerciales, etapas de negociacion ni pools de vendedores.
-La clasificacion y distribucion posteriores para las nuevas familias se definiran
-por separado en esta misma conversacion.
+La clasificacion y distribucion posteriores se definieron luego en esta misma
+conversacion y se documentan en `DEAL_CLASSIFICATION.md` y `DEAL_ROUTING.md`.
 
 Se conservan el corte temporal y las exclusiones operativas existentes: responsables
 excluidos, ownership y marcadores de prueba no se reemplazan por estas reglas.
@@ -91,8 +91,8 @@ crear nueva configuracion operativa. Modificar la lista requiere un cambio expli
 y revisable en Git; este cambio no agrega ningun mecanismo de actualizacion.
 
 No se ha desplegado este cambio ni reclasificado leads historicos cerrados durante
-la implementacion. Las reglas posteriores de negociacion quedan pendientes de
-definicion, sin introducir nuevas clasificaciones ni distribuciones en este cambio.
+la implementacion. Las reglas posteriores de negociacion se incorporaron luego en esta rama y estan
+versionadas en `DEAL_CLASSIFICATION.md` y `DEAL_ROUTING.md`.
 
 ## Casos de aceptacion
 
