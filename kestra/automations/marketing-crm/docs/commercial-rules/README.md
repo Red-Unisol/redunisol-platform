@@ -115,6 +115,7 @@ versión.
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
 | 2026-10-13 | Caja Morosos: máximo 8 entidades para Jubilado Provincial nuevo | Implementado, pendiente de deploy | Tarea Bitrix24 `23321` y autorización de Santiago en la sesión del 13/10/2026 | [Contrato y pruebas](CAJA_MOROSOS_23321.md) |
+| 2026-10-30 | Asignacion directa general de pools con un unico habilitado | Implementado en rama, pendiente de deploy | Confirmacion explicita de Santiago en esta conversacion; DEAL_ROUTING.md | PR #631 |
 | 2026-10-30 | Negociaciones ANSES, Santa Fe y Neuquen; pools compartido y Ludmila | Implementado en rama, pendiente de deploy | Definiciones de Santiago en esta conversacion, incorporadas en DEAL_CLASSIFICATION.md y DEAL_ROUTING.md | Rama codex/casos-ganados-anses-provincias |
 | 2026-10-30 | Leads ANSES, Santa Fe, Neuquen y prioridad CUAD historica | Implementado en rama, pendiente de deploy | Definiciones de Santiago en esta conversacion, incorporadas en LEAD_QUALIFICATION.md | Rama codex/casos-ganados-anses-provincias |
 | 2026-08-26 | Córdoba: Policía y Público Provincial a CBU | Acordado e implementado | Tarea Bitrix24 `22895` y definición comercial complementaria | PR de tarea `22895` |
