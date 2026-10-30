@@ -33,7 +33,7 @@ class NormalizedInput:
 
 @dataclass(frozen=True)
 class PrequalificationInput:
-    province: CatalogItem
+    province: CatalogItem | None
     employment_status: CatalogItem
     payment_bank: CatalogItem | None
 
@@ -104,18 +104,31 @@ def normalize_prequalification_input(payload: dict[str, Any]) -> Prequalificatio
     if not isinstance(payload, dict):
         raise ValueError("El payload debe ser un objeto JSON.")
 
+    employment = SITUACIONES_LABORALES.resolve(
+        _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]),
+        "employment_status",
+    )
+    if employment.key == "jubilado_nacional":
+        # Eligibility for ANSES does not depend on having these fields completed.
+        def optional_item(catalog, keys, field):
+            try:
+                return catalog.resolve(_first(payload, keys), field)
+            except ValueError:
+                return None
+
+        return PrequalificationInput(
+            employment_status=employment,
+            province=optional_item(PROVINCIAS, ["province", "provincia", "ProvinciaDeContacto"], "province"),
+            payment_bank=optional_item(BANCOS, ["payment_bank", "banco_cobro", "bancoCobroCliente"], "payment_bank"),
+        )
+
     return PrequalificationInput(
         province=PROVINCIAS.resolve(
-            _first(payload, ["province", "provincia", "ProvinciaDeContacto"]),
-            "province",
+            _first(payload, ["province", "provincia", "ProvinciaDeContacto"]), "province",
         ),
-        employment_status=SITUACIONES_LABORALES.resolve(
-            _first(payload, ["employment_status", "situacion_laboral", "Situacion_Laboral"]),
-            "employment_status",
-        ),
+        employment_status=employment,
         payment_bank=BANCOS.resolve(
-            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]),
-            "payment_bank",
+            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]), "payment_bank",
         ),
     )
 

@@ -201,6 +201,16 @@ def build_prequalification_input_from_lead(
     lead: dict[str, Any],
     config: AppConfig,
 ) -> PrequalificationInput:
+    from .catalogs import SITUACIONES_LABORALES
+    employment_value = _required_lead_value(lead, config.fields.lead_employment_status)
+    employment = SITUACIONES_LABORALES.resolve(employment_value, "employment_status")
+    if employment.key == "jubilado_nacional":
+        return normalize_prequalification_input({
+            "employment_status": employment_value,
+            "province": lead.get(config.fields.lead_province),
+            "payment_bank": _optional_lead_value(lead, config.fields.lead_payment_bank),
+        })
+
     # Only the explicit assisted Caja route allows an absent payment bank.
     # The ordinary form and every other segment retain their existing validation.
     if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake"}
@@ -313,7 +323,8 @@ def prequalification_title_from_lead(
             return full_name or None
 
     if full_name:
-        return test_title(lead, f"{full_name} - {submission.province.label}")
+        segment = submission.province.label if submission.province is not None else "ANSES"
+        return test_title(lead, f"{full_name} - {segment}")
     return None
 
 

@@ -86,10 +86,16 @@ Detalle aprobado: [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).
 
 No generan negociacion interna ni participan de estos buckets:
 
-- La Rioja
-- Rio Negro
-- Neuquen
-- Santa Fe
+- La Rioja, segun su elegibilidad provincial.
+- Rio Negro, segun su elegibilidad provincial.
+- Cualquier provincia y situacion laboral cuando el CUIT coincide con la base
+  historica Haberes CUAD, con prioridad sobre ANSES.
+
+Santa Fe y Neuquen dejan de derivar por provincia. Sus perfiles habilitados pasan
+a GANADO si no tienen antecedente CUAD. Las reglas exactas estan en
+[`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md), version 2026-10-30, implementada en
+rama y pendiente de deploy. Los nuevos pools y la clasificacion comercial posterior
+quedan pendientes de definicion; este cambio no los incorpora.
 
 La derivacion externa solo aplica cuando el caso cumple las reglas de elegibilidad de
 su provincia. Un caso no elegible conserva su rechazo correspondiente.

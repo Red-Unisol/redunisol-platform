@@ -64,7 +64,11 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
   el corte operativo, sin usar el owner previo como compuerta; esta decision no
   interpreta BCRA.
 - Todo lead nuevo creado por el intake recibe `Motor decision comercial = Kestra`.
-- Rio Negro, Santa Fe y Neuquen derivan a `NEGOCIACION CON VENDEDOR (13)` cuando cumplen las reglas migradas desde Bitrix.
+- La prioridad de antecedentes Haberes CUAD y la ampliacion de leads ANSES/Santa Fe/Neuquen
+  se documentan en `docs/commercial-rules/LEAD_QUALIFICATION.md` (implementadas en rama,
+  pendientes de deploy). CUAD historico deriva a `NEGOCIACION CON VENDEDOR (13)` en
+  cualquier provincia; ANSES y los perfiles habilitados de Santa Fe/Neuquen pasan a GANADO
+  sin ese antecedente. Rio Negro y La Rioja conservan sus reglas restantes.
 - Diego Frias (`ASSIGNED_BY_ID=7`) queda excluido de la precalificacion automatica.
 - Bitrix conserva temporalmente un BP minimo dedicado exclusivamente al email Finguru.
 - Desde `2026-08-07T12:28:19-03:00`, el webhook de actualizacion clasifica cualquier
