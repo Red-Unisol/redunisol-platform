@@ -14,6 +14,38 @@ from bitrix24_form_flow.form_processor.qualification import evaluate_prequalific
 
 
 class QualificationExpansionTests(unittest.TestCase):
+    def test_buenos_aires_accepts_only_the_four_confirmed_profiles_with_any_or_no_bank(self) -> None:
+        for employment in ("Policia", "Docente", "Empleado Publico Provincial", "Jubilado Provincial",
+                           "1269", "3745", "1239", "2565"):
+            for bank in ("Banco de la Nacion Argentina", "Otros", None, "", "banco no catalogado"):
+                with self.subTest(employment=employment, bank=bank):
+                    result = prequalify_commercial_fields({
+                        "province": "221", "employment_status": employment, "payment_bank": bank,
+                    })
+                    self.assertTrue(result["ok"], result)
+                    self.assertTrue(result["prequalified"])
+                    self.assertTrue(result["route_to_whatsapp"])
+
+    def test_buenos_aires_does_not_admit_federal_police_or_other_unlisted_profiles(self) -> None:
+        for employment in ("Policía Federal", "Empleado Publico Municipal", "Empleado Publico Nacional",
+                           "Personal de Salud", "Pensionado", "Jubilado Municipal", "Empleado Privado"):
+            with self.subTest(employment=employment):
+                decision = evaluate_prequalification(normalize_prequalification_input({
+                    "province": "Buenos Aires", "employment_status": employment, "payment_bank": "Otros",
+                }))
+                self.assertFalse(decision.qualified)
+                self.assertEqual(decision.reason, "employment_status_not_eligible")
+
+    def test_buenos_aires_profiles_do_not_open_caba(self) -> None:
+        for employment in ("Policia", "Docente", "Empleado Publico Provincial", "Jubilado Provincial"):
+            with self.subTest(employment=employment):
+                result = prequalify_commercial_fields({
+                    "province": "4145", "employment_status": employment, "payment_bank": "Otros",
+                })
+                self.assertTrue(result["ok"])
+                self.assertFalse(result["prequalified"])
+                self.assertFalse(result["route_to_whatsapp"])
+
     def test_anses_qualifies_across_all_provinces_and_payment_banks(self) -> None:
         provinces = (
             "Cordoba", "Rio Negro", "Neuquen", "Catamarca", "Chubut", "Jujuy",
@@ -73,7 +105,8 @@ class QualificationExpansionTests(unittest.TestCase):
 
     def test_cuad_history_has_priority_over_all_internal_and_province_rules(self) -> None:
         for province, employment in (("Cordoba", "Jubilado Nacional"), ("Buenos Aires", "Empleado Privado"),
-                                     ("Santa Fe", "Pensionado"), ("Neuquen", "Docente")):
+                                     ("Santa Fe", "Pensionado"), ("Neuquen", "Docente"),
+                                     ("Buenos Aires", "Policia"), ("Buenos Aires", "Jubilado Provincial")):
             with self.subTest(province=province, employment=employment):
                 decision = evaluate_prequalification(normalize_prequalification_input({
                     "province": province, "employment_status": employment, "payment_bank": "Otros",
@@ -86,7 +119,7 @@ class QualificationExpansionTests(unittest.TestCase):
         for employment in ("Pensionado", "Jubilado Provincial", "Jubilado Municipal", "Empleado Privado"):
             with self.subTest(employment=employment):
                 decision = evaluate_prequalification(normalize_prequalification_input({
-                    "province": "Buenos Aires", "employment_status": employment, "payment_bank": "Otros",
+                    "province": "Chubut", "employment_status": employment, "payment_bank": "Otros",
                 }))
                 self.assertFalse(decision.qualified)
                 self.assertEqual(decision.outcome, "rejected")

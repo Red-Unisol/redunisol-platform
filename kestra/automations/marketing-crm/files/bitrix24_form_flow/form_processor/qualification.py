@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from .input_parser import NormalizedInput, PrequalificationInput, RoutingInput
+if TYPE_CHECKING:
+    from .input_parser import NormalizedInput, PrequalificationInput, RoutingInput
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,14 @@ POLICIA_FEDERAL_INITIAL_REJECTION_LABEL = "POLICÍA FEDERAL CABA - PERÍODO INIC
 
 
 QUALIFICATION_RULES = {
+    "buenos_aires": {
+        "allowed_employment_statuses": {
+            "policia",
+            "docente",
+            "empleado_publico_provincial",
+            "jubilado_provincial",
+        },
+    },
     "cordoba": {
         "allowed_employment_statuses": {
             "empleado_publico_provincial",

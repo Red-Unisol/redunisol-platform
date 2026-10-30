@@ -48,7 +48,7 @@ Estado: **implementado en rama, pendiente de deploy**.
 ### `santa_fe_anses`
 
 - Criterio: Jubilado Nacional de cualquier provincia (prioridad ANSES), o perfil
-  interno habilitado de Santa Fe.
+  interno habilitado de Santa Fe o de Buenos Aires.
 - Bucket unico compartido para las lineas `Red Mutual - paii` y `Haberes Premium`.
 - Pool inicial confirmado, en este orden:
   - Patricia Contendi (`10451`)

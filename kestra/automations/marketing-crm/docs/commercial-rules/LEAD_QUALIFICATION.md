@@ -1,6 +1,6 @@
-# Precalificacion de leads — ANSES, Santa Fe, Neuquen y Haberes CUAD
+# Precalificacion de leads — Buenos Aires, ANSES, Santa Fe, Neuquen y Haberes CUAD
 
-Version: `2026-10-30-anses-santa-fe-neuquen-cuad-history`.
+Version: `2026-10-30-buenos-aires-anses-santa-fe-neuquen-cuad-history`.
 
 Estado: **implementado en rama, pendiente de deploy**. Definicion funcional confirmada
 por Santiago en la conversacion del 30/10/2026. Git conserva las reglas y la base congelada; Vimarx fue la fuente del relevamiento
@@ -22,7 +22,12 @@ excluidos, ownership y marcadores de prueba no se reemplazan por estas reglas.
 | 20 | `LEAD-ANSES-010` | Jubilado Nacional, sin antecedente CUAD | GANADO; provincia y banco no restringen la elegibilidad, aunque esos campos esten ausentes |
 | 30 | `LEAD-SFE-010` | Santa Fe + Docente, Empleado Publico Provincial, Policia, Personal de Salud o Jubilado Provincial; sin antecedente CUAD | GANADO; cualquier banco |
 | 40 | `LEAD-NEU-010` | Neuquen + Docente, Empleado Publico Provincial, Policia, Personal de Salud, Jubilado Provincial o Empleado Publico Municipal; sin antecedente CUAD | GANADO; cualquier banco |
-| 50 | Reglas existentes | Resto de provincias y perfiles sin antecedente CUAD | Se conservan sus requisitos y resultados anteriores |
+| 50 | `LEAD-PBA-010` | Buenos Aires + Policia, Docente, Empleado Publico Provincial o Jubilado Provincial; sin antecedente CUAD | GANADO; cualquier banco, incluso ausente |
+| 60 | Reglas existentes | Resto de provincias y perfiles sin antecedente CUAD | Se conservan sus requisitos y resultados anteriores |
+
+Buenos Aires utiliza exclusivamente los cuatro perfiles de la regla `LEAD-PBA-010`.
+Municipal, Nacional y Salud no se agregan. CABA y Policia Federal conservan su
+tratamiento previo. El recorrido completo se define en [BUENOS_AIRES.md](BUENOS_AIRES.md).
 
 La derivacion externa general por provincia se elimina para Santa Fe y Neuquen.
 La Rioja y Rio Negro conservan sus reglas provinciales, sujetas a la prioridad global

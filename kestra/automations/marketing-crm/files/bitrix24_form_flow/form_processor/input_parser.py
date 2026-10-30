@@ -8,6 +8,7 @@ from urllib.parse import parse_qs
 from .attribution import normalize_attribution
 from .catalogs import BANCOS, ORIGENES_LEAD, PROVINCIAS, SITUACIONES_LABORALES, CatalogItem
 from .normalization import normalize_cuil, normalize_email, normalize_full_name, normalize_whatsapp
+from .qualification import QUALIFICATION_RULES
 
 
 @dataclass(frozen=True)
@@ -122,15 +123,19 @@ def normalize_prequalification_input(payload: dict[str, Any]) -> Prequalificatio
             payment_bank=optional_item(BANCOS, ["payment_bank", "banco_cobro", "bancoCobroCliente"], "payment_bank"),
         )
 
-    return PrequalificationInput(
-        province=PROVINCIAS.resolve(
-            _first(payload, ["province", "provincia", "ProvinciaDeContacto"]), "province",
-        ),
-        employment_status=employment,
-        payment_bank=BANCOS.resolve(
-            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]), "payment_bank",
-        ),
+    province = PROVINCIAS.resolve(
+        _first(payload, ["province", "provincia", "ProvinciaDeContacto"]), "province",
     )
+    try:
+        payment_bank = BANCOS.resolve(
+            _first(payload, ["payment_bank", "banco_cobro", "bancoCobroCliente"]), "payment_bank",
+        )
+    except ValueError:
+        if (province.key != "buenos_aires"
+                or employment.key not in QUALIFICATION_RULES["buenos_aires"]["allowed_employment_statuses"]):
+            raise
+        payment_bank = None
+    return PrequalificationInput(province=province, employment_status=employment, payment_bank=payment_bank)
 
 
 def normalize_routing_input(payload: dict[str, Any]) -> RoutingInput:

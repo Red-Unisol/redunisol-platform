@@ -15,6 +15,7 @@ from bitrix24_form_flow.form_processor.catamarca_deal_qualification import (
     qualify_catamarca_deal, select_next_pending_catamarca_deal, process_distribution_queue,
 )
 from bitrix24_form_flow.form_processor.config import load_config
+from bitrix24_form_flow.form_processor.expanded_deal_family import expanded_deal_family
 from bitrix24_form_flow.form_processor.lead_won_deal_service import process_lead_update_event
 from bitrix24_form_flow.form_processor.routing_bucket import resolve_routing_bucket
 import test_business_logic as fixtures
@@ -81,6 +82,40 @@ class ExpandedDealTests(unittest.TestCase):
         bcra.assert_not_called()
         vimarx.assert_not_called()
 
+    def test_buenos_aires_uses_anses_line_and_shared_pool_without_provider_or_identity_requirements(self):
+        for employment in ("1269", "3745", "1239", "2565"):
+            for snapshot in ("negative", "missing", "failed"):
+                with self.subTest(employment=employment, snapshot=snapshot):
+                    lead = self.seed(province="221", employment=employment, count=30)
+                    for key in (self.config.fields.lead_cuil, self.config.fields.lead_payment_bank,
+                                "BIRTHDATE", self.config.fields.lead_vimarx_creditos_activos_raw):
+                        lead.pop(key, None)
+                    if snapshot == "missing":
+                        lead.pop(self.config.fields.lead_bcra_data_raw, None)
+                        lead.pop(self.config.fields.lead_bcra_checked_at, None)
+                    elif snapshot == "failed":
+                        lead[self.config.fields.lead_bcra_data_raw] = json.dumps({"outcome": "error"})
+                    with patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.sync_lead_bcra") as bcra, \
+                         patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.refresh_deal_vimarx") as vimarx:
+                        result = self.qualify()
+                    self.assertEqual(result["commercial_action"], "approved")
+                    self.assertEqual(result["commercial_reason"], "buenos_aires_approved")
+                    self.assertEqual(result["commercial_line"], "Red Mutual - paii")
+                    self.assertEqual(result["routing_bucket"], "santa_fe_anses")
+                    self.assertIn(result["assigned_by_id"], (10451, 29, 116561))
+                    self.assertEqual(self.client.deals[960]["stageId"], "C1:NEW")
+                    bcra.assert_not_called()
+                    vimarx.assert_not_called()
+
+    def test_buenos_aires_and_caba_keep_federal_police_out_of_the_shared_bucket(self):
+        lead = self.seed(province="221", employment="4165")
+        self.assertEqual(expanded_deal_family(self.config, lead), "")
+        self.assertIsNone(resolve_routing_bucket(self.config, lead).bucket)
+        lead[self.config.fields.lead_province] = "4145"
+        lead["DATE_CREATE"] = "2026-09-20T12:00:00-03:00"
+        self.assertEqual(expanded_deal_family(self.config, lead), "")
+        self.assertEqual(resolve_routing_bucket(self.config, lead).bucket.key, "policia_federal_caba")
+
     def test_santa_fe_accepts_seven_entities_even_all_situation_five_and_rejects_eight(self):
         for count, action, line in ((0, "approved", "Haberes Premium"),
                                      (7, "approved", "Haberes Premium"), (8, "rejected", None)):
@@ -123,7 +158,7 @@ class ExpandedDealTests(unittest.TestCase):
                 self.assertEqual(self.qualify()["commercial_action"], "manual_review")
 
     def test_provider_retry_timers_do_not_block_selection_for_unrestricted_families(self):
-        for province, employment in (("213", "3745"), ("209", "2567")):
+        for province, employment in (("213", "3745"), ("209", "2567"), ("221", "1269"), ("221", "1239")):
             with self.subTest(province=province):
                 self.seed(province=province, employment=employment)
                 with patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.bcra_retry_waiting", return_value=True) as bcra, \
@@ -145,7 +180,8 @@ class ExpandedDealTests(unittest.TestCase):
         self.assertEqual(self.client.leads[950]["ASSIGNED_BY_ID"], 58913)
 
     def test_new_families_create_pending_deals_under_provisional_assignee(self):
-        for province, employment in (("279", "3745"), ("213", "3745"), (None, "2567")):
+        for province, employment in (("279", "3745"), ("213", "3745"), (None, "2567"),
+                                     ("221", "1269"), ("221", "3745"), ("221", "1239"), ("221", "2565")):
             with self.subTest(province=province):
                 lead = self.seed(province=province, employment=employment)
                 lead["STATUS_ID"] = "QUALIFIED"

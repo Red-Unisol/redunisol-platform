@@ -21,7 +21,7 @@ def expanded_deal_family(config: AppConfig, lead: dict[str, Any]) -> str:
         province = PROVINCIAS.resolve(lead.get(config.fields.lead_province), "province")
     except ValueError:
         return ""
-    if (province.key in {"santa_fe", "neuquen"}
+    if (province.key in {"santa_fe", "neuquen", "buenos_aires"}
             and employment.key in QUALIFICATION_RULES[province.key]["allowed_employment_statuses"]):
         return province.key
     return ""

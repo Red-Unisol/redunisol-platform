@@ -32,7 +32,7 @@ def resolve_routing_bucket(
 ) -> RoutingResolution:
     family = expanded_deal_family(config, lead)
     if family:
-        key = "santa_fe_anses" if family in {"anses", "santa_fe"} else "neuquen"
+        key = "santa_fe_anses" if family in {"anses", "santa_fe", "buenos_aires"} else "neuquen"
         try:
             province_label = PROVINCIAS.resolve(lead.get(config.fields.lead_province), "province").label
         except ValueError:
