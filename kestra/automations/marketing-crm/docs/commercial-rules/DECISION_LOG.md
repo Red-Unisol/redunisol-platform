@@ -335,5 +335,19 @@ tres familias necesita Vimarx para decidir. La base historica CUAD permanece con
 El pool compartido inicial de Santa Fe/ANSES queda con Patricia Contendi (10451),
 Susana Contenti (29) y Julieta Aguilera (116561), en ese orden. Neuquen queda
 exclusivamente con Ludmila Gallardo (58913), que no integra el pool compartido.
-Se mantiene el comportamiento general de disponibilidad y horario mientras se
-resuelve una eventual excepcion de asignacion a Ludmila offline.
+La politica de vendedor unico aprobada a continuacion define su asignacion
+directa, incluso offline y fuera de horario.
+
+
+## 2026-10-30 — Asignacion directa general para un vendedor habilitado
+
+Santiago confirma que cualquier bucket con exactamente un vendedor habilitado se
+asigna siempre a ese vendedor, aunque este offline y fuera de horario. El numero
+de habilitados se toma del pool del panel luego de las pausas. La regla conserva
+los requisitos comerciales y los rechazos; no equivale a que un pool de varios
+con uno solo online reciba la excepcion.
+
+Los casos retenidos en cola cuyo pool tenga un unico habilitado tambien salen por
+asignacion directa, conservando su decision y linea. Un rechazo de transferencia
+de chat se registra sin revertir ni demorar la asignacion del prospecto/negociacion.
+Los pools multiples y vacios mantienen sus politicas existentes.

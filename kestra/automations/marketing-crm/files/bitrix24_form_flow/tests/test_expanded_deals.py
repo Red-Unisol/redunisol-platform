@@ -134,17 +134,15 @@ class ExpandedDealTests(unittest.TestCase):
                 bcra.assert_not_called()
                 vimarx.assert_not_called()
 
-    def test_neuquen_uses_existing_queue_when_ludmila_is_offline_then_assigns_when_online(self):
+    def test_neuquen_assigns_ludmila_while_offline_without_entering_queue(self):
         self.seed(province="213")
         self.client.online_user_ids = {10451, 29, 116561}
         result = self.qualify()
-        self.assertEqual(result["distribution_action"], "queued")
+        self.assertEqual(result["distribution_action"], "assigned")
         self.assertEqual(result["routing_bucket"], "neuquen")
-        self.client.online_user_ids.add(58913)
-        resumed = process_distribution_queue(env=self.env, bitrix_client=self.client,
-                                             logger=SilentLogger(), now=NOW)
-        self.assertTrue(resumed["ok"])
-        self.assertEqual(self.client.deals[960]["assignedById"], 58913)
+        self.assertEqual(result["assigned_by_id"], 58913)
+        self.assertEqual(self.client.deals[960]["stageId"], "C1:NEW")
+        self.assertEqual(self.client.leads[950]["ASSIGNED_BY_ID"], 58913)
 
     def test_new_families_create_pending_deals_under_provisional_assignee(self):
         for province, employment in (("279", "3745"), ("213", "3745"), (None, "2567")):

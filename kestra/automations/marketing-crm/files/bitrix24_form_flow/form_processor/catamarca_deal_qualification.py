@@ -465,7 +465,8 @@ def qualify_catamarca_deal(
             **bcra_trace,
         )
 
-    outside_distribution_window = _business_hours_gate_enabled(source) and (
+    single_seller_bucket = bucket is not None and len(bucket.seller_ids) == 1
+    outside_distribution_window = not single_seller_bucket and _business_hours_gate_enabled(source) and (
         not within_business_hours or not created_within_distribution_window
     )
     if outside_distribution_window:
@@ -811,7 +812,25 @@ def process_distribution_queue(
     queued = _list_queued_deals(client, config)
     events: list[dict[str, object]] = []
 
-    if not _is_within_business_hours(source, processed_at):
+    within_business_hours = _is_within_business_hours(source, processed_at)
+    remaining: list[dict[str, Any]] = []
+    for deal in queued:
+        bucket_key = str(deal.get(config.deal.routing_bucket_field) or "").strip()
+        bucket = routing_bucket_by_key(config, bucket_key)
+        if bucket is None or len(bucket.seller_ids) != 1:
+            remaining.append(deal)
+            continue
+        try:
+            events.append(_retry_queued_deal(
+                client, config, deal, active_logger, processed_at,
+                within_business_hours=within_business_hours,
+            ))
+        except Exception as exc:
+            active_logger.error(f"No se pudo distribuir el bucket de vendedor unico {bucket_key}: {exc}")
+            events.append(_queue_error_result(config, deal, processed_at, exc))
+    queued = remaining
+
+    if not within_business_hours:
         for deal in queued:
             try:
                 events.append(
@@ -930,6 +949,8 @@ def _retry_queued_deal(
     deal: dict[str, Any],
     logger: Logger,
     processed_at: datetime,
+    *,
+    within_business_hours: bool = True,
 ) -> dict[str, object]:
     deal_id = _required_int(deal.get("id"), "id")
     lead_id = _required_int(deal.get("leadId"), "leadId")
@@ -1011,6 +1032,7 @@ def _retry_queued_deal(
         client, config, deal, logger,
         action="queue_distributed",
         reason="assignment_queue_distributed",
+        within_business_hours=within_business_hours,
         processed_at=processed_at,
         assigned_by_id=assigned_by_id,
         assigned_by_name=assigned_by_name,
@@ -1099,7 +1121,7 @@ def _queue_context_result(
         routing_bucket=str(deal.get(config.deal.routing_bucket_field) or ""),
         commercial_line=str(deal.get(config.deal.commercial_line_field) or "") or None,
         previous_assigned_by_id=_optional_int(deal.get("assignedById")),
-        within_business_hours=overrides.get("action") != "queue_closed",
+        within_business_hours=overrides.pop("within_business_hours", overrides.get("action") != "queue_closed"),
         commercial_action=str(deal.get(config.deal.queue_action_field) or ""),
         commercial_reason=str(deal.get(config.deal.queue_reason_field) or ""),
         commercial_stage_id=str(

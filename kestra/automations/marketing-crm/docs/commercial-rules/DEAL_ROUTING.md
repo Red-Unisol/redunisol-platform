@@ -1,6 +1,6 @@
 # Buckets De Distribucion De Negociaciones
 
-Versión: `2026-08-26`.
+Versión: `2026-10-30`.
 
 Este documento cubre solamente distribución. La clasificación comercial y el proceso
 compartido de aprobación se documentan en [`README.md`](README.md).
@@ -15,6 +15,31 @@ Los responsables y su orden se administran desde **Configuración > Distribució
 Bitrix** en el panel de Red Unisol. Las listas de este documento y las variables de
 entorno quedan como valores iniciales y fallback si el panel no está disponible.
 Un vendedor pausado permanece visible en el panel pero no recibe asignaciones nuevas.
+
+## Regla general de vendedor unico — 2026-10-30
+
+Cuando el pool publicado por el panel contiene **exactamente un vendedor habilitado**,
+Kestra le asigna directamente toda negociacion distribuible, aunque este offline,
+fuera de horario o el caso haya sido creado fuera de la ventana semanal. La regla
+es general para todos los buckets, no solo Neuquen. Se cuentan los habilitados
+luego de aplicar las pausas del panel, no los vendedores online en ese momento.
+
+- Se sincroniza el responsable del prospecto y la negociacion; se conserva la
+  decision comercial, su linea y su etapa destino.
+- No se consulta presencia para elegir al responsable, no se ejecuta round-robin
+  ni compensacion de volumen, y no se ingresa a la cola por falta de conexion.
+- La estrategia auditable es `single_seller`; `online_pool` queda vacio porque no
+  se verifico presencia. Esto no indica que se haya comprobado que este offline.
+- Si ya existen casos en cola y el pool tiene un solo habilitado, el procesador
+  los asigna directamente, incluso fuera de horario y aunque sean de otra semana,
+  sin recalcular la decision comercial previamente guardada.
+- La transferencia del chat se intenta despues de guardar la asignacion. Si Bitrix
+  la rechaza, el responsable se conserva y se registra `transfer_error`; el resto
+  de los chats sigue procesandose. El resultado distingue transferencia fallida
+  de transferencia parcial.
+- Los rechazos comerciales/BCRA no se distribuyen. Un pool vacio o pausado no
+  habilita esta excepcion. Los pools de varios vendedores conservan la politica
+  de disponibilidad, horario, recurrencia, compensacion y cola existente.
 
 ## Nuevos buckets — version 2026-10-30
 
@@ -38,13 +63,13 @@ Estado: **implementado en rama, pendiente de deploy**.
   corresponde al bucket ANSES.
 - Linea: `MUDON`.
 - Responsable inicial exclusivo: Ludmila Gallardo (`58913`).
-- Mientras se define una eventual excepcion para Ludmila offline, se conserva el
-  comportamiento general existente de horario, disponibilidad y cola. No se
-  reasigna a otro pool ni a los vendedores de Santa Fe/ANSES.
+- Se asigna directamente a Ludmila, incluso offline y fuera de horario, por la
+  regla general de vendedor unico. No se reasigna al bucket de Santa Fe/ANSES.
 
 Ambos grupos se administran desde el panel de Distribucion Bitrix; los defaults de
 Git coinciden con estos pools iniciales. Las pausas y pools explicitamente vacios
-conservan la semantica existente. La cola procesa tambien los dos nuevos buckets.
+conservan la semantica existente. La cola contempla ambos buckets y retira de ella
+los casos cuyo pool quede con un unico habilitado.
 
 ## Buckets
 
@@ -99,8 +124,8 @@ conservan la semantica existente. La cola procesa tambien los dos nuevos buckets
 
 - Regla `PFC-ROUTE-010`: Policía Federal + CABA, lead creado desde el 14/09/2026.
 - Responsable inicial: Stefania Salguero (`8057`), editable desde el panel.
-- Incluye la revisión comercial y respeta las reglas generales de horario,
-  disponibilidad, cola y transferencia de chat.
+- Incluye la revisión comercial y respeta la regla general de vendedor unico
+  cuando queda un habilitado; para pools de varios conserva horario y cola.
 - Excluye leads históricos y fechas ausentes o inválidas.
 - Estado: implementado, pendiente de deploy.
 
@@ -134,8 +159,9 @@ su provincia. Un caso no elegible conserva su rechazo correspondiente.
 
 Fuera de la ventana continua que comienza el lunes a las 00:00 inclusive y termina
 el viernes a las 17:00 exclusive, Kestra conserva y aplica la decision comercial,
-pero toda negociacion que requiera distribucion queda con Maru Lopez (`57`) para
-gestion manual.
+las negociaciones distribuibles de pools de varios vendedores o pools vacios
+quedan con Maru Lopez (`57`) para gestion manual. Los pools con exactamente un
+habilitado se asignan directamente a ese vendedor en cualquier horario.
 
 - no se ejecuta round-robin;
 - no se transfiere el chat;
@@ -145,8 +171,10 @@ Zona horaria: `America/Argentina/Cordoba`.
 
 ## Cola Temporal Por Falta De Vendedor
 
-Si una negociacion creada y procesada dentro de la ventana semanal no encuentra
-vendedores online, queda con Maru en `COLA DE DISTRIBUCION KESTRA`.
+Si una negociacion creada y procesada dentro de la ventana semanal pertenece a un
+pool de varios habilitados sin vendedores online, queda con Maru en
+`COLA DE DISTRIBUCION KESTRA`. Los pools vacios conservan la pausa explicita;
+los pools con un unico habilitado reciben asignacion directa.
 
 - cada minuto se reintenta como maximo el caso mas antiguo de cada bucket;
 - el orden es FIFO dentro de cada bucket, no existe una cola global;
@@ -158,7 +186,8 @@ vendedores online, queda con Maru en `COLA DE DISTRIBUCION KESTRA`.
   `REVISION MANUAL KESTRA` con Maru;
 - el remanente no vuelve a entrar automaticamente el lunes.
 
-Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola.
+Las negociaciones creadas fuera de la ventana semanal nunca ingresan a esta cola;
+si tienen un unico vendedor habilitado se asignan directamente.
 Un pool explícitamente vacío significa **grupo pausado**, incluso si un vendedor
 anterior sigue conectado. Sus casos distribuibles salen de Pendiente de calificación
 y entran a la cola temporal con motivo `routing_pool_paused`; conservan la decisión
