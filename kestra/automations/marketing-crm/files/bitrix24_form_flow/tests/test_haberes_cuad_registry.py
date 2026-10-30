@@ -87,6 +87,30 @@ class RegistryLeadIntegrationTests(unittest.TestCase):
     def classify(self):
         return classify_lead(309, env=self.env, bitrix_client=self.client, logger=SilentLogger())
 
+    def test_buenos_aires_incomplete_cuil_and_missing_bank_still_reaches_ganado(self) -> None:
+        self.lead[self.config.fields.lead_province] = "221"
+        self.lead[self.config.fields.lead_cuil] = "12345678"
+        self.lead.pop(self.config.fields.lead_payment_bank)
+        for employment in ("1269", "3745", "1239", "2565"):
+            with self.subTest(employment=employment):
+                self.lead["STATUS_ID"] = "NEW"
+                self.lead[self.config.fields.lead_employment_status] = employment
+                result = self.classify()
+                self.assertTrue(result["ok"], result)
+                self.assertEqual(result["action"], "qualified")
+                self.assertEqual(result["lead_status"], "QUALIFIED")
+        self.registry_lookup.assert_not_called()
+
+    def test_buenos_aires_eligible_profile_with_cuad_history_is_external(self) -> None:
+        self.lead[self.config.fields.lead_province] = "221"
+        self.lead[self.config.fields.lead_employment_status] = "1269"
+        self.lead.pop(self.config.fields.lead_payment_bank)
+        self.registry_lookup.return_value = registry_for("20123456786")
+        result = self.classify()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["action"], "external_referral")
+        self.assertEqual(result["lead_status"], "13")
+
     def test_matching_cuit_is_referred_in_any_province_even_with_missing_profile(self) -> None:
         self.registry_lookup.return_value = registry_for("20123456786")
         for key in (self.config.fields.lead_province, self.config.fields.lead_employment_status,

@@ -201,7 +201,8 @@ def build_prequalification_input_from_lead(
     lead: dict[str, Any],
     config: AppConfig,
 ) -> PrequalificationInput:
-    from .catalogs import SITUACIONES_LABORALES
+    from .catalogs import PROVINCIAS, SITUACIONES_LABORALES
+    from .qualification import QUALIFICATION_RULES
     employment_value = _required_lead_value(lead, config.fields.lead_employment_status)
     employment = SITUACIONES_LABORALES.resolve(employment_value, "employment_status")
     if employment.key == "jubilado_nacional":
@@ -211,16 +212,23 @@ def build_prequalification_input_from_lead(
             "payment_bank": _optional_lead_value(lead, config.fields.lead_payment_bank),
         })
 
-    # Only the explicit assisted Caja route allows an absent payment bank.
-    # The ordinary form and every other segment retain their existing validation.
+    province_value = _required_lead_value(lead, config.fields.lead_province)
+    province = PROVINCIAS.resolve(province_value, "province")
+    if (province.key == "buenos_aires"
+            and employment.key in QUALIFICATION_RULES["buenos_aires"]["allowed_employment_statuses"]):
+        return normalize_prequalification_input({
+            "employment_status": employment_value,
+            "province": province_value,
+            "payment_bank": _optional_lead_value(lead, config.fields.lead_payment_bank),
+        })
+
+    # Outside ANSES and the eligible Buenos Aires profiles, only the explicit
+    # assisted Caja route allows an absent payment bank.
     if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake"}
             and lead.get("UF_CRM_WA_ORGANISMO") == "caja_cordoba"
             and not lead.get(config.fields.lead_payment_bank)):
-        from .catalogs import PROVINCIAS, SITUACIONES_LABORALES
-        status = SITUACIONES_LABORALES.resolve(lead.get(config.fields.lead_employment_status), "employment_status")
-        province = PROVINCIAS.resolve(lead.get(config.fields.lead_province), "province")
-        if status.key == "jubilado_provincial" and province.key == "cordoba":
-            return PrequalificationInput(province=province, employment_status=status, payment_bank=None)
+        if employment.key == "jubilado_provincial" and province.key == "cordoba":
+            return PrequalificationInput(province=province, employment_status=employment, payment_bank=None)
     payload = {
         "province": _required_lead_value(lead, config.fields.lead_province),
         "employment_status": _required_lead_value(

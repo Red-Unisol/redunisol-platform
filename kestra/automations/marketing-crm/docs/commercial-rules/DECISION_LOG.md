@@ -351,3 +351,17 @@ Los casos retenidos en cola cuyo pool tenga un unico habilitado tambien salen po
 asignacion directa, conservando su decision y linea. Un rechazo de transferencia
 de chat se registra sin revertir ni demorar la asignacion del prospecto/negociacion.
 Los pools multiples y vacios mantienen sus politicas existentes.
+
+## 2026-10-30 — Buenos Aires comparte la linea y el bucket de ANSES
+
+Santiago aprueba GANADO interno para Buenos Aires con Policia, Docente, Empleado
+Publico Provincial y Jubilado Provincial. Confirma que Empleado Publico no incluye
+Municipal ni Nacional y que se aplican las mismas condiciones que ANSES: sin
+filtros BCRA ni requisitos de banco, edad, afiliacion o prestamos previos.
+
+Las negociaciones usan PRESENTACION, `Red Mutual - paii` y el bucket existente
+`santa_fe_anses`, con su configuracion de vendedores y politica de distribucion.
+CUAD conserva la prioridad global sobre la base congelada; CUIL incompleto se
+considera sin coincidencia. CABA y Policia Federal mantienen su tratamiento.
+Detalle y casos: [BUENOS_AIRES.md](BUENOS_AIRES.md). Estado de esta ampliacion:
+implementado en rama, pendiente de merge y deploy.

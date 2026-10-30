@@ -10,6 +10,7 @@ REASON_LABELS = {
     "vimarx_missing_cuil": "Falta un CUIL de 11 dígitos para actualizar los datos de Vimarx.",
     "vimarx_configuration_error": "No se pudo consultar Vimarx por un problema de configuración.",
     "anses_approved": "ANSES no tiene condiciones BCRA; corresponde Red Mutual - paii.",
+    "buenos_aires_approved": "El perfil habilitado de Buenos Aires no tiene condiciones BCRA; corresponde Red Mutual - paii.",
     "neuquen_approved": "Neuquen no tiene restricciones BCRA vigentes; corresponde MUDON.",
     "santa_fe_haberes_premium": "Santa Fe informa hasta siete entidades en el ultimo periodo BCRA.",
     "santa_fe_more_than_seven_entities": "Santa Fe informa mas de siete entidades en el ultimo periodo BCRA.",

@@ -79,7 +79,7 @@ class BcraSnapshotResolution:
 
 BUSINESS_HOURS_ONLY_ENV = "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY"
 BUSINESS_HOURS_TIMEZONE_ENV = "BITRIX24_DISTRIBUTION_TIMEZONE"
-COMMERCIAL_RULE_VERSION = "2026-10-30-anses-santa-fe-neuquen-v1"
+COMMERCIAL_RULE_VERSION = "2026-10-30-buenos-aires-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
@@ -209,7 +209,7 @@ def _select_pending_catamarca_deals(
             family = expanded_deal_family(config, lead)
             if not family and vimarx_retry_waiting(deal, lead, config, now=current_time):
                 continue
-            if family not in {"anses", "neuquen"} and bcra_retry_waiting(
+            if family not in {"anses", "neuquen", "buenos_aires"} and bcra_retry_waiting(
                 lead,
                 config,
                 now=current_time,
@@ -1207,7 +1207,7 @@ def _resolve_bcra_snapshot(
     bcra_client: Any | None,
 ) -> BcraSnapshotResolution:
     family = expanded_deal_family(config, lead)
-    if family in {"anses", "neuquen"}:
+    if family in {"anses", "neuquen", "buenos_aires"}:
         return BcraSnapshotResolution(lead, None, "", None, False, "not_required")
     retry_state = bcra_retry_state_from_lead(lead, config)
     if retry_state is not None and retry_state.is_exhausted:
@@ -1459,6 +1459,8 @@ def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> Comm
     family = expanded_deal_family(config, lead)
     if family == "anses":
         return _approved(config, "anses_approved", "Red Mutual - paii")
+    if family == "buenos_aires":
+        return _approved(config, "buenos_aires_approved", "Red Mutual - paii")
     if family == "neuquen":
         return _approved(config, "neuquen_approved", "MUDON")
     if family == "santa_fe":

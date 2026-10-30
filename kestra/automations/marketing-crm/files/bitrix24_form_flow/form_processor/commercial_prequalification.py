@@ -7,7 +7,7 @@ from .input_parser import normalize_prequalification_input
 from .qualification import evaluate_prequalification
 
 
-RULE_VERSION = "2026-10-30-anses-santa-fe-neuquen-cuad-history"
+RULE_VERSION = "2026-10-30-buenos-aires-anses-santa-fe-neuquen-cuad-history"
 
 
 def prequalify_commercial_fields(

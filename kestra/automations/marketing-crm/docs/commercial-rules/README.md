@@ -30,9 +30,9 @@ desplegado. Una rama o PR puede contener una implementación todavía no despleg
 estado debe declararse explícitamente. Si una tabla aprobada y producción no coinciden,
 existe una desviación que debe corregirse o documentarse.
 
-La precalificacion de leads para ANSES, Santa Fe, Neuquen y la prioridad de
+La precalificacion de leads para Buenos Aires, ANSES, Santa Fe, Neuquen y la prioridad de
 antecedentes Haberes CUAD se define en [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md),
-version `2026-10-30-anses-santa-fe-neuquen-cuad-history`. El recorrido posterior de
+version `2026-10-30-buenos-aires-anses-santa-fe-neuquen-cuad-history`. El recorrido posterior de
 negociaciones de estas familias esta definido en la seccion 2026-10-30 de
 `DEAL_CLASSIFICATION.md` y en los nuevos buckets de `DEAL_ROUTING.md`.
 
@@ -42,6 +42,7 @@ negociaciones de estas familias esta definido en la seccion 2026-10-30 de
 |---|---|---|
 | [`PROCESS_OVERVIEW.md`](PROCESS_OVERVIEW.md) | Todos | Explica visualmente el proceso y sus responsabilidades. |
 | [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md) | Negocio y Tecnologia | Reglas de leads y base historica Haberes CUAD. |
+| [`BUENOS_AIRES.md`](BUENOS_AIRES.md) | Negocio y Tecnologia | Perfiles de Buenos Aires, Red Mutual - paii y bucket compartido. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Todos | Define términos y resultados permitidos. |
 | [`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md) | Negocio y Tecnología | Contiene las reglas de clasificación de negociaciones. |
 | [`DEAL_ROUTING.md`](DEAL_ROUTING.md) | Negocio y Tecnología | Contiene los buckets acordados de distribución. |

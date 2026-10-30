@@ -60,7 +60,7 @@ mientras BCRA esté pendiente, la consulta Vimarx espera.
 Detalle de persistencia y reintentos:
 [`../technical/vimarx-deal-refresh.md`](../technical/vimarx-deal-refresh.md).
 
-## ANSES, Santa Fe y Neuquen — version 2026-10-30
+## Buenos Aires, ANSES, Santa Fe y Neuquen — version 2026-10-30
 
 Estado: **implementado en rama, pendiente de deploy**. Condiciones y lineas confirmadas
 por Santiago en esta conversacion. Solo se aplican las condiciones de esta seccion:
@@ -75,6 +75,7 @@ familia provincial. El resto de los perfiles debe haber superado la precalificac
 | Regla | Perfil | Condicion | Decision | Etapa | Linea | Bucket |
 |---|---|---|---|---|---|---|
 | `ANSES-010` | Jubilado Nacional, cualquier provincia | Sin condiciones BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
+| `PBA-010` | Buenos Aires + Policia, Docente, Empleado Publico Provincial o Jubilado Provincial | Mismas condiciones que ANSES; sin filtros BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
 | `SFE-010` | Perfil interno habilitado de Santa Fe | Hasta 7 entidades informadas en el ultimo periodo BCRA | Aprobado | PRESENTACION | `Haberes Premium` | `santa_fe_anses` |
 | `SFE-020` | Perfil interno habilitado de Santa Fe | 8 o mas entidades informadas en ese periodo | Rechazo BCRA, sin distribuir | SIT. NEG. EN BCRA | No aplica | `santa_fe_anses` |
 | `NEU-010` | Perfil interno habilitado de Neuquen | Sin restricciones BCRA por el momento | Aprobado | PRESENTACION | `MUDON` | `neuquen` |
@@ -86,10 +87,14 @@ cero entidades. Una consulta fallida, identificacion invalida o respuesta incomp
 no equivale a cero: conserva la politica existente de actualizacion, reintentos y
 revision de datos. Se reutiliza un snapshot vigente y se actualiza uno vencido.
 
-ANSES y Neuquen no consultan BCRA para decidir ni quedan bloqueados por un snapshot
-ausente, negativo, vencido o con reintentos pendientes. Ninguna de las tres familias
+ANSES, los cuatro perfiles habilitados de Buenos Aires y Neuquen no consultan BCRA
+para decidir ni quedan bloqueados por un snapshot ausente, negativo, vencido o con
+reintentos pendientes. Ninguna de estas familias
 espera actualizaciones Vimarx ni reintentos de Vimarx para su decision comercial.
 El enriquecimiento general del ingreso conserva su funcion informativa.
+
+El alcance de Buenos Aires y su separacion de CABA/Policia Federal se detallan en
+[BUENOS_AIRES.md](BUENOS_AIRES.md). Motivo comercial: `buenos_aires_approved`.
 
 Las negociaciones nuevas de estas familias nacen en PENDIENTE CALIFICACION KESTRA,
 provisionalmente con Maru (57), y luego se clasifican y distribuyen por el circuito

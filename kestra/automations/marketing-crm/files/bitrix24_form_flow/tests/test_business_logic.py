@@ -1105,7 +1105,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "email": "ana@example.com",
                 "whatsapp": "3511234567",
                 "cuil": "27-12345678-5",
-                "province": "Buenos Aires",
+                "province": "Chubut",
                 "employment_status": "Empleado Publico Provincial",
                 "payment_bank": "Banco de la Nacion Argentina",
                 "lead_source": "Instagram",
@@ -2313,7 +2313,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "email": "ana@example.com",
                 "whatsapp": "3511234567",
                 "cuil": "27-12345678-5",
-                "province": "Buenos Aires",
+                "province": "Chubut",
                 "employment_status": "Empleado Publico Provincial",
                 "payment_bank": "Banco de la Nacion Argentina",
                 "lead_source": "Instagram",
@@ -5174,7 +5174,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-10-30-anses-santa-fe-neuquen-v1",
+            "2026-10-30-buenos-aires-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
