@@ -30,11 +30,18 @@ desplegado. Una rama o PR puede contener una implementación todavía no despleg
 estado debe declararse explícitamente. Si una tabla aprobada y producción no coinciden,
 existe una desviación que debe corregirse o documentarse.
 
+La precalificacion de leads para ANSES, Santa Fe, Neuquen y la prioridad de
+antecedentes Haberes CUAD se define en [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md),
+version `2026-10-30-anses-santa-fe-neuquen-cuad-history`. El recorrido posterior de
+negociaciones de estas familias esta definido en la seccion 2026-10-30 de
+`DEAL_CLASSIFICATION.md` y en los nuevos buckets de `DEAL_ROUTING.md`.
+
 ## Documentos
 
 | Documento | Audiencia | Para qué sirve |
 |---|---|---|
 | [`PROCESS_OVERVIEW.md`](PROCESS_OVERVIEW.md) | Todos | Explica visualmente el proceso y sus responsabilidades. |
+| [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md) | Negocio y Tecnologia | Reglas de leads y base historica Haberes CUAD. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Todos | Define términos y resultados permitidos. |
 | [`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md) | Negocio y Tecnología | Contiene las reglas de clasificación de negociaciones. |
 | [`DEAL_ROUTING.md`](DEAL_ROUTING.md) | Negocio y Tecnología | Contiene los buckets acordados de distribución. |
@@ -108,6 +115,8 @@ versión.
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
 | 2026-10-13 | Caja Morosos: máximo 8 entidades para Jubilado Provincial nuevo | Implementado, pendiente de deploy | Tarea Bitrix24 `23321` y autorización de Santiago en la sesión del 13/10/2026 | [Contrato y pruebas](CAJA_MOROSOS_23321.md) |
+| 2026-10-30 | Negociaciones ANSES, Santa Fe y Neuquen; pools compartido y Ludmila | Implementado en rama, pendiente de deploy | Definiciones de Santiago en esta conversacion, incorporadas en DEAL_CLASSIFICATION.md y DEAL_ROUTING.md | Rama codex/casos-ganados-anses-provincias |
+| 2026-10-30 | Leads ANSES, Santa Fe, Neuquen y prioridad CUAD historica | Implementado en rama, pendiente de deploy | Definiciones de Santiago en esta conversacion, incorporadas en LEAD_QUALIFICATION.md | Rama codex/casos-ganados-anses-provincias |
 | 2026-08-26 | Córdoba: Policía y Público Provincial a CBU | Acordado e implementado | Tarea Bitrix24 `22895` y definición comercial complementaria | PR de tarea `22895` |
 | 2026-08-11 | Catamarca | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218; producción conserva la versión anterior |
 | 2026-08-11 | Córdoba | Implementado, pendiente de deploy | Criterios incorporados; aprobador formal pendiente de registrar | PR #218 |

@@ -47,6 +47,7 @@ from bitrix24_form_flow.form_processor.contact_birthdate_service import (
     backfill_contact_birthdate_to_leads,
 )
 from bitrix24_form_flow.form_processor.config import load_config
+from bitrix24_form_flow.form_processor.haberes_cuad_registry import HaberesCuadRegistry
 from bitrix24_form_flow.form_processor.credixsa_employer_service import (
     STATUS_NO_EMPLOYER,
     STATUS_OK,
@@ -518,6 +519,12 @@ class BusinessLogicTests(unittest.TestCase):
         )
         refresh.start()
         self.addCleanup(refresh.stop)
+        registry = patch(
+            "bitrix24_form_flow.form_processor.business_logic.load_registry",
+            return_value=HaberesCuadRegistry(frozenset(), "test-fixture"),
+        )
+        registry.start()
+        self.addCleanup(registry.stop)
         self.env = {
             "BITRIX24_BASE_URL": "https://example.bitrix24.com/rest",
             "BITRIX24_WEBHOOK_PATH": "1/token",
@@ -1169,7 +1176,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result.outcome, "rejected")
         self.assertEqual(result.reason, "employment_status_not_eligible")
 
-    def test_neuquen_refers_municipal_employee_to_external_seller(self) -> None:
+    def test_neuquen_qualifies_municipal_employee_internally(self) -> None:
         submission = normalize_business_input(
             {
                 "full_name": "Ana Gomez",
@@ -1185,8 +1192,8 @@ class BusinessLogicTests(unittest.TestCase):
 
         result = evaluate_qualification(submission)
 
-        self.assertEqual(result.outcome, "external_referral")
-        self.assertEqual(result.reason, "external_referral")
+        self.assertEqual(result.outcome, "qualified")
+        self.assertEqual(result.reason, "qualified")
 
     def test_qualification_rejects_cordoba_policia_without_bancor(self) -> None:
         submission = normalize_business_input(
@@ -1296,10 +1303,10 @@ class BusinessLogicTests(unittest.TestCase):
                 self.assertTrue(result.qualified)
                 self.assertEqual(result.reason, "qualified")
 
-    def test_qualification_keeps_cordoba_bank_restrictions_for_municipal_and_national_retirees(
+    def test_qualification_keeps_cordoba_bank_restrictions_for_municipal_retirees(
         self,
     ) -> None:
-        for employment_status in ("Jubilado Municipal", "Jubilado Nacional"):
+        for employment_status in ("Jubilado Municipal",):
             with self.subTest(employment_status=employment_status):
                 submission = normalize_business_input(
                     {
@@ -5170,7 +5177,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-10-13-caja-morosos-23321-v1",
+            "2026-10-30-anses-santa-fe-neuquen-v1",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
@@ -6206,7 +6213,7 @@ class BusinessLogicTests(unittest.TestCase):
             ("recurrent", "2565", recurrent, 5, "approved", "caja_morosos", "Caja Morosos"),
             ("nuevo_limpio", "2565", None, 1, "approved", "caja_nuevo", "Caja Nuevo"),
             ("irregular", "2565", None, 2, "approved", "caja_irregulares", "Caja Irregulares"),
-            ("nacional", "2567", None, 5, "rejected", "cbu_more_than_five_entities", None),
+            ("nacional", "2567", None, 5, "approved", "anses_approved", "Red Mutual - paii"),
             ("pensionado", "2569", None, 5, "rejected", "cbu_more_than_five_entities", None),
         )
         for name, employment, vimarx, situation, action, reason, line in cases:

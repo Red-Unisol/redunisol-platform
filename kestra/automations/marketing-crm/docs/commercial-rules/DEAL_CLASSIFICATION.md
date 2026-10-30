@@ -60,6 +60,41 @@ mientras BCRA esté pendiente, la consulta Vimarx espera.
 Detalle de persistencia y reintentos:
 [`../technical/vimarx-deal-refresh.md`](../technical/vimarx-deal-refresh.md).
 
+## ANSES, Santa Fe y Neuquen — version 2026-10-30
+
+Estado: **implementado en rama, pendiente de deploy**. Condiciones y lineas confirmadas
+por Santiago en esta conversacion. Solo se aplican las condiciones de esta seccion:
+no se agregan limites de edad, afiliacion, prestamos previos ni exigencias Vimarx.
+Los leads con antecedente en la base congelada CUAD siguen la derivacion externa
+definida en `LEAD_QUALIFICATION.md` y no originan este circuito interno.
+
+ANSES corresponde a `Jubilado Nacional` y tiene prioridad absoluta sobre la provincia:
+incluye Cordoba, Catamarca, Santa Fe y Neuquen, aunque antes el perfil usara otra
+familia provincial. El resto de los perfiles debe haber superado la precalificacion.
+
+| Regla | Perfil | Condicion | Decision | Etapa | Linea | Bucket |
+|---|---|---|---|---|---|---|
+| `ANSES-010` | Jubilado Nacional, cualquier provincia | Sin condiciones BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
+| `SFE-010` | Perfil interno habilitado de Santa Fe | Hasta 7 entidades informadas en el ultimo periodo BCRA | Aprobado | PRESENTACION | `Haberes Premium` | `santa_fe_anses` |
+| `SFE-020` | Perfil interno habilitado de Santa Fe | 8 o mas entidades informadas en ese periodo | Rechazo BCRA, sin distribuir | SIT. NEG. EN BCRA | No aplica | `santa_fe_anses` |
+| `NEU-010` | Perfil interno habilitado de Neuquen | Sin restricciones BCRA por el momento | Aprobado | PRESENTACION | `MUDON` | `neuquen` |
+
+Santa Fe cuenta todas las entidades del ultimo periodo informado. No filtra por
+situacion, monto ni banco de cobro; siete entidades en situacion 5 siguen cumpliendo
+el unico requisito cuantitativo. Una respuesta BCRA valida `not_found` equivale a
+cero entidades. Una consulta fallida, identificacion invalida o respuesta incompleta
+no equivale a cero: conserva la politica existente de actualizacion, reintentos y
+revision de datos. Se reutiliza un snapshot vigente y se actualiza uno vencido.
+
+ANSES y Neuquen no consultan BCRA para decidir ni quedan bloqueados por un snapshot
+ausente, negativo, vencido o con reintentos pendientes. Ninguna de las tres familias
+espera actualizaciones Vimarx ni reintentos de Vimarx para su decision comercial.
+El enriquecimiento general del ingreso conserva su funcion informativa.
+
+Las negociaciones nuevas de estas familias nacen en PENDIENTE CALIFICACION KESTRA,
+provisionalmente con Maru (57), y luego se clasifican y distribuyen por el circuito
+existente. Se conserva la separacion de decision comercial y disponibilidad de vendedores.
+
 ## Catamarca — AMEJUCA
 
 Estado: **implementado en el PR #218, pendiente de deploy y auditoría en producción**.
@@ -113,7 +148,8 @@ superarlos queda en revisión manual.
 Estado: reglas vigentes para Córdoba actualizadas al `2026-08-26`.
 
 Precondición: negociación que ya superó provincia, situación laboral y banco de cobro
-en la precalificación.
+en la precalificación. Desde la version 2026-10-30, Jubilado Nacional se evalua por
+ANSES y no por las tablas provinciales de esta seccion.
 
 ### Reglas comunes de CBU
 
@@ -133,7 +169,7 @@ laboral habilita alguna de esas familias. Para activos, los límites CBU son
 60 años para mujeres y 65 para hombres; para pasivos, 80 años. Los límites que dependen
 de sexo permanecen manuales hasta disponer de género confiable.
 
-### Policía, Empleado Público Provincial, Docente, Empleado Público Municipal, Personal de Salud, Jubilado Nacional y Pensionado
+### Policía, Empleado Público Provincial, Docente, Empleado Público Municipal, Personal de Salud y Pensionado
 
 Desde el 26/08/2026, Policía y Empleado Público Provincial utilizan las mismas reglas
 CBU vigentes que los demás perfiles de esta sección. La existencia de préstamos Cruz

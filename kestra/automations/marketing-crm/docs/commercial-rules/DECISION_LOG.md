@@ -300,3 +300,40 @@ del árbol activo; Git conserva su historial.
   chat al vendedor elegido. Fuera de la ventana semanal se conserva gestión manual.
 - **Estado:** implementado y probado; verificación productiva en la documentación
   técnica del incidente 23271.
+
+
+## 2026-10-30 — Ampliacion de leads y antecedentes Haberes CUAD
+
+Santiago confirma GANADO interno para Jubilado Nacional en cualquier provincia y
+banco, para cinco perfiles de Santa Fe y para seis de Neuquen. Pensionado no se
+incorpora a Santa Fe ni a ANSES. Cualquier CUIT con prestamo historico de la familia
+Haberes CUAD SANTA FE (superior 2703), incluso cancelado, deriva externamente en
+cualquier provincia y prevalece sobre ANSES. Con CUIL incompleto se asume ausencia
+de coincidencia y se resuelve por perfil, sin revision manual por identidad.
+
+La definicion versionada y sus casos estan en [LEAD_QUALIFICATION.md](LEAD_QUALIFICATION.md).
+El alcance actual termina en el lead; la clasificacion y distribucion posteriores
+se acordaran por separado. Estado: implementado en rama, pendiente de deploy.
+
+La base historica queda **congelada al relevamiento del 30/10/2026**, por decision
+explicita de Santiago. No se incorpora actualizacion desde Vimarx, scheduler ni KV mutable. El paquete versiona los
+hashes de coincidencia de los 1.945 CUIT; los CUIT legibles quedan en el artefacto local.
+
+
+## 2026-10-30 — Negociaciones ANSES, Santa Fe y Neuquen
+
+Santiago confirma ANSES como prioridad nacional para Jubilado Nacional, sin condiciones
+BCRA; linea `Red Mutual - paii`. Santa Fe admite hasta siete entidades informadas en
+el ultimo periodo BCRA, sin filtrar situaciones ni banco: linea `Haberes Premium`;
+ocho o mas producen rechazo BCRA. Una respuesta valida sin datos equivale a cero
+entidades. Neuquen no tiene limites BCRA por el momento: linea `MUDON`.
+
+Se aplican solo estas condiciones, sin restricciones adicionales de edad, afiliacion
+o prestamos previos. ANSES y Neuquen no dependen de consultas BCRA, y ninguna de las
+tres familias necesita Vimarx para decidir. La base historica CUAD permanece congelada.
+
+El pool compartido inicial de Santa Fe/ANSES queda con Patricia Contendi (10451),
+Susana Contenti (29) y Julieta Aguilera (116561), en ese orden. Neuquen queda
+exclusivamente con Ludmila Gallardo (58913), que no integra el pool compartido.
+Se mantiene el comportamiento general de disponibilidad y horario mientras se
+resuelve una eventual excepcion de asignacion a Ludmila offline.

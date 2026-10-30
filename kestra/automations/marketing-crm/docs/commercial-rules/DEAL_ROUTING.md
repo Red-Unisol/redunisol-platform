@@ -16,6 +16,36 @@ Bitrix** en el panel de Red Unisol. Las listas de este documento y las variables
 entorno quedan como valores iniciales y fallback si el panel no está disponible.
 Un vendedor pausado permanece visible en el panel pero no recibe asignaciones nuevas.
 
+## Nuevos buckets — version 2026-10-30
+
+Estado: **implementado en rama, pendiente de deploy**.
+
+### `santa_fe_anses`
+
+- Criterio: Jubilado Nacional de cualquier provincia (prioridad ANSES), o perfil
+  interno habilitado de Santa Fe.
+- Bucket unico compartido para las lineas `Red Mutual - paii` y `Haberes Premium`.
+- Pool inicial confirmado, en este orden:
+  - Patricia Contendi (`10451`)
+  - Susana Contenti (`29`)
+  - Julieta Aguilera (`116561`)
+- Ludmila no integra este bucket. Se conservan recurrencia, round-robin,
+  compensacion de volumen, pausas, disponibilidad, horario y cola existentes.
+
+### `neuquen`
+
+- Criterio: perfil interno habilitado de Neuquen, excepto Jubilado Nacional que
+  corresponde al bucket ANSES.
+- Linea: `MUDON`.
+- Responsable inicial exclusivo: Ludmila Gallardo (`58913`).
+- Mientras se define una eventual excepcion para Ludmila offline, se conserva el
+  comportamiento general existente de horario, disponibilidad y cola. No se
+  reasigna a otro pool ni a los vendedores de Santa Fe/ANSES.
+
+Ambos grupos se administran desde el panel de Distribucion Bitrix; los defaults de
+Git coinciden con estos pools iniciales. Las pausas y pools explicitamente vacios
+conservan la semantica existente. La cola procesa tambien los dos nuevos buckets.
+
 ## Buckets
 
 ### `catamarca_general`
@@ -35,8 +65,8 @@ Un vendedor pausado permanece visible en el panel pero no recibe asignaciones nu
 
 ### `cordoba_jubilados`
 
-- Criterio: Cordoba + `Jubilado Provincial`, `Jubilado Nacional`, `Jubilado Municipal`
-  o `Pensionado`.
+- Criterio: Cordoba + `Jubilado Provincial`, `Jubilado Municipal` o `Pensionado`.
+  Jubilado Nacional pasa al bucket compartido `santa_fe_anses` desde la version 2026-10-30.
 - Responsables, en orden:
   - Patricia Contendi (`10451`)
   - Natalia Rojo Moyano (`71159`)
@@ -86,10 +116,16 @@ Detalle aprobado: [`POLICIA_FEDERAL_CABA.md`](POLICIA_FEDERAL_CABA.md).
 
 No generan negociacion interna ni participan de estos buckets:
 
-- La Rioja
-- Rio Negro
-- Neuquen
-- Santa Fe
+- La Rioja, segun su elegibilidad provincial.
+- Rio Negro, segun su elegibilidad provincial.
+- Cualquier provincia y situacion laboral cuando el CUIT coincide con la base
+  historica Haberes CUAD, con prioridad sobre ANSES.
+
+Santa Fe y Neuquen dejan de derivar por provincia. Sus perfiles habilitados pasan
+a GANADO si no tienen antecedente CUAD. Las reglas exactas estan en
+[`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md), version 2026-10-30, implementada en
+rama y pendiente de deploy. Los pools y la clasificacion comercial posterior de la version 2026-10-30 se
+detallan en este documento y en `DEAL_CLASSIFICATION.md`.
 
 La derivacion externa solo aplica cuando el caso cumple las reglas de elegibilidad de
 su provincia. Un caso no elegible conserva su rechazo correspondiente.

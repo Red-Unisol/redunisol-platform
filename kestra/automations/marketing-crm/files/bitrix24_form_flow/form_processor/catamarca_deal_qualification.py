@@ -20,6 +20,7 @@ from .bcra_service import (
 from .bitrix_client import BitrixClient
 from .distribution_schedule import is_within_business_hours as _is_within_business_hours
 from .config import AppConfig, load_config
+from .expanded_deal_family import expanded_deal_family
 from .commercial_trace import (
     TRACE_SCHEMA_VERSION,
     business_decision,
@@ -36,7 +37,7 @@ from .deal_service import (
     resolve_round_robin_assignee,
     user_display_name,
 )
-from .deal_vimarx_refresh import refresh_deal_vimarx, vimarx_retry_waiting
+from .deal_vimarx_refresh import VimarxRefreshResolution, refresh_deal_vimarx, vimarx_retry_waiting
 from .deal_commercial_decision import persist_commercial_decision
 from .lead_service import (
     build_submission_from_lead,
@@ -78,10 +79,12 @@ class BcraSnapshotResolution:
 
 BUSINESS_HOURS_ONLY_ENV = "BITRIX24_DISTRIBUTION_BUSINESS_HOURS_ONLY"
 BUSINESS_HOURS_TIMEZONE_ENV = "BITRIX24_DISTRIBUTION_TIMEZONE"
-COMMERCIAL_RULE_VERSION = "2026-10-13-caja-morosos-23321-v1"
+COMMERCIAL_RULE_VERSION = "2026-10-30-anses-santa-fe-neuquen-v1"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
+    "santa_fe_anses",
+    "neuquen",
     "policia_federal_caba",
     "catamarca_general",
     "cordoba_jubilados",
@@ -203,9 +206,10 @@ def _select_pending_catamarca_deals(
                 continue
             seen.add(deal_id)
             lead = get_lead(client, lead_id, active_logger)
-            if vimarx_retry_waiting(deal, lead, config, now=current_time):
+            family = expanded_deal_family(config, lead)
+            if not family and vimarx_retry_waiting(deal, lead, config, now=current_time):
                 continue
-            if bcra_retry_waiting(
+            if family not in {"anses", "neuquen"} and bcra_retry_waiting(
                 lead,
                 config,
                 now=current_time,
@@ -354,9 +358,13 @@ def qualify_catamarca_deal(
             ),
             **bcra_trace,
         )
-    vimarx_resolution = refresh_deal_vimarx(
-        client, config, lead, deal=deal, lead_id=lead_id, deal_id=deal_id_int,
-        source=source, processed_at=processed_at, logger=active_logger,
+    vimarx_resolution = (
+        VimarxRefreshResolution(lead, "not_required")
+        if expanded_deal_family(config, lead)
+        else refresh_deal_vimarx(
+            client, config, lead, deal=deal, lead_id=lead_id, deal_id=deal_id_int,
+            source=source, processed_at=processed_at, logger=active_logger,
+        )
     )
     lead = vimarx_resolution.lead
     bcra_trace.update(vimarx_resolution.trace)
@@ -1176,6 +1184,9 @@ def _resolve_bcra_snapshot(
     logger: Logger,
     bcra_client: Any | None,
 ) -> BcraSnapshotResolution:
+    family = expanded_deal_family(config, lead)
+    if family in {"anses", "neuquen"}:
+        return BcraSnapshotResolution(lead, None, "", None, False, "not_required")
     retry_state = bcra_retry_state_from_lead(lead, config)
     if retry_state is not None and retry_state.is_exhausted:
         return BcraSnapshotResolution(
@@ -1194,7 +1205,10 @@ def _resolve_bcra_snapshot(
     max_age_days = _bcra_max_age_days(source)
 
     raw_outcome = _lead_bcra_outcome(lead, config)
-    if raw_outcome in {"not_found", "invalid_identification"}:
+    santa_fe_zero_entities = family == "santa_fe" and raw_outcome == "not_found"
+    if santa_fe_zero_entities and age_days is not None and age_days < max_age_days:
+        return BcraSnapshotResolution(lead, None, checked_at, age_days, False, "reused_not_found")
+    if raw_outcome in {"not_found", "invalid_identification"} and not santa_fe_zero_entities:
         reason = "bcra_not_found" if raw_outcome == "not_found" else "bcra_invalid_identification"
         return BcraSnapshotResolution(
             lead=lead,
@@ -1320,7 +1334,7 @@ def _resolve_bcra_snapshot(
         lead=refreshed_lead,
         decision_override=(
             _manual(config, "bcra_not_found")
-            if result.outcome == "not_found"
+            if result.outcome == "not_found" and family != "santa_fe"
             else _manual(config, "bcra_invalid_identification")
             if result.outcome == "invalid_identification"
             else None
@@ -1420,6 +1434,19 @@ def _persist_deal_bcra_snapshot(
 
 
 def _evaluate_deal(client: Any, config: AppConfig, lead: dict[str, Any]) -> CommercialDecision:
+    family = expanded_deal_family(config, lead)
+    if family == "anses":
+        return _approved(config, "anses_approved", "Red Mutual - paii")
+    if family == "neuquen":
+        return _approved(config, "neuquen_approved", "MUDON")
+    if family == "santa_fe":
+        entities = _santa_fe_bcra_entities(config, lead)
+        if entities is None:
+            return _manual(config, "bcra_snapshot_not_conclusive")
+        if len(entities) > 7:
+            return _bcra_rejected(config, "santa_fe_more_than_seven_entities")
+        return _approved(config, "santa_fe_haberes_premium", "Haberes Premium")
+
     try:
         submission = build_submission_from_lead(lead, config)
     except ValueError:
@@ -1616,6 +1643,29 @@ def _latest_bcra_entities(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(entities, list):
         return []
     return [entity for entity in entities if isinstance(entity, dict)]
+
+
+def _santa_fe_bcra_entities(config: AppConfig, lead: dict[str, Any]) -> list[dict[str, Any]] | None:
+    try:
+        snapshot = json.loads(str(lead.get(config.fields.lead_bcra_data_raw or "") or ""))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(snapshot, dict):
+        return None
+    if snapshot.get("outcome") == "not_found":
+        return []
+    if snapshot.get("outcome") != "ok":
+        return None
+    payload = snapshot.get("payload")
+    results = payload.get("results") if isinstance(payload, dict) else None
+    periods = results.get("periodos") if isinstance(results, dict) else None
+    if not isinstance(periods, list) or not periods or any(not isinstance(p, dict) for p in periods):
+        return None
+    latest = max(periods, key=lambda period: str(period.get("periodo") or ""))
+    entities = latest.get("entidades")
+    if not isinstance(entities, list) or any(not isinstance(entity, dict) for entity in entities):
+        return None
+    return entities
 
 
 def _bcra_entities(config: AppConfig, lead: dict[str, Any]) -> list[dict[str, Any]] | None:
