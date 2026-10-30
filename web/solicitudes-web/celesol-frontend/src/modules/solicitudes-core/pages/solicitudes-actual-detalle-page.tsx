@@ -27,6 +27,9 @@ import {
   CircleCheckBig,
   Download,
   Eye,
+  FileSignature,
+  FileText,
+  Landmark,
   Pencil,
   Plus,
   Send,
@@ -198,7 +201,16 @@ import { TableEmptyState } from "@/shared/components/ui/table-empty-state";
 import { ApiError } from "@/shared/services/http/api-error";
 import { TABLA } from "@/modules/solicitudes-core/utils/tabla-detalle";
 import { esCuitValido } from "@/shared/utils/cuit";
-import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
+import {
+  ACCIONES_DE_ESTADO,
+  etiquetaDeAccion,
+  terminaLaSolicitud,
+} from "@/modules/solicitudes-shared/utils/acciones-de-estado";
+import {
+  AccionesDeEstado,
+  MotivoBloqueo,
+  type AccionDeEstado,
+} from "@/modules/solicitudes-core/components/acciones-de-estado";
 
 const EDIT_SOLICITUD_ERROR_TOAST_ID = "edit-solicitud-core-error";
 const EDIT_SOLICITUD_SUCCESS_TOAST_ID = "edit-solicitud-core-success";
@@ -233,7 +245,6 @@ const DELETE_CANCELACION_ERROR_TOAST_ID =
   "delete-solicitud-core-cancelacion-error";
 const PLACEHOLDER = "-";
 const DOWNLOAD_BUTTON_MIN_LOADING_MS = 450;
-const FIRST_SUBMISSION_TRANSITION_LABEL = "Motor -> Riesgo";
 const CONFIRMAR_ACTION_CODE = "confirmar";
 
 type TitularConfirmarRequiredFieldKey =
@@ -746,26 +757,6 @@ function CancelacionesSection({
   );
 }
 
-// Lo que se hace habitualmente en cada estado va como boton en la barra azul;
-// el resto de las transiciones queda en "Otras acciones". Por actionCode.
-const ACCIONES_DE_ESTADO: Record<
-  string,
-  { primaria: string; secundaria?: string }
-> = {
-  CargaVendedor: { primaria: "enviar" },
-  PreAprobada: { primaria: "confirmar" },
-  Revisar: { primaria: "revisar_reenviar" },
-  RevisionRiesgo: { primaria: "preaprobar", secundaria: "revisar" },
-};
-
-const ETIQUETA_DE_ACCION: Record<string, string> = {
-  confirmar: "Confirmar",
-  enviar: "Enviar a Riesgo",
-  preaprobar: "Pre aprobar",
-  revisar: "Devolver al vendedor",
-  revisar_reenviar: "Reenviar a Riesgo",
-};
-
 type SolicitudDetailVistaTab = "credixsa" | "evaluacion" | "solicitud";
 
 const SOLICITUD_DETAIL_VISTA_TABS: TabItem<SolicitudDetailVistaTab>[] = [
@@ -896,20 +887,6 @@ function formatTipoDocumento(value: string | null | undefined) {
   );
 
   return match?.label ?? normalizedValue;
-}
-
-function formatWorkflowTransitionOptionLabel(
-  transition: WorkflowTransition,
-  currentStateCode?: string,
-) {
-  if (
-    currentStateCode === "CargaVendedor" &&
-    transition.toState.code === "Motor"
-  ) {
-    return FIRST_SUBMISSION_TRANSITION_LABEL;
-  }
-
-  return nombreEstado(transition.toState.code, transition.toState.name);
 }
 
 function resolveAssignmentLabel(solicitud: SolicitudCoreResponse) {
@@ -3708,25 +3685,16 @@ export function SolicitudesActualDetallePage() {
   const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
   const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
+  // La evaluacion se arma la primera vez que se abre y despues queda armada
+  // (oculta) al cambiar de pestaña: volver es inmediato y no se pierde lo hecho.
+  const [evaluacionAbierta, setEvaluacionAbierta] = useState(false);
   // La cabecera unica siempre es compacta (antes se podia expandir).
   const headerExpanded = false;
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
-    // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
-    if (
-      vistaTab === "evaluacion" &&
-      tab !== "evaluacion" &&
-      evaluacionConCambios &&
-      !window.confirm(
-        "Hay cambios sin guardar en la evaluación. Si cambiás de pestaña se pierden. ¿Continuar?",
-      )
-    ) {
-      return false;
-    }
-
-    if (tab !== "evaluacion") {
-      setReciboView(null);
-      setEvaluacionConCambios(false);
+    // La planilla y el recibo abierto quedan armados al salir de la pestaña.
+    if (tab === "evaluacion") {
+      setEvaluacionAbierta(true);
     }
 
     setVistaTab(tab);
@@ -3849,36 +3817,6 @@ export function SolicitudesActualDetallePage() {
     currentUser?.lastName,
     solicitud,
   ]);
-  const workflowTransitionOptions: StyledSelectOption[] = useMemo(
-    () =>
-      workflowTransitions
-        .filter((transition) => transition.actionCode !== "liquidar")
-        .map((transition) => ({
-          disabled:
-            transition.blockedReason !== null ||
-            (documentReview.data?.enabled === true &&
-              ["transferir", "devolver_a_liquidada"].includes(
-                transition.actionCode,
-              )),
-          disabledReason:
-            documentReview.data?.enabled &&
-            ["transferir", "devolver_a_liquidada"].includes(
-              transition.actionCode,
-            )
-              ? "Registrá la decisión humana en Revisión de firma."
-              : (transition.blockedReason ?? undefined),
-          label: formatWorkflowTransitionOptionLabel(
-            transition,
-            solicitud?.estadoActual.code,
-          ),
-          value: transition.id,
-        })),
-    [
-      solicitud?.estadoActual.code,
-      workflowTransitions,
-      documentReview.data?.enabled,
-    ],
-  );
   const analysisTransition = workflowTransitions.find(
     (transition) => transition.actionCode === "liquidar",
   );
@@ -4057,15 +3995,6 @@ export function SolicitudesActualDetallePage() {
     workflowTransitionsError instanceof Error
       ? workflowTransitionsError.message
       : null;
-  const workflowTransitionPlaceholder = !canChangeState
-    ? "No disponible en este estado"
-    : isLoadingWorkflowTransitions
-      ? "Cargando acciones..."
-      : workflowTransitionSelectorErrorMessage
-        ? workflowTransitionSelectorErrorMessage
-        : workflowTransitionOptions.length > 0
-          ? "Enviar a..."
-          : "Sin acciones disponibles";
   const submissionTransition =
     resolvedSolicitud.estadoActual.code === "CargaVendedor"
       ? workflowTransitions.find(
@@ -4078,6 +4007,14 @@ export function SolicitudesActualDetallePage() {
     !isLoadingAdjuntos &&
     !adjuntosError &&
     recibos.length === 0;
+  const irARevisionDeFirma = () => {
+    if (!cambiarVistaTab("solicitud")) return;
+    requestAnimationFrame(() => {
+      const target = document.getElementById("solicitud-revision-firma");
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      target?.focus({ preventScroll: true });
+    });
+  };
   const irAAdjuntos = () => {
     if (!cambiarVistaTab("solicitud")) return;
     setSolicitanteTab("adjuntos");
@@ -4091,26 +4028,122 @@ export function SolicitudesActualDetallePage() {
       target?.focus({ preventScroll: true });
     });
   };
-  // Con el boton "Enviar a Riesgo" a la vista, el desplegable queda para el resto.
-  const accionesDelEstado =
-    ACCIONES_DE_ESTADO[resolvedSolicitud.estadoActual.code];
-  const transicionPrincipal =
-    submissionTransition ??
-    (accionesDelEstado
+  // Acciones de la barra azul, con la misma regla en todos los estados:
+  // principal, secundaria y "Mas acciones" (solicitudes-shared/utils/acciones-de-estado).
+  const estadoCode = resolvedSolicitud.estadoActual.code;
+  const accionesDelEstado = ACCIONES_DE_ESTADO[estadoCode];
+  const ocupado =
+    isLoadingWorkflowTransitions ||
+    workflowTransitionSelectorErrorMessage !== null ||
+    executeWorkflowTransitionMutation.isPending;
+  const motivoEditando = isEditing
+    ? "Guardá o cancelá los cambios primero."
+    : null;
+  // Con la revision de firma activa, transferir lo decide Legajos en su panel.
+  const motivoDeTransicion = (transition: WorkflowTransition) =>
+    documentReview.data?.enabled &&
+    ["transferir", "devolver_a_liquidada"].includes(transition.actionCode)
+      ? "Se decide en la revisión de firma."
+      : transition.blockedReason;
+  const accionDeTransicion = (
+    transition: WorkflowTransition,
+    icono?: ReactNode,
+  ): AccionDeEstado => {
+    const motivo = motivoEditando ?? motivoDeTransicion(transition);
+
+    return {
+      clave: transition.id,
+      deshabilitada: ocupado || Boolean(motivo),
+      etiqueta: etiquetaDeAccion(transition.actionCode, transition.actionLabel),
+      icono,
+      motivo,
+      onClick: () => handleWorkflowTransitionChange(transition.id),
+      terminal: terminaLaSolicitud(transition.actionCode),
+    };
+  };
+  const transicionPorCodigo = (actionCode?: string) =>
+    actionCode
       ? workflowTransitions.find(
-          (transition) => transition.actionCode === accionesDelEstado.primaria,
+          (transition) => transition.actionCode === actionCode,
         )
-      : undefined);
-  const transicionSecundaria = accionesDelEstado?.secundaria
-    ? workflowTransitions.find(
-        (transition) => transition.actionCode === accionesDelEstado.secundaria,
-      )
-    : undefined;
-  const otrasAcciones = workflowTransitionOptions.filter(
-    (option) =>
-      option.value !== transicionPrincipal?.id &&
-      option.value !== transicionSecundaria?.id,
+      : undefined;
+  const puedeGenerarPrestamo =
+    estadoCode === "Confirmada" &&
+    !resolvedSolicitud.legacyOid &&
+    canCreateSocio(currentUser) &&
+    linkedLoan.data?.status !== "cancelled";
+  const revisaFirmaAca =
+    estadoCode === "VerificarFirmaYDocumentacion" &&
+    documentReview.data?.canDecide === true;
+  const transicionPrincipal = transicionPorCodigo(accionesDelEstado?.primaria);
+  const transicionSecundaria = transicionPorCodigo(
+    accionesDelEstado?.secundaria,
   );
+  let accionPrincipal: AccionDeEstado | undefined;
+
+  if (puedeGenerarPrestamo) {
+    // Sin el prestamo en Vimarx no se puede seguir: es el paso que falta.
+    const motivo =
+      motivoEditando ??
+      (linkedLoan.isError || linkedLoan.data?.status === "unavailable"
+        ? "Esperá a que se verifique el préstamo en Vimarx."
+        : null);
+    accionPrincipal = {
+      clave: "generar-prestamo",
+      deshabilitada: createPrestamoLegacyMutation.isPending || Boolean(motivo),
+      etiqueta: "Generar préstamo",
+      icono: <Landmark className="size-4" />,
+      motivo,
+      onClick: () => setIsGenerarPrestamoModalOpen(true),
+    };
+  } else if (revisaFirmaAca) {
+    // La decision (que intento, con que motivo) se toma en el panel de firma.
+    accionPrincipal = {
+      clave: "revisar-firma",
+      etiqueta: "Revisar firma",
+      icono: <FileSignature className="size-4" />,
+      onClick: irARevisionDeFirma,
+    };
+  } else if (transicionPrincipal?.actionCode === "liquidar") {
+    const motivo = motivoEditando ?? analysisBlockedReason;
+    accionPrincipal = {
+      ...accionDeTransicion(transicionPrincipal, <Send className="size-4" />),
+      deshabilitada: ocupado || Boolean(motivo),
+      etiqueta: analysisActionLabel,
+      motivo,
+    };
+  } else if (transicionPrincipal) {
+    const accion = accionDeTransicion(
+      transicionPrincipal,
+      transicionPrincipal === submissionTransition ? (
+        <Send className="size-4" />
+      ) : (
+        <Check className="size-4" />
+      ),
+    );
+    accionPrincipal =
+      transicionPrincipal === submissionTransition && faltaReciboParaEnviar
+        ? {
+            ...accion,
+            deshabilitada: true,
+            motivo: "Falta el recibo de sueldo.",
+          }
+        : accion;
+  }
+
+  const accionSecundaria = transicionSecundaria
+    ? accionDeTransicion(transicionSecundaria, <Undo2 className="size-4" />)
+    : undefined;
+  // El resto, en el orden de la configuracion. "liquidar" va solo como
+  // principal: su nombre y su bloqueo dependen de la firma y del prestamo.
+  const accionesDelMenu = workflowTransitions
+    .filter(
+      (transition) =>
+        transition.actionCode !== "liquidar" &&
+        transition.id !== transicionSecundaria?.id &&
+        (puedeGenerarPrestamo || transition.id !== transicionPrincipal?.id),
+    )
+    .map((transition) => accionDeTransicion(transition));
   const workflowHistoryErrorMessage =
     workflowHistoryError instanceof ApiError &&
     workflowHistoryError.status === 403
@@ -4876,20 +4909,28 @@ export function SolicitudesActualDetallePage() {
 
     executeWorkflowTransitionMutation.reset();
     setSelectedWorkflowTransition(
-      transition?.actionCode === "liquidar"
+      transition && transition.actionCode !== "liquidar"
         ? {
             ...transition,
-            actionLabel: analysisActionLabel,
-            description:
-              "El análisis quedará terminado. El destino se comprobará con la firma vigente al confirmar.",
-            toState: {
-              ...transition.toState,
-              name: documentReview.data?.signature?.approved
-                ? "Para transferir"
-                : "Revisión de firma",
-            },
+            actionLabel: etiquetaDeAccion(
+              transition.actionCode,
+              transition.actionLabel,
+            ),
           }
-        : transition,
+        : transition?.actionCode === "liquidar"
+          ? {
+              ...transition,
+              actionLabel: analysisActionLabel,
+              description:
+                "El análisis quedará terminado. El destino se comprobará con la firma vigente al confirmar.",
+              toState: {
+                ...transition.toState,
+                name: documentReview.data?.signature?.approved
+                  ? "Para transferir"
+                  : "Revisión de firma",
+              },
+            }
+          : transition,
     );
   }
 
@@ -4932,95 +4973,15 @@ export function SolicitudesActualDetallePage() {
           {/* Ficha: quien pide y en que etapa esta, que se pide, pestanas y acciones. */}
           <CabeceraSolicitudEnBarra
             accionPrincipal={
-              canChangeState &&
-              (transicionPrincipal || transicionSecundaria) ? (
-                <div className="flex items-center gap-2">
-                  {transicionSecundaria ? (
-                    <Button
-                      aria-label={
-                        ETIQUETA_DE_ACCION[transicionSecundaria.actionCode] ??
-                        transicionSecundaria.actionLabel
-                      }
-                      className="h-10 rounded-md border border-white/30 bg-transparent px-3 font-semibold text-white hover:bg-white/10 sm:px-4"
-                      disabled={
-                        isLoadingWorkflowTransitions ||
-                        executeWorkflowTransitionMutation.isPending ||
-                        transicionSecundaria.blockedReason !== null
-                      }
-                      onClick={() =>
-                        handleWorkflowTransitionChange(transicionSecundaria.id)
-                      }
-                      title={transicionSecundaria.blockedReason ?? undefined}
-                      type="button"
-                    >
-                      <Undo2 className="size-4" />
-                      <span className="hidden sm:inline">
-                        {ETIQUETA_DE_ACCION[transicionSecundaria.actionCode] ??
-                          transicionSecundaria.actionLabel}
-                      </span>
-                    </Button>
-                  ) : null}
-                  {transicionPrincipal ? (
-                    <Button
-                      aria-label={
-                        ETIQUETA_DE_ACCION[transicionPrincipal.actionCode] ??
-                        transicionPrincipal.actionLabel
-                      }
-                      className="h-10 rounded-md bg-verde px-3 font-semibold text-white hover:bg-verde/90 sm:px-5"
-                      disabled={
-                        isLoadingWorkflowTransitions ||
-                        workflowTransitionSelectorErrorMessage !== null ||
-                        executeWorkflowTransitionMutation.isPending ||
-                        transicionPrincipal.blockedReason !== null ||
-                        (transicionPrincipal === submissionTransition &&
-                          faltaReciboParaEnviar)
-                      }
-                      onClick={() =>
-                        handleWorkflowTransitionChange(transicionPrincipal.id)
-                      }
-                      title={
-                        transicionPrincipal.blockedReason ??
-                        (transicionPrincipal === submissionTransition &&
-                        faltaReciboParaEnviar
-                          ? "Falta el recibo de sueldo."
-                          : undefined)
-                      }
-                      type="button"
-                    >
-                      {transicionPrincipal === submissionTransition ? (
-                        <Send className="size-4" />
-                      ) : (
-                        <Check className="size-4" />
-                      )}
-                      <span className="hidden sm:inline">
-                        {ETIQUETA_DE_ACCION[transicionPrincipal.actionCode] ??
-                          transicionPrincipal.actionLabel}
-                      </span>
-                    </Button>
-                  ) : null}
-                </div>
+              canChangeState ? (
+                <AccionesDeEstado
+                  mas={accionesDelMenu}
+                  principal={accionPrincipal}
+                  secundaria={accionSecundaria}
+                />
               ) : null
             }
             destino={topbarSlot}
-            aviso={
-              faltaReciboParaEnviar ? (
-                <p className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-amber-200">
-                  <CircleAlert className="size-3.5" />
-                  Falta el recibo de sueldo.
-                  <button
-                    className="font-semibold underline underline-offset-2 hover:no-underline"
-                    onClick={irAAdjuntos}
-                    type="button"
-                  >
-                    Adjuntarlo
-                  </button>
-                </p>
-              ) : submissionTransition?.blockedReason ? (
-                <p className="text-xs font-medium text-amber-200">
-                  {submissionTransition.blockedReason}
-                </p>
-              ) : null
-            }
             estado={resolvedSolicitud.estadoActual}
             nroSolicitud={resolvedSolicitud.nroSolicitud ?? null}
             estadoDesde={
@@ -5064,6 +5025,14 @@ export function SolicitudesActualDetallePage() {
                             type="button"
                           >
                             {tab.label}
+                            {tab.value === "evaluacion" &&
+                            evaluacionConCambios ? (
+                              <span
+                                aria-label="con cambios sin guardar"
+                                className="ml-1 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
+                                title="Hay cambios sin guardar en la evaluación"
+                              />
+                            ) : null}
                           </button>
                         );
                       })}
@@ -5071,31 +5040,26 @@ export function SolicitudesActualDetallePage() {
                 ) : null}
                 <SolicitudDetailToolbar
                   embedded
-                  analysisAction={
-                    canChangeState && analysisTransition
-                      ? {
-                          label: analysisActionLabel,
-                          onClick: () =>
-                            handleWorkflowTransitionChange(
-                              analysisTransition.id,
-                            ),
-                          disabled:
-                            isEditing ||
-                            isLoadingWorkflowTransitions ||
-                            executeWorkflowTransitionMutation.isPending ||
-                            Boolean(analysisBlockedReason),
-                          disabledReason: isEditing
-                            ? "Guardá los cambios antes de terminar el análisis."
-                            : (analysisBlockedReason ?? undefined),
-                        }
-                      : undefined
+                  aviso={
+                    faltaReciboParaEnviar ? (
+                      <MotivoBloqueo>
+                        Falta el recibo de sueldo.{" "}
+                        <button
+                          className="font-semibold underline underline-offset-2 hover:no-underline"
+                          onClick={irAAdjuntos}
+                          type="button"
+                        >
+                          Adjuntarlo
+                        </button>
+                      </MotivoBloqueo>
+                    ) : canChangeState &&
+                      accionPrincipal?.deshabilitada &&
+                      accionPrincipal.motivo ? (
+                      <MotivoBloqueo>{accionPrincipal.motivo}</MotivoBloqueo>
+                    ) : null
                   }
-                  canEdit={canEnterEditMode}
-                  isCreatePrestamoLegacyPending={
-                    createPrestamoLegacyMutation.isPending ||
-                    linkedLoan.isError ||
-                    linkedLoan.data?.status === "unavailable"
-                  }
+                  // Editar solo cambia la pestaña Solicitud.
+                  canEdit={canEnterEditMode && vistaTab === "solicitud"}
                   isEditing={isEditing}
                   isSaving={patchSolicitudCoreMutation.isPending}
                   onCancelEdit={handleCancelEditing}
@@ -5108,17 +5072,6 @@ export function SolicitudesActualDetallePage() {
                     (isEditing
                       ? !hasEditableSolicitudFields
                       : !canEnterEditMode)
-                  }
-                  isPrestamoLegacyGenerado={Boolean(
-                    resolvedSolicitud.legacyOid,
-                  )}
-                  onCreatePrestamoLegacy={
-                    canCreateSocio(currentUser) &&
-                    linkedLoan.data?.status !== "cancelled" &&
-                    resolvedSolicitud.estadoActual.code === "Confirmada" &&
-                    !resolvedSolicitud.legacyOid
-                      ? () => setIsGenerarPrestamoModalOpen(true)
-                      : undefined
                   }
                   onCreateSocio={
                     canCreateSocio(currentUser) && !esSocio
@@ -5136,31 +5089,6 @@ export function SolicitudesActualDetallePage() {
                         : adjuntos.length,
                     onClick: irAAdjuntos,
                   }}
-                  transitionControl={
-                    !headerExpanded &&
-                    otrasAcciones.length === 0 &&
-                    !isLoadingWorkflowTransitions &&
-                    !workflowTransitionSelectorErrorMessage ? undefined : (
-                      <StyledSelect
-                        className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
-                        disabled={
-                          !canChangeState ||
-                          isLoadingWorkflowTransitions ||
-                          workflowTransitionSelectorErrorMessage !== null ||
-                          executeWorkflowTransitionMutation.isPending ||
-                          otrasAcciones.length === 0
-                        }
-                        onChange={handleWorkflowTransitionChange}
-                        options={otrasAcciones}
-                        placeholder={
-                          transicionPrincipal && otrasAcciones.length > 0
-                            ? "Otras acciones"
-                            : workflowTransitionPlaceholder
-                        }
-                        value={selectedWorkflowTransition?.id ?? ""}
-                      />
-                    )
-                  }
                 />
               </>
             }
@@ -5342,10 +5270,12 @@ export function SolicitudesActualDetallePage() {
               }
               firmaLegajo={
                 verFirmaLegajo ? (
-                  <DocumentReviewPanel
-                    solicitudId={solicitudId}
-                    editing={false}
-                  />
+                  <div id="solicitud-revision-firma" tabIndex={-1}>
+                    <DocumentReviewPanel
+                      solicitudId={solicitudId}
+                      editing={false}
+                    />
+                  </div>
                 ) : null
               }
               solicitud={resolvedSolicitud}
@@ -5424,43 +5354,60 @@ export function SolicitudesActualDetallePage() {
           </div>
         ) : null}
 
-        {canViewCalculadora && vistaTab === "evaluacion" ? (
-          <EvaluacionRecibosView
-            key={solicitudId}
-            solicitudId={solicitudId}
-            recibos={recibos}
-            open={visorRecibosOpen}
-            selectedId={visorRecibosOpen ? reciboView.selectedId : null}
-            onOpen={() =>
-              setReciboView({
-                solicitudId,
-                selectedId: recibos[0]?.id ?? null,
-              })
-            }
-            onClose={() => setReciboView(null)}
-            onSelect={(selectedId) =>
-              setReciboView({ solicitudId, selectedId })
-            }
-            loading={isLoadingAdjuntos}
-            error={
-              adjuntosError
-                ? "No se pudo obtener el listado de recibos de sueldo."
-                : null
-            }
-          >
-            <Suspense
-              fallback={
-                <SolicitudesContentLoader label="Cargando calculadora..." />
+        {canViewCalculadora && evaluacionAbierta ? (
+          <div className={vistaTab === "evaluacion" ? "contents" : "hidden"}>
+            <EvaluacionRecibosView
+              // Si se guardan cambios en la solicitud, se rearma con los datos nuevos.
+              key={`${solicitudId}:${resolvedSolicitud.updatedAt}`}
+              solicitudId={solicitudId}
+              recibos={recibos}
+              open={visorRecibosOpen}
+              selectedId={visorRecibosOpen ? reciboView.selectedId : null}
+              onClose={() => setReciboView(null)}
+              onSelect={(selectedId) =>
+                setReciboView({ solicitudId, selectedId })
+              }
+              loading={isLoadingAdjuntos}
+              error={
+                adjuntosError
+                  ? "No se pudo obtener el listado de recibos de sueldo."
+                  : null
               }
             >
-              <CalculadoraMutualSheet
-                className="flex-1 min-w-0"
-                onCambiosSinGuardarChange={setEvaluacionConCambios}
-                puedeGuardar={canGuardarEvaluacion}
-                source={{ kind: "embedded", solicitudId }}
-              />
-            </Suspense>
-          </EvaluacionRecibosView>
+              <Suspense
+                fallback={
+                  <SolicitudesContentLoader label="Cargando calculadora..." />
+                }
+              >
+                <CalculadoraMutualSheet
+                  acciones={
+                    !visorRecibosOpen && recibos.length > 0 ? (
+                      <Button
+                        onClick={() =>
+                          setReciboView({
+                            solicitudId,
+                            selectedId: recibos[0]?.id ?? null,
+                          })
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <FileText className="size-4" />
+                        {recibos.length > 1
+                          ? `Ver recibos (${recibos.length})`
+                          : "Ver recibo"}
+                      </Button>
+                    ) : null
+                  }
+                  className="flex-1 min-w-0"
+                  onCambiosSinGuardarChange={setEvaluacionConCambios}
+                  puedeGuardar={canGuardarEvaluacion}
+                  source={{ kind: "embedded", solicitudId }}
+                />
+              </Suspense>
+            </EvaluacionRecibosView>
+          </div>
         ) : null}
 
         <NuevaGarantiaModal

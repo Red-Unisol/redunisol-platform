@@ -81,7 +81,7 @@ export function CabeceraSolicitudEnBarra({
   return createPortal(
     <div className="flex min-w-0 flex-1 items-center gap-2 pl-2 sm:gap-4 sm:pl-4">
       <span aria-hidden className="hidden h-8 w-px bg-white/15 sm:block" />
-      <div className="min-w-0 leading-tight">
+      <div className="min-w-28 leading-tight">
         <p className="truncate text-base font-semibold text-white">{nombre}</p>
         <p className="hidden truncate text-xs text-marino-foreground-secondary sm:block">
           {ubicacion}

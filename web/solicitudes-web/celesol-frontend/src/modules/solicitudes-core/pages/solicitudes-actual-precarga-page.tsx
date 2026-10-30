@@ -16,17 +16,14 @@ import {
   Plus,
   Send,
 } from "lucide-react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { canCreateSolicitud } from "@/modules/auth/utils/auth-user";
 import { useLineasDelAgenteQuery } from "@/modules/solicitudes-core/hooks/use-lineas-del-agente-query";
-import {
-  ActualizarListaButton,
-  ListaPaginacion,
-} from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
+import { ListaPaginacion } from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
 import { useSolicitudesCorePrecargaQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-precarga-query";
 import {
   executeSolicitudCoreTransition,
@@ -45,6 +42,7 @@ import {
   buildSocioLista,
   formatFechaLista,
   formatMontoLista,
+  hayTextoSeleccionado,
 } from "@/modules/solicitudes-core/utils/lista-solicitudes-formato";
 import { getRecibosDeSolicitud } from "@/modules/solicitudes-core/utils/recibos-de-solicitud";
 import {
@@ -54,8 +52,13 @@ import {
 import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
 import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
 import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
+import { etiquetaDeAccion } from "@/modules/solicitudes-shared/utils/acciones-de-estado";
+import { SolicitudWorkflowActionDialog } from "@/modules/solicitudes-core/components/solicitud-workflow-action-dialog";
+import type {
+  ExecuteWorkflowTransitionRequest,
+  WorkflowTransition,
+} from "@/modules/solicitudes/types/solicitudes-core";
 import { Button } from "@/shared/components/ui/button";
-import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
 import { ApiError } from "@/shared/services/http/api-error";
 
 const SimuladorPrestamoModal = lazy(() =>
@@ -96,25 +99,13 @@ export function SolicitudesActualPrecargaPage() {
   const queryClient = useQueryClient();
   const [reciboPara, setReciboPara] = useState<PrecargaRow | null>(null);
   const [isUploadingRecibo, setIsUploadingRecibo] = useState(false);
-  const [envioPara, setEnvioPara] = useState<PrecargaRow | null>(null);
-  const [comentarioEnvio, setComentarioEnvio] = useState<string | null>(null);
+  // Al tocar "Enviar a Riesgo" se piden las transiciones: dicen si se puede
+  // y si pide comentario. Con eso se abre el mismo dialogo que en el detalle.
+  const [envioPara, setEnvioPara] = useState<{
+    row: PrecargaRow;
+    transition: WorkflowTransition;
+  } | null>(null);
   const [isEnviando, setIsEnviando] = useState(false);
-  // Las transiciones se piden al abrir la confirmación: dicen si "enviar" está disponible y si pide comentario.
-  const transicionesQuery = useQuery({
-    enabled: envioPara !== null,
-    queryFn: () => listSolicitudCoreTransitions(envioPara?.id ?? ""),
-    queryKey: solicitudesCoreQueryKeys.transitions(envioPara?.id ?? ""),
-    retry: false,
-  });
-  const transicionEnviar =
-    transicionesQuery.data?.find(
-      (transition) => transition.actionCode === ENVIAR_ACTION_CODE,
-    ) ?? null;
-  const comentarioEnvioValue =
-    comentarioEnvio ?? transicionEnviar?.defaultComment ?? "";
-  const faltaComentarioEnvio =
-    transicionEnviar?.requiresComment === true &&
-    comentarioEnvioValue.trim().length === 0;
   const lineasQuery = useLineasDelAgenteQuery(isSimuladorOpen);
   useEffect(() => prefetchWhenIdle(loadSimuladorPrestamoModal), []);
   const { data, error, isFetching, isLoading, refetch } =
@@ -215,24 +206,53 @@ export function SolicitudesActualPrecargaPage() {
     }
   }
 
-  function abrirEnvio(row: PrecargaRow) {
-    setComentarioEnvio(null);
-    setEnvioPara(row);
+  async function abrirEnvio(row: PrecargaRow) {
+    try {
+      const transiciones = await queryClient.fetchQuery({
+        queryFn: () => listSolicitudCoreTransitions(row.id),
+        queryKey: solicitudesCoreQueryKeys.transitions(row.id),
+        staleTime: 0,
+      });
+      const transicion = transiciones.find(
+        (transition) => transition.actionCode === ENVIAR_ACTION_CODE,
+      );
+
+      if (!transicion || transicion.blockedReason) {
+        toast.error(
+          transicion?.blockedReason ??
+            "Esta solicitud no se puede enviar desde acá. Abrila para ver su estado.",
+          { duration: 3500, icon: <CircleAlert className="size-5" /> },
+        );
+        return;
+      }
+
+      setEnvioPara({
+        row,
+        transition: {
+          ...transicion,
+          actionLabel: etiquetaDeAccion(
+            transicion.actionCode,
+            transicion.actionLabel,
+          ),
+        },
+      });
+    } catch {
+      toast.error("No se pudo verificar si la solicitud se puede enviar.", {
+        duration: 3500,
+        icon: <CircleAlert className="size-5" />,
+      });
+    }
   }
 
-  async function handleEnviar() {
-    if (!envioPara || !transicionEnviar) return;
-    const solicitudId = envioPara.id;
-    const comentario = comentarioEnvioValue.trim();
+  async function handleEnviar(payload: ExecuteWorkflowTransitionRequest) {
+    if (!envioPara) return;
+    const solicitudId = envioPara.row.id;
     setIsEnviando(true);
 
     try {
-      await executeSolicitudCoreTransition(solicitudId, {
-        actionCode: ENVIAR_ACTION_CODE,
-        ...(comentario ? { comment: comentario } : {}),
-      });
+      await executeSolicitudCoreTransition(solicitudId, payload);
       toast.success(
-        `Solicitud de ${envioPara.socio || "el socio"} enviada a Riesgo.`,
+        `Solicitud de ${envioPara.row.socio || "el socio"} enviada a Riesgo.`,
         { duration: 3500, icon: <CircleCheckBig className="size-5" /> },
       );
       setEnvioPara(null);
@@ -290,14 +310,6 @@ export function SolicitudesActualPrecargaPage() {
           <Calculator className="size-4" />
           Simulador
         </Button>
-
-        <div className="ml-auto">
-          <ActualizarListaButton
-            disabled={refreshState.isRefreshActionDisabled}
-            isRefreshing={isManualRefreshPending}
-            onRefresh={() => void handleRefresh()}
-          />
-        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-surface shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -364,7 +376,9 @@ export function SolicitudesActualPrecargaPage() {
                 <tr
                   className="group cursor-pointer transition-colors hover:bg-verde/5 focus-visible:bg-verde/5 focus-visible:outline-none [&>td]:border-t [&>td]:border-border-soft [&:last-child>td]:border-b"
                   key={row.id}
-                  onClick={() => abrirDetalle(row.id)}
+                  onClick={() => {
+                    if (!hayTextoSeleccionado()) abrirDetalle(row.id);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") abrirDetalle(row.id);
                   }}
@@ -401,7 +415,8 @@ export function SolicitudesActualPrecargaPage() {
                         {row.cuotas}
                         {row.cuotaResultante ? (
                           <span className="text-foreground-secondary">
-                            {" "}× {row.cuotaResultante}
+                            {" "}
+                            × {row.cuotaResultante}
                           </span>
                         ) : null}
                       </>
@@ -416,7 +431,7 @@ export function SolicitudesActualPrecargaPage() {
                     <ParaEnviarCell
                       estado={estadoParaEnviar.get(row.id) ?? "revisando"}
                       onCargarRecibo={() => setReciboPara(row)}
-                      onEnviar={() => abrirEnvio(row)}
+                      onEnviar={() => void abrirEnvio(row)}
                     />
                   </td>
                   {showVendedor ? (
@@ -455,50 +470,15 @@ export function SolicitudesActualPrecargaPage() {
         }
       />
 
-      <ConfirmDialog
-        confirmLabel="Enviar a Riesgo"
-        description={
-          envioPara
-            ? `La solicitud de ${envioPara.socio || "el socio"}${envioPara.monto ? ` por ${envioPara.monto}` : ""} pasa a Riesgo y sale de Precarga.`
-            : ""
-        }
-        isConfirmDisabled={
-          transicionesQuery.isPending ||
-          !transicionEnviar ||
-          transicionEnviar.blockedReason !== null ||
-          faltaComentarioEnvio
-        }
-        isConfirming={isEnviando}
-        onConfirm={() => void handleEnviar()}
+      <SolicitudWorkflowActionDialog
+        isSubmitting={isEnviando}
+        onConfirm={handleEnviar}
         onOpenChange={(open) => {
           if (!open) setEnvioPara(null);
         }}
         open={envioPara !== null}
-        title="¿Enviar a Riesgo?"
-      >
-        {transicionesQuery.isPending ? (
-          <p className="text-sm text-foreground-muted">Verificando…</p>
-        ) : transicionesQuery.isError || !transicionEnviar ? (
-          <p className="text-sm text-destructive">
-            Esta solicitud no se puede enviar desde acá. Abrila para ver su
-            estado.
-          </p>
-        ) : transicionEnviar.blockedReason ? (
-          <p className="text-sm text-destructive">
-            {transicionEnviar.blockedReason}
-          </p>
-        ) : transicionEnviar.requiresComment ? (
-          <label className="block space-y-1.5 text-sm">
-            <span className="font-medium text-foreground">Comentario</span>
-            <textarea
-              className="min-h-20 w-full rounded-md border border-input bg-surface px-3 py-2 text-sm outline-none focus:border-input-focus"
-              disabled={isEnviando}
-              onChange={(event) => setComentarioEnvio(event.target.value)}
-              value={comentarioEnvioValue}
-            />
-          </label>
-        ) : null}
-      </ConfirmDialog>
+        transition={envioPara?.transition ?? null}
+      />
 
       {isSimuladorOpen ? (
         <Suspense fallback={null}>
@@ -547,7 +527,7 @@ function ParaEnviarCell({
 
   return (
     <button
-      className="inline-flex w-36 items-center justify-center gap-1.5 rounded-full border border-verde px-3 py-1 text-xs font-semibold text-verde transition hover:bg-verde hover:text-white focus-visible:ring-2 focus-visible:ring-verde/40 focus-visible:outline-none"
+      className="inline-flex w-36 items-center justify-center gap-1.5 rounded-full border border-verde bg-verde px-3 py-1 text-xs font-semibold text-white transition hover:bg-verde/90 focus-visible:ring-2 focus-visible:ring-verde/40 focus-visible:outline-none"
       onClick={onEnviar}
       title="Tiene recibo de sueldo: lista para enviar"
       type="button"

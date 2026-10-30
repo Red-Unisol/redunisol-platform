@@ -41,7 +41,10 @@ export function formatMontoLista(value: number | string | null) {
   }).format(numero);
 }
 
-export function buildSocioLista(apellido: string | null, nombre: string | null) {
+export function buildSocioLista(
+  apellido: string | null,
+  nombre: string | null,
+) {
   return [apellido?.trim(), nombre?.trim()].filter(Boolean).join(", ");
 }
 
@@ -60,4 +63,10 @@ export function buildRowStyleLista(
     backgroundColor: appearance.backgroundColor ?? undefined,
     color: appearance.textColor ?? undefined,
   };
+}
+
+// Al pintar texto de una fila (p. ej. para copiar el DNI) el navegador igual
+// dispara el clic: si quedo texto seleccionado, no es un clic para abrirla.
+export function hayTextoSeleccionado() {
+  return (window.getSelection()?.toString().trim().length ?? 0) > 0;
 }
