@@ -7,6 +7,99 @@ La primera tanda tiene **10 números de WhatsApp únicos**. La siguiente prepara
 **20 números únicos**, con su propio ID y cupo persistente; el resto continúa por
 el Router anterior y su formulario web.
 
+## Versión 3: provincias ampliadas y despliegue sin cupo
+
+Estado al 30/10/2026: separación de Jubilado y Pensionado aprobada por Santiago
+para las siete opciones de provincia. El JSON de Marketing del Drive fue cotejado
+con Git antes de aplicar esta separación. Meta conserva el Flow
+**Solicitud web | Provincias ampliadas | v3**, ID `950118281197789`, publicado
+el 30/10/2026 y validado sin errores de JSON. Se verificaron en la vista previa
+los campos de Jubilado/Pensionado y, en modo interactivo, el avance desde
+Jubilado de Caja Córdoba hasta CUIL y email. La UAT real queda para la activación.
+La versión incluye pruebas de visibilidad, organismo y banco; no cambia las
+reglas comerciales de pensionados ni activa envíos por sí sola.
+SHA-256 del JSON publicado, serializado con claves ordenadas, UTF-8 y sin
+espacios: `989b52e066d4950173a37ab17a46d451777556a4ecccd7801bb80ff487348e46`.
+
+El [JSON v3](whatsapp-website-intake-v3.flow.json), basado en el archivo de Marketing
+del 30/10/2026, separa `DATOS` (perfil y banco) de `IDENTIDAD` (CUIL obligatorio,
+email opcional y consentimiento). También pide los datos para las selecciones
+que terminan en rechazo; no agrega una landing ni una pantalla de resultado.
+
+El receptor de intake admite Buenos Aires, Santa Fe y Neuquén además de las
+provincias anteriores. `provincia_bsas`, `santa_fe` y `bpn` se resuelven contra el
+catálogo bancario existente. Para jubilados y pensionados fuera de Córdoba lee exclusivamente
+`organismo_<provincia>` y `banco_<provincia>`; Córdoba conserva `organismo` y
+`banco_jubilado`. Sólo Jubilado de Caja Córdoba omite el banco; Pensionado lo
+conserva aun cuando declara Caja y se guarda como Pensionado genérico. Los valores de ramas ocultas nunca completan otro perfil.
+
+`anses` con un jubilado identificado se guarda como Jubilado Nacional, incluso
+en Otra provincia y con Nación u otro banco. No se rechaza primero por provincia.
+La posterior calificación reutiliza las [reglas comerciales vigentes](../kestra/automations/marketing-crm/docs/commercial-rules/LEAD_QUALIFICATION.md),
+incluida la prioridad de la base CUAD. Una caja provincial fuera de Córdoba se
+guarda como Jubilado Provincial y conserva las reglas de su provincia; no se
+aprueba por el solo hecho de que el formulario admita la respuesta.
+
+El contrato admite `jubilado` y `pensionado` separados. Nunca transforma un
+`pensionado` en Jubilado Nacional. La selección histórica agrupada
+`jubilado_pensionado` de Córdoba conserva su compatibilidad únicamente para los
+IDs publicados v1/v2; las selecciones agrupadas de un Flow nuevo, las agrupadas
+fuera de Córdoba o un organismo `ayuda` permanecen en revisión manual.
+No se resuelve por descarte la identificación pendiente de la tarea `23333`.
+
+Para una tanda nueva, `EDNA_INTAKE_PILOT_LIMIT=unlimited` elimina exclusivamente
+el límite de participantes. Se persiste como `capacity=0`, con contador,
+admisiones, deduplicación, cooldown y rollback de cola sin cambios. El cero
+numérico o textual sigue siendo configuración inválida: sólo la palabra exacta
+`unlimited` habilita este modo. Cambiar la configuración no altera el cupo de
+una tanda ya creada, limitada o ilimitada. `edna:intake pilot` informa `limit`
+como `unlimited` y explica el valor persistido `0`.
+
+La activación requiere un **ID de tanda nuevo** y un **Flow nuevo publicado**.
+Primero desplegar el receptor compatible; luego configurar por Git el nuevo
+ID en Web y la lista de IDs aceptados en Kestra, conservando `3298964390491520`
+y `995212369590508` para las respuestas pendientes. No reiniciar las tandas
+existentes de 10 y 20 participantes. El modo sin cupo sigue requiriendo origen
+web verificado; Ads directo se mantiene en la tarea `23279`.
+
+La confirmación inmediata por segmento y el resumen privado para el asesor
+son cambios posteriores; este contrato no agrega esos mensajes.
+
+### Valores preparados para la activación
+
+El merge y despliegue de la compatibilidad preceden al cambio de ID de envío.
+Los archivos de entorno cifrados de producción no se cambian con esta preparación.
+
+| Runtime | Variable | Valor de activación |
+|---|---|---|
+| Web | `EDNA_INTAKE_FLOW_ID` | `950118281197789` |
+| Web | `EDNA_INTAKE_PILOT_ID` | `website-intake-v3` (tanda nueva) |
+| Web | `EDNA_INTAKE_PILOT_LIMIT` | `unlimited` |
+| Web | `EDNA_INTAKE_START_AT` | Instante real del corte, ISO 8601 con zona horaria |
+| Web | `EDNA_INTAKE_RECIPIENTS` | Vacío, para entradas web verificadas |
+| Web | `EDNA_INTAKE_ENABLED`, `EDNA_INTAKE_CRM_ENABLED` | `true` |
+| Kestra | `ENV_EDNA_INTAKE_FLOW_ID` | `950118281197789` |
+| Kestra | `ENV_EDNA_INTAKE_ACCEPTED_FLOW_IDS` | `3298964390491520,995212369590508,950118281197789` |
+| Kestra | `ENV_EDNA_INTAKE_CRM_ENABLED` | `true` |
+| Kestra | `ENV_EDNA_INTAKE_RECIPIENTS` | Vacío |
+
+1. Comprobar que este ID conserve el estado Publicado (verificado el 30/10/2026).
+2. Mergear y desplegar el receptor compatible y Web por los workflows existentes.
+3. En un cambio Git posterior, actualizar primero la aceptación de IDs de Kestra;
+   comprobar el runtime antes de cambiar el Flow de envío y crear la tanda v3.
+4. Mantener los IDs v1/v2 aceptados, sin tocar sus cupos ni reprocesar respuestas.
+5. Para UAT, usar la referencia de prueba documentada y revisar la correlación,
+   lead, categoría, atribución y ausencia de duplicados. Esa referencia escribe
+   datos reales de prueba en CRM; no usar respuestas históricas de clientes.
+
+La validación de Meta y la vista previa no envían mensajes, no crean leads ni
+ocupan cupos. El contrato mantiene `DATOS` → `IDENTIDAD`, CUIL obligatorio y
+email opcional. Las expresiones booleanas de visibilidad usan la sintaxis de
+[expresiones anidadas de Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/flowjson/).
+El envío final conserva las mismas claves de respuesta y obtiene el perfil
+mediante referencias globales `${screen.DATOS.form.<campo>}`; no necesita
+transferir campos de ramas ocultas como datos obligatorios de navegación.
+
 ## Prueba completa por referencia
 
 Con esta versión desplegada, enviar **`(ref: PRUEBAFORM)`** al WhatsApp de Ventas
