@@ -30,7 +30,8 @@ def test_public_draft_has_own_oauth_and_review_metadata_without_private_bindings
             assert isinstance(case["tools_triggered"],str) and case["expected_behavior"]
         assert len(ext["review"]["test_cases"]["positive"]) == 5
         assert len(ext["review"]["test_cases"]["negative"]) == 3
-        assert "demo_recording_url" not in ext["review"]
+        assert ext["review"]["demo_recording_url"] == "https://mcp.redunisol.com.ar/demo/"
+        assert ext["publication"]["translations"]["es-419"]["subtitle"] == "Consultas de Mutual Celesol"
         server=json.loads(archive.read("vimarx-celesol/mcp.json"))["mcpServers"]["vimarx-celesol"]
         assert server["url"] == "https://mcp.redunisol.com.ar/mcp"
         assert server["extensions"]["com.openai"]["auth"] == {"type":"oauth"}

@@ -205,15 +205,17 @@ cinco casos positivos y tres negativos están en `plugin/public-submission.json`
 Los datos del socio 900001 y préstamo 910001 son fixtures ficticios implementados
 en el backend sintético, no registros existentes en Vimarx. Los cinco recorridos
 positivos se verifican por API en tests/test_demo.py sin acceso de red. La
-ejecución de los ocho casos por ChatGPT y la grabación siguen pendientes.
+grabación real en ChatGPT cubre los cinco recorridos y dos rechazos de escritura;
+la regresión de otra conexión se verificó por separado con el plugin 2.0.4.
+Todavía deben ejecutarse los casos en la versión guardada en el portal de envío.
 
 Páginas: `/`, `/support`, `/privacy`, `/terms`; contacto confirmado:
 info@redunisol.com.ar. Las URL del ZIP deben comprobarse en producción tras
 desplegar esta revisión antes de considerar el paquete listo.
 
-Pendientes externos: identidad verificada de Santiago Agustín Acosta, cuenta
-de demostración sin datos reales, grabación reproducible y accesible para el
-revisor, casos ejecutados con dicha cuenta, verificación de dominio y conexión
+Pendientes externos: identidad verificada de Santiago Agustín Acosta,
+credenciales demo cargadas de forma privada en el portal, casos ejecutados con
+dicha cuenta en la versión de envío, verificación de dominio y conexión
 en el portal. El ZIP es un borrador: no enviarlo como listo ni confundir upload,
 envío a revisión y publicación. Las credenciales del revisor se ingresan solo
 en los campos seguros del portal. Nunca usar la cuenta personal de producción.
@@ -295,3 +297,47 @@ simula datos localmente y no está conectada a una instalación demo de Vimarx.
 Probar los prompts con esta cuenta y grabar el flujo real en ChatGPT. El acceso
 solo no equivale a una revisión aprobada. No publicar sus credenciales en la
 ficha, README, video ni ZIP.
+
+## Video público de revisión
+
+Página: `https://mcp.redunisol.com.ar/demo/`. El MP4 aprobado, de 144 segundos y
+1280×720 sin audio, sólo muestra datos ficticios. No se distribuye la grabación
+original que contiene pruebas adicionales. El checksum y nombre inmutables están
+en `deploy/demo-media.json`; el binario se conserva como artefacto de publicación,
+fuera del ZIP del plugin y de las carpetas privadas del gateway.
+
+El vhost sirve exclusivamente `public-demo/` para `/demo/`, sin listar directorios.
+La publicación usa un archivo explícito y valida su tamaño y SHA-256 antes de
+copiarlo; no recorre carpetas ni publica credenciales. Para reproducir el estado,
+desplegar los archivos de `deploy/` y ejecutar en la VPS autorizada:
+
+```sh
+python3 /opt/vimarx-oauth-gateway/deploy/publish_demo.py --media /ruta/al/mp4-aprobado
+```
+
+El script valida Apache y hace una recarga graceful, sin reiniciar el gateway;
+restaura el vhost anterior si la validación o recarga falla. Verificar HTTPS,
+`Content-Type: video/mp4`, respuestas parciales 206 y reproducción en navegador.
+El catálogo demo describe sólo las capacidades del simulador, incluyendo sus
+límites XPO, calendario ilustrativo y ausencia de cálculos financieros reales.
+
+Verificación operativa del 30/10/2026: revisión
+`5da455d63aefefc19bdf2fbd5187fd68532daae2` desplegada, claves y configuración
+productivas conservadas. Estado deseado de esta VPS: `DEMO_ENABLED=1`, con hash y
+clave demo propios tomados del registro local de accesos; no hay valores secretos
+en Git. Página y MP4 publicados, checksum coincidente, tipo `video/mp4`, rangos
+HTTP 206 y reproducción en Chrome comprobados sin autenticación.
+
+Revisión final: 159 tests locales; los cinco recorridos por HTTPS, las 26 tools,
+OAuth DCR/PKCE, renovación, límites y rechazo de escrituras pasaron nuevamente.
+La renovación se forzó sólo sobre una sesión demo creada para la prueba y esa
+conexión se revocó al terminar. El ZIP público 2.1.0 incluye la URL del video,
+metadatos base en inglés y traducción es-419, icono PNG y cinco casos positivos
+más tres negativos. El caso de préstamos describe el único préstamo del fixture.
+
+El portal de la organización Personal exige verificar la identidad individual
+antes de aceptar la carga. El ZIP no se subió ni se envió a revisión en esta
+comprobación. Tras verificar la identidad quedan la carga, verificación de dominio,
+conexión demo y pruebas del portal, credenciales privadas del revisor y
+declaraciones del publicador. La aprobación y publicación no se deducen de estas
+comprobaciones locales.
