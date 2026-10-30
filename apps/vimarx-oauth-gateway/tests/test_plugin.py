@@ -55,7 +55,7 @@ def test_zip_preserves_official_binary_logo_and_updated_presentation(tmp_path):
         assert hashlib.sha256(logo).hexdigest() == "2c9c638e6e32e4e6a4226c903c6a18869a39c3557762d1b251f0393d1c08c0cf"
         manifest = json.loads(archive.read("vimarx-celesol/plugin.json"))
         assert manifest["name"] == "vimarx-celesol"
-        assert manifest["version"] == "2.0.2"
+        assert manifest["version"] == "2.0.4"
         interface = manifest["extensions"]["com.openai"]["interface"]
         assert interface["displayName"] == "Celesol · Vimarx"
         assert interface["logo"] == interface["composerIcon"] == "./assets/icon.jpeg"

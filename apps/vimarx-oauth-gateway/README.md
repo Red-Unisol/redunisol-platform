@@ -167,7 +167,7 @@ problema de 2.0.1: el cliente local devuelve datos y el chat normal no recibe to
 Exportar para escritorio/Codex local:
 
 ```sh
-python deploy/build_plugin.py --output /salida/celesol-vimarx-desktop-2.0.2.zip
+python deploy/build_plugin.py --output /salida/celesol-vimarx-desktop-2.0.4.zip
 ```
 
 Para ChatGPT, registrar primero la conexión privada al endpoint OAuth mediante
@@ -176,7 +176,7 @@ y exportar la variante que referencia esa conexión registrada:
 
 ```sh
 python deploy/build_plugin.py --registered-app-id APP_ID_VERIFICADO \
-  --output /salida/celesol-vimarx-chatgpt-2.0.2.zip
+  --output /salida/celesol-vimarx-chatgpt-2.0.4.zip
 ```
 
 El App ID se suministra al exportar y no queda fijo en Git. Esta variante contiene
@@ -195,7 +195,7 @@ Referencia: https://learn.chatgpt.com/docs/enterprise/plugin-management
 
 ## Preparación para el directorio público
 
-La instalación privada 2.0.3 y sus App IDs se conservan fuera de Git.
+La instalación privada 2.0.4 y sus App IDs se conservan fuera de Git.
 `python deploy/build_public_plugin.py --output /ruta/celesol-vimarx-public-2.1.0-draft.zip`
 genera una copia para revisión pública, con OAuth descubierto desde el endpoint
 HTTPS, sin `.app.json`, credenciales ni referencias a la conexión privada.
@@ -243,6 +243,37 @@ la cuenta o rotar su hash/clave impide volver a usar sus tokens internos.
 revoca también sus conexiones OAuth. Las cuentas reales conservan su ruta y sus
 permisos. Los tests usan un backend que falla si recibe cualquier llamada y
 bloquean httpx/socket para comprobar el aislamiento del demo.
+
+### Selección de cuenta en ChatGPT
+
+El aislamiento del router cubre cada token autenticado. No controla las otras
+Apps o cuentas que una persona haya conectado por separado en ChatGPT. En una
+prueba del 30/10/2026, el modelo consultó metadatos de una conexión de producción
+al buscar otra mutual desde una conversación DEMO; no consultó socios reales.
+Eso es un cambio de conexión en el host, no un fallback del router sintético.
+
+La skill desde 2.0.4 exige mantener conexión, cuenta y ambiente durante consultas,
+metadatos, errores y reconexiones; prohíbe descubrir o probar alternativas cuando
+se eligió DEMO y rechaza pedidos de otra mutual sin invocar herramientas. Un
+cambio explícito de cuenta invalida el contexto previo y exige reconfirmación.
+Estas instrucciones reducen cambios indebidos del modelo, pero no son una barrera
+de autorización sobre otras Apps. Para una revisión con aislamiento estricto,
+usar una cuenta o perfil de ChatGPT que sólo tenga acceso al demo. No deshabilitar
+cuentas productivas del usuario como efecto de una prueba.
+
+La regresión de host debe comenzar en un chat nuevo del plugin actualizado:
+confirmar DEMO, pedir el servidor de otra mutual aun con otra conexión autorizada,
+comprobar el rechazo sin actividad de herramientas y confirmar que sigue en DEMO.
+Repetir con un resultado vacío o función no soportada; nunca usar producción para
+completar el resultado. La prueba automática del router y esta prueba del host
+son evidencias distintas; una no sustituye a la otra.
+
+Verificación del 30/10/2026 con el plugin privado 2.0.4 en un chat nuevo de
+ChatGPT (GPT-5.6 Sol): confirmó la cuenta DEMO, rechazó buscar el servidor Fiat
+mediante otra conexión autorizada sin mostrar actividad de herramientas en esa
+respuesta, y devolvió socio 999999 inexistente sin completar con producción.
+Son resultados observados de dos regresiones del host, no una garantía de que
+un modelo nunca pueda elegir otra App disponible. La suite local pasó 156 tests.
 
 Los 26 nombres de herramientas y sus argumentos de lectura tienen un catálogo
 sintético local en gateway/demo_tools.json. Todos los resultados anuncian DEMO,
