@@ -320,3 +320,24 @@ restaura el vhost anterior si la validación o recarga falla. Verificar HTTPS,
 `Content-Type: video/mp4`, respuestas parciales 206 y reproducción en navegador.
 El catálogo demo describe sólo las capacidades del simulador, incluyendo sus
 límites XPO, calendario ilustrativo y ausencia de cálculos financieros reales.
+
+Verificación operativa del 30/10/2026: revisión
+`5da455d63aefefc19bdf2fbd5187fd68532daae2` desplegada, claves y configuración
+productivas conservadas. Estado deseado de esta VPS: `DEMO_ENABLED=1`, con hash y
+clave demo propios tomados del registro local de accesos; no hay valores secretos
+en Git. Página y MP4 publicados, checksum coincidente, tipo `video/mp4`, rangos
+HTTP 206 y reproducción en Chrome comprobados sin autenticación.
+
+Revisión final: 159 tests locales; los cinco recorridos por HTTPS, las 26 tools,
+OAuth DCR/PKCE, renovación, límites y rechazo de escrituras pasaron nuevamente.
+La renovación se forzó sólo sobre una sesión demo creada para la prueba y esa
+conexión se revocó al terminar. El ZIP público 2.1.0 incluye la URL del video,
+metadatos base en inglés y traducción es-419, icono PNG y cinco casos positivos
+más tres negativos. El caso de préstamos describe el único préstamo del fixture.
+
+El portal de la organización Personal exige verificar la identidad individual
+antes de aceptar la carga. El ZIP no se subió ni se envió a revisión en esta
+comprobación. Tras verificar la identidad quedan la carga, verificación de dominio,
+conexión demo y pruebas del portal, credenciales privadas del revisor y
+declaraciones del publicador. La aprobación y publicación no se deducen de estas
+comprobaciones locales.
