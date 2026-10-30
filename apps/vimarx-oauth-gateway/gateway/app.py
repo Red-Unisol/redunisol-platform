@@ -22,6 +22,7 @@ from werkzeug.security import generate_password_hash
 from .models import Client, Code, PersistentSession, RateBucket, RefreshResponse, Token, UserSession, db, digest
 from .upstream import UpstreamError, UpstreamSessionExpired, Vimarx
 from .sessions import ReauthenticationRequired, SessionService
+from .demo import RoutedVimarx
 
 READ_TOOLS = frozenset({
     "get_version", "contexto_cliente", "get_entidades", "get_propiedades",
@@ -61,6 +62,9 @@ def create_app(config=None, upstream=None):
         REFRESH_RETRY_SECONDS=15,
         GIT_SHA=os.environ.get("GIT_SHA", "development"),
         EXTRA_REDIRECT_URIS=[],
+        DEMO_ENABLED=os.environ.get("DEMO_ENABLED", "0") == "1",
+        DEMO_PASSWORD_HASH=os.environ.get("DEMO_PASSWORD_HASH", ""),
+        DEMO_TOKEN_KEY=os.environ.get("DEMO_TOKEN_KEY", ""),
     )
     if config:
         app.config.update(config)
@@ -86,7 +90,8 @@ def create_app(config=None, upstream=None):
                 connection.exec_driver_sql("PRAGMA journal_mode=WAL")
                 connection.exec_driver_sql("PRAGMA busy_timeout=20000")
         db.create_all()
-    vimarx = upstream or Vimarx(app.config["VIMARX_ORIGIN"])
+    vimarx = RoutedVimarx(upstream or Vimarx(app.config["VIMARX_ORIGIN"]), app.config)
+    app.extensions["vimarx_router"] = vimarx
     sessions = SessionService(app, cipher, vimarx)
     app.extensions["vimarx_sessions"] = sessions
 
@@ -313,6 +318,18 @@ def create_app(config=None, upstream=None):
     def home():
         return render_template("home.html", resource=resource)
 
+    @app.get(prefix + "/support")
+    def support():
+        return render_template("support.html", resource=resource)
+
+    @app.get(prefix + "/privacy")
+    def privacy():
+        return render_template("privacy.html", resource=resource)
+
+    @app.get(prefix + "/terms")
+    def terms():
+        return render_template("terms.html", resource=resource)
+
     @app.get(prefix + "/authorize.js")
     def authorize_script():
         return app.send_static_file("authorize.js")
@@ -466,7 +483,7 @@ def create_app(config=None, upstream=None):
         session.permanent = True
         return render_template("authorize.html", csrf=csrf, error=error_message,
                                resource=resource, client_name=grant.client.client_name,
-                               username=request.form.get("username", "")[:128]), (401 if error_message else 200)
+                               username=request.form.get("username", "")[:128], demo_enabled=vimarx.demo is not None), (401 if error_message else 200)
 
     @app.post(prefix + "/token")
     def issue_token():
@@ -634,6 +651,13 @@ def create_app(config=None, upstream=None):
                 "luego query_entidad con ordenarPor descendente y limit 3. "
                 "Las descripciones pueden mencionar métodos internos en PascalCase; usar los nombres "
                 "snake_case de tools/list. No inventar resultados ni confundir metadatos con registros.")
+        if method == "initialize" and vimarx.is_demo_token(upstream_token):
+            init["serverInfo"]["name"] = "redunisol-vimarx-DEMO-sintetico"
+            init["instructions"] = (
+                "DEMOSTRACIÓN: todos los datos son ficticios y locales. Este modo no consulta Vimarx "
+                "ni permite acceder a producción. Informar siempre que los resultados son de DEMO. "
+                "Las consultas XPO soportan un subconjunto explícito; las no soportadas fallan. "
+            ) + init["instructions"]
         if method == "tools/list" and isinstance(result.get("result"), dict):
             tools = []
             for tool in result["result"].get("tools", []):

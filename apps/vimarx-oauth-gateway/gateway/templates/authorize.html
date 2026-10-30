@@ -14,6 +14,7 @@
     <p>Autorizá a <strong>{{ client_name }}</strong> a consultar Celesol con los permisos de tu usuario.</p>
     <p>Este acceso permite consultas de solo lectura. No permite modificar datos.</p>
     {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    {% if demo_enabled %}<p class="hint">La cuenta reservada <strong>__demo_celesol__</strong> usa únicamente datos ficticios. Las cuentas habituales siguen accediendo a Vimarx con sus propios permisos.</p>{% endif %}
     <form method="post" data-busy-label="Conectando…">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <label for="username">Usuario de Vimarx</label>
@@ -26,6 +27,6 @@
       <button class="secondary" name="approve" value="no" formnovalidate>Cancelar</button>
     </form>
     <p class="note">Sin «Mantener conectado», tu contraseña sólo se usa en este ingreso y tendrás que volver a conectar cuando venza el acceso.</p>
-  </main>
+  <p class="note"><a href="{{ resource.rsplit('/', 1)[0] }}/privacy">Privacidad</a> · <a href="{{ resource.rsplit('/', 1)[0] }}/terms">Términos</a> · <a href="{{ resource.rsplit('/', 1)[0] }}/support">Soporte</a></p></main>
 </body>
 </html>

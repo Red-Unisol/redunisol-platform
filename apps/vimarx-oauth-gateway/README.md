@@ -192,3 +192,75 @@ Verificar con una lectura posterior que no haya declaraciones MCP residuales,
 que la ficha web permita abrir el plugin y que la conexión espere OAuth del usuario.
 
 Referencia: https://learn.chatgpt.com/docs/enterprise/plugin-management
+
+## Preparación para el directorio público
+
+La instalación privada 2.0.3 y sus App IDs se conservan fuera de Git.
+`python deploy/build_public_plugin.py --output /ruta/celesol-vimarx-public-2.1.0-draft.zip`
+genera una copia para revisión pública, con OAuth descubierto desde el endpoint
+HTTPS, sin `.app.json`, credenciales ni referencias a la conexión privada.
+El logo es una recodificación PNG de los mismos píxeles del JPEG aprobado.
+La configuración confirmada del publicador, países, ausencia de cobros y los
+cinco casos positivos y tres negativos están en `plugin/public-submission.json`.
+Los datos del socio 900001 y préstamo 910001 son fixtures ficticios implementados
+en el backend sintético, no registros existentes en Vimarx. Los cinco recorridos
+positivos se verifican por API en tests/test_demo.py sin acceso de red. La
+ejecución de los ocho casos por ChatGPT y la grabación siguen pendientes.
+
+Páginas: `/`, `/support`, `/privacy`, `/terms`; contacto confirmado:
+info@redunisol.com.ar. Las URL del ZIP deben comprobarse en producción tras
+desplegar esta revisión antes de considerar el paquete listo.
+
+Pendientes externos: identidad verificada de Santiago Agustín Acosta, cuenta
+de demostración sin datos reales, grabación reproducible y accesible para el
+revisor, casos ejecutados con dicha cuenta, verificación de dominio y conexión
+en el portal. El ZIP es un borrador: no enviarlo como listo ni confundir upload,
+envío a revisión y publicación. Las credenciales del revisor se ingresan solo
+en los campos seguros del portal. Nunca usar la cuenta personal de producción.
+
+## Cuenta de demostración sintética
+
+El mismo endpoint OAuth/MCP puede aceptar la cuenta reservada `__demo_celesol__`.
+Está deshabilitada por omisión. Habilitarla requiere `DEMO_ENABLED=1`, un
+`DEMO_PASSWORD_HASH` Werkzeug scrypt o pbkdf2:sha256, y una `DEMO_TOKEN_KEY`
+Fernet exclusiva, distinta de `TOKEN_ENCRYPTION_KEY`. Guardar contraseña y claves
+solo en el archivo local canónico de accesos y en el `.env` operativo necesario.
+No hay una contraseña de fábrica, ni se incluyen credenciales en el ZIP.
+
+El token interno del demo es opaco, autenticado con la clave propia y ligado al
+issuer, la cuenta, la generación de contraseña y una hora de vigencia. Nunca
+sale al cliente como respuesta de herramienta. El OAuth externo usa PKCE,
+rotación y renovación existentes; con Mantener conectado renueva el demo
+localmente, sin llamar al login de Vimarx. El borrado de conexiones usa la misma
+cuenta reservada. No cambia el esquema ni convierte sesiones productivas.
+
+El router decide por el token autenticado de la sesión, nunca por argumentos,
+headers, criterios ni una entidad elegida por el modelo. Login demo incorrecto,
+cuenta deshabilitada, token vencido/alterado/de otro issuer, herramienta ausente
+o consulta no soportada fallan sin fallback al backend productivo. Desactivar
+la cuenta o rotar su hash/clave impide volver a usar sus tokens internos.
+`flask --app gateway.app:create_app revoke-account --username __demo_celesol__`
+revoca también sus conexiones OAuth. Las cuentas reales conservan su ruta y sus
+permisos. Los tests usan un backend que falla si recibe cualquier llamada y
+bloquean httpx/socket para comprobar el aislamiento del demo.
+
+Los 26 nombres de herramientas y sus argumentos de lectura tienen un catálogo
+sintético local en gateway/demo_tools.json. Todos los resultados anuncian DEMO,
+datosFicticios y synthetic-v1; initialize también identifica el simulador.
+La fecha de trabajo del fixture es 2026-10-30. Los correos usan example.invalid.
+Los calendarios, herencia y cálculos de deuda son ilustrativos; no afirman
+reproducir el motor financiero ni el esquema completo de Vimarx.
+
+`query_entidad` admite las entidades locales devueltas por get_entidades,
+comparaciones (=, !=, <>, <, <=, >, >=), And/Or/Not, In, Contains/StartsWith/EndsWith,
+fechas #ISO#, propiedades simples, orden múltiple y un agregado Count/Sum/Avg/Min/Max
+con agrupación opcional. No ejecuta SQL, Python ni XPO real. Otros operadores y
+expresiones fallan explícitamente. Límites: 200 filas, 4096 caracteres, 256 tokens
+y 16 niveles de paréntesis. El campo de orden debe figurar en la proyección.
+El fixture es inmutable entre consultas y no contiene ninguna exportación real.
+
+Para la revisión pública, declarar en las instrucciones seguras que esta cuenta
+simula datos localmente y no está conectada a una instalación demo de Vimarx.
+Probar los prompts con esta cuenta y grabar el flujo real en ChatGPT. El acceso
+solo no equivale a una revisión aprobada. No publicar sus credenciales en la
+ficha, README, video ni ZIP.

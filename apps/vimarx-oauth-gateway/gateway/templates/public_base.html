@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{% endblock %} · Celesol · Vimarx</title>
+<link rel="stylesheet" href="{{ resource.rsplit('/', 1)[0] }}/style.css"></head>
+<body><main><p class="brand">CELESOL · VIMARX</p>
+{% block content %}{% endblock %}
+<nav aria-label="Información del servicio"><p>
+<a href="{{ resource.rsplit('/', 1)[0] }}/">Inicio</a> ·
+<a href="{{ resource.rsplit('/', 1)[0] }}/support">Soporte</a> ·
+<a href="{{ resource.rsplit('/', 1)[0] }}/privacy">Privacidad</a> ·
+<a href="{{ resource.rsplit('/', 1)[0] }}/terms">Términos</a>
+</p></nav></main></body></html>
