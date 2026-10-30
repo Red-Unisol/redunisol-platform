@@ -99,6 +99,8 @@ class ChatTransferResult:
             for _chat_id, reason in self.skipped_chats
         ):
             return "non_distributable_open_line"
+        if any(reason == "transfer_error" for _chat_id, reason in self.skipped_chats):
+            return "transfer_failed"
         return "no_transferable_session"
 
 
@@ -232,6 +234,15 @@ def resolve_round_robin_assignee(
         # An explicit empty pool is an operator pause, not a technical failure.
         # Use the existing waiting path without falling back to other sellers.
         raise NoOnlineSellersError(pool)
+
+    if len(pool) == 1:
+        # The panel already removed paused sellers. Presence does not change the
+        # destination of a singleton, and must not gate or postpone its ownership.
+        logger.info(f"Bucket {bucket_key}: asignacion directa al unico vendedor habilitado {pool[0]}.")
+        return AssignmentResolution(
+            assigned_by_id=pool[0], strategy="single_seller",
+            configured_pool=pool, online_pool=(),
+        )
 
     online_pool = _online_pool_users(client, pool=pool, logger=logger)
     if not online_pool:
@@ -556,10 +567,17 @@ def assign_open_line_chats_to_user(
         if not transferable:
             skipped_chats.append((chat_id, reason))
             continue
-        client.call(
-            "imopenlines.operator.transfer",
-            {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
-        )
+        try:
+            client.call(
+                "imopenlines.operator.transfer",
+                {"CHAT_ID": chat_id, "USER_ID": assigned_by_id},
+            )
+        except RuntimeError as exc:
+            # Ownership is already persisted; a rejected chat transfer must not
+            # undo it or turn successful distribution into a technical failure.
+            logger.error(f"No se pudo transferir el chat {chat_id} al vendedor {assigned_by_id}: {exc}")
+            skipped_chats.append((chat_id, "transfer_error"))
+            continue
         transferred_chat_ids.append(chat_id)
         logger.info(f"Chat Open Lines {chat_id} transferido al vendedor {assigned_by_id}.")
     return ChatTransferResult(

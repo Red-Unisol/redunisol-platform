@@ -1499,7 +1499,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.leads[990]["ASSIGNED_BY_ID"], 8057)
         self.assertEqual(result["transferred_chat_count"], 1)
 
-    def test_policia_federal_queue_retries_when_stefania_returns(self) -> None:
+    def test_policia_federal_single_seller_is_assigned_while_offline(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids.clear()
         client.leads[990] = self._policia_federal_lead(990)
@@ -1508,16 +1508,12 @@ class BusinessLogicTests(unittest.TestCase):
             990, env=self.env, bitrix_client=client, logger=SilentLogger(),
             now=datetime.fromisoformat("2026-09-14T12:00:00-03:00"),
         )
-        self.assertEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
-        self.assertEqual(client.deals[990]["ufCrmRouteBucket"], "policia_federal_caba")
-        client.online_user_ids.add(8057)
-        result = process_distribution_queue(
-            env=self.env, bitrix_client=client, logger=SilentLogger(),
-            now=datetime.fromisoformat("2026-09-14T12:01:00-03:00"),
-        )
-        self.assertEqual(result["distributed_count"], 1)
-        self.assertEqual(client.deals[990]["assignedById"], 8057)
+        self.assertEqual(result["distribution_action"], "assigned")
+        self.assertEqual(result["assigned_by_id"], 8057)
+        self.assertEqual(result["assignment_strategy"], "single_seller")
         self.assertEqual(client.deals[990]["stageId"], load_config(self.env).deal.manual_review_stage_id)
+        self.assertEqual(client.deals[990]["ufCrmRouteBucket"], "policia_federal_caba")
+        self.assertEqual(client.leads[990]["ASSIGNED_BY_ID"], 8057)
 
     def test_policia_federal_respects_remote_pool_changes_and_pause(self) -> None:
         for pool in ([53121], []):
@@ -1531,7 +1527,7 @@ class BusinessLogicTests(unittest.TestCase):
                 routing = resolve_routing_bucket(config, self._policia_federal_lead(990))
                 self.assertEqual(routing.bucket.seller_ids, tuple(pool))
 
-    def test_policia_federal_outside_hours_keeps_manual_owner(self) -> None:
+    def test_policia_federal_single_seller_is_assigned_outside_hours(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids.add(8057)
         client.leads[990] = self._policia_federal_lead(990)
@@ -1541,8 +1537,9 @@ class BusinessLogicTests(unittest.TestCase):
             bitrix_client=client, logger=SilentLogger(),
             now=datetime.fromisoformat("2026-09-18T17:00:00-03:00"),
         )
-        self.assertEqual(result["assigned_by_id"], 57)
-        self.assertEqual(result["distribution_reason"], "outside_business_hours")
+        self.assertEqual(result["assigned_by_id"], 8057)
+        self.assertEqual(result["distribution_reason"], "seller_selected")
+        self.assertFalse(result["within_business_hours"])
         self.assertEqual(client.chat_transfers, [])
         self.assertNotEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
 
