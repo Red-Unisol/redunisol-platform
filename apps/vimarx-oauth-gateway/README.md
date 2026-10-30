@@ -264,3 +264,27 @@ simula datos localmente y no está conectada a una instalación demo de Vimarx.
 Probar los prompts con esta cuenta y grabar el flujo real en ChatGPT. El acceso
 solo no equivale a una revisión aprobada. No publicar sus credenciales en la
 ficha, README, video ni ZIP.
+
+## Estado operativo deseado de la VPS
+
+En `mcp.redunisol.com.ar`, el demo sintético está habilitado mediante
+`DEMO_ENABLED=1`. La cuenta reservada es `__demo_celesol__`; su contraseña,
+hash y clave exclusiva se mantienen solo en los accesos privados y en el
+`.env` operativo necesario. El valor 0 del archivo de ejemplo es el valor
+seguro para instalaciones nuevas, no el estado deseado de esta VPS.
+Preservar `GATEWAY_SECRET_KEY`, `TOKEN_ENCRYPTION_KEY`, `VIMARX_ORIGIN`,
+`DATABASE_URL` y el volumen existente en los despliegues siguientes.
+
+Evidencia del despliegue del 30 de octubre de 2026: revisión mergeada
+`479b407b650b43182d72d9e54e235fe44f26e5f7`, contenedor saludable sin reinicios,
+timers de limpieza y certificado activos. La prueba HTTPS verificó las 26
+herramientas demo, los cinco recorridos positivos por API, rechazo de escrituras
+y consultas no soportadas, rotación y reintento del refresh, renovación tras
+vencer solo la sesión demo de prueba y revocación de esa conexión al finalizar.
+La cuenta productiva previamente conectada continuó respondiendo. Las páginas
+`/`, `/support`, `/privacy` y `/terms` fueron verificadas públicamente.
+Esta es evidencia histórica; verificar `/health` para conocer la revisión actual.
+
+La ejecución de los casos por ChatGPT, su grabación, las verificaciones del
+publicador y dominio y el envío al directorio siguen siendo etapas posteriores.
+No interpretar la verificación de la API como evidencia de aprobación de OpenAI.
