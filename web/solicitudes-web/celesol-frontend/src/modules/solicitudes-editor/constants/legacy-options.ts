@@ -8,6 +8,30 @@ export const SEXO_OPTIONS: LegacyOption[] = [
   { label: "Otro", value: "Otro" },
 ];
 
+// Vimarx guarda el sexo como codigo (0 Masculino, 1 Femenino, 2 persona
+// juridica, 3 Otro; verificado en prod el 29/10) y al crear el socio recibe el
+// nombre. En Sol Web puede llegar de las dos formas: se muestra y se edita
+// siempre con el nombre.
+const SEXO_POR_CODIGO: Record<string, string> = {
+  "0": "Masculino",
+  "1": "Femenino",
+  "2": "PersonaJuridica",
+  "3": "Otro",
+  F: "Femenino",
+  M: "Masculino",
+};
+
+export function normalizarSexo(value?: string | null) {
+  const texto = value?.trim() ?? "";
+  return SEXO_POR_CODIGO[texto.toUpperCase()] ?? texto;
+}
+
+export function sexoLegible(value?: string | null) {
+  const nombre = normalizarSexo(value);
+  if (nombre === "PersonaJuridica") return "No aplica (persona jurídica)";
+  return nombre || null;
+}
+
 export const ESTADO_CIVIL_OPTIONS: LegacyOption[] = [
   { label: "Soltero", value: "Soltero" },
 

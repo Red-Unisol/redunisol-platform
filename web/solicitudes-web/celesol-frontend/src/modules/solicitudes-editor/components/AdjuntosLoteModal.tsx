@@ -36,9 +36,15 @@ type AdjuntosLoteModalProps = {
   onOpenChange: (open: boolean) => void;
   onSave: (items: AdjuntoLoteItem[]) => Promise<boolean>;
   open: boolean;
+  // Para abrirlo fuera del detalle (sin :id en la ruta), p. ej. desde Precarga.
+  saveLabel?: string;
+  solicitudId?: string;
+  tipoAdjuntoInicial?: string;
+  title?: string;
 };
 export function AdjuntosLoteModal(props: AdjuntosLoteModalProps) {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const id = props.solicitudId ?? params.id;
   return (
     <AdjuntosLoteModalContent
       key={`${id ?? "alta"}:${props.open}`}
@@ -51,8 +57,12 @@ function AdjuntosLoteModalContent({
   onOpenChange,
   onSave,
   open,
+  saveLabel = "Guardar",
+  solicitudId,
+  tipoAdjuntoInicial = "",
+  title = "Adjuntos Solicitud",
 }: AdjuntosLoteModalProps) {
-  const { draft, estados } = useReconocimientoRecibos(open);
+  const { draft, estados } = useReconocimientoRecibos(open, solicitudId);
   const [items, setItems] = useState<PendingAdjuntoLoteItem[]>([]);
   const [isDragActive, setIsDragActive] = useState(false);
   const [dropWarning, setDropWarning] = useState<string | null>(null);
@@ -101,7 +111,7 @@ function AdjuntosLoteModalContent({
     const added = filesToAdd.map((file) => ({
       file,
       id: crypto.randomUUID(),
-      tipoAdjunto: "",
+      tipoAdjunto: tipoAdjuntoInicial,
     }));
     setItems((current) => [...current, ...added]);
     for (const item of added)
@@ -232,7 +242,7 @@ function AdjuntosLoteModalContent({
               <Paperclip className="size-4" />
             </span>
             <DialogTitle className="text-2xl font-semibold leading-none text-foreground">
-              Adjuntos Solicitud
+              {title}
             </DialogTitle>
           </div>
           <DialogClose asChild>
@@ -352,7 +362,7 @@ function AdjuntosLoteModalContent({
               onClick={() => void handleSave()}
               type="button"
             >
-              {isSaving ? "Guardando..." : "Guardar"}
+              {isSaving ? "Guardando..." : saveLabel}
             </Button>
             <DialogClose asChild>
               <Button type="button" variant="outline">

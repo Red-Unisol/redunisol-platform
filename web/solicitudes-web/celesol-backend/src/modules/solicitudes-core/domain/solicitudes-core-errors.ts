@@ -399,14 +399,14 @@ export class MontoSuperaAprobadoRiesgoError extends SolicitudesError {
 
 export class ConfiguracionMaximosLineaInvalidaError extends SolicitudesError {
   constructor() {
-    super("La línea tiene máximos ausentes o inválidos. Corregí su configuración en el legacy.", 503);
+    super("La línea tiene máximos ausentes o inválidos. Corregí su configuración en Vimarx.", 503);
     this.name = "ConfiguracionMaximosLineaInvalidaError";
   }
 }
 
 export class CalculoConValoresEfectivosError extends SolicitudesError {
   readonly effectiveValues: { montoAFinanciar: number; cuotas: number };
-  constructor(values: { montoAFinanciar: number; cuotas: number }, message = "El cálculo del legacy no coincide con las condiciones solicitadas.", status = 502) {
+  constructor(values: { montoAFinanciar: number; cuotas: number }, message = "Vimarx devolvió otras condiciones para ese monto y esas cuotas. Revisá la línea, el monto y las cuotas.", status = 502) {
     super(message, status);
     this.name = "CalculoConValoresEfectivosError";
     this.effectiveValues = values;
