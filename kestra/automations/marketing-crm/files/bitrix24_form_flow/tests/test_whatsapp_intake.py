@@ -13,7 +13,7 @@ from bitrix24_form_flow.form_processor.lead_service import build_prequalificatio
 from bitrix24_form_flow.form_processor.qualification import evaluate_prequalification
 from test_whatsapp_assistance import CASE, CUIL, ENV, PHONE, Crm
 
-FLOW = '999000111222333'
+FLOW = '995212369590508'  # Published v2; its grouped Cordoba retirement stays compatible.
 CONFIG = {**ENV, 'EDNA_INTAKE_CRM_ENABLED': 'true', 'EDNA_INTAKE_FLOW_ID': FLOW}
 
 

@@ -43,7 +43,7 @@ def process(payload, *, env=None, client=None):
         timestamp = datetime.fromisoformat(str(payload.get("received_at", "")).replace("Z", "+00:00"))
         if timestamp.tzinfo is None:
             raise ValueError("An aware response timestamp is required.")
-        answer = normalize_answer(payload.get("answer"), retain_invalid_identity=True)
+        answer = normalize_answer(payload.get("answer"), retain_invalid_identity=True, flow_id=payload["flow_id"])
     except (ValueError, TypeError, AttributeError):
         raise InvalidIntake("Invalid WhatsApp intake response.") from None
     result = persist(payload, answer, env=source, client=client)

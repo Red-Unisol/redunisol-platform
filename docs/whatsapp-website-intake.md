@@ -7,6 +7,58 @@ La primera tanda tiene **10 números de WhatsApp únicos**. La siguiente prepara
 **20 números únicos**, con su propio ID y cupo persistente; el resto continúa por
 el Router anterior y su formulario web.
 
+## Versión 3: provincias ampliadas y despliegue sin cupo
+
+Estado al 30/10/2026: implementación preparada para revisión. Meta conserva el
+borrador **Solicitud web | Provincias ampliadas | v3**, ID `950118281197789`, con
+el JSON de Marketing guardado y validado sin errores. No está publicado ni
+activado. Antes de publicar se debe cerrar la separación de jubilado/pensionado
+en la interfaz o aceptar explícitamente su revisión manual. El borrador se puede
+editar; no reutilizar un ID publicado para reemplazar su contrato.
+
+El [JSON v3](whatsapp-website-intake-v3.flow.json), basado en el archivo de Marketing
+del 30/10/2026, separa `DATOS` (perfil y banco) de `IDENTIDAD` (CUIL obligatorio,
+email opcional y consentimiento). También pide los datos para las selecciones
+que terminan en rechazo; no agrega una landing ni una pantalla de resultado.
+
+El receptor de intake admite Buenos Aires, Santa Fe y Neuquén además de las
+provincias anteriores. `provincia_bsas`, `santa_fe` y `bpn` se resuelven contra el
+catálogo bancario existente. Para jubilados fuera de Córdoba lee exclusivamente
+`organismo_<provincia>` y `banco_<provincia>`; Córdoba conserva `organismo` y
+`banco_jubilado`. Los valores de ramas ocultas nunca completan otro perfil.
+
+`anses` con un jubilado identificado se guarda como Jubilado Nacional, incluso
+en Otra provincia y con Nación u otro banco. No se rechaza primero por provincia.
+La posterior calificación reutiliza las [reglas comerciales vigentes](../kestra/automations/marketing-crm/docs/commercial-rules/LEAD_QUALIFICATION.md),
+incluida la prioridad de la base CUAD. Una caja provincial fuera de Córdoba se
+guarda como Jubilado Provincial y conserva las reglas de su provincia; no se
+aprueba por el solo hecho de que el formulario admita la respuesta.
+
+El contrato admite `jubilado` y `pensionado` separados. Nunca transforma un
+`pensionado` en Jubilado Nacional. La selección histórica agrupada
+`jubilado_pensionado` de Córdoba conserva su compatibilidad únicamente para los
+IDs publicados v1/v2; las selecciones agrupadas de un Flow nuevo, las agrupadas
+fuera de Córdoba o un organismo `ayuda` permanecen en revisión manual.
+No se resuelve por descarte la identificación pendiente de la tarea `23333`.
+
+Para una tanda nueva, `EDNA_INTAKE_PILOT_LIMIT=unlimited` elimina exclusivamente
+el límite de participantes. Se persiste como `capacity=0`, con contador,
+admisiones, deduplicación, cooldown y rollback de cola sin cambios. El cero
+numérico o textual sigue siendo configuración inválida: sólo la palabra exacta
+`unlimited` habilita este modo. Cambiar la configuración no altera el cupo de
+una tanda ya creada, limitada o ilimitada. `edna:intake pilot` informa `limit`
+como `unlimited` y explica el valor persistido `0`.
+
+La activación requiere un **ID de tanda nuevo** y un **Flow nuevo publicado**.
+Primero desplegar el receptor compatible; luego configurar por Git el nuevo
+ID en Web y la lista de IDs aceptados en Kestra, conservando `3298964390491520`
+y `995212369590508` para las respuestas pendientes. No reiniciar las tandas
+existentes de 10 y 20 participantes. El modo sin cupo sigue requiriendo origen
+web verificado; Ads directo se mantiene en la tarea `23279`.
+
+La confirmación inmediata por segmento y el resumen privado para el asesor
+son cambios posteriores; este contrato no agrega esos mensajes.
+
 ## Prueba completa por referencia
 
 Con esta versión desplegada, enviar **`(ref: PRUEBAFORM)`** al WhatsApp de Ventas

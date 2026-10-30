@@ -14,6 +14,11 @@ class EdnaIntakePilot
     public function capacity(): ?int
     {
         $value = config('edna.intake_pilot_limit', self::CAPACITY);
+        // Only this explicit value removes the quota. Numeric zero and invalid
+        // configuration still fail closed. Stored capacity 0 means unlimited.
+        if ($value === 'unlimited') {
+            return 0;
+        }
         if (! is_int($value) && ! is_string($value)) {
             return null;
         }
@@ -63,7 +68,8 @@ class EdnaIntakePilot
                 return null;
             }
             // The conditional write also enforces the limit on databases without row locks.
-            $claimed = DB::table('edna_intake_pilots')->where('id', $key)->where('admitted', '<', $pilot->capacity)
+            $claimed = DB::table('edna_intake_pilots')->where('id', $key)
+                ->when((int) $pilot->capacity !== 0, fn ($query) => $query->where('admitted', '<', $pilot->capacity))
                 ->increment('admitted', 1, ['updated_at' => now()]);
             if (! $claimed) {
                 return null;

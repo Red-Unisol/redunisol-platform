@@ -564,9 +564,62 @@ test('invalid new capacity fails closed while existing participants can continue
     expect(intakeReserve('5493519999999')->flow_id)->toBe(EdnaFlowRouter::FLOW_ID)
         ->and((new EdnaIntakePilot)->reserve('2423', '5493510000000', $send->flow_id, true)->id)->toBe($send->intake_admission_id)
         ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1);
-})->with([0, -1, 1001, 'bad', '20.5', true, null]);
+})->with([0, '0', -1, 1001, 'bad', '20.5', 'UNLIMITED', true, null]);
 
-test('parallel database workers cannot exceed a batch capacity or double count one phone', function (int $capacity) {
+test('an explicit unlimited rollout admits past the old quotas and retains one admission per phone', function () {
+    $old = intakeReserve();
+    config()->set('edna.intake_pilot_id', 'website-intake-v3');
+    config()->set('edna.intake_pilot_limit', 'unlimited');
+    config()->set('edna.intake_flow_id', '888000111222333');
+    for ($i = 1; $i <= 35; $i++) {
+        $phone = sprintf('5493513%06d', $i);
+        $send = intakeReserve($phone);
+        expect($send->flow_id)->toBe('888000111222333');
+        expect(intakeReserve($phone)->id)->toBe($send->id);
+    }
+    $rollout = DB::table('edna_intake_pilots')->where('name', 'website-intake-v3')->first();
+    expect((new EdnaIntakePilot)->capacity())->toBe(0)
+        ->and($rollout->capacity)->toBe(0)->and($rollout->admitted)->toBe(35)
+        ->and(DB::table('edna_intake_admissions')->count())->toBe(36)
+        ->and((new EdnaIntake)->canSend($old))->toBeTrue();
+    $this->artisan('edna:intake', ['action' => 'pilot'])
+        ->expectsOutputToContain('"limit":"unlimited"')->assertSuccessful();
+});
+
+test('changing a limit does not silently turn an existing capped batch into unlimited', function () {
+    intakeReserve();
+    config()->set('edna.intake_pilot_limit', 'unlimited');
+    for ($i = 1; $i <= 11; $i++) {
+        $send = intakeReserve(sprintf('5493514%06d', $i));
+    }
+    expect($send->flow_id)->toBe(EdnaFlowRouter::FLOW_ID)
+        ->and(DB::table('edna_intake_pilots')->value('capacity'))->toBe(10)
+        ->and(DB::table('edna_intake_pilots')->value('admitted'))->toBe(10);
+});
+
+test('an unlimited rollout retains its mode when a later environment limit changes', function () {
+    config()->set('edna.intake_pilot_id', 'website-intake-v3');
+    config()->set('edna.intake_pilot_limit', 'unlimited');
+    intakeReserve();
+    config()->set('edna.intake_pilot_limit', 1);
+    expect(intakeReserve('5493519999999')->flow_id)->toBe('999000111222333')
+        ->and(DB::table('edna_intake_pilots')->value('capacity'))->toBe(0)
+        ->and(DB::table('edna_intake_pilots')->value('admitted'))->toBe(2);
+});
+
+test('unlimited rollout still rolls back the admission when enqueueing fails', function () {
+    config()->set('edna.intake_pilot_id', 'website-intake-v3');
+    config()->set('edna.intake_pilot_limit', 'unlimited');
+    $journey = (new AttributionJourney)->create(['version' => 1, 'first' => [], 'last' => []]);
+    $event = intakeInbound(['messageContent' => ['text' => 'Hola, vengo del sitio web de Red Unisol (ref: '.$journey->id.')']]);
+    Queue::shouldReceive('connection')->with('edna')->once()->andThrow(new RuntimeException('private'));
+    expect(fn () => (new ReceiveEdnaInKestra($event->id))->handle())->toThrow(RuntimeException::class);
+    expect(DB::table('edna_intake_admissions')->count())->toBe(0)
+        ->and(DB::table('edna_intake_pilots')->count())->toBe(0)
+        ->and(DB::table('edna_flow_sends')->count())->toBe(0);
+});
+
+test('parallel database workers preserve bounded or unlimited capacity and count each phone once', function (int|string $capacity) {
     $file = tempnam(sys_get_temp_dir(), 'edna-quota-');
     $gate = $file.'.go';
     $processes = [];
@@ -585,7 +638,9 @@ test('parallel database workers cannot exceed a batch capacity or double count o
         config()->set('edna.intake_pilot_limit', $capacity);
         $first = (new EdnaIntakePilot)->reserve('2423', '5493510000000', '999000111222333', true);
         DB::setDefaultConnection($default);
-        $phones = [...array_map(fn ($i) => sprintf('549351%07d', $i), range(1, $capacity + 2)),
+        $expected = is_int($capacity) ? $capacity : 23;
+        $candidates = is_int($capacity) ? $capacity + 2 : 22;
+        $phones = [...array_map(fn ($i) => sprintf('549351%07d', $i), range(1, $candidates)),
             '5493510000000', '5493510000000', '5493510000000'];
         $extensions = PHP_OS_FAMILY === 'Windows' ? ['-d', 'extension=php_pdo_sqlite.dll', '-d', 'extension=php_intl.dll'] : [];
         foreach ($phones as $phone) {
@@ -621,9 +676,9 @@ test('parallel database workers cannot exceed a batch capacity or double count o
                 expect($result['admission_id'])->toBe($first->id);
             }
         }
-        expect(DB::connection('pilot_race')->table('edna_intake_pilots')->value('admitted'))->toBe($capacity);
-        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->count())->toBe($capacity);
-        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->orderBy('slot')->pluck('slot')->all())->toBe(range(1, $capacity));
+        expect(DB::connection('pilot_race')->table('edna_intake_pilots')->value('admitted'))->toBe($expected);
+        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->count())->toBe($expected);
+        expect(DB::connection('pilot_race')->table('edna_intake_admissions')->orderBy('slot')->pluck('slot')->all())->toBe(range(1, $expected));
         DB::setDefaultConnection('pilot_race');
         $migration->down();
         expect(Schema::hasTable('edna_intake_pilots'))->toBeFalse();
@@ -642,7 +697,7 @@ test('parallel database workers cannot exceed a batch capacity or double count o
             }
         }
     }
-})->with([10, 20]);
+})->with([10, 20, 'unlimited']);
 
 test('audited review rescue keeps the original answer UUID and quota and records a manual lead', function (string $reason) {
     $request = intakeReply(['messageContent' => ['text' => json_encode(['provincia' => 'catamarca',
