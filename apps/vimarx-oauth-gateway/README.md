@@ -354,9 +354,33 @@ La ruta pública exacta `/.well-known/openai-apps-challenge` entrega el token
 de verificación de dominio de ese borrador como texto plano. Es información
 pública de comprobación de propiedad; no autoriza consultas MCP. Su test
 comprueba cuerpo exacto, ausencia de llamadas a Vimarx y que el MCP conserva
-el rechazo anónimo 401. Suite local completa: 160 tests aprobados. Esta ruta
-todavía requiere despliegue autorizado y verificación pública antes de pulsar
-Verify Domain. La conexión OAuth del portal, los escaneos y casos sobre esa
-conexión, las credenciales privadas del revisor y las declaraciones del
-publicador siguen pendientes. La revisión automática bloqueó Connect hasta
-recibir confirmación específica para autorizar la cuenta demo en OpenAI.
+el rechazo anónimo 401. Suite local completa: 160 tests aprobados.
+
+Despliegue autorizado y comprobado el 02/11/2026: revisión
+`4d0b0925438ad15298c46b44b999b8a8cef280f5` activa en la VPS, con `/health`
+correcto por HTTPS. El desafío público respondió 200, `text/plain` y cuerpo
+exacto; MCP sin autenticación siguió respondiendo 401. Se creó el backup privado
+de SQLite y se conservaron las claves, configuración DEMO, volumen y sesiones
+vigentes. No se cambiaron DNS ni la publicación del video.
+
+La aceptación por HTTPS con una conexión demo nueva comprobó los cinco
+recorridos, las 26 herramientas, OAuth DCR/PKCE, rotación y reintento de refresh,
+límites y rechazo de escrituras. No se forzaron vencimientos ni se modificaron
+sesiones existentes; sólo se revocó la conexión creada por esa prueba al terminar.
+La conexión OAuth del portal ya figura Authorized con la cuenta sintética
+`__demo_celesol__` y Mantener conectado, corroborada mediante una lectura
+acotada de su sesión. El portal confirmó Domain verified y guardó las
+credenciales e instrucciones sólo en los campos privados del revisor.
+
+El escaneo MCP terminó con las 26 herramientas descubiertas y tres hallazgos
+no bloqueantes en `get_socio_por_dni`, `get_socio_por_cuit` y `query_socios` por
+identificadores gubernamentales; el filtro Blocking no muestra entradas.
+Las reglas del directorio en
+https://developers.openai.com/plugins/plugin-guidelines#data-collection
+prohíben solicitar o procesar esa categoría. Está pendiente decidir el alcance
+de una edición pública que excluya esos datos realmente, incluidas las
+consultas genéricas y las respuestas, conservando aparte el MCP interno.
+Los recorridos por API no equivalen a ejecutar los ocho prompts con el modelo
+en la versión guardada del portal; esa comprobación sigue pendiente junto a
+las declaraciones del publicador. El plugin continúa sin enviarse a revisión
+ni publicarse.
