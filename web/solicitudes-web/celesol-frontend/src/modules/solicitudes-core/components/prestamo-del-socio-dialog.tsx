@@ -1,12 +1,12 @@
-import { useId, useState } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 import { Landmark, X } from "lucide-react";
 
 import type { CuotaPrestamoResponse } from "@/modules/solicitudes-core/services/solicitudes-core-api";
+import { MovimientosCuotaDialog } from "@/modules/solicitudes-core/components/movimientos-cuota-dialog";
 import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
 import {
   diaDeNegocio,
   diaLegacy,
-  ETIQUETAS_COBRO,
   vistaCuotas,
   resaltadoCuota,
 } from "@/modules/solicitudes-core/utils/cuotas-cobro";
@@ -25,12 +25,10 @@ const PLACEHOLDER = "-";
 
 const CUOTAS_TABLE_COLUMNS = [
   "Nro cuota",
-  "Vencimiento",
-  "Fecha de cobro",
-  "Estado",
+  "Fecha",
   "Monto total",
+  "Fecha cobro",
   "Saldo cuota con punitorios",
-  "Saldo cuota",
   "Capital",
 ] as const;
 
@@ -120,6 +118,8 @@ export function PrestamoDelSocioDialog({
                 <CuotasTable
                   key={`${solicitudId}/${prestamoId}`}
                   cuotas={cuotas}
+                  prestamoId={prestamoId}
+                  solicitudId={solicitudId}
                 />
               )}
             </>
@@ -141,14 +141,25 @@ const ROW_STYLES = {
   desconocido: "",
 };
 
-function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
+function CuotasTable({
+  cuotas,
+  prestamoId,
+  solicitudId,
+}: {
+  cuotas: CuotaPrestamoResponse[];
+  prestamoId: string;
+  solicitudId: string;
+}) {
   const [expandida, setExpandida] = useState(false);
+  // Cuota abierta en la ventana de movimientos, como el doble clic de Vimarx.
+  const [cuotaAbierta, setCuotaAbierta] =
+    useState<CuotaPrestamoResponse | null>(null);
   const tableId = useId();
   const hoy = diaDeNegocio();
   const { filas, cantidadOcultas } = vistaCuotas(cuotas, expandida, hoy);
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1000px] border-collapse text-sm">
+      <table className="w-full min-w-[720px] border-collapse text-sm">
         <caption className="sr-only">Plan de cuotas y estado de cobro</caption>
         <thead className="bg-background text-left text-xs text-foreground-secondary">
           <tr>
@@ -185,10 +196,18 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
         </tbody>
         <tbody id={tableId}>
           {filas.length ? (
-            filas.map(({ cuota, estado, ultimaCobrada }, index) => (
+            filas.map(({ cuota, estado }, index) => (
               <tr
-                className={`border-t border-border ${ROW_STYLES[estado]} ${resaltadoCuota(cuota, hoy).noVencida ? "font-bold" : ""}`}
+                className={`border-t border-border ${ROW_STYLES[estado]} ${resaltadoCuota(cuota, hoy).noVencida ? "font-bold" : ""} ${cuota.id ? "cursor-pointer hover:bg-background focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring" : ""}`}
                 key={`${cuota.nroCuota}-${index}`}
+                {...(cuota.id && {
+                  onDoubleClick: () => setCuotaAbierta(cuota),
+                  onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
+                    if (event.key === "Enter") setCuotaAbierta(cuota);
+                  },
+                  tabIndex: 0,
+                  title: "Doble clic para ver los movimientos de la cuota",
+                })}
               >
                 <td className="border-r border-border px-3 py-2">
                   {cuota.nroCuota ?? PLACEHOLDER}
@@ -197,6 +216,9 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
                   {diaLegacy(cuota.fecha)
                     ? formatLegacyDate(diaLegacy(cuota.fecha))
                     : "No disponible"}
+                </td>
+                <td className="border-r border-border px-3 py-2">
+                  {formatNullableAmount(cuota.montoTotal) || PLACEHOLDER}
                 </td>
                 <td
                   className={`border-r border-border px-3 py-2 whitespace-nowrap ${resaltadoCuota(cuota, hoy).cobroEnOtroDia ? "bg-warning text-warning-foreground font-bold" : ""}`}
@@ -213,17 +235,8 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
                       : "Sin cobro"}
                 </td>
                 <td className="border-r border-border px-3 py-2">
-                  {ultimaCobrada ? "Última cobrada" : ETIQUETAS_COBRO[estado]}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatNullableAmount(cuota.montoTotal) || PLACEHOLDER}
-                </td>
-                <td className="border-r border-border px-3 py-2">
                   {formatNullableAmount(cuota.saldoCuotaConPunitorios) ||
                     PLACEHOLDER}
-                </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatNullableAmount(cuota.saldoCuota) || PLACEHOLDER}
                 </td>
                 <td className="px-3 py-2">
                   {formatNullableAmount(cuota.capital) || PLACEHOLDER}
@@ -246,7 +259,7 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
             <tr>
               <th
                 scope="row"
-                colSpan={4}
+                colSpan={2}
                 className="border-r border-border px-3 py-2 text-left"
               >
                 Total
@@ -255,14 +268,11 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
                 {formatNullableAmount(sumar(cuotas, "montoTotal")) ||
                   PLACEHOLDER}
               </td>
+              <td className="border-r border-border px-3 py-2" />
               <td className="border-r border-border px-3 py-2">
                 {formatNullableAmount(
                   sumar(cuotas, "saldoCuotaConPunitorios"),
                 ) || PLACEHOLDER}
-              </td>
-              <td className="border-r border-border px-3 py-2">
-                {formatNullableAmount(sumar(cuotas, "saldoCuota")) ||
-                  PLACEHOLDER}
               </td>
               <td className="px-3 py-2">
                 {formatNullableAmount(sumar(cuotas, "capital")) || PLACEHOLDER}
@@ -271,6 +281,15 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
           </tfoot>
         )}
       </table>
+      <MovimientosCuotaDialog
+        cuotaId={cuotaAbierta?.id ?? null}
+        nroCuota={cuotaAbierta?.nroCuota ?? null}
+        onOpenChange={(open) => {
+          if (!open) setCuotaAbierta(null);
+        }}
+        prestamoId={prestamoId}
+        solicitudId={solicitudId}
+      />
     </div>
   );
 }
@@ -280,7 +299,7 @@ function CuotasTable({ cuotas }: { cuotas: CuotaPrestamoResponse[] }) {
 // cuota tiene el dato, devuelve null.
 function sumar(
   cuotas: CuotaPrestamoResponse[],
-  campo: "capital" | "montoTotal" | "saldoCuota" | "saldoCuotaConPunitorios",
+  campo: "capital" | "montoTotal" | "saldoCuotaConPunitorios",
 ) {
   const valores = cuotas
     .map((cuota) => cuota[campo])

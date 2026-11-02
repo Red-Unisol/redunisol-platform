@@ -132,6 +132,7 @@ function buildLegacyGateway(
     getSocioMutualCancelacionDetalleById: async () => null,
     getVendedorLegacyId: async () => null,
     listCuotasDelPrestamo: async () => [],
+    listMovimientosDeCuota: async () => [],
     listPrestamosDelSocio: async () => [],
     listSociosCancelaciones: async () => [],
   };

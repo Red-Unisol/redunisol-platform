@@ -40,6 +40,88 @@ describe("GetPrestamoDelSocioUseCase", () => {
     assert.equal(detalle.cuotas[0]?.fechaCobro, "2026-10-01T00:00:00");
   });
 
+  it("asks for the movements of an installment only after checking the prestamo is the socio's", async () => {
+    const llamadas: string[] = [];
+    const useCase = buildUseCase({
+      legacyGateway: {
+        getPrestamoDelSocio: async (socioLegacyId, prestamoLegacyId) => {
+          llamadas.push(`prestamo ${socioLegacyId} ${prestamoLegacyId}`);
+          return prestamo();
+        },
+        listCuotasDelPrestamo: async () => [],
+        listMovimientosDeCuota: async (prestamoLegacyId, cuotaLegacyId) => {
+          llamadas.push(`movimientos ${prestamoLegacyId} ${cuotaLegacyId}`);
+          return [movimiento()];
+        },
+      },
+    });
+
+    const movimientos = await useCase.movimientosDeCuota({
+      cuotaId: "17640862",
+      prestamoId: "423331",
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(llamadas, [
+      "prestamo 146871 423331",
+      "movimientos 423331 17640862",
+    ]);
+    assert.deepEqual(movimientos, [movimiento()]);
+  });
+
+  it("does not ask for the movements of an installment of a prestamo that is not the socio's", async () => {
+    let pidioMovimientos = false;
+    const useCase = buildUseCase({
+      legacyGateway: {
+        getPrestamoDelSocio: async () => null,
+        listCuotasDelPrestamo: async () => [],
+        listMovimientosDeCuota: async () => {
+          pidioMovimientos = true;
+          return [];
+        },
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.movimientosDeCuota({
+          cuotaId: "17640862",
+          prestamoId: "999",
+          solicitudId: "sol-1",
+        }),
+      PrestamoDelSocioNotFoundError,
+    );
+    assert.equal(pidioMovimientos, false);
+  });
+
+  it("does not call the legacy system with a non numeric installment id", async () => {
+    let llamado = false;
+    const useCase = buildUseCase({
+      legacyGateway: {
+        getPrestamoDelSocio: async () => {
+          llamado = true;
+          return prestamo();
+        },
+        listCuotasDelPrestamo: async () => [],
+        listMovimientosDeCuota: async () => {
+          llamado = true;
+          return [];
+        },
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        useCase.movimientosDeCuota({
+          cuotaId: "17640862 OR 1=1",
+          prestamoId: "423331",
+          solicitudId: "sol-1",
+        }),
+      PrestamoDelSocioNotFoundError,
+    );
+    assert.equal(llamado, false);
+  });
+
   it("throws when the solicitud does not exist", async () => {
     const useCase = buildUseCase({ solicitud: null });
 
@@ -149,6 +231,16 @@ function cuota() {
   };
 }
 
+function movimiento() {
+  return {
+    cuotaAfectada: "1004051/1",
+    fecha: "2025-09-02",
+    id: "41532214",
+    monto: -58770.31,
+    tipo: "Capital",
+  };
+}
+
 function buildUseCase(
   overrides: {
     legacyGateway?: {
@@ -159,6 +251,10 @@ function buildUseCase(
       listCuotasDelPrestamo: (
         prestamoLegacyId: string,
       ) => Promise<ReturnType<typeof cuota>[]>;
+      listMovimientosDeCuota?: (
+        prestamoLegacyId: string,
+        cuotaLegacyId: string,
+      ) => Promise<ReturnType<typeof movimiento>[]>;
     };
     socios?: { id: string }[];
     solicitud?: unknown;
@@ -172,6 +268,7 @@ function buildUseCase(
 
   return new GetPrestamoDelSocioUseCase({
     legacyGateway: {
+      listMovimientosDeCuota: async () => [],
       ...(overrides.legacyGateway ?? {
         getPrestamoDelSocio: async () => prestamo(),
         listCuotasDelPrestamo: async () => [],
