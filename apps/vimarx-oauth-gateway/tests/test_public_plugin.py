@@ -40,7 +40,7 @@ def test_public_draft_has_restricted_endpoint_and_review_metadata_without_privat
         assert not any(".app.json" in name or ".codex-plugin" in name for name in archive.namelist())
         manifest = json.loads(archive.read("vimarx-celesol/plugin.json"))
         ext = manifest["extensions"]["com.openai"]
-        assert manifest["name"] == "vimarx-celesol" and manifest["version"] == "2.2.0"
+        assert manifest["name"] == "celesol-vimarx-directorio" and manifest["version"] == "2.2.0"
         assert manifest["author"]["name"] == "Santiago Agustín Acosta"
         assert manifest["homepage"] == "https://mcp.redunisol.com.ar/directorio/"
         assert "apps" not in manifest and "apps" not in ext

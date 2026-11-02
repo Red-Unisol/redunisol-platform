@@ -15,6 +15,7 @@ METADATA = PACKAGE.parent / "public-submission.json"
 PUBLIC_CONTENT = PACKAGE.parent / "directory-content"
 DIRECTORY_MCP_URL = "https://mcp.redunisol.com.ar/directorio/mcp"
 DIRECTORY_SERVER_NAME = "vimarx-celesol-directorio"
+PUBLIC_PLUGIN_NAME = "celesol-vimarx-directorio"
 PUBLIC_OVERRIDES = (
     "README.md", "skills/consultar-vimarx/SKILL.md",
     "skills/consultar-vimarx/agents/openai.yaml",
@@ -37,6 +38,7 @@ def build(output, folder=PACKAGE, metadata_path=METADATA,
     if output.is_relative_to(folder):
         raise ValueError("Write the archive outside its source")
     manifest = deepcopy(validate(folder))
+    manifest["name"] = PUBLIC_PLUGIN_NAME
     metadata = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
     manifest["version"] = metadata["version"]
     manifest["author"] = {"name": metadata["publisher"]}
