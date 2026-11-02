@@ -274,8 +274,9 @@ su manifiesto y logo aprobados, pero sustituye README, skill, instrucciones y
 endpoint por los de `plugin/directory-content/`. No modifica la fuente privada.
 El ZIP no contiene `.app.json`, credenciales ni bindings a Apps privadas.
 El logo PNG conserva exactamente los píxeles del JPEG aprobado.
-El nombre del plugin sigue siendo `vimarx-celesol`; su única declaración MCP
-pública se llama `vimarx-celesol-directorio`.
+La edición pública usa el nombre técnico `celesol-vimarx-directorio`, separado
+del paquete interno `vimarx-celesol`; conserva la identidad visible Celesol · Vimarx.
+Su única declaración MCP pública se llama `vimarx-celesol-directorio`.
 
 Generar el candidato de revisión con el video verificado de la metadata:
 
