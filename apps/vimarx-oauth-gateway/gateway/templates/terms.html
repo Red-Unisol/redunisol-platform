@@ -1,10 +1,13 @@
 {% extends "public_base.html" %}
 {% block title %}Términos de uso{% endblock %}
-{% block content %}<h1>Términos de uso</h1><p>Vigentes desde el 30 de octubre de 2026.</p>
+{% block content %}<h1>Términos de uso</h1><p>Vigentes desde {% if config.get('GATEWAY_PROFILE') == 'directory' %}el 2 de noviembre de 2026{% else %}el 30 de octubre de 2026{% endif %}.</p>
 <p>Celesol · Vimarx es una integración publicada por Santiago Agustín Acosta para consultar información de Mutual Celesol con una cuenta autorizada de Vimarx. Contacto: <a href="mailto:info@redunisol.com.ar">info@redunisol.com.ar</a>.</p>
 <h2>Acceso y uso permitido</h2>
 <p>Usá tu propia cuenta habilitada y consultá únicamente información que estés autorizado a tratar. La disponibilidad de la ficha del plugin no otorga acceso a Vimarx. No compartas credenciales, eludas permisos ni uses la integración para extraer o divulgar datos sin autorización.</p>
 <p>El plugin permite lectura. No modifica registros, aprueba préstamos o solicitudes, efectúa cobros, transferencias o compras, ni ofrece asesoramiento financiero personalizado. No se cobra por el uso del plugin; pueden aplicarse los costos propios de los servicios que utilices, como ChatGPT.</p>
+{% if config.get('GATEWAY_PROFILE') == 'directory' %}
+<p>Esta edición permite buscar socios por nombre o número interno y consultar los campos habilitados de solicitudes, préstamos y cuotas. No ofrece consultas libres, búsquedas por documentos de identidad o identificadores fiscales ni funciones ajenas a ese alcance. No uses esos identificadores como términos de búsqueda.</p>
+{% endif %}
 <h2>Resultados</h2>
 <p>Las respuestas dependen de los datos y permisos de Vimarx y de su interpretación por el asistente. Verificá en el sistema fuente los importes, fechas y estados antes de adoptar una decisión operativa. No tomes una respuesta del asistente como una aprobación o una operación ejecutada.</p>
 <h2>Conexión y privacidad</h2>

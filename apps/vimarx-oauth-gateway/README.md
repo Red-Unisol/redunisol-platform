@@ -3,18 +3,31 @@
 Puente de consultas por usuario entre ChatGPT y Mutual Celesol. Código y estado
 operativo deseado en Git; Docker/Apache en la VPS son el runtime.
 
-- MCP: `https://mcp.redunisol.com.ar/mcp`
-- Inicio: `https://mcp.redunisol.com.ar/`
-- Borrado de conexiones: `https://mcp.redunisol.com.ar/connections`
+El mismo código tiene dos perfiles. Cada uno necesita su propia conexión OAuth:
+
+| Perfil | MCP | Issuer / inicio | Alcance |
+| --- | --- | --- | --- |
+| Interno (`internal`) | `https://mcp.redunisol.com.ar/mcp` | `https://mcp.redunisol.com.ar` | Catálogo completo de 26 herramientas de lectura y permisos de Vimarx. |
+| Directorio (`directory`) | `https://mcp.redunisol.com.ar/directorio/mcp` | `https://mcp.redunisol.com.ar/directorio` | Ocho herramientas específicas, búsqueda por nombre o número interno y campos permitidos. |
+
+La edición del directorio 2.2.0 está en preparación. Su presencia en Git o en un
+ZIP no acredita un despliegue, compatibilidad con el esquema productivo ni una
+revisión aprobada; las verificaciones pendientes se detallan más abajo.
+
+- Borrado de conexiones: `/connections` respecto del issuer de cada perfil.
 - Origen fijo: `https://celesol.dyndns.org:35010`
-- Runtime: `/opt/vimarx-oauth-gateway`, bind interno `127.0.0.1:3060`.
+- Runtime compartido de código: `/opt/vimarx-oauth-gateway`. Instancia interna
+  `127.0.0.1:3060`; instancia de directorio `127.0.0.1:3061`.
 - DNS deseado: `deploy/dns.json`. El host tiene su propio certificado y vhost;
   no comparte rutas ni issuer con Kestra.
 
 ## Experiencia del usuario
 
 Agregar un MCP personalizado en ChatGPT, autenticación OAuth y registro dinámico
-DCR. Instalarlo y conectar el usuario habitual de Vimarx. Para recordar el acceso,
+DCR, usando la URL correspondiente a la edición elegida. Instalarlo y conectar
+el usuario habitual de Vimarx. Instalar ambas ediciones no amplía el alcance de
+la del directorio: una consulta debe conservar su conexión, cuenta y ambiente.
+Para recordar el acceso,
 seleccionar **Mantener conectado** en el formulario. Esa elección autoriza guardar
 las credenciales cifradas en la VPS; no se envían al modelo, cookies ni herramientas.
 Sin esa opción, la contraseña sólo se usa en el login inicial y no se conserva.
@@ -68,16 +81,52 @@ sesiones existentes. Preservar el volumen y las claves al desplegar/reiniciar.
 
 ## Herramientas y permisos
 
-`READ_TOOLS` contiene 26 herramientas explícitas de lectura, incluidas
+El perfil interno usa `READ_TOOLS`: 26 herramientas explícitas de lectura, incluidas
 `query_entidad`, `query_socios`, búsquedas de socios y metadatos. El listado y la
 ejecución usan la misma lista. Las consultas genéricas admiten 1–200 filas, con
 50 por omisión y longitudes de criterios acotadas. El esquema publicado refleja
 ese límite. Cada herramienta anuncia OAuth y sus annotations de lectura.
 
-Para las últimas solicitudes: descubrir la entidad y propiedades con
+En el perfil interno, para las últimas solicitudes: descubrir la entidad y propiedades con
 `get_entidades` y `get_propiedades`, después usar `query_entidad` con los campos
 correctos, orden de fecha descendente y `limit: 3`. Las instrucciones iniciales
 explican los nombres snake_case reales de las herramientas.
+
+El perfil del directorio usa exclusivamente `gateway/directory.py:SPECS`:
+
+| Herramienta | Entrada / límite |
+| --- | --- |
+| `contexto_cliente` | Sin argumentos; confirma empresa, perfil y ambiente. |
+| `get_fecha_trabajo` | Sin argumentos; devuelve `resultado.fechaTrabajo`. |
+| `buscar_socios` | `nombre` de 2–100 caracteres, sólo letras, espacios, apóstrofes y guiones; `limit` 1–50, por omisión 20. |
+| `get_socio_por_numero` | `nroSocio` interno. |
+| `get_solicitudes_recientes` | `limit` 1–50, por omisión 3; fecha descendente. |
+| `get_solicitudes_socio` | `nroSocio`; `limit` 1–50, por omisión 20; fecha descendente. |
+| `get_prestamos` | `nroSocio`; hasta 50 registros. |
+| `get_cuotas_prestamo` | `idPrestamo` único obtenido de `get_prestamos`; hasta 50 registros; sin argumento de fecha. |
+
+Los números internos son enteros positivos de hasta 2147483647. No se aceptan
+argumentos adicionales. Las respuestas se construyen con un DTO propio: socio
+(`nroSocio`, `nombre`, `apellido`, `estado`), solicitud (`nroSolicitud`, `fecha`,
+`monto`, `estado`, `nroSocio`), préstamo (`idPrestamo`, `nroPrestamo`, `nroSocio`,
+`capital`, `saldo`, `fecha`, `estado`, `moneda`) o cuota (`nroCuota`, `idPrestamo`, `nroPrestamo`,
+`fecha`, `capital`, `interes`, `pagado`, `saldo`). `pagado` suma capital e interés
+pagados y no incluye otros cargos. La fecha de cuota no se presenta como
+vencimiento porque su semántica no está confirmada. La moneda conserva el valor
+devuelto por Vimarx; no se fuerza una conversión de enumerados a códigos ISO.
+El sobre incluye `empresa`, `ambiente`, `datosFicticios`, `perfil=directorio`,
+`soloLectura`, `resultado`, `truncado` y `aviso`. Una lista truncada no permite
+inferir el total ni calcular una deuda completa.
+Los números de préstamo pueden repetirse entre sucursales. Para consultar cuotas,
+el cliente obtiene primero los préstamos del socio y usa el `idPrestamo` único
+devuelto; nunca interpreta `nroPrestamo` como ID ni mezcla cuotas por ese número.
+
+Esta edición no expone DNI/CUIT, contactos, domicilios, movimientos de cuentas,
+consultas genéricas ni metadatos arbitrarios. La barrera está en el servidor:
+valida las entradas, construye proyecciones fijas y no entrega registros crudos.
+Un esquema o respuesta no reconocidos producen un error sin fallback al perfil
+interno. Los mappings productivos requieren una auditoría y una prueba real;
+una consulta DEMO exitosa no demuestra compatibilidad con Vimarx productivo.
 
 No se habilitan escrituras, acciones de negocio, batches, recursos ni prompts.
 Cada consulta usa el JWT de su propio usuario; no hay cuenta compartida ni token
@@ -92,6 +141,16 @@ cuerpos ni URLs OAuth. Hay eventos operativos sin identificadores personales:
 2. Subir **sólo el árbol de esta app de una revisión Git concreta** al runtime.
 3. Ejecutar `python3 deploy/install.py --revision FULL_GIT_COMMIT_SHA`.
 
+El estado deseado despliega ambos perfiles desde la misma revisión, con proyectos
+Compose y volúmenes separados: `vimarx-oauth-gateway` usa `.env` y
+`vimarx-oauth-directory` usa `.env.directory`. El segundo archivo sigue
+`deploy/directory.env.example`, con `GATEWAY_PROFILE=directory`, issuer
+`/directorio`, puerto 3061 y claves propias. El instalador conserva la instancia
+interna, sus claves y sesiones; crea claves independientes para el directorio y
+sólo puede reutilizar el hash del login sintético habilitado, nunca sus claves.
+No copiar una base de sesiones ni tokens entre perfiles. Las cookies tienen
+nombres y rutas propios; los resource/issuer de OAuth también son distintos.
+
 El instalador toma primero un snapshot consistente SQLite privado (modo 0600),
 sin copiar las claves, con retención de siete días y poda diaria; luego construye, publica el desafío ACME HTTP sin detener Apache,
 obtiene un certificado con Certbot/webroot y conserva las claves del `.env`.
@@ -103,11 +162,16 @@ hook de reload; el timer propio `vimarx-mcp-cert-renew.timer` verifica dos veces
 día únicamente este certificado, sin modificar la renovación de otros sitios. El timer `vimarx-oauth-cleanup.timer` ejecuta limpieza diaria aunque no
 haya tráfico; también se limpia cada cinco minutos con tráfico y en cada deploy.
 
-Verificar `/health` (revisión + DB), discovery HTTPS y el formulario publicado.
+Verificar `/health` y `/directorio/health` (revisión + DB), discovery HTTPS y
+el formulario de cada issuer. Comprobar que un token no autorice el otro perfil.
 Revisar `docker compose ... ps`, los eventos del contenedor y
 `systemctl status vimarx-oauth-cleanup.timer`. No habilitar logs de acceso para
 investigar OAuth. Para recuperar cuentas deshabilitadas, el operador puede usar
 `flask --app gateway.app:create_app revoke-account --username USUARIO`.
+Ejecutar la revocación dentro del proyecto Compose de la conexión afectada;
+revocar en un perfil no elimina conexiones creadas en el otro. La limpieza
+diaria y los backups recorren ambos perfiles; el directorio usa
+`backups/directory/` y mantiene su retención independiente.
 
 El cifrado protege una copia aislada de SQLite; no protege contra control total
 de la VPS y su clave. Un backup debe proteger volumen y claves por separado,
@@ -195,33 +259,70 @@ Referencia: https://learn.chatgpt.com/docs/enterprise/plugin-management
 
 ## Preparación para el directorio público
 
-La instalación privada 2.0.4 y sus App IDs se conservan fuera de Git.
-`python deploy/build_public_plugin.py --output /ruta/celesol-vimarx-public-2.1.1-draft.zip`
-genera una copia para revisión pública, con OAuth descubierto desde el endpoint
-HTTPS, sin `.app.json`, credenciales ni referencias a la conexión privada.
-El logo es una recodificación PNG de los mismos píxeles del JPEG aprobado.
-La configuración confirmada del publicador, países, ausencia de cobros y los
-cinco casos positivos y tres negativos están en `plugin/public-submission.json`.
-Los datos del socio 900001 y préstamo 910001 son fixtures ficticios implementados
-en el backend sintético, no registros existentes en Vimarx. Los cinco recorridos
-positivos se verifican por API en tests/test_demo.py sin acceso de red. La
-grabación real en ChatGPT cubre los cinco recorridos y dos rechazos de escritura;
-la regresión de otra conexión se verificó por separado con el plugin 2.0.4.
-Todavía deben ejecutarse los casos en la versión guardada en el portal de envío.
+La instalación privada 2.0.4 y sus App IDs se conservan. El builder público usa
+su manifiesto y logo aprobados, pero sustituye README, skill, instrucciones y
+endpoint por los de `plugin/directory-content/`. No modifica la fuente privada.
+El ZIP no contiene `.app.json`, credenciales ni bindings a Apps privadas.
+El logo PNG conserva exactamente los píxeles del JPEG aprobado.
+El nombre del plugin sigue siendo `vimarx-celesol`; su única declaración MCP
+pública se llama `vimarx-celesol-directorio`.
 
-Páginas: `/`, `/support`, `/privacy`, `/terms`; contacto confirmado:
-info@redunisol.com.ar. Las URL del ZIP deben comprobarse en producción tras
-desplegar esta revisión antes de considerar el paquete listo.
+Generar el borrador restringido:
 
-Pendientes externos: credenciales demo cargadas de forma privada en el portal, casos ejecutados con
-dicha cuenta en la versión de envío, verificación de dominio y conexión
-en el portal. El ZIP es un borrador: no enviarlo como listo ni confundir upload,
-envío a revisión y publicación. Las credenciales del revisor se ingresan solo
-en los campos seguros del portal. Nunca usar la cuenta personal de producción.
+```sh
+python deploy/build_public_plugin.py \
+  --output /ruta/celesol-vimarx-public-2.2.0-draft.zip
+```
+
+La identidad confirmada de Santiago Agustín Acosta, todos los países disponibles,
+ausencia de cobros, traducción es-419 y los cinco casos positivos y tres negativos
+están en `plugin/public-submission.json`. Los recorridos positivos usan las ocho
+herramientas específicas con los fixtures ficticios del socio 900001 y préstamo
+910001: últimas solicitudes, búsqueda por nombre, préstamos de un socio, fecha
+de trabajo y cuotas con fechas/pagos/saldos registrados, y solicitudes de un socio.
+Los negativos cubren documentos gubernamentales, escrituras y cambio de mutual
+mediante otra conexión. `tests/test_directory_profile.py` verifica el servidor;
+`tests/test_public_plugin.py` verifica el paquete y sus casos. Estas pruebas no
+sustituyen la ejecución con el modelo de la versión guardada en el portal.
+
+Las páginas de esta edición son `/directorio/`, `/directorio/support`,
+`/directorio/privacy` y `/directorio/terms`, con info@redunisol.com.ar como contacto.
+Antes del envío falta comprobar por HTTPS esas URL, el OAuth y el catálogo de
+ocho herramientas, el rechazo de llamadas fuera del catálogo y el aislamiento
+de tokens y de la cuenta DEMO. Confirmar por separado los mappings y resultados
+productivos con un usuario autorizado, sin usar datos reales en la revisión.
+
+Se necesita una grabación nueva del perfil restringido en ChatGPT y verificar
+su reproducción pública. La grabación existente en `/demo/` muestra el catálogo
+completo anterior de 26 herramientas; se conserva como evidencia histórica,
+pero su URL no se incluye en el borrador 2.2.0. Tras grabar y comprobar el nuevo
+recorrido, generar el candidato con:
+
+```sh
+python deploy/build_public_plugin.py \
+  --demo-recording-url https://DOMINIO/RUTA-DEL-NUEVO-VIDEO-VERIFICADO \
+  --require-demo-recording \
+  --output /ruta/celesol-vimarx-public-2.2.0.zip
+```
+
+El flag impide generar ese candidato sin una URL de video; no comprueba por sí
+solo su reproducción ni convierte el ZIP en una versión aprobada. En el portal,
+verificar la App y URL efectivamente guardadas: volver a cargar el ZIP preserva
+conexión, autenticación y escaneos previos y no migra automáticamente `/mcp` a
+`/directorio/mcp`. No ejecutar los casos ni enviarlo si sigue asociada la conexión
+interna. El nuevo nombre de servidor tampoco garantiza una migración de App.
+Si el borrador anterior 2.1.1 no admite reemplazar la URL y conserva su App
+interna, crear un nuevo borrador **público** en RED UNISOL con el ZIP final;
+conservar el borrador anterior y no crear un plugin privado duplicado. Verificar
+que el borrador elegido tenga exactamente una conexión `/directorio/mcp`, sin
+una App interna residual. Reconectar DEMO, ejecutar los ocho prompts contra la versión restringida,
+repetir escaneos y completar acceso del revisor y declaraciones del publicador.
+Las credenciales sólo van en los campos privados del portal, nunca en el ZIP,
+ficha o video. Carga, envío a revisión y publicación son estados distintos.
 
 ## Cuenta de demostración sintética
 
-El mismo endpoint OAuth/MCP puede aceptar la cuenta reservada `__demo_celesol__`.
+Cada perfil OAuth/MCP puede aceptar la cuenta reservada `__demo_celesol__`.
 Está deshabilitada por omisión. Habilitarla requiere `DEMO_ENABLED=1`, un
 `DEMO_PASSWORD_HASH` Werkzeug scrypt o pbkdf2:sha256, y una `DEMO_TOKEN_KEY`
 Fernet exclusiva, distinta de `TOKEN_ENCRYPTION_KEY`. Guardar contraseña y claves
@@ -276,7 +377,7 @@ respuesta, y devolvió socio 999999 inexistente sin completar con producción.
 Son resultados observados de dos regresiones del host, no una garantía de que
 un modelo nunca pueda elegir otra App disponible. La suite local pasó 156 tests.
 
-Los 26 nombres de herramientas y sus argumentos de lectura tienen un catálogo
+En el perfil interno, los 26 nombres de herramientas y sus argumentos de lectura tienen un catálogo
 sintético local en gateway/demo_tools.json. Todos los resultados anuncian DEMO,
 datosFicticios y synthetic-v1; initialize también identifica el simulador.
 La fecha de trabajo del fixture es 2026-10-30. Los correos usan example.invalid.
@@ -290,6 +391,10 @@ con agrupación opcional. No ejecuta SQL, Python ni XPO real. Otros operadores y
 expresiones fallan explícitamente. Límites: 200 filas, 4096 caracteres, 256 tokens
 y 16 niveles de paréntesis. El campo de orden debe figurar en la proyección.
 El fixture es inmutable entre consultas y no contiene ninguna exportación real.
+El perfil del directorio reutiliza ese fixture mediante proyecciones internas
+fijas y entrega sólo sus ocho herramientas y DTO permitidos; no publica el
+catálogo genérico del simulador. Las claves y sesiones DEMO siguen separadas
+entre perfiles aunque se autorice el mismo usuario sintético.
 
 Para la revisión pública, declarar en las instrucciones seguras que esta cuenta
 simula datos localmente y no está conectada a una instalación demo de Vimarx.
@@ -297,9 +402,10 @@ Probar los prompts con esta cuenta y grabar el flujo real en ChatGPT. El acceso
 solo no equivale a una revisión aprobada. No publicar sus credenciales en la
 ficha, README, video ni ZIP.
 
-## Video público de revisión
+## Video público histórico del catálogo completo
 
-Página: `https://mcp.redunisol.com.ar/demo/`. El MP4 aprobado, de 144 segundos y
+Este video corresponde a las 26 herramientas anteriores, no a la nueva edición
+restringida 2.2.0. Página: `https://mcp.redunisol.com.ar/demo/`. El MP4 aprobado, de 144 segundos y
 1280×720 sin audio, sólo muestra datos ficticios. No se distribuye la grabación
 original que contiene pruebas adicionales. El checksum y nombre inmutables están
 en `deploy/demo-media.json`; el binario se conserva como artefacto de publicación,
@@ -377,9 +483,11 @@ no bloqueantes en `get_socio_por_dni`, `get_socio_por_cuit` y `query_socios` por
 identificadores gubernamentales; el filtro Blocking no muestra entradas.
 Las reglas del directorio en
 https://developers.openai.com/plugins/plugin-guidelines#data-collection
-prohíben solicitar o procesar esa categoría. Está pendiente decidir el alcance
-de una edición pública que excluya esos datos realmente, incluidas las
-consultas genéricas y las respuestas, conservando aparte el MCP interno.
+prohíben solicitar o procesar esa categoría. En ese checkpoint estaba pendiente
+decidir el alcance de una edición pública que excluyera esos datos realmente,
+incluidas las consultas genéricas y las respuestas, conservando aparte el MCP
+interno. La decisión posterior es la edición restringida 2.2.0 descrita arriba;
+los resultados de este escaneo de 26 herramientas no validan su nuevo catálogo.
 Los recorridos por API no equivalen a ejecutar los ocho prompts con el modelo
 en la versión guardada del portal; esa comprobación sigue pendiente junto a
 las declaraciones del publicador. El plugin continúa sin enviarse a revisión

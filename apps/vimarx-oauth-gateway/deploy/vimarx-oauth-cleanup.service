@@ -1,5 +1,5 @@
 [Unit]
-Description=Remove expired Vimarx OAuth credentials
+Description=Remove expired Vimarx OAuth credentials from both isolated profiles
 After=docker.service
 Requires=docker.service
 
@@ -8,4 +8,4 @@ Type=oneshot
 WorkingDirectory=/opt/vimarx-oauth-gateway
 UMask=0077
 ExecStartPre=/usr/bin/python3 /opt/vimarx-oauth-gateway/deploy/backup.py --prune
-ExecStart=/usr/bin/docker compose -p vimarx-oauth-gateway --env-file /opt/vimarx-oauth-gateway/.env -f /opt/vimarx-oauth-gateway/deploy/docker-compose.yml exec -T gateway flask --app gateway.app:create_app cleanup
+ExecStart=/usr/bin/python3 /opt/vimarx-oauth-gateway/deploy/cleanup.py

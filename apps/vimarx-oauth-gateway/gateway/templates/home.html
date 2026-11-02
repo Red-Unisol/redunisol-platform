@@ -2,10 +2,15 @@
 {% block title %}Consultas de Mutual Celesol{% endblock %}
 {% block content %}
 <h1>Celesol · Vimarx</h1>
+{% if config.get('GATEWAY_PROFILE') == 'directory' %}
+<p>Buscá socios por nombre o número interno y consultá solicitudes, préstamos y cuotas de Mutual Celesol desde ChatGPT, con los permisos de tu usuario de Vimarx.</p>
+<p>Esta edición ofrece consultas concretas con campos acotados: identificación interna del socio, nombre y apellido, fechas, importes y estados. No admite consultas libres ni búsquedas por documentos de identidad o identificadores fiscales.</p>
+{% else %}
 <p>Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT con los permisos de tu usuario de Vimarx.</p>
+{% endif %}
 <p>El plugin es publicado por Santiago Agustín Acosta. Permite consultas de solo lectura; no aprueba solicitudes, modifica registros ni realiza pagos.</p>
 <h2>Conectar tu cuenta</h2>
-<p>Para una conexión MCP personalizada, usá esta dirección con autenticación OAuth:</p>
+<p>Al conectar el plugin se abre el formulario de ingreso de Red Unisol. Para una conexión MCP personalizada, usá esta dirección con autenticación OAuth:</p>
 <p><code>{{ resource }}</code></p>
 <p>Ingresá tus credenciales únicamente en el formulario HTTPS de conexión. No las escribas en una conversación.</p>
 <p>La opción <strong>Mantener conectado</strong> guarda las credenciales cifradas en el puente para renovar tu sesión. Es opcional.</p>

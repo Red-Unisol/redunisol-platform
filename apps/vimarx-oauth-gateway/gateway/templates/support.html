@@ -8,4 +8,7 @@
 <p>Si no podés iniciar sesión, contactá al correo de soporte para gestionar tu solicitud y verificar tu identidad sin enviar tu contraseña.</p>
 <h2>Permisos y disponibilidad</h2>
 <p>Necesitás un usuario de Vimarx habilitado para consultar Mutual Celesol. Instalar el plugin no amplía sus permisos. La disponibilidad en ChatGPT depende también de tu cuenta y de las políticas de tu workspace.</p>
+{% if config.get('GATEWAY_PROFILE') == 'directory' %}
+<p>Esta edición busca socios por nombre o número interno y consulta solicitudes, préstamos y cuotas. Si una consulta no está habilitada, reformulá el pedido dentro de esas funciones o contactá a soporte. La administración de conexiones en estas páginas corresponde únicamente a esta edición.</p>
+{% endif %}
 {% endblock %}
