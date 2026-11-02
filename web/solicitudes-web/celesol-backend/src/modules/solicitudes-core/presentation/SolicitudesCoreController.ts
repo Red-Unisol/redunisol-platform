@@ -47,6 +47,7 @@ import {
   getAnalistaStatsQuerySchema,
   getSolicitudesStatsQuerySchema,
   listSolicitudesQuerySchema,
+  movimientosDeCuotaParamsSchema,
   patchSolicitudBodySchema,
   prestamoDelSocioParamsSchema,
   simularPrestamoBodySchema,
@@ -60,6 +61,7 @@ import {
   type GetAnalistaStatsQuery,
   type GetSolicitudesStatsQuery,
   type ListSolicitudesQuery,
+  type MovimientosDeCuotaParams,
   type PatchSolicitudBody,
   type PrestamoDelSocioParams,
   type SimularPrestamoBody,
@@ -450,6 +452,37 @@ export class SolicitudesCoreController {
       });
 
       res.status(200).json(detalle);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Movimientos de una cuota de un prestamo del socio. Mismo criterio de
+  // acceso que el detalle del prestamo.
+  listMovimientosDeCuota = async (
+    req: CookieRequest,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const user = await this.getCurrentUser(req);
+
+      if (!user.isSystemAdmin && user.workflowOwner?.code === "VENDEDORES") {
+        throw new ForbiddenSolicitudAccessError();
+      }
+
+      const params = this.parseRequest<MovimientosDeCuotaParams>(
+        movimientosDeCuotaParamsSchema,
+        req.params,
+      );
+      const movimientos =
+        await this.getPrestamoDelSocioUseCase.movimientosDeCuota({
+          cuotaId: params.cuotaId,
+          prestamoId: params.prestamoId,
+          solicitudId: params.id,
+        });
+
+      res.status(200).json({ movimientos });
     } catch (error) {
       next(error);
     }

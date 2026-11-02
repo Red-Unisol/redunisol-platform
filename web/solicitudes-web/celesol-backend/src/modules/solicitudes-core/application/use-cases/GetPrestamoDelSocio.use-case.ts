@@ -1,6 +1,7 @@
 import { FindSolicitudTitularSocioLegacyId } from "../services/FindSolicitudTitularSocioLegacyId";
 import type {
   CuotaPrestamoLegacy,
+  MovimientoCuotaLegacy,
   PrestamoDelSocioDetalleLegacy,
 } from "../../../solicitudes/domain/entities/Solicitud.entity";
 import {
@@ -12,7 +13,7 @@ import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/servi
 
 type LegacyGateway = Pick<
   SolicitudesLegacyGateway,
-  "getPrestamoDelSocio" | "listCuotasDelPrestamo"
+  "getPrestamoDelSocio" | "listCuotasDelPrestamo" | "listMovimientosDeCuota"
 > & {
   lookupSocioRapido(
     documento: string,
@@ -28,6 +29,10 @@ type Dependencies = {
 export type GetPrestamoDelSocioInput = {
   prestamoId: string;
   solicitudId: string;
+};
+
+export type GetMovimientosDeCuotaInput = GetPrestamoDelSocioInput & {
+  cuotaId: string;
 };
 
 export type PrestamoDelSocioConCuotas = {
@@ -51,6 +56,30 @@ export class GetPrestamoDelSocioUseCase {
   async execute(
     input: GetPrestamoDelSocioInput,
   ): Promise<PrestamoDelSocioConCuotas> {
+    const { prestamo, prestamoId } = await this.prestamoDelTitular(input);
+    const cuotas = await this.legacyGateway.listCuotasDelPrestamo(prestamoId);
+
+    return { cuotas, prestamo };
+  }
+
+  // Movimientos de una cuota, para la ventana que se abre desde el plan de
+  // cuotas. Mismo control que el detalle: solo cuotas de un prestamo del socio.
+  async movimientosDeCuota(
+    input: GetMovimientosDeCuotaInput,
+  ): Promise<MovimientoCuotaLegacy[]> {
+    // Tambien se interpola en la expresion de criterios del legado.
+    const cuotaId = input.cuotaId.trim();
+
+    if (!/^\d+$/.test(cuotaId)) {
+      throw new PrestamoDelSocioNotFoundError();
+    }
+
+    const { prestamoId } = await this.prestamoDelTitular(input);
+
+    return this.legacyGateway.listMovimientosDeCuota(prestamoId, cuotaId);
+  }
+
+  private async prestamoDelTitular(input: GetPrestamoDelSocioInput) {
     const solicitud = await this.repository.findById(input.solicitudId);
 
     if (!solicitud) {
@@ -77,7 +106,7 @@ export class GetPrestamoDelSocioUseCase {
     }
 
     // Primero el prestamo, filtrado por el socio del titular: si no es suyo,
-    // no se llegan a pedir las cuotas.
+    // no se llega a pedir nada mas.
     const prestamo = await this.legacyGateway.getPrestamoDelSocio(
       socioLegacyId,
       prestamoId,
@@ -87,8 +116,6 @@ export class GetPrestamoDelSocioUseCase {
       throw new PrestamoDelSocioNotFoundError();
     }
 
-    const cuotas = await this.legacyGateway.listCuotasDelPrestamo(prestamoId);
-
-    return { cuotas, prestamo };
+    return { prestamo, prestamoId };
   }
 }

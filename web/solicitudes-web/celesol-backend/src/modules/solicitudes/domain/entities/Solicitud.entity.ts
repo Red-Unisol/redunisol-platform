@@ -255,10 +255,23 @@ export type CuotaPrestamoLegacy = {
   fecha: string | null;
   /** null/vacío: sin cobro; ausente: dato no disponible. */
   fechaCobro?: string | null;
+  /** ID de la fila CuotaPrestamo en Vimarx; con él se piden sus movimientos. */
+  id?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
   saldoCuota: number | null;
   saldoCuotaConPunitorios: number | null;
+};
+
+// Un movimiento de una cuota (MovimientoPrestamo en Vimarx): lo que se ve al
+// abrir la cuota con doble clic en "Detalle cuotas". Los montos positivos son
+// lo que la cuota debe; los negativos, lo que se le pagó.
+export type MovimientoCuotaLegacy = {
+  cuotaAfectada: string | null;
+  fecha: string | null;
+  id: string | null;
+  monto: number | null;
+  tipo: string | null;
 };
 
 export type LineaPrestamoPresolicitud = {

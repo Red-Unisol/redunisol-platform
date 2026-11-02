@@ -246,6 +246,10 @@ export const prestamoDelSocioParamsSchema = solicitudByIdParamsSchema.extend({
   prestamoId: z.string().regex(/^\d+$/, "prestamoId must be numeric"),
 });
 
+export const movimientosDeCuotaParamsSchema = prestamoDelSocioParamsSchema.extend({
+  cuotaId: z.string().regex(/^\d+$/, "cuotaId must be numeric"),
+});
+
 // Cuotas a cancelar con una refinanciacion, por prestamo de Vimarx. Los IDs
 // van solo con digitos por la misma razon que prestamoDelSocioParamsSchema.
 const refinanciacionPrestamosSchema = z
@@ -441,6 +445,9 @@ export type CreatePrestamoLegacyBody = z.infer<
   typeof createPrestamoLegacyBodySchema
 >;
 export type PrestamoDelSocioParams = z.infer<typeof prestamoDelSocioParamsSchema>;
+export type MovimientosDeCuotaParams = z.infer<
+  typeof movimientosDeCuotaParamsSchema
+>;
 export type SimularRefinanciacionBody = z.infer<
   typeof simularRefinanciacionBodySchema
 >;
