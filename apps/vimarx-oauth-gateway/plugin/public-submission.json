@@ -4,7 +4,7 @@
   "interface": {
     "displayName": "Celesol · Vimarx",
     "shortDescription": "Celesol account queries",
-    "longDescription": "Read focused Mutual Celesol member, application, loan and installment information in ChatGPT. Find members by name or internal member number, view recent applications or applications for one member, and review returned loan balances and installments. Requires a Vimarx account authorized for Celesol and preserves its permissions. Each person connects through OAuth; optional remembered login stores encrypted credentials in Red Unisol to renew access. This edition exposes only its declared read-only fields and does not approve applications, change records, collect payments or transfer money. A dedicated synthetic DEMO account is available for review and is clearly labelled as fictional data.",
+    "longDescription": "Read focused Mutual Celesol member, application, loan and installment information in ChatGPT. Find members by name or internal member number, view recent dated applications or dated applications for one member, and review returned loan balances and installments. Application lists exclude records without an assigned date and may be truncated; they do not establish global totals. Requires a Vimarx account authorized for Celesol and preserves its permissions. Each person connects through OAuth; optional remembered login stores encrypted credentials in Red Unisol to renew access. This edition exposes only its declared read-only fields and does not approve applications, change records, collect payments or transfer money. A dedicated synthetic DEMO account is available for review and is clearly labelled as fictional data.",
     "developerName": "Santiago Agustín Acosta",
     "category": "Finance",
     "websiteURL": "https://mcp.redunisol.com.ar/directorio/",
@@ -28,10 +28,10 @@
     "test_cases": {
       "positive": [
         {
-          "description": "Use the selected synthetic directory DEMO account, with its fixed work date of 2026-10-30 and four fictional applications. Do not use the internal endpoint or real member data.",
+          "description": "Use the selected synthetic directory DEMO account, with its fixed work date of 2026-10-30 and four fictional dated applications. The directory lists only applications with an assigned date, not undated records. Do not use the internal endpoint or real member data.",
           "prompt": "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
           "tools_triggered": "contexto_cliente, get_solicitudes_recientes",
-          "expected_behavior": "Confirm perfil=directorio, ambiente=DEMO and datosFicticios=true in the selected connection. Call get_solicitudes_recientes with limit=3. Return only the three fictional applications 7004, 7003 and 7002 ordered by fecha DESC, explain that fecha defines recency, and label the data as DEMO. Do not infer recency from IDs or request raw entity metadata."
+          "expected_behavior": "Confirm perfil=directorio, ambiente=DEMO and datosFicticios=true in the selected connection. Call get_solicitudes_recientes with limit=3. Return only the three fictional applications 7004, 7003 and 7002 ordered by fecha DESC, explain that fecha defines recency, and label the data as DEMO. Explain that undated records are excluded and truncado=true means more dated records may exist; do not infer a global total or a tie-break order from IDs. If an application has nroSocio=null, label it as having no member assigned rather than guessing one. Do not request raw entity metadata."
         },
         {
           "description": "The synthetic directory DEMO contains the fictional member Ana Demo Ejemplo, internal member number 900001. Member lookup accepts names and returns only nroSocio, nombre, apellido and estado.",
@@ -52,10 +52,10 @@
           "expected_behavior": "Confirm the directory DEMO and read resultado.fechaTrabajo=2026-10-30 from get_fecha_trabajo. Call get_prestamos with nroSocio=900001, select the returned loan nroPrestamo=910001 and pass its returned idPrestamo=601 to get_cuotas_prestamo. Do not pass nroPrestamo as the tool argument or ask the user for an internal ID already returned. Display the three rows with idPrestamo=601, nroPrestamo=910001, fecha, capital, interes, pagado and saldo. Sum the returned saldo amounts to 8800 and capital-plus-interest pagado to 4400, showing the calculation and marking DEMO. Explain that fecha is the recorded installment date, not a verified due date. Preserve the loan's returned ARS currency without inventing a conversion. Do not classify arrears, include unreturned charges, or claim a settlement, penalty interest or historical balance was computed."
         },
         {
-          "description": "The synthetic directory DEMO applications for member 900001 are 7003 dated 2026-10-29 and 7001 dated 2026-10-25. Other member applications must not be included.",
+          "description": "The synthetic directory DEMO dated applications for member 900001 are 7003 dated 2026-10-29 and 7001 dated 2026-10-25. Other member applications must not be included. Both directory application-list tools exclude records without an assigned date.",
           "prompt": "Mostrame hasta 5 solicitudes del socio 900001, de la más reciente a la más antigua.",
           "tools_triggered": "contexto_cliente, get_solicitudes_socio",
-          "expected_behavior": "Confirm the directory DEMO and call get_solicitudes_socio with nroSocio=900001 and limit=5. Return exactly applications 7003 then 7001 ordered by fecha DESC, both belonging to nroSocio=900001. Explain if truncado is true; do not invent a total or include another member, and do not use a generic entity query."
+          "expected_behavior": "Confirm the directory DEMO and call get_solicitudes_socio with nroSocio=900001 and limit=5. Return exactly applications 7003 then 7001 ordered by fecha DESC, both belonging to nroSocio=900001. Explain that undated applications are excluded even when truncado is false; an empty result would not establish that no undated applications exist. Explain any truncation; do not invent a global total, infer a tie-break order from IDs, include another member or use a generic entity query."
         }
       ],
       "negative": [
@@ -82,7 +82,7 @@
     "translations": {
       "es-419": {
         "subtitle": "Consultas de Mutual Celesol",
-        "description": "Consultá socios por nombre o número interno, solicitudes recientes o de un socio, préstamos y cuotas de Mutual Celesol desde ChatGPT. Requiere una cuenta de Vimarx habilitada para Celesol y conserva sus permisos. Esta edición ofrece campos acotados de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; Mantener conectado permite renovar el acceso mediante credenciales cifradas en Red Unisol. El ambiente DEMO usa únicamente datos ficticios."
+        "description": "Consultá socios por nombre o número interno, solicitudes fechadas recientes o de un socio, préstamos y cuotas de Mutual Celesol desde ChatGPT. Las listas de solicitudes excluyen registros sin fecha asignada y pueden estar truncadas; no representan totales globales. Requiere una cuenta de Vimarx habilitada para Celesol y conserva sus permisos. Esta edición ofrece campos acotados de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; Mantener conectado permite renovar el acceso mediante credenciales cifradas en Red Unisol. El ambiente DEMO usa únicamente datos ficticios."
       }
     }
   },

@@ -100,13 +100,13 @@ El perfil del directorio usa exclusivamente `gateway/directory.py:SPECS`:
 | `get_fecha_trabajo` | Sin argumentos; devuelve `resultado.fechaTrabajo`. |
 | `buscar_socios` | `nombre` de 2–100 caracteres, sólo letras, espacios, apóstrofes y guiones; `limit` 1–50, por omisión 20. |
 | `get_socio_por_numero` | `nroSocio` interno. |
-| `get_solicitudes_recientes` | `limit` 1–50, por omisión 3; fecha descendente. |
-| `get_solicitudes_socio` | `nroSocio`; `limit` 1–50, por omisión 20; fecha descendente. |
+| `get_solicitudes_recientes` | `limit` 1–50, por omisión 3; sólo solicitudes con fecha, en orden descendente de fecha. |
+| `get_solicitudes_socio` | `nroSocio`; `limit` 1–50, por omisión 20; sólo solicitudes fechadas de ese socio, en orden descendente de fecha. |
 | `get_prestamos` | `nroSocio`; hasta 50 registros. |
 | `get_cuotas_prestamo` | `idPrestamo` único obtenido de `get_prestamos`; hasta 50 registros; sin argumento de fecha. |
 
-Los números internos son enteros positivos de hasta 2147483647. No se aceptan
-argumentos adicionales. Las respuestas se construyen con un DTO propio: socio
+Los identificadores de entrada son enteros positivos de hasta 2147483647. No se
+aceptan argumentos adicionales. Las respuestas se construyen con un DTO propio: socio
 (`nroSocio`, `nombre`, `apellido`, `estado`), solicitud (`nroSolicitud`, `fecha`,
 `monto`, `estado`, `nroSocio`), préstamo (`idPrestamo`, `nroPrestamo`, `nroSocio`,
 `capital`, `saldo`, `fecha`, `estado`, `moneda`) o cuota (`nroCuota`, `idPrestamo`, `nroPrestamo`,
@@ -120,6 +120,16 @@ inferir el total ni calcular una deuda completa.
 Los números de préstamo pueden repetirse entre sucursales. Para consultar cuotas,
 el cliente obtiene primero los préstamos del socio y usa el `idPrestamo` único
 devuelto; nunca interpreta `nroPrestamo` como ID ni mezcla cuotas por ese número.
+`nroCuota` es un contador Int32 con signo: admite cero y valores negativos para
+cuotas especiales, sin renumerarlos ni confundirlos con identificadores.
+
+Ambas listas de solicitudes excluyen registros sin fecha asignada y llevan un
+aviso propio que lo indica. Sólo se garantiza fecha descendente; entre fechas
+iguales no se promete un orden por número de solicitud. Una lista vacía no prueba
+la inexistencia de solicitudes sin fecha; tampoco se infieren totales globales.
+Únicamente en el DTO de solicitud, un `NroSocio` de origen cero o nulo se representa
+como `nroSocio: null`, sin socio asignado. No se inventa un ID ni se habilita cero
+o nulo como argumento para consultas de socio.
 
 Esta edición no expone DNI/CUIT, contactos, domicilios, movimientos de cuentas,
 consultas genéricas ni metadatos arbitrarios. La barrera está en el servidor:
@@ -492,3 +502,31 @@ Los recorridos por API no equivalen a ejecutar los ocho prompts con el modelo
 en la versión guardada del portal; esa comprobación sigue pendiente junto a
 las declaraciones del publicador. El plugin continúa sin enviarse a revisión
 ni publicarse.
+
+## Aceptación acotada del perfil de directorio — 02/11/2026
+
+Las consultas autorizadas al MCP real confirmaron un comportamiento que los
+probes vacíos no demostraban: las proyecciones simples con alias `as` devuelven
+filas `{}`. El perfil público usa ahora proyecciones directas, incluidas las
+rutas de relaciones con puntos, y construye el DTO localmente. Se comprobaron
+las formas de respuesta de SocioMutual, Solicitud, Prestamo y CuotaPrestamo,
+incluidos los enumerados como strings dentro de los valores permitidos.
+
+La aceptación de las ocho herramientas terminó con `success: true` en la
+evidencia local `2026-11-02-directory-production-contract.json`. El informe
+conserva sólo formas, tipos y resultados de comprobaciones; no persiste valores
+de registros ni credenciales. Es una comprobación acotada de lectura con un
+usuario autorizado; incluye una lista de solicitudes del socio vacía y no
+acredita todas las combinaciones de datos, permisos o instalaciones de Vimarx.
+
+La evidencia también motivó el alcance explícito de solicitudes fechadas: las
+dos listas excluyen registros sin fecha, usan `Fecha DESC` sin un desempate por
+número y anuncian esa exclusión. Un socio no asignado se representa como `null`
+sólo en solicitudes. Los contadores especiales de cuota admiten cero o negativos;
+los identificadores de entrada siguen siendo positivos.
+
+Este resultado no acredita un despliegue de la nueva instancia `/directorio`,
+una conexión del borrador 2.2.0 en el portal ni los recorridos del modelo en
+ChatGPT. Siguen pendientes ese despliegue, su aceptación por HTTPS, la grabación
+restringida y los controles del portal. Los ZIP previos a este contrato no son
+candidatos válidos para el envío.

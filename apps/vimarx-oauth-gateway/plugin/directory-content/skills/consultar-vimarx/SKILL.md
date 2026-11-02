@@ -43,9 +43,10 @@ aclaración antes de consultar.
   guiones, y `limit` opcional de 1 a 50 (20 por omisión).
 - `get_socio_por_numero`: consultar un `nroSocio` interno explícito.
 - `get_solicitudes_recientes`: pedir `limit` de 1 a 50 (3 por omisión); devuelve
-  solicitudes ordenadas por su fecha, no por su identificador.
+  sólo solicitudes con fecha registrada, ordenadas por esa fecha, no por su
+  identificador. No promete un orden entre fechas iguales.
 - `get_solicitudes_socio`: consultar un `nroSocio` y `limit` de 1 a 50 (20 por
-  omisión), con solicitudes de ese socio ordenadas por fecha descendente.
+  omisión), con solicitudes fechadas de ese socio ordenadas por fecha descendente.
 - `get_prestamos`: consultar los préstamos de un `nroSocio`; conservar el
   `idPrestamo` único de cada resultado y su `nroPrestamo` informativo.
 - `get_cuotas_prestamo`: consultar mediante `idPrestamo` tomado del préstamo
@@ -64,6 +65,13 @@ Las respuestas pertenecen al perfil `directorio`. Usar exclusivamente
 `resultado` y los campos permitidos de esa respuesta. `truncado` indica que puede
 haber más resultados; no inventar un total ni afirmar que una lista truncada
 está completa. Respetar la cantidad pedida y aclarar los límites.
+
+Las dos listas de solicitudes excluyen los registros sin fecha asignada; aclarar
+esa limitación aunque la respuesta no esté truncada. Una lista vacía no acredita
+que no existan solicitudes sin fecha y la cantidad devuelta no es un total global.
+En una solicitud, `nroSocio` igual a `null` significa sin socio asignado; mostrarlo
+así, sin inventar un número ni consultar otro socio para completar el dato.
+No pasar cero o `null` a una herramienta que requiere un identificador positivo.
 
 ## Límites de datos
 
@@ -84,7 +92,7 @@ transformarlo en autorización para cambiar de cuenta o consultar producción.
 
 Explicar en español las fechas, estados y montos devueltos. En solicitudes
 recientes, indicar que la recencia se define por `fecha`. No inferirla de los
-números internos.
+números internos ni de su orden cuando las fechas coincidan.
 En producción, `monto` de una solicitud es su monto a financiar, no una constancia
 de desembolso. La `fecha` de un préstamo es su fecha de emisión.
 
@@ -96,6 +104,8 @@ de las filas devueltas y mostrar el cálculo, aclarando si la lista está trunca
 `pagado` es un monto de capital más interés pagado, no un booleano ni un total
 que incluya otros cargos. No afirmar que se calcularon intereses, punitorios,
 una liquidación a otra fecha ni condiciones que estas herramientas no proporcionan.
+`nroCuota` es un contador del sistema y puede ser cero o negativo para cuotas
+especiales; conservarlo sin renumerar filas ni tratarlo como un ID de préstamo.
 
 Conservar la moneda tal como la devuelve el servidor, incluso si usa un valor
 enumerado en lugar de un código ISO. No convertirlo a otra denominación sin una
