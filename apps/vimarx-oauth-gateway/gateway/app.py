@@ -330,6 +330,13 @@ def create_app(config=None, upstream=None):
     def terms():
         return render_template("terms.html", resource=resource)
 
+    @app.get("/.well-known/openai-apps-challenge")
+    def openai_apps_challenge():
+        return app.response_class(
+            "xoRLNJvKuiF0_JI26ebizigjSiPTzBFCNgk6TY4KmFE",
+            mimetype="text/plain",
+        )
+
     @app.get(prefix + "/authorize.js")
     def authorize_script():
         return app.send_static_file("authorize.js")

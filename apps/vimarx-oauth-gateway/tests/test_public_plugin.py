@@ -21,7 +21,7 @@ def test_public_draft_has_own_oauth_and_review_metadata_without_private_bindings
         assert not any(".app.json" in name or ".codex-plugin" in name for name in archive.namelist())
         manifest=json.loads(archive.read("vimarx-celesol/plugin.json"))
         ext=manifest["extensions"]["com.openai"]
-        assert manifest["name"] == "vimarx-celesol" and manifest["version"] == "2.1.0"
+        assert manifest["name"] == "vimarx-celesol" and manifest["version"] == "2.1.1"
         assert "apps" not in manifest and "apps" not in ext
         assert ext["interface"]["category"] == "Finance"
         assert ext["publication"]["countries"] == []

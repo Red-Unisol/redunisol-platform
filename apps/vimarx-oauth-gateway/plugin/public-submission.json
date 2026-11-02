@@ -1,10 +1,10 @@
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "publisher": "Santiago Agustín Acosta",
   "interface": {
     "displayName": "Celesol · Vimarx",
     "shortDescription": "Celesol account queries",
-    "longDescription": "Read Mutual Celesol member, application, loan, installment and savings-account information in ChatGPT. Requires a Vimarx account authorized for the Celesol installation and preserves its permissions. Read-only: cannot approve applications, change records, collect payments or transfer money. Each user connects through OAuth. Optional remembered login stores encrypted credentials in the gateway to renew access. The plugin has no usage fee; third-party service charges may apply. A dedicated synthetic demo account is available to reviewers, clearly marked DEMO, without access to real member data.",
+    "longDescription": "Read Mutual Celesol member, application, loan, installment and savings-account information in ChatGPT. Requires a Vimarx account authorized for the Celesol installation and preserves its permissions. Read-only: cannot approve applications, change records, collect payments or transfer money. Each user connects through OAuth. Optional remembered login stores encrypted credentials in the gateway to renew access. A dedicated synthetic demo account is available to reviewers, clearly marked DEMO, without access to real member data.",
     "developerName": "Santiago Agustín Acosta",
     "category": "Finance",
     "websiteURL": "https://mcp.redunisol.com.ar/",
@@ -78,7 +78,7 @@
     "translations": {
       "es-419": {
         "subtitle": "Consultas de Mutual Celesol",
-        "description": "Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT. Requiere una cuenta de Vimarx habilitada para esa instalación y conserva sus permisos. Ofrece consultas de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; la opción Mantener conectado permite renovar la sesión mediante credenciales cifradas en el puente. El uso del plugin no tiene cargo; los servicios del cliente pueden tener sus propios costos."
+        "description": "Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT. Requiere una cuenta de Vimarx habilitada para esa instalación y conserva sus permisos. Ofrece consultas de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; la opción Mantener conectado permite renovar la sesión mediante credenciales cifradas en el puente."
       }
     }
   }

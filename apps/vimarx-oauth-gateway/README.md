@@ -196,7 +196,7 @@ Referencia: https://learn.chatgpt.com/docs/enterprise/plugin-management
 ## Preparación para el directorio público
 
 La instalación privada 2.0.4 y sus App IDs se conservan fuera de Git.
-`python deploy/build_public_plugin.py --output /ruta/celesol-vimarx-public-2.1.0-draft.zip`
+`python deploy/build_public_plugin.py --output /ruta/celesol-vimarx-public-2.1.1-draft.zip`
 genera una copia para revisión pública, con OAuth descubierto desde el endpoint
 HTTPS, sin `.app.json`, credenciales ni referencias a la conexión privada.
 El logo es una recodificación PNG de los mismos píxeles del JPEG aprobado.
@@ -213,8 +213,7 @@ Páginas: `/`, `/support`, `/privacy`, `/terms`; contacto confirmado:
 info@redunisol.com.ar. Las URL del ZIP deben comprobarse en producción tras
 desplegar esta revisión antes de considerar el paquete listo.
 
-Pendientes externos: identidad verificada de Santiago Agustín Acosta,
-credenciales demo cargadas de forma privada en el portal, casos ejecutados con
+Pendientes externos: credenciales demo cargadas de forma privada en el portal, casos ejecutados con
 dicha cuenta en la versión de envío, verificación de dominio y conexión
 en el portal. El ZIP es un borrador: no enviarlo como listo ni confundir upload,
 envío a revisión y publicación. Las credenciales del revisor se ingresan solo
@@ -341,3 +340,23 @@ comprobación. Tras verificar la identidad quedan la carga, verificación de dom
 conexión demo y pruebas del portal, credenciales privadas del revisor y
 declaraciones del publicador. La aprobación y publicación no se deducen de estas
 comprobaciones locales.
+
+Actualización del 02/11/2026: la organización RED UNISOL
+(`org-QL8GvReAuolL0HojLlzh4k5I`) figura como Verified, con la verificación
+individual Approved. El portal aceptó el borrador público 2.1.1 de
+`plugin_asdk_app_6ae8866ac7c481919ea7be2a7d30ff59`, con Santiago Agustín Acosta
+como Developer, los cinco casos positivos y tres negativos completos, todos
+los países disponibles, traducción es-419 y video público importados. La
+descripción ya no incluye precios; metadata sin hallazgos y skill con Checks
+passed. El plugin sigue Not submitted y Not published.
+
+La ruta pública exacta `/.well-known/openai-apps-challenge` entrega el token
+de verificación de dominio de ese borrador como texto plano. Es información
+pública de comprobación de propiedad; no autoriza consultas MCP. Su test
+comprueba cuerpo exacto, ausencia de llamadas a Vimarx y que el MCP conserva
+el rechazo anónimo 401. Suite local completa: 160 tests aprobados. Esta ruta
+todavía requiere despliegue autorizado y verificación pública antes de pulsar
+Verify Domain. La conexión OAuth del portal, los escaneos y casos sobre esa
+conexión, las credenciales privadas del revisor y las declaraciones del
+publicador siguen pendientes. La revisión automática bloqueó Connect hasta
+recibir confirmación específica para autorizar la cuenta demo en OpenAI.
