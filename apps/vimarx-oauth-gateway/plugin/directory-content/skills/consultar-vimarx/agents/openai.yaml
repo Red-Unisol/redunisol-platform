@@ -1,0 +1,6 @@
+interface:
+  display_name: "Consultar Celesol"
+  short_description: "Consultas de socios, solicitudes, préstamos y cuotas"
+  default_prompt: "Consultá información de Mutual Celesol usando la cuenta y el ambiente seleccionados."
+policy:
+  allow_implicit_invocation: true
