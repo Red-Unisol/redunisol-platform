@@ -1,12 +1,17 @@
 import { FindSolicitudTitularSocioLegacyId } from "./FindSolicitudTitularSocioLegacyId";
 import { hoyEnArgentina } from "./PlanCobroRefinanciacion";
-import { SolicitudCoreNotFoundError } from "../../domain/solicitudes-core-errors";
+import {
+  SolicitudCoreNotFoundError,
+  SolicitudRefinanciacionInvalidaError,
+} from "../../domain/solicitudes-core-errors";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
+import type { CuotaPrestamoLegacy } from "../../../solicitudes/domain/entities/Solicitud.entity";
 import type { CuotaCobradaLegacy } from "../../infrastructure/services/CobrarPrestamoGateway";
 import {
   buildComprobanteRefinanciacionPdf,
   type ComprobanteRefinanciacion,
+  type ComprobanteRefinanciacionCuota,
 } from "../../infrastructure/services/ComprobanteRefinanciacionPdf";
 
 type LegacyGateway = Pick<
@@ -33,6 +38,8 @@ export type ComprobanteRefinanciacionInput = {
     /** ID del cobro en Vimarx; "0" en una simulacion. */
     numero: string;
     prestamoId: string;
+    /** TotalPago de Vimarx: lo que se cobra (o se cobraria) del prestamo. */
+    totalPago: number;
   }[];
   simulacion: boolean;
   solicitudId: string;
@@ -42,11 +49,22 @@ export type ComprobanteRefinanciacionInput = {
  * Arma el comprobante "REFINANCIACION DE CREDITO" (el "Prestamos Pagos" de
  * Vimarx) de uno o mas cobros, una pagina por cobro.
  *
- * Las columnas salen igual que en Vimarx: Capital e Interes son los de la
- * cuota en el plan; "Credito Pago Adel." es el interes que no se cobra por
- * pagar antes del vencimiento; Gastos Administrativos es el cargo de
- * refinanciacion de la linea; Total General, lo cobrado. Verificado contra
- * la simulacion de la pantalla del 28/10/2026 (prestamo 416228, 340705,34).
+ * Cada renglon es lo que se cobra ahora de la cuota, tomado del plan de
+ * Vimarx en ese momento: el saldo de la cuota con los punitorios al dia
+ * (SaldoCuotaConPunitorios; en las cuotas que no vencieron ya viene sin el
+ * interes que no corrio). Capital es lo que queda de capital; Interes, el
+ * resto del saldo; "Credito Pago Adel.", el interes que no se cobra. Lo que
+ * le falta a la suma para llegar al TotalPago de Vimarx es el cargo de
+ * refinanciacion de la linea (Gastos Administrativos), y va en la ultima
+ * cuota, como en Vimarx.
+ *
+ * No se usa el detalle por cuota que devuelve /api/Prestamo/cobrar: en una
+ * cuota con pagos anteriores trae lo pagado en toda su historia, no lo de
+ * este cobro (verificado en FapiTest el 2/11/2026, prestamo 418720; en prod
+ * el comprobante del 389291 sumaba 14407,11 para un cobro de 10749,01).
+ *
+ * Si la suma no cierra con el TotalPago (el resto da negativo o mas que el
+ * cargo), no se arma: un comprobante tiene que decir lo que se cobra.
  */
 export class ComprobanteRefinanciacionService {
   private readonly build: typeof buildComprobanteRefinanciacionPdf;
@@ -91,34 +109,7 @@ export class ComprobanteRefinanciacionService {
       );
 
       comprobantes.push({
-        cuotas: item.cuotas.map((cobrada) => {
-          const cuota = plan.get(cobrada.nroCuota);
-          // Sin el plan se reconstruye desde el cobro: lo que no es interes,
-          // punitorios ni cargo, es capital.
-          const capital =
-            cuota?.capital ??
-            cobrada.totalPagado -
-              cobrada.interesPagado -
-              cobrada.punitoriosPagados -
-              cobrada.otrosPagado;
-          const interes =
-            cuota?.montoTotal != null && cuota.capital != null
-              ? cuota.montoTotal - cuota.capital
-              : cobrada.interesPagado;
-
-          return {
-            capital: redondear(capital),
-            creditoPagoAdelantado: redondear(
-              Math.max(0, interes - cobrada.interesPagado),
-            ),
-            gastos: redondear(cobrada.otrosPagado),
-            interes: redondear(interes),
-            nroCuota: cobrada.nroCuota,
-            punitorios: redondear(cobrada.punitoriosPagados),
-            total: redondear(cobrada.totalPagado),
-            vencimiento: fechaArgentina(cobrada.fechaVto ?? cuota?.fecha ?? null),
-          };
-        }),
+        cuotas: cuotasDelComprobante(item, plan),
         documento: titular.nroDocumento?.trim() || titular.cuit?.trim() || "-",
         domicilio:
           [titular.domicilioCalle, titular.nroPuerta]
@@ -141,6 +132,65 @@ export class ComprobanteRefinanciacionService {
 
     return this.build(comprobantes, { simulacion: input.simulacion });
   }
+}
+
+/**
+ * Tope del cargo de refinanciacion sobre lo cobrado de las cuotas. Las lineas
+ * cobran 2,5 % o nada (novedad "Cargo Adm. Refinanciacion", motivo 1); el
+ * margen es para que un cambio menor de la linea no frene el comprobante.
+ */
+const CARGO_MAXIMO = 0.03;
+
+function cuotasDelComprobante(
+  item: ComprobanteRefinanciacionInput["prestamos"][number],
+  plan: Map<number, CuotaPrestamoLegacy>,
+): ComprobanteRefinanciacionCuota[] {
+  const ordenadas = [...item.cuotas].sort((a, b) => a.nroCuota - b.nroCuota);
+  const filas = ordenadas.map((cobrada) => {
+    const cuota = plan.get(cobrada.nroCuota);
+
+    if (
+      !cuota ||
+      cuota.saldoCuota == null ||
+      cuota.saldoCuotaConPunitorios == null
+    ) {
+      throw new SolicitudRefinanciacionInvalidaError(
+        `No se pudo armar el comprobante: falta la cuota ${cobrada.nroCuota} del préstamo ${item.prestamoId} en Vimarx.`,
+      );
+    }
+
+    const saldo = cuota.saldoCuota;
+    const aCobrar = cuota.saldoCuotaConPunitorios;
+    const capital = Math.min(cuota.capital ?? saldo, saldo);
+
+    return {
+      capital: redondear(capital),
+      creditoPagoAdelantado: redondear(Math.max(0, saldo - aCobrar)),
+      gastos: 0,
+      interes: redondear(saldo - capital),
+      nroCuota: cobrada.nroCuota,
+      punitorios: redondear(Math.max(0, aCobrar - saldo)),
+      total: redondear(aCobrar),
+      vencimiento: fechaArgentina(cobrada.fechaVto ?? cuota.fecha ?? null),
+    };
+  });
+  const suma = filas.reduce((total, fila) => total + fila.total, 0);
+  const cargo = redondear(item.totalPago - suma);
+
+  if (cargo < -0.01 || cargo > suma * CARGO_MAXIMO + 0.01) {
+    throw new SolicitudRefinanciacionInvalidaError(
+      `No se pudo armar el comprobante del préstamo ${item.prestamoId}: las cuotas suman ${suma.toFixed(2)} y Vimarx cobra ${item.totalPago.toFixed(2)}.`,
+    );
+  }
+
+  const ultima = filas.at(-1);
+
+  if (ultima && cargo > 0) {
+    ultima.gastos = cargo;
+    ultima.total = redondear(ultima.total + cargo);
+  }
+
+  return filas;
 }
 
 // "2026-09-30" o "2026-09-30T00:00:00" -> "30/09/2026".

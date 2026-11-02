@@ -41,6 +41,10 @@ export class SolicitudesCoreRoutes {
       "/:id/prestamos-socio/:prestamoId",
       controller.getPrestamoDelSocio,
     );
+    router.get(
+      "/:id/prestamos-socio/:prestamoId/cuotas/:cuotaId/movimientos",
+      controller.listMovimientosDeCuota,
+    );
     router.post(
       "/:id/refinanciacion/simulacion",
       controller.simularRefinanciacion,

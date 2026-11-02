@@ -302,6 +302,8 @@ export type CuotaPrestamoResponse = {
   fecha: string | null;
   /** null/vacío: sin cobro; ausente: dato no disponible. */
   fechaCobro?: string | null;
+  /** ID de la cuota en Vimarx; con él se piden sus movimientos. */
+  id?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
   saldoCuota: number | null;
@@ -313,6 +315,24 @@ export function getPrestamoDelSocio(solicitudId: string, prestamoId: string) {
     cuotas: CuotaPrestamoResponse[];
     prestamo: PrestamoDelSocioDetalleResponse;
   }>(`/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}`);
+}
+
+export type MovimientoCuotaResponse = {
+  cuotaAfectada: string | null;
+  fecha: string | null;
+  id: string | null;
+  monto: number | null;
+  tipo: string | null;
+};
+
+export function getMovimientosDeCuota(
+  solicitudId: string,
+  prestamoId: string,
+  cuotaId: string,
+) {
+  return apiClient.get<{ movimientos: MovimientoCuotaResponse[] }>(
+    `/solicitudes/${solicitudId}/prestamos-socio/${prestamoId}/cuotas/${cuotaId}/movimientos`,
+  );
 }
 
 export type RefinanciacionPrestamoRequest = {
