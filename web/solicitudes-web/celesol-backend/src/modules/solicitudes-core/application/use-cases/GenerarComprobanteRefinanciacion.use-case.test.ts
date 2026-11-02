@@ -58,7 +58,7 @@ describe("GenerarComprobanteRefinanciacionUseCase", () => {
     assert.equal(result.adjuntoId, "adj-1");
     assert.deepEqual(armados, [
       {
-        prestamos: [{ cuotas: [], numero: NUMERO_PENDIENTE_DE_COBRO, prestamoId: "416700" }],
+        prestamos: [{ cuotas: [], numero: NUMERO_PENDIENTE_DE_COBRO, prestamoId: "416700", totalPago: 625851.9 }],
         // Es el comprobante del legajo, no la simulacion para el socio.
         simulacion: false,
         solicitudId: "sol-1",
