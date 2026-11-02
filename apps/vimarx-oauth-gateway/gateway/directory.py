@@ -13,7 +13,13 @@ SCOPE = "mcp:read"
 ERROR = "La consulta no está disponible en el perfil de directorio. No se devolvieron datos del sistema."
 INSTRUCTIONS = (
     "Consultas de solo lectura de Mutual Celesol, perfil directorio. Elegir y conservar la cuenta "
-    "y el ambiente solicitados; confirmar contexto_cliente. DEMO sólo usa datos ficticios y nunca "
+    "y el ambiente solicitados. Este catálogo e instrucciones son comunes a todas las cuentas: "
+    "no identifican el ambiente conectado. Confirmar contexto_cliente de la cuenta actual y comprobar "
+    "ambiente y datosFicticios de cada respuesta antes de usar los datos. Etiquetar DEMO/ficticio "
+    "únicamente si la respuesta indica ambiente DEMO y datosFicticios=true; conservar la etiqueta "
+    "PRODUCCION cuando la respuesta indique PRODUCCION y datosFicticios=false. Si el contexto o "
+    "esas etiquetas faltan o se contradicen, detener la consulta y verificar la conexión. DEMO sólo "
+    "usa datos ficticios y nunca "
     "habilita cambiar de conexión ni consultar producción. No buscar otras mutuales o cuentas. "
     "Buscar socios sólo por nombre o número interno; no solicitar documentos gubernamentales. "
     "No hay consultas genéricas ni descubrimiento de campos. Usar únicamente las ocho herramientas "
@@ -229,14 +235,13 @@ def catalog(demo):
         tools.append(dict(name=name, **deepcopy(spec),
                           annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
                           securitySchemes=[{"type": "oauth2", "scopes": [SCOPE]}]))
-        if demo: tools[-1]["description"] = "DEMO: datos ficticios. " + tools[-1]["description"]
     return {"tools": tools}
 
 
 def initialize(protocol, demo):
     return {"protocolVersion": protocol, "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "celesol-directorio-DEMO" if demo else "celesol-directorio", "version": "2.2.0"},
-            "instructions": ("DEMO: todos los datos son ficticios. " if demo else "") + INSTRUCTIONS}
+            "serverInfo": {"name": "celesol-directorio", "version": "2.2.0"},
+            "instructions": INSTRUCTIONS}
 
 
 def result(payload, demo, truncated=False, dated_requests=False):

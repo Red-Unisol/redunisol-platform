@@ -478,3 +478,22 @@ def test_undated_request_filter_is_real_and_not_silent_dto_dropping(bridge, monk
     undated = dict(nroSolicitud=7001, fecha=None, monto=1000, estado="Procesando", nroSocio=900001)
     with pytest.raises(directory.DirectoryError):
         directory.call("get_solicitudes_recientes", {}, lambda *args: production_reply("Solicitud", [undated]), False)
+
+
+def test_public_catalog_and_initialization_are_account_independent():
+    # Directory review can cache metadata obtained with the DEMO reviewer account.
+    # That cached metadata must remain correct for a later production connection.
+    assert directory.catalog(True) == directory.catalog(False)
+    assert len(directory.catalog(True)["tools"]) == 8
+    for protocol in ("2024-11-05", "2025-03-26", "2025-06-18"):
+        reviewed = directory.initialize(protocol, True)
+        assert reviewed == directory.initialize(protocol, False)
+        assert reviewed["serverInfo"] == {"name": "celesol-directorio", "version": "2.2.0"}
+        assert "contexto_cliente" in reviewed["instructions"] and "cada respuesta" in reviewed["instructions"]
+        assert "todos los datos son ficticios" not in reviewed["instructions"]
+    assert all(not tool["description"].startswith("DEMO:") for tool in directory.catalog(True)["tools"])
+    # Actual context and tool responses still carry the authenticated mode.
+    for demo, expected in ((True, "DEMO"), (False, "PRODUCCION")):
+        body = directory.result({}, demo)["structuredContent"]
+        assert body["ambiente"] == expected and body["datosFicticios"] is demo
+        assert body["aviso"].startswith("DEMO:") is demo
