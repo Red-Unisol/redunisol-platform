@@ -25,5 +25,7 @@ missing results and reconnection. A dedicated synthetic DEMO account can be used
 for review; its credentials belong only in the portal's private reviewer fields.
 DEMO data is fictional and must always be labelled as such.
 
-A new walkthrough of this restricted edition is required before submission. The
-older walkthrough of the full internal tool set is not evidence for this edition.
+A verified public walkthrough of this restricted edition is included in the
+review metadata. It shows real interactions in a development installation using
+fictional DEMO data. Connection and case validation in the submission portal
+remain separate; the package is still a review candidate, not an approved release.

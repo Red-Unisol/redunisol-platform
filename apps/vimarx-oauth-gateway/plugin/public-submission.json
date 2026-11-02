@@ -18,6 +18,7 @@
     ]
   },
   "review": {
+    "demo_recording_url": "https://mcp.redunisol.com.ar/demo/directorio/celesol-vimarx-directorio-demo-2026-11-02.mp4",
     "prompts": [
       "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
       "Buscá a Ana Demo y mostrame su número de socio y estado.",

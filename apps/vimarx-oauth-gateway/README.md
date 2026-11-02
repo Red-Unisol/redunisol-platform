@@ -277,11 +277,12 @@ El logo PNG conserva exactamente los píxeles del JPEG aprobado.
 El nombre del plugin sigue siendo `vimarx-celesol`; su única declaración MCP
 pública se llama `vimarx-celesol-directorio`.
 
-Generar el borrador restringido:
+Generar el candidato de revisión con el video verificado de la metadata:
 
 ```sh
 python deploy/build_public_plugin.py \
-  --output /ruta/celesol-vimarx-public-2.2.0-draft.zip
+  --require-demo-recording \
+  --output /ruta/celesol-vimarx-public-2.2.0.zip
 ```
 
 La identidad confirmada de Santiago Agustín Acosta, todos los países disponibles,
@@ -297,26 +298,19 @@ sustituyen la ejecución con el modelo de la versión guardada en el portal.
 
 Las páginas de esta edición son `/directorio/`, `/directorio/support`,
 `/directorio/privacy` y `/directorio/terms`, con info@redunisol.com.ar como contacto.
-Antes del envío falta comprobar por HTTPS esas URL, el OAuth y el catálogo de
-ocho herramientas, el rechazo de llamadas fuera del catálogo y el aislamiento
-de tokens y de la cuenta DEMO. Confirmar por separado los mappings y resultados
-productivos con un usuario autorizado, sin usar datos reales en la revisión.
+El despliegue dual, la aceptación HTTPS, el aislamiento y el contrato productivo
+acotado ya se comprobaron; las evidencias y límites figuran al final de esta guía.
+Revalidar las URL y el acceso de revisión al preparar el envío, sin usar datos
+reales de socios para la revisión pública.
 
-Se necesita una grabación nueva del perfil restringido en ChatGPT y verificar
-su reproducción pública. La grabación existente en `/demo/` muestra el catálogo
-completo anterior de 26 herramientas; se conserva como evidencia histórica,
-pero su URL no se incluye en el borrador 2.2.0. Tras grabar y comprobar el nuevo
-recorrido, generar el candidato con:
+El nuevo [video del directorio](https://mcp.redunisol.com.ar/demo/directorio/celesol-vimarx-directorio-demo-2026-11-02.mp4)
+está publicado y su reproducción por HTTPS fue verificada. La grabación anterior
+de `/demo/` muestra las 26 herramientas y se conserva como evidencia histórica;
+el candidato 2.2.0 referencia exclusivamente la grabación restringida.
 
-```sh
-python deploy/build_public_plugin.py \
-  --demo-recording-url https://DOMINIO/RUTA-DEL-NUEVO-VIDEO-VERIFICADO \
-  --require-demo-recording \
-  --output /ruta/celesol-vimarx-public-2.2.0.zip
-```
-
-El flag impide generar ese candidato sin una URL de video; no comprueba por sí
-solo su reproducción ni convierte el ZIP en una versión aprobada. En el portal,
+El flag `--require-demo-recording` del comando de construcción anterior impide
+generar el candidato sin una URL de video; no comprueba por sí solo su reproducción
+ni convierte el ZIP en una versión aprobada. En el portal,
 verificar la App y URL efectivamente guardadas: volver a cargar el ZIP preserva
 conexión, autenticación y escaneos previos y no migra automáticamente `/mcp` a
 `/directorio/mcp`. No ejecutar los casos ni enviarlo si sigue asociada la conexión
@@ -525,8 +519,55 @@ número y anuncian esa exclusión. Un socio no asignado se representa como `null
 sólo en solicitudes. Los contadores especiales de cuota admiten cero o negativos;
 los identificadores de entrada siguen siendo positivos.
 
-Este resultado no acredita un despliegue de la nueva instancia `/directorio`,
-una conexión del borrador 2.2.0 en el portal ni los recorridos del modelo en
-ChatGPT. Siguen pendientes ese despliegue, su aceptación por HTTPS, la grabación
-restringida y los controles del portal. Los ZIP previos a este contrato no son
-candidatos válidos para el envío.
+Esta aceptación del adaptador, por sí sola, no acreditaba un despliegue de la
+nueva instancia `/directorio`, una conexión del borrador 2.2.0 en el portal ni
+los recorridos del modelo en ChatGPT. Las verificaciones posteriores se
+registran a continuación. Los ZIP previos a este contrato no son candidatos
+válidos para el envío.
+
+## Estado operativo y video del directorio — 02/11/2026
+
+Los dos perfiles están desplegados y aceptados por HTTPS en la revisión
+`00ab38cb68802c55701123c60827d4b2c9388f67`: interno con 26 herramientas y
+directorio con ocho. Se verificaron OAuth, refresh, revocación y aislamiento;
+se conservaron las claves, volumen y sesiones internas. La metadata del catálogo
+y `initialize` es igual entre cuentas: el ambiente se confirma exclusivamente
+con `contexto_cliente` y los marcadores de cada resultado, sin inferirlo de
+descripciones o `serverInfo`.
+
+Una instalación de desarrollo App-backed 1.0.1 se conectó a DEMO en ChatGPT Work.
+El recorrido real respondió los cinco prompts positivos con los fixtures
+esperados y rechazó los tres negativos; una consulta extra al socio inexistente
+999999 devolvió ausencia de resultado manteniendo DEMO. Todos los casos usaron
+la misma conversación y reutilizaron contexto: no equivalen a cinco ejecuciones
+independientes. La interfaz mostró uso de integración y respuestas, pero no los
+argumentos MCP detallados. Los rechazos sin tarjeta de integración son evidencia
+de la interfaz, no una auditoría de red que pruebe ausencia absoluta de llamadas.
+Esta prueba de desarrollo no ejecuta los casos de una versión guardada del portal.
+
+El corte aprobado dura 229 segundos, tiene resolución 1280×666, H.264 sin audio y
+ocupa 3.416.489 bytes. Nombre, duración, tamaño, URL y SHA-256 se registran en
+`deploy/demo-directory-media.json`; la resolución y reproducción se comprobaron
+en la QA del video. SHA-256:
+`e00d548e38e79358348ab3c0c8386f406f676574f774b700f71ee1e835a7e3d1`.
+La publicación devolvió HTTP 200, MIME de video y rangos 206; FFmpeg decodificó
+por HTTPS los 6.870 frames sin errores y todos sus hashes coincidieron con el
+candidato revisado. También se inspeccionó visualmente un frame remoto de cuotas.
+
+El publicador de la revisión `f3df8f2beadddddc6757dbe1708d132ee27eecfb` permite
+reproducir la publicación autorizada con:
+
+```sh
+python3 /opt/vimarx-oauth-gateway/deploy/publish_demo.py \
+  --edition directory --media /ruta/al/mp4-aprobado
+```
+
+Esta edición valida el archivo aprobado y usa el Alias `/demo/` ya instalado.
+Publica sólo su subcarpeta `directorio`, sin modificar ni recargar Apache y sin
+reiniciar el gateway; conserva el video anterior y las sesiones.
+
+El paquete está preparado para revisión; la etapa del portal permanece pendiente. Siguen
+pendientes la conexión de la App pública al endpoint restringido, los ocho
+prompts contra esa versión guardada, acceso privado del revisor, escaneos y
+declaraciones del publicador. No se enviaron a revisión ni se publicaron en el
+directorio estas nuevas capacidades.

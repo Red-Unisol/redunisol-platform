@@ -21,9 +21,18 @@ def builder():
         sys.path.remove(str(deploy))
 
 
-def test_public_draft_has_restricted_endpoint_and_review_metadata_without_private_bindings(tmp_path, builder):
-    first = builder.build(tmp_path / "one.zip")
-    second = builder.build(tmp_path / "two.zip")
+@pytest.fixture
+def metadata_without_recording(tmp_path, builder):
+    metadata = json.loads(builder.METADATA.read_text(encoding="utf-8"))
+    metadata["review"].pop("demo_recording_url", None)
+    path = tmp_path / "draft-metadata.json"
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+    return path
+
+
+def test_public_draft_has_restricted_endpoint_and_review_metadata_without_private_bindings(tmp_path, builder, metadata_without_recording):
+    first = builder.build(tmp_path / "one.zip", metadata_path=metadata_without_recording)
+    second = builder.build(tmp_path / "two.zip", metadata_path=metadata_without_recording)
     assert first["sha256"] == second["sha256"]
     assert first["demo_recording_included"] is False
     assert "record the restricted directory walkthrough" in first["remaining_checks"]
@@ -94,9 +103,10 @@ def test_old_full_endpoint_cannot_enter_directory_package(tmp_path, builder):
     assert not (tmp_path / "bad.zip").exists()
 
 
-def test_final_candidate_requires_current_recording_instead_of_reusing_full_demo(tmp_path, builder):
+def test_final_candidate_requires_current_recording_instead_of_reusing_full_demo(tmp_path, builder, metadata_without_recording):
     with pytest.raises(ValueError, match="restricted directory walkthrough"):
-        builder.build(tmp_path / "missing.zip", require_demo_recording=True)
+        builder.build(tmp_path / "missing.zip", metadata_path=metadata_without_recording,
+                      require_demo_recording=True)
     assert not (tmp_path / "missing.zip").exists()
     recording = "https://mcp.redunisol.com.ar/demo/directorio/walkthrough.mp4"
     report = builder.build(tmp_path / "candidate.zip", demo_recording_url=recording,
@@ -106,6 +116,17 @@ def test_final_candidate_requires_current_recording_instead_of_reusing_full_demo
     with zipfile.ZipFile(tmp_path / "candidate.zip") as archive:
         manifest = json.loads(archive.read("vimarx-celesol/plugin.json"))
         assert manifest["extensions"]["com.openai"]["review"]["demo_recording_url"] == recording
+
+
+def test_canonical_directory_recording_matches_approved_media_manifest(tmp_path, builder):
+    metadata = json.loads(builder.METADATA.read_text(encoding="utf-8"))
+    media = json.loads((builder.METADATA.parent.parent / "deploy/demo-directory-media.json").read_text(encoding="utf-8"))
+    assert metadata["review"]["demo_recording_url"] == media["public_url"]
+    report = builder.build(tmp_path / "with-approved-recording.zip", require_demo_recording=True)
+    assert report["demo_recording_included"] is True
+    with zipfile.ZipFile(tmp_path / "with-approved-recording.zip") as archive:
+        manifest = json.loads(archive.read("vimarx-celesol/plugin.json"))
+        assert manifest["extensions"]["com.openai"]["review"]["demo_recording_url"] == media["public_url"]
 
 
 @pytest.mark.parametrize("recording", ["http://example.invalid/video", "https://user:password@example.invalid/video", ""])
