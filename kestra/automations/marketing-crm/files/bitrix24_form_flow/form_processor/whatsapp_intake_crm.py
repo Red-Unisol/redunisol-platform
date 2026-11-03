@@ -52,7 +52,9 @@ def persist(payload, answer, *, env, client=None):
             or (not test and recipients and phone.lstrip("+") not in recipients)):
         return dict(result, action="disabled", reason="disabled_or_outside_pilot")
     config = load_config(env)
-    api = IntakeCrmClient(client or BitrixClient(config, create_logger()))
+    api = IntakeCrmClient(client or BitrixClient(
+        config, create_logger(), cache_lead_fields=True, min_request_interval_seconds=1.0,
+    ))
     review_status = env.get("BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW", "").strip()
     _validate_schema(api, config, review_status, test=test)
 

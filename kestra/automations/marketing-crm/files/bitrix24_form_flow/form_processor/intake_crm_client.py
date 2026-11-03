@@ -48,7 +48,13 @@ class IntakeCrmClient:
                 error.intake_crm_method = method
                 error.intake_crm_attempts = attempt
                 error.intake_crm_write_attempted = self.write_attempted
-                delay = 2 ** (attempt - 1)
+                # Bitrix shares its quota with other automations. Give an
+                # explicit quota response more time to drain than a network
+                # interruption; never apply either retry policy to writes.
+                limited = any(token in str(error).lower() for token in (
+                    "query_limit_exceeded", "too many requests", "http 429",
+                )) or isinstance(error, HTTPError) and error.code == 429
+                delay = 2 ** (attempt if limited else attempt - 1)
                 if (not read or not _transient(error) or attempt == 3
                         or self.clock() + delay >= self.deadline):
                     raise
