@@ -67,6 +67,15 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `VerificarFirmaYDocumentacion` | `devolver_a_liquidada` | `Devolver a Liquidada` | `Liquidada` | yes |
 | `VerificarFirmaYDocumentacion` | `transferir` | `Para Transferir` | `Transferir` | no |
 | `Transferir` | `pagar` | `Pagada` | `Pagada` | no |
+| `RevisionRiesgo`, `Confirmada`, `VerificarFirmaYDocumentacion`, `Transferir` | `paso_por_vimarx` | `Pasó por Vimarx` | `Desestimada` | yes |
+
+## `Pasó por Vimarx` (2026-11-03)
+
+Cierra como `Desestimada` una solicitud que se siguio en Vimarx. Se ofrece en las etapas que no son de vendedores (migracion `20261103120000_paso_por_vimarx`). No escribe nada en Vimarx.
+
+- El historial guarda `action_code = 'paso_por_vimarx'`: es lo que la distingue de las demas desestimadas, sin columnas nuevas.
+- Historicas tiene el filtro "Pasaron por Vimarx" (`pasoPorVimarx=true` en `GET /solicitudes?scope=historicas`) y los listados y el detalle la marcan con la etiqueta "Vimarx".
+- Es la unica accion que comparte origen y destino con otra (`desestimar`) y la unica salida de `Transferir` ademas de `pagar`.
 
 ## Regla de comentarios
 
@@ -88,7 +97,7 @@ No deben quedar activas:
 
 - transiciones que referencien `Abandonada`, `PreAprobado`, `VerificacionRiesgo`, `VerificacionFirmas` o `ParaTransferir`;
 - cualquier salida desde `Pagada`, `Rechazada`, `Vencida` o `Desestimada`;
-- cualquier salida desde `Transferir` que no sea `pagar -> Pagada`;
+- cualquier salida desde `Transferir` que no sea `pagar -> Pagada` o `paso_por_vimarx -> Desestimada`;
 - `RevisionRiesgo -> Liquidada`;
 - `RevisionRiesgo -> VerificarFirmaYDocumentacion`;
 - `Revisar -> VerificarFirmaYDocumentacion`;

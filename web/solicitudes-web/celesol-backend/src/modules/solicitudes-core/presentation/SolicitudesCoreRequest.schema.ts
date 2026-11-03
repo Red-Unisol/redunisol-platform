@@ -205,6 +205,8 @@ export const listSolicitudesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   nroDocumento: z.string().trim().min(1).optional(),
   offset: z.coerce.number().int().min(0).default(0),
+  // Solo Historicas: las desestimadas con la accion "Paso por Vimarx".
+  pasoPorVimarx: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   scope: z.enum(["historicas", "recientes", "tracking", "work"]).default("work"),
 });
 

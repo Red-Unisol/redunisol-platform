@@ -258,6 +258,8 @@ export type SolicitudCore = {
   nroSolicitud: string | null;
   observaciones: string | null;
   ultimaNovedad?: string | null;
+  // Solo en los listados: desestimada con la accion "Paso por Vimarx".
+  pasoPorVimarx?: boolean;
   capabilities?: SolicitudCoreCapabilities;
   participants?: SolicitudCoreParticipant[];
   titular: SolicitudCoreTitular;

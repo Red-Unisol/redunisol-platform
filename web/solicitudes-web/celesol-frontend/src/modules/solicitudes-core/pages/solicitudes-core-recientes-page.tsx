@@ -212,6 +212,16 @@ function RecientesList({ user }: { user: AuthUser }) {
     [data],
   );
 
+  const pasoPorVimarxIds = useMemo(
+    () =>
+      new Set(
+        (data ?? [])
+          .filter((item) => item.pasoPorVimarx)
+          .map((item) => item.id),
+      ),
+    [data],
+  );
+
   const filterOptions = useMemo(
     () => buildSolicitudesTableFilterOptions(tableRows, FILTRO_COLUMNS_LIST),
     [tableRows],
@@ -500,15 +510,20 @@ function RecientesList({ user }: { user: AuthUser }) {
                     </td>
                   ) : null}
                   <td className="px-2.5 py-2.5">
-                    {row.estado ? (
-                      <Badge
-                        className="max-w-44"
-                        dot
-                        variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
-                      >
-                        {row.estado}
-                      </Badge>
-                    ) : null}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {row.estado ? (
+                        <Badge
+                          className="max-w-44"
+                          dot
+                          variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
+                        >
+                          {row.estado}
+                        </Badge>
+                      ) : null}
+                      {pasoPorVimarxIds.has(row.id) ? (
+                        <Badge>Vimarx</Badge>
+                      ) : null}
+                    </div>
                     {novedadAporta(row.ultimaNovedad, row.estado) ? (
                       <p
                         className="mt-1 max-w-44 truncate text-xs text-foreground-secondary"
