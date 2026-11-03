@@ -59,6 +59,7 @@ export class GenerarComprobanteRefinanciacionUseCase {
               cuotas: prestamo.cuotas,
               numero: NUMERO_PENDIENTE_DE_COBRO,
               prestamoId: prestamo.prestamoId,
+              totalPago: prestamo.totalPago,
             },
           ]
         : [],

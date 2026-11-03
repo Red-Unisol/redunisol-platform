@@ -12,6 +12,7 @@ from .attribution import CRM_FIELDS, lead_fields as attribution_fields, normaliz
 from .bitrix_client import BitrixClient
 from .catalogs import BANCOS, ORIGENES_LEAD, PROVINCIAS, SITUACIONES_LABORALES
 from .config import load_config
+from .intake_crm_client import IntakeCrmClient
 from .lead_service import _resolve_enum_id, resolve_commercial_owner_enum_id, resolve_processing_policy_enum_id
 from .logger import create_logger
 from .normalization import normalize_whatsapp
@@ -51,7 +52,9 @@ def persist(payload, answer, *, env, client=None):
             or (not test and recipients and phone.lstrip("+") not in recipients)):
         return dict(result, action="disabled", reason="disabled_or_outside_pilot")
     config = load_config(env)
-    api = client or BitrixClient(config, create_logger())
+    api = IntakeCrmClient(client or BitrixClient(
+        config, create_logger(), cache_lead_fields=True, min_request_interval_seconds=1.0,
+    ))
     review_status = env.get("BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW", "").strip()
     _validate_schema(api, config, review_status, test=test)
 

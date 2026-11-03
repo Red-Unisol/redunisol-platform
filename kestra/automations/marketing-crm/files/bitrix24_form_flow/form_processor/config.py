@@ -92,6 +92,8 @@ DEFAULT_DEAL_CONFIG = {
     ),
     "cordoba_unc_user_ids": (53121,),
     "cordoba_general_user_ids": (10451, 71159, 68579, 90231, 29, 116561, 110059),
+    "santa_fe_anses_user_ids": (10451, 29, 116561),
+    "neuquen_user_ids": (58913,),
 }
 
 
@@ -207,6 +209,8 @@ class DealConfig:
     cordoba_unc_user_ids: tuple[int, ...]
     cordoba_general_user_ids: tuple[int, ...]
     policia_federal_caba_user_ids: tuple[int, ...]
+    santa_fe_anses_user_ids: tuple[int, ...]
+    neuquen_user_ids: tuple[int, ...]
     volume_compensation_url: str | None
     volume_compensation_token: str | None
     volume_compensation_scope: str
@@ -517,6 +521,10 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
             policia_federal_caba_user_ids=routing_pools.get(
                 "policia_federal_caba", (8057,)
             ),
+            santa_fe_anses_user_ids=routing_pools.get(
+                "santa_fe_anses", DEFAULT_DEAL_CONFIG["santa_fe_anses_user_ids"],
+            ),
+            neuquen_user_ids=routing_pools.get("neuquen", DEFAULT_DEAL_CONFIG["neuquen_user_ids"]),
             volume_compensation_url=_optional_env(
                 source, "BITRIX24_VOLUME_COMPENSATION_URL"
             ),
@@ -548,6 +556,8 @@ def _load_routing_pools(env: dict[str, str]) -> dict[str, tuple[int, ...]]:
 
     pools: dict[str, tuple[int, ...]] = {}
     for key in (
+        "santa_fe_anses",
+        "neuquen",
         "policia_federal_caba",
         "catamarca_general",
         "cordoba_jubilados",

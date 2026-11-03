@@ -1,23 +1,34 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArchiveRestore,
-  ArchiveX,
-  Calculator,
-  CloudDownload,
-  Ellipsis,
-  FileCode,
-  RefreshCw,
-  Save,
-} from "lucide-react";
+  type CSSProperties,
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Calculator, ClipboardList, Copy, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import type { AuthUser } from "@/modules/auth/services/auth-api";
+import { isVendedor } from "@/modules/auth/utils/auth-user";
+import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
+import { cn } from "@/shared/utils/cn";
 
-import { SolicitudesCoreListFooter } from "@/modules/solicitudes-core/components/solicitudes-core-list-footer";
+import { ListaPaginacion } from "@/modules/solicitudes-core/components/lista-solicitudes-controles";
 import { useLineasDelAgenteQuery } from "@/modules/solicitudes-core/hooks/use-lineas-del-agente-query";
 import { useSolicitudesCoreRecientesQuery } from "@/modules/solicitudes-core/hooks/use-solicitudes-core-recientes-query";
+import {
+  LISTA_HEADER_CELL,
+  buildRowStyleLista,
+  buildSocioLista,
+  formatFechaLista,
+  formatMontoLista,
+  hayTextoSeleccionado,
+} from "@/modules/solicitudes-core/utils/lista-solicitudes-formato";
 import {
   resolveListRefreshState,
   runListManualRefresh,
@@ -26,19 +37,17 @@ import {
   buildSolicitudesTableFilterOptions,
   filterSolicitudesTableRows,
 } from "@/modules/solicitudes/utils/solicitudes-table-filters";
+import { SolicitudesColumnFilter } from "@/modules/solicitudes-shared/components/solicitudes-column-filter";
 import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
+import type {
+  SolicitudesTableColumn,
+  SolicitudesTableFilters,
+  SolicitudesTableRow,
+} from "@/modules/solicitudes-shared/components/solicitudes-table";
+import { getEstadoBadgeVariant } from "@/modules/solicitudes-shared/utils/estado-badge-variant";
 import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
 import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
-import {
-  SolicitudesTable,
-  type SolicitudesTableColumn,
-  type SolicitudesTableFilters,
-  type SolicitudesTableRow,
-} from "@/modules/solicitudes-shared/components/solicitudes-table";
-import {
-  SolicitudesToolbar,
-  type SolicitudesToolbarAction,
-} from "@/modules/solicitudes/components/solicitudes-toolbar";
+import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
 
 const SimuladorPrestamoModal = lazy(() =>
   loadSimuladorPrestamoModal().then((module) => ({
@@ -46,125 +55,48 @@ const SimuladorPrestamoModal = lazy(() =>
   })),
 );
 
-const CORE_RECIENTES_COLUMNS: SolicitudesTableColumn[] = [
-  { key: "nroSolicitud", label: "Nº Solicitud", minWidth: "min-w-28", filterable: true },
-  {
-    key: "vendedorSolicitud",
-    label: "Vendedor Solicitud",
-    minWidth: "min-w-32",
+const PAGE_SIZE = 30;
+
+// Columnas con filtro (filtran la página cargada, como antes).
+const FILTRO_COLUMNS: Partial<
+  Record<keyof SolicitudesTableRow, SolicitudesTableColumn>
+> = {
+  asignadoA: {
     filterable: true,
-  },
-  { key: "fecha", label: "Fecha", minWidth: "min-w-28", filterable: true },
-  {
-    key: "nombreCompleto",
-    label: "Nombre Completo",
-    minWidth: "min-w-48",
-    filterable: true,
-  },
-  {
-    key: "lineaPrestamo",
-    label: "Línea Préstamo",
-    minWidth: "min-w-44",
-    filterable: true,
-  },
-  {
     key: "asignadoA",
-    label: "Ejecutivo Solicitud",
-    minWidth: "min-w-36",
+    label: "Ejecutivo",
+    minWidth: "",
+  },
+  estado: { filterable: true, key: "estado", label: "Estado", minWidth: "" },
+  fecha: { filterable: true, key: "fecha", label: "Fecha", minWidth: "" },
+  lineaPrestamo: {
     filterable: true,
+    key: "lineaPrestamo",
+    label: "Línea",
+    minWidth: "",
   },
-  {
-    key: "linkFirmaDigital",
-    label: "Link firma digital",
-    minWidth: "min-w-44",
-  },
-  {
-    key: "montoFinal",
-    label: "Monto a Financiar",
-    minWidth: "min-w-24",
-    align: "right",
-  },
-  {
-    key: "cuotas",
-    label: "Cuotas",
-    minWidth: "min-w-20",
-    align: "right",
-    filterable: true,
-  },
-  {
-    key: "cuotaResultante",
-    label: "Cuota Resultante",
-    minWidth: "min-w-28",
-    align: "right",
-  },
-  { key: "estado", label: "Estado", minWidth: "min-w-36", filterable: true },
-  {
-    key: "ultimaNovedad",
-    label: "Última Novedad",
-    minWidth: "min-w-36",
-    filterable: true,
-  },
-];
+};
+const FILTRO_COLUMNS_LIST = Object.values(FILTRO_COLUMNS).filter(
+  (column): column is SolicitudesTableColumn => column !== undefined,
+);
 
-// Simulador suelto, sin solicitud: para vendedores y Riesgo, con las lineas
-// del agente de cada uno.
-const CORE_RECIENTES_LEFT_ACTIONS: SolicitudesToolbarAction[] = [
-  { icon: Calculator, id: "simulador", label: "Simulador" },
-];
-
-const CORE_RECIENTES_RIGHT_ACTIONS: SolicitudesToolbarAction[] = [
-  { disabled: true, id: "borrar-mover", label: "Borrar/Mover" },
-  { disabled: true, icon: Save, id: "guardar" },
-  { disabled: true, icon: FileCode, id: "exportar-xml" },
-  { disabled: true, icon: CloudDownload, id: "vimarx" },
-  {
-    disabled: true,
-    icon: ArchiveX,
-    id: "archivar-solicitud",
-    label: "Archivar Solicitud",
-  },
-  {
-    disabled: true,
-    icon: ArchiveRestore,
-    id: "desarchivar-solicitud",
-    label: "Desarchivar Solicitud",
-  },
-  { icon: RefreshCw, id: "refresh" },
-  { disabled: true, icon: Ellipsis, id: "more-actions" },
-];
-
-function formatDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
+// La novedad suele ser el comentario por defecto de la transición ("Preaprobada"
+// para "Pre Aprobada"): si repite el estado no aporta.
+function normalizarTextoEstado(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word && word !== "de" && word !== "y")
+    .join("");
 }
 
-function formatAmount(value: number | string | null) {
-  if (value === null || value === "") {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return new Intl.NumberFormat("es-AR", {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    useGrouping: false,
-  }).format(value);
-}
-
-function buildNombreCompleto(apellido: string | null, nombre: string | null) {
-  return [apellido?.trim(), nombre?.trim()].filter(Boolean).join(" ");
+function novedadAporta(novedad: string, estado: string) {
+  return (
+    novedad.length > 0 &&
+    normalizarTextoEstado(novedad) !== normalizarTextoEstado(estado)
+  );
 }
 
 function resolveAssignmentLabel(item: {
@@ -194,16 +126,6 @@ function resolveAssignmentLabel(item: {
   return "Sin asignar";
 }
 
-function getRowAppearanceStyle(row: SolicitudesTableRow, isSelected: boolean) {
-  if (isSelected || !row.rowBackgroundColor) {
-    return undefined;
-  }
-
-  return {
-    backgroundColor: row.rowBackgroundColor,
-  };
-}
-
 export function SolicitudesCoreRecientesPage() {
   const session = useAuthSessionQuery();
   if (!session.data) return <SolicitudesContentLoader />;
@@ -220,11 +142,12 @@ function RecientesList({ user }: { user: AuthUser }) {
   // arrancara en "Mi area", la solicitud se le iria al enviarla a Riesgo.
   // "Ver todas" nunca le muestra las de otros (lo limita el backend).
   const esVendedor = user.workflowOwner?.code === "VENDEDORES";
-  const areaLabel = user.workflowOwner?.code === "RIESGO"
-    ? "Riesgo"
-    : esVendedor
-      ? "Pendientes de mi lado"
-      : user.workflowOwner?.name ?? "Sin área asignada";
+  const areaLabel =
+    user.workflowOwner?.code === "RIESGO"
+      ? "Riesgo"
+      : esVendedor
+        ? "Pendientes de mi lado"
+        : (user.workflowOwner?.name ?? "Sin área asignada");
   const todasLabel = esVendedor ? "Todas mis solicitudes" : "Ver todas";
   const [vista, setVista] = useState<"mi-area" | "todas">(() =>
     !user.isSystemAdmin &&
@@ -236,9 +159,7 @@ function RecientesList({ user }: { user: AuthUser }) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(30);
   const [isManualRefreshPending, setIsManualRefreshPending] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [columnFilters, setColumnFilters] = useState<SolicitudesTableFilters>(
     {},
   );
@@ -253,65 +174,65 @@ function RecientesList({ user }: { user: AuthUser }) {
       workflowOwnerId: user.workflowOwnerId,
       search: searchTerm,
       page,
-      pageSize,
+      pageSize: PAGE_SIZE,
     });
 
-  const tableRows = useMemo<SolicitudesTableRow[]>(() => {
-    if (!data) {
-      return [];
-    }
-
-    return data.map((item) => ({
-      cuotaResultante: formatAmount(item.cuotaResultante),
-      cuotas: item.cuotas !== null ? String(item.cuotas) : "",
-      estado: item.estadoActual.name ?? "",
-      fecha: formatDate(item.createdAt),
-      id: item.id,
-      linkFirmaDigital: item.linkFirmaDigital ?? "",
-      asignadoA: resolveAssignmentLabel(item),
-      lineaPrestamo: item.lineaPrestamoDescripcion ?? "",
-      montoFinal: formatAmount(item.montoAFinanciar),
-      nombreCompleto: buildNombreCompleto(
-        item.titular.apellidoDenominacion,
-        item.titular.nombre,
+  const tableRows = useMemo<SolicitudesTableRow[]>(
+    () =>
+      (data ?? []).map((item) => ({
+        asignadoA: resolveAssignmentLabel(item),
+        cuotaResultante: formatMontoLista(item.cuotaResultante),
+        cuotas: item.cuotas !== null ? String(item.cuotas) : "",
+        estado: nombreEstado(item.estadoActual.code, item.estadoActual.name),
+        estadoCode: item.estadoActual.code ?? "",
+        fecha: formatFechaLista(item.createdAt),
+        nroSolicitud: item.nroSolicitud ?? "",
+        id: item.id,
+        lineaPrestamo: item.lineaPrestamoDescripcion ?? "",
+        linkFirmaDigital: item.linkFirmaDigital ?? "",
+        montoFinal: formatMontoLista(item.montoAFinanciar),
+        nombreCompleto: buildSocioLista(
+          item.titular.apellidoDenominacion,
+          item.titular.nombre,
+        ),
+        nroDocumento: item.titular.nroDocumento ?? "",
+        ultimaNovedad: item.ultimaNovedad?.trim() ?? "",
+        vendedorSolicitud: item.vendedorSolicitud ?? "",
+      })),
+    [data],
+  );
+  const rowStyles = useMemo(
+    () =>
+      new Map<string, CSSProperties | undefined>(
+        (data ?? []).map((item) => [
+          item.id,
+          buildRowStyleLista(item.appearance),
+        ]),
       ),
-      nroDocumento: item.titular.nroDocumento ?? "",
-      nroSolicitud: item.nroSolicitud ?? "",
-      rowBackgroundColor: item.appearance?.backgroundColor ?? null,
-      rowTextColor: item.appearance?.textColor ?? null,
-      ultimaNovedad: item.ultimaNovedad?.trim() || "-",
-      vendedorSolicitud: item.vendedorSolicitud ?? "",
-    }));
-  }, [data]);
+    [data],
+  );
 
   const filterOptions = useMemo(
-    () => buildSolicitudesTableFilterOptions(tableRows, CORE_RECIENTES_COLUMNS),
+    () => buildSolicitudesTableFilterOptions(tableRows, FILTRO_COLUMNS_LIST),
     [tableRows],
   );
   const filteredRows = useMemo(
     () => filterSolicitudesTableRows(tableRows, "", columnFilters),
     [columnFilters, tableRows],
   );
+  // Vendedor solo aporta si en la página hay más de uno.
+  const showVendedor =
+    new Set(tableRows.map((row) => row.vendedorSolicitud)).size > 1;
+  const hasActiveFilters = Object.keys(columnFilters).length > 0;
+  // El ejecutivo es interno: el vendedor no lo ve, igual que en el detalle.
+  const mostrarEjecutivo = !isVendedor(user);
 
-  const hasNextPage = tableRows.length === pageSize;
-  const pageCount = hasNextPage ? page + 1 : page;
-  const totalItems =
-    (page - 1) * pageSize + tableRows.length + (hasNextPage ? 1 : 0);
   const refreshState = resolveListRefreshState({
     hasData: data !== undefined,
     isFetching,
     isLoading,
     isManualRefreshPending,
   });
-  const rightActions = useMemo(
-    () =>
-      CORE_RECIENTES_RIGHT_ACTIONS.map((action) =>
-        action.id === "refresh"
-          ? { ...action, disabled: refreshState.isRefreshActionDisabled }
-          : action,
-      ),
-    [refreshState.isRefreshActionDisabled],
-  );
 
   async function handleRefresh() {
     await runListManualRefresh({
@@ -322,147 +243,320 @@ function RecientesList({ user }: { user: AuthUser }) {
     });
   }
 
+  function abrirDetalle(id: string) {
+    navigate(`/solicitudes/core/detalle/${id}?origen=recientes`);
+  }
+
+  function applyColumnFilter(
+    columnKey: keyof SolicitudesTableRow,
+    selectedValues?: string[],
+  ) {
+    setColumnFilters((current) => {
+      const next = { ...current };
+      if (selectedValues === undefined) {
+        delete next[columnKey];
+      } else {
+        next[columnKey] = selectedValues;
+      }
+      return next;
+    });
+  }
+
+  function headerCell(
+    label: string,
+    columnKey?: keyof SolicitudesTableRow,
+    className = "px-2.5",
+  ) {
+    const column = columnKey ? FILTRO_COLUMNS[columnKey] : undefined;
+
+    return (
+      <th
+        className={cn(LISTA_HEADER_CELL, className, column && "relative pr-9")}
+      >
+        {label}
+        {column ? (
+          <SolicitudesColumnFilter
+            column={column}
+            filterOptions={filterOptions[column.key] ?? []}
+            onApply={applyColumnFilter}
+            selectedValues={columnFilters[column.key]}
+          />
+        ) : null}
+      </th>
+    );
+  }
+
   return (
     <article
       aria-busy={refreshState.isBackgroundRefreshing}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm"
+      className="flex h-full min-h-0 flex-col gap-3 p-2 md:p-4"
     >
-      <SolicitudesToolbar
-        searchPlaceholder="Buscar por solicitud, DNI, nombre o apellido"
-        viewControl={user.workflowOwner?.code !== "TESORERIA" && (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          className="h-10 rounded-full bg-surface px-4 text-foreground"
+          onClick={() => setIsSimuladorOpen(true)}
+          onFocus={loadSimuladorPrestamoModal}
+          onMouseEnter={loadSimuladorPrestamoModal}
+          type="button"
+          variant="outline"
+        >
+          <Calculator className="size-4" />
+          Simulador
+        </Button>
+
+        {user.workflowOwner?.code !== "TESORERIA" ? (
           <div
-            className="flex flex-wrap items-center gap-2"
-            role="group"
             aria-label="Vista por área"
+            className="order-last flex h-10 w-full items-center rounded-full border border-border bg-surface p-1 sm:order-none sm:inline-flex sm:w-auto"
+            role="group"
           >
-            <span className="text-sm text-foreground-secondary">
-              Área: {areaLabel}
-            </span>
             {(["mi-area", "todas"] as const).map((value) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                variant={vista === value ? "default" : "outline"}
+              <button
                 aria-pressed={vista === value}
+                className={cn(
+                  "h-8 flex-1 rounded-full px-3 text-[13px] font-medium whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none sm:px-4 sm:text-sm",
+                  vista === value
+                    ? "bg-verde text-white"
+                    : "text-foreground-secondary hover:text-foreground",
+                )}
                 disabled={value === "mi-area" && !user.workflowOwnerId}
+                key={value}
                 onClick={() => {
                   if (vista === value) return;
                   setVista(value);
                   setPage(1);
-                  setSelectedIds([]);
                 }}
+                type="button"
               >
                 {value === "mi-area" ? areaLabel : todasLabel}
-              </Button>
+              </button>
             ))}
           </div>
-        )}
-        leftActions={CORE_RECIENTES_LEFT_ACTIONS}
-        onAction={(actionId) => {
-          if (actionId === "refresh") {
-            void handleRefresh();
-          }
-          if (actionId === "simulador") {
-            setIsSimuladorOpen(true);
-          }
-        }}
-        onSimularIntent={loadSimuladorPrestamoModal}
-        onSearchChange={(value) => {
-          setSearchTerm(value);
-          setPage(1);
-          setSelectedIds([]);
-        }}
-        rightActions={rightActions}
-        searchTerm={searchTerm}
-      />
+        ) : null}
 
-      {!refreshState.isInitialLoading && !error && vista === "mi-area" && filteredRows.length === 0 && (
-        <p role="status" className="shrink-0 border-b border-border px-3 py-3 text-sm text-foreground-secondary">
-          No hay solicitudes para tu área dentro de los criterios de búsqueda aplicados.
-        </p>
-      )}
-      <div className="min-h-0 flex-1">
+        <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+          <label className="relative min-w-0 flex-1 sm:w-80 sm:flex-none">
+            <span className="sr-only">
+              Buscar por solicitud, DNI, nombre o apellido
+            </span>
+            <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-foreground-muted" />
+            <input
+              className="h-10 w-full rounded-full border border-border bg-surface pr-4 pl-10 text-sm outline-none placeholder:text-foreground-muted focus:border-input-focus focus:ring-2 focus:ring-input-focus/20"
+              onChange={(event) => {
+                setSearchTerm(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Buscar por solicitud, DNI, nombre o apellido"
+              type="search"
+              value={searchTerm}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-surface shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {refreshState.isInitialLoading ? (
           <SolicitudesContentLoader />
+        ) : tableRows.length === 0 ? (
+          <div className="flex h-full min-h-64 flex-col items-center justify-center gap-3 px-6 text-center">
+            <span className="inline-flex size-12 items-center justify-center rounded-full bg-verde/10 text-verde">
+              <ClipboardList className="size-6" />
+            </span>
+            {error ? (
+              <>
+                <p className="font-semibold text-foreground">
+                  No se pudieron cargar las solicitudes
+                </p>
+                <Button
+                  className="rounded-full"
+                  onClick={() => void handleRefresh()}
+                  type="button"
+                  variant="outline"
+                >
+                  Reintentar
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-foreground">
+                  {searchTerm.trim()
+                    ? "No hay solicitudes que coincidan con la búsqueda"
+                    : vista === "mi-area"
+                      ? "No hay solicitudes pendientes de tu lado"
+                      : "No hay solicitudes recientes"}
+                </p>
+                {vista === "mi-area" && !searchTerm.trim() ? (
+                  <p className="max-w-sm text-sm text-foreground-secondary">
+                    Cuando una solicitud quede en manos de tu área, aparece acá.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </div>
         ) : (
-          <SolicitudesTable
-            columnFilters={columnFilters}
-            columns={CORE_RECIENTES_COLUMNS}
-            emptyMessage={
-              error
-                ? "No se pudieron cargar las solicitudes."
-                : vista === "mi-area"
-                  ? null
-                  : undefined
-            }
-            filterOptions={filterOptions}
-            onApplyColumnFilter={(columnKey, selectedValues) => {
-              setColumnFilters((current) => {
-                const next = { ...current };
-                if (selectedValues === undefined) {
-                  delete next[columnKey];
-                } else {
-                  next[columnKey] = selectedValues;
-                }
-                return next;
-              });
-              setPage(1);
-            }}
-            onRowClick={(row) => {
-              const searchParams = new URLSearchParams({
-                origen: "recientes",
-              });
-
-              navigate(
-                `/solicitudes/core/detalle/${row.id}?${searchParams.toString()}`,
-              );
-            }}
-            onToggleAllRows={() => {
-              const areAllRowsSelected =
-                filteredRows.length > 0 &&
-                filteredRows.every((row) => selectedIds.includes(row.id));
-
-              if (areAllRowsSelected) {
-                setSelectedIds([]);
-                return;
-              }
-
-              setSelectedIds(filteredRows.map((row) => row.id));
-            }}
-            onToggleRow={(rowId) => {
-              setSelectedIds((currentIds) =>
-                currentIds.includes(rowId)
-                  ? currentIds.filter((id) => id !== rowId)
-                  : [...currentIds, rowId],
-              );
-            }}
-            rowStyle={getRowAppearanceStyle}
-            rows={filteredRows}
-            selectedIds={selectedIds}
-          />
+          <table className="w-full min-w-[52rem] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                {headerCell("Fecha", "fecha")}
+                {headerCell("Nº")}
+                {headerCell("Socio")}
+                {headerCell("Línea", "lineaPrestamo")}
+                {headerCell("Monto")}
+                {headerCell("Cuotas")}
+                {mostrarEjecutivo ? headerCell("Ejecutivo", "asignadoA") : null}
+                {headerCell("Estado", "estado")}
+                {headerCell("Firma")}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td
+                    className="px-4 py-10 text-center text-foreground-secondary"
+                    colSpan={mostrarEjecutivo ? 9 : 8}
+                  >
+                    Ninguna solicitud de esta página cumple los filtros.{" "}
+                    <button
+                      className="font-semibold text-verde underline-offset-2 hover:underline"
+                      onClick={() => setColumnFilters({})}
+                      type="button"
+                    >
+                      Quitar filtros
+                    </button>
+                  </td>
+                </tr>
+              ) : null}
+              {filteredRows.map((row) => (
+                <tr
+                  className="group cursor-pointer transition-colors hover:bg-verde/5 focus-visible:bg-verde/5 focus-visible:outline-none [&>td]:border-t [&>td]:border-border-soft [&:last-child>td]:border-b"
+                  key={row.id}
+                  onClick={() => {
+                    if (!hayTextoSeleccionado()) abrirDetalle(row.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") abrirDetalle(row.id);
+                  }}
+                  style={rowStyles.get(row.id)}
+                  tabIndex={0}
+                >
+                  <td className="px-2.5 py-2.5 whitespace-nowrap text-foreground-secondary tabular-nums">
+                    {row.fecha}
+                  </td>
+                  <td className="px-2.5 py-2.5 whitespace-nowrap text-foreground-secondary tabular-nums">
+                    {row.nroSolicitud}
+                  </td>
+                  <td className="min-w-36 px-2.5 py-2.5">
+                    <p className="font-semibold text-foreground">
+                      {row.nombreCompleto || "Sin nombre"}
+                    </p>
+                    {row.nroDocumento ? (
+                      <p className="text-xs text-foreground-secondary tabular-nums">
+                        DNI {row.nroDocumento}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td
+                    className="max-w-28 truncate px-2.5 py-2.5"
+                    title={row.lineaPrestamo}
+                  >
+                    {row.lineaPrestamo}
+                  </td>
+                  <td className="px-2.5 py-2.5 font-semibold whitespace-nowrap tabular-nums">
+                    {row.montoFinal}
+                  </td>
+                  <td className="px-2.5 py-2.5 whitespace-nowrap tabular-nums">
+                    {row.cuotas ? (
+                      <>
+                        {row.cuotas}
+                        {row.cuotaResultante ? (
+                          <p className="text-xs text-foreground-secondary">
+                            × {row.cuotaResultante}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </td>
+                  {mostrarEjecutivo ? (
+                    <td className="max-w-32 px-2.5 py-2.5">
+                      <p
+                        className={cn(
+                          "truncate",
+                          row.asignadoA === "Sin asignar"
+                            ? "text-foreground-muted"
+                            : "text-foreground",
+                        )}
+                        title={row.asignadoA}
+                      >
+                        {row.asignadoA}
+                      </p>
+                      {showVendedor && row.vendedorSolicitud ? (
+                        <p
+                          className="truncate text-xs text-foreground-secondary"
+                          title={`Vendedor: ${row.vendedorSolicitud}`}
+                        >
+                          Vend.: {row.vendedorSolicitud}
+                        </p>
+                      ) : null}
+                    </td>
+                  ) : null}
+                  <td className="px-2.5 py-2.5">
+                    {row.estado ? (
+                      <Badge
+                        className="max-w-44"
+                        dot
+                        variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
+                      >
+                        {row.estado}
+                      </Badge>
+                    ) : null}
+                    {novedadAporta(row.ultimaNovedad, row.estado) ? (
+                      <p
+                        className="mt-1 max-w-44 truncate text-xs text-foreground-secondary"
+                        title={row.ultimaNovedad}
+                      >
+                        {row.ultimaNovedad}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td
+                    className="px-2.5 py-2.5 whitespace-nowrap"
+                    // Los botones de esta celda no abren el detalle.
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    {row.linkFirmaDigital ? (
+                      <FirmaAcciones url={row.linkFirmaDigital} />
+                    ) : (
+                      <span className="text-foreground-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      <SolicitudesCoreListFooter
-        currentPage={page}
-        isRefreshing={refreshState.isBackgroundRefreshing}
-        itemLabel="solicitudes"
-        onPageChange={(nextPage) => {
-          setPage(nextPage);
-          setSelectedIds([]);
-        }}
-        onPageSizeChange={(value) => {
-          setPageSize(value);
-          setPage(1);
-          setSelectedIds([]);
-        }}
-        pageCount={Math.max(1, pageCount)}
-        pageSize={pageSize}
-        pageSizeOptions={[10, 20, 30, 50, 100]}
-        selectedCount={selectedIds.length}
-        totalItems={Math.max(tableRows.length, totalItems)}
-      />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="min-w-0 flex-1">
+          <ListaPaginacion
+            onPageChange={setPage}
+            page={page}
+            pageSize={PAGE_SIZE}
+            rowsCount={tableRows.length}
+          />
+        </div>
+        {hasActiveFilters ? (
+          <button
+            className="text-sm font-semibold text-verde underline-offset-2 hover:underline"
+            onClick={() => setColumnFilters({})}
+            type="button"
+          >
+            Quitar filtros
+          </button>
+        ) : null}
+      </div>
+
       {isSimuladorOpen ? (
         <Suspense fallback={null}>
           <SimuladorPrestamoModal
@@ -474,5 +568,36 @@ function RecientesList({ user }: { user: AuthUser }) {
         </Suspense>
       ) : null}
     </article>
+  );
+}
+
+// El link de firma se manda al socio: se copia, sin mostrar la URL entera.
+function FirmaAcciones({ url }: { url: string }) {
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link de firma digital copiado");
+    } catch {
+      toast.error(
+        "No se pudo copiar el link. Abrí la solicitud para copiarlo desde ahí.",
+      );
+    }
+  }
+
+  const botonClassName =
+    "inline-flex size-7 items-center justify-center rounded-full border border-border bg-surface text-foreground-secondary transition hover:border-verde hover:text-verde focus-visible:ring-2 focus-visible:ring-verde/40 focus-visible:outline-none";
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        aria-label="Copiar link de firma digital"
+        className={botonClassName}
+        onClick={() => void copiar()}
+        title="Copiar link de firma"
+        type="button"
+      >
+        <Copy className="size-3.5" />
+      </button>
+    </div>
   );
 }

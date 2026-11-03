@@ -65,8 +65,11 @@ export function NuevaSolicitudToolbar({
 
 export function SolicitudDetailToolbar({
   canEdit = false,
+  embedded = false,
   isCreatePrestamoLegacyPending = false,
   isEditing = false,
+  isSaving = false,
+  onCancelEdit,
   isPrestamoLegacyGenerado = false,
   isSaveDisabled = false,
   onCreatePrestamoLegacy,
@@ -80,10 +83,16 @@ export function SolicitudDetailToolbar({
   submitAction,
   attachmentsAction,
   analysisAction,
+  aviso,
 }: {
   canEdit?: boolean;
+  // Dentro de la ficha del detalle: sin franja propia.
+  embedded?: boolean;
   isCreatePrestamoLegacyPending?: boolean;
   isEditing?: boolean;
+  isSaving?: boolean;
+  // Con esto, al editar se ven "Cancelar" y "Guardar cambios" con texto.
+  onCancelEdit?: () => void;
   isPrestamoLegacyGenerado?: boolean;
   isSaveDisabled?: boolean;
   onCreatePrestamoLegacy?: () => void;
@@ -106,9 +115,17 @@ export function SolicitudDetailToolbar({
     disabled: boolean;
     disabledReason?: string;
   };
+  // Por que no se puede hacer la accion principal de la barra azul.
+  aviso?: ReactNode;
 }) {
   return (
-    <div className="shrink-0 border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5">
+    <div
+      className={
+        embedded
+          ? "min-w-0 flex-1"
+          : "shrink-0 border-b border-border bg-linear-to-b from-white to-background/70 px-3 py-2.5"
+      }
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onFocus={onPreloadSimulador}
@@ -131,7 +148,7 @@ export function SolicitudDetailToolbar({
             type="button"
           >
             <Send className="size-4" aria-hidden="true" />
-            Enviar solicitud
+            Enviar a Riesgo
           </Button>
         ) : null}
         {analysisAction ? (
@@ -191,22 +208,30 @@ export function SolicitudDetailToolbar({
           )
         ) : null}
         {transitionControl ? (
-          <div className="min-w-[15rem] flex-1 sm:max-w-[24rem]">
+          <div
+            className={
+              embedded
+                ? "w-44 shrink-0"
+                : "min-w-[15rem] flex-1 sm:max-w-[24rem]"
+            }
+          >
             {transitionControl}
           </div>
         ) : null}
         <div className="ml-0 flex items-center gap-1 sm:ml-auto">
-          <Button
-            aria-label="Actualizar"
-            className="text-foreground-muted"
-            disabled={!onRefresh}
-            onClick={onRefresh}
-            size="icon-sm"
-            type="button"
-            variant="outline"
-          >
-            <RefreshCw className="size-4" />
-          </Button>
+          {aviso ? <div className="mr-2">{aviso}</div> : null}
+          {onRefresh ? (
+            <Button
+              aria-label="Actualizar"
+              className="text-foreground-muted"
+              onClick={onRefresh}
+              size="icon-sm"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw className="size-4" />
+            </Button>
+          ) : null}
           {!isEditing && canEdit ? (
             <Button
               onClick={onStartEdit}
@@ -218,7 +243,29 @@ export function SolicitudDetailToolbar({
               Editar
             </Button>
           ) : null}
-          {isEditing ? (
+          {isEditing && onCancelEdit ? (
+            // Siempre a la vista (la fila no scrollea): cancelar y guardar.
+            <>
+              <Button
+                disabled={isSaving}
+                onClick={onCancelEdit}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Cancelar
+              </Button>
+              <Button
+                disabled={isSaveDisabled}
+                onClick={onSave}
+                size="sm"
+                type="button"
+              >
+                <Save className="size-4" />
+                {isSaving ? "Guardando..." : "Guardar cambios"}
+              </Button>
+            </>
+          ) : isEditing ? (
             <Button
               aria-label="Guardar"
               disabled={isSaveDisabled}

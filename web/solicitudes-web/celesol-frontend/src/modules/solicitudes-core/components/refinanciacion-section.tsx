@@ -14,13 +14,21 @@ import {
   type RefinanciacionPrestamoRequest,
   type RefinanciacionSimuladaResponse,
 } from "@/modules/solicitudes-core/services/solicitudes-core-api";
-import { diaDeNegocio, diaLegacy, estadoCobro } from "@/modules/solicitudes-core/utils/cuotas-cobro";
+import {
+  diaDeNegocio,
+  diaLegacy,
+  estadoCobro,
+} from "@/modules/solicitudes-core/utils/cuotas-cobro";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { clasificarEstadoPrestamo } from "@/modules/solicitudes-core/utils/prestamo-estado";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { ApiError } from "@/shared/services/http/api-error";
-import { formatMoneyAmount, formatNullableAmount } from "@/shared/utils/money-format";
+import {
+  formatMoneyAmount,
+  formatNullableAmount,
+} from "@/shared/utils/money-format";
+import { TABLA } from "../utils/tabla-detalle";
 
 const PLACEHOLDER = "-";
 const GUARDAR_ERROR_TOAST_ID = "refinanciacion-guardar-error";
@@ -197,12 +205,12 @@ export function RefinanciacionSection({
   return (
     <div className="space-y-3">
       <p className="text-sm text-foreground-secondary">
-        Seleccioná las cuotas a cancelar con la refinanciación y generá el
-        PDF: guarda la selección y deja el comprobante en Adjuntos. Las cuotas
-        se cobran en Vimarx al generar el préstamo.
+        Seleccioná las cuotas a cancelar con la refinanciación y generá el PDF:
+        guarda la selección y deja el comprobante en Adjuntos. Las cuotas se
+        cobran en Vimarx al generar el préstamo.
       </p>
       {yaCobrada ? (
-        <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-[#f6f8f7] px-3 py-2 text-sm">
           Ya se cobraron en Vimarx cuotas de esta refinanciación. No se puede
           cambiar: terminá de generar el préstamo.
         </p>
@@ -230,7 +238,7 @@ export function RefinanciacionSection({
           />
         ))
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-[#f6f8f7] px-4 py-3">
         <div className="text-sm">
           <div>
             {cantidadCuotas === 0
@@ -338,8 +346,8 @@ function PrestamoRefinanciacion({
   }
 
   return (
-    <div className="rounded-md border border-border">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+    <div className="overflow-hidden rounded-lg border border-border">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#f6f8f7] px-3 py-2.5">
         <button
           aria-expanded={abierto}
           className="flex items-center gap-2 text-left text-sm font-medium"
@@ -389,13 +397,10 @@ function PrestamoRefinanciacion({
       {abierto ? (
         <div className="overflow-x-auto border-t border-border">
           <table className="w-full min-w-[640px] border-collapse text-sm">
-            <thead className="bg-background text-left text-xs text-foreground-secondary">
+            <thead className={TABLA.encabezado}>
               <tr>
                 {CUOTAS_COLUMNS.map((column) => (
-                  <th
-                    className="border-r border-border px-3 py-2 font-medium"
-                    key={column}
-                  >
+                  <th className={TABLA.th} key={column}>
                     {column}
                   </th>
                 ))}
@@ -403,27 +408,27 @@ function PrestamoRefinanciacion({
             </thead>
             <tbody>
               {isLoading ? (
-                <tr className="border-t border-border">
-                  <td className="px-3 py-3 text-foreground-secondary" colSpan={CUOTAS_COLUMNS.length}>
+                <tr className={TABLA.fila}>
+                  <td className={TABLA.vacio} colSpan={CUOTAS_COLUMNS.length}>
                     Consultando cuotas...
                   </td>
                 </tr>
               ) : error ? (
-                <tr className="border-t border-border">
-                  <td className="px-3 py-3 text-foreground-secondary" colSpan={CUOTAS_COLUMNS.length}>
+                <tr className={TABLA.fila}>
+                  <td className={TABLA.vacio} colSpan={CUOTAS_COLUMNS.length}>
                     No se pudieron consultar las cuotas.
                   </td>
                 </tr>
               ) : pendientes.length === 0 ? (
-                <tr className="border-t border-border">
-                  <td className="px-3 py-3 text-foreground-secondary" colSpan={CUOTAS_COLUMNS.length}>
+                <tr className={TABLA.fila}>
+                  <td className={TABLA.vacio} colSpan={CUOTAS_COLUMNS.length}>
                     No tiene cuotas pendientes.
                   </td>
                 </tr>
               ) : (
                 pendientes.map((cuota) => (
-                  <tr className="border-t border-border" key={cuota.nroCuota}>
-                    <td className="border-r border-border px-3 py-2">
+                  <tr className={TABLA.fila} key={cuota.nroCuota}>
+                    <td className={TABLA.celda}>
                       <Checkbox
                         aria-label={`Cancelar la cuota ${cuota.nroCuota}`}
                         checked={seleccionadas.has(cuota.nroCuota)}
@@ -433,19 +438,17 @@ function PrestamoRefinanciacion({
                         }
                       />
                     </td>
-                    <td className="border-r border-border px-3 py-2">
-                      {cuota.nroCuota}
-                    </td>
-                    <td className="border-r border-border px-3 py-2">
+                    <td className={TABLA.celda}>{cuota.nroCuota}</td>
+                    <td className={TABLA.celda}>
                       {formatLegacyDate(cuota.fecha)}
                     </td>
-                    <td className={`border-r border-border px-3 py-2 ${ESTILO_TIPO[cuota.tipo]}`}>
+                    <td className={`${TABLA.celda} ${ESTILO_TIPO[cuota.tipo]}`}>
                       {ETIQUETAS_TIPO[cuota.tipo]}
                     </td>
-                    <td className="border-r border-border px-3 py-2">
+                    <td className={TABLA.celda}>
                       {formatNullableAmount(cuota.saldoCuota) || PLACEHOLDER}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className={TABLA.celda}>
                       {formatNullableAmount(cuota.saldoCuotaConPunitorios) ||
                         PLACEHOLDER}
                     </td>
@@ -514,7 +517,9 @@ function aRequest(seleccion: Seleccion): RefinanciacionPrestamoRequest[] {
 function mismaSeleccion(a: Seleccion, b: Seleccion) {
   const normalizar = (seleccion: Seleccion) =>
     JSON.stringify(
-      aRequest(seleccion).sort((x, y) => x.prestamoId.localeCompare(y.prestamoId)),
+      aRequest(seleccion).sort((x, y) =>
+        x.prestamoId.localeCompare(y.prestamoId),
+      ),
     );
 
   return normalizar(a) === normalizar(b);

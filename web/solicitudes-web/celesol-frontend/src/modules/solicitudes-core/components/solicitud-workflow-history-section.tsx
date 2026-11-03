@@ -1,9 +1,8 @@
-import { Section } from "@/modules/solicitudes-editor/components/fields/base";
 import type {
   SolicitudCoreWorkflowHistoryItem,
   SolicitudWorkflowHistoryStateSnapshot,
 } from "@/modules/solicitudes/types/solicitudes-core";
-import { TableEmptyState } from "@/shared/components/ui/table-empty-state";
+import { nombreEstado } from "@/modules/solicitudes-shared/utils/nombre-estado";
 
 const PLACEHOLDER = "-";
 
@@ -33,7 +32,7 @@ function formatDateTime(value: string) {
 }
 
 function formatState(state: SolicitudWorkflowHistoryStateSnapshot) {
-  return formatText(state.name?.trim() || state.code);
+  return formatText(nombreEstado(state.code, state.name));
 }
 
 function formatOwner(state: SolicitudWorkflowHistoryStateSnapshot) {
@@ -99,14 +98,18 @@ export function SolicitudWorkflowHistorySection({
   isLoading = false,
 }: SolicitudWorkflowHistorySectionProps) {
   const cellClassName =
-    "block min-w-0 px-3 py-2.5 align-top [overflow-wrap:anywhere] md:table-cell";
+    "block min-w-0 px-2 py-2 align-top [overflow-wrap:anywhere] md:table-cell";
   const labelClassName =
     "mb-1 block text-xs font-semibold text-foreground-secondary md:hidden";
 
   return (
-    <Section title="Novedades">
+    // Al pie del detalle, sin caja: es consulta, no tarea.
+    <section aria-label="Novedades" className="px-1 pt-3">
+      <h2 className="mb-1 px-2 text-xs font-semibold text-foreground-secondary">
+        Novedades
+      </h2>
       {isLoading ? (
-        <p className="text-sm text-foreground-secondary">
+        <p className="px-2 py-1 text-xs text-foreground-muted">
           Cargando novedades...
         </p>
       ) : null}
@@ -121,49 +124,51 @@ export function SolicitudWorkflowHistorySection({
       ) : null}
 
       {!isLoading && !errorMessage && history.length === 0 ? (
-        <TableEmptyState message="Sin novedades para mostrar." />
+        <p className="px-2 py-1 text-xs text-foreground-muted">
+          Sin novedades todavía.
+        </p>
       ) : null}
 
       {!isLoading && !errorMessage && history.length > 0 ? (
-        <div className="overflow-hidden rounded-md border border-border">
+        <div>
           <table
             role="table"
             aria-label="Historial de estados de la solicitud"
-            className="block w-full text-left text-sm md:table md:table-fixed"
+            className="block w-full text-left text-xs text-foreground-secondary md:table md:table-fixed"
           >
             <caption className="sr-only">
               Movimientos más recientes primero. Fecha y hora de Argentina.
             </caption>
             <thead
               role="rowgroup"
-              className="sr-only bg-background md:not-sr-only md:table-header-group"
+              className="sr-only border-b border-border-soft text-foreground-muted md:not-sr-only md:table-header-group"
             >
               <tr role="row">
                 <th
                   role="columnheader"
                   scope="col"
-                  className="w-[16%] px-3 py-2.5 font-semibold"
+                  className="w-[16%] px-2 py-1.5 font-medium"
                 >
                   Fecha
                 </th>
                 <th
                   role="columnheader"
                   scope="col"
-                  className="w-[28%] px-3 py-2.5 font-semibold"
+                  className="w-[28%] px-2 py-1.5 font-medium"
                 >
                   Cambio de estado
                 </th>
                 <th
                   role="columnheader"
                   scope="col"
-                  className="w-[36%] px-3 py-2.5 font-semibold"
+                  className="w-[36%] px-2 py-1.5 font-medium"
                 >
                   Observación
                 </th>
                 <th
                   role="columnheader"
                   scope="col"
-                  className="w-[20%] px-3 py-2.5 font-semibold"
+                  className="w-[20%] px-2 py-1.5 font-medium"
                 >
                   Usuario
                 </th>
@@ -184,7 +189,7 @@ export function SolicitudWorkflowHistorySection({
                   <tr
                     role="row"
                     key={item.id}
-                    className="block border-t border-border even:bg-background/50 md:table-row"
+                    className="block border-t border-border-soft first:border-t-0 md:table-row"
                   >
                     <td
                       role="cell"
@@ -207,18 +212,16 @@ export function SolicitudWorkflowHistorySection({
                           →
                         </span>
                         <span
-                          className={`inline-flex rounded-sm border px-1.5 py-0.5 text-xs font-semibold ${getStateVariantClassName(formatState(item.estadoNuevo))}`}
+                          className={`inline-flex rounded-sm border px-1 py-px text-[0.6875rem] font-medium ${getStateVariantClassName(formatText(item.estadoNuevo.name?.trim() || item.estadoNuevo.code))}`}
                         >
                           {formatState(item.estadoNuevo)}
                         </span>
                       </div>
                       {action !== PLACEHOLDER ? (
-                        <p className="mt-1 text-xs text-foreground-secondary">
-                          {action}
-                        </p>
+                        <p className="mt-0.5 text-foreground-muted">{action}</p>
                       ) : null}
                       {previousOwner !== nextOwner ? (
-                        <p className="mt-1 text-xs text-foreground-secondary">
+                        <p className="mt-0.5 text-foreground-muted">
                           Área: {previousOwner} → {nextOwner}
                         </p>
                       ) : null}
@@ -231,7 +234,7 @@ export function SolicitudWorkflowHistorySection({
                         {comment || PLACEHOLDER}
                       </p>
                       {reason && reason !== comment && reason !== action ? (
-                        <p className="mt-1 whitespace-pre-wrap text-xs text-foreground-secondary">
+                        <p className="mt-0.5 whitespace-pre-wrap text-foreground-muted">
                           Motivo: {reason}
                         </p>
                       ) : null}
@@ -255,6 +258,6 @@ export function SolicitudWorkflowHistorySection({
           </table>
         </div>
       ) : null}
-    </Section>
+    </section>
   );
 }

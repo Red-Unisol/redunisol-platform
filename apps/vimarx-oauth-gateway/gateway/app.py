@@ -6,7 +6,7 @@ import re
 import secrets
 import time
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from authlib.integrations.flask_oauth2 import AuthorizationServer
 from authlib.oauth2 import OAuth2Error
@@ -23,6 +23,7 @@ from .models import Client, Code, PersistentSession, RateBucket, RefreshResponse
 from .upstream import UpstreamError, UpstreamSessionExpired, Vimarx
 from .sessions import ReauthenticationRequired, SessionService
 from .demo import RoutedVimarx
+from . import directory
 
 READ_TOOLS = frozenset({
     "get_version", "contexto_cliente", "get_entidades", "get_propiedades",
@@ -36,6 +37,7 @@ READ_TOOLS = frozenset({
 })
 PROTOCOLS = {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
 SCOPE = "mcp:read"
+CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 
 
 def create_app(config=None, upstream=None):
@@ -44,6 +46,7 @@ def create_app(config=None, upstream=None):
     app.config.update(
         SECRET_KEY=os.environ.get("GATEWAY_SECRET_KEY"),
         TOKEN_ENCRYPTION_KEY=os.environ.get("TOKEN_ENCRYPTION_KEY"),
+        GATEWAY_PROFILE=os.environ.get("GATEWAY_PROFILE", "internal"),
         ISSUER=os.environ.get("GATEWAY_ISSUER", "https://mcp.redunisol.com.ar"),
         VIMARX_ORIGIN=os.environ.get("VIMARX_ORIGIN", "https://celesol.dyndns.org:35010"),
         SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "sqlite:////data/gateway.db"),
@@ -68,6 +71,12 @@ def create_app(config=None, upstream=None):
     )
     if config:
         app.config.update(config)
+    profile = app.config["GATEWAY_PROFILE"]
+    if profile not in {"internal", "directory"}:
+        raise ValueError("GATEWAY_PROFILE must be internal or directory")
+    directory_profile = profile == "directory"
+    if directory_profile:
+        app.config["SESSION_COOKIE_NAME"] = "__Secure-vimarx-directory-oauth"
     if not app.config["SECRET_KEY"] or len(app.config["SECRET_KEY"]) < 32:
         raise ValueError("GATEWAY_SECRET_KEY must contain at least 32 characters")
     cipher = Fernet(app.config["TOKEN_ENCRYPTION_KEY"])
@@ -318,6 +327,14 @@ def create_app(config=None, upstream=None):
     def home():
         return render_template("home.html", resource=resource)
 
+    if not directory_profile:
+        @app.get(prefix + "/claude")
+        def claude_connector():
+            return redirect("https://claude.ai/customize/connectors?" + urlencode({
+                "modal": "add-custom-connector", "connectorName": "Celesol · Vimarx Interno",
+                "connectorUrl": resource,
+            }), code=302)
+
     @app.get(prefix + "/support")
     def support():
         return render_template("support.html", resource=resource)
@@ -329,6 +346,13 @@ def create_app(config=None, upstream=None):
     @app.get(prefix + "/terms")
     def terms():
         return render_template("terms.html", resource=resource)
+
+    @app.get("/.well-known/openai-apps-challenge")
+    def openai_apps_challenge():
+        return app.response_class(
+            "xoRLNJvKuiF0_JI26ebizigjSiPTzBFCNgk6TY4KmFE",
+            mimetype="text/plain",
+        )
 
     @app.get(prefix + "/authorize.js")
     def authorize_script():
@@ -358,6 +382,10 @@ def create_app(config=None, upstream=None):
                        scopes_supported=[SCOPE], bearer_methods_supported=["header"])
 
     def allowed_redirect(uri):
+        # The public-directory profile must not acquire Claude support through
+        # the test/operator override or through a previously registered client.
+        if uri == CLAUDE_CALLBACK:
+            return not directory_profile
         if uri in app.config["EXTRA_REDIRECT_URIS"]:
             return True
         try:
@@ -452,6 +480,8 @@ def create_app(config=None, upstream=None):
             grant = server.get_consent_grant()
         except OAuth2Error as error:
             return jsonify(error=error.error, error_description=error.description), 400
+        if not allowed_redirect(grant.redirect_uri):
+            return jsonify(error="invalid_redirect_uri"), 400
         g.oauth_redirect_uri = grant.redirect_uri
         error_message = None
         if request.method == "POST":
@@ -483,6 +513,7 @@ def create_app(config=None, upstream=None):
         session.permanent = True
         return render_template("authorize.html", csrf=csrf, error=error_message,
                                resource=resource, client_name=grant.client.client_name,
+                                redirect_hostname=urlsplit(grant.redirect_uri).hostname,
                                username=request.form.get("username", "")[:128], demo_enabled=vimarx.demo is not None), (401 if error_message else 200)
 
     @app.post(prefix + "/token")
@@ -594,7 +625,7 @@ def create_app(config=None, upstream=None):
         if "id" not in message:
             return rpc_error(None, -32600, "La operación requiere un identificador.")
         if method == "tools/call" and (
-            not isinstance(params.get("name"), str) or params.get("name") not in READ_TOOLS
+            not isinstance(params.get("name"), str) or params.get("name") not in (directory.TOOLS if directory_profile else READ_TOOLS)
             or not isinstance(params.get("arguments", {}), dict)
         ):
             return rpc_error(message_id, -32601, "Herramienta no permitida por el puente de solo lectura.")
@@ -603,6 +634,46 @@ def create_app(config=None, upstream=None):
             protocol = params.get("protocolVersion", protocol)
         if not isinstance(protocol, str) or protocol not in PROTOCOLS:
             return rpc_error(message_id, -32602, "Versión de protocolo no soportada.")
+        if directory_profile:
+            demo = False
+            try:
+                if method == "tools/call":
+                    directory.validate_arguments(params["name"], params.get("arguments", {}))
+                upstream_token = sessions.token(user)
+                demo = vimarx.is_demo_token(upstream_token)
+                if demo:
+                    if vimarx.demo is None:
+                        raise directory.DirectoryError()
+                    vimarx.demo.authorize(upstream_token)
+                if method == "initialize":
+                    result = directory.initialize(protocol, demo)
+                elif method == "tools/list":
+                    result = directory.catalog(demo)
+                else:
+                    def directory_rpc(name, arguments):
+                        nonlocal upstream_token
+                        message = dict(jsonrpc="2.0", id=message_id, method="tools/call",
+                                       params=dict(name=name, arguments=arguments))
+                        old_encrypted = user.upstream_token
+                        db.session.commit()
+                        try:
+                            return vimarx.rpc(upstream_token, message, protocol)
+                        except UpstreamSessionExpired:
+                            upstream_token = sessions.token(user, rejected_token=old_encrypted)
+                            return vimarx.rpc(upstream_token, message, protocol)
+                    result = directory.call(params["name"], params.get("arguments", {}), directory_rpc, demo)
+                    sessions.touch(user)
+                return jsonify(jsonrpc="2.0", id=message_id, result=result)
+            except directory.DirectoryInputError:
+                return rpc_error(message_id, -32602, "Argumentos no permitidos por el perfil de directorio.")
+            except ReauthenticationRequired:
+                return challenge()
+            except UpstreamSessionExpired:
+                sessions.revoke(user.id)
+                return challenge()
+            except Exception:
+                # The directory never exposes upstream errors, debug payloads or values.
+                return jsonify(jsonrpc="2.0", id=message_id, result=directory.error(demo))
         # Rebuild the envelope; never forward headers, client tokens, batch calls,
         # or arbitrary top-level extension fields to the upstream.
         forwarded = dict(jsonrpc="2.0", id=message_id, method=method, params=params)

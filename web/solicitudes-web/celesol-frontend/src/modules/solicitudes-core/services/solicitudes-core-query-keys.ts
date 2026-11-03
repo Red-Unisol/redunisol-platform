@@ -28,6 +28,15 @@ export const solicitudesCoreQueryKeys = {
     [...solicitudesCoreRootKey, "prestamos-socio", id] as const,
   prestamoDelSocio: (id: string, prestamoId: string) =>
     [...solicitudesCoreRootKey, "prestamos-socio", id, prestamoId] as const,
+  movimientosDeCuota: (id: string, prestamoId: string, cuotaId: string) =>
+    [
+      ...solicitudesCoreRootKey,
+      "prestamos-socio",
+      id,
+      prestamoId,
+      "movimientos",
+      cuotaId,
+    ] as const,
   refinanciacion: (id: string) =>
     [...solicitudesCoreRootKey, "refinanciacion", id] as const,
   refinanciacionTotal: (id: string) =>

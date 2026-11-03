@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { cbuSchema } from "./cbu.schema";
+import { CUIT_INVALIDO, esCuitValido } from "./cuit.schema";
 
 const MIN_TITULAR_AGE_YEARS = 18;
 const MAX_TITULAR_AGE_YEARS = 85;
@@ -170,7 +171,12 @@ export const createSolicitudBodySchema = z.object({
     cbu: cbuSchema.optional(),
     cbuNoHabitual: cbuSchema.optional(),
     celular: z.string().trim().min(1).optional(),
-    cuit: z.string().trim().min(1).optional(),
+    cuit: z
+      .string()
+      .trim()
+      .min(1)
+      .refine(esCuitValido, { message: CUIT_INVALIDO })
+      .optional(),
     domicilioCalle: z.string().trim().min(1).optional(),
     email: z.string().trim().email().optional(),
     estadoCivil: z.string().trim().min(1).optional(),
@@ -238,6 +244,10 @@ export const createPrestamoLegacyBodySchema = z
 // la expresion de criterios del legado.
 export const prestamoDelSocioParamsSchema = solicitudByIdParamsSchema.extend({
   prestamoId: z.string().regex(/^\d+$/, "prestamoId must be numeric"),
+});
+
+export const movimientosDeCuotaParamsSchema = prestamoDelSocioParamsSchema.extend({
+  cuotaId: z.string().regex(/^\d+$/, "cuotaId must be numeric"),
 });
 
 // Cuotas a cancelar con una refinanciacion, por prestamo de Vimarx. Los IDs
@@ -373,7 +383,11 @@ export const patchSolicitudBodySchema = z.object({
       cbu: z.union([cbuSchema, z.null()]).optional(),
       cbuNoHabitual: z.union([cbuSchema, z.null()]).optional(),
       celular: nullableTrimmedStringSchema.optional(),
-      cuit: nullableTrimmedStringSchema.optional(),
+      cuit: nullableTrimmedStringSchema
+        .refine((cuit) => cuit === null || esCuitValido(cuit), {
+          message: CUIT_INVALIDO,
+        })
+        .optional(),
       domicilioCalle: nullableTrimmedStringSchema.optional(),
       email: z.union([z.string().trim().email(), z.null()]).optional(),
       estadoCivil: nullableTrimmedStringSchema.optional(),
@@ -431,6 +445,9 @@ export type CreatePrestamoLegacyBody = z.infer<
   typeof createPrestamoLegacyBodySchema
 >;
 export type PrestamoDelSocioParams = z.infer<typeof prestamoDelSocioParamsSchema>;
+export type MovimientosDeCuotaParams = z.infer<
+  typeof movimientosDeCuotaParamsSchema
+>;
 export type SimularRefinanciacionBody = z.infer<
   typeof simularRefinanciacionBodySchema
 >;

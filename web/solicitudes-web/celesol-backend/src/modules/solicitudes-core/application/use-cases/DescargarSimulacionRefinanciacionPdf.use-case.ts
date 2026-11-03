@@ -32,7 +32,14 @@ export class DescargarSimulacionRefinanciacionPdfUseCase {
     return this.dependencies.comprobante.armar({
       prestamos: simulacion.prestamos.flatMap((prestamo) =>
         prestamo.ok
-          ? [{ cuotas: prestamo.cuotas, numero: "0", prestamoId: prestamo.prestamoId }]
+          ? [
+              {
+                cuotas: prestamo.cuotas,
+                numero: "0",
+                prestamoId: prestamo.prestamoId,
+                totalPago: prestamo.totalPago,
+              },
+            ]
           : [],
       ),
       simulacion: true,

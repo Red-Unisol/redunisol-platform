@@ -29,7 +29,11 @@ export function Section({
   const contentId = useId();
 
   return (
-    <section id={id} tabIndex={id ? -1 : undefined} className="overflow-hidden rounded-md border border-border bg-surface">
+    <section
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      className="overflow-hidden rounded-md border border-border bg-surface"
+    >
       <header
         className={`bg-background ${
           isExpanded ? "border-b border-border" : ""
@@ -346,15 +350,18 @@ export function ModalField({
   children,
   className,
   label,
+  required,
 }: {
   children: ReactNode;
   className?: string;
   label: string;
+  required?: boolean;
 }) {
   return (
     <label className={`grid gap-1.5 ${className ?? ""}`}>
       <span className="text-xs font-medium text-foreground-secondary">
         {label}
+        {required ? <RequiredMark /> : null}
       </span>
       {children}
     </label>

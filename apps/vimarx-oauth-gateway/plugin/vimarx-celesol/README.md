@@ -26,6 +26,21 @@ en la VPS para renovar el acceso automáticamente. El ZIP nunca incluye credenci
 MCP: https://mcp.redunisol.com.ar/mcp. OAuth usa DCR, PKCE S256 y `mcp:read`.
 Cada persona necesita acceso propio a Vimarx; el paquete no concede permisos.
 
+## Cuenta elegida y demostración
+
+Si hay varias cuentas conectadas, seleccionar la cuenta deseada antes de consultar.
+La cuenta DEMO sólo devuelve datos ficticios. El plugin debe mantener la cuenta y
+el ambiente elegidos, también al consultar metadatos o resolver una falla: no debe
+buscar conexiones alternativas ni sustituir DEMO por producción. Después de una
+reconexión o un cambio explícito, vuelve a confirmar el contexto de esa cuenta.
+El servidor de otra mutual queda fuera del alcance de este plugin.
+
+El puente garantiza que un token demo nunca se envía a Vimarx. Las instrucciones
+del plugin guían la selección que hace ChatGPT; no pueden revocar ni bloquear
+otras conexiones independientes que el usuario haya autorizado en su cuenta.
+Para una revisión que requiera aislamiento estricto del host, usar un perfil de
+ChatGPT que sólo tenga conectada la cuenta demo, sin credenciales de producción.
+
 ## Compartir
 
 La variante con App debe apuntar a una conexión accesible para sus destinatarios.

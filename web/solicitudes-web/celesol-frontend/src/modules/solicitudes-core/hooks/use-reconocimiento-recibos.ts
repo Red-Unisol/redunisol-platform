@@ -8,8 +8,10 @@ import {
   ReconocimientoRecibosDraft,
   type EstadoAnalisis,
 } from "../utils/reconocimiento-recibos-draft";
-export function useReconocimientoRecibos(open: boolean) {
-  const { id } = useParams<{ id: string }>();
+// solicitudId: para usarlo fuera del detalle (sin :id en la ruta), p. ej. desde Precarga.
+export function useReconocimientoRecibos(open: boolean, solicitudId?: string) {
+  const params = useParams<{ id: string }>();
+  const id = solicitudId ?? params.id;
   const [estados, setEstados] = useState<Record<string, EstadoAnalisis>>({});
   const draft = useMemo(
     () =>

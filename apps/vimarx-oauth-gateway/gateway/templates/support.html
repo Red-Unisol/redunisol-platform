@@ -8,4 +8,12 @@
 <p>Si no podés iniciar sesión, contactá al correo de soporte para gestionar tu solicitud y verificar tu identidad sin enviar tu contraseña.</p>
 <h2>Permisos y disponibilidad</h2>
 <p>Necesitás un usuario de Vimarx habilitado para consultar Mutual Celesol. Instalar el plugin no amplía sus permisos. La disponibilidad en ChatGPT depende también de tu cuenta y de las políticas de tu workspace.</p>
+{% if config.get('GATEWAY_PROFILE') == 'internal' %}
+<h2>Conectar en Claude</h2>
+<p>Abrí <a href="{{ resource.rsplit('/', 1)[0] }}/claude">el enlace de instalación de Celesol · Vimarx</a>. Elegí <strong>Registrar automáticamente</strong> en el cliente OAuth (<strong>Register automatically</strong> en inglés), conectá tu propia cuenta de Vimarx y habilitá el conector en la conversación. No necesitás copiar un token, Client ID o secreto de otra persona.</p>
+<p>Si ves DEMO, estás usando datos ficticios. Para consultas reales elegí tu cuenta habitual y comprobá la empresa y el ambiente antes de buscar socios.</p>
+{% endif %}
+{% if config.get('GATEWAY_PROFILE') == 'directory' %}
+<p>Esta edición busca socios por nombre o número interno y consulta solicitudes, préstamos y cuotas. Si una consulta no está habilitada, reformulá el pedido dentro de esas funciones o contactá a soporte. La administración de conexiones en estas páginas corresponde únicamente a esta edición.</p>
+{% endif %}
 {% endblock %}

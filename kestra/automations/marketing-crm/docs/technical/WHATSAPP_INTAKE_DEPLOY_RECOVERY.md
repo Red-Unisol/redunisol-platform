@@ -68,6 +68,71 @@ devuelve 406 si hereda el `Accept: application/json` de las consultas de metadat
 Esto no vuelve atómica la actualización de un namespace compartido: el contrato
 vacío y la verificación completa siguen siendo necesarios antes de admitir casos.
 
+## Incidente del 03/11/2026: primera respuesta v3
+
+La solicitud `23`, ligada al envío `1472`, recibió una respuesta auténtica del
+Flow v3. Web quedó `unknown / crm_acknowledgement_uncertain`; la ejecución
+`63g5PPS8QXgw6B9n9nKW7x` terminó técnicamente en SUCCESS, pero su resultado fue
+`ok=false / error / intake_processing_uncertain`. El último método registrado
+fue `crm.lead.get`, al resolver el posible Guest del canal. No hubo intentos de
+`add`, `update` o `delete`, ni lead asociado al UUID del caso.
+
+El entrypoint anterior descartaba la excepción, de modo que no se puede afirmar
+su tipo o causa exactos a partir de aquel log. La respuesta original, evaluada
+después con un cliente que bloquea escrituras, supera las lecturas de identidad y
+la preparación de campos. El código publicado coincide con Git; no se confirmó
+un defecto de normalización del teléfono ni se cambia esa política de identidad.
+
+El cliente de intake incorpora hasta tres intentos únicamente para una lista
+explícita de lecturas transitorias de Bitrix, con pausas de 1 y 2 segundos y una
+ventana global de inicio de reintentos de 15 segundos. La ventana no interrumpe
+una consulta en curso: cada llamada conserva el timeout configurado del
+transporte; un primer timeout que agote la ventana no se vuelve a intentar.
+No reintenta escrituras ni el
+procesamiento completo. El entrypoint registra tipo de excepción, función y
+método, intentos y si el cliente había intentado escribir. Conserva también el
+tipo de causa y código HTTP, cuando existen, sin registrar el mensaje de
+error del proveedor, credenciales, payloads ni datos personales.
+
+Santiago autorizó expresamente el 03/11 la corrección por Git, su despliegue y la
+recuperación de este caso. Aplicar la CLI documentada una sola vez después de
+verificar el código activo, auditar todas las ejecuciones del UUID y repetir la
+búsqueda de ausencia de escrituras y lead por caso. Conservar en RAM la línea
+base del UUID, respuesta cifrada, envío, evento, admisión, tanda y slot para
+compararla después. La recuperación debe reutilizar la solicitud `23`, sin
+enviar otro WhatsApp ni reservar otra admisión; debe resultar en un único lead
+por UUID y un contacto por CUIL, o reutilizar los ya existentes conforme a las
+reglas de identidad. Las entradas concurrentes se cuentan separadamente: no
+atribuir sus admisiones a la recuperación ni reiniciar los contadores.
+
 Infraestructura y Marketing CRM de producción comparten un lock de despliegue
 con `cancel-in-progress=false`. Marketing usa el commit disparador, evitando
 mezclar una ejecución anterior con un `main` más nuevo.
+
+### Cuota Bitrix confirmada durante la recuperación
+
+El PR #651 desplegó los reintentos y el diagnóstico; se verificaron los 106
+namespace files contra el merge `ef7061b5`. La recuperación auditada de la
+solicitud `23` produjo la ejecución `3Q4wQ0htuW8agVdnru0xj7`: falló en
+`crm.lead.fields` con HTTP 503 después de tres intentos, con
+`write_attempted=false`. La búsqueda posterior confirmó cero leads por UUID y
+cero contactos por CUIL. Respuesta, envío, admisión y slot permanecieron iguales.
+No se volvió a encolar el caso ante ese resultado incierto.
+
+Tres lecturas acotadas desde la VPS confirmaron el error de proveedor
+`QUERY_LIMIT_EXCEEDED` (200, 503, 200), sin cabecera `Retry-After`. La cuota se
+comparte con otras automatizaciones; una pausa local no garantiza disponibilidad.
+El intake ahora reutiliza una sola respuesta exitosa de `crm.lead.fields` por
+instancia de cliente y separa los comienzos de llamadas HTTP al menos un segundo.
+La caché es optativa, conserva copias independientes y no almacena identidad,
+fallos ni otros endpoints. Las respuestas explícitas de cuota esperan 2 y 4
+segundos; los demás errores transitorios conservan 1 y 2 segundos. Se mantiene
+la ventana global de inicio de reintentos de 15 segundos y no se repite ninguna
+escritura, aunque su respuesta indique cuota.
+
+Una nueva recuperación requiere volver a auditar **todas** las ejecuciones del
+UUID, confirmar ausencia de intentos de escritura y buscar otra vez el caso y
+el contacto en Bitrix. Sólo después de desplegar y comprobar esta mitigación se
+puede aplicar de nuevo la recuperación autorizada, una vez, conservando la
+misma respuesta original. Si hubo cualquier intento de escritura, conciliar sus
+efectos antes de considerar otra intervención.

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { datosRapidosApi } from "../services/datos-rapidos-api";
@@ -14,6 +15,9 @@ export function DatosRapidosSolicitante({
   titular,
   canViewDetalle,
   onVerDetalle,
+  estado,
+  meta,
+  titulo,
 }: {
   compact?: boolean;
   solicitudId: string;
@@ -27,6 +31,11 @@ export function DatosRapidosSolicitante({
   };
   canViewDetalle: boolean;
   onVerDetalle: () => void;
+  // Estado de la solicitud (junto al nombre) e identificadores (abajo a la derecha).
+  estado?: ReactNode;
+  meta?: ReactNode;
+  // Cabecera unica del detalle: "Solicitud 500123" arriba del titular.
+  titulo?: ReactNode;
 }) {
   // La clave cambia con la solicitud y sus datos guardados; no se reutilizan
   // resultados de otra persona ni se mezclan con reglas por convenio.
@@ -74,6 +83,12 @@ export function DatosRapidosSolicitante({
         className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border bg-background px-3 py-2 md:px-4"
       >
         <div className="min-w-0">
+          {titulo || estado ? (
+            <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {titulo}
+              {estado}
+            </div>
+          ) : null}
           <h2 className="break-words text-sm font-semibold text-foreground">
             {[titular.nombre, titular.apellidoDenominacion]
               .map((value) => value?.trim())
@@ -132,6 +147,7 @@ export function DatosRapidosSolicitante({
               Ver detalle
             </Button>
           )}
+          {meta}
         </div>
       </section>
     );
@@ -143,15 +159,15 @@ export function DatosRapidosSolicitante({
     >
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-6">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-foreground-secondary">
-            Solicitante
-          </p>
-          <h2 className="break-words text-lg font-semibold text-foreground">
-            {[titular.nombre, titular.apellidoDenominacion]
-              .map((value) => value?.trim())
-              .filter(Boolean)
-              .join(" ") || "Nombre no informado"}
-          </h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="break-words text-xl font-semibold text-foreground">
+              {[titular.nombre, titular.apellidoDenominacion]
+                .map((value) => value?.trim())
+                .filter(Boolean)
+                .join(" ") || "Nombre no informado"}
+            </h2>
+            {estado}
+          </div>
           <dl className="mt-0.5 flex flex-wrap gap-x-5 gap-y-1 text-sm">
             <div className="flex gap-1.5">
               <dt className="text-foreground-secondary">
@@ -224,6 +240,11 @@ export function DatosRapidosSolicitante({
             )}
           </div>
         )}
+        {meta ? (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 md:ml-auto">
+            {meta}
+          </div>
+        ) : null}
       </div>
     </section>
   );

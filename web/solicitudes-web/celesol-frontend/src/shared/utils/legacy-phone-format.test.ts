@@ -16,6 +16,11 @@ describe("toDisplayPhone", () => {
     assert.equal(toDisplayPhone("03411512345"), "+543411512345");
   });
 
+  it("keeps a number already stored as +54 without doubling the prefix", () => {
+    assert.equal(toDisplayPhone("+543513080820"), "+543513080820");
+    assert.equal(toDisplayPhone(" +54 351 308-0820"), "+543513080820");
+  });
+
   it("returns an empty string for empty input", () => {
     assert.equal(toDisplayPhone(""), "");
     assert.equal(toDisplayPhone(null), "");

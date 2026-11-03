@@ -71,6 +71,19 @@ const HISTORIA_CATEGORIAS_FIJA = [{ Categoria: 2, Fecha: "2020-01-01" }];
 // en Celesol.
 const TIPO_DOCUMENTO_FIJO = "96";
 
+// Vimarx recibe el nombre del sexo (como "PersonaJuridica"). Si en Sol Web
+// quedo el codigo que devuelve EvaluateList (0 Masculino, 1 Femenino, 3 Otro;
+// verificado en prod el 29/10), se traduce.
+const SEXO_POR_CODIGO: Record<string, string> = {
+  "0": "Masculino",
+  "1": "Femenino",
+  "3": "Otro",
+};
+
+function nombreSexoVimarx(sexo: string) {
+  return SEXO_POR_CODIGO[sexo.trim()] ?? sexo;
+}
+
 export class CrearSocioMutualGateway {
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
@@ -138,7 +151,7 @@ export class CrearSocioMutualGateway {
         FechaDeNacimiento: input.fechaDeNacimiento,
         Nombre: input.nombre,
         NroDoc: input.nroDocumento,
-        Sexo: input.sexo,
+        Sexo: nombreSexoVimarx(input.sexo),
         TipoDoc: TIPO_DOCUMENTO_FIJO,
       };
     }

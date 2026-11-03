@@ -5,6 +5,7 @@ import type { SolicitudesLegacyGateway } from "../../domain/services/Solicitudes
 import type {
   CuotaPrestamoLegacy,
   LineaPrestamoPresolicitud,
+  MovimientoCuotaLegacy,
   PrestamoDelSocioDetalleLegacy,
   PrestamoDelSocioLegacy,
   PrestamoOtorgadoLegacy,
@@ -271,6 +272,17 @@ const CUOTAS_DEL_PRESTAMO_FIELDS = [
   "Descripcion",
   "Prestamo.NroCuenta",
   "FechaCobro",
+  "ID",
+] as const;
+
+// Movimientos de una cuota (MovimientoPrestamo): la coleccion
+// CuotaPrestamo.Detalle, que Vimarx muestra al abrir la cuota.
+const MOVIMIENTOS_DE_CUOTA_FIELDS = [
+  "ID",
+  "TransaccionPrestamo.Descripcion",
+  "Tipo.Descripcion",
+  "Fecha",
+  "Monto",
 ] as const;
 
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
@@ -381,6 +393,9 @@ const prestamoDelSocioDetalleFieldIndex = buildFieldIndexByName(
 );
 const cuotasDelPrestamoFieldIndex = buildFieldIndexByName(
   CUOTAS_DEL_PRESTAMO_FIELDS,
+);
+const movimientosDeCuotaFieldIndex = buildFieldIndexByName(
+  MOVIMIENTOS_DE_CUOTA_FIELDS,
 );
 
 const prestamoDirectoFieldIndex = buildFieldIndexByName(
@@ -842,6 +857,18 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       .sort((a, b) => (a.nroCuota ?? 0) - (b.nroCuota ?? 0));
   }
 
+  async listMovimientosDeCuota(
+    prestamoLegacyId: string,
+    cuotaLegacyId: string,
+  ) {
+    const movimientos = await this.executeEvaluateList(
+      buildMovimientosDeCuotaDefinition(prestamoLegacyId, cuotaLegacyId),
+    );
+
+    // La API no ordena: por ID quedan en el orden en que se registraron.
+    return movimientos.sort((a, b) => Number(a.id) - Number(b.id));
+  }
+
   listSociosCancelaciones() {
     return this.executeEvaluateList(
       buildSocioMutualCancelacionesDefinition(),
@@ -1243,6 +1270,24 @@ export function buildCuotasDelPrestamoDefinition(
     fields: CUOTAS_DEL_PRESTAMO_FIELDS,
     mapRow: mapCuotaDelPrestamoRow,
     tipo: "F.Module.Cuentas.Prestamos.CuotaPrestamo",
+  };
+}
+
+export function buildMovimientosDeCuotaDefinition(
+  prestamoLegacyId: string,
+  cuotaLegacyId: string,
+): EvaluateListDefinition<MovimientoCuotaLegacy> {
+  return {
+    // Los dos ids tienen que venir validados como enteros. El del prestamo
+    // asegura que la cuota sea del prestamo que ya se comprobo del socio.
+    buildCmd: () =>
+      `[TransaccionPrestamo.ID] = ${cuotaLegacyId} And [TransaccionPrestamo.Prestamo.ID] = ${prestamoLegacyId}`,
+    // Una cuota tiene pocos movimientos (la cobrada adelantada que se reviso,
+    // 8); el tope es holgado para no cortar ninguno.
+    defaultMax: 500,
+    fields: MOVIMIENTOS_DE_CUOTA_FIELDS,
+    mapRow: mapMovimientoDeCuotaRow,
+    tipo: "F.Module.Cuentas.Prestamos.MovimientoPrestamo",
   };
 }
 
@@ -2288,6 +2333,7 @@ function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
         fechaCobro === null || typeof fechaCobro === "string"
           ? fechaCobro
           : undefined,
+      id: getStringValue(row, cuotasDelPrestamoFieldIndex, "ID"),
       montoTotal: getNumberValue(
         row,
         cuotasDelPrestamoFieldIndex,
@@ -2318,6 +2364,20 @@ function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
       ),
       nroCuota,
     }),
+  };
+}
+
+function mapMovimientoDeCuotaRow(row: EvaluateListRow): MovimientoCuotaLegacy {
+  return {
+    cuotaAfectada: getStringValue(
+      row,
+      movimientosDeCuotaFieldIndex,
+      "TransaccionPrestamo.Descripcion",
+    ),
+    fecha: getStringValue(row, movimientosDeCuotaFieldIndex, "Fecha"),
+    id: getStringValue(row, movimientosDeCuotaFieldIndex, "ID"),
+    monto: getNumberValue(row, movimientosDeCuotaFieldIndex, "Monto"),
+    tipo: getStringValue(row, movimientosDeCuotaFieldIndex, "Tipo.Descripcion"),
   };
 }
 

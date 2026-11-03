@@ -1,9 +1,9 @@
 services:
   gateway:
     image: ${APP_IMAGE:?APP_IMAGE is required}
-    env_file: ../.env
+    env_file: ${GATEWAY_ENV_FILE:-../.env}
     ports:
-      - "127.0.0.1:3060:8000"
+      - "127.0.0.1:${GATEWAY_PORT:-3060}:8000"
     volumes:
       - gateway_data:/data
     restart: unless-stopped

@@ -37,10 +37,12 @@ export function InternationalPhoneField<TFieldValues extends FieldValues>({
   control,
   inputAutoComplete,
   name,
+  placeholder = "341 720 4225",
 }: {
   control: Control<TFieldValues>;
   inputAutoComplete?: string;
   name: Path<TFieldValues>;
+  placeholder?: string;
 }) {
   return (
     <Controller
@@ -59,7 +61,7 @@ export function InternationalPhoneField<TFieldValues extends FieldValues>({
           inputProps={{ autoComplete: inputAutoComplete, name: field.name }}
           onBlur={field.onBlur}
           onChange={(phone) => field.onChange(phone)}
-          placeholder="341 720 4225"
+          placeholder={placeholder}
           value={field.value}
         />
       )}

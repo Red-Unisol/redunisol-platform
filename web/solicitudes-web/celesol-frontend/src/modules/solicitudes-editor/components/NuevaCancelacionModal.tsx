@@ -56,7 +56,7 @@ export function NuevaCancelacionModal({
   open,
   saveLabel = "Guardar",
   socios,
-  title = "Nueva Cancelación",
+  title = "Nueva cancelación",
 }: NuevaCancelacionModalProps) {
   const [socioId, setSocioId] = useState("");
   const [cbu, setCbu] = useState("");
@@ -164,12 +164,12 @@ export function NuevaCancelacionModal({
   return (
     <DialogRoot onOpenChange={handleOpenChange} open={open}>
       <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[560px] flex-col overflow-hidden p-0">
-        <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
+        <header className="flex items-center justify-between border-b border-border bg-surface px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="inline-flex size-9 items-center justify-center rounded-full bg-background text-foreground-secondary">
+            <span className="inline-flex size-9 items-center justify-center rounded-full bg-[#e9f1ed] text-verde">
               <Landmark className="size-4" />
             </span>
-            <DialogTitle className="text-2xl font-semibold leading-none text-foreground">
+            <DialogTitle className="font-marca text-lg leading-tight font-bold tracking-[-0.01em] text-marino">
               {title}
             </DialogTitle>
           </div>
@@ -185,8 +185,8 @@ export function NuevaCancelacionModal({
           </DialogClose>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          <ModalField label="Cuenta a debitar*">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
+          <ModalField label="Cuenta a debitar" required>
             <StyledSelect
               onChange={handleSocioChange}
               options={socioOptions}
@@ -223,7 +223,7 @@ export function NuevaCancelacionModal({
                 value={socioMutual}
               />
             </ModalField>
-            <ModalField label="Monto*">
+            <ModalField label="Monto" required>
               <StaticMoneyInput onChange={setMonto} value={monto} />
             </ModalField>
           </div>
@@ -237,7 +237,7 @@ export function NuevaCancelacionModal({
           </ModalField>
         </div>
 
-        <footer className="shrink-0 border-t border-border bg-surface px-4 py-3">
+        <footer className="shrink-0 border-t border-border bg-[#f6f8f7] px-5 py-3">
           <div className="flex items-center justify-end gap-2">
             <Button disabled={!canSave} onClick={handleSave} type="button">
               {saveLabel}

@@ -466,7 +466,7 @@ describe("EvaluateListSolicitudesGateway", () => {
   it("keeps only the plan installments, in order, leaving out the disbursement and payments", async () => {
     // Filas reales del prestamo 423331, desordenadas como las devuelve la API.
     const { gateway, requests } = createGateway([
-      [1, "2025-08-31", 419988.31, 0, 0, 58770.31, "1004051/1", 1004051, "2025-09-02T00:00:00"],
+      [1, "2025-08-31", 419988.31, 0, 0, 58770.31, "1004051/1", 1004051, "2025-09-02T00:00:00", 17640862],
       [0, "2025-07-24", 2600000, 0, 0, 0, "Desembolso 17640860", 1004051],
       [0, "2025-07-31", 468000, 0, 0, 0, "1004051/0", 1004051, null],
       [
@@ -493,6 +493,7 @@ describe("EvaluateListSolicitudesGateway", () => {
       capital: 58770.31,
       fecha: "2025-08-31",
       fechaCobro: "2025-09-02T00:00:00",
+      id: "17640862",
       montoTotal: 419988.31,
       nroCuota: 1,
       saldoCuota: 0,
@@ -502,6 +503,39 @@ describe("EvaluateListSolicitudesGateway", () => {
       (requests[0]?.body as { cmd: string }).cmd,
       "[Prestamo.ID] = 423331",
     );
+  });
+
+  it("lists the movements of an installment of the prestamo, in the order they were recorded", async () => {
+    // Filas reales de FapiTest: cuota 5 del prestamo 438893, cobrada adelantada.
+    const { gateway, requests } = createGateway([
+      [41960337, "1013352/5", "Capital", "2026-10-27", -48627.48],
+      [41532222, "1013352/5", "Capital", "2026-12-31", 48627.48],
+      [41960335, "1013352/5", "Interes", "2026-10-27", -17370.95],
+    ]);
+
+    const movimientos = await gateway.listMovimientosDeCuota(
+      "438893",
+      "18694320",
+    );
+
+    assert.deepEqual(
+      movimientos.map((movimiento) => movimiento.id),
+      ["41532222", "41960335", "41960337"],
+    );
+    assert.deepEqual(movimientos[0], {
+      cuotaAfectada: "1013352/5",
+      fecha: "2026-12-31",
+      id: "41532222",
+      monto: 48627.48,
+      tipo: "Capital",
+    });
+    const body = requests[0]?.body as { cmd: string; tipo: string };
+    // El filtro por prestamo impide pedir una cuota de otro prestamo.
+    assert.equal(
+      body.cmd,
+      "[TransaccionPrestamo.ID] = 18694320 And [TransaccionPrestamo.Prestamo.ID] = 438893",
+    );
+    assert.equal(body.tipo, "F.Module.Cuentas.Prestamos.MovimientoPrestamo");
   });
 
   it("distinguishes missing collection data from explicit null and empty values", async () => {

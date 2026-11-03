@@ -3,6 +3,7 @@ export type SolicitudDetailOrigin = "historicas" | "precarga" | "recientes";
 type SolicitudDetailOriginConfig = {
   label: string;
   path: string;
+  shortLabel: string;
 };
 
 const DETAIL_ORIGIN_CONFIG: Record<
@@ -12,21 +13,25 @@ const DETAIL_ORIGIN_CONFIG: Record<
   historicas: {
     label: "Solicitudes Históricas",
     path: "/solicitudes/historicas",
+    shortLabel: "Históricas",
   },
   precarga: {
     label: "Solicitudes Precarga",
     path: "/solicitudes/precarga",
+    shortLabel: "Precarga",
   },
   recientes: {
     label: "Solicitudes Recientes",
     path: "/solicitudes/recientes",
+    shortLabel: "Recientes",
   },
 };
 
 export function getSolicitudDetailOrigin(
   value: string | null | undefined,
 ): SolicitudDetailOrigin {
-  if (value === "historicas" || value === "recientes") {
+  // Antes "precarga" caía en Recientes: Atrás no volvía a Precarga.
+  if (value === "historicas" || value === "precarga" || value === "recientes") {
     return value;
   }
 
@@ -50,16 +55,27 @@ const CORE_DETAIL_ORIGIN_CONFIG: Record<
   historicas: {
     label: "Solicitudes Históricas",
     path: "/solicitudes/core/historicas",
+    shortLabel: "Históricas",
   },
   precarga: {
     label: "Solicitudes Precarga",
     path: "/solicitudes/core/precarga",
+    shortLabel: "Precarga",
   },
   recientes: {
     label: "Solicitudes Recientes",
     path: "/solicitudes/core/recientes",
+    shortLabel: "Recientes",
   },
 };
+
+// Para el enlace "← Precarga" de la barra superior en el detalle.
+export function getSolicitudCoreDetailOriginLink(
+  value: string | null | undefined,
+) {
+  const config = CORE_DETAIL_ORIGIN_CONFIG[getSolicitudDetailOrigin(value)];
+  return { label: config.shortLabel, to: config.path };
+}
 
 export function getSolicitudCoreDetailOriginLabel(
   value: string | null | undefined,

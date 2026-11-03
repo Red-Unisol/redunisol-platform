@@ -24,8 +24,10 @@ class EdnaIntakeCommand extends Command
     public function handle(): int
     {
         if ($this->argument('action') === 'pilot') {
+            $capacity = (new EdnaIntakePilot)->capacity();
             $this->line(json_encode([
-                'limit' => (new EdnaIntakePilot)->capacity(),
+                'limit' => $capacity === 0 ? 'unlimited' : $capacity,
+                'unlimited_capacity_value' => 0,
                 'pilots' => DB::table('edna_intake_pilots')->latest('created_at')->limit(50)
                     ->get(['id', 'name', 'subject_id', 'flow_id', 'capacity', 'admitted', 'created_at']),
                 'participants' => DB::table('edna_intake_admissions as a')

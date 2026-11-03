@@ -83,7 +83,7 @@ export class SimularPrestamoUseCase {
           efectivos as { montoAFinanciar: number; cuotas: number },
           domainError.statusCode
             ? domainError.message
-            : "No se pudo obtener el cálculo del legacy.",
+            : "No se pudo obtener el cálculo de Vimarx. Probá de nuevo en unos minutos.",
           domainError.statusCode ?? 503,
         );
       }

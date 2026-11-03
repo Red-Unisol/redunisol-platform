@@ -1,4 +1,3 @@
-import { useSolicitudHeaderPreference } from "../hooks/use-solicitud-header-preference";
 import { AdministrativeStateControl } from "../components/administrative-state-control";
 import { EvaluacionRecibosView } from "../components/evaluacion-recibos-view";
 import { getRecibosDeSolicitud } from "../utils/recibos-de-solicitud";
@@ -10,20 +9,32 @@ import { useCuotaCalculada } from "@/modules/solicitudes-core/hooks/use-cuota-ca
 import { LinkFirmaDigital } from "../components/link-firma-digital";
 import { SolicitudesDelTitularSection } from "../components/solicitudes-del-titular-section";
 import { clasificarEstadoPrestamo } from "../utils/prestamo-estado";
-import { DatosRapidosSolicitante } from "@/modules/solicitudes-core/components/datos-rapidos-solicitante";
 import {
-  ArrowLeft,
+  CabeceraSolicitud,
+  CabeceraSolicitudEnBarra,
+  SituacionDelSocio,
+} from "@/modules/solicitudes-core/components/cabecera-solicitud";
+import {
+  COLUMNAS_TITULAR,
+  DetalleLectura,
+  DOS_COLUMNAS,
+} from "@/modules/solicitudes-core/components/detalle-lectura";
+import { datosRapidosApi } from "@/modules/solicitudes-core/services/datos-rapidos-api";
+import { socioIndicator } from "@/modules/solicitudes-core/utils/datos-rapidos-state";
+import {
+  Check,
   CircleAlert,
   CircleCheckBig,
-  Clock,
   Download,
   Eye,
+  FileSignature,
   FileText,
-  ChevronDown,
-  ChevronUp,
+  Landmark,
   Pencil,
   Plus,
+  Send,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import {
   lazy,
@@ -41,7 +52,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { toast } from "sonner";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import {
@@ -84,7 +95,9 @@ import {
 } from "@/modules/solicitudes-editor/components/fields/base";
 import {
   ESTADO_CIVIL_OPTIONS,
+  normalizarSexo,
   SEXO_OPTIONS,
+  sexoLegible,
   TIPO_DOCUMENTO_OPTIONS,
 } from "@/modules/solicitudes-editor/constants/legacy-options";
 import type {
@@ -124,7 +137,6 @@ import {
 } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 import { SolicitudesContentLoader } from "@/modules/solicitudes-shared/components/solicitudes-content-loader";
-import { getEstadoBadgeVariant } from "@/modules/solicitudes-shared/utils/estado-badge-variant";
 import { loadSimuladorPrestamoModal } from "@/modules/solicitudes-shared/utils/load-simulador-prestamo-modal";
 import { getCuotasFueraDeLineaError } from "@/modules/solicitudes-shared/utils/cuotas-linea";
 import { prefetchWhenIdle } from "@/modules/solicitudes-shared/utils/prefetch-when-idle";
@@ -174,10 +186,8 @@ import {
   formatNullableAmount,
   parseMoneyValue,
 } from "@/shared/utils/money-format";
-import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
-import { IdChip } from "@/shared/components/ui/id-chip";
 import { DateInput } from "@/shared/components/ui/date-input";
 import {
   DialogContent,
@@ -189,6 +199,18 @@ import { StaticInternationalPhoneField } from "@/shared/components/ui/internatio
 import { ModalLoadingOverlay } from "@/shared/components/ui/modal-loading-overlay";
 import { TableEmptyState } from "@/shared/components/ui/table-empty-state";
 import { ApiError } from "@/shared/services/http/api-error";
+import { TABLA } from "@/modules/solicitudes-core/utils/tabla-detalle";
+import { esCuitValido } from "@/shared/utils/cuit";
+import {
+  ACCIONES_DE_ESTADO,
+  etiquetaDeAccion,
+  terminaLaSolicitud,
+} from "@/modules/solicitudes-shared/utils/acciones-de-estado";
+import {
+  AccionesDeEstado,
+  MotivoBloqueo,
+  type AccionDeEstado,
+} from "@/modules/solicitudes-core/components/acciones-de-estado";
 
 const EDIT_SOLICITUD_ERROR_TOAST_ID = "edit-solicitud-core-error";
 const EDIT_SOLICITUD_SUCCESS_TOAST_ID = "edit-solicitud-core-success";
@@ -223,7 +245,6 @@ const DELETE_CANCELACION_ERROR_TOAST_ID =
   "delete-solicitud-core-cancelacion-error";
 const PLACEHOLDER = "-";
 const DOWNLOAD_BUTTON_MIN_LOADING_MS = 450;
-const FIRST_SUBMISSION_TRANSITION_LABEL = "Motor -> Riesgo";
 const CONFIRMAR_ACTION_CODE = "confirmar";
 
 type TitularConfirmarRequiredFieldKey =
@@ -290,6 +311,15 @@ const SOLICITANTE_CONTENT_TABS: TabItem<SolicitanteContentTab>[] = [
   { label: "Datos Personales", value: "datosPersonales" },
   { label: "Cancelaciones", value: "cancelaciones" },
   { label: "Adjuntos", value: "adjuntos" },
+];
+
+// Orden de las pestanas de "Más información" (lectura).
+const ORDEN_MAS_INFORMACION: SolicitanteContentTab[] = [
+  "adjuntos",
+  "prestamos",
+  "solicitudes",
+  "refinanciacion",
+  "cancelaciones",
 ];
 
 // Vendedores no ve esta pestaña: es informacion para analizar, no para cargar.
@@ -396,15 +426,12 @@ function PrestamosDelSocioSection({
           </Button>
         ))}
       </div>
-      <div className="overflow-x-auto">
+      <div className={TABLA.contenedor}>
         <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead className="bg-background text-left text-xs text-foreground-secondary">
+          <thead className={TABLA.encabezado}>
             <tr>
               {PRESTAMOS_TABLE_COLUMNS.map((column) => (
-                <th
-                  className="border-r border-border px-3 py-2 font-medium"
-                  key={column}
-                >
+                <th className={TABLA.th} key={column}>
                   {column}
                 </th>
               ))}
@@ -412,18 +439,18 @@ function PrestamosDelSocioSection({
           </thead>
           <tbody>
             {isLoading ? (
-              <tr className="border-t border-border">
+              <tr className={TABLA.fila}>
                 <td
-                  className="px-3 py-4 text-foreground-secondary"
+                  className={TABLA.vacio}
                   colSpan={PRESTAMOS_TABLE_COLUMNS.length}
                 >
                   Consultando préstamos...
                 </td>
               </tr>
             ) : error ? (
-              <tr className="border-t border-border">
+              <tr className={TABLA.fila}>
                 <td
-                  className="px-3 py-4 text-foreground-secondary"
+                  className={TABLA.vacio}
                   colSpan={PRESTAMOS_TABLE_COLUMNS.length}
                 >
                   No se pudieron consultar los préstamos del socio.
@@ -434,11 +461,11 @@ function PrestamosDelSocioSection({
                 <tr
                   // Otros estados no equivalen a créditos pagados ni libres de mora.
                   className={[
-                    "border-t border-border",
+                    TABLA.fila,
                     clasificarEstadoPrestamo(prestamo) === "otros"
                       ? "text-foreground-secondary"
                       : "",
-                    prestamo.legacyId ? "cursor-pointer hover:bg-muted/30" : "",
+                    prestamo.legacyId ? "cursor-pointer" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
@@ -458,36 +485,36 @@ function PrestamosDelSocioSection({
                     prestamo.legacyId ? "Ver detalle del préstamo" : undefined
                   }
                 >
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={`${TABLA.celdaPrincipal} tabular-nums`}>
                     {prestamo.nroCuenta || PLACEHOLDER}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celda}>
                     {prestamo.lineaPrestamoDescripcion || PLACEHOLDER}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celda}>
                     {formatLegacyDate(prestamo.fechaEmision)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celdaMonto}>
                     {formatNullableAmount(prestamo.montoPrestamo) ||
                       PLACEHOLDER}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celda}>
                     {prestamo.montoADesembolsar
                       ? formatNullableAmount(prestamo.montoADesembolsar)
                       : PLACEHOLDER}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celdaMonto}>
                     {formatNullableAmount(prestamo.saldo) || PLACEHOLDER}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className={TABLA.celda}>
                     {formatLegacyDate(prestamo.vencimiento)}
                   </td>
                 </tr>
               ))
             ) : (
-              <tr className="border-t border-border">
+              <tr className={TABLA.fila}>
                 <td
-                  className="px-3 py-4 text-foreground-secondary"
+                  className={TABLA.vacio}
                   colSpan={PRESTAMOS_TABLE_COLUMNS.length}
                 >
                   {prestamos.length === 0
@@ -521,10 +548,21 @@ type CancelacionesSectionProps = {
   solicitudId: string;
 };
 
+// Montos de cancelaciones siempre con centavos ("$ 254.300,50").
+const montoCancelacionFormatter = new Intl.NumberFormat("es-AR", {
+  currency: "ARS",
+  style: "currency",
+});
+
+function formatMontoCancelacion(value: number | null | undefined) {
+  return typeof value === "number"
+    ? montoCancelacionFormatter.format(value)
+    : PLACEHOLDER;
+}
+
 function CancelacionesSection({
   canCreateCancelaciones,
   canManageCancelaciones,
-  isEditing,
   solicitudId,
 }: CancelacionesSectionProps) {
   const { data: socios = [] } = useSociosCancelacionesQuery();
@@ -540,7 +578,8 @@ function CancelacionesSection({
   const [editingCancelacion, setEditingCancelacion] =
     useState<SolicitudCoreCancelacionResponse | null>(null);
 
-  const canManageRows = isEditing && canManageCancelaciones;
+  // Editar y quitar no esperan al modo "Editar": cargar tampoco lo pide.
+  const canManageRows = canManageCancelaciones;
   const columnCount =
     CANCELACIONES_TABLE_COLUMNS.length + (canManageRows ? 1 : 0);
 
@@ -555,6 +594,12 @@ function CancelacionesSection({
   }
 
   function handleDelete(cancelacion: SolicitudCoreCancelacionResponse) {
+    if (
+      !window.confirm(
+        `¿Quitar la cancelación de ${cancelacion.cuentaADebitar || "esta cuenta"}?`,
+      )
+    )
+      return;
     deleteCancelacionMutation.mutate(cancelacion.id, {
       onError: () => {
         toast.error("No se pudo eliminar la cancelación.", {
@@ -613,63 +658,56 @@ function CancelacionesSection({
   return (
     <div className="space-y-2">
       {canCreateCancelaciones ? (
-        <div className="flex items-center justify-end">
-          <Button onClick={handleAdd} size="sm" type="button" variant="outline">
+        <div className={TABLA.acciones}>
+          <Button onClick={handleAdd} size="sm" type="button">
             <Plus className="size-4" />
             Nueva cancelación
           </Button>
         </div>
       ) : null}
-      <div className="overflow-x-auto rounded-md border border-border">
+      <div className={TABLA.contenedor}>
         <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead className="bg-background text-left text-xs text-foreground-secondary">
+          <thead className={TABLA.encabezado}>
             <tr>
               {CANCELACIONES_TABLE_COLUMNS.map((column) => (
-                <th
-                  className="border-r border-border px-3 py-2 font-medium"
-                  key={column}
-                >
+                <th className={TABLA.th} key={column}>
                   {column}
                 </th>
               ))}
               {canManageRows ? (
-                <th className="px-3 py-2 font-medium">Acciones</th>
+                <th className="w-24 px-3 py-2.5 font-semibold">
+                  <span className="sr-only">Acciones</span>
+                </th>
               ) : null}
             </tr>
           </thead>
           <tbody>
             {cancelaciones.length > 0 ? (
               cancelaciones.map((cancelacion) => (
-                <tr className="border-t border-border" key={cancelacion.id}>
-                  <td className="border-r border-border px-3 py-2">
+                <tr className={TABLA.fila} key={cancelacion.id}>
+                  <td className={TABLA.celdaPrincipal}>
                     {cancelacion.cuentaADebitar}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={`${TABLA.celdaSecundaria} tabular-nums`}>
                     {cancelacion.cbu}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
-                    {formatNullableAmount(cancelacion.monto)}
+                  <td className={TABLA.celdaMonto}>
+                    {formatMontoCancelacion(cancelacion.monto)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celdaSecundaria}>
                     {cancelacion.notas || PLACEHOLDER}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
-                    {cancelacion.socio}
-                  </td>
-                  <td
-                    className={
-                      canManageRows
-                        ? "border-r border-border px-3 py-2"
-                        : "px-3 py-2"
-                    }
-                  >
+                  <td className="px-3 py-3">{cancelacion.socio}</td>
+                  <td className={TABLA.celdaSecundaria}>
                     {cancelacion.cuentaBancaria}
                   </td>
                   {canManageRows ? (
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-end gap-1">
                         <Button
+                          aria-label="Editar cancelación"
                           onClick={() => handleEdit(cancelacion)}
+                          title="Editar"
                           size="icon-sm"
                           type="button"
                           variant="ghost"
@@ -677,7 +715,10 @@ function CancelacionesSection({
                           <Pencil className="size-4" />
                         </Button>
                         <Button
+                          aria-label="Quitar cancelación"
+                          disabled={deleteCancelacionMutation.isPending}
                           onClick={() => handleDelete(cancelacion)}
+                          title="Quitar"
                           size="icon-sm"
                           type="button"
                           variant="ghost"
@@ -708,7 +749,7 @@ function CancelacionesSection({
           saveLabel={editingCancelacion ? "Guardar cambios" : "Guardar"}
           socios={socios}
           title={
-            editingCancelacion ? "Editar Cancelación" : "Nueva Cancelación"
+            editingCancelacion ? "Editar cancelación" : "Nueva cancelación"
           }
         />
       ) : null}
@@ -745,6 +786,9 @@ type ReadOnlyFieldProps = {
 
 type EditableFieldProps = {
   appearanceStyle?: CSSProperties;
+  // Envuelve en <label>: asocia la etiqueta al campo (lectores de pantalla y
+  // clic en la etiqueta). Solo para editores de un unico campo.
+  asLabel?: boolean;
   editor: ReactNode;
   highlightReadOnly?: boolean;
   isEditing: boolean;
@@ -843,20 +887,6 @@ function formatTipoDocumento(value: string | null | undefined) {
   );
 
   return match?.label ?? normalizedValue;
-}
-
-function formatWorkflowTransitionOptionLabel(
-  transition: WorkflowTransition,
-  currentStateCode?: string,
-) {
-  if (
-    currentStateCode === "CargaVendedor" &&
-    transition.toState.code === "Motor"
-  ) {
-    return FIRST_SUBMISSION_TRANSITION_LABEL;
-  }
-
-  return transition.toState.name;
 }
 
 function resolveAssignmentLabel(solicitud: SolicitudCoreResponse) {
@@ -1032,6 +1062,7 @@ function ReadOnlyField({
 
 function EditableField({
   appearanceStyle,
+  asLabel = false,
   editor,
   highlightReadOnly = false,
   isEditing,
@@ -1050,14 +1081,16 @@ function EditableField({
     );
   }
 
+  const Contenedor = asLabel ? "label" : "div";
+
   return (
-    <div className="grid gap-1.5">
+    <Contenedor className="grid gap-1.5">
       <span className="text-xs font-medium text-foreground-secondary">
         {label}
         {required ? <RequiredMark /> : null}
       </span>
       {editor}
-    </div>
+    </Contenedor>
   );
 }
 
@@ -1077,6 +1110,7 @@ function EditableTextInput({
 }: EditableTextInputProps) {
   return (
     <EditableField
+      asLabel
       appearanceStyle={appearanceStyle}
       editor={
         <input
@@ -1205,6 +1239,7 @@ function EditableDateInput({
 }) {
   return (
     <EditableField
+      asLabel
       appearanceStyle={appearanceStyle}
       editor={
         <DateInput
@@ -1315,6 +1350,7 @@ function EditableMoneyInput({
 }) {
   return (
     <EditableField
+      asLabel
       appearanceStyle={appearanceStyle}
       editor={
         <StaticMoneyInput
@@ -1427,6 +1463,7 @@ function LineaField({
 
 function SolicitudSection({
   cuotaCalculoMensaje,
+  ficha = false,
   assignmentOptions,
   assignmentValue,
   assignmentValueLabel,
@@ -1440,11 +1477,13 @@ function SolicitudSection({
   onBooleanChange,
   onChange,
   readonlyAppearanceStyle,
-  solicitud,
   ultimaNovedad,
+  solicitud,
   values,
 }: {
   cuotaCalculoMensaje?: string;
+  // Edicion con la misma grilla que la lectura (tarjeta Prestamo).
+  ficha?: boolean;
   /** El monto cargado pasa el aprobado por Riesgo. */
   montoTopeError?: string | null;
   assignmentOptions: StyledSelectOption[];
@@ -1475,6 +1514,212 @@ function SolicitudSection({
       appearanceStyle: readonlyAppearanceStyle,
       highlightReadOnly: !isFieldEditableByKey(fieldKey),
     };
+  }
+
+  if (ficha) {
+    return (
+      <>
+        <div className={DOS_COLUMNAS}>
+          <div className="col-span-2">
+            <LineaField
+              isEditable={
+                isEditing &&
+                isFieldEditableByKey("solicitud.lineaPrestamoLegacyOid")
+              }
+              lineas={lineas}
+              onChange={(value) => onChange("lineaPrestamoLegacyOid", value)}
+              solicitud={solicitud}
+              value={values.lineaPrestamoLegacyOid}
+            />
+          </div>
+          <div>
+            <EditableMoneyInput
+              {...getReadonlyProps("solicitud.montoAFinanciar")}
+              disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+              invalid={isEditing && Boolean(montoTopeError)}
+              isEditing={isEditing}
+              label="Monto a financiar"
+              onChange={(value) => onChange("montoAFinanciar", value)}
+              readOnlyValue={formatAmount(solicitud.montoAFinanciar)}
+              value={values.montoAFinanciar}
+            />
+            {isEditing && montoTopeError ? (
+              <span role="alert" className="text-xs text-danger">
+                {montoTopeError}
+              </span>
+            ) : null}
+          </div>
+          <EditableTextInput
+            {...getReadonlyProps("solicitud.cuotas")}
+            disabled={!isFieldEditableByKey("solicitud.cuotas")}
+            isEditing={isEditing}
+            label="Cuotas"
+            onChange={(value) => onChange("cuotas", value)}
+            readOnlyValue={
+              solicitud.cuotas === null ? PLACEHOLDER : String(solicitud.cuotas)
+            }
+            type="number"
+            value={values.cuotas}
+          />
+          <div>
+            <EditableMoneyInput
+              {...getReadonlyProps("solicitud.montoAFinanciar")}
+              disabled={!isFieldEditableByKey("solicitud.montoAFinanciar")}
+              isEditing={isEditing}
+              label="Cuota por mes"
+              onChange={(value) => onChange("cuotaResultante", value)}
+              readOnlyValue={values.cuotaResultante || "Cálculo no disponible"}
+              value={values.cuotaResultante}
+            />
+            {isEditing && cuotaCalculoMensaje ? (
+              <p
+                role="status"
+                className="mt-1 text-xs text-foreground-secondary"
+              >
+                {cuotaCalculoMensaje}
+              </p>
+            ) : null}
+          </div>
+          <EditableMoneyInput
+            {...getReadonlyProps("solicitud.cupoTitular")}
+            disabled={!isFieldEditableByKey("solicitud.cupoTitular")}
+            isEditing={isEditing}
+            label="Cupo del titular"
+            onChange={(value) => onChange("cupoTitular", value)}
+            readOnlyValue={formatAmount(solicitud.cupoTitular)}
+            value={values.cupoTitular}
+          />
+          <EditableField
+            appearanceStyle={readonlyAppearanceStyle}
+            editor={
+              <label
+                className="flex min-h-9 items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-foreground"
+                style={
+                  !isFieldEditableByKey("solicitud.firmaDigitalmente")
+                    ? readonlyAppearanceStyle
+                    : undefined
+                }
+              >
+                <Checkbox
+                  checked={values.firmaDigitalmente}
+                  className="size-5 rounded-md [&_svg]:size-4"
+                  disabled={
+                    !isFieldEditableByKey("solicitud.firmaDigitalmente")
+                  }
+                  onCheckedChange={(checked) =>
+                    onBooleanChange("firmaDigitalmente", checked === true)
+                  }
+                />
+                Sí
+              </label>
+            }
+            highlightReadOnly={
+              !isFieldEditableByKey("solicitud.firmaDigitalmente")
+            }
+            isEditing={isEditing}
+            label="Firma digital"
+            value={formatBoolean(solicitud.firmaDigitalmente)}
+          />
+          <EditableDateInput
+            {...getReadonlyProps("solicitud.fechaPrimerVencimiento")}
+            disabled={!isFieldEditableByKey("solicitud.fechaPrimerVencimiento")}
+            isEditing={isEditing}
+            label="Primer vencimiento"
+            onChange={(value) => onChange("fechaPrimerVencimiento", value)}
+            readOnlyValue={formatLegacyDate(solicitud.fechaPrimerVencimiento)}
+            value={values.fechaPrimerVencimiento}
+          />
+        </div>
+        <div
+          className={`${DOS_COLUMNAS} mt-3 border-t border-border-soft pt-3`}
+        >
+          <EditableField
+            appearanceStyle={readonlyAppearanceStyle}
+            isEditing={false}
+            editor={null}
+            label="Vendedor"
+            value={formatText(solicitud.vendedorSolicitud)}
+          />
+          {mostrarEjecutivo ? (
+            <EditableField
+              editor={
+                <StyledSelect
+                  disabled={isExecutiveAssignmentDisabled}
+                  onChange={onAssignmentChange}
+                  options={assignmentOptions}
+                  placeholder="Seleccionar ejecutivo"
+                  value={assignmentValue}
+                />
+              }
+              isEditing={isEditing}
+              label="Ejecutivo"
+              value={assignmentValueLabel}
+            />
+          ) : null}
+          {solicitud.nroOperacion ? (
+            <EditableTextInput
+              {...getReadonlyProps("solicitud.nroOperacion")}
+              disabled={!isFieldEditableByKey("solicitud.nroOperacion")}
+              isEditing={isEditing}
+              label="Nro. de operación"
+              onChange={(value) => onChange("nroOperacion", value)}
+              readOnlyValue={formatText(solicitud.nroOperacion)}
+              value={values.nroOperacion}
+            />
+          ) : null}
+          {solicitud.motivo ? (
+            <EditableTextInput
+              {...getReadonlyProps("solicitud.motivo")}
+              disabled={!isFieldEditableByKey("solicitud.motivo")}
+              isEditing={isEditing}
+              label="Motivo"
+              onChange={(value) => onChange("motivo", value)}
+              readOnlyValue={formatText(solicitud.motivo)}
+              value={values.motivo}
+            />
+          ) : null}
+          {solicitud.linkFirmaDigital ? (
+            <div className="col-span-2">
+              <ReadOnlyField
+                label="Link de firma digital"
+                value={
+                  <LinkFirmaDigital
+                    conWhatsapp={false}
+                    url={solicitud.linkFirmaDigital}
+                  />
+                }
+              />
+            </div>
+          ) : null}
+          <div className="col-span-2">
+            <EditableField
+              appearanceStyle={readonlyAppearanceStyle}
+              editor={
+                <textarea
+                  className={`${legacyFieldClassName} min-h-24 resize-none py-2`}
+                  disabled={!isFieldEditableByKey("solicitud.observaciones")}
+                  onChange={(event) =>
+                    onChange("observaciones", event.target.value)
+                  }
+                  style={
+                    !isFieldEditableByKey("solicitud.observaciones")
+                      ? readonlyAppearanceStyle
+                      : undefined
+                  }
+                  value={values.observaciones}
+                />
+              }
+              highlightReadOnly={
+                !isFieldEditableByKey("solicitud.observaciones")
+              }
+              isEditing={isEditing}
+              label="Observaciones"
+              value={formatText(solicitud.observaciones)}
+            />
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (
@@ -1675,6 +1920,7 @@ function TitularFields({
   datosLaborales,
   datosLaboralesValues,
   errors,
+  ficha = false,
   isFieldEditableByKey,
   isEditing,
   onBooleanChange,
@@ -1686,6 +1932,8 @@ function TitularFields({
 }: {
   datosLaborales: SolicitudCoreDatosLaboralesResponse;
   datosLaboralesValues: EditableSolicitudCoreValues["datosLaborales"];
+  // Edicion con la misma grilla que la lectura (detalle-lectura).
+  ficha?: boolean;
   errors?: Partial<
     Record<keyof EditableSolicitudCoreValues["titular"], string>
   >;
@@ -1709,6 +1957,256 @@ function TitularFields({
       appearanceStyle: readonlyAppearanceStyle,
       highlightReadOnly: !isFieldEditableByKey(fieldKey),
     };
+  }
+
+  if (ficha) {
+    return (
+      <div className={COLUMNAS_TITULAR}>
+        <EditableTextInput
+          {...getReadonlyProps("titular.nombre")}
+          disabled={!isFieldEditableByKey("titular.nombre")}
+          invalid={!!errors?.nombre}
+          isEditing={isEditing}
+          label="Nombre"
+          onChange={(value) => onChange("nombre", value)}
+          readOnlyValue={formatText(titular.nombre)}
+          required
+          value={values.nombre}
+        />
+        <EditableTextInput
+          {...getReadonlyProps("titular.apellidoDenominacion")}
+          disabled={!isFieldEditableByKey("titular.apellidoDenominacion")}
+          invalid={!!errors?.apellidoDenominacion}
+          isEditing={isEditing}
+          label="Apellido"
+          onChange={(value) => onChange("apellidoDenominacion", value)}
+          readOnlyValue={formatText(titular.apellidoDenominacion)}
+          required
+          value={values.apellidoDenominacion}
+        />
+        <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-start gap-2">
+          <EditableSelectInput
+            {...getReadonlyProps("titular.tipoDocumento")}
+            disabled={!isFieldEditableByKey("titular.tipoDocumento")}
+            invalid={!!errors?.tipoDocumento}
+            isEditing={isEditing}
+            label="Tipo"
+            onChange={(value) => onChange("tipoDocumento", value)}
+            options={TIPO_DOCUMENTO_OPTIONS}
+            readOnlyValue={formatTipoDocumento(titular.tipoDocumento)}
+            required
+            value={values.tipoDocumento}
+          />
+          <EditableTextInput
+            {...getReadonlyProps("titular.nroDocumento")}
+            disabled={!isFieldEditableByKey("titular.nroDocumento")}
+            invalid={!!errors?.nroDocumento}
+            isEditing={isEditing}
+            label="Documento"
+            onChange={(value) => onChange("nroDocumento", value)}
+            readOnlyValue={formatText(titular.nroDocumento)}
+            required
+            value={values.nroDocumento}
+          />
+        </div>
+        <EditableTextInput
+          {...getReadonlyProps("titular.cuit")}
+          disabled={!isFieldEditableByKey("titular.cuit")}
+          invalid={!!errors?.cuit}
+          isEditing={isEditing}
+          label="CUIT"
+          onChange={(value) => onChange("cuit", value)}
+          readOnlyValue={formatText(titular.cuit)}
+          required
+          value={values.cuit}
+        />
+        <EditableDateInput
+          {...getReadonlyProps("titular.fechaNacimiento")}
+          disabled={!isFieldEditableByKey("titular.fechaNacimiento")}
+          invalid={!!errors?.fechaNacimiento}
+          isEditing={isEditing}
+          label="Nacimiento"
+          onChange={(value) => onChange("fechaNacimiento", value)}
+          readOnlyValue={formatLegacyDate(titular.fechaNacimiento)}
+          required
+          value={values.fechaNacimiento}
+        />
+        <EditableSelectInput
+          {...getReadonlyProps("titular.sexo")}
+          disabled={!isFieldEditableByKey("titular.sexo")}
+          invalid={!!errors?.sexo}
+          isEditing={isEditing}
+          label="Sexo"
+          onChange={(value) => onChange("sexo", value)}
+          options={SEXO_OPTIONS}
+          readOnlyValue={formatText(sexoLegible(titular.sexo))}
+          required
+          value={normalizarSexo(values.sexo)}
+        />
+        <EditableSelectInput
+          {...getReadonlyProps("titular.estadoCivil")}
+          disabled={!isFieldEditableByKey("titular.estadoCivil")}
+          isEditing={isEditing}
+          label="Estado civil"
+          onChange={(value) => onChange("estadoCivil", value)}
+          options={ESTADO_CIVIL_OPTIONS}
+          readOnlyValue={formatText(titular.estadoCivil)}
+          value={values.estadoCivil}
+        />
+        <EditableTextInput
+          {...getReadonlyProps("titular.nacionalidad")}
+          disabled={!isFieldEditableByKey("titular.nacionalidad")}
+          isEditing={isEditing}
+          label="Nacionalidad"
+          onChange={(value) => onChange("nacionalidad", value)}
+          readOnlyValue={formatText(titular.nacionalidad)}
+          value={values.nacionalidad}
+        />
+        <EditablePhoneInput
+          {...getReadonlyProps("titular.celular")}
+          disabled={!isFieldEditableByKey("titular.celular")}
+          invalid={!!errors?.celular}
+          isEditing={isEditing}
+          label="Celular"
+          onChange={(value) => onChange("celular", value)}
+          required
+          value={values.celular}
+        />
+        <EditablePhoneInput
+          {...getReadonlyProps("titular.telefonoFijo")}
+          disabled={!isFieldEditableByKey("titular.telefonoFijo")}
+          isEditing={isEditing}
+          label="Teléfono fijo"
+          onChange={(value) => onChange("telefonoFijo", value)}
+          value={values.telefonoFijo}
+        />
+        <div className="lg:col-span-2">
+          <EditableTextInput
+            {...getReadonlyProps("titular.email")}
+            disabled={!isFieldEditableByKey("titular.email")}
+            invalid={!!errors?.email}
+            isEditing={isEditing}
+            label="Email"
+            onChange={(value) => onChange("email", value)}
+            readOnlyValue={formatText(titular.email)}
+            required
+            type="email"
+            value={values.email}
+          />
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-start gap-2 lg:col-span-2">
+          <EditableTextInput
+            {...getReadonlyProps("titular.domicilioCalle")}
+            disabled={!isFieldEditableByKey("titular.domicilioCalle")}
+            isEditing={isEditing}
+            label="Calle"
+            onChange={(value) => onChange("domicilioCalle", value)}
+            readOnlyValue={formatText(titular.domicilioCalle)}
+            value={values.domicilioCalle}
+          />
+          <EditableTextInput
+            {...getReadonlyProps("titular.nroPuerta")}
+            disabled={!isFieldEditableByKey("titular.nroPuerta")}
+            isEditing={isEditing}
+            label="Número"
+            onChange={(value) => onChange("nroPuerta", value)}
+            readOnlyValue={formatText(titular.nroPuerta)}
+            value={values.nroPuerta}
+          />
+        </div>
+        <EditableLocalidadInput
+          {...getReadonlyProps("titular.localidad")}
+          disabled={!isFieldEditableByKey("titular.localidad")}
+          isEditing={isEditing}
+          label="Localidad"
+          onChange={(value) => onChange("localidad", value)}
+          readOnlyValue={formatText(titular.localidad)}
+          value={values.localidad}
+        />
+        <EditableField
+          appearanceStyle={readonlyAppearanceStyle}
+          editor={
+            <label
+              className="flex min-h-9 items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-foreground"
+              style={
+                !isFieldEditableByKey("titular.personaExpuestaPoliticamente")
+                  ? readonlyAppearanceStyle
+                  : undefined
+              }
+            >
+              <Checkbox
+                checked={values.personaExpuestaPoliticamente}
+                className="size-5 rounded-md [&_svg]:size-4"
+                disabled={
+                  !isFieldEditableByKey("titular.personaExpuestaPoliticamente")
+                }
+                onCheckedChange={(checked) => onBooleanChange(checked === true)}
+              />
+              Sí
+            </label>
+          }
+          highlightReadOnly={
+            !isFieldEditableByKey("titular.personaExpuestaPoliticamente")
+          }
+          isEditing={isEditing}
+          label="Persona expuesta políticamente"
+          value={formatBoolean(titular.personaExpuestaPoliticamente)}
+        />
+        <EditableTextInput
+          {...getReadonlyProps("datosLaborales.empleador")}
+          disabled={!isFieldEditableByKey("datosLaborales.empleador")}
+          isEditing={isEditing}
+          label="Empleador"
+          onChange={(value) => onDatosLaboralesChange("empleador", value)}
+          readOnlyValue={formatText(datosLaborales.empleador)}
+          value={datosLaboralesValues.empleador}
+        />
+        <EditableDateInput
+          {...getReadonlyProps("datosLaborales.fechaIngresoLaboral")}
+          disabled={!isFieldEditableByKey("datosLaborales.fechaIngresoLaboral")}
+          isEditing={isEditing}
+          label="Ingreso laboral"
+          onChange={(value) =>
+            onDatosLaboralesChange("fechaIngresoLaboral", value)
+          }
+          readOnlyValue={formatLegacyDate(datosLaborales.fechaIngresoLaboral)}
+          value={datosLaboralesValues.fechaIngresoLaboral}
+        />
+        <div className="lg:col-span-2">
+          <EditableMoneyInput
+            {...getReadonlyProps("datosLaborales.montoRecibo")}
+            disabled={!isFieldEditableByKey("datosLaborales.montoRecibo")}
+            isEditing={isEditing}
+            label="Monto del recibo"
+            onChange={(value) => onDatosLaboralesChange("montoRecibo", value)}
+            readOnlyValue={formatAmount(datosLaborales.montoRecibo)}
+            value={datosLaboralesValues.montoRecibo}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <EditableTextInput
+            {...getReadonlyProps("titular.cbu")}
+            disabled={!isFieldEditableByKey("titular.cbu")}
+            isEditing={isEditing}
+            label="CBU"
+            onChange={(value) => onChange("cbu", value)}
+            readOnlyValue={formatText(titular.cbu)}
+            value={values.cbu}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <EditableTextInput
+            {...getReadonlyProps("titular.cbuNoHabitual")}
+            disabled={!isFieldEditableByKey("titular.cbuNoHabitual")}
+            isEditing={isEditing}
+            label="CBU cuenta no habitual"
+            onChange={(value) => onChange("cbuNoHabitual", value)}
+            readOnlyValue={formatText(titular.cbuNoHabitual)}
+            value={values.cbuNoHabitual}
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1833,9 +2331,9 @@ function TitularFields({
         label="Sexo"
         onChange={(value) => onChange("sexo", value)}
         options={SEXO_OPTIONS}
-        readOnlyValue={formatText(titular.sexo)}
+        readOnlyValue={formatText(sexoLegible(titular.sexo))}
         required
-        value={values.sexo}
+        value={normalizarSexo(values.sexo)}
       />
       <EditableTextInput
         {...getReadonlyProps("titular.nacionalidad")}
@@ -2015,8 +2513,8 @@ function ConyugeFields({
         label="Sexo"
         onChange={(value) => onChange("sexo", value)}
         options={SEXO_OPTIONS}
-        readOnlyValue={formatText(conyuge.sexo)}
-        value={values.sexo}
+        readOnlyValue={formatText(sexoLegible(conyuge.sexo))}
+        value={normalizarSexo(values.sexo)}
       />
       <EditableDateInput
         {...getReadonlyProps("conyuge.fechaNacimiento")}
@@ -2266,93 +2764,33 @@ function AdjuntosSection({
   previewingAdjuntoId?: string | null;
 }) {
   const [isAdjuntoModalOpen, setIsAdjuntoModalOpen] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [selectedAdjuntoIds, setSelectedAdjuntoIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const selectedAdjuntoIdsSet = useMemo(() => {
-    if (selectedAdjuntoIds.size === 0) {
-      return selectedAdjuntoIds;
-    }
+  // Cada fila tiene sus acciones (ver, descargar, reemplazar, quitar); antes
+  // habia que tildar casillas y usar los botones de arriba.
+  const [adjuntoAQuitar, setAdjuntoAQuitar] =
+    useState<SolicitudCoreAdjuntoResponse | null>(null);
+  const columnas = [
+    "Archivo",
+    "Tipo",
+    "Descripción",
+    "Estado",
+    "Tamaño",
+    "Subido por",
+    "Fecha",
+  ];
+  const tieneAcciones =
+    Boolean(onPreviewAdjunto) ||
+    canDownloadAdjunto ||
+    Boolean(onEditAdjunto) ||
+    canDeleteAdjunto;
+  const cantidadColumnas = columnas.length + (tieneAcciones ? 1 : 0);
 
-    const availableIds = new Set(adjuntos.map((adjunto) => adjunto.id));
-    const nextSelection = new Set<string>();
-    selectedAdjuntoIds.forEach((id) => {
-      if (availableIds.has(id)) {
-        nextSelection.add(id);
-      }
-    });
-
-    return nextSelection.size === selectedAdjuntoIds.size
-      ? selectedAdjuntoIds
-      : nextSelection;
-  }, [adjuntos, selectedAdjuntoIds]);
-  const selectedAdjuntos = useMemo(
-    () => adjuntos.filter((adjunto) => selectedAdjuntoIdsSet.has(adjunto.id)),
-    [adjuntos, selectedAdjuntoIdsSet],
-  );
-  const selectedAdjuntosCount = selectedAdjuntos.length;
-  const hasSelectedAdjuntos = selectedAdjuntosCount > 0;
-  const allAdjuntosSelected =
-    adjuntos.length > 0 &&
-    adjuntos.every((adjunto) => selectedAdjuntoIdsSet.has(adjunto.id));
-
-  function toggleAllAdjuntos(checked: boolean) {
-    if (checked) {
-      setSelectedAdjuntoIds(new Set(adjuntos.map((adjunto) => adjunto.id)));
-      return;
-    }
-
-    setSelectedAdjuntoIds(new Set());
-  }
-
-  function toggleAdjuntoSelection(adjuntoId: string, checked: boolean) {
-    setSelectedAdjuntoIds((current) => {
-      const nextSelection = new Set(current);
-
-      if (checked) {
-        nextSelection.add(adjuntoId);
-      } else {
-        nextSelection.delete(adjuntoId);
-      }
-
-      return nextSelection;
-    });
-  }
-
-  async function handleDownloadSelectedAdjunto() {
-    if (selectedAdjuntos.length === 0) {
-      return;
-    }
-
-    for (const selectedAdjunto of selectedAdjuntos) {
-      await onDownloadAdjunto(selectedAdjunto);
-    }
-  }
-
-  async function handleDeleteSelectedAdjuntos() {
-    if (selectedAdjuntos.length === 0) {
-      return;
-    }
-    let allDeleted = true;
-
-    for (const adjunto of selectedAdjuntos) {
-      try {
-        await onDeleteAdjunto(adjunto);
-      } catch {
-        allDeleted = false;
-        break;
-      }
-    }
-
-    setSelectedAdjuntoIds((current) => {
-      const nextSelection = new Set(current);
-      selectedAdjuntos.forEach((adjunto) => nextSelection.delete(adjunto.id));
-      return nextSelection;
-    });
-
-    if (allDeleted) {
-      setIsDeleteConfirmOpen(false);
+  async function handleQuitarAdjunto() {
+    if (!adjuntoAQuitar) return;
+    try {
+      await onDeleteAdjunto(adjuntoAQuitar);
+      setAdjuntoAQuitar(null);
+    } catch {
+      // El error ya lo informa quien borra; el dialogo queda abierto.
     }
   }
 
@@ -2362,198 +2800,143 @@ function AdjuntosSection({
       tabIndex={-1}
       className="space-y-3 scroll-mt-36"
     >
-      {canCreateAdjunto || canDownloadAdjunto || canDeleteAdjunto ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {canCreateAdjunto ? (
-              <Button
-                disabled={isUploading}
-                onClick={() => setIsAdjuntoModalOpen(true)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <Plus className="size-4" />
-                Agregar adjunto
-              </Button>
-            ) : null}
-            <span className="text-xs text-foreground-secondary">
-              {hasSelectedAdjuntos
-                ? `${selectedAdjuntosCount} seleccionado${selectedAdjuntosCount === 1 ? "" : "s"}`
-                : "Sin seleccion"}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {canDownloadAdjunto ? (
-              <Button
-                className={`transition-opacity duration-200 ${
-                  downloadingAdjuntoId !== null &&
-                  selectedAdjuntoIdsSet.has(downloadingAdjuntoId)
-                    ? "opacity-85"
-                    : ""
-                }`}
-                disabled={
-                  !hasSelectedAdjuntos ||
-                  (downloadingAdjuntoId !== null &&
-                    selectedAdjuntoIdsSet.has(downloadingAdjuntoId))
-                }
-                onClick={() => void handleDownloadSelectedAdjunto()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <Download className="size-4" />
-                {downloadingAdjuntoId !== null &&
-                selectedAdjuntoIdsSet.has(downloadingAdjuntoId)
-                  ? "Descargando..."
-                  : selectedAdjuntosCount > 1
-                    ? "Descargar seleccionados"
-                    : "Descargar"}
-              </Button>
-            ) : null}
-            {canDeleteAdjunto ? (
-              <Button
-                disabled={
-                  !hasSelectedAdjuntos ||
-                  (deletingAdjuntoId !== null &&
-                    selectedAdjuntoIdsSet.has(deletingAdjuntoId))
-                }
-                onClick={() => setIsDeleteConfirmOpen(true)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <Trash2 className="size-4" />
-                {deletingAdjuntoId !== null &&
-                selectedAdjuntoIdsSet.has(deletingAdjuntoId)
-                  ? "Eliminando..."
-                  : "Eliminar"}
-              </Button>
-            ) : null}
-          </div>
+      {canCreateAdjunto ? (
+        <div className={TABLA.acciones}>
+          <Button
+            disabled={isUploading}
+            onClick={() => setIsAdjuntoModalOpen(true)}
+            size="sm"
+            type="button"
+          >
+            <Plus className="size-4" />
+            Agregar adjunto
+          </Button>
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-md border border-border">
+      <div className={TABLA.contenedor}>
         <table className="w-full min-w-[760px] border-collapse text-sm">
-          <thead className="bg-background text-left text-xs text-foreground-secondary">
+          <thead className={TABLA.encabezado}>
             <tr>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                <Checkbox
-                  checked={allAdjuntosSelected}
-                  disabled={adjuntos.length === 0}
-                  onCheckedChange={(checked) =>
-                    toggleAllAdjuntos(checked === true)
-                  }
-                />
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Archivo
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Tipo adjunto
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Descripción
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Estado
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Tamaño
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Subido por
-              </th>
-              <th className="border-r border-border px-3 py-2 font-medium">
-                Fecha subida
-              </th>
-              <th className="px-3 py-2 font-medium">Acciones</th>
+              {columnas.map((columna) => (
+                <th className={TABLA.th} key={columna}>
+                  {columna}
+                </th>
+              ))}
+              {tieneAcciones ? (
+                <th className={`${TABLA.th} w-36`}>
+                  <span className="sr-only">Acciones</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr className="border-t border-border">
-                <td
-                  className="px-3 py-4 text-sm text-foreground-secondary"
-                  colSpan={9}
-                >
+              <tr className={TABLA.fila}>
+                <td className={TABLA.vacio} colSpan={cantidadColumnas}>
                   Cargando adjuntos...
                 </td>
               </tr>
             ) : errorMessage ? (
-              <tr className="border-t border-border">
-                <td className="px-3 py-4 text-sm text-danger" colSpan={9}>
+              <tr className={TABLA.fila}>
+                <td
+                  className="px-3 py-6 text-center text-sm text-danger"
+                  colSpan={cantidadColumnas}
+                >
                   {errorMessage}
                 </td>
               </tr>
             ) : adjuntos.length > 0 ? (
               adjuntos.map((adjunto) => (
-                <tr className="border-t border-border" key={adjunto.id}>
-                  <td className="border-r border-border px-3 py-2">
-                    <Checkbox
-                      checked={selectedAdjuntoIdsSet.has(adjunto.id)}
-                      onCheckedChange={(checked) =>
-                        toggleAdjuntoSelection(adjunto.id, checked === true)
-                      }
-                    />
-                  </td>
-                  <td className="border-r border-border px-3 py-2">
+                <tr className={TABLA.fila} key={adjunto.id}>
+                  <td className={`${TABLA.celdaPrincipal} break-all`}>
                     {formatText(adjunto.archivoNombre)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celda}>
                     {formatText(adjunto.tipoAdjunto)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celdaSecundaria}>
                     {formatText(adjunto.descripcion)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celda}>
                     {formatText(adjunto.estadoAdjunto)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={`${TABLA.celdaSecundaria} tabular-nums`}>
                     {formatBytes(adjunto.archivoSizeBytes)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={TABLA.celdaSecundaria}>
                     {formatText(adjunto.uploadedByName ?? adjunto.uploadedBy)}
                   </td>
-                  <td className="border-r border-border px-3 py-2">
+                  <td className={`${TABLA.celdaSecundaria} tabular-nums`}>
                     {formatDateTime(adjunto.uploadedAt)}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-1">
-                      {onPreviewAdjunto ? (
-                        <Button
-                          className="size-7 text-foreground-secondary"
-                          disabled={previewingAdjuntoId === adjunto.id}
-                          onClick={() => onPreviewAdjunto(adjunto)}
-                          size="icon-sm"
-                          title="Previsualizar"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Eye className="size-3.5" />
-                        </Button>
-                      ) : null}
-                      {onEditAdjunto ? (
-                        <Button
-                          className="size-7 text-foreground-secondary"
-                          disabled={editingAdjuntoId === adjunto.id}
-                          onClick={() => onEditAdjunto(adjunto)}
-                          size="icon-sm"
-                          title="Reemplazar"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
+                  {tieneAcciones ? (
+                    <td className={TABLA.celda}>
+                      <div className="flex items-center justify-end gap-1">
+                        {onPreviewAdjunto ? (
+                          <Button
+                            aria-label={`Ver ${adjunto.archivoNombre ?? "adjunto"}`}
+                            className={TABLA.icono}
+                            disabled={previewingAdjuntoId === adjunto.id}
+                            onClick={() => onPreviewAdjunto(adjunto)}
+                            size="icon-sm"
+                            title="Ver"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Eye className="size-4" />
+                          </Button>
+                        ) : null}
+                        {canDownloadAdjunto ? (
+                          <Button
+                            aria-label={`Descargar ${adjunto.archivoNombre ?? "adjunto"}`}
+                            className={TABLA.icono}
+                            disabled={downloadingAdjuntoId === adjunto.id}
+                            onClick={() => void onDownloadAdjunto(adjunto)}
+                            size="icon-sm"
+                            title="Descargar"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Download className="size-4" />
+                          </Button>
+                        ) : null}
+                        {onEditAdjunto ? (
+                          <Button
+                            aria-label={`Reemplazar ${adjunto.archivoNombre ?? "adjunto"}`}
+                            className={TABLA.icono}
+                            disabled={editingAdjuntoId === adjunto.id}
+                            onClick={() => onEditAdjunto(adjunto)}
+                            size="icon-sm"
+                            title="Reemplazar"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        ) : null}
+                        {canDeleteAdjunto ? (
+                          <Button
+                            aria-label={`Quitar ${adjunto.archivoNombre ?? "adjunto"}`}
+                            className={TABLA.iconoPeligro}
+                            disabled={deletingAdjuntoId === adjunto.id}
+                            onClick={() => setAdjuntoAQuitar(adjunto)}
+                            size="icon-sm"
+                            title="Quitar"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))
             ) : (
-              <tr className="border-t border-border">
-                <td className="px-3 py-3" colSpan={9}>
+              <tr className={TABLA.fila}>
+                <td className="px-3 py-3" colSpan={cantidadColumnas}>
                   <TableEmptyState />
                 </td>
               </tr>
@@ -2562,23 +2945,24 @@ function AdjuntosSection({
         </table>
       </div>
       <DialogRoot
-        onOpenChange={setIsDeleteConfirmOpen}
-        open={isDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) setAdjuntoAQuitar(null);
+        }}
+        open={adjuntoAQuitar !== null}
       >
         <DialogContent className="max-w-[440px] p-0">
-          <div className="space-y-3 p-4">
-            <DialogTitle className="text-base font-semibold text-foreground">
-              Eliminar adjunto
+          <div className="space-y-3 p-5">
+            <DialogTitle className="font-marca text-lg font-bold text-marino">
+              Quitar adjunto
             </DialogTitle>
             <DialogDescription className="text-sm text-foreground-secondary">
-              {selectedAdjuntosCount === 1
-                ? "Seguro que querés eliminar el adjunto seleccionado? Esta acción no se puede deshacer."
-                : "Seguro que querés eliminar los adjuntos seleccionados? Esta acción no se puede deshacer."}
+              ¿Quitar {adjuntoAQuitar?.archivoNombre ?? "este adjunto"}? No se
+              puede deshacer.
             </DialogDescription>
             <div className="flex items-center justify-end gap-2 pt-1">
               <Button
                 disabled={deletingAdjuntoId !== null}
-                onClick={() => setIsDeleteConfirmOpen(false)}
+                onClick={() => setAdjuntoAQuitar(null)}
                 type="button"
                 variant="outline"
               >
@@ -2586,18 +2970,11 @@ function AdjuntosSection({
               </Button>
               <Button
                 className="bg-danger text-danger-foreground hover:bg-danger/90"
-                disabled={
-                  !hasSelectedAdjuntos ||
-                  (deletingAdjuntoId !== null &&
-                    selectedAdjuntoIdsSet.has(deletingAdjuntoId))
-                }
-                onClick={() => void handleDeleteSelectedAdjuntos()}
+                disabled={deletingAdjuntoId !== null}
+                onClick={() => void handleQuitarAdjunto()}
                 type="button"
               >
-                {deletingAdjuntoId !== null &&
-                selectedAdjuntoIdsSet.has(deletingAdjuntoId)
-                  ? "Eliminando..."
-                  : "Eliminar"}
+                {deletingAdjuntoId !== null ? "Quitando..." : "Quitar"}
               </Button>
             </div>
           </div>
@@ -2658,11 +3035,13 @@ function SolicitanteSection({
   onNewAdjuntosLote,
   onPreviewAdjunto,
   previewingAdjuntoId,
+  ocultarCancelaciones = false,
   onTabChange,
   onTitularBooleanChange,
   onTitularChange,
   readonlyAppearanceStyle,
   shouldShowDatosLaborales,
+  soloComplementos = false,
   solicitudId,
   titular,
   titularDatosLaboralesValues,
@@ -2709,6 +3088,8 @@ function SolicitanteSection({
   onNewAdjuntosLote: (items: AdjuntoLoteItem[]) => Promise<boolean>;
   onPreviewAdjunto?: (adjunto: SolicitudCoreAdjuntoResponse) => void;
   previewingAdjuntoId?: string | null;
+  // Vendedores no carga ni ve cancelaciones: es tarea de Riesgo.
+  ocultarCancelaciones?: boolean;
   onTabChange: (tab: SolicitanteTab) => void;
   onTitularBooleanChange: (value: boolean) => void;
   onTitularChange: (
@@ -2717,6 +3098,8 @@ function SolicitanteSection({
   ) => void;
   readonlyAppearanceStyle?: CSSProperties;
   shouldShowDatosLaborales: boolean;
+  // Modo lectura: los datos personales ya estan arriba, aca solo lo demas.
+  soloComplementos?: boolean;
   solicitudId: string;
   titular: SolicitudCoreTitularResponse;
   titularDatosLaboralesValues: EditableSolicitudCoreValues["datosLaborales"];
@@ -2733,12 +3116,14 @@ function SolicitanteSection({
   const canViewPrestamos = canViewPrestamosDelSocio(currentUserPrestamos);
   const activeContentTab: SolicitanteContentTab =
     activeTab === "adjuntos" ||
-    activeTab === "cancelaciones" ||
+    (activeTab === "cancelaciones" && !ocultarCancelaciones) ||
     activeTab === "prestamos" ||
     activeTab === "refinanciacion" ||
     activeTab === "solicitudes"
       ? activeTab
-      : datosPersonalesTab;
+      : soloComplementos
+        ? "adjuntos"
+        : datosPersonalesTab;
   const [selectedGarantiaIndexes, setSelectedGarantiaIndexes] = useState<
     Set<number>
   >(() => new Set());
@@ -2802,39 +3187,47 @@ function SolicitanteSection({
     onGarantiaEdit(selectedIndex);
   }
 
-  return (
-    <DetailCard id="solicitante-prestamos" title="Solicitante">
-      <SectionTabs<SolicitanteContentTab>
-        activeTab={activeContentTab}
-        onTabChange={(tab) => {
-          if (
-            tab === "adjuntos" ||
-            tab === "cancelaciones" ||
-            tab === "prestamos" ||
-            tab === "refinanciacion" ||
-            tab === "solicitudes"
-          ) {
-            onTabChange(tab);
-            return;
-          }
+  const pestanas = (
+    canViewPrestamos
+      ? [
+          ...SOLICITANTE_CONTENT_TABS.slice(0, 2),
+          REFINANCIACION_TAB,
+          ...SOLICITANTE_CONTENT_TABS.slice(2),
+          PRESTAMOS_TAB,
+          { label: "Solicitudes", value: "solicitudes" as const },
+        ]
+      : SOLICITANTE_CONTENT_TABS
+  )
+    .filter((tab) => !soloComplementos || tab.value !== "datosPersonales")
+    .filter((tab) => !ocultarCancelaciones || tab.value !== "cancelaciones")
+    .sort((a, b) =>
+      soloComplementos
+        ? ORDEN_MAS_INFORMACION.indexOf(a.value) -
+          ORDEN_MAS_INFORMACION.indexOf(b.value)
+        : 0,
+    );
+  const cambiarPestana = (tab: SolicitanteContentTab) => {
+    if (
+      tab === "adjuntos" ||
+      tab === "cancelaciones" ||
+      tab === "prestamos" ||
+      tab === "refinanciacion" ||
+      tab === "solicitudes"
+    ) {
+      onTabChange(tab);
+      return;
+    }
 
-          onTabChange("solicitante");
-          onDatosPersonalesTabChange(tab);
-        }}
-        tabs={
-          canViewPrestamos
-            ? [
-                ...SOLICITANTE_CONTENT_TABS.slice(0, 2),
-                REFINANCIACION_TAB,
-                ...SOLICITANTE_CONTENT_TABS.slice(2),
-                PRESTAMOS_TAB,
-                { label: "Solicitudes", value: "solicitudes" },
-              ]
-            : SOLICITANTE_CONTENT_TABS
-        }
-      />
+    onTabChange("solicitante");
+    onDatosPersonalesTabChange(tab);
+  };
+  const contenido = (
+    <>
       {activeContentTab === "solicitudes" && canViewPrestamos ? (
-        <SolicitudesDelTitularSection solicitudId={solicitudId} documento={titular.nroDocumento} />
+        <SolicitudesDelTitularSection
+          solicitudId={solicitudId}
+          documento={titular.nroDocumento}
+        />
       ) : activeContentTab === "refinanciacion" && canViewPrestamos ? (
         <RefinanciacionSection
           canEdit={canCreateCancelaciones || canManageCancelaciones}
@@ -3087,6 +3480,59 @@ function SolicitanteSection({
           previewingAdjuntoId={previewingAdjuntoId}
         />
       )}
+    </>
+  );
+
+  // En lectura: tarjeta blanca como Titular y Prestamo, siempre abierta; la
+  // pestana activa es el titulo (en verde).
+  if (soloComplementos) {
+    return (
+      <section
+        className="rounded-lg border border-border bg-surface p-4"
+        id="solicitante-prestamos"
+        tabIndex={-1}
+      >
+        <div
+          aria-label="Más información"
+          className="mb-3 flex flex-wrap gap-x-6 gap-y-1 border-b border-border-soft"
+          role="tablist"
+        >
+          {pestanas.map((tab) => {
+            const activa = tab.value === activeContentTab;
+            return (
+              <button
+                aria-selected={activa}
+                className={`-mb-px border-b-[3px] pb-2 font-marca text-[0.9375rem] tracking-[-0.01em] transition-colors ${
+                  activa
+                    ? "border-verde font-bold text-marino"
+                    : "border-transparent font-semibold text-foreground-secondary hover:text-marino"
+                }`}
+                key={tab.value}
+                onClick={() => cambiarPestana(tab.value)}
+                role="tab"
+                type="button"
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        {contenido}
+      </section>
+    );
+  }
+
+  return (
+    <DetailCard
+      id="solicitante-prestamos"
+      title={soloComplementos ? "Más información" : "Solicitante"}
+    >
+      <SectionTabs<SolicitanteContentTab>
+        activeTab={activeContentTab}
+        onTabChange={cambiarPestana}
+        tabs={pestanas}
+      />
+      {contenido}
     </DetailCard>
   );
 }
@@ -3119,7 +3565,9 @@ function ErrorState({
 
 export function SolicitudesActualDetallePage() {
   const queryClient = useQueryClient();
-  const { closeSidebar } = useOutletContext<{ closeSidebar: () => void }>();
+  const { topbarSlot } = useOutletContext<{
+    topbarSlot?: HTMLElement | null;
+  }>();
   const navigate = useNavigate();
   const params = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -3137,6 +3585,10 @@ export function SolicitudesActualDetallePage() {
   const documentReview = useDocumentReview(solicitudId);
   const linkedLoan = useLinkedLoanStatus(solicitudId);
   const canViewCalculadora = canAccessRiesgoTools(currentUser);
+  // La firma del legajo es de Legajos: a Riesgo solo lo confunde.
+  const verFirmaLegajo = !(
+    currentUser?.workflowOwner?.code === "RIESGO" && !currentUser.isSystemAdmin
+  );
   const solicitudCapabilities = solicitud?.capabilities;
   const canChangeState = solicitudCapabilities?.canChangeState ?? false;
   // Guarda la evaluacion Riesgo con la solicitud a cargo, o un admin. El
@@ -3151,13 +3603,11 @@ export function SolicitudesActualDetallePage() {
     data: adjuntos = [],
     error: adjuntosError,
     isLoading: isLoadingAdjuntos,
-    refetch: refetchAdjuntos,
   } = useSolicitudCoreAdjuntosQuery(solicitudId);
   const {
     data: workflowTransitions = [],
     error: workflowTransitionsError,
     isLoading: isLoadingWorkflowTransitions,
-    refetch: refetchWorkflowTransitions,
   } = useSolicitudCoreTransitionsQuery(solicitudId, {
     enabled: canChangeState,
   });
@@ -3235,29 +3685,18 @@ export function SolicitudesActualDetallePage() {
   const recibos = getRecibosDeSolicitud(adjuntos, solicitudId);
   const visorRecibosOpen = reciboView?.solicitudId === solicitudId;
   const [evaluacionConCambios, setEvaluacionConCambios] = useState(false);
-  const [headerExpanded, setHeaderExpanded] = useSolicitudHeaderPreference();
+  // La evaluacion se arma la primera vez que se abre y despues queda armada
+  // (oculta) al cambiar de pestaña: volver es inmediato y no se pierde lo hecho.
+  const [evaluacionAbierta, setEvaluacionAbierta] = useState(false);
+  // La cabecera unica siempre es compacta (antes se podia expandir).
+  const headerExpanded = false;
 
   function cambiarVistaTab(tab: SolicitudDetailVistaTab) {
-    // La planilla se desmonta al salir de la pestaña: lo no guardado se pierde.
-    if (
-      vistaTab === "evaluacion" &&
-      tab !== "evaluacion" &&
-      evaluacionConCambios &&
-      !window.confirm(
-        "Hay cambios sin guardar en la evaluación. Si cambiás de pestaña se pierden. ¿Continuar?",
-      )
-    ) {
-      return false;
+    // La planilla y el recibo abierto quedan armados al salir de la pestaña.
+    if (tab === "evaluacion") {
+      setEvaluacionAbierta(true);
     }
 
-    if (tab !== "evaluacion") {
-      setReciboView(null);
-      setEvaluacionConCambios(false);
-    }
-
-    if (tab === "evaluacion" && canViewCalculadora) {
-      closeSidebar();
-    }
     setVistaTab(tab);
     return true;
   }
@@ -3378,36 +3817,6 @@ export function SolicitudesActualDetallePage() {
     currentUser?.lastName,
     solicitud,
   ]);
-  const workflowTransitionOptions: StyledSelectOption[] = useMemo(
-    () =>
-      workflowTransitions
-        .filter((transition) => transition.actionCode !== "liquidar")
-        .map((transition) => ({
-          disabled:
-            transition.blockedReason !== null ||
-            (documentReview.data?.enabled === true &&
-              ["transferir", "devolver_a_liquidada"].includes(
-                transition.actionCode,
-              )),
-          disabledReason:
-            documentReview.data?.enabled &&
-            ["transferir", "devolver_a_liquidada"].includes(
-              transition.actionCode,
-            )
-              ? "Registrá la decisión humana en Revisión de firma."
-              : (transition.blockedReason ?? undefined),
-          label: formatWorkflowTransitionOptionLabel(
-            transition,
-            solicitud?.estadoActual.code,
-          ),
-          value: transition.id,
-        })),
-    [
-      solicitud?.estadoActual.code,
-      workflowTransitions,
-      documentReview.data?.enabled,
-    ],
-  );
   const analysisTransition = workflowTransitions.find(
     (transition) => transition.actionCode === "liquidar",
   );
@@ -3427,6 +3836,7 @@ export function SolicitudesActualDetallePage() {
           : documentReview.isPending || documentReview.isError
             ? "Esperá a que se compruebe la situación de firma."
             : null);
+
   const ultimaNovedad = useMemo(() => {
     const latestHistoryWithComment = [...workflowHistory]
       .filter((item) => item.comentario?.trim())
@@ -3517,6 +3927,27 @@ export function SolicitudesActualDetallePage() {
   );
   const nroCuentaPrestamo =
     prestamoGeneradoQuery.data?.prestamo.nroCuenta ?? null;
+  // Misma consulta (y cache) que el chip "Es socio" del encabezado: si ya es
+  // socio, "Crear socio" no aplica.
+  const socioQuery = useQuery({
+    enabled: Boolean(solicitud),
+    queryFn: () => datosRapidosApi.socio(solicitudId),
+    queryKey: [
+      "solicitudes-core",
+      "datos-rapidos",
+      solicitudId,
+      JSON.stringify([
+        solicitud?.titular.nroDocumento,
+        solicitud?.titular.tipoDocumento,
+        solicitud?.lineaPrestamoLegacyOid,
+      ]),
+      "persona",
+      "socio",
+    ],
+    retry: false,
+  });
+  const esSocio = socioIndicator(socioQuery).member;
+
   if (!solicitudId) {
     return (
       <ErrorState
@@ -3564,21 +3995,155 @@ export function SolicitudesActualDetallePage() {
     workflowTransitionsError instanceof Error
       ? workflowTransitionsError.message
       : null;
-  const workflowTransitionPlaceholder = !canChangeState
-    ? "No disponible en este estado"
-    : isLoadingWorkflowTransitions
-      ? "Cargando acciones..."
-      : workflowTransitionSelectorErrorMessage
-        ? workflowTransitionSelectorErrorMessage
-        : workflowTransitionOptions.length > 0
-          ? "Enviar a..."
-          : "Sin acciones disponibles";
   const submissionTransition =
     resolvedSolicitud.estadoActual.code === "CargaVendedor"
       ? workflowTransitions.find(
           (transition) => transition.toState.code === "Motor",
         )
       : undefined;
+  // Lo unico que exige el backend para enviar a Riesgo es el recibo de sueldo.
+  const faltaReciboParaEnviar =
+    resolvedSolicitud.estadoActual.code === "CargaVendedor" &&
+    !isLoadingAdjuntos &&
+    !adjuntosError &&
+    recibos.length === 0;
+  const irARevisionDeFirma = () => {
+    if (!cambiarVistaTab("solicitud")) return;
+    requestAnimationFrame(() => {
+      const target = document.getElementById("solicitud-revision-firma");
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      target?.focus({ preventScroll: true });
+    });
+  };
+  const irAAdjuntos = () => {
+    if (!cambiarVistaTab("solicitud")) return;
+    setSolicitanteTab("adjuntos");
+    setSolicitanteNavigation((value) => value + 1);
+    requestAnimationFrame(() => {
+      const target = document.getElementById("solicitud-adjuntos");
+      target?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      target?.focus({ preventScroll: true });
+    });
+  };
+  // Acciones de la barra azul, con la misma regla en todos los estados:
+  // principal, secundaria y "Mas acciones" (solicitudes-shared/utils/acciones-de-estado).
+  const estadoCode = resolvedSolicitud.estadoActual.code;
+  const accionesDelEstado = ACCIONES_DE_ESTADO[estadoCode];
+  const ocupado =
+    isLoadingWorkflowTransitions ||
+    workflowTransitionSelectorErrorMessage !== null ||
+    executeWorkflowTransitionMutation.isPending;
+  const motivoEditando = isEditing
+    ? "Guardá o cancelá los cambios primero."
+    : null;
+  // Con la revision de firma activa, transferir lo decide Legajos en su panel.
+  const motivoDeTransicion = (transition: WorkflowTransition) =>
+    documentReview.data?.enabled &&
+    ["transferir", "devolver_a_liquidada"].includes(transition.actionCode)
+      ? "Se decide en la revisión de firma."
+      : transition.blockedReason;
+  const accionDeTransicion = (
+    transition: WorkflowTransition,
+    icono?: ReactNode,
+  ): AccionDeEstado => {
+    const motivo = motivoEditando ?? motivoDeTransicion(transition);
+
+    return {
+      clave: transition.id,
+      deshabilitada: ocupado || Boolean(motivo),
+      etiqueta: etiquetaDeAccion(transition.actionCode, transition.actionLabel),
+      icono,
+      motivo,
+      onClick: () => handleWorkflowTransitionChange(transition.id),
+      terminal: terminaLaSolicitud(transition.actionCode),
+    };
+  };
+  const transicionPorCodigo = (actionCode?: string) =>
+    actionCode
+      ? workflowTransitions.find(
+          (transition) => transition.actionCode === actionCode,
+        )
+      : undefined;
+  const puedeGenerarPrestamo =
+    estadoCode === "Confirmada" &&
+    !resolvedSolicitud.legacyOid &&
+    canCreateSocio(currentUser) &&
+    linkedLoan.data?.status !== "cancelled";
+  const revisaFirmaAca =
+    estadoCode === "VerificarFirmaYDocumentacion" &&
+    documentReview.data?.canDecide === true;
+  const transicionPrincipal = transicionPorCodigo(accionesDelEstado?.primaria);
+  const transicionSecundaria = transicionPorCodigo(
+    accionesDelEstado?.secundaria,
+  );
+  let accionPrincipal: AccionDeEstado | undefined;
+
+  if (puedeGenerarPrestamo) {
+    // Sin el prestamo en Vimarx no se puede seguir: es el paso que falta.
+    const motivo =
+      motivoEditando ??
+      (linkedLoan.isError || linkedLoan.data?.status === "unavailable"
+        ? "Esperá a que se verifique el préstamo en Vimarx."
+        : null);
+    accionPrincipal = {
+      clave: "generar-prestamo",
+      deshabilitada: createPrestamoLegacyMutation.isPending || Boolean(motivo),
+      etiqueta: "Generar préstamo",
+      icono: <Landmark className="size-4" />,
+      motivo,
+      onClick: () => setIsGenerarPrestamoModalOpen(true),
+    };
+  } else if (revisaFirmaAca) {
+    // La decision (que intento, con que motivo) se toma en el panel de firma.
+    accionPrincipal = {
+      clave: "revisar-firma",
+      etiqueta: "Revisar firma",
+      icono: <FileSignature className="size-4" />,
+      onClick: irARevisionDeFirma,
+    };
+  } else if (transicionPrincipal?.actionCode === "liquidar") {
+    const motivo = motivoEditando ?? analysisBlockedReason;
+    accionPrincipal = {
+      ...accionDeTransicion(transicionPrincipal, <Send className="size-4" />),
+      deshabilitada: ocupado || Boolean(motivo),
+      etiqueta: analysisActionLabel,
+      motivo,
+    };
+  } else if (transicionPrincipal) {
+    const accion = accionDeTransicion(
+      transicionPrincipal,
+      transicionPrincipal === submissionTransition ? (
+        <Send className="size-4" />
+      ) : (
+        <Check className="size-4" />
+      ),
+    );
+    accionPrincipal =
+      transicionPrincipal === submissionTransition && faltaReciboParaEnviar
+        ? {
+            ...accion,
+            deshabilitada: true,
+            motivo: "Falta el recibo de sueldo.",
+          }
+        : accion;
+  }
+
+  const accionSecundaria = transicionSecundaria
+    ? accionDeTransicion(transicionSecundaria, <Undo2 className="size-4" />)
+    : undefined;
+  // El resto, en el orden de la configuracion. "liquidar" va solo como
+  // principal: su nombre y su bloqueo dependen de la firma y del prestamo.
+  const accionesDelMenu = workflowTransitions
+    .filter(
+      (transition) =>
+        transition.actionCode !== "liquidar" &&
+        transition.id !== transicionSecundaria?.id &&
+        (puedeGenerarPrestamo || transition.id !== transicionPrincipal?.id),
+    )
+    .map((transition) => accionDeTransicion(transition));
   const workflowHistoryErrorMessage =
     workflowHistoryError instanceof ApiError &&
     workflowHistoryError.status === 403
@@ -3827,6 +4392,20 @@ export function SolicitudesActualDetallePage() {
     }
     toast.dismiss(EDIT_SOLICITUD_ERROR_TOAST_ID);
     toast.dismiss(EDIT_SOLICITUD_SUCCESS_TOAST_ID);
+
+    // CUIT: se valida solo si se cambio (uno viejo mal cargado no bloquea
+    // otras ediciones; el backend tambien lo valida cuando se envia).
+    const cuitEditado = currentValues.titular.cuit.trim();
+    if (
+      cuitEditado &&
+      cuitEditado !== (resolvedSolicitud.titular.cuit ?? "").trim() &&
+      !esCuitValido(cuitEditado)
+    ) {
+      const mensaje = "El CUIT no es válido: revisá los 11 números.";
+      setTitularErrors((current) => ({ ...current, cuit: mensaje }));
+      toast.error(mensaje, { id: EDIT_SOLICITUD_ERROR_TOAST_ID });
+      return;
+    }
 
     // Solo si se cambiaron las cuotas o la linea: una solicitud que ya venia
     // fuera de rango no tiene que bloquear otras ediciones. Se compara contra
@@ -4316,16 +4895,6 @@ export function SolicitudesActualDetallePage() {
     }
   }
 
-  function handleRefresh() {
-    void Promise.all([
-      refetchDetail(),
-      refetchAdjuntos(),
-      refetchWorkflowTransitions(),
-      linkedLoan.refetch(),
-      documentReview.refetch(),
-    ]);
-  }
-
   function handleWorkflowTransitionChange(transitionId: string) {
     setTitularErrors({});
 
@@ -4340,20 +4909,28 @@ export function SolicitudesActualDetallePage() {
 
     executeWorkflowTransitionMutation.reset();
     setSelectedWorkflowTransition(
-      transition?.actionCode === "liquidar"
+      transition && transition.actionCode !== "liquidar"
         ? {
             ...transition,
-            actionLabel: analysisActionLabel,
-            description:
-              "El análisis quedará terminado. El destino se comprobará con la firma vigente al confirmar.",
-            toState: {
-              ...transition.toState,
-              name: documentReview.data?.signature?.approved
-                ? "Para transferir"
-                : "Revisión de firma",
-            },
+            actionLabel: etiquetaDeAccion(
+              transition.actionCode,
+              transition.actionLabel,
+            ),
           }
-        : transition,
+        : transition?.actionCode === "liquidar"
+          ? {
+              ...transition,
+              actionLabel: analysisActionLabel,
+              description:
+                "El análisis quedará terminado. El destino se comprobará con la firma vigente al confirmar.",
+              toState: {
+                ...transition.toState,
+                name: documentReview.data?.signature?.approved
+                  ? "Para transferir"
+                  : "Revisión de firma",
+              },
+            }
+          : transition,
     );
   }
 
@@ -4387,614 +4964,601 @@ export function SolicitudesActualDetallePage() {
   }
 
   return (
-    <article
-      data-header-expanded={headerExpanded}
-      className="flex h-full min-h-0 flex-col rounded-md border border-border bg-surface shadow-sm"
-    >
-      <div id="solicitud-encabezado-completo" className="contents">
-        <header className="shrink-0 border-b border-border bg-surface px-3 py-2">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <div className="flex min-w-0 max-w-full items-center gap-2.5">
-              <Button
-                className="shrink-0 text-foreground-secondary"
-                onClick={() => navigate(originPath)}
-                size="icon-sm"
-                type="button"
-                variant="ghost"
-              >
-                <ArrowLeft className="size-4" />
-              </Button>
-              <FileText className="size-4 shrink-0 text-primary" />
-              <h1
-                aria-label={`Solicitud ${resolvedSolicitud.nroSolicitud ?? "sin número"}`}
-                className="flex min-w-0 flex-wrap items-center gap-x-2 text-[1.375rem] leading-tight font-semibold text-foreground"
-              >
-                Solicitud
-                {resolvedSolicitud.nroSolicitud ? (
-                  <IdChip
-                    className="border-0 bg-transparent p-0 font-sans text-[1.375rem] font-semibold text-foreground"
-                    value={resolvedSolicitud.nroSolicitud}
-                  />
-                ) : (
-                  <span>sin número</span>
-                )}
-              </h1>
-            </div>
-            <div className="flex max-w-full flex-wrap items-center gap-x-5 gap-y-2">
-              {canViewPrestamoGenerado ? (
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <span className="text-xs font-medium text-foreground-muted">
-                    Préstamo
-                  </span>
-                  {!resolvedSolicitud.legacyOid ? (
-                    <Badge
-                      icon={<Clock className="size-3" />}
-                      variant="neutral"
-                    >
-                      Sin generar
-                    </Badge>
-                  ) : nroCuentaPrestamo ? (
-                    <IdChip value={nroCuentaPrestamo} variant="accent" />
-                  ) : (
-                    <Badge variant="neutral">
-                      {prestamoGeneradoQuery.isLoading
-                        ? "Consultando..."
-                        : "No disponible"}
-                    </Badge>
-                  )}
-                </div>
-              ) : null}
-            </div>
-            <Badge
-              className="ml-auto shrink-0 px-4 py-1.5 text-sm font-semibold"
-              dot
-              variant={getEstadoBadgeVariant(
-                resolvedSolicitud.estadoActual.code,
-              )}
-            >
-              {formatText(
-                resolvedSolicitud.estadoActual.code ||
-                  resolvedSolicitud.estadoActual.name,
-              )}
-            </Badge>
-          </div>
-        </header>
-
-        <DatosRapidosSolicitante
-          compact={!headerExpanded}
-          key={resolvedSolicitud.id}
-          solicitudId={resolvedSolicitud.id}
-          titular={resolvedSolicitud.titular}
-          revision={JSON.stringify([
-            resolvedSolicitud.titular.nroDocumento,
-            resolvedSolicitud.titular.tipoDocumento,
-            resolvedSolicitud.lineaPrestamoLegacyOid,
-          ])}
-          canViewDetalle={
-            Boolean(currentUser) && canViewPrestamosDelSocio(currentUser)
-          }
-          onVerDetalle={() => {
-            if (!cambiarVistaTab("solicitud")) return;
-            setSolicitanteTab("prestamos");
-            setSolicitanteNavigation((value) => value + 1);
-            requestAnimationFrame(() => {
-              const target = document.getElementById("solicitante-prestamos");
-              target?.scrollIntoView({ behavior: "smooth", block: "start" });
-              target?.focus({ preventScroll: true });
-            });
-          }}
-        />
-
-        <SolicitudDetailToolbar
-          analysisAction={
-            canChangeState && analysisTransition
-              ? {
-                  label: analysisActionLabel,
-                  onClick: () =>
-                    handleWorkflowTransitionChange(analysisTransition.id),
-                  disabled:
-                    isEditing ||
-                    isLoadingWorkflowTransitions ||
-                    executeWorkflowTransitionMutation.isPending ||
-                    Boolean(analysisBlockedReason),
-                  disabledReason: isEditing
-                    ? "Guardá los cambios antes de terminar el análisis."
-                    : (analysisBlockedReason ?? undefined),
-                }
-              : undefined
-          }
-          canEdit={canEnterEditMode}
-          isCreatePrestamoLegacyPending={
-            createPrestamoLegacyMutation.isPending ||
-            linkedLoan.isError ||
-            linkedLoan.data?.status === "unavailable"
-          }
-          isEditing={isEditing}
-          isSaveDisabled={
-            patchSolicitudCoreMutation.isPending ||
-            (isEditing && cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
-            Boolean(montoTopeError) ||
-            (isEditing ? !hasEditableSolicitudFields : !canEnterEditMode)
-          }
-          isPrestamoLegacyGenerado={Boolean(resolvedSolicitud.legacyOid)}
-          onCreatePrestamoLegacy={
-            canCreateSocio(currentUser) &&
-            linkedLoan.data?.status !== "cancelled"
-              ? () => setIsGenerarPrestamoModalOpen(true)
-              : undefined
-          }
-          onCreateSocio={
-            canCreateSocio(currentUser)
-              ? () => setIsCreateSocioModalOpen(true)
-              : undefined
-          }
-          onOpenSimulador={() => setIsSimuladorOpen(true)}
-          onPreloadSimulador={loadSimuladorPrestamoModal}
-          onRefresh={handleRefresh}
-          onSave={handleSaveToolbarAction}
-          onStartEdit={handleStartEditing}
-          submitAction={
-            canChangeState && submissionTransition
-              ? {
-                  onClick: () =>
-                    handleWorkflowTransitionChange(submissionTransition.id),
-                  disabled:
-                    isLoadingWorkflowTransitions ||
-                    workflowTransitionSelectorErrorMessage !== null ||
-                    executeWorkflowTransitionMutation.isPending ||
-                    submissionTransition.blockedReason !== null,
-                  disabledReason:
-                    submissionTransition.blockedReason ?? undefined,
-                }
-              : undefined
-          }
-          attachmentsAction={{
-            count:
-              isLoadingAdjuntos || adjuntosError ? undefined : adjuntos.length,
-            onClick: () => {
-              if (!cambiarVistaTab("solicitud")) return;
-              setSolicitanteTab("adjuntos");
-              setSolicitanteNavigation((value) => value + 1);
-              requestAnimationFrame(() => {
-                const target = document.getElementById("solicitud-adjuntos");
-                target?.scrollIntoView({ behavior: "smooth", block: "start" });
-                target?.focus({ preventScroll: true });
-              });
-            },
-          }}
-          transitionControl={
-            !headerExpanded &&
-            workflowTransitionOptions.length === 0 &&
-            !isLoadingWorkflowTransitions &&
-            !workflowTransitionSelectorErrorMessage ? undefined : (
-              <StyledSelect
-                className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
-                disabled={
-                  !canChangeState ||
-                  isLoadingWorkflowTransitions ||
-                  workflowTransitionSelectorErrorMessage !== null ||
-                  executeWorkflowTransitionMutation.isPending ||
-                  workflowTransitionOptions.length === 0
-                }
-                onChange={handleWorkflowTransitionChange}
-                options={workflowTransitionOptions}
-                placeholder={workflowTransitionPlaceholder}
-                value={selectedWorkflowTransition?.id ?? ""}
-              />
-            )
-          }
-        />
-      </div>
-      <SolicitudWorkflowActionDialog
-        errorMessage={workflowTransitionErrorMessage}
-        isSubmitting={executeWorkflowTransitionMutation.isPending}
-        onConfirm={handleConfirmWorkflowTransition}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedWorkflowTransition(null);
-          }
-        }}
-        open={selectedWorkflowTransition !== null}
-        transition={selectedWorkflowTransition}
-        validate={handleValidateWorkflowTransition}
-      />
-
-      <div className="shrink-0 border-b border-border bg-surface px-3 md:px-4">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {canViewCalculadora &&
-            SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
-              const isActive = tab.value === vistaTab;
-
-              return (
-                <button
-                  className={`border-b-2 px-0 py-2 text-sm font-medium transition ${
-                    isActive
-                      ? "border-primary text-primary"
-                      : "border-transparent text-foreground-secondary hover:text-foreground"
-                  }`}
-                  key={tab.value}
-                  onClick={() => cambiarVistaTab(tab.value)}
-                  type="button"
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          <Button
-            className="my-1 ml-auto"
-            aria-expanded={headerExpanded}
-            aria-controls="solicitud-encabezado-completo"
-            onClick={() => setHeaderExpanded((value) => !value)}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            {headerExpanded ? (
-              <ChevronUp className="size-4" />
-            ) : (
-              <ChevronDown className="size-4" />
-            )}
-            {headerExpanded ? "Ocultar encabezado" : "Mostrar encabezado"}
-          </Button>
-        </div>
-      </div>
-
-      {!canViewCalculadora || vistaTab === "solicitud" ? (
-        <div
-          data-testid="solicitud-reading-area"
-          className="min-h-40 flex-1 space-y-3 overflow-y-auto p-3 pb-8 md:p-4 md:pb-10"
-        >
-          {isEditing ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                disabled={patchSolicitudCoreMutation.isPending}
-                onClick={handleCancelEditing}
-                type="button"
-                variant="outline"
-              >
-                Cancelar
-              </Button>
-              <Button
-                disabled={
-                  patchSolicitudCoreMutation.isPending ||
-                  (cuotaObjetivoTexto !== null && !cuotaEdicion.data) ||
-                  Boolean(montoTopeError)
-                }
-                onClick={() => void handleSaveChanges()}
-                type="button"
-              >
-                <Pencil className="size-4" />
-                Guardar cambios
-              </Button>
-            </div>
-          ) : null}
-          <LinkedLoanStatusBanner
-            canRecover={currentUser?.isSystemAdmin === true}
-            solicitudId={solicitudId}
-            data={linkedLoan.data}
-            loading={linkedLoan.isPending}
-            failed={linkedLoan.isError}
-            retry={() => void linkedLoan.refetch()}
-            onRecovered={() =>
-              Promise.all([refetchDetail(), linkedLoan.refetch()])
+    <div className="h-full min-h-0 p-1 md:p-3">
+      <article
+        data-header-expanded={headerExpanded}
+        className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm"
+      >
+        <div id="solicitud-encabezado-completo" className="contents">
+          {/* Ficha: quien pide y en que etapa esta, que se pide, pestanas y acciones. */}
+          <CabeceraSolicitudEnBarra
+            accionPrincipal={
+              canChangeState ? (
+                <AccionesDeEstado
+                  mas={accionesDelMenu}
+                  principal={accionPrincipal}
+                  secundaria={accionSecundaria}
+                />
+              ) : null
             }
-          />
-          {resolvedSolicitud.legacyOid && (
-            <div className="border-b border-border px-4 pb-3">
-              <ControlledLoanReplacementControl
-                solicitudId={solicitudId}
-                updatedAt={resolvedSolicitud.updatedAt}
-                isEditing={isEditing}
-              />
-            </div>
-          )}
-
-          <AdministrativeStateControl
-            key={`admin-state:${solicitudId}`}
-            solicitudId={solicitudId}
-            updatedAt={resolvedSolicitud.updatedAt}
-            isEditing={isEditing}
-          />
-
-          {["Transferir", "Pagada"].includes(
-            resolvedSolicitud.estadoActual.code,
-          ) &&
-          (currentUser?.isSystemAdmin ||
-            ["TESORERIA", "RIESGO"].includes(
-              currentUser?.workflowOwner?.code ?? "",
-            )) ? (
-            <ExternalPaymentControl
-              key={`external-payment:${solicitudId}`}
-              solicitudId={solicitudId}
-              isPaid={resolvedSolicitud.estadoActual.code === "Pagada"}
-            />
-          ) : null}
-          <DocumentReviewPanel solicitudId={solicitudId} editing={isEditing} />
-          <SolicitudSection
-            cuotaCalculoMensaje={
-              cuotaObjetivoTexto !== null &&
-              parseMoneyValue(cuotaObjetivoTexto) <= 0
-                ? "Ingresá una cuota mayor a cero."
-                : cuotaEdicion.isPending
-                  ? "Calculando..."
-                  : cuotaEdicion.error?.message
+            destino={topbarSlot}
+            estado={resolvedSolicitud.estadoActual}
+            nroSolicitud={resolvedSolicitud.nroSolicitud ?? null}
+            estadoDesde={
+              // Ultimo cambio de estado del historial (si no hay, la creacion).
+              workflowHistory.reduce<string | null>(
+                (ultimo, item) =>
+                  !ultimo || item.changedAt > ultimo ? item.changedAt : ultimo,
+                null,
+              ) ?? resolvedSolicitud.createdAt
             }
-            assignmentOptions={assignmentAgentOptions}
-            assignmentValue={selectedAssignmentValue}
-            assignmentValueLabel={assignmentValueLabel}
-            isFieldEditableByKey={isSolicitudFieldEditable}
-            isEditing={isEditing}
-            isExecutiveAssignmentDisabled={!canManageAssignment}
-            montoTopeError={montoTopeError}
-            mostrarEjecutivo={!isVendedor(currentUser)}
-            lineas={lineasSimulador}
-            onAssignmentChange={setSelectedAssignmentValue}
-            onBooleanChange={updateSolicitudBooleanField}
-            onChange={updateSolicitudField}
-            readonlyAppearanceStyle={readonlyAppearanceStyle}
-            solicitud={resolvedSolicitud}
-            ultimaNovedad={ultimaNovedad}
-            values={{
-              ...currentValues.solicitud,
-              montoAFinanciar:
-                amountLocked || cuotaObjetivoTexto !== null
-                  ? currentValues.solicitud.montoAFinanciar
-                  : ajustarMontoTexto(
-                      currentValues.solicitud.montoAFinanciar,
-                      lineaEdicion,
-                    ),
-              cuotas: ajustarCuotasTexto(
-                currentValues.solicitud.cuotas,
-                lineaEdicion,
-              ),
-              cuotaResultante: isEditing
-                ? cuotaEdicion.data
-                  ? formatDecimalMoneyValue(cuotaEdicion.data.cuotaResultante)
-                  : (cuotaObjetivoTexto ?? "")
-                : currentValues.solicitud.cuotaResultante,
-            }}
-          />
-          <SolicitanteSection
-            key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
-            activeTab={solicitanteTab}
-            adjuntos={adjuntos}
-            canCreateAdicional={isEditing && canUploadAdjuntos}
-            canCreateAdjunto={canUploadAdjuntos}
-            canDeleteAdjunto={isEditing && canDeleteAdjuntos}
-            canDownloadAdjunto={canDownloadAdjuntos}
-            canCreateCancelaciones={canCreateCancelaciones}
-            canManageCancelaciones={canManageCancelaciones}
-            datosLaborales={resolvedSolicitud.datosLaborales}
-            datosPersonalesTab={datosPersonalesTab}
-            deletingAdjuntoId={deletingAdjuntoId}
-            downloadingAdjuntoId={downloadingAdjuntoId}
-            errorMessage={
-              adjuntosError
-                ? "No se pudieron cargar los adjuntos de la solicitud."
-                : undefined
+            prestamo={
+              !resolvedSolicitud.legacyOid
+                ? null
+                : canViewPrestamoGenerado && nroCuentaPrestamo
+                  ? `Préstamo Nº ${nroCuentaPrestamo}`
+                  : "Préstamo generado"
             }
-            isFieldEditableByKey={isSolicitudFieldEditable}
-            isGarantiasFullyEditable={canCreateGarantias}
-            isGarantiasPartiallyEditable={canEditGarantias}
-            isEditing={isEditing}
-            isLoadingAdjuntos={isLoadingAdjuntos}
-            isUploadingAdjunto={isUploadingAdjunto}
-            onConyugeChange={updateConyugeField}
-            onDatosLaboralesChange={updateDatosLaboralesField}
-            editingAdjuntoId={editingAdjuntoId}
-            onDatosPersonalesTabChange={setDatosPersonalesTab}
-            onDeleteAdjunto={handleDeleteAdjunto}
-            onDownloadAdjunto={handleDownloadAdjunto}
-            onEditAdjunto={
-              isEditing && canDeleteAdjuntos ? handleOpenEditAdjunto : undefined
-            }
-            onGarantiaCreate={handleGarantiaCreate}
-            onNewAdjuntosLote={handleAddAdjuntosLote}
-            onPreviewAdjunto={handlePreviewAdjunto}
-            previewingAdjuntoId={previewingAdjuntoId}
-            onGarantiaEdit={handleGarantiaEdit}
-            onTabChange={setSolicitanteTab}
-            onTitularBooleanChange={updateTitularBooleanField}
-            onTitularChange={updateTitularField}
-            readonlyAppearanceStyle={readonlyAppearanceStyle}
-            shouldShowDatosLaborales={shouldShowDatosLaborales}
-            solicitudId={solicitudId}
-            garantias={currentGarantias}
-            titularConyuge={resolvedSolicitud.conyuge}
-            titularConyugeValues={currentValues.conyuge}
-            titularDatosLaboralesValues={currentValues.datosLaborales}
             titular={resolvedSolicitud.titular}
-            titularErrors={titularErrors}
-            titularValues={currentValues.titular}
           />
-          <SolicitudWorkflowHistorySection
-            errorMessage={workflowHistoryErrorMessage}
-            history={workflowHistory}
-            isLoading={isLoadingWorkflowHistory}
-          />
-        </div>
-      ) : null}
+          <CabeceraSolicitud
+            acciones={
+              <>
+                {canViewCalculadora ? (
+                  <nav
+                    aria-label="Vistas de la solicitud"
+                    className="flex gap-x-4"
+                  >
+                    {canViewCalculadora &&
+                      SOLICITUD_DETAIL_VISTA_TABS.map((tab) => {
+                        const isActive = tab.value === vistaTab;
 
-      {canViewCalculadora && vistaTab === "credixsa" ? (
-        <div className="min-h-40 flex-1 overflow-y-auto">
-          <CredixsaInformeSection
-            isActive={vistaTab === "credixsa"}
-            solicitudId={solicitudId}
-          />
-        </div>
-      ) : null}
-
-      {canViewCalculadora && vistaTab === "evaluacion" ? (
-        <EvaluacionRecibosView
-          key={solicitudId}
-          solicitudId={solicitudId}
-          recibos={recibos}
-          open={visorRecibosOpen}
-          selectedId={visorRecibosOpen ? reciboView.selectedId : null}
-          onOpen={() =>
-            setReciboView({ solicitudId, selectedId: recibos[0]?.id ?? null })
-          }
-          onClose={() => setReciboView(null)}
-          onSelect={(selectedId) => setReciboView({ solicitudId, selectedId })}
-          loading={isLoadingAdjuntos}
-          error={
-            adjuntosError
-              ? "No se pudo obtener el listado de recibos de sueldo."
-              : null
-          }
-        >
-          <Suspense
-            fallback={
-              <SolicitudesContentLoader label="Cargando calculadora..." />
+                        return (
+                          <button
+                            className={`border-b-2 px-0 py-2 text-sm font-medium transition ${
+                              isActive
+                                ? "border-primary text-primary"
+                                : "border-transparent text-foreground-secondary hover:text-foreground"
+                            }`}
+                            key={tab.value}
+                            onClick={() => cambiarVistaTab(tab.value)}
+                            type="button"
+                          >
+                            {tab.label}
+                            {tab.value === "evaluacion" &&
+                            evaluacionConCambios ? (
+                              <span
+                                aria-label="con cambios sin guardar"
+                                className="ml-1 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
+                                title="Hay cambios sin guardar en la evaluación"
+                              />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                  </nav>
+                ) : null}
+                <SolicitudDetailToolbar
+                  embedded
+                  aviso={
+                    faltaReciboParaEnviar ? (
+                      <MotivoBloqueo>
+                        Falta el recibo de sueldo.{" "}
+                        <button
+                          className="font-semibold underline underline-offset-2 hover:no-underline"
+                          onClick={irAAdjuntos}
+                          type="button"
+                        >
+                          Adjuntarlo
+                        </button>
+                      </MotivoBloqueo>
+                    ) : canChangeState &&
+                      accionPrincipal?.deshabilitada &&
+                      accionPrincipal.motivo ? (
+                      <MotivoBloqueo>{accionPrincipal.motivo}</MotivoBloqueo>
+                    ) : null
+                  }
+                  // Editar solo cambia la pestaña Solicitud.
+                  canEdit={canEnterEditMode && vistaTab === "solicitud"}
+                  isEditing={isEditing}
+                  isSaving={patchSolicitudCoreMutation.isPending}
+                  onCancelEdit={handleCancelEditing}
+                  isSaveDisabled={
+                    patchSolicitudCoreMutation.isPending ||
+                    (isEditing &&
+                      cuotaObjetivoTexto !== null &&
+                      !cuotaEdicion.data) ||
+                    Boolean(montoTopeError) ||
+                    (isEditing
+                      ? !hasEditableSolicitudFields
+                      : !canEnterEditMode)
+                  }
+                  onCreateSocio={
+                    canCreateSocio(currentUser) && !esSocio
+                      ? () => setIsCreateSocioModalOpen(true)
+                      : undefined
+                  }
+                  onOpenSimulador={() => setIsSimuladorOpen(true)}
+                  onPreloadSimulador={loadSimuladorPrestamoModal}
+                  onSave={handleSaveToolbarAction}
+                  onStartEdit={handleStartEditing}
+                  attachmentsAction={{
+                    count:
+                      isLoadingAdjuntos || adjuntosError
+                        ? undefined
+                        : adjuntos.length,
+                    onClick: irAAdjuntos,
+                  }}
+                />
+              </>
             }
+          />
+        </div>
+        <SolicitudWorkflowActionDialog
+          errorMessage={workflowTransitionErrorMessage}
+          isSubmitting={executeWorkflowTransitionMutation.isPending}
+          onConfirm={handleConfirmWorkflowTransition}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedWorkflowTransition(null);
+            }
+          }}
+          open={selectedWorkflowTransition !== null}
+          transition={selectedWorkflowTransition}
+          validate={handleValidateWorkflowTransition}
+        />
+
+        {!canViewCalculadora || vistaTab === "solicitud" ? (
+          <div
+            data-testid="solicitud-reading-area"
+            className="min-h-40 flex-1 space-y-3 overflow-y-auto p-3 pb-8 md:p-4 md:pb-10"
           >
-            <CalculadoraMutualSheet
-              className="flex-1 min-w-0"
-              onCambiosSinGuardarChange={setEvaluacionConCambios}
-              puedeGuardar={canGuardarEvaluacion}
-              source={{ kind: "embedded", solicitudId }}
+            <LinkedLoanStatusBanner
+              canRecover={currentUser?.isSystemAdmin === true}
+              editing={isEditing}
+              cuenta={
+                resolvedSolicitud.legacyOid && nroCuentaPrestamo
+                  ? {
+                      loanId: String(resolvedSolicitud.legacyOid),
+                      nroCuenta: nroCuentaPrestamo,
+                    }
+                  : null
+              }
+              solicitudId={solicitudId}
+              data={linkedLoan.data}
+              loading={linkedLoan.isPending}
+              failed={linkedLoan.isError}
+              retry={() => void linkedLoan.refetch()}
+              onRecovered={() =>
+                Promise.all([refetchDetail(), linkedLoan.refetch()])
+              }
+            />
+            {resolvedSolicitud.legacyOid && (
+              <div className="border-b border-border px-4 pb-3">
+                <ControlledLoanReplacementControl
+                  solicitudId={solicitudId}
+                  updatedAt={resolvedSolicitud.updatedAt}
+                  isEditing={isEditing}
+                />
+              </div>
+            )}
+
+            <AdministrativeStateControl
+              key={`admin-state:${solicitudId}`}
+              solicitudId={solicitudId}
+              updatedAt={resolvedSolicitud.updatedAt}
+              isEditing={isEditing}
+            />
+
+            {["Transferir", "Pagada"].includes(
+              resolvedSolicitud.estadoActual.code,
+            ) &&
+            (currentUser?.isSystemAdmin ||
+              ["TESORERIA", "RIESGO"].includes(
+                currentUser?.workflowOwner?.code ?? "",
+              )) ? (
+              <ExternalPaymentControl
+                key={`external-payment:${solicitudId}`}
+                solicitudId={solicitudId}
+                isPaid={resolvedSolicitud.estadoActual.code === "Pagada"}
+              />
+            ) : null}
+            <DetalleLectura
+              prestamoEditable={
+                isEditing ? (
+                  <SolicitudSection
+                    ficha
+                    cuotaCalculoMensaje={
+                      cuotaObjetivoTexto !== null &&
+                      parseMoneyValue(cuotaObjetivoTexto) <= 0
+                        ? "Ingresá una cuota mayor a cero."
+                        : cuotaEdicion.isPending
+                          ? "Calculando..."
+                          : cuotaEdicion.error?.message
+                    }
+                    assignmentOptions={assignmentAgentOptions}
+                    assignmentValue={selectedAssignmentValue}
+                    assignmentValueLabel={assignmentValueLabel}
+                    isFieldEditableByKey={isSolicitudFieldEditable}
+                    isEditing={isEditing}
+                    isExecutiveAssignmentDisabled={!canManageAssignment}
+                    montoTopeError={montoTopeError}
+                    mostrarEjecutivo={!isVendedor(currentUser)}
+                    lineas={lineasSimulador}
+                    onAssignmentChange={setSelectedAssignmentValue}
+                    onBooleanChange={updateSolicitudBooleanField}
+                    onChange={updateSolicitudField}
+                    readonlyAppearanceStyle={readonlyAppearanceStyle}
+                    solicitud={resolvedSolicitud}
+                    ultimaNovedad={ultimaNovedad}
+                    values={{
+                      ...currentValues.solicitud,
+                      montoAFinanciar:
+                        amountLocked || cuotaObjetivoTexto !== null
+                          ? currentValues.solicitud.montoAFinanciar
+                          : ajustarMontoTexto(
+                              currentValues.solicitud.montoAFinanciar,
+                              lineaEdicion,
+                            ),
+                      cuotas: ajustarCuotasTexto(
+                        currentValues.solicitud.cuotas,
+                        lineaEdicion,
+                      ),
+                      cuotaResultante: isEditing
+                        ? cuotaEdicion.data
+                          ? formatDecimalMoneyValue(
+                              cuotaEdicion.data.cuotaResultante,
+                            )
+                          : (cuotaObjetivoTexto ?? "")
+                        : currentValues.solicitud.cuotaResultante,
+                    }}
+                  />
+                ) : undefined
+              }
+              titularEditable={
+                isEditing ? (
+                  <TitularFields
+                    datosLaborales={resolvedSolicitud.datosLaborales}
+                    datosLaboralesValues={currentValues.datosLaborales}
+                    errors={titularErrors}
+                    ficha
+                    isEditing
+                    isFieldEditableByKey={isSolicitudFieldEditable}
+                    onBooleanChange={updateTitularBooleanField}
+                    onChange={updateTitularField}
+                    onDatosLaboralesChange={updateDatosLaboralesField}
+                    readonlyAppearanceStyle={readonlyAppearanceStyle}
+                    titular={resolvedSolicitud.titular}
+                    values={currentValues.titular}
+                  />
+                ) : undefined
+              }
+              situacionSocio={
+                <SituacionDelSocio
+                  canViewDetalle={
+                    Boolean(currentUser) &&
+                    canViewPrestamosDelSocio(currentUser)
+                  }
+                  nroSocio={resolvedSolicitud.titular.nroSocio}
+                  onVerPrestamos={() => {
+                    if (!cambiarVistaTab("solicitud")) return;
+                    setSolicitanteTab("prestamos");
+                    setSolicitanteNavigation((value) => value + 1);
+                    requestAnimationFrame(() => {
+                      const target = document.getElementById(
+                        "solicitante-prestamos",
+                      );
+                      target?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                      target?.focus({ preventScroll: true });
+                    });
+                  }}
+                  revision={JSON.stringify([
+                    resolvedSolicitud.titular.nroDocumento,
+                    resolvedSolicitud.titular.tipoDocumento,
+                    resolvedSolicitud.lineaPrestamoLegacyOid,
+                  ])}
+                  solicitudId={resolvedSolicitud.id}
+                />
+              }
+              ejecutivo={
+                isVendedor(currentUser)
+                  ? undefined
+                  : (resolvedSolicitud.assignedToUser?.fullName ?? null)
+              }
+              firmaLegajo={
+                verFirmaLegajo ? (
+                  <div id="solicitud-revision-firma" tabIndex={-1}>
+                    <DocumentReviewPanel
+                      solicitudId={solicitudId}
+                      editing={false}
+                    />
+                  </div>
+                ) : null
+              }
+              solicitud={resolvedSolicitud}
+            />
+            <SolicitanteSection
+              key={`${resolvedSolicitud.id}:${solicitanteNavigation}`}
+              activeTab={solicitanteTab}
+              adjuntos={adjuntos}
+              canCreateAdicional={isEditing && canUploadAdjuntos}
+              canCreateAdjunto={canUploadAdjuntos}
+              canDeleteAdjunto={isEditing && canDeleteAdjuntos}
+              canDownloadAdjunto={canDownloadAdjuntos}
+              canCreateCancelaciones={canCreateCancelaciones}
+              canManageCancelaciones={canManageCancelaciones}
+              datosLaborales={resolvedSolicitud.datosLaborales}
+              datosPersonalesTab={datosPersonalesTab}
+              deletingAdjuntoId={deletingAdjuntoId}
+              downloadingAdjuntoId={downloadingAdjuntoId}
+              errorMessage={
+                adjuntosError
+                  ? "No se pudieron cargar los adjuntos de la solicitud."
+                  : undefined
+              }
+              isFieldEditableByKey={isSolicitudFieldEditable}
+              isGarantiasFullyEditable={canCreateGarantias}
+              isGarantiasPartiallyEditable={canEditGarantias}
+              isEditing={isEditing}
+              isLoadingAdjuntos={isLoadingAdjuntos}
+              isUploadingAdjunto={isUploadingAdjunto}
+              onConyugeChange={updateConyugeField}
+              onDatosLaboralesChange={updateDatosLaboralesField}
+              editingAdjuntoId={editingAdjuntoId}
+              onDatosPersonalesTabChange={setDatosPersonalesTab}
+              onDeleteAdjunto={handleDeleteAdjunto}
+              onDownloadAdjunto={handleDownloadAdjunto}
+              onEditAdjunto={
+                isEditing && canDeleteAdjuntos
+                  ? handleOpenEditAdjunto
+                  : undefined
+              }
+              onGarantiaCreate={handleGarantiaCreate}
+              onNewAdjuntosLote={handleAddAdjuntosLote}
+              onPreviewAdjunto={handlePreviewAdjunto}
+              previewingAdjuntoId={previewingAdjuntoId}
+              onGarantiaEdit={handleGarantiaEdit}
+              onTabChange={setSolicitanteTab}
+              onTitularBooleanChange={updateTitularBooleanField}
+              onTitularChange={updateTitularField}
+              readonlyAppearanceStyle={readonlyAppearanceStyle}
+              ocultarCancelaciones={isVendedor(currentUser)}
+              soloComplementos
+              shouldShowDatosLaborales={shouldShowDatosLaborales}
+              solicitudId={solicitudId}
+              garantias={currentGarantias}
+              titularConyuge={resolvedSolicitud.conyuge}
+              titularConyugeValues={currentValues.conyuge}
+              titularDatosLaboralesValues={currentValues.datosLaborales}
+              titular={resolvedSolicitud.titular}
+              titularErrors={titularErrors}
+              titularValues={currentValues.titular}
+            />
+            <SolicitudWorkflowHistorySection
+              errorMessage={workflowHistoryErrorMessage}
+              history={workflowHistory}
+              isLoading={isLoadingWorkflowHistory}
+            />
+          </div>
+        ) : null}
+
+        {canViewCalculadora && vistaTab === "credixsa" ? (
+          <div className="min-h-40 flex-1 overflow-y-auto">
+            <CredixsaInformeSection
+              isActive={vistaTab === "credixsa"}
+              solicitudId={solicitudId}
+            />
+          </div>
+        ) : null}
+
+        {canViewCalculadora && evaluacionAbierta ? (
+          <div className={vistaTab === "evaluacion" ? "contents" : "hidden"}>
+            <EvaluacionRecibosView
+              // Si se guardan cambios en la solicitud, se rearma con los datos nuevos.
+              key={`${solicitudId}:${resolvedSolicitud.updatedAt}`}
+              solicitudId={solicitudId}
+              recibos={recibos}
+              open={visorRecibosOpen}
+              selectedId={visorRecibosOpen ? reciboView.selectedId : null}
+              onClose={() => setReciboView(null)}
+              onSelect={(selectedId) =>
+                setReciboView({ solicitudId, selectedId })
+              }
+              loading={isLoadingAdjuntos}
+              error={
+                adjuntosError
+                  ? "No se pudo obtener el listado de recibos de sueldo."
+                  : null
+              }
+            >
+              <Suspense
+                fallback={
+                  <SolicitudesContentLoader label="Cargando calculadora..." />
+                }
+              >
+                <CalculadoraMutualSheet
+                  acciones={
+                    !visorRecibosOpen && recibos.length > 0 ? (
+                      <Button
+                        onClick={() =>
+                          setReciboView({
+                            solicitudId,
+                            selectedId: recibos[0]?.id ?? null,
+                          })
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <FileText className="size-4" />
+                        {recibos.length > 1
+                          ? `Ver recibos (${recibos.length})`
+                          : "Ver recibo"}
+                      </Button>
+                    ) : null
+                  }
+                  className="flex-1 min-w-0"
+                  onCambiosSinGuardarChange={setEvaluacionConCambios}
+                  puedeGuardar={canGuardarEvaluacion}
+                  source={{ kind: "embedded", solicitudId }}
+                />
+              </Suspense>
+            </EvaluacionRecibosView>
+          </div>
+        ) : null}
+
+        <NuevaGarantiaModal
+          defaultValues={
+            editingGarantiaIndex === null
+              ? undefined
+              : currentGarantias[editingGarantiaIndex]
+          }
+          isFieldEditable={isGarantiaFieldEditable}
+          onOpenChange={handleGarantiaModalOpenChange}
+          onSave={handleGarantiaSave}
+          open={isGarantiaModalOpen}
+          saveLabel={
+            editingGarantiaIndex === null
+              ? "Agregar adicional"
+              : "Guardar cambios"
+          }
+          title={
+            editingGarantiaIndex === null
+              ? "Agregar adicional"
+              : "Editar garantía"
+          }
+        />
+        {isSimuladorOpen ? (
+          <Suspense
+            fallback={<ModalLoadingOverlay label="Cargando simulador..." />}
+          >
+            <SimuladorPrestamoModal
+              isLoadingLineas={isLoadingLineasSimulador}
+              solicitudId={solicitudId}
+              onLimitsAdjusted={() => {
+                void queryClient.invalidateQueries({
+                  queryKey:
+                    solicitudesCoreQueryKeys.lineasPrestamo(solicitudId),
+                });
+              }}
+              defaultLineaOid={
+                resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
+              }
+              valoresIniciales={{
+                cuotas: resolvedSolicitud.cuotas ?? null,
+                montoAFinanciar:
+                  resolvedSolicitud.montoAFinanciar === null ||
+                  resolvedSolicitud.montoAFinanciar === undefined
+                    ? null
+                    : Number(resolvedSolicitud.montoAFinanciar),
+              }}
+              lineas={lineasSimulador}
+              onApply={
+                canEnterEditMode
+                  ? (valores) => {
+                      if (
+                        amountLocked &&
+                        parseMoneyValue(valores.montoAFinanciar) !==
+                          Number(resolvedSolicitud.montoAFinanciar)
+                      ) {
+                        toast.error(
+                          "El monto está bloqueado. Anulá el préstamo en Vimarx antes de aplicar otro monto.",
+                        );
+                        return;
+                      }
+                      // El simulador se abre desde la barra aunque la solicitud
+                      // no este en edicion. Antes, aplicar en ese caso descartaba
+                      // los valores sin avisar; ahora entra en edicion con los
+                      // valores cargados, para revisarlos y guardar.
+                      if (!isEditing) {
+                        handleStartEditing();
+                      }
+
+                      setCuotaObjetivoTexto(null);
+                      setEditableValues((current) => {
+                        const base =
+                          current ??
+                          mapSolicitudCoreToEditableValues(resolvedSolicitud);
+
+                        return {
+                          ...base,
+                          solicitud: {
+                            ...base.solicitud,
+                            cuotaResultante: valores.cuotaResultante,
+                            cuotas: valores.cuotas,
+                            fechaPrimerVencimiento:
+                              valores.fechaPrimerVencimiento,
+                            montoAFinanciar: valores.montoAFinanciar,
+                          },
+                        };
+                      });
+                      setIsSimuladorOpen(false);
+                    }
+                  : undefined
+              }
+              onOpenChange={setIsSimuladorOpen}
+              open={isSimuladorOpen}
             />
           </Suspense>
-        </EvaluacionRecibosView>
-      ) : null}
-
-      <NuevaGarantiaModal
-        defaultValues={
-          editingGarantiaIndex === null
-            ? undefined
-            : currentGarantias[editingGarantiaIndex]
-        }
-        isFieldEditable={isGarantiaFieldEditable}
-        onOpenChange={handleGarantiaModalOpenChange}
-        onSave={handleGarantiaSave}
-        open={isGarantiaModalOpen}
-        saveLabel={
-          editingGarantiaIndex === null
-            ? "Agregar adicional"
-            : "Guardar cambios"
-        }
-        title={
-          editingGarantiaIndex === null
-            ? "Agregar adicional"
-            : "Editar garantía"
-        }
-      />
-      {isSimuladorOpen ? (
-        <Suspense
-          fallback={<ModalLoadingOverlay label="Cargando simulador..." />}
-        >
-          <SimuladorPrestamoModal
-            isLoadingLineas={isLoadingLineasSimulador}
-            solicitudId={solicitudId}
-            onLimitsAdjusted={() => {
-              void queryClient.invalidateQueries({
-                queryKey: solicitudesCoreQueryKeys.lineasPrestamo(solicitudId),
-              });
-            }}
-            defaultLineaOid={
-              resolvedSolicitud.lineaPrestamoLegacyOid ?? undefined
-            }
-            lineas={lineasSimulador}
-            onApply={
-              canEnterEditMode
-                ? (valores) => {
-                    if (
-                      amountLocked &&
-                      parseMoneyValue(valores.montoAFinanciar) !==
-                        Number(resolvedSolicitud.montoAFinanciar)
-                    ) {
-                      toast.error(
-                        "El monto está bloqueado. Anulá el préstamo en Vimarx antes de aplicar otro monto.",
-                      );
-                      return;
-                    }
-                    // El simulador se abre desde la barra aunque la solicitud
-                    // no este en edicion. Antes, aplicar en ese caso descartaba
-                    // los valores sin avisar; ahora entra en edicion con los
-                    // valores cargados, para revisarlos y guardar.
-                    if (!isEditing) {
-                      handleStartEditing();
-                    }
-
-                    setCuotaObjetivoTexto(null);
-                    setEditableValues((current) => {
-                      const base =
-                        current ??
-                        mapSolicitudCoreToEditableValues(resolvedSolicitud);
-
-                      return {
-                        ...base,
-                        solicitud: {
-                          ...base.solicitud,
-                          cuotaResultante: valores.cuotaResultante,
-                          cuotas: valores.cuotas,
-                          fechaPrimerVencimiento:
-                            valores.fechaPrimerVencimiento,
-                          montoAFinanciar: valores.montoAFinanciar,
-                        },
-                      };
-                    });
-                    setIsSimuladorOpen(false);
-                  }
-                : undefined
-            }
-            onOpenChange={setIsSimuladorOpen}
-            open={isSimuladorOpen}
-          />
-        </Suspense>
-      ) : null}
-      <AdjuntoPreviewModal
-        file={previewFile}
-        onOpenChange={(open) => {
-          if (!open) setPreviewFile(null);
-        }}
-        open={previewFile !== null}
-      />
-      <NuevaAdjuntoModal
-        initialValues={
-          editAdjuntoModal
-            ? {
-                adicional: editAdjuntoModal.adicional ?? undefined,
-                comentario: editAdjuntoModal.comentario ?? undefined,
-                descripcion: editAdjuntoModal.descripcion ?? undefined,
-                existingFileName: editAdjuntoModal.archivoNombre ?? undefined,
-                nroDocumento: editAdjuntoModal.nroDocumento ?? undefined,
-                restringido: editAdjuntoModal.restringido,
-                tipoAdjunto: editAdjuntoModal.tipoAdjunto ?? undefined,
-              }
-            : undefined
-        }
-        isSaving={isUploadingAdjunto}
-        onOpenChange={(open) => {
-          if (!open) setEditAdjuntoModal(null);
-        }}
-        onSaveEdit={handleSaveEditAdjunto}
-        open={editAdjuntoModal !== null}
-      />
-      <SocioFormDialog
-        initialValues={buildSocioPrefillFromTitular(resolvedSolicitud.titular)}
-        isSaving={createSocioMutation.isPending}
-        onOpenChange={setIsCreateSocioModalOpen}
-        onSubmit={handleCreateSocio}
-        open={isCreateSocioModalOpen}
-        socio={null}
-      />
-      <GenerarPrestamoDialog
-        condicionesKey={JSON.stringify([
-          resolvedSolicitud.lineaPrestamoLegacyOid,
-          resolvedSolicitud.montoAFinanciar,
-          resolvedSolicitud.cuotas,
-          resolvedSolicitud.titular,
-        ])}
-        cuotas={resolvedSolicitud.cuotas}
-        isPending={createPrestamoLegacyMutation.isPending}
-        lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}
-        montoAFinanciar={resolvedSolicitud.montoAFinanciar}
-        onConfirm={(convenio) => void handleCreatePrestamoLegacy(convenio)}
-        onOpenChange={setIsGenerarPrestamoModalOpen}
-        open={isGenerarPrestamoModalOpen}
-        solicitudId={solicitudId}
-      />
-    </article>
+        ) : null}
+        <AdjuntoPreviewModal
+          file={previewFile}
+          onOpenChange={(open) => {
+            if (!open) setPreviewFile(null);
+          }}
+          open={previewFile !== null}
+        />
+        <NuevaAdjuntoModal
+          initialValues={
+            editAdjuntoModal
+              ? {
+                  adicional: editAdjuntoModal.adicional ?? undefined,
+                  comentario: editAdjuntoModal.comentario ?? undefined,
+                  descripcion: editAdjuntoModal.descripcion ?? undefined,
+                  existingFileName: editAdjuntoModal.archivoNombre ?? undefined,
+                  nroDocumento: editAdjuntoModal.nroDocumento ?? undefined,
+                  restringido: editAdjuntoModal.restringido,
+                  tipoAdjunto: editAdjuntoModal.tipoAdjunto ?? undefined,
+                }
+              : undefined
+          }
+          isSaving={isUploadingAdjunto}
+          onOpenChange={(open) => {
+            if (!open) setEditAdjuntoModal(null);
+          }}
+          onSaveEdit={handleSaveEditAdjunto}
+          open={editAdjuntoModal !== null}
+        />
+        <SocioFormDialog
+          initialValues={buildSocioPrefillFromTitular(
+            resolvedSolicitud.titular,
+          )}
+          isSaving={createSocioMutation.isPending}
+          onOpenChange={setIsCreateSocioModalOpen}
+          onSubmit={handleCreateSocio}
+          open={isCreateSocioModalOpen}
+          socio={null}
+        />
+        <GenerarPrestamoDialog
+          condicionesKey={JSON.stringify([
+            resolvedSolicitud.lineaPrestamoLegacyOid,
+            resolvedSolicitud.montoAFinanciar,
+            resolvedSolicitud.cuotas,
+            resolvedSolicitud.titular,
+          ])}
+          cuotas={resolvedSolicitud.cuotas}
+          isPending={createPrestamoLegacyMutation.isPending}
+          lineaPrestamoDescripcion={resolvedSolicitud.lineaPrestamoDescripcion}
+          montoAFinanciar={resolvedSolicitud.montoAFinanciar}
+          onConfirm={(convenio) => void handleCreatePrestamoLegacy(convenio)}
+          onOpenChange={setIsGenerarPrestamoModalOpen}
+          open={isGenerarPrestamoModalOpen}
+          solicitudId={solicitudId}
+        />
+      </article>
+    </div>
   );
 }

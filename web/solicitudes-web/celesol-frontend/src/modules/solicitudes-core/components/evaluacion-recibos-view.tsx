@@ -1,66 +1,90 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  Minus,
+  Plus,
+  X,
+} from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
-import { AdjuntoPreviewContent } from "@/modules/solicitudes-editor/components/AdjuntoPreviewContent";
 import type { SolicitudCoreAdjuntoResponse } from "@/modules/solicitudes/types/solicitudes-core";
 import { downloadSolicitudCoreAdjunto } from "../services/solicitudes-core-api";
 
-function ReciboDocumento({
-  solicitudId,
-  adjunto,
-}: {
-  solicitudId: string;
-  adjunto: SolicitudCoreAdjuntoResponse;
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
+// Altura comun de la franja de la calculadora y la del recibo: una sola linea
+// de acciones arriba de cada mitad.
+export const FRANJA_EVALUACION =
+  "flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-3";
+
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 300;
+const ZOOM_PASO = 25;
+
+function useReciboArchivo(
+  solicitudId: string,
+  adjunto: SolicitudCoreAdjuntoResponse | undefined,
+) {
+  const [estado, setEstado] = useState<{
+    clave: string;
+    file: File | null;
+    error: string | null;
+  } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [url, setUrl] = useState<string | null>(null);
+  const adjuntoId = adjunto?.id;
+  const nombre = adjunto?.archivoNombre;
+  const clave = adjuntoId ? `${adjuntoId}:${attempt}` : "";
+
   useEffect(() => {
+    if (!adjuntoId) return;
     const controller = new AbortController();
-    downloadSolicitudCoreAdjunto(solicitudId, adjunto.id, controller.signal)
+    downloadSolicitudCoreAdjunto(solicitudId, adjuntoId, controller.signal)
       .then((response) => {
         if (controller.signal.aborted) return;
-        setFile(
-          new File(
+        setEstado({
+          clave,
+          error: null,
+          file: new File(
             [response.blob],
-            response.fileName ?? adjunto.archivoNombre ?? "Recibo de sueldo",
+            response.fileName ?? nombre ?? "Recibo de sueldo",
             { type: response.contentType ?? response.blob.type },
           ),
-        );
+        });
       })
       .catch((reason) => {
-        if (!controller.signal.aborted)
-          setError(
+        if (controller.signal.aborted) return;
+        setEstado({
+          clave,
+          error:
             reason instanceof Error
               ? reason.message
               : "No se pudo obtener el recibo.",
-          );
+          file: null,
+        });
       });
     return () => controller.abort();
-  }, [solicitudId, adjunto.id, adjunto.archivoNombre, attempt]);
-  if (error)
-    return (
-      <div role="alert" className="p-3 text-sm">
-        <p>{error}</p>
-        <Button
-          className="mt-2"
-          variant="outline"
-          onClick={() => {
-            setError(null);
-            setAttempt((value) => value + 1);
-          }}
-        >
-          Reintentar
-        </Button>
-      </div>
-    );
-  if (!file)
-    return (
-      <p role="status" className="p-3 text-sm">
-        Cargando recibo de sueldo...
-      </p>
-    );
-  return <AdjuntoPreviewContent file={file} />;
+  }, [solicitudId, adjuntoId, nombre, clave]);
+
+  const actual = estado?.clave === clave ? estado : null;
+  const file = actual?.file ?? null;
+
+  useEffect(() => {
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    queueMicrotask(() => setUrl(objectUrl));
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+      setUrl(null);
+    };
+  }, [file]);
+
+  return {
+    error: actual?.error ?? null,
+    file,
+    reintentar: () => setAttempt((value) => value + 1),
+    url: file ? url : null,
+  };
 }
 
 export function EvaluacionRecibosView({
@@ -70,7 +94,6 @@ export function EvaluacionRecibosView({
   open,
   selectedId,
   onSelect,
-  onOpen,
   onClose,
   loading,
   error,
@@ -81,190 +104,264 @@ export function EvaluacionRecibosView({
   open: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onOpen: () => void;
   onClose: () => void;
   loading: boolean;
   error: string | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [leftPercent, setLeftPercent] = useState(45);
-  const manuallyResized = useRef(false);
-  useEffect(() => {
-    const element = container.current;
-    if (!element) return;
-    // Near the center on large screens, with ~840 px for A–H when space permits.
-    // Observer only changes the initial layout; the user's adjustment takes priority.
-    const observer = new ResizeObserver(([entry]) => {
-      if (manuallyResized.current || !entry || entry.contentRect.width <= 0)
-        return;
-      const percentage = Math.min(
-        65,
-        Math.max(45, (840 / entry.contentRect.width) * 100),
-      );
-      setLeftPercent(Math.round(percentage * 10) / 10);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+  // Mitad y mitad; se puede correr la division a mano.
+  const [leftPercent, setLeftPercent] = useState(50);
+  const [zoom, setZoom] = useState(100);
   const index = Math.max(
     0,
     recibos.findIndex((item) => item.id === selectedId),
   );
-  const selected = recibos[index];
+  const selected = open ? recibos[index] : undefined;
+  const recibo = useReciboArchivo(solicitudId, selected);
+  const esImagen = recibo.file?.type.startsWith("image/") ?? false;
+  const esPdf = recibo.file?.type === "application/pdf";
   const changeWidth = (value: number) => {
-    manuallyResized.current = true;
-    setLeftPercent(Math.max(35, Math.min(75, value)));
+    setLeftPercent(Math.max(35, Math.min(65, value)));
   };
+  const cambiarRecibo = (id: string) => {
+    setZoom(100);
+    onSelect(id);
+  };
+
   return (
-    <div className="flex min-h-72 min-w-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
-        <Button variant="outline" size="sm" onClick={onOpen}>
-          Ver recibos de sueldo
-        </Button>
-        {open ? (
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Cerrar recibos
-          </Button>
-        ) : null}
-        {open && recibos.length > 1 ? (
-          <label className="flex min-w-0 items-center gap-2 text-sm">
-            Recibo de sueldo
-            <select
-              aria-label="Seleccionar recibo de sueldo"
-              className="max-w-64 rounded border border-border bg-background p-1"
-              value={selected?.id ?? ""}
-              onChange={(event) => onSelect(event.target.value)}
-            >
-              {recibos.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.archivoNombre ?? "Recibo de sueldo"}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
-      <div className="flex min-h-0 flex-1 overflow-x-auto">
+    <div className="flex min-h-72 min-w-0 flex-1 overflow-x-auto">
+      <div
+        ref={container}
+        className={`flex min-h-0 flex-1 ${open ? "min-w-[680px]" : "min-w-0"}`}
+      >
         <div
-          ref={container}
-          className={`flex min-h-0 flex-1 ${open ? "min-w-[680px]" : "min-w-0"}`}
+          id="evaluacion-panel"
+          className="flex min-h-0 min-w-0 flex-col"
+          style={{ width: open ? `${leftPercent}%` : "100%" }}
         >
-          <div
-            id="evaluacion-panel"
-            className="flex min-h-0 min-w-0 flex-col"
-            style={{ width: open ? `${leftPercent}%` : "100%" }}
-          >
-            {children}
-          </div>
-          {open ? (
-            <>
-              <div
-                role="separator"
-                aria-label="Ajustar ancho de Evaluación y recibo"
-                aria-orientation="vertical"
-                aria-controls="evaluacion-panel"
-                aria-valuemin={35}
-                aria-valuemax={75}
-                aria-valuenow={leftPercent}
-                tabIndex={0}
-                className="z-10 w-2 shrink-0 touch-none cursor-col-resize bg-border focus-visible:bg-primary focus-visible:outline-none"
-                onKeyDown={(event) => {
-                  if (
-                    ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                      event.key,
-                    )
-                  ) {
-                    event.preventDefault();
-                    changeWidth(
-                      event.key === "Home"
-                        ? 35
-                        : event.key === "End"
-                          ? 75
-                          : leftPercent + (event.key === "ArrowLeft" ? -2 : 2),
-                    );
-                  }
-                }}
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                }}
-                onPointerMove={(event) => {
-                  if (!event.currentTarget.hasPointerCapture(event.pointerId))
-                    return;
-                  const rect = container.current?.getBoundingClientRect();
-                  if (rect)
-                    changeWidth(
-                      ((event.clientX - rect.left) / rect.width) * 100,
-                    );
-                }}
-                onPointerUp={(event) =>
-                  event.currentTarget.releasePointerCapture(event.pointerId)
-                }
-              />
-              <aside
-                aria-label="Recibos de sueldo"
-                className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border"
-              >
-                <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
-                  <p className="min-w-0 flex-1 break-all text-sm font-medium">
-                    {selected?.archivoNombre ?? "Recibos de sueldo"}
-                  </p>
-                  <Button
-                    aria-label="Cerrar visor de recibos"
-                    size="icon-sm"
-                    variant="ghost"
-                    onClick={onClose}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                  {recibos.length > 1 ? (
-                    <div className="flex w-full flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={index === 0}
-                        onClick={() => onSelect(recibos[index - 1].id)}
-                      >
-                        Anterior
-                      </Button>
-                      <span aria-live="polite" className="text-xs">
-                        Recibo {index + 1} de {recibos.length}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={index === recibos.length - 1}
-                        onClick={() => onSelect(recibos[index + 1].id)}
-                      >
-                        Siguiente
-                      </Button>
-                    </div>
-                  ) : null}
-                </header>
-                <div className="min-h-0 flex-1">
-                  {loading ? (
-                    <p role="status" className="p-3 text-sm">
-                      Cargando listado de recibos...
-                    </p>
-                  ) : error ? (
-                    <p role="alert" className="p-3 text-sm">
-                      {error}
-                    </p>
-                  ) : !selected ? (
-                    <p className="p-3 text-sm">
-                      No hay recibos de sueldo disponibles.
-                    </p>
-                  ) : (
-                    <ReciboDocumento
-                      key={`${solicitudId}:${selected.id}`}
-                      solicitudId={solicitudId}
-                      adjunto={selected}
-                    />
-                  )}
-                </div>
-              </aside>
-            </>
-          ) : null}
+          {children}
         </div>
+        {open ? (
+          <>
+            <div
+              role="separator"
+              aria-label="Ajustar ancho de Evaluación y recibo"
+              aria-orientation="vertical"
+              aria-controls="evaluacion-panel"
+              aria-valuemin={35}
+              aria-valuemax={65}
+              aria-valuenow={leftPercent}
+              tabIndex={0}
+              className="z-10 w-1.5 shrink-0 touch-none cursor-col-resize bg-border hover:bg-verde/40 focus-visible:bg-verde focus-visible:outline-none"
+              onDoubleClick={() => setLeftPercent(50)}
+              onKeyDown={(event) => {
+                if (
+                  ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+                ) {
+                  event.preventDefault();
+                  changeWidth(
+                    event.key === "Home"
+                      ? 35
+                      : event.key === "End"
+                        ? 65
+                        : leftPercent + (event.key === "ArrowLeft" ? -2 : 2),
+                  );
+                }
+              }}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (!event.currentTarget.hasPointerCapture(event.pointerId))
+                  return;
+                const rect = container.current?.getBoundingClientRect();
+                if (rect)
+                  changeWidth(((event.clientX - rect.left) / rect.width) * 100);
+              }}
+              onPointerUp={(event) =>
+                event.currentTarget.releasePointerCapture(event.pointerId)
+              }
+              title="Arrastrá para cambiar el ancho (doble clic: mitad y mitad)"
+            />
+            <aside
+              aria-label="Recibos de sueldo"
+              className="flex min-h-0 min-w-0 flex-1 flex-col"
+            >
+              {/* Una sola franja: que recibo es y todo lo que se le puede hacer. */}
+              <header className={FRANJA_EVALUACION}>
+                {recibos.length > 1 ? (
+                  <div className="flex shrink-0 items-center">
+                    <Button
+                      aria-label="Recibo anterior"
+                      disabled={index === 0}
+                      onClick={() => cambiarRecibo(recibos[index - 1].id)}
+                      size="icon-sm"
+                      variant="ghost"
+                    >
+                      <ChevronLeft className="size-4" />
+                    </Button>
+                    <span
+                      aria-live="polite"
+                      className="text-xs text-foreground-secondary tabular-nums"
+                    >
+                      {index + 1}/{recibos.length}
+                    </span>
+                    <Button
+                      aria-label="Recibo siguiente"
+                      disabled={index === recibos.length - 1}
+                      onClick={() => cambiarRecibo(recibos[index + 1].id)}
+                      size="icon-sm"
+                      variant="ghost"
+                    >
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                ) : null}
+                <p
+                  className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+                  title={selected?.archivoNombre ?? undefined}
+                >
+                  {selected?.archivoNombre ?? "Recibo de sueldo"}
+                </p>
+                {esImagen || esPdf ? (
+                  <div className="flex shrink-0 items-center">
+                    <Button
+                      aria-label="Achicar el recibo"
+                      disabled={zoom <= ZOOM_MIN}
+                      onClick={() =>
+                        setZoom((value) =>
+                          Math.max(ZOOM_MIN, value - ZOOM_PASO),
+                        )
+                      }
+                      size="icon-sm"
+                      variant="ghost"
+                    >
+                      <Minus className="size-4" />
+                    </Button>
+                    <button
+                      className="w-11 text-center text-xs text-foreground-secondary tabular-nums hover:text-foreground"
+                      onClick={() => setZoom(100)}
+                      title="Volver al ancho de la pantalla"
+                      type="button"
+                    >
+                      {zoom}%
+                    </button>
+                    <Button
+                      aria-label="Agrandar el recibo"
+                      disabled={zoom >= ZOOM_MAX}
+                      onClick={() =>
+                        setZoom((value) =>
+                          Math.min(ZOOM_MAX, value + ZOOM_PASO),
+                        )
+                      }
+                      size="icon-sm"
+                      variant="ghost"
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  </div>
+                ) : null}
+                <Button
+                  aria-label="Abrir el recibo en otra pestaña"
+                  asChild
+                  disabled={!recibo.url}
+                  size="icon-sm"
+                  title="Abrir en otra pestaña"
+                  variant="ghost"
+                >
+                  <a
+                    href={recibo.url ?? undefined}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink className="size-4" />
+                  </a>
+                </Button>
+                <Button
+                  aria-label="Descargar el recibo"
+                  asChild
+                  disabled={!recibo.url}
+                  size="icon-sm"
+                  title="Descargar"
+                  variant="ghost"
+                >
+                  <a
+                    download={recibo.file?.name}
+                    href={recibo.url ?? undefined}
+                  >
+                    <Download className="size-4" />
+                  </a>
+                </Button>
+                <Button
+                  aria-label="Cerrar el recibo"
+                  onClick={onClose}
+                  size="icon-sm"
+                  title="Cerrar el recibo"
+                  variant="ghost"
+                >
+                  <X className="size-4" />
+                </Button>
+              </header>
+              <div
+                aria-label="Contenido del recibo"
+                className="min-h-0 flex-1 overflow-auto bg-background/50"
+                tabIndex={0}
+              >
+                {loading ? (
+                  <p role="status" className="p-3 text-sm">
+                    Cargando listado de recibos...
+                  </p>
+                ) : error ? (
+                  <p role="alert" className="p-3 text-sm">
+                    {error}
+                  </p>
+                ) : !selected ? (
+                  <p className="p-3 text-sm">
+                    No hay recibos de sueldo disponibles.
+                  </p>
+                ) : recibo.error ? (
+                  <div role="alert" className="p-3 text-sm">
+                    <p>{recibo.error}</p>
+                    <Button
+                      className="mt-2"
+                      onClick={recibo.reintentar}
+                      variant="outline"
+                    >
+                      Reintentar
+                    </Button>
+                  </div>
+                ) : !recibo.url ? (
+                  <p role="status" className="p-3 text-sm">
+                    Cargando recibo de sueldo...
+                  </p>
+                ) : esImagen ? (
+                  <img
+                    alt={recibo.file?.name ?? "Recibo de sueldo"}
+                    className="max-w-none"
+                    src={recibo.url}
+                    style={{ width: `${zoom}%` }}
+                  />
+                ) : esPdf ? (
+                  // Sin la barra del visor del navegador: el recibo solo se
+                  // mira. El zoom lo maneja la franja de arriba.
+                  <iframe
+                    className="h-full min-h-64 w-full border-none"
+                    key={`${recibo.url}:${zoom}`}
+                    src={`${recibo.url}#toolbar=0&navpanes=0&statusbar=0&${
+                      zoom === 100 ? "view=FitH" : `zoom=${zoom}`
+                    }`}
+                    title={recibo.file?.name ?? "Recibo de sueldo"}
+                  />
+                ) : (
+                  <p className="p-4 text-sm">
+                    Vista previa no disponible para este tipo de archivo. Podés
+                    abrirlo o descargarlo.
+                  </p>
+                )}
+              </div>
+            </aside>
+          </>
+        ) : null}
       </div>
     </div>
   );

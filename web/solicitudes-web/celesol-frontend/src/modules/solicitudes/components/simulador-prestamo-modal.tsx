@@ -58,6 +58,9 @@ type SimuladorPrestamoModalProps = {
   // Mientras se piden las lineas (simulador suelto de las listas).
   isLoadingLineas?: boolean;
   defaultLineaOid?: string;
+  // Desde una solicitud: arranca con su monto y cuotas (si no, los maximos
+  // de la linea).
+  valoresIniciales?: { cuotas: number | null; montoAFinanciar: number | null };
   solicitudId?: string;
   onLimitsAdjusted?: () => void;
   onApply?: (valores: SimulacionAplicada) => void;
@@ -92,6 +95,7 @@ export function SimuladorPrestamoModal({
   lineas = [],
   isLoadingLineas = false,
   defaultLineaOid,
+  valoresIniciales,
   solicitudId,
   onLimitsAdjusted,
   onApply,
@@ -150,19 +154,20 @@ export function SimuladorPrestamoModal({
       // positivo, asi que sin monto cargado va el maximo de la linea.
       montoAFinanciar:
         cuotaObjetivo !== null
-          ? parseMoneyValue(montoAFinanciar) || (selectedLinea?.montoMaximo ?? 1)
+          ? parseMoneyValue(montoAFinanciar) ||
+            (selectedLinea?.montoMaximo ?? 1)
           : parseMoneyValue(ajustarMontoTexto(montoAFinanciar, selectedLinea)),
       cuotas: Number(ajustarCuotasTexto(cuotas, selectedLinea)),
       ...(fechaPrimerVencimiento ? { fechaPrimerVencimiento } : {}),
     },
     Boolean(
       open &&
-        selectedLinea?.oid &&
-        !cuotasError &&
-        Number(cuotas) > 0 &&
-        (cuotaObjetivo !== null
-          ? cuotaObjetivo > 0
-          : parseMoneyValue(montoAFinanciar) > 0),
+      selectedLinea?.oid &&
+      !cuotasError &&
+      Number(cuotas) > 0 &&
+      (cuotaObjetivo !== null
+        ? cuotaObjetivo > 0
+        : parseMoneyValue(montoAFinanciar) > 0),
     ),
     (result) => {
       // Con cuota objetivo, que cambie el monto es el resultado, no un ajuste
@@ -192,20 +197,29 @@ export function SimuladorPrestamoModal({
     initialized.current = true;
 
     const lineaDefaults = getLineaDefaults(initialLinea);
+    const desdeSolicitud =
+      valoresIniciales && initialLinea.oid === defaultLineaOid
+        ? valoresIniciales
+        : null;
 
     reset({
       capitalFinanciado: "",
       condiciones: "",
       cuotaResultante: "",
-      cuotas: lineaDefaults.cuotas,
+      cuotas: desdeSolicitud?.cuotas
+        ? String(desdeSolicitud.cuotas)
+        : lineaDefaults.cuotas,
       fechaPrimerVencimiento: "",
       fechaUltimaCuota: "",
       gastosAdministrativos: "",
       lineaOid: initialLinea?.oid ?? "",
-      montoAFinanciar: lineaDefaults.montoAFinanciar,
+      montoAFinanciar: desdeSolicitud?.montoAFinanciar
+        ? formatMoneyAmount(desdeSolicitud.montoAFinanciar)
+        : lineaDefaults.montoAFinanciar,
       tasa: lineaDefaults.tasa,
       total: "",
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al abrir
   }, [open, initialLinea, reset]);
 
   useEffect(() => {
@@ -298,6 +312,7 @@ export function SimuladorPrestamoModal({
           </div>
           <DialogClose asChild>
             <Button
+              aria-label="Cerrar simulador"
               className="text-foreground-muted"
               size="icon-xs"
               type="button"
@@ -366,7 +381,8 @@ export function SimuladorPrestamoModal({
               <div className="grid gap-2 md:grid-cols-3">
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
-                    Monto a Financiar<span className="text-destructive"> *</span>
+                    Monto a Financiar
+                    <span className="text-destructive"> *</span>
                   </span>
                   <MoneyInputField
                     className="h-8 text-xs"
@@ -498,7 +514,11 @@ export function SimuladorPrestamoModal({
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">
                     Tasa
                   </span>
-                  <Input className="h-8 text-xs" readOnly {...register("tasa")} />
+                  <Input
+                    className="h-8 text-xs"
+                    readOnly
+                    {...register("tasa")}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-[0.68rem] font-medium text-foreground-secondary">

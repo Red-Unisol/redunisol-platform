@@ -52,9 +52,12 @@ Salguero (`8057`, cuenta activa verificada por API). El pool puede editarse o pa
 desde **Configuración > Distribución Bitrix** sin cambiar el flujo ni otros pools.
 Fallback de código: únicamente `8057`; un pool vacío explícito se respeta.
 
-Se conserva la ventana semanal, la cola por falta de vendedores online y la
-transferencia del chat del canal habitual. Fuera de horario queda con Maru según la
-regla general. Una fecha de creación ausente o inválida no habilita este bucket.
+Desde la regla general del 30/10/2026, si este pool tiene un unico habilitado se
+asigna directamente a ese vendedor, incluso offline y fuera de horario. Los pools
+multiples o vacios conservan su politica de horario y cola. La transferencia del
+chat se intenta despues de asignar y su rechazo no revierte el responsable.
+Una fecha de creacion ausente o invalida no habilita este bucket; la pausa comercial
+de nuevos leads permanece vigente.
 
 ## Formulario
 
@@ -68,7 +71,8 @@ cambio de ubicación no altera las reglas comerciales de La Rioja.
 - Policía Federal + Buenos Aires, o Policía común + CABA: no ingresan al convenio.
 - Lead del período comercial calificado: negociación pendiente de Kestra y luego revisión con Stefania.
 - Stefania online dentro de horario: responsable sincronizado en lead/negociación y chat transferido.
-- Stefania offline: cola del segmento; al volver online, revisión asignada a Stefania.
+- Unico habilitado offline o fuera de horario: revision asignada directamente a
+  ese vendedor. Pool vacio o pausado: no se asigna por esta excepcion.
 - Fecha anterior al 14/09, ausente o inválida: sin nueva distribución automática del segmento.
 - Aprobación crediticia o rechazo BCRA específico: no definidos; evaluación manual.
 - `01/10 23:59:59 -03`: conserva medición, WhatsApp y circuito comercial.

@@ -1,13 +1,14 @@
 import {
+  ArrowLeft,
+  ChevronRight,
   CircleAlert,
   LogOut,
   Menu,
   Pencil,
-  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
@@ -28,6 +29,9 @@ type AppTopbarProps = {
   titleIcon: LucideIcon;
   title?: string | null;
   titleBadge?: string | null;
+  backLink?: { label: string; to: string } | null;
+  // Contenedor que la pagina completa por portal (cabecera del detalle).
+  slotRef?: (element: HTMLDivElement | null) => void;
   onToggleSidebar: () => void;
 };
 
@@ -50,6 +54,8 @@ export function AppTopbar({
   titleIcon: TitleIcon,
   title,
   titleBadge,
+  backLink,
+  slotRef,
   onToggleSidebar,
 }: AppTopbarProps) {
   const navigate = useNavigate();
@@ -91,38 +97,65 @@ export function AppTopbar({
   return (
     <header
       data-compact={compact || undefined}
-      className={`app-topbar flex shrink-0 items-center justify-between border-b border-border bg-surface ${compact ? "h-[var(--app-topbar-height,2.5rem)] gap-2 px-3" : "h-16 px-4"}`}
+      className={`app-topbar flex shrink-0 items-center justify-between bg-marino pr-4 font-marca text-white ${
+        compact ? "h-[var(--app-topbar-height,2.5rem)]" : "h-16"
+      }`}
     >
-      <div
-        className={`flex min-w-0 items-center ${compact ? "flex-1 gap-2" : "gap-4"}`}
-      >
-        <button
-          aria-label="Mostrar u ocultar menú lateral"
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground-secondary transition hover:bg-background hover:text-foreground"
-          onClick={onToggleSidebar}
-          type="button"
-        >
-          <Menu className="size-5" />
-        </button>
-        <div
-          className={`flex min-w-0 items-center gap-3 ${compact ? "" : "md:ml-[15.25rem]"}`}
-        >
-          <TitleIcon
-            className={`${compact ? "hidden size-4.5 sm:block" : "size-6"} shrink-0 text-foreground-secondary`}
-          />
+      <div className="flex min-w-0 flex-1 items-center">
+        {/* Mismo ancho que el menú lateral (w-52) para que el título arranque sobre el contenido. */}
+        <div className="flex shrink-0 items-center gap-2 px-3 md:w-52">
+          <button
+            aria-label="Mostrar u ocultar menú lateral"
+            className="inline-flex size-9 items-center justify-center rounded-md text-marino-foreground-secondary transition hover:bg-white/10 hover:text-white"
+            onClick={onToggleSidebar}
+            type="button"
+          >
+            <Menu className="size-5" />
+          </button>
+          {/* En el detalle (barra compacta) solo queda el menu, para ganar alto. */}
+          <div className={`hidden leading-tight ${compact ? "" : "md:block"}`}>
+            <p className="text-[0.95rem] font-bold">Redunisol</p>
+            <p className="text-[0.62rem] font-bold tracking-[0.14em] text-verde-claro uppercase">
+              Solicitudes
+            </p>
+          </div>
+        </div>
+        <div className="flex min-w-0 items-center gap-2.5 md:pl-4">
+          {backLink ? (
+            <>
+              <Link
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-marino-foreground-secondary transition hover:bg-white/20 hover:text-white focus-visible:ring-2 focus-visible:ring-verde-claro focus-visible:outline-none"
+                aria-label={`Volver a ${backLink.label}`}
+                to={backLink.to}
+              >
+                <ArrowLeft className="size-4" />
+                {/* En celular queda solo la flecha: el lugar es para la solicitud. */}
+                <span className="hidden sm:inline">{backLink.label}</span>
+              </Link>
+              {title ? (
+                <ChevronRight
+                  aria-hidden
+                  className="hidden size-4 shrink-0 text-marino-foreground-secondary/60 sm:block"
+                />
+              ) : null}
+            </>
+          ) : (
+            <TitleIcon className="size-5 shrink-0 text-verde-claro" />
+          )}
           <div className="flex min-w-0 items-center gap-3">
             {title ? (
-              <h1 className="text-[1.85rem] leading-none font-semibold text-foreground">
+              <h1 className="truncate text-lg leading-none font-semibold md:text-xl">
                 {title}
               </h1>
             ) : null}
             {titleBadge ? (
-              <span className="block min-w-0 truncate rounded-full border border-input-border bg-background px-3 py-1 text-sm font-medium text-foreground-secondary">
+              <span className="inline-flex shrink-0 items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-marino-foreground-secondary">
                 {titleBadge}
               </span>
             ) : null}
           </div>
         </div>
+        <div className="flex min-w-0 flex-1 items-center" ref={slotRef} />
       </div>
 
       <div
@@ -133,11 +166,13 @@ export function AppTopbar({
           <PopoverTrigger asChild>
             <button
               aria-label="Usuario"
-              className="inline-flex size-9 items-center justify-center rounded-md transition hover:bg-background"
+              className="inline-flex size-9 items-center justify-center rounded-md transition hover:bg-white/10"
               type="button"
             >
               <Avatar className="size-7">
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                <AvatarFallback className="bg-verde text-xs font-semibold text-white">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
             </button>
           </PopoverTrigger>
@@ -201,14 +236,6 @@ export function AppTopbar({
             </div>
           </PopoverContent>
         </PopoverRoot>
-
-        <button
-          aria-label="Configuración"
-          className="inline-flex size-9 items-center justify-center rounded-md text-foreground-secondary transition hover:bg-background hover:text-foreground"
-          type="button"
-        >
-          <Settings className="size-5" />
-        </button>
       </div>
     </header>
   );

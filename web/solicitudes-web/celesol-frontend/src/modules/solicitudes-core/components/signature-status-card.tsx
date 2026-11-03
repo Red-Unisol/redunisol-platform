@@ -1,17 +1,36 @@
-import { useState } from "react";
 import { Check, Copy, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/shared/components/ui/button";
 import type { SignatureSummary } from "../services/document-review-api";
 import { signatureStatusLabels } from "../utils/signature-status-labels";
 
+// Color de la etiqueta segun en que punto esta la firma.
+const ESTILO_ESTADO: Record<SignatureSummary["status"], string> = {
+  approved: "border-verde/30 bg-[#e9f1ed] text-[#2f5f4b]",
+  requested_again: "border-amber-500/40 bg-amber-50 text-amber-800",
+  to_review: "border-sky-300 bg-sky-50 text-sky-800",
+  waiting: "border-border bg-[#f6f8f7] text-foreground-secondary",
+};
+
+function Paso({ hecho, texto }: { hecho: boolean; texto: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 ${hecho ? "text-foreground" : "text-foreground-secondary"}`}
+    >
+      {hecho ? <Check aria-hidden className="size-3.5 text-verde" /> : null}
+      {texto}
+    </span>
+  );
+}
+
+// Seguimiento de la firma para quien no decide (vendedor, Riesgo, Tesoreria):
+// una franja con el estado, el avance y el enlace para el socio.
 export function SignatureStatusCard({
   signature,
-  analysisReady,
 }: {
   signature: SignatureSummary;
-  analysisReady: boolean;
+  analysisReady?: boolean;
 }) {
-  const [copyMessage, setCopyMessage] = useState("");
   const completed = signature.completedAttempts > 0;
   const lastCompleted =
     signature.lastCompletedAt &&
@@ -22,102 +41,90 @@ export function SignatureStatusCard({
           timeZone: "America/Argentina/Buenos_Aires",
         }).format(new Date(signature.lastCompletedAt))
       : null;
+
+  async function copiarEnlace() {
+    try {
+      await navigator.clipboard.writeText(signature.link!);
+      toast.success("Enlace copiado. Podés enviárselo al socio.");
+    } catch {
+      toast.error(
+        "No se pudo copiar. Abrí el enlace y copialo desde el navegador.",
+      );
+    }
+  }
+
   return (
     <section
-      className="space-y-3 rounded-lg border border-border bg-surface p-4"
       aria-label="Seguimiento de firma"
+      className="rounded-lg border border-border bg-surface px-4 py-3"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-semibold">Firma del legajo digital</h2>
-          <p className="mt-1 text-sm text-foreground-secondary">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex items-center gap-2.5">
+          <h2 className="font-marca text-[0.9375rem] font-bold tracking-[-0.01em] text-marino">
+            Firma del legajo
+          </h2>
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ESTILO_ESTADO[signature.status]}`}
+          >
             {signatureStatusLabels[signature.status]}
-          </p>
+          </span>
         </div>
-        <span className="rounded-full border border-border px-3 py-1 text-xs">
-          {analysisReady ? "Análisis terminado" : "Análisis en curso"}
-        </span>
-      </div>
-      <div
-        className="flex flex-wrap gap-x-6 gap-y-2 text-sm"
-        aria-label="Avance de la firma"
-      >
-        <span className="inline-flex items-center gap-2">
-          <span
-            className={`inline-flex size-6 items-center justify-center rounded-full border ${completed ? "border-primary bg-primary text-white" : "border-border text-foreground-muted"}`}
-            aria-hidden="true"
-          >
-            {completed ? <Check className="size-4" /> : "1"}
-          </span>
-          {completed ? "Firma enviada" : "Sin firmas enviadas"}
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span
-            className={`inline-flex size-6 items-center justify-center rounded-full border ${signature.approved ? "border-green-700 bg-green-700 text-white" : "border-border text-foreground-muted"}`}
-            aria-hidden="true"
-          >
-            {signature.approved ? <Check className="size-4" /> : "2"}
-          </span>
-          {signature.approved
-            ? "Validada por Legajos"
-            : "Pendiente de validación"}
-        </span>
-      </div>
-      <p className="text-xs text-foreground-secondary">
-        {signature.completedAttempts} intento(s) completo(s) en esta gestión
-        {lastCompleted ? ` · Último: ${lastCompleted}` : ""}.
-      </p>
-      {signature.reason && signature.status === "requested_again" && (
         <div
-          role="status"
-          className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+          aria-label="Avance de la firma"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
         >
-          <strong>Pedile al socio que firme nuevamente.</strong>
-          <p className="mt-1 whitespace-pre-wrap">{signature.reason}</p>
+          <Paso hecho={completed} texto={completed ? "Firmó" : "Sin firma"} />
+          <span aria-hidden className="text-border">
+            ·
+          </span>
+          <Paso
+            hecho={signature.approved}
+            texto={signature.approved ? "Validada por Legajos" : "Sin validar"}
+          />
+          <span aria-hidden className="text-border">
+            ·
+          </span>
+          <span className="text-foreground-secondary">
+            {signature.completedAttempts}{" "}
+            {signature.completedAttempts === 1 ? "intento" : "intentos"}
+            {lastCompleted ? ` · último ${lastCompleted}` : ""}
+          </span>
         </div>
-      )}
-      {signature.link ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              void (async () => {
-                try {
-                  await navigator.clipboard.writeText(signature.link!);
-                  setCopyMessage("Enlace copiado. Podés enviárselo al socio.");
-                } catch {
-                  setCopyMessage(
-                    "No se pudo copiar. Abrí el enlace y copialo desde el navegador.",
-                  );
-                }
-              })();
-            }}
-          >
-            <Copy className="size-4" />
-            Copiar enlace para el socio
-          </Button>
-          <a
-            className="inline-flex items-center gap-1 text-sm text-primary underline"
-            href={signature.link}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <ExternalLink className="size-4" />
-            Abrir enlace
-          </a>
+        <div className="ml-auto flex items-center gap-2">
+          {signature.link ? (
+            <>
+              <Button
+                onClick={() => void copiarEnlace()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Copy className="size-4" />
+                Copiar enlace
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <a href={signature.link} rel="noreferrer" target="_blank">
+                  <ExternalLink className="size-4" />
+                  Abrir
+                </a>
+              </Button>
+            </>
+          ) : (
+            <span className="text-sm text-foreground-secondary">
+              El enlace se habilita al generar el préstamo
+            </span>
+          )}
         </div>
-      ) : (
-        <p className="text-sm text-foreground-secondary">
-          El enlace estará disponible al generar el préstamo.
+      </div>
+      {signature.reason && signature.status === "requested_again" ? (
+        <p
+          className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          role="status"
+        >
+          <strong>Pedile al socio que firme nuevamente:</strong>{" "}
+          {signature.reason}
         </p>
-      )}
-      {copyMessage && (
-        <p role="status" className="text-sm">
-          {copyMessage}
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }

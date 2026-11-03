@@ -1,6 +1,5 @@
-import { ArrowLeft, CircleAlert, FileText } from "lucide-react";
-import { useState } from "react";
-import { Controller } from "react-hook-form";
+import { Calculator, CircleAlert, Save } from "lucide-react";
+import { Controller, useWatch } from "react-hook-form";
 
 import type { CreateSolicitudCoreGarantiaRequest } from "@/modules/solicitudes/types/solicitudes-core";
 import type {
@@ -14,7 +13,7 @@ import {
   StaticMoneyInput,
 } from "@/shared/components/forms/money-input-field";
 import { Button } from "@/shared/components/ui/button";
-import { NUEVA_SOLICITUD_TABS } from "../constants/solicitud-tabs";
+import { cn } from "@/shared/utils/cn";
 import type {
   NuevaSolicitudFormValues,
   NuevaSolicitudTab,
@@ -27,19 +26,15 @@ import {
   getCuotasPlaceholder,
   getMontoAFinanciarPlaceholder,
 } from "../utils/linea-placeholders";
-import { NuevaSolicitudAdjuntosSection } from "./AdjuntosSection";
 import type { AdjuntoLoteItem } from "./AdjuntosLoteModal";
-import { GarantiasSection } from "./GarantiasSection";
-import { NuevaGarantiaModal } from "./NuevaGarantiaModal";
-import { NuevaSolicitudTitularFields } from "./NuevaSolicitudTitularSection";
-import { NuevaSolicitudToolbar } from "./SolicitudToolbar";
+import { AdjuntosNuevaSolicitud } from "./AdjuntosNuevaSolicitud";
 import {
-  LegacyField,
-  Section,
-  SectionTabs,
-  StyledSelect,
-  legacyFieldClassName,
-} from "./fields/base";
+  DatosTitularFields,
+  IdentificacionTitularFields,
+} from "./NuevaSolicitudTitularSection";
+import { StyledSelect, legacyFieldClassName } from "./fields/base";
+import { mensajeDeError } from "../utils/mensaje-de-error";
+import { StackedField } from "./fields/form-card";
 
 const VALIDATION_FIELDS: Array<{
   key: keyof NuevaSolicitudFormValues;
@@ -51,14 +46,18 @@ const VALIDATION_FIELDS: Array<{
   { key: "documento", label: "Tipo de documento" },
   { key: "noDocumento", label: "Nro. de documento" },
   { key: "cuit", label: "CUIT" },
-  { key: "apellidoDenominacion", label: "Apellido / Denominación" },
+  { key: "apellidoDenominacion", label: "Apellido" },
   { key: "nombre", label: "Nombre" },
   { key: "fechaNacimiento", label: "Fecha de nacimiento" },
   { key: "cbu", label: "CBU" },
   { key: "cbuNoHabitual", label: "CBU Transferencias Cuenta No Habitual" },
 ];
 
+// Resultado de buscar al socio por documento.
+export type AvisoDocumento = { texto: string; tipo: "info" | "ok" };
+
 type NuevaSolicitudViewProps = {
+  avisoDocumento?: AvisoDocumento | null;
   cuotaCalculo: {
     mensaje: string | null;
     onCuotaChange: (value: string) => void;
@@ -88,6 +87,8 @@ type NuevaSolicitudViewProps = {
   onOpenSimulador: () => void;
   pendingAdjuntos: PendingSolicitudCoreAdjunto[];
   onSave: () => void;
+  // Ya no se usan aca: no hay pestañas (Garantias se quito) y el envio a
+  // Riesgo se hace desde el detalle (al guardar se navega ahi).
   onTabChange: (tab: NuevaSolicitudTab) => void;
   register: SolicitudFormRegister;
   selectedLinea: LineaPrestamoPresolicitud | undefined;
@@ -99,36 +100,28 @@ type NuevaSolicitudViewProps = {
   isWorkflowTransitionDisabled: boolean;
 };
 
+const NUMERO = "font-semibold tabular-nums";
+
 export function NuevaSolicitudView({
+  avisoDocumento,
   cuotaCalculo,
   adjuntos,
   control,
   errors,
-  garantias,
   isLoadingLineas,
   isSaving,
   isUploadingAdjunto,
   lineas,
-  onAddGarantia,
   onAddAdjuntosLote,
   onEditAdjunto,
   onDeleteAdjunto,
-  onBack,
   onLookupTitularByDocumento,
   onOpenSimulador,
   pendingAdjuntos,
   onSave,
-  onTabChange,
   register,
   selectedLinea,
-  selectedWorkflowTransitionId,
-  tab,
-  workflowTransitionOptions,
-  workflowTransitionPlaceholder,
-  onWorkflowTransitionChange,
-  isWorkflowTransitionDisabled,
 }: NuevaSolicitudViewProps) {
-  const [isGarantiaModalOpen, setIsGarantiaModalOpen] = useState(false);
   const lineaOptions = lineas.flatMap((linea) => {
     const descripcion = linea.descripcion?.trim() ?? "";
     const oid = linea.oid?.trim() ?? "";
@@ -139,74 +132,74 @@ export function NuevaSolicitudView({
 
     return [{ label: descripcion, value: oid || descripcion }];
   });
+  const errorDe = mensajeDeError(errors);
+  const errorItems = errors
+    ? VALIDATION_FIELDS.filter(({ key }) => !!errors[key])
+    : [];
 
   return (
-    <>
-      <article className="flex flex-col rounded-md border border-border bg-surface shadow-sm">
-        <header className="border-b border-border bg-surface px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Button
-              className="text-foreground-secondary"
-              onClick={onBack}
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-            >
-              <ArrowLeft className="size-4" />
-            </Button>
-            <FileText className="size-4 text-primary" />
-            <h1 className="text-[2rem] leading-none font-semibold text-foreground">
-              Solicitud
-            </h1>
+    <div className="flex min-h-full flex-col">
+      <form className="min-w-0 flex-1 space-y-3 p-2 md:p-4">
+        {errorItems.length > 0 ? (
+          <div
+            className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive"
+            role="alert"
+          >
+            <CircleAlert className="size-4 shrink-0" />
+            {/* El motivo de cada error esta debajo de su campo. */}
+            <p className="font-medium">
+              {errorItems.length === 1
+                ? "Hay 1 dato para revisar. Está marcado en rojo."
+                : `Hay ${errorItems.length} datos para revisar. Están marcados en rojo.`}
+            </p>
           </div>
-        </header>
+        ) : null}
 
-        <NuevaSolicitudToolbar
-          isSaving={isSaving}
-          onOpenSimulador={onOpenSimulador}
-          onSave={onSave}
-          transitionControl={
-            <StyledSelect
-              className="!h-7 !min-h-7 rounded-[min(var(--radius-md),12px)] !px-2.5 !py-0 text-[0.8rem] leading-none"
-              disabled={isWorkflowTransitionDisabled}
-              onChange={onWorkflowTransitionChange}
-              options={workflowTransitionOptions}
-              placeholder={workflowTransitionPlaceholder}
-              value={selectedWorkflowTransitionId}
+        <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+          {/* Izquierda: quien pide. Arranca por el documento. */}
+          <section className="rounded-lg border border-border bg-surface p-4">
+            <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2 border-b border-border-soft pb-2">
+              <h2 className="text-base font-semibold text-foreground">
+                Titular
+              </h2>
+            </header>
+            <IdentificacionTitularFields
+              aviso={avisoDocumento}
+              control={control}
+              errors={errors}
+              onLookupByDocumento={onLookupTitularByDocumento}
+              register={register}
             />
-          }
-        />
+            <div className="mt-3">
+              <DatosTitularFields
+                control={control}
+                errors={errors}
+                register={register}
+              />
+            </div>
+          </section>
 
-        {errors &&
-          (() => {
-            const errorItems = VALIDATION_FIELDS.filter(
-              ({ key }) => !!errors[key],
-            );
-            return errorItems.length > 0 ? (
-              <div className="flex items-start gap-2 border-b border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                <CircleAlert className="mt-0.5 size-4 shrink-0" />
-                <div>
-                  <p className="font-medium">
-                    Revisá los siguientes campos antes de guardar:
-                  </p>
-                  <ul className="mt-1 list-inside list-disc">
-                    {/* El mensaje dice el motivo ("La línea permite hasta 6
-                        cuotas."); el nombre del campo solo no alcanzaba cuando
-                        el valor estaba cargado pero fuera de rango. */}
-                    {errorItems.map(({ key, label }) => (
-                      <li key={key}>{errors[key]?.message || label}</li>
-                    ))}
-                  </ul>
-                </div>
+          {/* Derecha: el credito, siempre a la vista al bajar. */}
+          <div className="space-y-3 lg:sticky lg:top-4">
+            <section className="rounded-lg border border-border bg-surface p-4">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border-soft pb-2">
+                <h2 className="text-base font-semibold text-foreground">
+                  Préstamo
+                </h2>
+                {selectedLinea ? (
+                  <span className="flex flex-wrap gap-x-4 text-xs text-foreground-secondary">
+                    <span>{getMontoAFinanciarPlaceholder(selectedLinea)}</span>
+                    <span>{getCuotasPlaceholder(selectedLinea)}</span>
+                  </span>
+                ) : null}
               </div>
-            ) : null;
-          })()}
-
-        <div className="p-3 md:p-4">
-          <form className="space-y-7">
-            <Section title="Solicitud">
-              <div className="space-y-3">
-                <LegacyField label="Línea" required>
+              <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
+                <StackedField
+                  className="sm:col-span-2"
+                  error={errorDe("linea")}
+                  label="Línea"
+                  required
+                >
                   <Controller
                     control={control}
                     name="linea"
@@ -229,107 +222,172 @@ export function NuevaSolicitudView({
                       />
                     )}
                   />
-                </LegacyField>
-                <LegacyField label="Monto A Financiar" required>
+                </StackedField>
+                <StackedField
+                  error={errorDe("montoAFinanciar")}
+                  label="Monto a financiar"
+                  required
+                >
                   <MoneyInputField
+                    className={NUMERO}
                     control={control}
                     invalid={!!errors?.montoAFinanciar}
                     name="montoAFinanciar"
-                    placeholder={getMontoAFinanciarPlaceholder(selectedLinea)}
                     transform={(value) => {
                       // Solo corre cuando escribe el usuario.
                       cuotaCalculo.onDatosChange();
                       return value;
                     }}
                   />
-                </LegacyField>
-                <LegacyField label="Cuotas" required>
+                </StackedField>
+                <StackedField error={errorDe("cuotas")} label="Cuotas" required>
                   <input
                     aria-invalid={!!errors?.cuotas}
-                    className={legacyFieldClassName}
-                    placeholder={getCuotasPlaceholder(selectedLinea)}
+                    className={cn(legacyFieldClassName, NUMERO)}
+                    inputMode="numeric"
                     {...register("cuotas", {
                       onChange: cuotaCalculo.onDatosChange,
                     })}
                   />
-                </LegacyField>
+                </StackedField>
                 {/* Editable: escribir una cuota calcula el monto, como en el
                     detalle y el simulador. */}
-                <LegacyField label="Cuota Resultante">
-                  <div className="grid gap-1">
-                    <StaticMoneyInput
-                      aria-label="Cuota Resultante"
-                      onChange={cuotaCalculo.onCuotaChange}
-                      value={cuotaCalculo.valor}
-                    />
-                    {cuotaCalculo.mensaje ? (
-                      <span
-                        className="text-xs text-foreground-secondary"
-                        role="status"
-                      >
-                        {cuotaCalculo.mensaje}
-                      </span>
-                    ) : null}
-                    {cuotaCalculo.onReintentar ? (
-                      <Button
-                        className="justify-self-start"
-                        onClick={cuotaCalculo.onReintentar}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Reintentar cuota
-                      </Button>
-                    ) : null}
-                  </div>
-                </LegacyField>
-                <LegacyField label="Cupo Titular">
+                <StackedField
+                  hint={
+                    cuotaCalculo.mensaje ? (
+                      <span role="status">{cuotaCalculo.mensaje}</span>
+                    ) : undefined
+                  }
+                  label="Cuota por mes"
+                >
+                  <StaticMoneyInput
+                    aria-label="Cuota por mes"
+                    className={NUMERO}
+                    onChange={cuotaCalculo.onCuotaChange}
+                    value={cuotaCalculo.valor}
+                  />
+                </StackedField>
+                <StackedField label="Cupo del titular">
                   <MoneyInputField
                     control={control}
                     name="cupoTitular"
-                    placeholder={getCupoTitularPlaceholder(selectedLinea)}
+                    placeholder={
+                      selectedLinea
+                        ? getCupoTitularPlaceholder(selectedLinea)
+                        : undefined
+                    }
                   />
-                </LegacyField>
+                </StackedField>
               </div>
-            </Section>
-
-            <section>
-              <SectionTabs<NuevaSolicitudTab>
-                activeTab={tab}
-                onTabChange={onTabChange}
-                tabs={NUEVA_SOLICITUD_TABS}
-              />
-              {tab === "titular" ? (
-                <NuevaSolicitudTitularFields
-                  control={control}
-                  errors={errors}
-                  onLookupByDocumento={onLookupTitularByDocumento}
-                  register={register}
-                />
-              ) : (
-                <GarantiasSection
-                  garantias={garantias}
-                  onNew={() => setIsGarantiaModalOpen(true)}
-                />
-              )}
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {cuotaCalculo.onReintentar ? (
+                  <Button
+                    className="rounded-md"
+                    onClick={cuotaCalculo.onReintentar}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Reintentar cuota
+                  </Button>
+                ) : null}
+                <button
+                  className="ml-auto inline-flex items-center gap-1.5 text-sm font-medium text-verde hover:underline"
+                  onClick={onOpenSimulador}
+                  type="button"
+                >
+                  <Calculator className="size-4" />
+                  Abrir simulador
+                </button>
+              </div>
             </section>
-
-            <NuevaSolicitudAdjuntosSection
+            <AdjuntosNuevaSolicitud
               adjuntos={adjuntos}
               isUploading={isUploadingAdjunto}
-              onNewAdjuntosLote={onAddAdjuntosLote}
-              onEditPendingAdjunto={onEditAdjunto}
               onDeletePendingAdjunto={onDeleteAdjunto}
+              onEditPendingAdjunto={onEditAdjunto}
+              onNewAdjuntosLote={onAddAdjuntosLote}
               pendingAdjuntos={pendingAdjuntos}
             />
-          </form>
+          </div>
         </div>
-      </article>
-      <NuevaGarantiaModal
-        onOpenChange={setIsGarantiaModalOpen}
-        onSave={onAddGarantia}
-        open={isGarantiaModalOpen}
+      </form>
+
+      <BarraGuardar
+        control={control}
+        cuotaResultante={cuotaCalculo.valor}
+        isSaving={isSaving}
+        onSave={onSave}
       />
-    </>
+    </div>
+  );
+}
+
+// Siempre a la vista: lo armado en una linea y el boton de guardar.
+function BarraGuardar({
+  control,
+  cuotaResultante,
+  isSaving,
+  onSave,
+}: {
+  control: SolicitudFormControl;
+  cuotaResultante: string;
+  isSaving: boolean;
+  onSave: () => void;
+}) {
+  const [monto, cuotas] = useWatch({
+    control,
+    name: ["montoAFinanciar", "cuotas"],
+  });
+  const montoTexto = monto?.trim();
+  const cuotasTexto = cuotas?.trim();
+  // Los montos ya vienen con "$" desde el campo de dinero.
+  const conPesos = (texto?: string | null) =>
+    texto ? (texto.startsWith("$") ? texto : `$ ${texto}`) : null;
+  const datos = [
+    { label: "Monto", value: conPesos(montoTexto) },
+    { label: "Cuotas", value: cuotasTexto || null },
+    {
+      destacado: true,
+      label: "Cuota por mes",
+      value: conPesos(cuotaResultante),
+    },
+  ];
+
+  return (
+    <div className="sticky bottom-0 z-20 flex items-center gap-4 border-t border-verde/30 bg-[color-mix(in_oklab,var(--verde)_10%,white)] px-3 py-2.5 shadow-[0_-4px_12px_-6px_rgba(30,45,61,0.15)] md:px-4">
+      {/* Lo que se va armando, siempre a la vista mientras se completa el formulario. */}
+      <dl className="flex min-w-0 items-center gap-x-6 gap-y-1">
+        {datos.map(({ destacado, label, value }) => (
+          <div className="min-w-0" key={label}>
+            <dt className="text-xs text-foreground-secondary">{label}</dt>
+            <dd
+              className={cn(
+                "truncate text-base font-semibold tabular-nums",
+                value
+                  ? destacado
+                    ? "text-verde"
+                    : "text-foreground"
+                  : "text-foreground-muted",
+              )}
+            >
+              {value ?? "—"}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="ml-auto hidden max-w-56 text-right text-xs text-foreground-secondary lg:block">
+        Una vez guardada, la solicitud se envía a Riesgo desde su detalle.
+      </p>
+      <Button
+        className="ml-auto h-10 shrink-0 rounded-md bg-verde px-5 font-semibold text-white hover:bg-verde/90 lg:ml-0"
+        disabled={isSaving}
+        onClick={onSave}
+        type="button"
+      >
+        <Save className="size-4" />
+        {isSaving ? "Guardando…" : "Guardar solicitud"}
+      </Button>
+    </div>
   );
 }
