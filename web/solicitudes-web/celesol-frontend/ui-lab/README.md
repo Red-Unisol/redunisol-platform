@@ -95,6 +95,13 @@ listados reales con la solicitud ficticia `500001` en la primera columna. La
 ficha usa ese número como título y permite copiarlo sin prefijo ni separadores.
 Los listados del laboratorio no simulan la búsqueda del servidor.
 
+`/production?list=usuarios&role=admin` muestra la vista real de Usuarios con
+cuatro registros ficticios. Permite revisar la búsqueda por nombre, apellido,
+email o usuario legacy, mayúsculas/tildes, varias palabras, búsqueda sin
+coincidencias y limpieza del filtro. Revisar escritorio y 390 px; la tabla
+conserva desplazamiento horizontal. Se puede abrir Editar, pero guardar e
+ingresar como otro usuario siguen bloqueados por el transporte del laboratorio.
+
 La sección Novedades de `/production` usa la tabla real con cuatro movimientos
 ficticios: pago, confirmación de análisis con observación larga y multilínea,
 asignación automática sin cambio de estado y corrección administrativa. Permite

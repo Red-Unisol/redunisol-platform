@@ -15,6 +15,7 @@ import {
   HEADER_SESSION_FIXTURE,
 } from "./header-fixtures.ts";
 import { SAMPLE_REQUEST } from "./header-sample.ts";
+import { USERS_FIXTURE, USERS_WORKFLOW_OWNERS } from "./users-fixtures.ts";
 
 export type ProductionRole = "riesgo" | "admin" | "vendedor";
 export type ProductionFixtureOptions = {
@@ -351,6 +352,9 @@ export function productionFixture(
   const riskBase = `/api/riesgo/calculadora/core/${HEADER_SAMPLE.id}`;
   let body: unknown;
   if (pathname === "/auth/me") body = productionSession(options.role);
+  else if (pathname === "/auth/users") body = { users: USERS_FIXTURE };
+  else if (pathname === "/auth/workflow-owners") body = { workflowOwners: USERS_WORKFLOW_OWNERS };
+  else if (pathname === "/auth/impersonation") body = { context: null };
   else if (pathname === "/solicitudes") body = [{ ...PRODUCTION_SOLICITUD, ultimaNovedad: null }];
   else if (pathname === "/api/notifications")
     body = { items: [], unreadCount: 0, total: 0, offset: 0, limit: 8 };

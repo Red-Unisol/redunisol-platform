@@ -2,8 +2,8 @@ import { useAuthSessionQuery } from "@/modules/auth/hooks/use-auth-session";
 import { getImpersonationContext } from "@/modules/auth/services/auth-api";
 import { reloadIdentity } from "@/modules/auth/utils/reload-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, CircleCheckBig } from "lucide-react";
-import { useState } from "react";
+import { CircleAlert, CircleCheckBig, Search } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -20,9 +20,17 @@ import {
   updateUser,
 } from "@/modules/users-admin/services/users-admin-api";
 import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
 import { ApiError } from "@/shared/services/http/api-error";
 
 class PartialAreaUpdateError extends Error {}
+
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
 
 function getUserStateLabel(state: number) {
   if (state === 0) {
@@ -43,7 +51,11 @@ function getUserStateLabel(state: number) {
 export function AdminUsersPage() {
   const queryClient = useQueryClient();
   const session = useAuthSessionQuery();
-  const acting = useQuery({ queryKey: ["auth", "impersonation"], queryFn: getImpersonationContext, retry: false });
+  const acting = useQuery({
+    queryKey: ["auth", "impersonation"],
+    queryFn: getImpersonationContext,
+    retry: false,
+  });
   const enter = useMutation({
     mutationFn: enterUser,
     onSuccess: async () => {
@@ -54,6 +66,8 @@ export function AdminUsersPage() {
     onError: (error) => toast.error(error.message),
   });
   const [editingUser, setEditingUser] = useState<UsersAdminUser | null>(null);
+  const [search, setSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const usersQuery = useQuery({
     queryFn: getUsers,
     queryKey: ["users-admin", "users"],
@@ -84,6 +98,16 @@ export function AdminUsersPage() {
   });
 
   const users = usersQuery.data?.users ?? [];
+  const searchTerms = normalizeSearch(search)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const filteredUsers = users.filter((user) => {
+    const searchableText = normalizeSearch(
+      [user.firstName, user.lastName, user.email, user.legacyUser].join(" "),
+    );
+    return searchTerms.every((term) => searchableText.includes(term));
+  });
   const workflowOwners = workflowOwnersQuery.data?.workflowOwners ?? [];
   const workflowOwnersById = new Map(
     workflowOwners.map((owner) => [owner.id, owner.name]),
@@ -198,7 +222,12 @@ export function AdminUsersPage() {
     }
   }
 
-  if (enter.isPending) return <p role="status" className="p-4">Ingresando al usuario…</p>;
+  if (enter.isPending)
+    return (
+      <p role="status" className="p-4">
+        Ingresando al usuario…
+      </p>
+    );
 
   return (
     <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
@@ -206,6 +235,50 @@ export function AdminUsersPage() {
         <h1 className="text-[1.85rem] leading-none font-semibold text-foreground">
           Usuarios
         </h1>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:max-w-md">
+            <label className="sr-only" htmlFor="users-search">
+              Buscar usuarios
+            </label>
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-muted"
+            />
+            <Input
+              ref={searchInputRef}
+              id="users-search"
+              type="search"
+              autoComplete="off"
+              className="h-11 pl-9"
+              placeholder="Nombre, email o usuario legacy"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              aria-describedby="users-search-count"
+            />
+          </div>
+          {search && (
+            <Button
+              className="h-11"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSearch("");
+                searchInputRef.current?.focus();
+              }}
+            >
+              Limpiar búsqueda
+            </Button>
+          )}
+          <p
+            id="users-search-count"
+            role="status"
+            className="text-sm text-foreground-secondary"
+          >
+            {!isLoading &&
+              !hasLoadError &&
+              `${filteredUsers.length} de ${users.length} usuarios`}
+          </p>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
@@ -220,6 +293,10 @@ export function AdminUsersPage() {
         ) : users.length === 0 ? (
           <p className="text-sm text-foreground-secondary">
             No hay usuarios para mostrar.
+          </p>
+        ) : filteredUsers.length === 0 ? (
+          <p className="text-sm text-foreground-secondary">
+            No se encontraron usuarios con esa búsqueda.
           </p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
@@ -253,7 +330,7 @@ export function AdminUsersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <tr className="bg-surface" key={user.id}>
                     <td className="px-3 py-2 text-foreground">{user.email}</td>
                     <td className="px-3 py-2 text-foreground">
@@ -289,9 +366,20 @@ export function AdminUsersPage() {
                         Editar
                       </Button>
                       {session.data?.isSystemAdmin && !acting.data?.context && (
-                        <Button className="ml-2" size="sm" type="button" variant="outline"
-                          disabled={enter.isPending || !acting.isSuccess || user.state !== 1 || !user.workflowOwnerId || user.id === session.data.id}
-                          onClick={() => enter.mutate(user.id)}>
+                        <Button
+                          className="ml-2"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                          disabled={
+                            enter.isPending ||
+                            !acting.isSuccess ||
+                            user.state !== 1 ||
+                            !user.workflowOwnerId ||
+                            user.id === session.data.id
+                          }
+                          onClick={() => enter.mutate(user.id)}
+                        >
                           Ingresar usuario
                         </Button>
                       )}
