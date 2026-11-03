@@ -14,7 +14,7 @@ from .archive import Archive
 from .config import Config
 from .source import SourceClient, SourceError, check_deadline, content_version
 from .store import import_snapshot, read_manifest, timestamp
-from .bundle import active_bundle, refresh_bundle
+from .bundle import active_bundle, active_current, inside, refresh_bundle
 
 
 def refresh_budget_seconds(config: Config, now: datetime | None = None) -> float:
@@ -72,26 +72,50 @@ class RefreshManager:
         with self.lock:
             return dict(self.state) if self.state.get("job_id") == job_id else None
 
+    def publication(self, historical=False) -> dict:
+        """Resolve a validated publication with freshness scoped to its endpoint."""
+        with self.snapshot_lock:
+            bundle = active_bundle(self.config.data_dir)
+            monthly = active_current(self.config.data_dir)
+            manifest = bundle if historical else monthly or bundle or read_manifest(self.database)
+            with self.lock:
+                state = dict(self.state)
+
+            def checked(dataset):
+                if dataset is not None and dataset is not monthly and state.get('checked_version') == dataset['version']:
+                    return state.get('last_successful_check_at') or dataset.get('checked_at')
+                return (dataset or {}).get('checked_at')
+
+            def stale(at):
+                return not at or (datetime.now(timezone.utc) - datetime.fromisoformat(at)).total_seconds() > self.config.max_check_age_hours * 3600
+
+            checked_at = checked(manifest)
+            outdated = stale(checked_at)
+            supplements = bundle
+            if not historical and monthly and (not bundle or stale(checked(bundle))
+                    or bundle['components']['current']['version'] != monthly['version']):
+                supplements = None
+            database = (inside(self.config.data_dir, manifest['components']['current']['path'])
+                        if manifest and 'components' in manifest else self.database)
+            return {'ready': manifest is not None and not outdated, 'check_stale': outdated,
+                    'last_successful_check_at': checked_at, 'dataset': manifest,
+                    'database': database, 'bundle': supplements}
+
     def status(self) -> dict:
         with self.snapshot_lock:
-            manifest = active_bundle(self.config.data_dir) or read_manifest(self.database)
-        with self.lock:
-            state = dict(self.state)
-        checked_at = (
-            state.get("last_successful_check_at")
-            if manifest and state.get("checked_version") == manifest["version"]
-            else (manifest or {}).get("checked_at")
-        )
-        stale = True
-        if checked_at:
-            age = datetime.now(timezone.utc) - datetime.fromisoformat(checked_at)
-            stale = age.total_seconds() > self.config.max_check_age_hours * 3600
-        return {
-            "ready": manifest is not None and not stale, "check_stale": stale,
-            "last_successful_check_at": checked_at, "refresh": state, "dataset": manifest,
-            "capabilities": (manifest or {}).get('capabilities', {
-                'current': manifest is not None, 'history': False, 'padron': False, 'normal_since': False}),
-        }
+            current, history = self.publication(), self.publication(historical=True)
+            with self.lock:
+                state = dict(self.state)
+            return {
+                'ready': current['ready'], 'check_stale': current['check_stale'],
+                'last_successful_check_at': current['last_successful_check_at'],
+                'dataset': current['dataset'], 'refresh': state,
+                'history_ready': history['ready'], 'history_check_stale': history['check_stale'],
+                'last_successful_history_check_at': history['last_successful_check_at'],
+                'history_dataset': history['dataset'],
+                'capabilities': {'current': current['dataset'] is not None, 'history': history['dataset'] is not None,
+                                 'padron': current['bundle'] is not None, 'normal_since': current['bundle'] is not None},
+            }
 
     def _refresh(self) -> dict:
         if not self.config.terms_accepted:
