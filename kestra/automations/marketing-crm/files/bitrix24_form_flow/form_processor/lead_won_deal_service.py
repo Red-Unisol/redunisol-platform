@@ -7,6 +7,7 @@ from typing import Any
 from .bitrix_client import BitrixClient
 from .business_logic import classify_lead
 from .config import load_config
+from .expanded_deal_family import expanded_deal_family
 from .deal_service import (
     bind_open_line_activities_to_deal,
     ensure_deal_timeline_comment,
@@ -240,6 +241,8 @@ def _is_kestra_classified_lead(
     lead: dict[str, Any],
     logger: Logger,
 ) -> bool:
+    if expanded_deal_family(config, lead):
+        return True
     province = lead_enum_label(client, lead, config.fields.lead_province)
     supported = str(province or "").strip().lower() in {"catamarca", "cordoba"}
     if not supported:

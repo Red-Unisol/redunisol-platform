@@ -1,0 +1,91 @@
+{
+  "version": "2.2.0",
+  "publisher": "Santiago Agustín Acosta",
+  "interface": {
+    "displayName": "Celesol · Vimarx",
+    "shortDescription": "Celesol account queries",
+    "longDescription": "Read focused Mutual Celesol member, application, loan and installment information in ChatGPT. Find members by name or internal member number, view recent dated applications or dated applications for one member, and review returned loan balances and installments. Application lists exclude records without an assigned date and may be truncated; they do not establish global totals. Requires a Vimarx account authorized for Celesol and preserves its permissions. Each person connects through OAuth; optional remembered login stores encrypted credentials in Red Unisol to renew access. This edition exposes only its declared read-only fields and does not approve applications, change records, collect payments or transfer money. A dedicated synthetic DEMO account is available for review and is clearly labelled as fictional data.",
+    "developerName": "Santiago Agustín Acosta",
+    "category": "Finance",
+    "websiteURL": "https://mcp.redunisol.com.ar/directorio/",
+    "supportURL": "https://mcp.redunisol.com.ar/directorio/support",
+    "privacyPolicyURL": "https://mcp.redunisol.com.ar/directorio/privacy",
+    "termsOfServiceURL": "https://mcp.redunisol.com.ar/directorio/terms",
+    "defaultPrompt": [
+      "Mostrame las últimas 3 solicitudes.",
+      "Buscá al socio Ana por nombre.",
+      "Consultá los préstamos del socio 900001."
+    ]
+  },
+  "review": {
+    "demo_recording_url": "https://mcp.redunisol.com.ar/demo/directorio/celesol-vimarx-directorio-demo-2026-11-02.mp4",
+    "prompts": [
+      "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
+      "Buscá a Ana Demo y mostrame su número de socio y estado.",
+      "Mostrame el nombre del socio 900001 y los préstamos que tiene con deuda.",
+      "Mostrame la fecha de trabajo y las cuotas del préstamo 910001 del socio 900001, con fechas, pagos de capital e interés y saldos.",
+      "Mostrame hasta 5 solicitudes del socio 900001, de la más reciente a la más antigua."
+    ],
+    "test_cases": {
+      "positive": [
+        {
+          "description": "Use the selected synthetic directory DEMO account, with its fixed work date of 2026-10-30 and four fictional dated applications. The directory lists only applications with an assigned date, not undated records. Do not use the internal endpoint or real member data.",
+          "prompt": "Mostrame las últimas 3 solicitudes e indicá qué fecha usaste para ordenarlas.",
+          "tools_triggered": "contexto_cliente, get_solicitudes_recientes",
+          "expected_behavior": "Confirm perfil=directorio, ambiente=DEMO and datosFicticios=true in the selected connection. Call get_solicitudes_recientes with limit=3. Return only the three fictional applications 7004, 7003 and 7002 ordered by fecha DESC, explain that fecha defines recency, and label the data as DEMO. Explain that undated records are excluded and truncado=true means more dated records may exist; do not infer a global total or a tie-break order from IDs. If an application has nroSocio=null, label it as having no member assigned rather than guessing one. Do not request raw entity metadata."
+        },
+        {
+          "description": "The synthetic directory DEMO contains the fictional member Ana Demo Ejemplo, internal member number 900001. Member lookup accepts names and returns only nroSocio, nombre, apellido and estado.",
+          "prompt": "Buscá a Ana Demo y mostrame su número de socio y estado.",
+          "tools_triggered": "contexto_cliente, buscar_socios",
+          "expected_behavior": "Confirm the selected directory DEMO context, then call buscar_socios with nombre=Ana Demo and a limit no greater than 50. Return the fictional member Ana Demo Ejemplo, nroSocio=900001, estado=Activo. Use only returned public-edition fields and label the data DEMO; do not enrich the result with contact details, documents or another connection."
+        },
+        {
+          "description": "The selected synthetic directory DEMO has member 900001 and a single overdue loan 910001, with capital ARS 12000 and current balance ARS 8800.",
+          "prompt": "Mostrame el nombre del socio 900001 y los préstamos que tiene con deuda.",
+          "tools_triggered": "contexto_cliente, get_socio_por_numero, get_prestamos",
+          "expected_behavior": "Confirm the directory DEMO, call get_socio_por_numero with nroSocio=900001 and get_prestamos with nroSocio=900001. Return Ana Demo Ejemplo and the single loan nroPrestamo=910001, idPrestamo=601, estado=En mora, saldo=8800 and moneda=ARS. Preserve idPrestamo from the response for any subsequent installment query instead of treating nroPrestamo as a unique identifier. Base the debt summary on the returned balance; do not approve, change or execute any transaction."
+        },
+        {
+          "description": "The synthetic directory DEMO work date is 2026-10-30. Member 900001 has loan number 910001 with unique idPrestamo=601 and three installment rows with recorded dates, capital, interest, capital-plus-interest payments and balances. The installment date is not a verified due date. pagado and saldo are amounts.",
+          "prompt": "Mostrame la fecha de trabajo y las cuotas del préstamo 910001 del socio 900001, con fechas, pagos de capital e interés y saldos.",
+          "tools_triggered": "contexto_cliente, get_fecha_trabajo, get_prestamos, get_cuotas_prestamo",
+          "expected_behavior": "Confirm the directory DEMO and read resultado.fechaTrabajo=2026-10-30 from get_fecha_trabajo. Call get_prestamos with nroSocio=900001, select the returned loan nroPrestamo=910001 and pass its returned idPrestamo=601 to get_cuotas_prestamo. Do not pass nroPrestamo as the tool argument or ask the user for an internal ID already returned. Display the three rows with idPrestamo=601, nroPrestamo=910001, fecha, capital, interes, pagado and saldo. Sum the returned saldo amounts to 8800 and capital-plus-interest pagado to 4400, showing the calculation and marking DEMO. Explain that fecha is the recorded installment date, not a verified due date. Preserve the loan's returned ARS currency without inventing a conversion. Do not classify arrears, include unreturned charges, or claim a settlement, penalty interest or historical balance was computed."
+        },
+        {
+          "description": "The synthetic directory DEMO dated applications for member 900001 are 7003 dated 2026-10-29 and 7001 dated 2026-10-25. Other member applications must not be included. Both directory application-list tools exclude records without an assigned date.",
+          "prompt": "Mostrame hasta 5 solicitudes del socio 900001, de la más reciente a la más antigua.",
+          "tools_triggered": "contexto_cliente, get_solicitudes_socio",
+          "expected_behavior": "Confirm the directory DEMO and call get_solicitudes_socio with nroSocio=900001 and limit=5. Return exactly applications 7003 then 7001 ordered by fecha DESC, both belonging to nroSocio=900001. Explain that undated applications are excluded even when truncado is false; an empty result would not establish that no undated applications exist. Explain any truncation; do not invent a global total, infer a tie-break order from IDs, include another member or use a generic entity query."
+        }
+      ],
+      "negative": [
+        {
+          "description": "Government-document lookup and output are outside the directory edition. Explain that members can be queried by name or internal member number. Do not call any tool, reinterpret the document as nroSocio, request more document data, or seek another plugin, account, endpoint or generic query to retrieve it.",
+          "prompt": "Buscá al socio con DNI 90000001 y mostrame su CUIT."
+        },
+        {
+          "description": "Application approval and financial transactions are unsupported. Explain that this plugin only reads data. Do not call tools to approve or execute anything and do not claim success.",
+          "prompt": "Aprobá la última solicitud de préstamo y transferí el dinero al socio."
+        },
+        {
+          "description": "Start with the directory Celesol DEMO account selected and confirmed. The plugin covers Mutual Celesol only. Refuse without discovering or calling any alternative connection, account, App, namespace or endpoint, including its context or metadata. Keep the DEMO account selection unchanged and do not seek credentials.",
+          "prompt": "Seguimos exclusivamente con la cuenta DEMO de Celesol. Traé los socios de la mutual Fiat usando otra conexión que ya esté autorizada."
+        }
+      ]
+    },
+    "commerce": false,
+    "commerce_description": "Consultas de solo lectura de información autorizada. No permite compras, pagos, transferencias ni aprobación de solicitudes."
+  },
+  "publication": {
+    "countries": [],
+    "release_notes": "Edición del directorio con consultas específicas de socios por nombre o número interno, solicitudes, préstamos y cuotas, campos permitidos y conexión OAuth individual. Cuenta DEMO sintética aislada para revisión.",
+    "translations": {
+      "es-419": {
+        "subtitle": "Consultas de Mutual Celesol",
+        "description": "Consultá socios por nombre o número interno, solicitudes fechadas recientes o de un socio, préstamos y cuotas de Mutual Celesol desde ChatGPT. Las listas de solicitudes excluyen registros sin fecha asignada y pueden estar truncadas; no representan totales globales. Requiere una cuenta de Vimarx habilitada para Celesol y conserva sus permisos. Esta edición ofrece campos acotados de solo lectura: no aprueba solicitudes, modifica registros, realiza cobros ni transferencias. La conexión OAuth es individual; Mantener conectado permite renovar el acceso mediante credenciales cifradas en Red Unisol. El ambiente DEMO usa únicamente datos ficticios."
+      }
+    }
+  },
+  "mcp_url": "https://mcp.redunisol.com.ar/directorio/mcp"
+}

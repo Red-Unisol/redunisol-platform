@@ -75,7 +75,8 @@ Cierra como `Desestimada` una solicitud que se siguio en Vimarx. Se ofrece solo 
 
 - El historial guarda `action_code = 'paso_por_vimarx'`: es lo que la distingue de las demas desestimadas, sin columnas nuevas.
 - Historicas tiene el filtro "Pasaron por Vimarx" (`pasoPorVimarx=true` en `GET /solicitudes?scope=historicas`) y los listados y el detalle la marcan con la etiqueta "Vimarx".
-- Es la unica accion que comparte origen y destino con otra (`desestimar`, en `Confirmada`). En `RevisionRiesgo` es la unica salida a `Desestimada`.
+- Es la unica accion que comparte origen y destino con otra (`desestimar`).
+- Pasa por los mismos controles de desestimacion que `desestimar` (se aplican a cualquier entrada a `Desestimada`, ver `domain/workflow/README.md`), pero `revertir_desestimacion` solo restaura las hechas con `desestimar`.
 
 ## Regla de comentarios
 

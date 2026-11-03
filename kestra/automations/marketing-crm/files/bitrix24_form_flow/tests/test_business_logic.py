@@ -47,6 +47,7 @@ from bitrix24_form_flow.form_processor.contact_birthdate_service import (
     backfill_contact_birthdate_to_leads,
 )
 from bitrix24_form_flow.form_processor.config import load_config
+from bitrix24_form_flow.form_processor.haberes_cuad_registry import HaberesCuadRegistry
 from bitrix24_form_flow.form_processor.credixsa_employer_service import (
     STATUS_NO_EMPLOYER,
     STATUS_OK,
@@ -518,6 +519,12 @@ class BusinessLogicTests(unittest.TestCase):
         )
         refresh.start()
         self.addCleanup(refresh.stop)
+        registry = patch(
+            "bitrix24_form_flow.form_processor.business_logic.load_registry",
+            return_value=HaberesCuadRegistry(frozenset(), "test-fixture"),
+        )
+        registry.start()
+        self.addCleanup(registry.stop)
         self.env = {
             "BITRIX24_BASE_URL": "https://example.bitrix24.com/rest",
             "BITRIX24_WEBHOOK_PATH": "1/token",
@@ -1098,7 +1105,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "email": "ana@example.com",
                 "whatsapp": "3511234567",
                 "cuil": "27-12345678-5",
-                "province": "Buenos Aires",
+                "province": "Chubut",
                 "employment_status": "Empleado Publico Provincial",
                 "payment_bank": "Banco de la Nacion Argentina",
                 "lead_source": "Instagram",
@@ -1169,7 +1176,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result.outcome, "rejected")
         self.assertEqual(result.reason, "employment_status_not_eligible")
 
-    def test_neuquen_refers_municipal_employee_to_external_seller(self) -> None:
+    def test_neuquen_qualifies_municipal_employee_internally(self) -> None:
         submission = normalize_business_input(
             {
                 "full_name": "Ana Gomez",
@@ -1185,8 +1192,8 @@ class BusinessLogicTests(unittest.TestCase):
 
         result = evaluate_qualification(submission)
 
-        self.assertEqual(result.outcome, "external_referral")
-        self.assertEqual(result.reason, "external_referral")
+        self.assertEqual(result.outcome, "qualified")
+        self.assertEqual(result.reason, "qualified")
 
     def test_qualification_rejects_cordoba_policia_without_bancor(self) -> None:
         submission = normalize_business_input(
@@ -1296,10 +1303,10 @@ class BusinessLogicTests(unittest.TestCase):
                 self.assertTrue(result.qualified)
                 self.assertEqual(result.reason, "qualified")
 
-    def test_qualification_keeps_cordoba_bank_restrictions_for_municipal_and_national_retirees(
+    def test_qualification_keeps_cordoba_bank_restrictions_for_municipal_retirees(
         self,
     ) -> None:
-        for employment_status in ("Jubilado Municipal", "Jubilado Nacional"):
+        for employment_status in ("Jubilado Municipal",):
             with self.subTest(employment_status=employment_status):
                 submission = normalize_business_input(
                     {
@@ -1492,7 +1499,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(client.leads[990]["ASSIGNED_BY_ID"], 8057)
         self.assertEqual(result["transferred_chat_count"], 1)
 
-    def test_policia_federal_queue_retries_when_stefania_returns(self) -> None:
+    def test_policia_federal_single_seller_is_assigned_while_offline(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids.clear()
         client.leads[990] = self._policia_federal_lead(990)
@@ -1501,16 +1508,12 @@ class BusinessLogicTests(unittest.TestCase):
             990, env=self.env, bitrix_client=client, logger=SilentLogger(),
             now=datetime.fromisoformat("2026-09-14T12:00:00-03:00"),
         )
-        self.assertEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
-        self.assertEqual(client.deals[990]["ufCrmRouteBucket"], "policia_federal_caba")
-        client.online_user_ids.add(8057)
-        result = process_distribution_queue(
-            env=self.env, bitrix_client=client, logger=SilentLogger(),
-            now=datetime.fromisoformat("2026-09-14T12:01:00-03:00"),
-        )
-        self.assertEqual(result["distributed_count"], 1)
-        self.assertEqual(client.deals[990]["assignedById"], 8057)
+        self.assertEqual(result["distribution_action"], "assigned")
+        self.assertEqual(result["assigned_by_id"], 8057)
+        self.assertEqual(result["assignment_strategy"], "single_seller")
         self.assertEqual(client.deals[990]["stageId"], load_config(self.env).deal.manual_review_stage_id)
+        self.assertEqual(client.deals[990]["ufCrmRouteBucket"], "policia_federal_caba")
+        self.assertEqual(client.leads[990]["ASSIGNED_BY_ID"], 8057)
 
     def test_policia_federal_respects_remote_pool_changes_and_pause(self) -> None:
         for pool in ([53121], []):
@@ -1524,7 +1527,7 @@ class BusinessLogicTests(unittest.TestCase):
                 routing = resolve_routing_bucket(config, self._policia_federal_lead(990))
                 self.assertEqual(routing.bucket.seller_ids, tuple(pool))
 
-    def test_policia_federal_outside_hours_keeps_manual_owner(self) -> None:
+    def test_policia_federal_single_seller_is_assigned_outside_hours(self) -> None:
         client = FakeBitrixClient()
         client.online_user_ids.add(8057)
         client.leads[990] = self._policia_federal_lead(990)
@@ -1534,8 +1537,9 @@ class BusinessLogicTests(unittest.TestCase):
             bitrix_client=client, logger=SilentLogger(),
             now=datetime.fromisoformat("2026-09-18T17:00:00-03:00"),
         )
-        self.assertEqual(result["assigned_by_id"], 57)
-        self.assertEqual(result["distribution_reason"], "outside_business_hours")
+        self.assertEqual(result["assigned_by_id"], 8057)
+        self.assertEqual(result["distribution_reason"], "seller_selected")
+        self.assertFalse(result["within_business_hours"])
         self.assertEqual(client.chat_transfers, [])
         self.assertNotEqual(client.deals[990]["stageId"], "C1:KESTRA_QUEUE")
 
@@ -1860,7 +1864,7 @@ class BusinessLogicTests(unittest.TestCase):
             "UF_CRM_LEAD_1711458190312": ["459"],
         }
         for field in required:
-            for empty in (None, "", "  ", []):
+            for empty in (None, "", "  ", [], False, [False], [None], [""], ["  "]):
                 with self.subTest(field=field, empty=empty):
                     client = FakeBitrixClient()
                     client.leads[303] = {
@@ -1894,6 +1898,33 @@ class BusinessLogicTests(unittest.TestCase):
                     self.assertTrue(result["ok"])
                     self.assertEqual(result["action"], "qualified")
                     self.assertEqual(client.leads[303]["STATUS_ID"], "QUALIFIED")
+
+    def test_lead_update_keeps_invalid_catalog_values_as_errors(self) -> None:
+        required = {
+            "UF_CRM_64E65D2B2136C": "215",
+            "UF_CRM_1714071903": "1269",
+            "UF_CRM_LEAD_1711458190312": ["459"],
+        }
+        for field in required:
+            for invalid in (0, True, "False", "unsupported"):
+                with self.subTest(field=field, invalid=invalid):
+                    client = FakeBitrixClient()
+                    client.leads[303] = {
+                        "ID": "303", "STATUS_ID": "NEW", "ASSIGNED_BY_ID": "57",
+                        "DATE_CREATE": "2026-09-23T10:00:00-03:00",
+                        **required, field: invalid,
+                    }
+                    original = dict(client.leads[303])
+                    result = process_lead_update_event(
+                        self.make_lead_update_event(303), env=self.env, bitrix_client=client,
+                        expected_application_token="app-token", logger=SilentLogger(),
+                    )
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["action"], "error")
+                    self.assertNotEqual(result["reason"], "missing_required_field")
+                    self.assertEqual(client.leads[303], original)
+                    self.assertEqual(client.deals, {})
+                    self.assertNotIn("crm.lead.update", [method for method, _ in client.calls])
 
     def test_lead_update_does_not_treat_other_exceptions_as_missing_data(self) -> None:
         for error in (
@@ -2282,7 +2313,7 @@ class BusinessLogicTests(unittest.TestCase):
                 "email": "ana@example.com",
                 "whatsapp": "3511234567",
                 "cuil": "27-12345678-5",
-                "province": "Buenos Aires",
+                "province": "Chubut",
                 "employment_status": "Empleado Publico Provincial",
                 "payment_bank": "Banco de la Nacion Argentina",
                 "lead_source": "Instagram",
@@ -5143,7 +5174,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-10-13-caja-morosos-23321-v1",
+            "2026-11-03-buenos-aires-sin-publico-provincial",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
@@ -6179,7 +6210,7 @@ class BusinessLogicTests(unittest.TestCase):
             ("recurrent", "2565", recurrent, 5, "approved", "caja_morosos", "Caja Morosos"),
             ("nuevo_limpio", "2565", None, 1, "approved", "caja_nuevo", "Caja Nuevo"),
             ("irregular", "2565", None, 2, "approved", "caja_irregulares", "Caja Irregulares"),
-            ("nacional", "2567", None, 5, "rejected", "cbu_more_than_five_entities", None),
+            ("nacional", "2567", None, 5, "approved", "anses_approved", "Red Mutual - paii"),
             ("pensionado", "2569", None, 5, "rejected", "cbu_more_than_five_entities", None),
         )
         for name, employment, vimarx, situation, action, reason, line in cases:

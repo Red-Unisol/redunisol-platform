@@ -14,7 +14,7 @@ WA_FIELDS = (
 )
 ASSISTANCE_FIELDS = tuple("UF_CRM_" + name for name in (
     "WA_ASSISTANCE_ID", "WA_ASSISTANCE_STATE", "WA_SUBFLOW", "WA_SUBFLOW_ID",
-    "WA_ORGANISMO", "WA_BANCO", "WA_CONTINUIDAD"))
+    "WA_ORGANISMO", "WA_BANCO", "WA_CONTINUIDAD", "WA_TEST"))
 
 
 def normalize_attribution(value: Any) -> dict[str, Any] | None:

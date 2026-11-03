@@ -1,0 +1,29 @@
+name: Vimarx OAuth gateway
+on:
+  pull_request:
+    paths:
+      - 'apps/vimarx-oauth-gateway/**'
+      - '.github/workflows/vimarx-oauth-gateway.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/vimarx-oauth-gateway/**'
+      - '.github/workflows/vimarx-oauth-gateway.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/vimarx-oauth-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: 'apps/vimarx-oauth-gateway/requirements*.txt'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest tests -q

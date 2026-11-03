@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 
 ENTRY_PHRASE = "vengo del sitio web de red unisol"
+TEST_REFERENCE = "PRUEBAFORM"
 ROUTER_FLOW_ID = "1850162769693486"
 SEGMENTS = {
     "cordoba": {
@@ -14,6 +15,11 @@ SEGMENTS = {
     "catamarca": {"empleado_publico", "policia", "docente", "salud", "otra"},
     "caba": {"pfa", "otra"},
 }
+
+
+def is_test_entry(text):
+    refs = re.findall(r"\(ref:\s*([^)]*)\)", text, re.IGNORECASE)
+    return len(refs) == 1 and refs[0].strip().upper() == TEST_REFERENCE
 
 
 def identifier(value):
@@ -74,10 +80,11 @@ def classify(event, allowed_subject):
     if not isinstance(text, str) or len(text.encode("utf-8")) > 32768:
         return {**receipt, "reason": "invalid_text"}, None
     if content.get("type") == "TEXT":
-        if ENTRY_PHRASE not in " ".join(text.casefold().split()):
+        test = is_test_entry(text)
+        if not test and ENTRY_PHRASE not in " ".join(text.casefold().split()):
             return {**receipt, "kind": "ignored", "reason": "unrelated_text",
                     "out_of_hours_candidate": not bool(content.get("payload"))}, None
-        return {**receipt, "kind": "router_entry", "reason": "entry_phrase"}, {
+        return {**receipt, "kind": "router_entry", "reason": "test_reference" if test else "entry_phrase"}, {
             **normalized, "kind": "router_entry", "wa_entry": "website",
         }
     if content.get("type") != "FLOW":

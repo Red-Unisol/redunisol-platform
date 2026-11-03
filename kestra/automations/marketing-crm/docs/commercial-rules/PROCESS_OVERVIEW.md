@@ -85,5 +85,7 @@ flowchart TD
 
 - Dentro del horario laboral, los casos aprobados y de revisión manual se distribuyen
   según su bucket.
-- Fuera del horario laboral quedan con Maru para gestión manual.
+- Los buckets con un unico vendedor habilitado se asignan directamente, incluso
+  offline y fuera de horario. Los pools de varios o vacios conservan su politica
+  de gestion manual con Maru fuera del horario laboral.
 - La distribución no modifica etapa, aprobación ni línea comercial.
