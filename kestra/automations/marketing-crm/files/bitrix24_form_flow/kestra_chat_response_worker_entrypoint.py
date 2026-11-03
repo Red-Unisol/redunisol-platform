@@ -6,13 +6,13 @@ import os
 from .form_processor.bitrix_client import BitrixClient
 from .form_processor.config import load_config
 from .form_processor.logger import create_logger
-from .form_processor.chat_response_worker import QueueClient, run_worker
+from .form_processor.chat_response_worker import QueueClient, run_batches
 
 
 def main():
     logger = create_logger()
     try:
-        result = run_worker(BitrixClient(load_config(), logger, log_api_calls=False),
+        result = run_batches(BitrixClient(load_config(), logger, log_api_calls=False),
             QueueClient(os.environ["CHAT_RESPONSE_QUEUE_URL"], os.environ["CHAT_RESPONSE_QUEUE_TOKEN"],
                         os.environ["CHAT_RESPONSE_SCOPE"]))
     except Exception as exc:

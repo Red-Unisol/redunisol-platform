@@ -114,14 +114,16 @@ def _candidates(api, claim):
     return [found[key] for key in sorted(found) if key <= boundary], not page_ends
 
 
-def run_worker(client, queue, *, clock=time.monotonic, sleep=time.sleep, **budget):
+def run_worker(client, queue, *, clock=time.monotonic, sleep=time.sleep, _api=None, **budget):
     claim = queue.request("claim")
     mode = claim.get("mode")
     if mode in {"busy", "idle"}:
         return {"ok": True, "mode": mode, "api_calls": {}, "counts": {}, "events": [], "checked": 0}
     if mode not in {"event", "fallback"} or not claim.get("lease"):
         raise ValueError("Invalid queue claim")
-    api = BudgetedClient(client, queue, claim["lease"], clock=clock, sleep=sleep, **budget)
+    api = _api or BudgetedClient(client, queue, claim["lease"], clock=clock, sleep=sleep, **budget)
+    api.lease = claim["lease"]
+    calls_before, failures_before = api.calls.copy(), api.failures.copy()
     cursor, counts, outcome, error_type = int(claim.get("cursor", 0)), Counter(), "completed", None
     events, current = [], None
     try:
@@ -148,12 +150,34 @@ def run_worker(client, queue, *, clock=time.monotonic, sleep=time.sleep, **budge
         if current:
             events.append({"deal_id": int(current["id"]), "status": "error", "error_type": error_type})
             counts["error"] += 1
+    calls, failures = api.calls - calls_before, api.failures - failures_before
     queue.request("finish", lease=claim["lease"], outcome=outcome, cursor=cursor,
-                  calls=sum(api.calls.values()), moved=counts.get("moved", 0))
+                  calls=sum(calls.values()), moved=counts.get("moved", 0))
     return {"ok": outcome != "error", "mode": mode, "outcome": outcome,
-            "counts": dict(counts), "api_calls": dict(api.calls),
-            "api_failed_attempts": dict(api.failures), "error_type": error_type,
+            "counts": dict(counts), "api_calls": dict(calls),
+            "api_failed_attempts": dict(failures), "error_type": error_type,
             "events": events, "checked": len(events)}
+
+
+def run_batches(client, queue, *, clock=time.monotonic, sleep=time.sleep, **budget):
+    """Drain several notices under ONE shared time/call/pacing budget."""
+    api = BudgetedClient(client, queue, None, clock=clock, sleep=sleep, **budget)
+    counts, events, batches, last = Counter(), [], 0, None
+    while batches < 20 and sum(api.calls.values()) < api.max_calls and clock() < api.deadline:
+        result = run_worker(client, queue, clock=clock, sleep=sleep, _api=api)
+        if result["mode"] in {"busy", "idle"}:
+            if last is None:
+                return result
+            break
+        batches += 1
+        counts.update(result["counts"])
+        events.extend(result["events"])
+        last = result
+        if not result["ok"] or result["mode"] == "fallback" or result["outcome"] == "retry":
+            break
+    return {**last, "batches": batches, "counts": dict(counts), "events": events,
+            "checked": len(events), "api_calls": dict(api.calls),
+            "api_failed_attempts": dict(api.failures)}
 
 
 def enqueue_classified_deal(event, source, logger):

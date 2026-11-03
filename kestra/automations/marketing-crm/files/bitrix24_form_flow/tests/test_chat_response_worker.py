@@ -2,7 +2,7 @@ from copy import deepcopy
 import unittest
 from unittest.mock import Mock
 
-from bitrix24_form_flow.form_processor.chat_response_worker import BudgetedClient, BudgetReached, _candidates, run_worker
+from bitrix24_form_flow.form_processor.chat_response_worker import BudgetedClient, BudgetReached, _candidates, run_worker, run_batches
 from bitrix24_form_flow.tests.test_deal_chat_response import Client, deal
 
 
@@ -115,6 +115,18 @@ class ChatWorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "stale lease"):
             guarded.call_full("crm.item.update", {})
         api.call_full.assert_not_called()
+
+    def test_multiple_notices_share_the_same_call_budget_and_pacing(self):
+        api, queue, clock = Api([deal(i) for i in range(1, 8)]), Queue(), Clock()
+        original = queue.request
+        pending = iter([Queue(payload={"deal_id": i}).claim for i in range(1, 8)])
+        queue.request = lambda action, **body: next(pending) if action == "claim" else original(action, **body)
+        result = run_batches(api, queue, clock=clock, sleep=clock.sleep, max_calls=20)
+        self.assertEqual(sum(result["api_calls"].values()), 20)
+        self.assertEqual(result["counts"]["moved"], 3)
+        self.assertEqual(result["outcome"], "retry")
+        self.assertGreaterEqual(clock.now, 38)
+        self.assertEqual(sum(body["calls"] for action, body in queue.calls if action == "finish"), 20)
 
     def test_only_explicit_read_rate_limit_rejections_are_retried(self):
         api, queue, clock = Mock(), Queue(), Clock()
