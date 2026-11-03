@@ -1,6 +1,6 @@
 id: bitrix24_deal_chat_response
 namespace: redunisol
-description: Mueve Presentación y Revisión Manual a Respuesta cuando existe una sesión WhatsApp de Ventas activa y una decisión comercial no rechazada.
+description: Atiende avisos de actividad y reconciliacion acotada con lease compartido, presupuesto y ritmo reservado para la calificacion.
 
 concurrency:
   limit: 1
@@ -15,15 +15,13 @@ labels:
 tasks:
   - id: revisar_chats
     type: io.kestra.plugin.scripts.python.Commands
-    timeout: PT12M
+    timeout: PT2M
     namespaceFiles:
       enabled: true
       include:
         - bitrix24_form_flow/**
     taskRunner:
-      type: io.kestra.plugin.scripts.runner.docker.Docker
-      pullPolicy: IF_NOT_PRESENT
-    containerImage: ghcr.io/kestra-io/kestrapy@sha256:cd587a1497ecc19f4a298c4df9f4053972d0af983562e6a75066f7bea1c90b51
+      type: io.kestra.plugin.core.runner.Process
     env:
       BITRIX24_BASE_URL: "{{ envs.bitrix24_base_url }}"
       BITRIX24_WEBHOOK_PATH: "{{ secret('BITRIX24_WEBHOOK_PATH') }}"
@@ -31,8 +29,11 @@ tasks:
       BITRIX24_LEAD_STATUS_QUALIFIED: "{{ envs.bitrix24_lead_status_qualified }}"
       BITRIX24_LEAD_STATUS_REJECTED: "{{ envs.bitrix24_lead_status_rejected }}"
       BITRIX24_TIMEOUT_SECONDS: "20"
+      CHAT_RESPONSE_QUEUE_URL: "https://redunisol.com.ar/api/internal/bitrix-chat-response"
+      CHAT_RESPONSE_QUEUE_TOKEN: "{{ secret('BITRIX24_ROUTING_ALLOCATION_TOKEN') }}"
+      CHAT_RESPONSE_SCOPE: "{{ flow.namespace }}"
     commands:
-      - python -m bitrix24_form_flow.kestra_deal_chat_response_entrypoint
+      - python -m bitrix24_form_flow.kestra_chat_response_worker_entrypoint
 
 outputs:
   - id: ok
@@ -45,4 +46,5 @@ outputs:
 triggers:
   - id: cada_dos_minutos
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "*/2 * * * *"
+    cron: "* * * * *"
+    recoverMissedSchedules: NONE
