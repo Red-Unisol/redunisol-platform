@@ -77,7 +77,9 @@ anterior delega al nuevo worker: una revision vieja reentregada no puede volver
 al barrido completo ni ejecutar sin configuracion de cola.
 
 Cada tanda dispone de 45 segundos y un maximo absoluto de 20 intentos HTTP a
-Bitrix, incluidos los reintentos. El intervalo minimo entre intentos es dos
+Bitrix, incluidos los reintentos. Puede atender varios avisos dentro de ese mismo
+presupuesto global; pasar al siguiente aviso no reinicia ni el cupo ni la pausa.
+El intervalo minimo entre intentos es dos
 segundos (como maximo 0,5 llamadas/segundo), para reservar capacidad a ingreso y
 calificacion. Solo lecturas rechazadas expresamente con QUERY_LIMIT_EXCEEDED se
 reintentan, con espera creciente. Se mantiene la lectura de verificacion tras

@@ -67,7 +67,7 @@ class ApiLoggingTests(unittest.TestCase):
                 "CHAT_RESPONSE_QUEUE_TOKEN": "private-token", "CHAT_RESPONSE_SCOPE": "prod"}), \
                 patch.object(entrypoint, "load_config", return_value=CONFIG), \
                 patch.object(entrypoint, "QueueClient"), \
-                patch.object(entrypoint, "run_worker", return_value=result, side_effect=failure), \
+                patch.object(entrypoint, "run_batches", return_value=result, side_effect=failure), \
                 redirect_stdout(stdout), redirect_stderr(stderr):
             code = entrypoint.main()
         directive = next(line for line in stdout.getvalue().splitlines() if line.startswith("::"))
