@@ -1,6 +1,6 @@
 # Clasificación Comercial de Negociaciones
 
-Versión: `2026-10-13`
+Versión: `2026-11-03-buenos-aires-sin-publico-provincial`
 
 ## Alcance
 
@@ -60,11 +60,12 @@ mientras BCRA esté pendiente, la consulta Vimarx espera.
 Detalle de persistencia y reintentos:
 [`../technical/vimarx-deal-refresh.md`](../technical/vimarx-deal-refresh.md).
 
-## Buenos Aires, ANSES, Santa Fe y Neuquen — version 2026-10-30
+## Buenos Aires, ANSES, Santa Fe y Neuquen — correccion Buenos Aires 2026-11-03
 
-Estado: **implementado en rama, pendiente de deploy**. Condiciones y lineas confirmadas
-por Santiago en esta conversacion. Solo se aplican las condiciones de esta seccion:
-no se agregan limites de edad, afiliacion, prestamos previos ni exigencias Vimarx.
+Estado de la correccion de Buenos Aires: **implementado en rama, pendiente de merge y deploy**.
+Condiciones y lineas iniciales confirmadas por Santiago el 30/10/2026; retiro de
+Empleado Publico Provincial de Buenos Aires aprobado el 03/11/2026. Solo se aplican
+las condiciones de esta seccion: no se agregan limites de edad, afiliacion, prestamos previos ni exigencias Vimarx.
 Los leads con antecedente en la base congelada CUAD siguen la derivacion externa
 definida en `LEAD_QUALIFICATION.md` y no originan este circuito interno.
 
@@ -75,7 +76,7 @@ familia provincial. El resto de los perfiles debe haber superado la precalificac
 | Regla | Perfil | Condicion | Decision | Etapa | Linea | Bucket |
 |---|---|---|---|---|---|---|
 | `ANSES-010` | Jubilado Nacional, cualquier provincia | Sin condiciones BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
-| `PBA-010` | Buenos Aires + Policia, Docente, Empleado Publico Provincial o Jubilado Provincial | Mismas condiciones que ANSES; sin filtros BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
+| `PBA-010` | Buenos Aires + Policia, Docente o Jubilado Provincial | Mismas condiciones que ANSES; sin filtros BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
 | `SFE-010` | Perfil interno habilitado de Santa Fe | Hasta 7 entidades informadas en el ultimo periodo BCRA | Aprobado | PRESENTACION | `Haberes Premium` | `santa_fe_anses` |
 | `SFE-020` | Perfil interno habilitado de Santa Fe | 8 o mas entidades informadas en ese periodo | Rechazo BCRA, sin distribuir | SIT. NEG. EN BCRA | No aplica | `santa_fe_anses` |
 | `NEU-010` | Perfil interno habilitado de Neuquen | Sin restricciones BCRA por el momento | Aprobado | PRESENTACION | `MUDON` | `neuquen` |
@@ -87,7 +88,7 @@ cero entidades. Una consulta fallida, identificacion invalida o respuesta incomp
 no equivale a cero: conserva la politica existente de actualizacion, reintentos y
 revision de datos. Se reutiliza un snapshot vigente y se actualiza uno vencido.
 
-ANSES, los cuatro perfiles habilitados de Buenos Aires y Neuquen no consultan BCRA
+ANSES, los tres perfiles habilitados de Buenos Aires y Neuquen no consultan BCRA
 para decidir ni quedan bloqueados por un snapshot ausente, negativo, vencido o con
 reintentos pendientes. Ninguna de estas familias
 espera actualizaciones Vimarx ni reintentos de Vimarx para su decision comercial.
@@ -95,6 +96,11 @@ El enriquecimiento general del ingreso conserva su funcion informativa.
 
 El alcance de Buenos Aires y su separacion de CABA/Policia Federal se detallan en
 [BUENOS_AIRES.md](BUENOS_AIRES.md). Motivo comercial: `buenos_aires_approved`.
+Empleado Publico Provincial de Buenos Aires queda fuera de esta familia. Con datos
+completos y sin CUAD se rechaza en la precalificacion del lead por
+`NO CUMPLE REQUISITOS PARA CONVENIO`, sin originar una negociacion interna nueva
+por esta regla.
+La correccion aplica hacia adelante y no reclasifica negociaciones historicas.
 
 Las negociaciones nuevas de estas familias nacen en PENDIENTE CALIFICACION KESTRA,
 provisionalmente con Maru (57), y luego se clasifican y distribuyen por el circuito

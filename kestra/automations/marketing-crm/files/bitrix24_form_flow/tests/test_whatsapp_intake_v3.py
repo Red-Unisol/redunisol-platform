@@ -127,7 +127,13 @@ class IntakeV3Tests(unittest.TestCase):
                         'situacion_laboral': normalized['employment_status'], 'payment_bank': normalized['payment_bank']})
                     self.assertEqual(actual, web)
                     self.assertEqual(evaluate_prequalification(actual), evaluate_prequalification(web))
-                    self.assertTrue(evaluate_prequalification(actual).qualified)
+                    decision = evaluate_prequalification(actual)
+                    excluded = province == 'buenos_aires' and situation == 'empleado_publico'
+                    self.assertEqual(decision.qualified, not excluded)
+                    if excluded:
+                        self.assertEqual(lead[api.config.fields.lead_employment_status], '1239')
+                        self.assertEqual(decision.reason, 'employment_status_not_eligible')
+                        self.assertEqual(decision.rejection_label, 'NO CUMPLE REQUISITOS PARA CONVENIO')
                     writes = len(api.writes)
                     self.assertEqual(process(request, env=CONFIG, client=api)['lead_id'], result['lead_id'])
                     self.assertEqual(len(api.writes), writes)

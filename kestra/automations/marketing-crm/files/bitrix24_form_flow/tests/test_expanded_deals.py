@@ -83,7 +83,7 @@ class ExpandedDealTests(unittest.TestCase):
         vimarx.assert_not_called()
 
     def test_buenos_aires_uses_anses_line_and_shared_pool_without_provider_or_identity_requirements(self):
-        for employment in ("1269", "3745", "1239", "2565"):
+        for employment in ("1269", "3745", "2565"):
             for snapshot in ("negative", "missing", "failed"):
                 with self.subTest(employment=employment, snapshot=snapshot):
                     lead = self.seed(province="221", employment=employment, count=30)
@@ -106,6 +106,11 @@ class ExpandedDealTests(unittest.TestCase):
                     self.assertEqual(self.client.deals[960]["stageId"], "C1:NEW")
                     bcra.assert_not_called()
                     vimarx.assert_not_called()
+
+    def test_buenos_aires_public_employee_has_no_internal_family_or_shared_bucket(self):
+        lead = self.seed(province="221", employment="1239")
+        self.assertEqual(expanded_deal_family(self.config, lead), "")
+        self.assertIsNone(resolve_routing_bucket(self.config, lead).bucket)
 
     def test_buenos_aires_and_caba_keep_federal_police_out_of_the_shared_bucket(self):
         lead = self.seed(province="221", employment="4165")
@@ -158,7 +163,7 @@ class ExpandedDealTests(unittest.TestCase):
                 self.assertEqual(self.qualify()["commercial_action"], "manual_review")
 
     def test_provider_retry_timers_do_not_block_selection_for_unrestricted_families(self):
-        for province, employment in (("213", "3745"), ("209", "2567"), ("221", "1269"), ("221", "1239")):
+        for province, employment in (("213", "3745"), ("209", "2567"), ("221", "1269"), ("221", "3745")):
             with self.subTest(province=province):
                 self.seed(province=province, employment=employment)
                 with patch("bitrix24_form_flow.form_processor.catamarca_deal_qualification.bcra_retry_waiting", return_value=True) as bcra, \
@@ -181,7 +186,7 @@ class ExpandedDealTests(unittest.TestCase):
 
     def test_new_families_create_pending_deals_under_provisional_assignee(self):
         for province, employment in (("279", "3745"), ("213", "3745"), (None, "2567"),
-                                     ("221", "1269"), ("221", "3745"), ("221", "1239"), ("221", "2565")):
+                                     ("221", "1269"), ("221", "3745"), ("221", "2565")):
             with self.subTest(province=province):
                 lead = self.seed(province=province, employment=employment)
                 lead["STATUS_ID"] = "QUALIFIED"

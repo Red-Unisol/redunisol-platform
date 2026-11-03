@@ -1,10 +1,11 @@
 # Precalificacion de leads — Buenos Aires, ANSES, Santa Fe, Neuquen y Haberes CUAD
 
-Version: `2026-10-30-buenos-aires-anses-santa-fe-neuquen-cuad-history`.
+Version: `2026-11-03-buenos-aires-sin-publico-provincial`.
 
-Estado: **implementado en rama, pendiente de deploy**. Definicion funcional confirmada
-por Santiago en la conversacion del 30/10/2026. Git conserva las reglas y la base congelada; Vimarx fue la fuente del relevamiento
-realizado el 30/10/2026. Los CUIT personales no se guardan en Git.
+Estado de la correccion de Buenos Aires: **implementado en rama, pendiente de merge y deploy**.
+Definicion funcional inicial confirmada por Santiago el 30/10/2026; retiro de Empleado
+Publico Provincial de Buenos Aires aprobado el 03/11/2026. Git conserva las reglas y
+la base congelada; Vimarx fue la fuente del relevamiento realizado el 30/10/2026. Los CUIT personales no se guardan en Git.
 
 ## Alcance y prioridad
 
@@ -22,12 +23,20 @@ excluidos, ownership y marcadores de prueba no se reemplazan por estas reglas.
 | 20 | `LEAD-ANSES-010` | Jubilado Nacional, sin antecedente CUAD | GANADO; provincia y banco no restringen la elegibilidad, aunque esos campos esten ausentes |
 | 30 | `LEAD-SFE-010` | Santa Fe + Docente, Empleado Publico Provincial, Policia, Personal de Salud o Jubilado Provincial; sin antecedente CUAD | GANADO; cualquier banco |
 | 40 | `LEAD-NEU-010` | Neuquen + Docente, Empleado Publico Provincial, Policia, Personal de Salud, Jubilado Provincial o Empleado Publico Municipal; sin antecedente CUAD | GANADO; cualquier banco |
-| 50 | `LEAD-PBA-010` | Buenos Aires + Policia, Docente, Empleado Publico Provincial o Jubilado Provincial; sin antecedente CUAD | GANADO; cualquier banco, incluso ausente |
+| 50 | `LEAD-PBA-010` | Buenos Aires + Policia, Docente o Jubilado Provincial; sin antecedente CUAD | GANADO; cualquier banco, incluso ausente |
 | 60 | Reglas existentes | Resto de provincias y perfiles sin antecedente CUAD | Se conservan sus requisitos y resultados anteriores |
 
-Buenos Aires utiliza exclusivamente los cuatro perfiles de la regla `LEAD-PBA-010`.
-Municipal, Nacional y Salud no se agregan. CABA y Policia Federal conservan su
-tratamiento previo. El recorrido completo se define en [BUENOS_AIRES.md](BUENOS_AIRES.md).
+Buenos Aires utiliza exclusivamente los tres perfiles de la regla `LEAD-PBA-010`.
+Empleado Publico Provincial, Municipal, Nacional y Salud no se agregan. CABA y
+Policia Federal conservan su tratamiento previo. El recorrido completo se define en [BUENOS_AIRES.md](BUENOS_AIRES.md).
+
+Desde esta correccion, Empleado Publico Provincial de Buenos Aires sin antecedente
+CUAD recibe el resultado habitual de un perfil no incluido: con datos completos,
+RESULTADO PERDIDO y motivo `NO CUMPLE REQUISITOS PARA CONVENIO`
+(`employment_status_not_eligible`). Sin banco, el lead espera actualizacion conforme
+a la politica existente; no se extiende la excepcion de banco opcional de los tres
+perfiles habilitados. CUAD conserva su prioridad externa. La aplicacion es hacia
+adelante, sin reclasificar leads o negociaciones historicos.
 
 La derivacion externa general por provincia se elimina para Santa Fe y Neuquen.
 La Rioja y Rio Negro conservan sus reglas provinciales, sujetas a la prioridad global
@@ -112,4 +121,6 @@ versionadas en `DEAL_CLASSIFICATION.md` y `DEAL_ROUTING.md`.
 | Sin coincidencia CUAD; Municipal Santa Fe | PERDIDO por situacion laboral |
 | Sin coincidencia CUAD; Municipal Neuquen | GANADO |
 | Sin coincidencia CUAD; Salud Neuquen | GANADO |
+| Sin coincidencia CUAD; Empleado Publico Provincial de Buenos Aires y banco informado | RESULTADO PERDIDO; NO CUMPLE REQUISITOS PARA CONVENIO |
+| Sin coincidencia CUAD; Empleado Publico Provincial de Buenos Aires sin banco | Conservar estado del lead; waiting_for_update / missing_required_field |
 | CUIT completo; archivo de base congelada ausente | Conservar estado; error tecnico recuperable, sin decision comercial |

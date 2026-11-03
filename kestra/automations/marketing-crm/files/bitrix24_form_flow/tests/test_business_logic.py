@@ -5174,7 +5174,7 @@ class BusinessLogicTests(unittest.TestCase):
         self.assertEqual(result["contact_id"], 101)
         self.assertEqual(
             result["rule_version"],
-            "2026-10-30-buenos-aires-v1",
+            "2026-11-03-buenos-aires-sin-publico-provincial",
         )
         self.assertTrue(result["processed_at"])
         chat_queries = [
