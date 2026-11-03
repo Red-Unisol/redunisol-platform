@@ -67,6 +67,17 @@ son cambios posteriores; este contrato no agrega esos mensajes.
 
 ### Valores preparados para la activación
 
+Activación autorizada por Santiago el 03/11/2026 para entradas desde la web, sin
+cupo. Se aplica por Git en dos despliegues ordenados: primero el receptor Kestra
+acepta v1/v2/v3 y usa v3 como ID principal; después Web cambia al Flow v3 y a la
+tanda nueva `website-intake-v3` con límite `unlimited`. El primer cambio no activa
+envíos v3: Web conserva v2 hasta verificar el receptor productivo. Las respuestas
+ordinarias pendientes de v1/v2 conservan su Flow y admisión originales.
+
+Estado de esta etapa: configuración del receptor preparada en rama, pendiente de
+merge y despliegue. La activación Web y su verificación se registran después del
+primer despliegue.
+
 El merge y despliegue de la compatibilidad preceden al cambio de ID de envío.
 Los archivos de entorno cifrados de producción no se cambian con esta preparación.
 
