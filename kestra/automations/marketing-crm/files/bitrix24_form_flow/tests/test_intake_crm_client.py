@@ -31,7 +31,25 @@ class IntakeCrmClientTests(unittest.TestCase):
 
         self.assertEqual(client.call("crm.duplicate.findbycomm", request), {"LEAD": ["10"]})
         self.assertEqual(api.call.call_args_list, [call("crm.duplicate.findbycomm", request)] * 2)
-        sleep.assert_called_once_with(1)
+        sleep.assert_called_once_with(2)
+
+    def test_bitrix_503_quota_response_waits_two_and_four_seconds_without_replaying_writes(self):
+        api = Mock()
+        quota = RuntimeError('Bitrix24 devolvio HTTP 503: {"error":"QUERY_LIMIT_EXCEEDED"}')
+        api.call.side_effect = [quota, quota, {"FIELD": {"type": "string"}}]
+        sleep = Mock()
+        client = IntakeCrmClient(api, sleep=sleep, clock=lambda: 0)
+        self.assertEqual(client.call("crm.lead.fields", {}), {"FIELD": {"type": "string"}})
+        self.assertEqual(api.call.call_count, 3)
+        self.assertEqual(sleep.call_args_list, [call(2), call(4)])
+
+        api.call.reset_mock(side_effect=True)
+        api.call.side_effect = quota
+        sleep.reset_mock()
+        with self.assertRaises(RuntimeError):
+            client.call("crm.contact.add", {"fields": {}})
+        api.call.assert_called_once()
+        sleep.assert_not_called()
 
     def test_transient_http_failures_can_retry_a_safe_read(self):
         for status in (429, 500, 502, 503, 504):
@@ -42,7 +60,7 @@ class IntakeCrmClientTests(unittest.TestCase):
                 client = IntakeCrmClient(api, sleep=sleep, clock=lambda: 0)
                 self.assertEqual(client.call("crm.contact.list", {"filter": {}}), [])
                 self.assertEqual(api.call.call_count, 2)
-                sleep.assert_called_once_with(1)
+                sleep.assert_called_once_with(2 if status == 429 else 1)
 
     def test_nontransient_identity_or_permission_failures_are_not_retried(self):
         for error in (ValueError("CRM identity does not match"),
