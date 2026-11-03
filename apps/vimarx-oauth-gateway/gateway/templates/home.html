@@ -7,10 +7,14 @@
 <p>Esta edición ofrece consultas concretas con campos acotados: identificación interna del socio, nombre y apellido, fechas, importes y estados. No admite consultas libres ni búsquedas por documentos de identidad o identificadores fiscales.</p>
 <p>Los listados de solicitudes incluyen sólo las que tienen fecha asignada. No incluyen borradores sin fecha ni representan el total de solicitudes del sistema.</p>
 {% else %}
-<p>Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT con los permisos de tu usuario de Vimarx.</p>
+<p>Consultá solicitudes, socios, préstamos, cuotas y cuentas de Mutual Celesol desde ChatGPT o Claude con los permisos de tu usuario de Vimarx. Esta edición interna admite búsquedas por DNI y CUIT.</p>
 {% endif %}
 <p>El plugin es publicado por Santiago Agustín Acosta. Permite consultas de solo lectura; no aprueba solicitudes, modifica registros ni realiza pagos.</p>
 <h2>Conectar tu cuenta</h2>
+{% if config.get('GATEWAY_PROFILE') == 'internal' %}
+<p><a href="{{ resource.rsplit('/', 1)[0] }}/claude">Conectar Celesol · Vimarx en Claude</a></p>
+<p>El enlace abre Claude con el nombre y la dirección ya cargados. Confirmá los datos, elegí el registro automático del cliente OAuth e ingresá con tu propio usuario de Vimarx. Cada persona autoriza su propia conexión.</p>
+{% endif %}
 <p>Al conectar el plugin se abre el formulario de ingreso de Red Unisol. Para una conexión MCP personalizada, usá esta dirección con autenticación OAuth:</p>
 <p><code>{{ resource }}</code></p>
 <p>Ingresá tus credenciales únicamente en el formulario HTTPS de conexión. No las escribas en una conversación.</p>

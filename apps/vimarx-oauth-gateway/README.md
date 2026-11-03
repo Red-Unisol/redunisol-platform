@@ -1,6 +1,6 @@
 # Vimarx OAuth gateway
 
-Puente de consultas por usuario entre ChatGPT y Mutual Celesol. Código y estado
+Puente de consultas por usuario entre clientes MCP y Mutual Celesol. Código y estado
 operativo deseado en Git; Docker/Apache en la VPS son el runtime.
 
 El mismo código tiene dos perfiles. Cada uno necesita su propia conexión OAuth:
@@ -32,7 +32,7 @@ seleccionar **Mantener conectado** en el formulario. Esa elección autoriza guar
 las credenciales cifradas en la VPS; no se envían al modelo, cookies ni herramientas.
 Sin esa opción, la contraseña sólo se usa en el login inicial y no se conserva.
 
-El acceso de ChatGPT dura 30 minutos. Con conexión recordada se emite un refresh
+El token OAuth del cliente dura 30 minutos. Con conexión recordada se emite un refresh
 token rotatorio y se renueva sin interacción. El JWT de Vimarx se renueva mediante
 su login existente cuando quedan menos de dos minutos y se está usando el servicio.
 No hay un cron que mantenga usuarios autenticándose sin actividad.
@@ -49,11 +49,65 @@ explícitamente rechazado revoca la conexión y borra sus credenciales. Las caí
 transitorias conservan la conexión y aplican 30 segundos de espera antes de otro
 intento de login. Un cambio de credenciales puede requerir conectar otra vez.
 
+## Claude: edición interna con DNI/CUIT
+
+Compartir **https://mcp.redunisol.com.ar/claude**. Esa ruta abre el formulario
+oficial de Claude con el nombre `Celesol · Vimarx Interno` y la dirección
+`https://mcp.redunisol.com.ar/mcp` ya cargados. No lleva tokens ni conecta una
+cuenta automáticamente. Cada persona confirma el alta y autoriza su propio
+usuario de Vimarx; en Claude debe elegir **Registrar automáticamente**
+(**Register automatically** en inglés) para DCR.
+La opción **Mantener conectado** habilita refresh y renovación de Vimarx con
+los mismos controles de cifrado, actividad y revocación descritos arriba.
+
+La compatibilidad de Claude se limita al perfil interno. Conserva las 26
+herramientas de lectura, incluidas las búsquedas por DNI/CUIT, y los permisos del
+usuario. El perfil del directorio conserva su catálogo y sus callbacks; no se
+habilita Claude en esa edición ni se reemplaza su conexión de OpenAI.
+
+El callback alojado admitido es exclusivamente
+`https://claude.ai/api/mcp/auth_callback`, con coincidencia literal. El formulario
+muestra el hostname del cliente validado antes de autorizar. No se admiten
+subdominios, puertos, query strings o rutas alternativas de Claude.
+
+La verificación debe distinguir las pruebas locales y del protocolo OAuth de
+un recorrido real en Claude: DEMO, búsqueda de su DNI ficticio y una consulta
+posterior a renovar. No presentar una prueba de servidor como una conexión
+real de Claude ni usar una cuenta productiva para el recorrido sintético.
+
+Referencias oficiales: [autenticación de Claude](https://claude.com/docs/connectors/building/authentication)
+y [enlaces de instalación](https://claude.com/docs/connectors/building/directory-vs-custom).
+
+Para actualizar únicamente esta instancia, exportar primero el árbol exacto del
+commit revisado bajo `/opt/vimarx-oauth-gateway` y ejecutar allí:
+
+```bash
+python3 deploy/update_internal.py --revision SHA_COMPLETO
+```
+
+Este actualizador requiere ambos perfiles ya instalados. Construye la imagen,
+respalda la base interna y cambia únicamente su `APP_IMAGE`. Conserva claves,
+credenciales, volumen y puerto. Verifica que la identidad del contenedor del
+directorio, su entorno y los videos permanezcan iguales; no modifica Apache,
+DNS, timers ni reinicia el directorio. Ante un error revierte sólo la instancia
+interna. El instalador general `deploy/install.py` actualiza ambos perfiles y
+no corresponde a una intervención limitada como ésta.
+
+`deploy/probe.py --client claude --remember` comprueba el protocolo con la cuenta
+DEMO: DCR, PKCE, catálogo interno, DNI/CUIT ficticios y rotación/reintentos de
+refresh. Las credenciales se leen de stdin o de un archivo privado, nunca de
+argumentos. Los callbacks se verifican y parsean localmente sin pedir la URL de
+Claude. Los hooks de vencimiento de su API Python deben resolver el hash del
+access token de esa prueba y actuar exclusivamente sobre esa sesión DEMO;
+nunca reducir el plazo global ni modificar otras conexiones. Esta prueba de
+protocolo no sustituye comprobar el ingreso y uso en el cliente real de Claude.
+
 ## OAuth y concurrencia
 
 Authlib implementa Authorization Code, PKCE S256 obligatorio, DCR y refresh. El
 cliente, callback, scope `mcp:read` y resource quedan ligados a cada transacción.
-Los callbacks permitidos son las rutas HTTPS conocidas de ChatGPT y las rutas
+Los callbacks permitidos son las rutas HTTPS conocidas de ChatGPT, el callback
+exacto de Claude sólo en el perfil interno, y las rutas
 `/callback` o `/callback/<id>` sobre HTTP loopback (`127.0.0.1`, `localhost` o
 `[::1]`) para escritorio. Se admiten puertos efímeros, sin userinfo, query ni
 fragmento. Cada autorización e intercambio de código exige la URI exacta
