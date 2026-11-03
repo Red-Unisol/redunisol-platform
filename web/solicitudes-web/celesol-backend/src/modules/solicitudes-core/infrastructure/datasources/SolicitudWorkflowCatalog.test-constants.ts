@@ -90,7 +90,7 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     sortOrder: 10,
   },
   "Confirmada|liquidar|VerificarFirmaYDocumentacion": {
-    actionLabel: "Mandar a revisar firma",
+    actionLabel: "Enviar a firmar",
     defaultComment: "Análisis finalizado; firma pendiente de aprobación.",
     description: null,
     requiresComment: false,
