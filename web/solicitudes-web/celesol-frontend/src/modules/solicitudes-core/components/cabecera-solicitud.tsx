@@ -31,6 +31,7 @@ function formatDesde(value?: string | null) {
 // Punto de color del estado sobre fondo marino.
 const PUNTO_ESTADO: Record<string, string> = {
   danger: "bg-red-300",
+  info: "bg-sky-300",
   neutral: "bg-white/60",
   success: "bg-verde-claro",
   warning: "bg-amber-300",
