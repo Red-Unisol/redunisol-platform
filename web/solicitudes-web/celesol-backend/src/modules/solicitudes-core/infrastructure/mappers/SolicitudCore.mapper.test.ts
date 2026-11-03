@@ -27,6 +27,7 @@ describe("SolicitudCoreMapper", () => {
   it("maps canonical persisted fields into the domain model", () => {
     const record: PrismaSolicitudShape = {
       administrativeCoreControl: null,
+      desestimacionHistorialId: null,
       archivedAt: null,
       analisisFinalizadoAt: null, analisisFinalizadoBy: null,
       signatureCycleId: null, signatureRequestedAt: null,
@@ -143,6 +144,7 @@ describe("SolicitudCoreMapper", () => {
     const record: PrismaSolicitudShape = {
       ...({
         administrativeCoreControl: null,
+      desestimacionHistorialId: null,
       archivedAt: null,
       analisisFinalizadoAt: null, analisisFinalizadoBy: null,
       signatureCycleId: null, signatureRequestedAt: null,

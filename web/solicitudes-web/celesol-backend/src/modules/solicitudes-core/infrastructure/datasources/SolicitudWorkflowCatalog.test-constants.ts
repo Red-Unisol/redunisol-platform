@@ -25,17 +25,24 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "Liquidada|desestimar|Desestimada",
   "Liquidada|transferir|Transferir",
   "Liquidada|verificar_firma|VerificarFirmaYDocumentacion",
+  "Motor|desestimar|Desestimada",
   "Motor|motor|RevisionRiesgo",
+  "Pagada|desestimar|Desestimada",
   "PreAprobada|confirmar|Confirmada",
   "PreAprobada|desestimar|Desestimada",
   "PreAprobada|revisar_monto_cuota|RevisionRiesgo",
+  "Rechazada|desestimar|Desestimada",
   "Revisar|desestimar|Desestimada",
   "Revisar|revisar_reenviar|RevisionRiesgo",
   "RevisionRiesgo|confirmar|Confirmada",
+  "RevisionRiesgo|desestimar|Desestimada",
   "RevisionRiesgo|preaprobar|PreAprobada",
   "RevisionRiesgo|rechazar|Rechazada",
   "RevisionRiesgo|revisar|Revisar",
+  "Transferir|desestimar|Desestimada",
   "Transferir|pagar|Pagada",
+  "Vencida|desestimar|Desestimada",
+  "VerificarFirmaYDocumentacion|desestimar|Desestimada",
   "VerificarFirmaYDocumentacion|transferir|Transferir",
 ] as const;
 
@@ -48,6 +55,10 @@ export const LEGACY_WORKFLOW_STATE_CODES = [
 ] as const;
 
 export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
+  ...Object.fromEntries(["Motor", "Pagada", "Rechazada", "RevisionRiesgo", "Transferir", "Vencida", "VerificarFirmaYDocumentacion"]
+    .map(code => [code + "|desestimar|Desestimada", {
+      actionLabel: "Desestimar", defaultComment: null, description: null, requiresComment: true, sortOrder: 100,
+    }])),
   "CargaVendedor|desestimar|Desestimada": {
     actionLabel: "Desestimar",
     defaultComment: "Desestimar",

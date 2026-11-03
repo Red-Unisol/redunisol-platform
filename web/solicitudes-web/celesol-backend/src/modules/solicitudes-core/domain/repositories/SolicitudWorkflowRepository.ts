@@ -1,5 +1,6 @@
 import type { SolicitudEstadoHistorial } from "../entities/SolicitudEstadoHistorial.entity";
 import type { WorkflowTransition } from "../entities/WorkflowTransition.entity";
+import type { DismissalReversal } from "../workflow/Dismissal";
 import type {
   ExecuteSolicitudWorkflowPlanInput,
   ExecuteSolicitudWorkflowResult,
@@ -16,6 +17,7 @@ export type SolicitudTransitionValidationContext = {
     ownerId: string | null;
   } | null;
   transition: {
+    dismissalReversal?: DismissalReversal;
     isActive: boolean;
     requiresComment: boolean;
     transitionId?: string | null;
