@@ -7,6 +7,8 @@ const BADGE_VARIANT_CLASSES = {
   warning: "border-warning/50 bg-warning/20 text-warning-foreground",
   // danger-foreground es blanco (para botones): sobre el rosa no se leia.
   danger: "border-danger/40 bg-danger/10 text-[#b42318]",
+  // Celeste: etapas de cierre operativo (firma y transferencia).
+  info: "border-sky-300 bg-sky-50 text-sky-800",
   neutral: "border-input-border bg-background text-foreground-secondary",
 } as const;
 
@@ -14,6 +16,7 @@ const BADGE_DOT_CLASSES = {
   success: "bg-success-foreground",
   warning: "bg-warning-foreground",
   danger: "bg-[#b42318]",
+  info: "bg-sky-600",
   neutral: "bg-foreground-muted",
 } as const;
 
