@@ -144,6 +144,7 @@ model Solicitud {
   id                       String                     @id @default(uuid()) @db.Uuid
   loanReplacements SolicitudPrestamoReplacement[]
   administrativeCoreControl Json? @map("administrative_core_control")
+  desestimacionHistorialId String? @map("desestimacion_historial_id") @db.Uuid
   legacyOid                String?                    @unique @map("legacy_oid")
   analisisFinalizadoAt      DateTime?                  @map("analisis_finalizado_at")
   analisisFinalizadoBy      String?                    @map("analisis_finalizado_by") @db.Uuid

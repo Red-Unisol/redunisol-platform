@@ -95,7 +95,7 @@ describe("Canonical workflow transition catalog", () => {
       transitions
         .filter((transition) => transition.fromState.code === "Transferir")
         .map((transition) => transition.actionCode),
-      ["pagar"],
+      ["desestimar", "pagar"],
     );
   });
 });

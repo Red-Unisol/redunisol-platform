@@ -1,7 +1,9 @@
 import type { SolicitudCore } from "../entities/SolicitudCore.entity";
 import type { WorkflowTransition } from "../entities/WorkflowTransition.entity";
+import type { DismissalReversal } from "./Dismissal";
 
 export type ExecuteSolicitudTransitionInput = {
+  dismissalReversal?: DismissalReversal;
   administrativeCorrection?: { expectedUpdatedAt: string; requestId: string };
   actionCode: string;
   changedBy: string;
