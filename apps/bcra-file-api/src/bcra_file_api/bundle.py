@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import tempfile
 import time
 from contextlib import closing
@@ -57,8 +58,10 @@ def component_version(kind: str, files: list[dict], period: str) -> str:
 
 
 class BuildBudget:
-    def __init__(self, config, work: Path, deadline: float):
+    def __init__(self, config, work: Path, deadline: float, pending: Path | None = None):
         self.config, self.work, self.deadline = config, work, deadline
+        self.pending = pending
+        self.completed: list[Path] = []
         self.last_check = -1.0
 
     def __call__(self, *, force=False):
@@ -69,9 +72,45 @@ class BuildBudget:
         if shutil.disk_usage(self.work).free < self.config.min_free_bytes:
             raise SourceError('BCRA build reached the disk reserve; active data retained')
         size = sum(path.stat().st_size for path in self.work.iterdir() if path.is_file())
+        if self.pending:
+            size += pending_bytes(self.pending)
+        size += sum(path.stat().st_size for path in self.completed if path.is_file())
         if size > self.config.max_build_bytes:
             raise SourceError('BCRA build exceeded its storage budget; active data retained')
         self.last_check = now
+
+
+def pending_bytes(pending: Path) -> int:
+    return sum(path.stat().st_size for path in pending.glob('*') if path.is_file() and not path.is_symlink())
+
+
+def pending_manifest(path: Path) -> dict | None:
+    if not path.is_file():
+        return None
+    # Recover hot rollback journals before reading a checkpointed database.
+    # Immutable read-only opens are appropriate only after publication.
+    try:
+        with closing(sqlite3.connect(path)) as connection:
+            exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='metadata'").fetchone()
+            row = connection.execute('SELECT value FROM metadata').fetchone() if exists else None
+            return json.loads(row[0]) if row else None
+    except (sqlite3.Error, ValueError):
+        raise SourceError('Invalid BCRA pending component; active publication retained') from None
+
+
+def prune_pending(pending: Path, versions: dict):
+    keep = {kind + '-' + version + '.sqlite' for kind, version in versions.items()}
+    for path in pending.glob('*'):
+        name = path.name.removesuffix('-journal')
+        if (name.endswith('.sqlite') and name.split('-', 1)[0] in COMPONENT_KINDS
+                and name not in keep and path.is_file() and not path.is_symlink()):
+            path.unlink()
+
+
+def unpublished_components(root: Path, previous: dict | None) -> list[Path]:
+    active = {inside(root, item['path']) for item in (previous or {}).get('components', {}).values()}
+    return [path for kind in COMPONENT_KINDS for path in (root / 'components' / kind).glob('*.sqlite')
+            if not path.is_symlink() and path.resolve() not in active]
 
 
 def clean_staging(root: Path):
@@ -85,7 +124,7 @@ def clean_staging(root: Path):
 def collect_unused(root: Path, manifest: dict):
     keep = {inside(root, component['path']) for component in manifest['components'].values()}
     keep.update(inside(root, file['path']) for file in manifest['files'])
-    for directory in ('components', 'raw', 'archives'):
+    for directory in ('components', 'raw', 'archives', 'pending'):
         parent = root / directory
         if not parent.exists() or parent.is_symlink():
             continue
@@ -119,9 +158,13 @@ def refresh_bundle(manager, deadline: float) -> dict:
     legacy = read_manifest(manager.database)
     with manager.snapshot_lock:
         clean_staging(root)
-        if previous:
-            collect_unused(root, previous)
-    if shutil.disk_usage(root).free < config.min_free_bytes + min(config.max_build_bytes, 25 * 1024**3):
+    pending = root / 'pending'
+    pending.mkdir(exist_ok=True)
+    # Persisted blocks already occupy part of the construction allowance.
+    cached = unpublished_components(root, previous)
+    retained_bytes = pending_bytes(pending) + sum(path.stat().st_size for path in cached)
+    remaining = max(0, min(config.max_build_bytes, 25 * 1024**3) - retained_bytes)
+    if shutil.disk_usage(root).free < config.min_free_bytes + remaining:
         raise SourceError('Insufficient free space to start the extended BCRA build')
     client = SourceClient(config, deadline=deadline)
     assets = client.catalog()
@@ -140,7 +183,7 @@ def refresh_bundle(manager, deadline: float) -> dict:
 
     with tempfile.TemporaryDirectory(prefix='refresh-', dir=root) as temporary:
         work = Path(temporary)
-        guard = BuildBudget(config, work, deadline)
+        guard = BuildBudget(config, work, deadline, pending)
         downloaded = []
         for asset in assets:
             guard()
@@ -152,6 +195,13 @@ def refresh_bundle(manager, deadline: float) -> dict:
         if set(by_kind) != expected:
             raise SourceError('Extended BCRA publication is incomplete')
         versions = {kind: component_version(kind, downloaded, period) for kind in COMPONENT_KINDS}
+        prune_pending(pending, versions)
+        wanted_paths = {root / 'components' / kind / (wanted + '.sqlite') for kind, wanted in versions.items()}
+        for path in cached:
+            if path in wanted_paths:
+                guard.completed.append(path)
+            else:
+                path.unlink()
         version = hashlib.sha256(json.dumps(['bundle-v1', period, versions], sort_keys=True).encode()).hexdigest()
         warnings = ['BCRA download log returned null for ' + file['name']
                     for file in downloaded if file.get('terms_log_result') == 'null_response']
@@ -185,15 +235,22 @@ def refresh_bundle(manager, deadline: float) -> dict:
                                     'bytes': destination.stat().st_size}
                 progress('reuse_completed_' + kind, completed['rows'])
                 continue
-            path = work / (kind + '.sqlite')
-            if kind == 'current' and legacy and legacy['version'] == wanted:
+            path = pending / (kind + '-' + wanted + '.sqlite')
+            metadata = pending_manifest(path)
+            if metadata and metadata['version'] == wanted:
+                progress('reuse_completed_' + kind, metadata['rows'])
+            elif kind == 'current' and legacy and legacy['version'] == wanted:
                 # Reuse the already validated database without copying its 2+ GB.
+                path.unlink(missing_ok=True)
                 os.link(manager.database, path)
                 metadata = legacy
             else:
                 progress('import_' + kind)
                 inputs = {key: archive(key) for key in required}
                 if kind == 'current':
+                    # The monthly component is rebuilt if interrupted before
+                    # completion; extended tables retain their durable blocks.
+                    path.unlink(missing_ok=True)
                     current_files = [by_kind[key] for key in required]
                     metadata = import_snapshot(path, inputs,
                         {'period': period, 'version': wanted, 'checked_at': timestamp(), 'files': current_files},
@@ -234,6 +291,7 @@ def refresh_bundle(manager, deadline: float) -> dict:
             with path.open('r+b') as handle:
                 os.fsync(handle.fileno())
             os.replace(path, destination)
+            guard.completed.append(destination)
         guard(force=True)
         manifest = {'schema_version': 2, 'version': version, 'period': period,
                     'checked_at': timestamp(), 'imported_at': timestamp(),

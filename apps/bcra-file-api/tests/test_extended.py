@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -278,6 +279,8 @@ class BundleTests(unittest.TestCase):
         self.assertEqual((self.root / 'active.json').read_bytes(), original)
         with TestClient(create_app(self.config)) as client:
             self.assertEqual(self.request(client, '/centraldedeudores/v1.0/Deudas/Historicas/' + CUIL).status_code, 200)
+        with patch('bcra_file_api.bundle.build_component', side_effect=AssertionError('reuse completed build')):
+            self.assertEqual(self.refresh()['action'], 'updated')
 
     def test_bad_import_never_publishes_partial_coverage(self):
         import_snapshot(self.manager.database, archives(), manifest(), 1)
@@ -317,6 +320,83 @@ class BundleTests(unittest.TestCase):
         self.manager.config = replace(self.config, max_check_age_hours=-1)
         self.assertEqual(compatibility_response(self.manager, CUIL).status_code, 503)
         self.assertEqual(compatibility_response(self.manager, CUIL, historical=True).status_code, 503)
+
+    def test_next_night_resumes_blocks_after_restart_and_a_name_source_change(self):
+        from test_resume import InterruptedArchive
+        import_snapshot(self.manager.database, archives(rows=base(situation=1)), manifest(), 1)
+        original = self.manager.database.read_bytes()
+        text = history() + history(OTHER) + ''.join(history(str(20999999990 + i)) for i in range(5))
+        self.fixtures['24DSF'] = InterruptedArchive({'24dsf.txt': text}, after=3)
+        def build(*args, **kwargs):
+            return build_component(*args, **kwargs, block_rows=2)
+        with self.sources(), patch('bcra_file_api.bundle.build_component', side_effect=build):
+            self.manager._run()
+        self.assertEqual(self.manager.state['status'], 'failed')
+        self.assertFalse((self.root / 'active.json').exists())
+        self.assertEqual(self.manager.database.read_bytes(), original)
+        checkpoint = next((self.root / 'pending').glob('history-*.sqlite'))
+        with closing(sqlite3.connect(checkpoint)) as connection:
+            self.assertEqual(connection.execute('SELECT count(*) FROM history').fetchone()[0], 2)
+        self.manager = RefreshManager(self.config)
+        self.fixtures['24DSF'] = FakeArchive({'24dsf.txt': text})
+        self.revisions['PADRON'] = 'new-day'
+        from bcra_file_api.component_store import history_record
+        with self.sources(), patch('bcra_file_api.bundle.build_component', side_effect=build), \
+                patch('bcra_file_api.bundle.import_snapshot', side_effect=AssertionError('reuse completed monthly base')), \
+                patch('bcra_file_api.component_store.history_record', wraps=history_record) as parse:
+            result = self.manager._refresh()
+        self.assertEqual(parse.call_count, 5)
+        self.assertEqual(result['component_rows']['history'], 7)
+        self.assertEqual(list((self.root / 'pending').glob('*.sqlite')), [])
+        self.assertEqual(compatibility_response(self.manager, CUIL, historical=True).status_code, 200)
+
+    def test_changed_history_source_discards_only_its_obsolete_checkpoint(self):
+        from test_resume import InterruptedArchive
+        text = history() + history(OTHER) + history('20999999999')
+        self.fixtures['24DSF'] = InterruptedArchive({'24dsf.txt': text}, after=2)
+        def build(*args, **kwargs):
+            return build_component(*args, **kwargs, block_rows=2)
+        with self.sources(), patch('bcra_file_api.bundle.build_component', side_effect=build):
+            with self.assertRaises(SourceError):
+                self.manager._refresh()
+        old = next((self.root / 'pending').glob('history-*.sqlite'))
+        self.revisions['24DSF'] = 'rectified-file'
+        self.fixtures['24DSF'] = FakeArchive({'24dsf.txt': text})
+        from bcra_file_api.component_store import history_record
+        with self.sources(), patch('bcra_file_api.component_store.history_record', wraps=history_record) as parse:
+            self.manager._refresh()
+        self.assertEqual(parse.call_count, 3)
+        self.assertFalse(old.exists())
+
+    def test_completed_pending_component_cannot_bypass_row_drop_validation(self):
+        self.fixtures['24DSF'] = FakeArchive({'24dsf.txt': history() + history(OTHER)})
+        self.refresh()
+        original = (self.root / 'active.json').read_bytes()
+        self.revisions['24DSF'] = 'suspicious-shrink'
+        self.fixtures['24DSF'] = FakeArchive({'24dsf.txt': history()})
+        with self.assertRaisesRegex(SourceError, 'row count dropped'):
+            self.refresh()
+        with patch('bcra_file_api.bundle.build_component', side_effect=AssertionError('reuse completed pending')):
+            with self.assertRaisesRegex(SourceError, 'row count dropped'):
+                self.refresh()
+        self.assertEqual((self.root / 'active.json').read_bytes(), original)
+
+    def test_storage_budget_includes_blocks_retained_from_previous_nights(self):
+        pending = self.root / 'pending'; pending.mkdir()
+        (pending / 'history.sqlite').write_bytes(b'x' * 101)
+        work = self.root / 'refresh-current'; work.mkdir()
+        budget = BuildBudget(replace(self.config, max_build_bytes=100), work,
+                             time.monotonic() + 60, pending)
+        with self.assertRaisesRegex(SourceError, 'storage budget'):
+            budget()
+        (pending / 'history.sqlite').unlink()
+        completed = self.root / 'completed.sqlite'; completed.write_bytes(b'x' * 101)
+        budget.completed.append(completed)
+        with self.assertRaisesRegex(SourceError, 'storage budget'):
+            budget(force=True)
+        (pending / 'history.sqlite').write_bytes(b'x')
+        clean_staging(self.root)
+        self.assertTrue((pending / 'history.sqlite').exists())
 
     @unittest.skipUnless(SEVEN_ZIP, '7z/7zz required')
     def test_real_archives_build_and_serve_the_complete_bundle(self):

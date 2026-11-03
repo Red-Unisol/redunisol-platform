@@ -65,13 +65,15 @@ instantánea con la API oficial ni se determina elegibilidad crediticia.
   Los defaults de la aplicación mantienen el importador anterior para pruebas.
 - Cinco componentes SQLite inmutables: `current`, `history`, `corrections`,
   `normal` y `padron`. Un único `active.json` selecciona la versión completa.
-- Se construye en `refresh-*`, en el mismo volumen. El manifiesto cambia mediante
+- Las descargas temporales usan `refresh-*`; los componentes en construcción se
+  conservan en `pending/`, en el mismo volumen. El manifiesto cambia mediante
   rename atómico únicamente después de validar todos los componentes y sus
   entidades. Las consultas mantienen una versión completa durante la lectura;
   el importador trabaja en otro hilo y las consultas SQLite usan un thread pool.
-- Un fallo conserva la publicación anterior. No se publica un histórico parcial.
-  Después del cambio se retiran componentes y comprimidos que ya no se usan.
-  Las construcciones abandonadas se limpian al comenzar el siguiente refresh.
+- Un fallo conserva la publicación anterior y los bloques confirmados de la
+  construcción. No se publica un histórico parcial. Después del cambio se retiran
+  componentes y comprimidos que ya no se usan. Al iniciar se limpian únicamente
+  las descargas temporales abandonadas; los puntos de continuación se conservan.
 - Se reutilizan componentes cuyo contenido no cambió. Una corrección diaria se
   guarda en una tabla separada y se aplica al consultar; no obliga a reconstruir
   las 60 millones de filas históricas. Cambiar sólo nombres tampoco reconstruye
@@ -141,11 +143,31 @@ las 21:00**, sin modificar consumidores.
 
 El servicio sólo admite trabajo pesado entre las 21:00 y las 07:00, incluso con
 `run_now=true`. El presupuesto de diez horas se acorta al cierre de la ventana y
-se controla en descarga, descompresión y SQL. Al agotarse, se descarta el temporal
-y se conserva la base activa. Reiniciar marca el job interrumpido como fallido.
-No hay reanudación dentro de un componente incompleto; la siguiente noche
-reintenta. Los componentes terminados de una primera carga interrumpida justo
-antes de publicar pueden reutilizarse después de verificar sus huellas.
+se controla en descarga, descompresión y SQL. Al agotarse, el job queda fallido y
+se conserva la base activa, junto con los bloques confirmados en `pending/`.
+Reiniciar también marca el job interrumpido como fallido; no dispara trabajo de
+día. El scheduler habitual lo retoma la siguiente noche con un nuevo job.
+
+Histórico, padrón, fecha normal y rectificaciones confirman bloques de **100.000
+registros de entrada**. Cada transacción SQLite guarda los datos, la posición
+del archivo y los contadores juntos, con journal de rollback y sincronización
+`EXTRA`. Una interrupción puede repetir únicamente el bloque sin confirmar.
+El fin de cada miembro se confirma después de validar la descompresión; los
+metadatos de componente completo se escriben después del `quick_check`.
+
+Cada noche se descargan y verifican nuevamente los comprimidos. Los puntos de
+continuación están ligados a la huella del contenido de cada componente: un
+cambio descarta sólo el avance de ese componente. Un padrón o una rectificación
+nueva no descartan el histórico si su archivo sigue igual. Como 7z es secuencial,
+se vuelve a descomprimir el prefijo confirmado, pero se omiten su interpretación
+y su inserción SQL; no se guarda el texto completo en disco.
+
+Los componentes ya terminados también se conservan entre noches y se reutilizan
+después de verificar sus huellas. La base mensual se conserva cuando termina;
+una base mensual interrumpida antes de terminar se reconstruye. La publicación
+atómica sigue exigiendo todos los componentes completos y todas las validaciones.
+Los límites de almacenamiento incluyen los bloques pendientes, y la reserva de
+inicio descuenta el espacio de construcción que esos bloques ya ocupan.
 
 Protecciones Compose, ajustables mediante configuración de la aplicación:
 
@@ -227,4 +249,6 @@ Los tests usan datos sintéticos y 7z reales cuando está disponible 7z/7zz
 Cubren contratos, rectificaciones históricas, montos, fechas, meses vacíos,
 publicación fallida, cambios por componente, migración sin copiar, lecturas
 concurrentes, autenticación, vigencia, límites de recursos y ventana nocturna.
+También cubren reanudación entre noches, cambio de huellas, descompresión fallida
+y salida abrupta de un proceso con un bloque SQL sin confirmar.
 La integración usa seis comprimidos de prueba y sirve ambas rutas GET.
