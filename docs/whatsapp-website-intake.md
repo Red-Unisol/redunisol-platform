@@ -3,9 +3,9 @@
 Definición acordada el 22/10 y ampliada el 27/10/2026: todos los segmentos del Router
 actual, exclusivamente para una entrada desde el botón de la web con referencia
 vigente y vinculada al teléfono/canal. CUIL obligatorio y email opcional.
-La primera tanda tiene **10 números de WhatsApp únicos**. La siguiente prepara
-**20 números únicos**, con su propio ID y cupo persistente; el resto continúa por
-el Router anterior y su formulario web.
+Las tandas iniciales de **10 y 20 números de WhatsApp únicos** conservan sus cupos
+e historial. La configuración productiva de esta versión usa una tanda v3 nueva
+**sin cupo**, exclusivamente para entradas desde la web con referencia válida.
 
 ## Versión 3: provincias ampliadas y despliegue sin cupo
 
@@ -74,12 +74,23 @@ tanda nueva `website-intake-v3` con límite `unlimited`. El primer cambio no act
 envíos v3: Web conserva v2 hasta verificar el receptor productivo. Las respuestas
 ordinarias pendientes de v1/v2 conservan su Flow y admisión originales.
 
-Estado de esta etapa: configuración del receptor preparada en rama, pendiente de
-merge y despliegue. La activación Web y su verificación se registran después del
-primer despliegue.
+El receptor se prepara en el PR #647. El cambio Web se aplica únicamente después
+de comprobar ese despliegue. La publicación verificada en Meta el 30/10/2026 se
+considera vigente por indicación explícita de Santiago el 03/11/2026; no se
+reautentica Meta para este corte. La configuración
+Web de esta versión usa `950118281197789`, tanda `website-intake-v3`, límite
+`unlimited` y sin lista de destinatarios. La fecha de elegibilidad configurada es
+`2026-11-03T09:44:25-03:00`; los envíos v3 comienzan al quedar activo el despliegue
+Web. No se reinician tandas, contadores ni solicitudes anteriores.
+
+La tanda ilimitada se crea automáticamente con la primera admisión ordinaria
+desde la web. La prueba `PRUEBAFORM` no crea tandas ni admisiones; verifica entrega,
+respuesta y CRM con la marca E2E. La auditoría posterior debe comprobar la
+configuración de PHP/workers, el límite `unlimited`, la preservación de v1/v2 y el
+recorrido de una entrada web auténtica.
 
 El merge y despliegue de la compatibilidad preceden al cambio de ID de envío.
-Los archivos de entorno cifrados de producción no se cambian con esta preparación.
+La activación modifica por Git los valores cifrados de producción de esta tabla.
 
 | Runtime | Variable | Valor de activación |
 |---|---|---|
