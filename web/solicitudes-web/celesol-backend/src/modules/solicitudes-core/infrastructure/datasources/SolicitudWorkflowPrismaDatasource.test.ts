@@ -1254,6 +1254,7 @@ class FakeWorkflowPrisma {
 
   client() {
     return {
+      user: { findFirst: async () => ({ id: "user-1", isSystemAdmin: false, workflowOwnerId: "owner-vendedor" }) },
       $queryRaw: async () => { this.lockCount += 1; return []; },
       solicitudDocumentReview: { findMany: async () => this.signatureApproved ? [this.signatureReview()] : [] },
       solicitudDocumentDecision: { findMany: async () => this.signatureApproved ? [{ id: "approval-1", humanDecision: "approve", legajoAdjuntoId: "legajo-1", verificationId: "valid-1", review: this.signatureReview() }] : [] },
@@ -1307,6 +1308,7 @@ class FakeWorkflowPrisma {
         },
       },
       solicitudEstadoHistorial: {
+        findFirst: async () => null,
         create: async (args: { data: unknown }) => {
           this.historyCreateCalls.push(args);
 

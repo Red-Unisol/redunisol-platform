@@ -45,9 +45,11 @@ class ProcessEdnaIntake implements ShouldQueue
         }
         try {
             $response = Http::asJson()->acceptJson()->connectTimeout(5)->timeout(85)->withoutRedirecting()->post($url, [
-                'contract' => EdnaIntake::CONTRACT, 'case_id' => $send->request_id, 'flow_id' => $send->flow_id,
+                'contract' => ($send->intake_test ?? false) ? EdnaIntake::TEST_CONTRACT : EdnaIntake::CONTRACT,
+                'case_id' => $send->request_id, 'flow_id' => $send->flow_id,
                 'acknowledgement_version' => 2,
                 'phone' => Crypt::decryptString($send->recipient), 'dry_run' => false,
+                'test_reference' => ($send->intake_test ?? false) ? EdnaIntake::TEST_REFERENCE : null,
                 'answer' => json_decode(Crypt::decryptString($request->answer), true, 16, JSON_THROW_ON_ERROR),
                 'received_at' => CarbonImmutable::parse($request->received_at)->toIso8601String(),
                 'attribution' => $service->attribution($send),

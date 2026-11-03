@@ -3,6 +3,7 @@ import type {
   WorkflowExecutionPlan,
   WorkflowValidationContext,
 } from "./types";
+import { REVERSE_DISMISSAL_ACTION } from "./Dismissal";
 
 // Owner cuyo ingreso dispara el reparto por turno. Si manana otra area
 // (por ejemplo TESORERIA) tuviera que repartir igual, se suma aca.
@@ -15,6 +16,17 @@ export class SolicitudWorkflowPlanBuilder {
   ): WorkflowExecutionPlan {
     const fromStateId = context?.transitionValidation.solicitud?.estadoActualId ?? null;
     const transition = context?.transitionValidation.transition;
+    if (command.actionCode === REVERSE_DISMISSAL_ACTION) {
+      // The destination and dismissal identity come exclusively from the server.
+      // Restoring Motor must not run it again; restoring Riesgo must not reassign.
+      const restore = { ...command, dismissalReversal: transition?.dismissalReversal };
+      return {
+        command: restore, expectedState: { fromStateId },
+        steps: [{ actionCode: restore.actionCode, fromStateId, kind: "domain-transition",
+          technical: false, toStateId: transition?.toStateId ?? null,
+          transitionId: null, transitionInput: restore }],
+      };
+    }
     const plan: WorkflowExecutionPlan = {
       command,
       expectedState: {

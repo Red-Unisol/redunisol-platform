@@ -4,8 +4,8 @@
  * evaluar, y es informacion crediticia de una persona que no hace falta
  * conservar.
  *
- * Los tres son finales (no tienen transiciones de salida), asi que alcanza
- * con borrar al entrar: la solicitud no vuelve a un estado que lo necesite.
+ * Una desestimación puede revertirse por un administrador. El informe borrado
+ * no se restaura: debe consultarse nuevamente si la solicitud lo necesita.
  */
 export const ESTADOS_QUE_BORRAN_INFORME_CREDIXSA: readonly string[] = [
   "Desestimada",

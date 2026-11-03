@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administrar conexiones · Red Unisol</title><link rel="stylesheet" href="{{ resource.rsplit('/', 1)[0] }}/style.css"></head>
+<body><main><p class="brand">RED UNISOL</p><h1>Administrar conexiones</h1>
+<p>Ingresá con tu usuario de Vimarx para desconectar todas tus conexiones recordadas y borrar las credenciales guardadas en el puente.</p>
+{% if disconnected is not none %}<p role="status">Conexiones desconectadas: {{ disconnected }}. Sus credenciales fueron eliminadas del servicio activo.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post"><input name="csrf" type="hidden" value="{{ csrf }}">
+<label for="username">Usuario de Vimarx</label><input id="username" name="username" autocomplete="username" maxlength="128" required>
+<label for="password">Contraseña</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="512" required>
+<button>Desconectar y borrar mis conexiones</button></form>
+<p><a href="{{ resource.rsplit('/', 1)[0] }}/">Volver al inicio</a></p></main></body></html>

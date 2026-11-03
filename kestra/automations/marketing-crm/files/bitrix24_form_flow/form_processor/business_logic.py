@@ -18,6 +18,7 @@ from .bcra_client import (
 from .bcra_service import sync_lead_bcra
 from .bitrix_client import BitrixClient
 from .config import load_config
+from .haberes_cuad_registry import RegistryUnavailable, cuit_digits, load_registry
 from .contact_service import upsert_contact
 from .input_parser import normalize_business_input, parse_body
 from .lead_service import (
@@ -40,6 +41,7 @@ from .qualification import (
     QualificationResult,
     evaluate_prequalification,
     evaluate_qualification,
+    haberes_cuad_referral_result,
 )
 from .result import failure_result, intake_success_result, skipped_result, success_result
 from .vimarx_service import (
@@ -350,27 +352,34 @@ def classify_lead(
             or lead_has_commercial_owner(client, lead, config, "kestra")
         )
 
-        submission = build_prequalification_input_from_lead(lead, config)
-        qualification = evaluate_prequalification(
-            submission,
-            evaluated_at=_lead_created_at(lead),
-        )
-        active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
-
         if not can_take_commercial_decision:
-            active_logger.info(
-                f"Lead {lead_id_int} omitido: Motor decision comercial distinto de Kestra."
-            )
             return skipped_result(
-                contact_id=contact_id,
-                lead_id=lead_id_int,
-                lead_status=lead_status,
+                contact_id=contact_id, lead_id=lead_id_int, lead_status=lead_status,
                 reason="commercial_owner_not_kestra",
-                message=(
-                    "La precalificacion fue calculada, pero Kestra no actualizo el estado "
-                    "porque no tiene ownership comercial del lead."
-                ),
+                message="Kestra no tiene ownership comercial del lead.",
             )
+
+        cuil = cuit_digits(lead.get(config.fields.lead_cuil))
+        has_cuad_history = False
+        if len(cuil) == 11:
+            try:
+                has_cuad_history = load_registry().contains(cuil)
+            except RegistryUnavailable as exc:
+                # Missing source data is not evidence of absence from the registry.
+                return failure_result(
+                    message=str(exc), contact_id=contact_id, lead_id=lead_id_int,
+                    lead_status=lead_status, action="waiting_for_update",
+                    reason="haberes_cuad_registry_unavailable",
+                )
+        # The approved incomplete-CUIL policy deliberately assumes no CUAD history.
+        title = None
+        if has_cuad_history:
+            qualification = haberes_cuad_referral_result()
+        else:
+            submission = build_prequalification_input_from_lead(lead, config)
+            qualification = evaluate_prequalification(submission, evaluated_at=_lead_created_at(lead))
+            title = prequalification_title_from_lead(lead, config, submission)
+        active_logger.info(f"Resultado de precalificacion: {qualification.reason}.")
 
         lead_status = update_lead_prequalification_result(
             client,
@@ -382,7 +391,7 @@ def classify_lead(
                 if qualification.outcome == "rejected"
                 else None
             ),
-            title=prequalification_title_from_lead(lead, config, submission),
+            title=title,
             commercial_owner_id=(
                 resolve_commercial_owner_enum_id(client, config, "kestra")
                 if take_commercial_ownership

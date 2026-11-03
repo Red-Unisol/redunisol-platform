@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from .input_parser import NormalizedInput, PrequalificationInput, RoutingInput
+if TYPE_CHECKING:
+    from .input_parser import NormalizedInput, PrequalificationInput, RoutingInput
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,13 @@ POLICIA_FEDERAL_INITIAL_REJECTION_LABEL = "POLICÍA FEDERAL CABA - PERÍODO INIC
 
 
 QUALIFICATION_RULES = {
+    "buenos_aires": {
+        "allowed_employment_statuses": {
+            "policia",
+            "docente",
+            "jubilado_provincial",
+        },
+    },
     "cordoba": {
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
@@ -61,7 +70,6 @@ QUALIFICATION_RULES = {
             "policia": {"banco_de_la_provincia_de_cordoba_s_a"},
             "docente": {"banco_de_la_provincia_de_cordoba_s_a"},
             "personal_de_salud": {"banco_de_la_provincia_de_cordoba_s_a"},
-            "jubilado_nacional": {"banco_de_la_provincia_de_cordoba_s_a"},
             "jubilado_municipal": {"banco_de_la_provincia_de_cordoba_s_a"},
         },
     },
@@ -106,20 +114,21 @@ QUALIFICATION_RULES = {
         },
     },
     "santa_fe": {
-        "external_referral": True,
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
             "policia",
+            "docente",
+            "personal_de_salud",
             "jubilado_provincial",
-            "pensionado",
         },
     },
     "neuquen": {
-        "external_referral": True,
         "allowed_employment_statuses": {
             "empleado_publico_provincial",
             "empleado_publico_municipal",
             "policia",
+            "docente",
+            "personal_de_salud",
             "jubilado_provincial",
         },
     },
@@ -130,7 +139,19 @@ def evaluate_prequalification(
     submission: NormalizedInput | PrequalificationInput,
     *,
     evaluated_at: datetime | None = None,
+    has_haberes_cuad_history: bool = False,
 ) -> QualificationResult:
+    if has_haberes_cuad_history:
+        return haberes_cuad_referral_result()
+
+    if submission.employment_status.key == "jubilado_nacional":
+        return QualificationResult(
+            qualified=True,
+            reason="qualified",
+            message="La persona califica para ANSES (Jubilado Nacional).",
+            outcome="qualified",
+        )
+
     if (
         is_policia_federal_caba(submission)
         and _as_buenos_aires_date(evaluated_at) >= POLICIA_FEDERAL_COMMERCIAL_PAUSE_START
@@ -203,6 +224,15 @@ def evaluate_prequalification(
         )
 
     return _approved_result(submission, rule)
+
+
+def haberes_cuad_referral_result() -> QualificationResult:
+    return QualificationResult(
+        qualified=False,
+        reason="haberes_cuad_history",
+        message="La persona registra creditos historicos Haberes CUAD SANTA FE y se deriva a vendedor externo.",
+        outcome=EXTERNAL_REFERRAL_OUTCOME,
+    )
 
 
 def evaluate_qualification(

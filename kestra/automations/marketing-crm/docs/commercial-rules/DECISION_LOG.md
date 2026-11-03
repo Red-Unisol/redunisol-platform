@@ -300,3 +300,89 @@ del árbol activo; Git conserva su historial.
   chat al vendedor elegido. Fuera de la ventana semanal se conserva gestión manual.
 - **Estado:** implementado y probado; verificación productiva en la documentación
   técnica del incidente 23271.
+
+
+## 2026-10-30 — Ampliacion de leads y antecedentes Haberes CUAD
+
+Santiago confirma GANADO interno para Jubilado Nacional en cualquier provincia y
+banco, para cinco perfiles de Santa Fe y para seis de Neuquen. Pensionado no se
+incorpora a Santa Fe ni a ANSES. Cualquier CUIT con prestamo historico de la familia
+Haberes CUAD SANTA FE (superior 2703), incluso cancelado, deriva externamente en
+cualquier provincia y prevalece sobre ANSES. Con CUIL incompleto se asume ausencia
+de coincidencia y se resuelve por perfil, sin revision manual por identidad.
+
+La definicion versionada y sus casos estan en [LEAD_QUALIFICATION.md](LEAD_QUALIFICATION.md).
+El alcance actual termina en el lead; la clasificacion y distribucion posteriores
+se acordaran por separado. Estado: implementado en rama, pendiente de deploy.
+
+La base historica queda **congelada al relevamiento del 30/10/2026**, por decision
+explicita de Santiago. No se incorpora actualizacion desde Vimarx, scheduler ni KV mutable. El paquete versiona los
+hashes de coincidencia de los 1.945 CUIT; los CUIT legibles quedan en el artefacto local.
+
+
+## 2026-10-30 — Negociaciones ANSES, Santa Fe y Neuquen
+
+Santiago confirma ANSES como prioridad nacional para Jubilado Nacional, sin condiciones
+BCRA; linea `Red Mutual - paii`. Santa Fe admite hasta siete entidades informadas en
+el ultimo periodo BCRA, sin filtrar situaciones ni banco: linea `Haberes Premium`;
+ocho o mas producen rechazo BCRA. Una respuesta valida sin datos equivale a cero
+entidades. Neuquen no tiene limites BCRA por el momento: linea `MUDON`.
+
+Se aplican solo estas condiciones, sin restricciones adicionales de edad, afiliacion
+o prestamos previos. ANSES y Neuquen no dependen de consultas BCRA, y ninguna de las
+tres familias necesita Vimarx para decidir. La base historica CUAD permanece congelada.
+
+El pool compartido inicial de Santa Fe/ANSES queda con Patricia Contendi (10451),
+Susana Contenti (29) y Julieta Aguilera (116561), en ese orden. Neuquen queda
+exclusivamente con Ludmila Gallardo (58913), que no integra el pool compartido.
+La politica de vendedor unico aprobada a continuacion define su asignacion
+directa, incluso offline y fuera de horario.
+
+
+## 2026-10-30 — Asignacion directa general para un vendedor habilitado
+
+Santiago confirma que cualquier bucket con exactamente un vendedor habilitado se
+asigna siempre a ese vendedor, aunque este offline y fuera de horario. El numero
+de habilitados se toma del pool del panel luego de las pausas. La regla conserva
+los requisitos comerciales y los rechazos; no equivale a que un pool de varios
+con uno solo online reciba la excepcion.
+
+Los casos retenidos en cola cuyo pool tenga un unico habilitado tambien salen por
+asignacion directa, conservando su decision y linea. Un rechazo de transferencia
+de chat se registra sin revertir ni demorar la asignacion del prospecto/negociacion.
+Los pools multiples y vacios mantienen sus politicas existentes.
+
+## 2026-10-30 — Buenos Aires comparte la linea y el bucket de ANSES
+
+Santiago aprueba GANADO interno para Buenos Aires con Policia, Docente, Empleado
+Publico Provincial y Jubilado Provincial. Confirma que Empleado Publico no incluye
+Municipal ni Nacional y que se aplican las mismas condiciones que ANSES: sin
+filtros BCRA ni requisitos de banco, edad, afiliacion o prestamos previos.
+
+Las negociaciones usan PRESENTACION, `Red Mutual - paii` y el bucket existente
+`santa_fe_anses`, con su configuracion de vendedores y politica de distribucion.
+CUAD conserva la prioridad global sobre la base congelada; CUIL incompleto se
+considera sin coincidencia. CABA y Policia Federal mantienen su tratamiento.
+Detalle y casos: [BUENOS_AIRES.md](BUENOS_AIRES.md). Estado de esta ampliacion:
+implementado en rama, pendiente de merge y deploy.
+
+## 2026-11-03 — Retirar Empleado Publico Provincial de Buenos Aires
+
+Santiago aprueba que Empleado Publico Provincial de Buenos Aires reciba la misma
+categoria que si no hubiese sido incluido en la ampliacion. La solicitud corrige
+la decision del 30/10/2026: los perfiles habilitados de Buenos Aires quedan en
+Policia, Docente y Jubilado Provincial. Antecedente: mensajes de Maru del 02/11/2026
+en el chat directo, IDs `6916839` y `6916843`.
+
+Con datos completos y sin coincidencia CUAD, el resultado habitual es rechazo
+automatico del lead en RESULTADO PERDIDO por `NO CUMPLE REQUISITOS PARA CONVENIO`
+(`employment_status_not_eligible`), sin negociacion interna nueva por esta regla.
+Los datos faltantes conservan su tratamiento existente: sin banco, el clasificador
+del lead espera actualizacion. No se agregan excepciones de normalizacion.
+La base congelada CUAD conserva su prioridad de derivacion externa.
+
+Alcance: aplicacion hacia adelante, sin reclasificar leads ni negociaciones
+historicos. No modifica los perfiles de otras provincias ni la regla ANSES.
+Version: `2026-11-03-buenos-aires-sin-publico-provincial`. Estado: implementado en
+rama, pendiente de merge, deploy y auditoria productiva. La ficha del cambio,
+campos y casos de aceptacion estan en [BUENOS_AIRES.md](BUENOS_AIRES.md).

@@ -1,0 +1,6 @@
+{
+  "zone": "redunisol.com.ar",
+  "records": [
+    {"type": "A", "name": "mcp", "content": "66.97.34.158", "proxied": false, "ttl": 1}
+  ]
+}

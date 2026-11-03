@@ -6,6 +6,8 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 
 ## Contenido
 
+- [Recuperación de intake tras despliegue parcial](docs/technical/WHATSAPP_INTAKE_DEPLOY_RECOVERY.md): pausa de nuevas admisiones, verificación de dependencias y recuperación de respuestas originales sin consumir cupos.
+
 - [Asistencia Jubilados Córdoba (23231 / 23081)](../../../docs/whatsapp-jubilados-assistance.md): rescate a 30 minutos, CUIL obligatorio y email opcional en el Flow, simulación y piloto cerrado; apagado por defecto.
 
 - [WhatsApp fuera de horario de Ventas (23233)](../../../docs/whatsapp-out-of-hours.md): candidatos de Kestra, calendario, avisos sin enlaces y activación coordinada.
@@ -25,7 +27,9 @@ Hoy incluye la automatizacion del webhook de formulario hacia Bitrix24 y su clas
 - `flows/bitrix24_prequalification_cutover.yaml`: cutover manual, con dry-run, del ownership activo hacia Kestra.
 - `flows/bitrix24_lead_won_deal_webhook.yaml`: receptor de `ONCRMLEADUPDATE`; clasifica `PRECLASIFICACION (NEW)` y crea negociaciones desde `RESULTADO GANADO`.
 - `flows/bitrix24_lead_event_process.yaml`: worker del receptor persistente de actualizaciones; los leads sin datos obligatorios esperan otro evento. [Arquitectura, despliegue y migracion de cola](../../../platform/bitrix-lead-receiver/README.md).
-- `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca y Cordoba; conserva el ID historico.
+
+  Los campos vacios de Bitrix representados como `false`, directamente o dentro de una lista, se tratan como datos faltantes. Si faltan datos obligatorios, el resultado es `waiting_for_update` / `missing_required_field`: no se completa el banco ni se modifica el lead, y el receptor espera un nuevo aviso.
+- `flows/bitrix24_catamarca_deal_qualification.yaml`: calificacion comercial definitiva y distribucion de negociaciones internas Catamarca, Cordoba, ANSES, Santa Fe y Neuquen; conserva el ID historico.
 - `flows/bitrix24_deal_assignment_queue.yaml`: reintenta por bucket las negociaciones sin vendedor y cierra el remanente semanal con Maru.
 - `flows/bitrix24_deal_chat_response.yaml`: mueve Presentación/Revisión Manual a Respuesta ante una sesión WhatsApp activa de Ventas y decisión comercial explícita no rechazada. [Campo, operación y concurrencia](docs/technical/ACTIVE_SALES_CHAT_RESPONSE.md).
 - `flows/commercial_distribution_report_daily.yaml`: genera el Excel diario auditable de clasificacion y distribucion visible en Filament.
@@ -44,6 +48,8 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
 ## Criterio
 
 - El codigo Python vive bajo `files/bitrix24_form_flow/` para que el deploy a namespace files preserve el path esperado por Kestra.
+- Los servicios compartidos de ese paquete deben importar con solo `bitrix24_form_flow/**` disponible. Las marcas de prueba de los titulos viven en `lead_test_markers.py`; el contrato WhatsApp las reexporta sin agregar Edna como dependencia de los flows comerciales.
+- `tests/test_namespace_imports.py` copia los archivos declarados por cada tarea YAML y prueba sus imports en un proceso Python aislado. Se ejecuta con la suite de tests del dominio para detectar dependencias que el `PYTHONPATH` completo de desarrollo ocultaria.
 - Los secretos y variables de entorno siguen resolviendose en Kestra, no desde Git.
 - El webhook de formulario solo crea contacto y lead en `INGRESO (UC_5N2OEO)`; no consulta proveedores ni toma decisiones comerciales.
 - La preclasificacion comercial usa el Process runner porque solo evalua reglas locales y no consulta servicios externos.
@@ -58,7 +64,11 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
   el corte operativo, sin usar el owner previo como compuerta; esta decision no
   interpreta BCRA.
 - Todo lead nuevo creado por el intake recibe `Motor decision comercial = Kestra`.
-- Rio Negro, Santa Fe y Neuquen derivan a `NEGOCIACION CON VENDEDOR (13)` cuando cumplen las reglas migradas desde Bitrix.
+- La prioridad de antecedentes Haberes CUAD y la ampliacion de leads ANSES/Santa Fe/Neuquen
+  se documentan en `docs/commercial-rules/LEAD_QUALIFICATION.md` (implementadas en rama,
+  pendientes de deploy). CUAD historico deriva a `NEGOCIACION CON VENDEDOR (13)` en
+  cualquier provincia; ANSES y los perfiles habilitados de Santa Fe/Neuquen pasan a GANADO
+  sin ese antecedente. Rio Negro y La Rioja conservan sus reglas restantes.
 - Diego Frias (`ASSIGNED_BY_ID=7`) queda excluido de la precalificacion automatica.
 - Bitrix conserva temporalmente un BP minimo dedicado exclusivamente al email Finguru.
 - Desde `2026-08-07T12:28:19-03:00`, el webhook de actualizacion clasifica cualquier
@@ -66,7 +76,7 @@ El [ingreso único de WhatsApp desde la web](../../../docs/whatsapp-website-inta
 - Los leads anteriores a ese corte no son reclamados ni clasificados por esta regla.
 - Diego Frias (`ASSIGNED_BY_ID=7`) conserva la exclusion explicita.
 - El mismo listener crea o reutiliza la negociacion cuando el lead llega a `RESULTADO GANADO`.
-- Las negociaciones internas Catamarca y Cordoba nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior clasifica y distribuye segun el resultado y el horario.
+- Las negociaciones internas Catamarca, Cordoba, ANSES, Santa Fe y Neuquen nacen en `PENDIENTE CALIFICACION KESTRA`, asignadas provisionalmente a Maru Lopez (`57`). La etapa programada posterior clasifica y distribuye segun el resultado y el horario.
 - Cada resultado terminal publica datos auditables en la ejecucion Kestra. El reporte diario los transforma en `marketing/distribucion-negociaciones/ultimo.xlsx` y conserva una copia historica por fecha.
 - El backfill de empleador no implementa scraping CredixSA propio: llama al flow `consulta_quiebra_credix` del dominio `analisis-credito`, que ya resuelve cache, consulta online y normalizacion.
 - Aunque el dominio se llame `marketing-crm`, la integracion actual sigue siendo con Bitrix24, por eso se mantienen nombres internos `bitrix24_*` donde ya forman parte del contrato tecnico.

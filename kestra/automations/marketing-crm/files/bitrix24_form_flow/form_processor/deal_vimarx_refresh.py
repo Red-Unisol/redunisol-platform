@@ -42,7 +42,7 @@ class VimarxRefreshResolution:
 
     @property
     def reason(self) -> str:
-        return "" if self.outcome in {"member", "not_found"} else f"vimarx_{self.outcome}"
+        return "" if self.outcome in {"member", "not_found", "not_required"} else f"vimarx_{self.outcome}"
 
     @property
     def trace(self) -> dict[str, Any]:

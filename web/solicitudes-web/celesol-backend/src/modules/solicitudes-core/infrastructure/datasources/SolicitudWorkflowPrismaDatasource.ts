@@ -1,7 +1,10 @@
 import { isConfirmedReturnToReview, prepareConfirmedReturnToReview } from "../services/ConfirmedReturnToReview";
 import { administrativeSource, correctionBlockedReason, applyAdministrativeCorrection } from "../services/AdministrativeCorrectionService";
 import { ADMIN_CORRECTION_ACTION, assertCoreReconciled, coreReconciliationPending, CORE_RECONCILIATION_REASON, CORE_GUARDED_ACTIONS } from "../../domain/workflow/AdministrativeCorrection";
-import { actingHistoryFields } from "../../../auth/impersonation/context";
+import { actingHistoryFields, actingContext } from "../../../auth/impersonation/context";
+import { randomUUID } from "node:crypto";
+import { REVERSE_DISMISSAL_ACTION } from "../../domain/workflow/Dismissal";
+import { applyDismissalReversal, dismissalReversalTransition, prepareDismissal, type DismissalLifecycle } from "../services/SolicitudDismissal";
 import { getSignatureApproval } from "../../../document-review/signature-workflow";
 import { assertSignatureTransferReady, finalizationAction } from "../../../document-review/signature-transfer-guard";
 import type { Prisma } from "@prisma/client";
@@ -103,6 +106,7 @@ export class SolicitudWorkflowPrismaDatasource {
   constructor(
     prisma: DbClient,
     private readonly transaction?: Prisma.TransactionClient,
+    private readonly dismissalLifecycle?: DismissalLifecycle,
   ) {
     this.prisma = prisma;
   }
@@ -113,10 +117,11 @@ export class SolicitudWorkflowPrismaDatasource {
 
   private inTransaction<T>(
     work: (tx: Prisma.TransactionClient) => Promise<T>,
+    timeout?: number,
   ): Promise<T> {
     return this.transaction
       ? work(this.transaction)
-      : this.prisma.$transaction(work);
+      : this.prisma.$transaction(work, timeout ? { timeout } : undefined);
   }
 
   async getTransitionValidationContext(input: {
@@ -134,6 +139,19 @@ export class SolicitudWorkflowPrismaDatasource {
       return {
         solicitud: null,
         transition: null,
+      };
+    }
+
+    if (input.actionCode === REVERSE_DISMISSAL_ACTION) {
+      const source = await administrativeSource(this.db, solicitud.id);
+      const restore = await dismissalReversalTransition(this.db, source);
+      return {
+        solicitud: { estadoActualId: solicitud.estadoActualId, stateCode: solicitud.estadoActual.code, ownerId: solicitud.estadoActual.ownerId },
+        transition: restore ? {
+          isActive: true, requiresComment: true, toStateCode: restore.toState.code,
+          toStateId: restore.toState.id, toStateIsActive: true, toStateOwnerCode: restore.toState.owner.code,
+          dismissalReversal: { historyId: restore.id, expectedUpdatedAt: source.updatedAt.toISOString() },
+        } : null,
       };
     }
 
@@ -159,7 +177,7 @@ export class SolicitudWorkflowPrismaDatasource {
         stateCode: solicitud.estadoActual.code,
         ownerId: solicitud.estadoActual.ownerId,
       },
-      transition: transition
+      transition: transition && solicitud.estadoActual.code !== "Desestimada"
         ? {
             isActive: transition.isActive,
             requiresComment: transition.requiresComment,
@@ -184,6 +202,14 @@ export class SolicitudWorkflowPrismaDatasource {
     if (input.plan.command.actionCode === ADMIN_CORRECTION_ACTION) {
       return this.inTransaction(async tx => {
         await applyAdministrativeCorrection(tx, input.plan.command);
+        const s = await this.loadSolicitudCoreById(tx, input.plan.command.solicitudId);
+        return { solicitud: SolicitudCoreMapper.toDomain(s),
+          transitions: await this.loadActiveTransitions(tx, s.estadoActualId) };
+      });
+    }
+    if (input.plan.command.actionCode === REVERSE_DISMISSAL_ACTION) {
+      return this.inTransaction(async tx => {
+        await applyDismissalReversal(tx, input.plan.command);
         const s = await this.loadSolicitudCoreById(tx, input.plan.command.solicitudId);
         return { solicitud: SolicitudCoreMapper.toDomain(s),
           transitions: await this.loadActiveTransitions(tx, s.estadoActualId) };
@@ -231,6 +257,8 @@ export class SolicitudWorkflowPrismaDatasource {
           solicitud.id,
         );
         let finalStateId = solicitud.estadoActualId;
+        if (solicitud.estadoActual.code === "Desestimada")
+          throw new SolicitudWorkflowTransitionNotAllowedError();
 
         for (const [stepIndex, step] of input.plan.steps.entries()) {
           currentStepIndex = stepIndex;
@@ -333,7 +361,14 @@ export class SolicitudWorkflowPrismaDatasource {
             await assertSignatureTransferReady(tx, solicitud.id, ["liquidar", "liquidar_con_firma"].includes(step.actionCode));
 
           if (step.kind === "domain-transition") {
+            const dismissalAudit = transition.toState.code === "Desestimada"
+              ? await prepareDismissal(tx, {
+                source: await administrativeSource(tx, solicitud.id),
+                actorId: step.transitionInput.changedBy,
+                comment: step.transitionInput.comment?.trim() || null,
+              }, this.dismissalLifecycle) : undefined;
             updatedSolicitud = await this.applyTransition({
+              dismissalAudit,
               changedBy: step.transitionInput.changedBy,
               comentario: step.transitionInput.comment?.trim() || null,
               executor,
@@ -387,13 +422,16 @@ export class SolicitudWorkflowPrismaDatasource {
           throw new WorkflowExecutionPlanNotExecutableError(["missing_domain_step"]);
         }
 
-        const transitions = await this.loadActiveTransitions(executor, finalStateId);
+        const restore = updatedSolicitud.estadoActual.code === "Desestimada" && input.plan.command.isSystemAdmin && !actingContext.getStore()
+          ? await dismissalReversalTransition(tx, await administrativeSource(tx, updatedSolicitud.id)) : null;
+        const transitions = updatedSolicitud.estadoActual.code === "Desestimada"
+          ? (restore ? [restore] : []) : await this.loadActiveTransitions(executor, finalStateId);
 
         return {
           solicitud: SolicitudCoreMapper.toDomain(updatedSolicitud),
           transitions,
         };
-      });
+      }, input.plan.command.actionCode === "desestimar" ? 30_000 : undefined);
 
       this.logWorkflowEvent("workflow_plan_execution_completed", {
         finalStateId: result.solicitud.estadoActual.id,
@@ -593,6 +631,7 @@ export class SolicitudWorkflowPrismaDatasource {
   }
 
   private async applyTransition(input: {
+    dismissalAudit?: Prisma.InputJsonObject;
     changedBy: string;
     comentario: string | null;
     executor: WorkflowExecutor;
@@ -614,6 +653,8 @@ export class SolicitudWorkflowPrismaDatasource {
         },
       },
     };
+    const dismissalHistoryId = input.dismissalAudit ? randomUUID() : undefined;
+    if (dismissalHistoryId) updateData.desestimacionHistorialId = dismissalHistoryId;
     if (["liquidar", "liquidar_con_firma"].includes(input.transition.actionCode)) {
       updateData.analisisFinalizadoAt = input.now;
       updateData.analisisFinalizadoBy = input.changedBy;
@@ -640,6 +681,8 @@ export class SolicitudWorkflowPrismaDatasource {
 
     await input.executor.solicitudEstadoHistorial.create({
       data: {
+        ...(dismissalHistoryId ? { id: dismissalHistoryId, metadata: input.dismissalAudit } : {}),
+        ...(dismissalHistoryId ? { realActorUserId: input.changedBy } : {}),
         ...actingHistoryFields(),
         ...(confirmedReturn?.audit ?? {}),
         actionCode: input.transition.actionCode,
@@ -682,6 +725,12 @@ export class SolicitudWorkflowPrismaDatasource {
       this.db,
       input.solicitudId,
     );
+
+    if (solicitud.estadoActual.code === "Desestimada") {
+      if (!input.isSystemAdmin || actingContext.getStore()) return [];
+      const restore = await dismissalReversalTransition(this.db, await administrativeSource(this.db, solicitud.id));
+      return restore ? [restore] : [];
+    }
 
     // Excepcion puntual: desde "Transferir", cualquier usuario del owner
     // RIESGO puede ver (y luego ejecutar) la transicion "pagar", ademas del

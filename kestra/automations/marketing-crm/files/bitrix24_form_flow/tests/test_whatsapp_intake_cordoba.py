@@ -41,7 +41,7 @@ class CordobaOptionsTests(unittest.TestCase):
             {'id': 'empleado_publico_municipal', 'title': 'Empleado público municipal'},
             {'id': 'jubilado_municipal', 'title': 'Jubilado municipal'},
         ])
-        self.assertEqual({c['id'] for c in new_choices}, INTAKE_SEGMENTS['cordoba'])
+        self.assertLessEqual({c['id'] for c in new_choices}, INTAKE_SEGMENTS['cordoba'])
         self.assertEqual([c for c in new_choices if c not in added], old_choices)
         old_choices[-1:-1] = added
         next(f for f in old_fields if f.get('condition') == "${form.provincia} == 'otra'")['then'][1]['text'] = (
@@ -52,7 +52,8 @@ class CordobaOptionsTests(unittest.TestCase):
         self.assertEqual(CORDOBA_EXTRA_SITUATIONS, set(NEW_OPTIONS))
         for province in SEGMENTS:
             self.assertEqual(INTAKE_SEGMENTS[province] - SEGMENTS[province],
-                             set(NEW_OPTIONS) if province == 'cordoba' else set())
+                             (set(NEW_OPTIONS) if province == 'cordoba' else {'jubilado_pensionado'})
+                             | {'jubilado', 'pensionado'})
         for situation in NEW_OPTIONS:
             data = cordoba_answer(situation)['answer']
             event = {'id': '1', 'subjectId': '2423', 'subscriber': {'identifier': '5493510000000'},
