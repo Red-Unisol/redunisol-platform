@@ -108,3 +108,31 @@ atribuir sus admisiones a la recuperación ni reiniciar los contadores.
 Infraestructura y Marketing CRM de producción comparten un lock de despliegue
 con `cancel-in-progress=false`. Marketing usa el commit disparador, evitando
 mezclar una ejecución anterior con un `main` más nuevo.
+
+### Cuota Bitrix confirmada durante la recuperación
+
+El PR #651 desplegó los reintentos y el diagnóstico; se verificaron los 106
+namespace files contra el merge `ef7061b5`. La recuperación auditada de la
+solicitud `23` produjo la ejecución `3Q4wQ0htuW8agVdnru0xj7`: falló en
+`crm.lead.fields` con HTTP 503 después de tres intentos, con
+`write_attempted=false`. La búsqueda posterior confirmó cero leads por UUID y
+cero contactos por CUIL. Respuesta, envío, admisión y slot permanecieron iguales.
+No se volvió a encolar el caso ante ese resultado incierto.
+
+Tres lecturas acotadas desde la VPS confirmaron el error de proveedor
+`QUERY_LIMIT_EXCEEDED` (200, 503, 200), sin cabecera `Retry-After`. La cuota se
+comparte con otras automatizaciones; una pausa local no garantiza disponibilidad.
+El intake ahora reutiliza una sola respuesta exitosa de `crm.lead.fields` por
+instancia de cliente y separa los comienzos de llamadas HTTP al menos un segundo.
+La caché es optativa, conserva copias independientes y no almacena identidad,
+fallos ni otros endpoints. Las respuestas explícitas de cuota esperan 2 y 4
+segundos; los demás errores transitorios conservan 1 y 2 segundos. Se mantiene
+la ventana global de inicio de reintentos de 15 segundos y no se repite ninguna
+escritura, aunque su respuesta indique cuota.
+
+Una nueva recuperación requiere volver a auditar **todas** las ejecuciones del
+UUID, confirmar ausencia de intentos de escritura y buscar otra vez el caso y
+el contacto en Bitrix. Sólo después de desplegar y comprobar esta mitigación se
+puede aplicar de nuevo la recuperación autorizada, una vez, conservando la
+misma respuesta original. Si hubo cualquier intento de escritura, conciliar sus
+efectos antes de considerar otra intervención.
