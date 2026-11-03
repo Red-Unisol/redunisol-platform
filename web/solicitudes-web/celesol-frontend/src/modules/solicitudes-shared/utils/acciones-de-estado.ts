@@ -4,6 +4,10 @@
 // Todo por actionCode: los nombres de la base ("PreAprobada", "Rechazada",
 // "Revisar/Reenviar") no se tocan porque son los de la configuracion.
 
+// Cierra como Desestimada una solicitud que se siguio en Vimarx; los listados
+// y el detalle la marcan con la etiqueta "Vimarx".
+export const PASO_POR_VIMARX_ACTION_CODE = "paso_por_vimarx";
+
 // Nombre en pantalla de cada accion: un verbo y, si hace falta, a donde va.
 const ETIQUETA_DE_ACCION: Record<string, string> = {
   confirmar: "Confirmar",
@@ -14,6 +18,7 @@ const ETIQUETA_DE_ACCION: Record<string, string> = {
   liquidar_con_firma: "Mandar a transferir",
   motor: "Pasar a Riesgo",
   pagar: "Marcar como pagada",
+  [PASO_POR_VIMARX_ACTION_CODE]: "Pasó por Vimarx",
   preaprobar: "Pre aprobar",
   rechazar: "Rechazar",
   revisar: "Devolver al vendedor",
@@ -42,7 +47,12 @@ export const ACCIONES_DE_ESTADO: Record<
 };
 
 // Terminan la solicitud: van al final del menu, separadas y en rojo.
-const ACCIONES_QUE_TERMINAN = new Set(["desestimar", "rechazar", "vencer"]);
+const ACCIONES_QUE_TERMINAN = new Set([
+  "desestimar",
+  PASO_POR_VIMARX_ACTION_CODE,
+  "rechazar",
+  "vencer",
+]);
 
 export function etiquetaDeAccion(
   actionCode: string,

@@ -112,6 +112,8 @@ export function SolicitudesCoreHistoricasPage() {
   const session = useAuthSessionQuery();
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
+  // "Pasaron por Vimarx" filtra en el servidor (todas, no solo esta pagina).
+  const [soloPasoPorVimarx, setSoloPasoPorVimarx] = useState(false);
   const [isManualRefreshPending, setIsManualRefreshPending] = useState(false);
   const [columnFilters, setColumnFilters] = useState<SolicitudesTableFilters>(
     () => {
@@ -126,6 +128,7 @@ export function SolicitudesCoreHistoricasPage() {
       search: searchTerm,
       page,
       pageSize: PAGE_SIZE,
+      pasoPorVimarx: soloPasoPorVimarx,
     });
   // El ejecutivo es interno: el vendedor no lo ve, igual que en el detalle.
   const mostrarEjecutivo = !isVendedor(session.data);
@@ -151,6 +154,16 @@ export function SolicitudesCoreHistoricasPage() {
         ultimaNovedad: item.ultimaNovedad?.trim() ?? "",
         vendedorSolicitud: item.vendedorSolicitud ?? "",
       })),
+    [data],
+  );
+
+  const pasoPorVimarxIds = useMemo(
+    () =>
+      new Set(
+        (data ?? [])
+          .filter((item) => item.pasoPorVimarx)
+          .map((item) => item.id),
+      ),
     [data],
   );
 
@@ -229,6 +242,32 @@ export function SolicitudesCoreHistoricasPage() {
       className="flex h-full min-h-0 flex-col gap-3 p-2 md:p-4"
     >
       <div className="flex flex-wrap items-center gap-2">
+        <div
+          aria-label="Filtro de históricas"
+          className="order-last flex h-10 w-full items-center rounded-full border border-border bg-surface p-1 sm:order-none sm:inline-flex sm:w-auto"
+          role="group"
+        >
+          {([false, true] as const).map((value) => (
+            <button
+              aria-pressed={soloPasoPorVimarx === value}
+              className={cn(
+                "h-8 flex-1 rounded-full px-3 text-[13px] font-medium whitespace-nowrap transition sm:flex-none sm:px-4 sm:text-sm",
+                soloPasoPorVimarx === value
+                  ? "bg-verde text-white"
+                  : "text-foreground-secondary hover:text-foreground",
+              )}
+              key={String(value)}
+              onClick={() => {
+                if (soloPasoPorVimarx === value) return;
+                setSoloPasoPorVimarx(value);
+                setPage(1);
+              }}
+              type="button"
+            >
+              {value ? "Pasaron por Vimarx" : "Todas"}
+            </button>
+          ))}
+        </div>
         <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
           <label className="relative min-w-0 flex-1 sm:w-80 sm:flex-none">
             <span className="sr-only">
@@ -275,7 +314,9 @@ export function SolicitudesCoreHistoricasPage() {
               <p className="font-semibold text-foreground">
                 {searchTerm.trim()
                   ? "No hay solicitudes que coincidan con la búsqueda"
-                  : "No hay solicitudes históricas"}
+                  : soloPasoPorVimarx
+                    ? "No hay solicitudes que hayan pasado por Vimarx"
+                    : "No hay solicitudes históricas"}
               </p>
             )}
           </div>
@@ -384,15 +425,20 @@ export function SolicitudesCoreHistoricasPage() {
                     </td>
                   ) : null}
                   <td className="px-2.5 py-2.5">
-                    {row.estado ? (
-                      <Badge
-                        className="max-w-44"
-                        dot
-                        variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
-                      >
-                        {row.estado}
-                      </Badge>
-                    ) : null}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {row.estado ? (
+                        <Badge
+                          className="max-w-44"
+                          dot
+                          variant={getEstadoBadgeVariant(row.estadoCode ?? "")}
+                        >
+                          {row.estado}
+                        </Badge>
+                      ) : null}
+                      {pasoPorVimarxIds.has(row.id) ? (
+                        <Badge>Vimarx</Badge>
+                      ) : null}
+                    </div>
                     {novedadAporta(row.ultimaNovedad, row.estado) ? (
                       <p
                         className="mt-1 max-w-44 truncate text-xs text-foreground-secondary"

@@ -67,6 +67,15 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `VerificarFirmaYDocumentacion` | `devolver_a_liquidada` | `Devolver a Liquidada` | `Liquidada` | yes |
 | `VerificarFirmaYDocumentacion` | `transferir` | `Para Transferir` | `Transferir` | no |
 | `Transferir` | `pagar` | `Pagada` | `Pagada` | no |
+| `RevisionRiesgo`, `Confirmada` | `paso_por_vimarx` | `Pasó por Vimarx` | `Desestimada` | yes |
+
+## `Pasó por Vimarx` (2026-11-03)
+
+Cierra como `Desestimada` una solicitud que se siguio en Vimarx. Se ofrece solo en las etapas de Riesgo (migracion `20261103120000_paso_por_vimarx`). No escribe nada en Vimarx.
+
+- El historial guarda `action_code = 'paso_por_vimarx'`: es lo que la distingue de las demas desestimadas, sin columnas nuevas.
+- Historicas tiene el filtro "Pasaron por Vimarx" (`pasoPorVimarx=true` en `GET /solicitudes?scope=historicas`) y los listados y el detalle la marcan con la etiqueta "Vimarx".
+- Es la unica accion que comparte origen y destino con otra (`desestimar`, en `Confirmada`). En `RevisionRiesgo` es la unica salida a `Desestimada`.
 
 ## Regla de comentarios
 

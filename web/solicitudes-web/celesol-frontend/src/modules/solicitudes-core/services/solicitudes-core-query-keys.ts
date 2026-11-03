@@ -61,6 +61,7 @@ export const solicitudesCoreQueryKeys = {
     limit: number;
     search?: string;
     offset: number;
+    pasoPorVimarx?: boolean;
   }) => [...solicitudesCoreHistoricasRootKey, input] as const,
   recientes: (input: {
     search?: string;
