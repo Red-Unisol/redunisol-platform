@@ -141,11 +141,39 @@ La politica funcional vigente queda separada en lectura y operacion:
 `Pagada` es el estado final operativo real del backend (2026-07-09).
 
 - Se mantiene `VerificarFirmaYDocumentacion -> Transferir` con `actionCode: "transferir"` y label visible `Para Transferir`.
-- `Transferir` ya no es terminal: tiene una unica salida activa, `Transferir -> Pagada` con `actionCode: "pagar"`.
-- No se implementan devoluciones desde Tesoreria.
+- `Transferir` permite `Transferir -> Pagada` con `actionCode: "pagar"` y el cierre por desestimación sujeto a los controles indicados más abajo.
+- No se implementan devoluciones arbitrarias desde Tesorería; la reversión de una desestimación sólo restaura su estado de origen.
 - `Appearance` y comportamiento nuevo de `save_and_exit` quedan fuera de alcance hasta definicion funcional (salvo el color verde ya configurado para `Pagada`).
 
-## Cobertura de tests relevante
+## Desestimación y reversión
+
+- Todos los estados activos excepto Desestimada tienen la acción de catálogo
+  `desestimar`, con motivo obligatorio y los permisos del área de origen.
+- Se bloquea si hay generación/reemplazo pendiente, archivo, reserva de
+  transferencia o pago registrado. Estos últimos requieren resolución operativa
+  antes del cierre; anular en Vimarx no revierte un movimiento bancario.
+- Si existe un préstamo vinculado, Vimarx debe confirmar ambos estados como
+  anulado, sin vigencia y con saldo cero. Una lectura incompleta o fallida bloquea
+  la acción. No se modifica Vimarx. Las etapas de liquidación/pago sin préstamo
+  vinculado tampoco pueden cerrarse sin una verificación.
+- El cambio y su historial se guardan juntos. `desestimacionHistorialId` vincula
+  la solicitud con el evento exacto de entrada a Desestimada.
+- `revertir_desestimacion` es una operación propia para administradores activos,
+  desde su sesión propia. Aparece en Más acciones y requiere motivo. Su destino
+  se obtiene del evento vinculado; la API no acepta un estado de destino.
+- Se valida nuevamente la identidad del evento y la versión de la solicitud bajo
+  bloqueo de fila. La reversión agrega un evento con `reversedHistoryId`,
+  responsable, fecha, motivo y estados/áreas de origen y destino. Conserva el
+  evento original y limpia el vínculo de desestimación actual.
+- Restaurar no ejecuta Motor, reparto, liquidación, firma ni pago; tampoco
+  recalcula topes, limpia análisis o reactiva el préstamo. Los controles
+  financieros habituales siguen aplicándose antes de avanzar.
+- Los informes CredixSA borrados al desestimar no se restauran.
+- La migración recupera el vínculo para desestimaciones históricas sólo si el
+  último cambio de estado tiene evidencia inequívoca. Si falta historial o hay
+  eventos empatados, no se ofrece una reversión que adivine el destino.
+
+## Cobertura de tests de workflow
 La suite cubre, a nivel de riesgo real:
 
 - validaciones de `SolicitudTransitionPolicy`

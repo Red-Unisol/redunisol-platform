@@ -1,4 +1,5 @@
 import { ADMIN_CORRECTION_ACTION, AdministrativeCorrectionError } from "./AdministrativeCorrection";
+import { REVERSE_DISMISSAL_ACTION } from "./Dismissal";
 import {
   ForbiddenSolicitudAccessError,
   MissingWorkflowOwnerAssignmentError,
@@ -16,6 +17,8 @@ const RIESGO_OWNER_ACTION_EXCEPTIONS = new Set(["pagar"]);
 
 export class SolicitudTransitionPolicy {
   validate(context: WorkflowValidationContext) {
+    if (context.command.actionCode === REVERSE_DISMISSAL_ACTION && !context.command.isSystemAdmin)
+      throw new ForbiddenSolicitudAccessError();
     if (context.command.actionCode === ADMIN_CORRECTION_ACTION) {
       if (!context.command.isSystemAdmin || !context.command.administrativeCorrection)
         throw new ForbiddenSolicitudAccessError();
