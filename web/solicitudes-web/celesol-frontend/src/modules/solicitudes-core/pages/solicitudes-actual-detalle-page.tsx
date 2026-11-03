@@ -3823,7 +3823,7 @@ export function SolicitudesActualDetallePage() {
   );
   const analysisActionLabel = documentReview.data?.signature?.approved
     ? "Mandar a transferir"
-    : "Mandar a revisar firma";
+    : "Enviar a firmar";
   const analysisBlockedReason =
     analysisTransition?.blockedReason ??
     (linkedLoan.isPending ||

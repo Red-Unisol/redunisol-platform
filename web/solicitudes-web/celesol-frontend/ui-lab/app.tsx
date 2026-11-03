@@ -341,7 +341,7 @@ export function App() {
                     ? {
                         label: scenario.signature.approved
                           ? "Mandar a transferir"
-                          : "Mandar a revisar firma",
+                          : "Enviar a firmar",
                         disabled: !canFinish,
                         disabledReason: !canFinish
                           ? "Se requiere préstamo vigente y mismo monto."

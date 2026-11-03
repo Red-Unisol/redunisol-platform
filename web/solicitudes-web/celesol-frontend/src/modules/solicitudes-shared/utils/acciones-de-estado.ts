@@ -14,7 +14,7 @@ const ETIQUETA_DE_ACCION: Record<string, string> = {
   desestimar: "Desestimar",
   devolver_a_liquidada: "Devolver a Liquidada",
   enviar: "Enviar a Riesgo",
-  liquidar: "Mandar a revisar firma",
+  liquidar: "Enviar a firmar",
   liquidar_con_firma: "Mandar a transferir",
   motor: "Pasar a Riesgo",
   pagar: "Marcar como pagada",
