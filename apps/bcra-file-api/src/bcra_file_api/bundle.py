@@ -1,4 +1,4 @@
-"""Publish immutable file components together, retaining the old bundle on failure."""
+"""Publish complete monthly data independently of the atomic extended bundle."""
 from __future__ import annotations
 
 import hashlib
@@ -32,13 +32,13 @@ def inside(root: Path, relative: str) -> Path:
     return candidate
 
 
-def active_bundle(root: Path) -> dict | None:
-    path = root / 'active.json'
+def _read_publication(root: Path, name: str, schema: int, kinds: set[str]) -> dict | None:
+    path = root / name
     if not path.exists():
         return None
     try:
         manifest = json.loads(path.read_text())
-        if manifest['schema_version'] != 2 or set(manifest['components']) != set(COMPONENT_KINDS):
+        if manifest['schema_version'] != schema or set(manifest['components']) != kinds:
             raise ValueError
         for component in manifest['components'].values():
             if not inside(root, component['path']).is_file():
@@ -46,6 +46,14 @@ def active_bundle(root: Path) -> dict | None:
         return manifest
     except (OSError, ValueError, KeyError, TypeError):
         raise SourceError('Invalid active BCRA bundle; previous publication must be recovered') from None
+
+
+def active_bundle(root: Path) -> dict | None:
+    return _read_publication(root, 'active.json', 2, set(COMPONENT_KINDS))
+
+
+def active_current(root: Path) -> dict | None:
+    return _read_publication(root, 'current.json', 1, {'current'})
 
 
 def component_version(kind: str, files: list[dict], period: str) -> str:
@@ -109,6 +117,7 @@ def prune_pending(pending: Path, versions: dict):
 
 def unpublished_components(root: Path, previous: dict | None) -> list[Path]:
     active = {inside(root, item['path']) for item in (previous or {}).get('components', {}).values()}
+    active.update(inside(root, item['path']) for item in (active_current(root) or {}).get('components', {}).values())
     return [path for kind in COMPONENT_KINDS for path in (root / 'components' / kind).glob('*.sqlite')
             if not path.is_symlink() and path.resolve() not in active]
 
@@ -124,6 +133,9 @@ def clean_staging(root: Path):
 def collect_unused(root: Path, manifest: dict):
     keep = {inside(root, component['path']) for component in manifest['components'].values()}
     keep.update(inside(root, file['path']) for file in manifest['files'])
+    monthly = active_current(root) or {}
+    keep.update(inside(root, item['path']) for item in monthly.get('components', {}).values())
+    keep.update(inside(root, item['path']) for item in monthly.get('files', []))
     for directory in ('components', 'raw', 'archives', 'pending'):
         parent = root / directory
         if not parent.exists() or parent.is_symlink():
@@ -137,13 +149,13 @@ def collect_unused(root: Path, manifest: dict):
                 path.rmdir()
 
 
-def _atomic_manifest(root: Path, manifest: dict):
-    temporary = root / 'active.json.tmp'
+def _atomic_json(root: Path, manifest: dict, name: str):
+    temporary = root / (name + '.tmp')
     with temporary.open('w', encoding='utf-8') as output:
         json.dump(manifest, output)
         output.flush()
         os.fsync(output.fileno())
-    os.replace(temporary, root / 'active.json')
+    os.replace(temporary, root / name)
     if os.name == 'posix':
         descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
         try:
@@ -152,9 +164,88 @@ def _atomic_manifest(root: Path, manifest: dict):
             os.close(descriptor)
 
 
+def _atomic_manifest(root: Path, manifest: dict):
+    _atomic_json(root, manifest, 'active.json')
+
+
+def _publish_current(manager, period, downloaded, archive, guard, progress, work):
+    """Publish a complete monthly database before any extended import can fail."""
+    config, root = manager.config, manager.config.data_dir
+    monthly, bundle = active_current(root), active_bundle(root)
+    legacy = read_manifest(manager.database)
+    previous = monthly or bundle
+    baseline = previous['components']['current'] if previous else legacy
+    latest = previous or legacy
+    if latest and period < latest['period']:
+        raise SourceError('BCRA catalog regressed to an older period')
+    wanted = content_version(downloaded)
+    destination = root / 'components' / 'current' / (wanted + '.sqlite')
+    pending = root / 'pending' / ('current-' + wanted + '.sqlite')
+    metadata = read_manifest(destination) if destination.is_file() else pending_manifest(pending)
+    if not metadata:
+        pending.unlink(missing_ok=True)
+        if legacy and legacy['version'] == wanted:
+            os.link(manager.database, pending)
+            metadata = legacy
+        else:
+            progress('import_current')
+            inputs = {kind: archive(kind) for kind in COMPONENT_KINDS['current']}
+            metadata = import_snapshot(pending, inputs,
+                {'period': period, 'version': wanted, 'checked_at': timestamp(),
+                 'files': [dict(file) for file in downloaded]},
+                config.min_rows, deadline=guard.deadline, guard=guard, progress=progress)
+    if metadata['version'] != wanted or metadata['period'] != period:
+        raise SourceError('Monthly BCRA component does not match its verified sources')
+    if baseline and metadata['rows'] < baseline['rows'] * config.min_row_ratio:
+        raise SourceError('current row count dropped by more than the allowed threshold')
+    guard(force=True)
+    if not destination.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with pending.open('r+b') as handle:
+            os.fsync(handle.fileno())
+        os.replace(pending, destination)
+        guard.completed.append(destination)
+    files = []
+    for file in downloaded:
+        target = root / 'raw' / file['kind'] / file['sha256'] / file['name']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(work / file['name'], target)
+        file['path'] = str(target.relative_to(root)).replace('\\', '/')
+        files.append(dict(file))
+    component = {**metadata, 'version': wanted, 'path': str(destination.relative_to(root)).replace('\\', '/'),
+                 'bytes': destination.stat().st_size}
+    manifest = {'schema_version': 1, 'version': wanted, 'period': period, 'checked_at': timestamp(),
+                'rows': metadata['rows'], 'files': files, 'components': {'current': component},
+                'capabilities': {'current': True, 'history': False, 'padron': False, 'normal_since': False}}
+    guard(force=True)
+    with manager.snapshot_lock:
+        _atomic_json(root, manifest, 'current.json')
+        # Retain the monthly database/master used by the historical publication.
+        # Retire only the superseded independent monthly publication, under the
+        # same lock used by readers, so failed historical loads cannot leak one
+        # monthly database and three archives on every source update.
+        if monthly:
+            keep = {destination.resolve()}
+            keep.update(inside(root, item['path']) for item in (bundle or {}).get('components', {}).values())
+            keep.update(inside(root, item['path']) for item in (bundle or {}).get('files', []))
+            keep.update(inside(root, item['path']) for item in files)
+            old_paths = [inside(root, item['path']) for item in monthly['components'].values()]
+            old_paths.extend(inside(root, item['path']) for item in monthly['files'])
+            for path in old_paths:
+                if path not in keep:
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        # Full-bundle collection retries cleanup after publication.
+                        progress('current_cleanup_pending', metadata['rows'])
+    progress('current_published', metadata['rows'])
+    return manifest
+
+
 def refresh_bundle(manager, deadline: float) -> dict:
     config, root = manager.config, manager.config.data_dir
     previous = active_bundle(root)
+    monthly = active_current(root)
     legacy = read_manifest(manager.database)
     with manager.snapshot_lock:
         clean_staging(root)
@@ -164,12 +255,10 @@ def refresh_bundle(manager, deadline: float) -> dict:
     cached = unpublished_components(root, previous)
     retained_bytes = pending_bytes(pending) + sum(path.stat().st_size for path in cached)
     remaining = max(0, min(config.max_build_bytes, 25 * 1024**3) - retained_bytes)
-    if shutil.disk_usage(root).free < config.min_free_bytes + remaining:
-        raise SourceError('Insufficient free space to start the extended BCRA build')
     client = SourceClient(config, deadline=deadline)
     assets = client.catalog()
     period = next(asset.period for asset in assets if asset.kind == 'DEUDORES')
-    if (previous or legacy) and period < (previous or legacy)['period']:
+    if (monthly or previous or legacy) and period < (monthly or previous or legacy)['period']:
         raise SourceError('BCRA catalog regressed to an older period')
     last_progress = [-1.0, '']
 
@@ -185,7 +274,28 @@ def refresh_bundle(manager, deadline: float) -> dict:
         work = Path(temporary)
         guard = BuildBudget(config, work, deadline, pending)
         downloaded = []
+        opened = {}
+
+        def archive(kind):
+            file = next(file for file in downloaded if file['kind'] == kind)
+            path = inside(root, file['path']) if file.get('path') else work / file['name']
+            if kind not in opened or opened[kind][0] != path:
+                opened[kind] = (path, Archive(path, config.seven_zip, deadline=deadline))
+            return opened[kind][1]
+
+        current_assets = [asset for asset in assets if asset.kind in COMPONENT_KINDS['current']]
+        if {asset.kind for asset in current_assets} != set(COMPONENT_KINDS['current']):
+            raise SourceError('Monthly BCRA publication is incomplete')
+        for asset in current_assets:
+            guard()
+            progress('download_' + asset.kind)
+            downloaded.append(client.download(asset, work / asset.name))
+        monthly = _publish_current(manager, period, downloaded, archive, guard, progress, work)
+        if shutil.disk_usage(root).free < config.min_free_bytes + remaining:
+            raise SourceError('Insufficient free space to start the extended BCRA build')
         for asset in assets:
+            if asset.kind in COMPONENT_KINDS['current']:
+                continue
             guard()
             progress('download_' + asset.kind)
             downloaded.append(client.download(asset, work / asset.name))
@@ -208,21 +318,15 @@ def refresh_bundle(manager, deadline: float) -> dict:
         if previous and version == previous['version']:
             return {'action': 'unchanged', 'version': version, 'period': period,
                     'capabilities': previous['capabilities'], 'warnings': warnings}
-        opened = {}
-
-        def archive(kind):
-            if kind not in opened:
-                asset = next(asset for asset in assets if asset.kind == kind)
-                opened[kind] = Archive(work / asset.name, config.seven_zip, deadline=deadline)
-            return opened[kind]
-
-        components = {}
+        components = {'current': monthly['components']['current']}
         staged = {}
         for kind, required in COMPONENT_KINDS.items():
+            if kind == 'current':
+                continue
             guard()
             wanted = versions[kind]
             old = (previous or {}).get('components', {}).get(kind)
-            baseline = old or (legacy if kind == 'current' else None)
+            baseline = old
             destination = root / 'components' / kind / (wanted + '.sqlite')
             metadata = None
             if old and old['version'] == wanted:
@@ -239,25 +343,11 @@ def refresh_bundle(manager, deadline: float) -> dict:
             metadata = pending_manifest(path)
             if metadata and metadata['version'] == wanted:
                 progress('reuse_completed_' + kind, metadata['rows'])
-            elif kind == 'current' and legacy and legacy['version'] == wanted:
-                # Reuse the already validated database without copying its 2+ GB.
-                path.unlink(missing_ok=True)
-                os.link(manager.database, path)
-                metadata = legacy
             else:
                 progress('import_' + kind)
                 inputs = {key: archive(key) for key in required}
-                if kind == 'current':
-                    # The monthly component is rebuilt if interrupted before
-                    # completion; extended tables retain their durable blocks.
-                    path.unlink(missing_ok=True)
-                    current_files = [by_kind[key] for key in required]
-                    metadata = import_snapshot(path, inputs,
-                        {'period': period, 'version': wanted, 'checked_at': timestamp(), 'files': current_files},
-                        config.min_rows, deadline=deadline, guard=guard, progress=progress)
-                else:
-                    metadata = build_component(path, kind, inputs, period, wanted,
-                                               config.min_extended_rows, guard, progress)
+                metadata = build_component(path, kind, inputs, period, wanted,
+                                           config.min_extended_rows, guard, progress)
             if baseline and kind != 'corrections' and metadata['rows'] < baseline['rows'] * config.min_row_ratio:
                 raise SourceError(f'{kind} row count dropped by more than the allowed threshold')
             components[kind] = {**metadata, 'path': str(destination.relative_to(root)).replace('\\', '/'),
@@ -273,6 +363,9 @@ def refresh_bundle(manager, deadline: float) -> dict:
         reusable = {(file['kind'], file['sha256']): file.get('path') for file in (previous or {}).get('files', [])}
         legacy_files = {(file['kind'], file['sha256']): file for file in (legacy or {}).get('files', [])}
         for file in downloaded:
+            if file.get('path'):
+                files.append(dict(file))
+                continue
             match = (file['kind'], file['sha256'])
             old_path = reusable.get(match)
             if not old_path and match in legacy_files:

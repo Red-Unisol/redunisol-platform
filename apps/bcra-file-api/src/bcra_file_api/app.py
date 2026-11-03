@@ -16,7 +16,6 @@ import uvicorn
 from .config import Config
 from .refresh import RefreshManager
 from .store import lookup
-from .bundle import active_bundle, inside
 from .compat import compatible_response, INVALID_ID
 from .source import SourceError
 
@@ -59,15 +58,13 @@ async def read_json(request: Request) -> object:
 
 def lookup_response(manager: RefreshManager, identification: str) -> JSONResponse:
     with manager.snapshot_lock:
-        state = manager.status()
+        state = manager.publication()
         if not state["ready"]:
             return response(503, {
                 "status": 503, "errorMessages": ["No validated and recently checked BCRA dataset"],
                 "meta": {"check_stale": state["check_stale"], "dataset": state["dataset"]},
             })
-        bundle = active_bundle(manager.config.data_dir)
-        database = inside(manager.config.data_dir, bundle['components']['current']['path']) if bundle else manager.database
-        result = lookup(database, identification)
+        result = lookup(state['database'], identification)
         result["meta"]["last_successful_check_at"] = state['last_successful_check_at']
         if result["status"] == 404:
             result["errorMessages"] = ["Identification absent from the loaded monthly publication"]
@@ -78,12 +75,11 @@ def compatibility_response(manager: RefreshManager, identification: str, histori
     if not re.fullmatch(r'[0-9]{11}', identification):
         return response(400, INVALID_ID)
     with manager.snapshot_lock:
-        state = manager.status()
+        state = manager.publication(historical)
         if not state['ready']:
             return response(503, {'status': 503, 'errorMessages': ['No hay una publicación BCRA validada y vigente.']})
-        bundle = active_bundle(manager.config.data_dir)
-        database = inside(manager.config.data_dir, bundle['components']['current']['path']) if bundle else manager.database
-        body = compatible_response(manager.config.data_dir, database, bundle, identification, historical)
+        bundle = state['bundle']
+        body = compatible_response(manager.config.data_dir, state['database'], bundle, identification, historical)
         result = response(body['status'], body)
         result.headers['X-BCRA-Source'] = 'monthly-files'
         result.headers['X-BCRA-Period'] = state['dataset']['period']

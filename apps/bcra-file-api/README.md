@@ -42,10 +42,24 @@ Las respuestas usan `Cache-Control: no-store`.
 
 - HTTP 400: identificación inválida.
 - HTTP 404: identificación sin datos en la cobertura cargada.
-- HTTP 503: falta una publicación validada, pasaron más de 72 horas sin control
-  exitoso o aún no terminó la carga inicial del histórico. No significa ausencia
-  de deudas. Hasta la primera carga ampliada, deudas vigentes sigue disponible
-  con la base anterior y sus campos todavía incompletos.
+- HTTP 503: falta una publicación completa y validada para el contrato consultado
+  o pasaron más de 72 horas sin su control exitoso. Histórico también devuelve
+  503 hasta terminar y validar su primera carga; nunca devuelve filas parciales
+  ni un 404 por registros todavía pendientes de importar.
+
+**Deuda vigente funciona mientras el histórico se está cargando.** Primero se
+descargan y verifican DEUDORES, INFRET e INFRETPA, y se construye o revalida la
+base mensual completa. Se publica antes de descargar/importar los archivos
+ampliados. Un fallo posterior del histórico no invalida ese control mensual.
+Si el padrón y la fecha normal todavía no están disponibles en una publicación
+ampliada vigente y compatible, se usa el nombre del maestro mensual cuando existe
+y `fechaSit1` queda en `null`.
+
+Los controles de vigencia son independientes: comprobar la base mensual no
+renueva un histórico viejo. Si hay un histórico anterior completo y vigente, se
+puede seguir consultando con su propio maestro de entidades. Los encabezados de
+cada respuesta identifican la versión, período y control de esa consulta; vigente
+e histórico pueden estar usando publicaciones diferentes durante una actualización.
 
 La compatibilidad es de contrato y de la información disponible en archivos.
 La API oficial puede tener novedades posteriores al corte mensual, denominaciones
@@ -64,15 +78,20 @@ instantánea con la API oficial ni se determina elegibilidad crediticia.
 - `BCRA_FILE_EXTENDED_ENABLED=true` en Compose habilita la publicación ampliada.
   Los defaults de la aplicación mantienen el importador anterior para pruebas.
 - Cinco componentes SQLite inmutables: `current`, `history`, `corrections`,
-  `normal` y `padron`. Un único `active.json` selecciona la versión completa.
+  `normal` y `padron`. `current.json` selecciona la base mensual validada;
+  `active.json` selecciona la publicación ampliada completa, incluido el maestro
+  mensual con el que se validaron sus entidades históricas.
 - Las descargas temporales usan `refresh-*`; los componentes en construcción se
   conservan en `pending/`, en el mismo volumen. El manifiesto cambia mediante
-  rename atómico únicamente después de validar todos los componentes y sus
-  entidades. Las consultas mantienen una versión completa durante la lectura;
+  rename atómico después de completar las validaciones de cada contrato. La
+  publicación histórica exige todos los componentes y sus entidades. Las
+  consultas mantienen una versión completa durante la lectura;
   el importador trabaja en otro hilo y las consultas SQLite usan un thread pool.
-- Un fallo conserva la publicación anterior y los bloques confirmados de la
-  construcción. No se publica un histórico parcial. Después del cambio se retiran
-  componentes y comprimidos que ya no se usan. Al iniciar se limpian únicamente
+- Un fallo conserva la última publicación validada de cada contrato y los bloques
+  confirmados de la construcción. Una base mensual ya publicada sigue disponible
+  aunque falle la ampliación. No se publica un histórico parcial. Se retiran
+  componentes y comprimidos que ya no se usan, conservando los necesarios para
+  ambas publicaciones. Al iniciar se limpian únicamente
   las descargas temporales abandonadas; los puntos de continuación se conservan.
 - Se reutilizan componentes cuyo contenido no cambió. Una corrección diaria se
   guarda en una tabla separada y se aplica al consultar; no obliga a reconstruir
@@ -165,7 +184,7 @@ y su inserción SQL; no se guarda el texto completo en disco.
 Los componentes ya terminados también se conservan entre noches y se reutilizan
 después de verificar sus huellas. La base mensual se conserva cuando termina;
 una base mensual interrumpida antes de terminar se reconstruye. La publicación
-atómica sigue exigiendo todos los componentes completos y todas las validaciones.
+histórica sigue exigiendo todos los componentes completos y todas las validaciones.
 Los límites de almacenamiento incluyen los bloques pendientes, y la reserva de
 inicio descuenta el espacio de construcción que esos bloques ya ocupan.
 
@@ -202,8 +221,12 @@ usar un túnel SSH al puerto loopback siguiendo el acceso canónico local.
 No se agrega dominio ni configuración Apache.
 
 - `GET /health`: liveness sin autenticación ni datos personales.
-- `GET /status`: readiness, capacidades (`current`, `history`, `padron`,
-  `normal_since`), versión, componentes, último control y progreso del job.
+- `GET /status`: `ready`, `check_stale`, `dataset` y `last_successful_check_at`
+  describen deuda vigente. `history_ready`, `history_check_stale`,
+  `history_dataset` y `last_successful_history_check_at` describen el histórico.
+  También incluye capacidades (`current`, `history`, `padron`, `normal_since`)
+  y el estado/progreso del job. Un job de ampliación fallido puede coexistir con
+  `ready=true` y `history_ready=false`; no se trata como un histórico completado.
 - `POST /refresh`, body `{}`: HTTP 202 y `job_id`. `Idempotency-Key` retoma el
   mismo job; ejecuciones simultáneas comparten el que esté activo.
 - `GET /jobs/{job_id}`: estado y progreso sin datos de deudores; HTTP 500 si falló.
@@ -251,4 +274,7 @@ publicación fallida, cambios por componente, migración sin copiar, lecturas
 concurrentes, autenticación, vigencia, límites de recursos y ventana nocturna.
 También cubren reanudación entre noches, cambio de huellas, descompresión fallida
 y salida abrupta de un proceso con un bloque SQL sin confirmar.
+La disponibilidad por contrato se prueba con histórico parcialmente confirmado,
+reinicio, descargas fallidas, caducidad independiente y maestros de entidades de
+versiones diferentes; un control mensual fallido no renueva la vigencia anterior.
 La integración usa seis comprimidos de prueba y sirve ambas rutas GET.
