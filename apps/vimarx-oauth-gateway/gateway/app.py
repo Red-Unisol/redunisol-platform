@@ -6,7 +6,7 @@ import re
 import secrets
 import time
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from authlib.integrations.flask_oauth2 import AuthorizationServer
 from authlib.oauth2 import OAuth2Error
@@ -37,6 +37,7 @@ READ_TOOLS = frozenset({
 })
 PROTOCOLS = {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
 SCOPE = "mcp:read"
+CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 
 
 def create_app(config=None, upstream=None):
@@ -326,6 +327,14 @@ def create_app(config=None, upstream=None):
     def home():
         return render_template("home.html", resource=resource)
 
+    if not directory_profile:
+        @app.get(prefix + "/claude")
+        def claude_connector():
+            return redirect("https://claude.ai/customize/connectors?" + urlencode({
+                "modal": "add-custom-connector", "connectorName": "Celesol · Vimarx Interno",
+                "connectorUrl": resource,
+            }), code=302)
+
     @app.get(prefix + "/support")
     def support():
         return render_template("support.html", resource=resource)
@@ -373,6 +382,10 @@ def create_app(config=None, upstream=None):
                        scopes_supported=[SCOPE], bearer_methods_supported=["header"])
 
     def allowed_redirect(uri):
+        # The public-directory profile must not acquire Claude support through
+        # the test/operator override or through a previously registered client.
+        if uri == CLAUDE_CALLBACK:
+            return not directory_profile
         if uri in app.config["EXTRA_REDIRECT_URIS"]:
             return True
         try:
@@ -467,6 +480,8 @@ def create_app(config=None, upstream=None):
             grant = server.get_consent_grant()
         except OAuth2Error as error:
             return jsonify(error=error.error, error_description=error.description), 400
+        if not allowed_redirect(grant.redirect_uri):
+            return jsonify(error="invalid_redirect_uri"), 400
         g.oauth_redirect_uri = grant.redirect_uri
         error_message = None
         if request.method == "POST":
@@ -498,6 +513,7 @@ def create_app(config=None, upstream=None):
         session.permanent = True
         return render_template("authorize.html", csrf=csrf, error=error_message,
                                resource=resource, client_name=grant.client.client_name,
+                                redirect_hostname=urlsplit(grant.redirect_uri).hostname,
                                username=request.form.get("username", "")[:128], demo_enabled=vimarx.demo is not None), (401 if error_message else 200)
 
     @app.post(prefix + "/token")
