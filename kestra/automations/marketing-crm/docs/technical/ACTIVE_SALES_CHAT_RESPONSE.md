@@ -1,8 +1,9 @@
 # Pase a Respuesta por WhatsApp activo
 
-Tarea Bitrix 22903. `bitrix24_deal_chat_response` revisa cada dos minutos las
-negociaciones de categoría 1 en Presentación (`C1:NEW`) y Revisión Manual
-(`C1:KESTRA_REVIEW`). Sólo escribe `stageId = C1:UC_ZH5DGU` (Respuesta).
+Tarea Bitrix 22903. `bitrix24_deal_chat_response` atiende cada minuto una cola
+durable de avisos de WhatsApp y de negociaciones recien clasificadas. Revisa
+solo esos casos en Presentación (`C1:NEW`) y Revisión Manual (`C1:KESTRA_REVIEW`).
+Sólo escribe `stageId = C1:UC_ZH5DGU` (Respuesta).
 
 ## Decisión comercial
 
@@ -49,39 +50,68 @@ escribir. Cualquier cambio durante la inspección omite el caso. Bitrix REST no
 ofrece una actualización condicional de versión en este método: hay una pequeña
 ventana residual entre lectura y escritura. No es un bloqueo sobre el asesor.
 
-El flow permite una ejecución y cancela nuevas tandas si la anterior sigue
-activa. Recorre todas las páginas por ID creciente; mover registros fuera del
-filtro no saltea otros. El presupuesto es diez minutos por barrido y doce para
-la tarea completa. Si el volumen supera ese presupuesto se registra un fallo,
-no un éxito incompleto; revisar capacidad antes de aumentar concurrencia.
+## Cola, exclusión y presupuesto
 
-Ritmo máximo local aproximado: 1,8 llamadas/segundo. Sólo las lecturas transitorias
-tienen hasta tres intentos con espera. Una escritura de resultado incierto se
-verifica por lectura y nunca se repite a ciegas. Un caso fallido no impide atender
-los siguientes; el resultado conserva los IDs, motivos y conteos, sin textos de
-clientes. La ejecución falla al terminar si hubo errores, para usar las alertas
-existentes. Las siguientes tandas reevalúan el estado actual.
+La web encola el telefono del mensaje entrante de Edna dentro de la misma
+transaccion que procesa el inbox. Se conserva cifrado con APP_KEY y se identifica
+con un HMAC, sin telefonos en logs. Los avisos de la misma persona se agrupan; los
+repetidos o antiguos no incrementan la generacion. Un mensaje nuevo durante el
+procesamiento deja otra generacion pendiente y no se pierde al confirmar la vieja.
+Se esperan 15 segundos desde el primer aviso para agrupar mensajes y tolerar el
+retraso del callback independiente de Bitrix. La clasificacion tambien encola el
+ID de una negociacion que acaba de quedar en una etapa habilitada: recupera el
+caso donde la conversacion existia antes de crear la negociacion.
+
+`bitrix_chat_response_queue` y `bitrix_chat_response_state` viven en PostgreSQL de
+la web. El endpoint `/api/internal/bitrix-chat-response/{claim,renew,finish,enqueue}`
+usa el token interno de asignacion ya compartido (`BITRIX_ROUTING_ALLOCATION_TOKEN`
+en web, secret `BITRIX24_ROUTING_ALLOCATION_TOKEN` en Kestra). Valida tambien el
+namespace: el runtime dev no puede consumir la cola prod.
+
+El claim usa una transaccion y bloqueo de fila para otorgar un solo lease global.
+Dura 180 segundos, se renueva antes de cada llamada CRM y una confirmacion de un
+propietario viejo se rechaza. Un proceso que pierde el lease deja de llamar a
+Bitrix. La exclusion no depende del contador interno de concurrencia de Kestra.
+El flow conserva `concurrency.limit: 1` como defensa adicional. El entrypoint
+anterior delega al nuevo worker: una revision vieja reentregada no puede volver
+al barrido completo ni ejecutar sin configuracion de cola.
+
+Cada tanda dispone de 45 segundos y un maximo absoluto de 20 intentos HTTP a
+Bitrix, incluidos los reintentos. El intervalo minimo entre intentos es dos
+segundos (como maximo 0,5 llamadas/segundo), para reservar capacidad a ingreso y
+calificacion. Solo lecturas rechazadas expresamente con QUERY_LIMIT_EXCEEDED se
+reintentan, con espera creciente. Se mantiene la lectura de verificacion tras
+una escritura incierta y no se repite esa escritura a ciegas.
+
+Los avisos por telefono buscan solo sus contactos/leads y las negociaciones
+relacionadas; los avisos por ID leen solo esa negociacion. El presupuesto conserva
+el cursor de la ultima negociacion completamente inspeccionada. Una espera de
+sesion/registro se reevalua hasta tres veces; los errores tecnicos hasta seis,
+y una nueva actividad reactiva el caso. Los trabajos completados se purgan a los
+siete dias con `edna:prune`.
+
+Sin eventos disponibles hay una reconciliacion de respaldo cada 15 minutos, con
+el mismo presupuesto y un cursor persistido por ID. Continua desde donde termino;
+no vuelve a barrer toda la base cada dos minutos. Este respaldo tambien recupera
+avisos perdidos o casos historicos. El calendario usa `recoverMissedSchedules:
+NONE`: recuperar minutos viejos no aporta datos nuevos a esta cola.
 
 ## Logs y diagnóstico
 
-Cada barrido emite un único resumen `bitrix24_deal_chat_response_summary` con
-`ok`, duración, negociaciones revisadas, conteos por resultado, llamadas por
-método y tipos de error. `api_calls` cuenta intentos HTTP reales, incluidos los
-reintentos de lectura; `api_failed_attempts` también incluye fallos recuperados.
-Un intento fallido recuperado no convierte un barrido exitoso en un error.
+`bitrix24_chat_response_worker_summary` informa modo (`event`, `fallback`, `busy`,
+`idle`), resultado, llamadas por metodo, intentos fallidos y conteos de casos. Los
+modos busy/idle hacen cero llamadas a Bitrix. Los errores solo conservan su tipo.
+Los eventos individuales quedan en `result_json`, sin duplicarlos en el resumen.
+Un error produce `ok=false` y salida de proceso distinta de cero; el agotamiento
+del presupuesto conserva trabajo pendiente como `outcome=retry`.
 
-El resumen exitoso va a stdout/INFO y el fallido a stderr/ERROR. El logger
-compartido de Bitrix también envía sus mensajes INFO a stdout. Los errores
-conservan su tipo sin imprimir cuerpos HTTP, credenciales ni datos de clientes.
-`ok` y `result_json` conservan el contrato completo de salidas de Kestra,
-incluidos los eventos por negociación; no se duplica esa lista en el log.
-
-Sólo este entrypoint omite por defecto los mensajes rutinarios «Invocando…».
-Para un diagnóstico puntual se puede agregar `BITRIX24_LOG_API_CALLS: "true"`
-al entorno de su tarea en Git y desplegarlo; restaurar luego el valor por defecto.
-Los demás consumidores de `BitrixClient` conservan sus mensajes por llamada.
-No cambia el cron, el ritmo, los reintentos ni la selección y actualización de
-negociaciones.
+Para desplegar: publicar primero la web y sus migraciones; luego los namespace
+files y flows. Si el consumidor se publica primero, falla cerrado hasta que el
+endpoint este listo. En una recuperacion de barridos anteriores, pausar el trigger,
+guardar sus IDs y cancelar sus ejecuciones por la API antes de reactivar el worker.
+No ajustar directamente tablas internas de Kestra para fabricar concurrencia.
+Verificar en produccion exclusion de claims simultaneos, eventos de la cola,
+trafico hacia Bitrix y avance real de los prospectos.
 
 ## Negociaciones anteriores a la incorporación del campo
 

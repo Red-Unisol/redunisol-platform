@@ -143,6 +143,8 @@ def process_pending_catamarca_deals(
                 deal_id, exc, env=env, bitrix_client=client, logger=active_logger, now=now,
             )
         events.append(event)
+        from .chat_response_worker import enqueue_classified_deal
+        enqueue_classified_deal(event, source, active_logger)
         # Respect provider throttling for the rest of this batch too.
         if event.get("bcra_refresh_outcome") == "rate_limited":
             break

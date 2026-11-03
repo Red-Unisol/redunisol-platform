@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AnalyticsAttributionController;
+use App\Http\Controllers\BitrixChatResponseController;
 use App\Http\Controllers\BitrixRoutingConfigController;
 use App\Http\Controllers\BitrixVolumeAllocationController;
 use App\Http\Controllers\EdnaIncomingController;
@@ -27,6 +28,8 @@ Route::match(['HEAD', 'POST'], '/webhooks/edna/probe/{probe}', EdnaProbeControll
     ->whereUuid('probe')->name('api.edna.probe');
 Route::get('/internal/bitrix-routing', BitrixRoutingConfigController::class)->name('api.bitrix-routing.show');
 Route::post('/internal/bitrix-routing/allocate', BitrixVolumeAllocationController::class)->name('api.bitrix-routing.allocate');
+Route::post('/internal/bitrix-chat-response/{action}', BitrixChatResponseController::class)
+    ->whereIn('action', ['claim', 'renew', 'finish', 'enqueue']);
 
 Route::post('/recibos/upload', function (Request $request) {
     $request->validate([
