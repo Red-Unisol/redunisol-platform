@@ -1,6 +1,6 @@
 # Reglas Comerciales Compartidas
 
-Versión documental: `2026-10-13`
+Versión documental: `2026-11-03-buenos-aires-sin-publico-provincial`
 
 ## Propósito
 
@@ -32,9 +32,13 @@ existe una desviación que debe corregirse o documentarse.
 
 La precalificacion de leads para Buenos Aires, ANSES, Santa Fe, Neuquen y la prioridad de
 antecedentes Haberes CUAD se define en [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md),
-version `2026-10-30-buenos-aires-anses-santa-fe-neuquen-cuad-history`. El recorrido posterior de
-negociaciones de estas familias esta definido en la seccion 2026-10-30 de
-`DEAL_CLASSIFICATION.md` y en los nuevos buckets de `DEAL_ROUTING.md`.
+version `2026-11-03-buenos-aires-sin-publico-provincial`. El recorrido posterior de
+negociaciones de estas familias esta definido en la seccion de Buenos Aires, ANSES,
+Santa Fe y Neuquen de `DEAL_CLASSIFICATION.md` y en los buckets de `DEAL_ROUTING.md`.
+La correccion del 03/11/2026 retira Empleado Publico Provincial de Buenos Aires;
+quedan Policia, Docente y Jubilado Provincial. Recupera el resultado habitual del
+perfil no incluido, conserva la prioridad CUAD y aplica hacia adelante sin
+reclasificar historicos. Estado: implementado en rama, pendiente de merge y deploy.
 
 ## Documentos
 
@@ -115,6 +119,7 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
+| 2026-11-03-buenos-aires-sin-publico-provincial | Retirar Empleado Publico Provincial de Buenos Aires de GANADO | Implementado en rama, pendiente de merge y deploy | Confirmacion de Santiago el 03/11/2026, registrada en BUENOS_AIRES.md y DECISION_LOG.md | Rama codex/buenos-aires-publico-rechazo |
 | 2026-10-13 | Caja Morosos: máximo 8 entidades para Jubilado Provincial nuevo | Implementado, pendiente de deploy | Tarea Bitrix24 `23321` y autorización de Santiago en la sesión del 13/10/2026 | [Contrato y pruebas](CAJA_MOROSOS_23321.md) |
 | 2026-10-30 | Asignacion directa general de pools con un unico habilitado | Implementado en rama, pendiente de deploy | Confirmacion explicita de Santiago en esta conversacion; DEAL_ROUTING.md | Seguimiento del PR #631 |
 | 2026-10-30 | Negociaciones ANSES, Santa Fe y Neuquen; pools compartido y Ludmila | Implementado en rama, pendiente de deploy | Definiciones de Santiago en esta conversacion, incorporadas en DEAL_CLASSIFICATION.md y DEAL_ROUTING.md | Rama codex/casos-ganados-anses-provincias |

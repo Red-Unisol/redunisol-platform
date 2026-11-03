@@ -14,9 +14,8 @@ from bitrix24_form_flow.form_processor.qualification import evaluate_prequalific
 
 
 class QualificationExpansionTests(unittest.TestCase):
-    def test_buenos_aires_accepts_only_the_four_confirmed_profiles_with_any_or_no_bank(self) -> None:
-        for employment in ("Policia", "Docente", "Empleado Publico Provincial", "Jubilado Provincial",
-                           "1269", "3745", "1239", "2565"):
+    def test_buenos_aires_accepts_only_the_three_confirmed_profiles_with_any_or_no_bank(self) -> None:
+        for employment in ("Policia", "Docente", "Jubilado Provincial", "1269", "3745", "2565"):
             for bank in ("Banco de la Nacion Argentina", "Otros", None, "", "banco no catalogado"):
                 with self.subTest(employment=employment, bank=bank):
                     result = prequalify_commercial_fields({
@@ -27,7 +26,8 @@ class QualificationExpansionTests(unittest.TestCase):
                     self.assertTrue(result["route_to_whatsapp"])
 
     def test_buenos_aires_does_not_admit_federal_police_or_other_unlisted_profiles(self) -> None:
-        for employment in ("Policía Federal", "Empleado Publico Municipal", "Empleado Publico Nacional",
+        for employment in ("Policía Federal", "Empleado Publico Provincial", "1239",
+                           "Empleado Publico Municipal", "Empleado Publico Nacional",
                            "Personal de Salud", "Pensionado", "Jubilado Municipal", "Empleado Privado"):
             with self.subTest(employment=employment):
                 decision = evaluate_prequalification(normalize_prequalification_input({
@@ -35,6 +35,20 @@ class QualificationExpansionTests(unittest.TestCase):
                 }))
                 self.assertFalse(decision.qualified)
                 self.assertEqual(decision.reason, "employment_status_not_eligible")
+
+    def test_buenos_aires_public_employee_uses_the_existing_commercial_rejection(self) -> None:
+        for employment in ("Empleado Público Provincial", "empleado_publico_provincial", "1239"):
+            for bank in ("Banco de la Provincia de Buenos Aires", "Otros"):
+                with self.subTest(employment=employment, bank=bank):
+                    payload = {"province": "221", "employment_status": employment, "payment_bank": bank}
+                    decision = evaluate_prequalification(normalize_prequalification_input(payload))
+                    self.assertEqual(decision.outcome, "rejected")
+                    self.assertEqual(decision.rejection_label, "NO CUMPLE REQUISITOS PARA CONVENIO")
+                    result = prequalify_commercial_fields(payload)
+                    self.assertTrue(result["ok"], result)
+                    self.assertFalse(result["prequalified"])
+                    self.assertFalse(result["route_to_whatsapp"])
+                    self.assertEqual(result["reason"], "employment_status_not_eligible")
 
     def test_buenos_aires_profiles_do_not_open_caba(self) -> None:
         for employment in ("Policia", "Docente", "Empleado Publico Provincial", "Jubilado Provincial"):

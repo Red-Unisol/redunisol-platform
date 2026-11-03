@@ -365,3 +365,24 @@ CUAD conserva la prioridad global sobre la base congelada; CUIL incompleto se
 considera sin coincidencia. CABA y Policia Federal mantienen su tratamiento.
 Detalle y casos: [BUENOS_AIRES.md](BUENOS_AIRES.md). Estado de esta ampliacion:
 implementado en rama, pendiente de merge y deploy.
+
+## 2026-11-03 — Retirar Empleado Publico Provincial de Buenos Aires
+
+Santiago aprueba que Empleado Publico Provincial de Buenos Aires reciba la misma
+categoria que si no hubiese sido incluido en la ampliacion. La solicitud corrige
+la decision del 30/10/2026: los perfiles habilitados de Buenos Aires quedan en
+Policia, Docente y Jubilado Provincial. Antecedente: mensajes de Maru del 02/11/2026
+en el chat directo, IDs `6916839` y `6916843`.
+
+Con datos completos y sin coincidencia CUAD, el resultado habitual es rechazo
+automatico del lead en RESULTADO PERDIDO por `NO CUMPLE REQUISITOS PARA CONVENIO`
+(`employment_status_not_eligible`), sin negociacion interna nueva por esta regla.
+Los datos faltantes conservan su tratamiento existente: sin banco, el clasificador
+del lead espera actualizacion. No se agregan excepciones de normalizacion.
+La base congelada CUAD conserva su prioridad de derivacion externa.
+
+Alcance: aplicacion hacia adelante, sin reclasificar leads ni negociaciones
+historicos. No modifica los perfiles de otras provincias ni la regla ANSES.
+Version: `2026-11-03-buenos-aires-sin-publico-provincial`. Estado: implementado en
+rama, pendiente de merge, deploy y auditoria productiva. La ficha del cambio,
+campos y casos de aceptacion estan en [BUENOS_AIRES.md](BUENOS_AIRES.md).

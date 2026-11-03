@@ -46,7 +46,6 @@ QUALIFICATION_RULES = {
         "allowed_employment_statuses": {
             "policia",
             "docente",
-            "empleado_publico_provincial",
             "jubilado_provincial",
         },
     },

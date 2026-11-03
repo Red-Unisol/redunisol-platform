@@ -91,7 +91,7 @@ class RegistryLeadIntegrationTests(unittest.TestCase):
         self.lead[self.config.fields.lead_province] = "221"
         self.lead[self.config.fields.lead_cuil] = "12345678"
         self.lead.pop(self.config.fields.lead_payment_bank)
-        for employment in ("1269", "3745", "1239", "2565"):
+        for employment in ("1269", "3745", "2565"):
             with self.subTest(employment=employment):
                 self.lead["STATUS_ID"] = "NEW"
                 self.lead[self.config.fields.lead_employment_status] = employment
@@ -100,6 +100,46 @@ class RegistryLeadIntegrationTests(unittest.TestCase):
                 self.assertEqual(result["action"], "qualified")
                 self.assertEqual(result["lead_status"], "QUALIFIED")
         self.registry_lookup.assert_not_called()
+
+    def test_buenos_aires_public_employee_is_rejected_with_the_existing_reason(self) -> None:
+        self.lead[self.config.fields.lead_province] = "221"
+        self.lead[self.config.fields.lead_employment_status] = "1239"
+        original_get_field = self.client.get_lead_field
+
+        def get_field(name):
+            if name == self.config.fields.lead_rejection_reason:
+                return {"items": [{"ID": "3965", "VALUE": "NO CUMPLE REQUISITOS PARA CONVENIO"}]}
+            return original_get_field(name)
+
+        with patch.object(self.client, "get_lead_field", side_effect=get_field):
+            result = self.classify()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["action"], "rejected")
+        self.assertEqual(result["reason"], "employment_status_not_eligible")
+        self.assertEqual(self.lead["STATUS_ID"], self.config.lead_statuses.rejected)
+        self.assertEqual(self.lead[self.config.fields.lead_rejection_reason], "3965")
+        self.assertEqual(self.client.deals, {})
+
+    def test_buenos_aires_public_employee_keeps_the_existing_missing_bank_handling(self) -> None:
+        self.lead[self.config.fields.lead_province] = "221"
+        self.lead[self.config.fields.lead_employment_status] = "1239"
+        self.lead.pop(self.config.fields.lead_payment_bank)
+        result = self.classify()
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["action"], "waiting_for_update")
+        self.assertEqual(result["reason"], "missing_required_field")
+        self.assertEqual(self.lead["STATUS_ID"], "NEW")
+
+    def test_buenos_aires_public_employee_with_cuad_history_remains_external(self) -> None:
+        self.lead[self.config.fields.lead_province] = "221"
+        self.lead[self.config.fields.lead_employment_status] = "1239"
+        self.lead.pop(self.config.fields.lead_payment_bank)
+        self.registry_lookup.return_value = registry_for("20123456786")
+        result = self.classify()
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["action"], "external_referral")
+        self.assertEqual(self.lead["STATUS_ID"], "13")
+        self.assertEqual(self.client.deals, {})
 
     def test_buenos_aires_eligible_profile_with_cuad_history_is_external(self) -> None:
         self.lead[self.config.fields.lead_province] = "221"
