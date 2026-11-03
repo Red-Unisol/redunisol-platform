@@ -14,6 +14,8 @@ export type ListSolicitudesInput = {
   limit: number;
   nroDocumento?: string;
   offset: number;
+  /** Solo Historicas: las desestimadas con la accion "Paso por Vimarx". */
+  pasoPorVimarx?: boolean;
   scope: "historicas" | "recientes" | "tracking" | "work";
   currentUser: {
     id: string;

@@ -8,6 +8,7 @@ import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/so
 type UseSolicitudesCoreHistoricasQueryOptions = {
   search?: string;
   page: number;
+  pasoPorVimarx?: boolean;
   pageSize: number;
 };
 
@@ -15,6 +16,7 @@ export function useSolicitudesCoreHistoricasQuery({
   search,
   page,
   pageSize,
+  pasoPorVimarx = false,
 }: UseSolicitudesCoreHistoricasQueryOptions) {
   const normalizedSearch = search?.trim() || undefined;
   const limit = pageSize;
@@ -26,12 +28,14 @@ export function useSolicitudesCoreHistoricasQuery({
         limit,
         search: normalizedSearch,
         offset,
+        ...(pasoPorVimarx ? { pasoPorVimarx: "true" as const } : {}),
         scope: "historicas",
       }),
     queryKey: solicitudesCoreQueryKeys.historicas({
       limit,
       search: normalizedSearch,
       offset,
+      pasoPorVimarx,
     }),
     refetchInterval: LISTAS_REFRESCO_AUTOMATICO_MS,
     retry: false,

@@ -75,6 +75,8 @@ export type ListSolicitudesHistoricasInput = {
   limit: number;
   nroDocumento?: string;
   offset: number;
+  /** Las desestimadas con la accion "Paso por Vimarx", sin la ventana de Recientes. */
+  pasoPorVimarx?: boolean;
 };
 
 export type UpdateSolicitudCorePatch = {

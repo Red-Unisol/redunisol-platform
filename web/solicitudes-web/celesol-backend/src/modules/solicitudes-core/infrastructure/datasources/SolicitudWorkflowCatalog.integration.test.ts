@@ -39,7 +39,9 @@ describe("Canonical workflow transition catalog", () => {
     const actionKeys = transitions.map(
       (transition) => `${transition.fromState.code}|${transition.actionCode}`,
     );
-    const pairKeys = transitions.map(
+    // "paso_por_vimarx" lleva a Desestimada igual que "desestimar"; es a
+    // proposito: la accion es la que distingue a las que se siguieron en Vimarx.
+    const pairKeys = transitions.filter((transition) => transition.actionCode !== "paso_por_vimarx").map(
       (transition) => `${transition.fromState.code}|${transition.toState.code}`,
     );
 

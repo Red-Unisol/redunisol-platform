@@ -160,3 +160,10 @@ test("acepta cuota objetivo únicamente positiva y finita en simulación", () =>
   assert.equal(simularPrestamoBodySchema.parse({ ...base, cuotaObjetivo: 100 }).cuotaObjetivo, 100);
   for (const cuotaObjetivo of [0, -1, Infinity, NaN, "letras"]) assert.equal(simularPrestamoBodySchema.safeParse({ ...base, cuotaObjetivo }).success, false);
 });
+
+it("lee el filtro de Históricas 'Pasó por Vimarx' como booleano", () => {
+  assert.equal(listSolicitudesQuerySchema.parse({ scope: "historicas", pasoPorVimarx: "true" }).pasoPorVimarx, true);
+  assert.equal(listSolicitudesQuerySchema.parse({ scope: "historicas", pasoPorVimarx: "false" }).pasoPorVimarx, false);
+  assert.equal(listSolicitudesQuerySchema.parse({ scope: "historicas" }).pasoPorVimarx, undefined);
+  assert.equal(listSolicitudesQuerySchema.safeParse({ pasoPorVimarx: "si" }).success, false);
+});
