@@ -15,10 +15,6 @@ LINEAS_PRESTAMO = [
     "CRUZ DEL EJE Ren Especial",
     "CRUZ DEL EJE Ren Premium",
 ]
-LINEAS_BONUS_RENOVACION = [
-    "CRUZ DEL EJE -Cance-especia-",
-    "CRUZ DEL EJE -Cancel-Prem",
-]
 
 ESTADO_CUENTA_ACTIVA = 0
 MAX_CUOTAS = 35000
@@ -147,7 +143,6 @@ def fetch_cuotas_por_cuil(cuil: str) -> List[Dict[str, Any]]:
         "Prestamo.LineaPrestamo.Superior.Descripcion",
         "NroCuota",
         "Fecha",
-        "FechaCobro",
         "SaldoCuota",
         "Capital",
     ]
@@ -157,7 +152,10 @@ def fetch_cuotas_por_cuil(cuil: str) -> List[Dict[str, Any]]:
         "Prestamo.LineaPrestamo.Superior.Descripcion",
     )
     criterio_cuil = build_cuil_cmd(cuil)
-    criterio = f"({criterio_lineas}) And ({criterio_cuil}) And [NroCuota] > 0"
+    criterio = (
+        f"({criterio_lineas}) And ({criterio_cuil}) And [NroCuota] > 0 "
+        f"And [Prestamo.Cuenta.Estado] = {ESTADO_CUENTA_ACTIVA}"
+    )
 
     filas = evaluate_list(
         cmd=criterio,
@@ -182,19 +180,6 @@ def filter_lines_exact(cuotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return filtradas
 
 
-def has_bonus_line(cuotas: List[Dict[str, Any]]) -> bool:
-    lineas_bonus = {normalize_line(x) for x in LINEAS_BONUS_RENOVACION}
-    for cuota in cuotas:
-        descripcion = cuota.get("Prestamo.LineaPrestamo.Descripcion") or ""
-        descripcion_sup = cuota.get("Prestamo.LineaPrestamo.Superior.Descripcion") or ""
-        if (
-            normalize_line(descripcion) in lineas_bonus
-            or normalize_line(descripcion_sup) in lineas_bonus
-        ):
-            return True
-    return False
-
-
 def group_by_prestamo(cuotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     por_prestamo: Dict[Any, Dict[str, Any]] = {}
     for cuota in cuotas:
@@ -215,7 +200,6 @@ def group_by_prestamo(cuotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             {
                 "NroCuota": cuota.get("NroCuota"),
                 "Fecha": cuota.get("Fecha"),
-                "FechaCobro": cuota.get("FechaCobro"),
                 "SaldoCuota": cuota.get("SaldoCuota"),
                 "Capital": cuota.get("Capital"),
                 "CuentaEstado": cuota.get("Prestamo.Cuenta.Estado"),
@@ -231,7 +215,7 @@ def compute_metrics(
     inicio_mes_siguiente = next_month_start(hoy)
     saldo_renovacion = 0.0
     max_nro_cuota = 0
-    max_nro_cuota_pagada = 0
+    max_nro_cuota_al_mes = 0
 
     for cuota in cuotas:
         nro_cuota = int(cuota.get("NroCuota") or 0)
@@ -239,15 +223,15 @@ def compute_metrics(
             max_nro_cuota = nro_cuota
 
         fecha = parse_date(cuota.get("Fecha"))
-        fecha_cobro = parse_date(cuota.get("FechaCobro"))
         saldo_cuota = float(cuota.get("SaldoCuota") or 0)
         capital = float(cuota.get("Capital") or 0)
 
         if saldo_cuota > SALDO_CUOTA_MINIMO_DEUDA and fecha and fecha <= corte_deuda:
             tiene_deuda_vencida = True
 
-        if fecha_cobro is not None and nro_cuota > max_nro_cuota_pagada:
-            max_nro_cuota_pagada = nro_cuota
+        # El mes actual cuenta completo, aunque el cobro aun no este imputado.
+        if fecha and fecha < inicio_mes_siguiente:
+            max_nro_cuota_al_mes = max(max_nro_cuota_al_mes, nro_cuota)
 
         if (
             fecha
@@ -260,14 +244,18 @@ def compute_metrics(
         "tiene_impagas": tiene_deuda_vencida,
         "saldo_renovacion": round(saldo_renovacion, 2),
         "max_nro_cuota": max_nro_cuota,
-        "max_nro_cuota_pagada": max_nro_cuota_pagada,
+        "max_nro_cuota_al_mes": max_nro_cuota_al_mes,
     }
 
 
 def evaluar_socio(cuil: str) -> Dict[str, Any]:
     cuotas = fetch_cuotas_por_cuil(cuil)
     cuotas = filter_lines_exact(cuotas)
-    aplica_bonus = has_bonus_line(cuotas)
+    cuotas = [
+        cuota
+        for cuota in cuotas
+        if cuota.get("Prestamo.Cuenta.Estado") == ESTADO_CUENTA_ACTIVA
+    ]
 
     if not cuotas:
         return {
@@ -312,19 +300,15 @@ def evaluar_socio(cuil: str) -> Dict[str, Any]:
         }
 
     cuota_minima = math.ceil(cuotas_totales / 2)
-    if metricas["max_nro_cuota_pagada"] < cuota_minima:
+    if metricas["max_nro_cuota_al_mes"] < cuota_minima:
         return {
             "puede_renovar": False,
             "saldo_renovacion": 0.0,
             "motivo": "menos_del_50_por_ciento",
         }
 
-    saldo_renovacion = metricas["saldo_renovacion"]
-    if aplica_bonus:
-        saldo_renovacion = round(saldo_renovacion * 1.025, 2)
-
     return {
         "puede_renovar": True,
-        "saldo_renovacion": saldo_renovacion,
+        "saldo_renovacion": metricas["saldo_renovacion"],
         "motivo": None,
     }

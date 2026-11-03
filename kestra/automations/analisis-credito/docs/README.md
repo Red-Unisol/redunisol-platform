@@ -31,6 +31,29 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 
 Evalua si un socio puede renovar un prestamo de las lineas Cruz del Eje.
 
+### Reglas de prestamos y saldo
+
+- Solo considera prestamos con cuenta activa (`Prestamo.Cuenta.Estado = 0`),
+  tanto para contar prestamos como para evaluar deuda, avance y saldo.
+- Un prestamo cancelado no bloquea la renovacion de otro activo. Dos prestamos
+  activos de las lineas admitidas siguen devolviendo `tiene_mas_de_un_prestamo`.
+- Si no hay prestamos activos admitidos, devuelve
+  `no_tiene_prestamo_cruz_del_eje`.
+- El avance del 50 % se mide por el numero mas alto de cuota con vencimiento
+  hasta el mes actual inclusive, sin depender de `FechaCobro`. La cuota minima
+  es la mitad del plan redondeada hacia arriba: 6 de 12, 8 de 15, etc. Si la
+  cuota 6 de un plan de 12 vence en noviembre, cumple desde el 1 de noviembre,
+  aunque no este cobrada. Una cuota futura cobrada anticipadamente no adelanta
+  este umbral.
+- Se rechaza por deuda si una cuota tiene saldo mayor a $100 y vencimiento
+  hasta el ultimo dia del mes de dos meses atras. En noviembre se revisa hasta
+  el 30 de septiembre; octubre y noviembre quedan fuera del control para
+  contemplar cobros pendientes de imputacion. Un saldo de exactamente $100
+  por cuota no bloquea.
+- El saldo suma capital de cuotas con vencimiento desde el primer dia del mes
+  siguiente. Ninguna linea agrega el adicional del 2,5 %, incluidas
+  `CRUZ DEL EJE -Cance-especia-` y `CRUZ DEL EJE -Cancel-Prem`.
+
 ### Entrada
 
 Webhook `POST` con JSON:
