@@ -80,8 +80,10 @@ propiedades dentro de SocAux:
 Esto confirma la naturaleza dinámica **en esta copia del cliente**, que antes era
 una hipótesis. La lectura por EvaluateList y los rechazos del alta son compatibles
 con que el servidor consulte metadatos XPO para leer y propiedades CLR para escribir.
-**La implementación interna del endpoint de alta sigue sin inspeccionarse:** no
-se debe presentar ese último mecanismo como confirmado.
+**Al cerrar esta inspección del cliente, aún no se había inspeccionado la
+implementación interna del endpoint de alta:** ese mecanismo todavía era una
+hipótesis. La evidencia posterior del servicio está en
+[Implementación del alta](implementacion-alta.md).
 
 ### El cliente contiene código que escribe Caja40
 
@@ -128,15 +130,15 @@ coherente con los IDs auxiliares observados tras nuestras altas.
 - **Sexo:** enum ESexo: Masculino=0, Femenino=1, PersonaJuridica=2, Otro=3.
   Los valores 0 y 3 se identificaron en el cliente, no se ensayaron en el alta.
 
-## Qué habilita y qué falta
+## Qué habilita y qué faltaba en esta inspección
 
 El catálogo permite ubicar nombres internos, tipos, herencia, relaciones,
 colecciones, enums, getters/setters y atributos de validación/persistencia.
 Reduce las pruebas a ciegas y permite especificar qué debe enviar Solicitudes.
 
-Para completar el contrato HTTP falta inspeccionar **el servicio que implementa
-CrearSocioMutual**, comparar sus DLL con este snapshot y reconstruir cómo convierte
-JSON, resuelve referencias, procesa colecciones y maneja miembros dinámicos.
+Para completar el contrato HTTP, en esta fase faltaba inspeccionar **el servicio
+que implementa CrearSocioMutual**, comparar sus DLL con este snapshot y reconstruir
+cómo convierte JSON, resuelve referencias, procesa colecciones y maneja miembros dinámicos.
 No se encontró ese endpoint ni SocioMutualRequest en la búsqueda dirigida sobre
 las DLL Vimarx de esta carpeta; esto no prueba ausencia en cualquier otro archivo.
 
