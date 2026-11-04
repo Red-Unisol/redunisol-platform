@@ -8,12 +8,13 @@ y exportación JSONL autenticada. El código no incorpora un dashboard de analí
 
 El [piloto de asistencia de Jubilados por WhatsApp](../../docs/whatsapp-jubilados-assistance.md) prepara dos teléfonos internos, espera de 30 segundos y leads marcados en una etapa de prueba. Los valores por defecto permanecen apagados; la activación usa configuración cifrada y worker optativo.
 
-El [ingreso único desde la web por WhatsApp](../../docs/whatsapp-website-intake.md)
-usa el formulario v3, con CUIL obligatorio y email opcional, para entradas web con
-referencia válida. La configuración productiva usa una tanda nueva sin cupo y
-conserva las respuestas e historial de las tandas anteriores de 10 y 20 números.
-La activación requiere verificar primero el receptor Kestra y el Flow publicado
-en Meta, y comprobar después el recorrido real en WhatsApp y CRM.
+El [intake unificado de WhatsApp Ventas](../../docs/whatsapp-unified-intake.md)
+usa el formulario v3, con CUIL obligatorio y email opcional, para las entradas
+web y directas del canal. Completa el prospecto original de Bitrix mediante una
+prueba del mensaje y la sesión de origen. Conserva la tanda sin cupo y el historial
+de las tandas anteriores de 10 y 20 números. La entrega real requiere saldo Edna
+y una comprobación posterior en WhatsApp y CRM. El [ingreso web anterior](../../docs/whatsapp-website-intake.md)
+documenta los contratos y pilotos históricos compatibles.
 
 Para una guia de onboarding tecnico mas orientada a arquitectura y extension del sistema, ver `../../docs/redunisol-web-overview.md`.
 
