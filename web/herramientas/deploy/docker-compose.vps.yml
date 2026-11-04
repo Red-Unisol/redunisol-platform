@@ -24,6 +24,9 @@ services:
       BCRA_KESTRA_NAMESPACE: ${BCRA_KESTRA_NAMESPACE:-redunisol.dev.contabilidad}
       BCRA_OUTPUT_ROOT: ${BCRA_OUTPUT_ROOT:-/data/bcra/redunisol.dev.contabilidad}
       BCRA_DEFAULT_EXCLUDED_CUITS: ${BCRA_DEFAULT_EXCLUDED_CUITS:-[]}
+      CUAD_MASIVO_PASSWORD_HASH: ${CUAD_MASIVO_PASSWORD_HASH:-}
+      CUAD_MASIVO_KESTRA_NAMESPACE: ${CUAD_MASIVO_KESTRA_NAMESPACE:-redunisol.dev.analisis-credito}
+      CUAD_MASIVO_OUTPUT_ROOT: ${CUAD_MASIVO_OUTPUT_ROOT:-/data/cuad-masivo/redunisol.dev.analisis-credito}
       ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL: ${ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL}
       ANALISIS_CREDITO_CONSULTA_CAJA: ${ANALISIS_CREDITO_CONSULTA_CAJA}
       ANALISIS_CREDITO_QUIEBRA_CREDIX_CACHE_URL: http://credixsa-cache-api:8000/credixsa/cache
@@ -42,6 +45,7 @@ services:
       - padrones:/var/www/html/storage/app/private/padrones
       - /opt/kestra/data/contabilidad-transfer:/data/contabilidad-transfer:ro
       - /srv/redunisol-reports/contabilidad/bcra:/data/bcra:ro
+      - /srv/redunisol-reports/analisis-credito/cuad-masivo:/data/cuad-masivo:ro
       - /opt/kestra/data/reporte-evaluacion:/data/reporte-evaluacion:ro
     restart: unless-stopped
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AnalisisPage from './AnalisisPage.jsx';
 import BcraPage from './BcraPage.jsx';
+import CuadMasivoPage from './CuadMasivoPage.jsx';
 import PadronesPage, { PadronesResults } from './PadronesPage.jsx';
 import { credixPrefill } from './analisis-state.js';
 import { prepareCredixBcra, bcraSituation, formatBcraSituation } from './credix-bcra.js';
@@ -77,6 +78,10 @@ function App({ branding, tools }) {
 
         if (tool.id === 'padrones') {
             window.location.assign('/padrones');
+            return;
+        }
+        if (tool.id === 'cuad-masivo') {
+            window.location.assign('/cuad-masivo');
             return;
         }
         if (tool.id === 'analisis') {
@@ -2144,6 +2149,8 @@ if (rootElement) {
         component = <BcraPage config={initialPayload.bcra || {}} />;
     } else if (initialPayload.page === 'padrones') {
         component = <PadronesPage config={initialPayload.padrones || {}} />;
+    } else if (initialPayload.page === 'cuad-masivo') {
+        component = <CuadMasivoPage config={initialPayload.cuadMasivo || {}} />;
     } else if (initialPayload.page === 'analisis') {
         component = <AnalisisPage config={initialPayload.analisis || {}} />;
     } else if (initialPayload.mode === 'contabilidad-transfer') {
