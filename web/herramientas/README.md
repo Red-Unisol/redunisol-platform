@@ -19,6 +19,26 @@ Esta diferencia se informa en la pantalla y en los archivos de auditoría.
 
 Ver [operación y configuración BCRA](../../kestra/automations/contabilidad/docs/bcra-deudores.md).
 
+## Consulta CUAD masiva
+
+`/cuad-masivo` lanza `consulta_cuad_masivo` en Kestra con un Excel de CUIL o con
+los socios de la línea superior 2703 (Haberes CUAD SANTA FE), consultando con las
+dos cuentas de CUAD a la vez. Tiene contraseña propia (`CUAD_MASIVO_PASSWORD_HASH`,
+la de Riesgo), distinta del acceso de Análisis.
+
+- Muestra el avance y el estado de cada cuenta (en vivo desde el KV de Kestra),
+  marca una cuenta frenada tras 5 min sin novedades y permite **Reintentar** una
+  cuenta caída sin cortar la otra.
+- Una corrida a la vez: no deja lanzar otra con una en curso o en cola.
+- Historial desde la carpeta de corridas (montada de solo lectura en
+  `/data/cuad-masivo/<namespace>`): descargar el `resultado.ndjson` y **Retomar**
+  las interrumpidas o incompletas. Una corrida que figura "corriendo" pero cuya
+  ejecución ya terminó (corte duro) se muestra interrumpida.
+- Kestra con las credenciales de BCRA (`BCRA_KESTRA_*`) salvo que se definan
+  `CUAD_MASIVO_KESTRA_*`; namespace en `CUAD_MASIVO_KESTRA_NAMESPACE`.
+
+Ver [el flow](../../kestra/automations/analisis-credito/docs/README.md#consulta_cuad_masivo).
+
 ## Objetivo
 
 Para cargar y mantener fuentes complementarias de CredixSA, ver [Padrones](docs/padrones.md).

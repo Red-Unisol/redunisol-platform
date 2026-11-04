@@ -92,6 +92,16 @@ return [
             'actionLabel' => 'Consultar CUAD',
             'helper' => 'Ingresa el CUIL y el backend Laravel consulta el webhook protegido de Kestra.',
         ],
+        [
+            'id' => 'cuad-masivo',
+            'title' => 'Consulta CUAD masiva',
+            'description' => 'Consultá en CUAD Santa Fe una lista de CUIL desde un Excel o los socios de la línea Haberes CUAD SANTA FE, con las dos cuentas a la vez.',
+            'category' => 'Analisis de credito',
+            'status' => 'active',
+            'icon' => 'credit-path',
+            'actionLabel' => 'Abrir consulta masiva',
+            'helper' => 'Acceso con la contraseña de Riesgo. Conserva el historial de cada corrida.',
+        ],
     ],
     'proxy' => [
         'consulta_renovacion_url' => env('ANALISIS_CREDITO_RENOVACION_WEBHOOK_URL'),

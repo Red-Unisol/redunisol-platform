@@ -3,10 +3,12 @@
 use App\Http\Controllers\AnalisisController;
 use App\Http\Controllers\BcraController;
 use App\Http\Controllers\ContabilidadTransferController;
+use App\Http\Controllers\CuadMasivoController;
 use App\Http\Controllers\HerramientasController;
 use App\Http\Controllers\ObjectivesDashboardController;
 use App\Http\Controllers\PadronesController;
 use App\Http\Middleware\AnalisisAccess;
+use App\Http\Middleware\CuadMasivoAccess;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
@@ -18,6 +20,16 @@ Route::middleware(AnalisisAccess::class)->prefix('/api/bcra')->group(function ()
     Route::post('/runs', [BcraController::class, 'start'])->middleware('throttle:3,1');
     Route::get('/executions/{execution}', [BcraController::class, 'status'])->middleware('throttle:120,1');
     Route::get('/runs/{run}/download/{artifact}', [BcraController::class, 'download'])->name('bcra.download');
+});
+Route::get('/cuad-masivo', [CuadMasivoController::class, 'index'])->name('cuad-masivo');
+Route::post('/cuad-masivo/login', [CuadMasivoController::class, 'login']);
+Route::middleware(CuadMasivoAccess::class)->prefix('/api/cuad-masivo')->group(function () {
+    Route::get('/corridas', [CuadMasivoController::class, 'history'])->middleware('throttle:60,1');
+    Route::post('/corridas', [CuadMasivoController::class, 'start'])->middleware('throttle:3,1');
+    Route::get('/corridas/{corrida}', [CuadMasivoController::class, 'status'])->middleware('throttle:120,1');
+    Route::post('/corridas/{corrida}/retomar', [CuadMasivoController::class, 'resume'])->middleware('throttle:3,1');
+    Route::post('/corridas/{corrida}/reintentar/{alias}', [CuadMasivoController::class, 'retry'])->middleware('throttle:10,1');
+    Route::get('/corridas/{corrida}/descargar', [CuadMasivoController::class, 'download'])->name('cuad-masivo.download');
 });
 Route::get('/padrones', [PadronesController::class, 'index'])->name('padrones');
 Route::post('/padrones/login', [PadronesController::class, 'login']);
