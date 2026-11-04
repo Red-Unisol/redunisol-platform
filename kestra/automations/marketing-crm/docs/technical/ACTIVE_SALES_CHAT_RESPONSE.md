@@ -115,6 +115,42 @@ No ajustar directamente tablas internas de Kestra para fabricar concurrencia.
 Verificar en produccion exclusion de claims simultaneos, eventos de la cola,
 trafico hacia Bitrix y avance real de los prospectos.
 
+## Intervencion y control del 3/11/2026
+
+La optimizacion y el despliegue productivo fueron autorizados por el operador.
+Los PR 658 y 659 incorporaron la cola web y el consumidor acotado a `main`.
+La web quedo en la imagen `prod-d8c8a1f095631b336c659738e76aaf296b2eee39`;
+los namespace files del worker se compararon por SHA-256 contra Git.
+
+El calendario viejo se pauso por API y se cancelaron las ejecuciones observadas.
+Otros despliegues volvieron a habilitar el calendario mientras se preparaba la
+web; se repitio la pausa. Las ejecuciones del consumidor nuevo anteriores a la
+API fallaron cerradas, sin llamadas CRM. La pausa final se prolongo hasta el
+4/11 a las 02:54 UTC (3/11 23:54 de Argentina), cuando se restablecio el calendario
+con `recoverMissedSchedules=false`. La cola conservo 286 avisos acumulados: son
+revisiones de actividad comercial, no pendientes de calificacion.
+
+Verificaciones directas, sin esperar ni monitorear checks remotos:
+
+- Tres claims simultaneos dieron un propietario y dos respuestas busy. La
+  renovacion posterior a finish devolvio 409; sin token, 401, y scope dev, 403.
+- La primera ejecucion productiva `639UpLnQeyDRFshLBghapM` atendio dos avisos,
+  consumio 11 intentos CRM sin fallos y movio una negociacion a Respuesta.
+- La muestra inicial de red tenia 203 conexiones hacia Bitrix en 45,04 segundos;
+  173 procedian de tres barridos de chat. Con el consumidor acotado activo, otra
+  muestra registro 37 conexiones totales en 45,31 segundos. Son ventanas
+  puntuales con distinta carga de otros consumidores; el limite propio del
+  worker se verifica ademas mediante sus contadores de intentos.
+- A las 02:54:45 UTC, Bitrix tenia cero prospectos en INGRESO y cero negociaciones
+  en PENDIENTE CALIFICACION. Los 107 prospectos del snapshot inicial habian salido
+  de INGRESO. Habia 11 negociaciones en COLA DE DISTRIBUCION, etapa posterior.
+
+El control tambien detecto que un aviso sin sesion interrumpia anticipadamente
+el resto de la tanda. Se ajusto el consumidor para diferir ese aviso y continuar
+con otros listos, manteniendo un solo presupuesto de 20 intentos/45 segundos.
+Los errores tecnicos siguen deteniendo la tanda; una espera comercial no bloquea
+otros avisos.
+
 ## Negociaciones anteriores a la incorporación del campo
 
 No convertir valores vacíos en aprobaciones. Se pueden recuperar decisiones de
