@@ -64,7 +64,7 @@ class SingleSellerDistributionTests(unittest.TestCase):
     def test_panel_reduced_pool_of_one_gets_the_general_exception(self):
         self.seed(province="279")
         self.env["BITRIX24_ROUTING_CONFIG_URL"] = "https://example.test/pools"
-        with self.pool("santa_fe_anses", [29]):
+        with self.pool("santa_fe", [29]):
             result = self.qualify_at()
         self.assertEqual(result["distribution_action"], "assigned")
         self.assertEqual(result["assigned_by_id"], 29)
@@ -91,7 +91,7 @@ class SingleSellerDistributionTests(unittest.TestCase):
     def test_commercial_rejection_is_not_overridden_by_singleton(self):
         self.seed(province="279", count=8)
         self.env["BITRIX24_ROUTING_CONFIG_URL"] = "https://example.test/pools"
-        with self.pool("santa_fe_anses", [29]):
+        with self.pool("santa_fe", [29]):
             result = self.qualify_at()
         self.assertEqual(result["commercial_action"], "rejected")
         self.assertEqual(result["distribution_action"], "not_applicable")

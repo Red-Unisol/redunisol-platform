@@ -63,7 +63,7 @@ class ExpandedDealTests(unittest.TestCase):
                     result = self.qualify()
                 self.assertEqual(result["commercial_action"], "approved")
                 self.assertEqual(result["commercial_line"], "Red Mutual - paii")
-                self.assertEqual(result["routing_bucket"], "santa_fe_anses")
+                self.assertEqual(result["routing_bucket"], "mutual_paii")
                 self.assertEqual(result["assigned_by_id"], 10451)
                 self.assertEqual(result["bcra_refresh_outcome"], "not_required")
                 self.assertEqual(result["vimarx_refresh_outcome"], "not_required")
@@ -82,7 +82,7 @@ class ExpandedDealTests(unittest.TestCase):
         bcra.assert_not_called()
         vimarx.assert_not_called()
 
-    def test_buenos_aires_uses_anses_line_and_shared_pool_without_provider_or_identity_requirements(self):
+    def test_buenos_aires_uses_anses_line_and_paii_pool_without_provider_or_identity_requirements(self):
         for employment in ("1269", "3745", "2565"):
             for snapshot in ("negative", "missing", "failed"):
                 with self.subTest(employment=employment, snapshot=snapshot):
@@ -101,7 +101,7 @@ class ExpandedDealTests(unittest.TestCase):
                     self.assertEqual(result["commercial_action"], "approved")
                     self.assertEqual(result["commercial_reason"], "buenos_aires_approved")
                     self.assertEqual(result["commercial_line"], "Red Mutual - paii")
-                    self.assertEqual(result["routing_bucket"], "santa_fe_anses")
+                    self.assertEqual(result["routing_bucket"], "mutual_paii")
                     self.assertIn(result["assigned_by_id"], (10451, 29, 116561))
                     self.assertEqual(self.client.deals[960]["stageId"], "C1:NEW")
                     bcra.assert_not_called()
@@ -129,7 +129,7 @@ class ExpandedDealTests(unittest.TestCase):
                 result = self.qualify()
                 self.assertEqual(result["commercial_action"], action)
                 self.assertEqual(result["commercial_line"], line)
-                self.assertEqual(result["routing_bucket"], "santa_fe_anses")
+                self.assertEqual(result["routing_bucket"], "santa_fe")
                 if action == "rejected":
                     self.assertEqual(result["stage_id"], "C1:5")
                     self.assertEqual(result["distribution_action"], "not_applicable")
@@ -201,16 +201,86 @@ class ExpandedDealTests(unittest.TestCase):
 
     @patch("bitrix24_form_flow.form_processor.config.urlopen")
     def test_remote_new_pools_allow_pauses_and_use_the_approved_fallbacks(self, urlopen):
-        self.assertEqual(self.config.deal.santa_fe_anses_user_ids, (10451, 29, 116561))
+        self.assertEqual(self.config.deal.mutual_paii_user_ids, (10451, 29, 116561))
         self.assertEqual(self.config.deal.neuquen_user_ids, (58913,))
         response = MagicMock()
-        response.__enter__.return_value.read.return_value = b'{"santa_fe_anses": [29], "neuquen": []}'
+        response.__enter__.return_value.read.return_value = b'{"mutual_paii": [29], "neuquen": []}'
         urlopen.return_value = response
         config = load_config({**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/pools"})
         lead = self.seed(province="213")
         self.assertEqual(resolve_routing_bucket(config, lead).bucket.seller_ids, ())
         lead[self.config.fields.lead_employment_status] = "2567"
         self.assertEqual(resolve_routing_bucket(config, lead).bucket.seller_ids, (29,))
+
+    @patch("bitrix24_form_flow.form_processor.config.urlopen")
+    def test_split_remote_pools_override_legacy_even_when_empty(self, urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "santa_fe_anses": [29], "santa_fe": [], "mutual_paii": [127337],
+        }).encode()
+        urlopen.return_value = response
+        config = load_config({**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/pools"})
+        lead = self.seed()
+        self.assertEqual(resolve_routing_bucket(config, lead).bucket.seller_ids, ())
+        for province, employment in (("279", "2567"), ("221", "3745")):
+            lead[self.config.fields.lead_province] = province
+            lead[self.config.fields.lead_employment_status] = employment
+            bucket = resolve_routing_bucket(config, lead).bucket
+            self.assertEqual((bucket.key, bucket.seller_ids), ("mutual_paii", (127337,)))
+
+    @patch("bitrix24_form_flow.form_processor.config.urlopen")
+    def test_legacy_panel_preserves_pauses_for_both_split_pools(self, urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"santa_fe_anses": []}'
+        urlopen.return_value = response
+        config = load_config({**self.env, "BITRIX24_ROUTING_CONFIG_URL": "https://example.test/pools"})
+        self.assertEqual(config.deal.santa_fe_user_ids, ())
+        self.assertEqual(config.deal.mutual_paii_user_ids, ())
+
+    @patch("bitrix24_form_flow.form_processor.config.urlopen")
+    def test_shared_queue_splits_before_fifo_and_uses_independent_pools(self, urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"santa_fe": [29, 10451], "mutual_paii": [116561, 127337]}'
+        urlopen.return_value = response
+        self.env["BITRIX24_ROUTING_CONFIG_URL"] = "https://example.test/pools"
+        self.seed()
+        self.client.deals[960].update({
+            "stageId": "C1:KESTRA_QUEUE", "ufCrmRouteBucket": "santa_fe_anses",
+            "ufCrmKqAction": "approved", "ufCrmKqReason": "santa_fe_approved",
+            "ufCrmKqStage": "C1:NEW", "ufCrmKqAt": NOW.isoformat(),
+            self.config.deal.commercial_line_field: "Haberes Premium",
+        })
+        self.client.leads[951] = {**self.client.leads[950], "ID": "951",
+            self.config.fields.lead_employment_status: "2567"}
+        self.client.deals[961] = {**self.client.deals[960], "id": 961, "leadId": 951,
+            "ufCrmKqReason": "anses_approved", self.config.deal.commercial_line_field: "Red Mutual - paii"}
+        # A second Santa Fe case must wait, while Mutual PAII advances independently.
+        self.client.deals[962] = {**self.client.deals[960], "id": 962}
+        self.client.online_user_ids = {29, 116561}
+        result = process_distribution_queue(env=self.env, bitrix_client=self.client,
+            logger=SilentLogger(), now=NOW)
+        self.assertEqual(result["distributed_count"], 2)
+        self.assertEqual(self.client.deals[960]["assignedById"], 29)
+        self.assertEqual(self.client.deals[961]["assignedById"], 116561)
+        self.assertEqual(self.client.deals[962]["stageId"], "C1:KESTRA_QUEUE")
+        for deal_id, key in ((960, "santa_fe"), (961, "mutual_paii"), (962, "santa_fe")):
+            self.assertEqual(self.client.deals[deal_id]["ufCrmRouteBucket"], key)
+        self.assertEqual({event["commercial_reason"] for event in result["events"]},
+            {"santa_fe_approved", "anses_approved"})
+
+    def test_legacy_review_queue_without_line_uses_lead_family(self):
+        self.seed()
+        self.client.deals[960].update({
+            "stageId": "C1:KESTRA_QUEUE", "ufCrmRouteBucket": "santa_fe_anses",
+            "ufCrmKqAction": "manual_review", "ufCrmKqReason": "missing_bcra_snapshot",
+            "ufCrmKqStage": "C1:KESTRA_MANUAL", "ufCrmKqAt": NOW.isoformat(),
+        })
+        self.client.online_user_ids.clear()
+        result = process_distribution_queue(env=self.env, bitrix_client=self.client,
+            logger=SilentLogger(), now=NOW)
+        self.assertEqual(self.client.deals[960]["ufCrmRouteBucket"], "santa_fe")
+        self.assertEqual(result["events"][0]["commercial_reason"], "missing_bcra_snapshot")
+        self.assertEqual(result["events"][0]["distribution_action"], "queued")
 
 
 if __name__ == "__main__":

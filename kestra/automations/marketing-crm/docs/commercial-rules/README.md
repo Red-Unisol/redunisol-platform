@@ -46,7 +46,7 @@ reclasificar historicos. Estado: implementado en rama, pendiente de merge y depl
 |---|---|---|
 | [`PROCESS_OVERVIEW.md`](PROCESS_OVERVIEW.md) | Todos | Explica visualmente el proceso y sus responsabilidades. |
 | [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md) | Negocio y Tecnologia | Reglas de leads y base historica Haberes CUAD. |
-| [`BUENOS_AIRES.md`](BUENOS_AIRES.md) | Negocio y Tecnologia | Perfiles de Buenos Aires, Red Mutual - paii y bucket compartido. |
+| [`BUENOS_AIRES.md`](BUENOS_AIRES.md) | Negocio y Tecnologia | Perfiles de Buenos Aires, Red Mutual - paii y bucket Mutual PAII, separado de Santa Fe. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Todos | Define términos y resultados permitidos. |
 | [`DEAL_CLASSIFICATION.md`](DEAL_CLASSIFICATION.md) | Negocio y Tecnología | Contiene las reglas de clasificación de negociaciones. |
 | [`DEAL_ROUTING.md`](DEAL_ROUTING.md) | Negocio y Tecnología | Contiene los buckets acordados de distribución. |

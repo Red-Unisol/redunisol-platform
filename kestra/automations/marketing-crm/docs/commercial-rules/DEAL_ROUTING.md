@@ -1,6 +1,6 @@
 # Buckets De Distribucion De Negociaciones
 
-Versión: `2026-10-30`.
+Versión: `2026-11-04`.
 
 Este documento cubre solamente distribución. La clasificación comercial y el proceso
 compartido de aprobación se documentan en [`README.md`](README.md).
@@ -45,17 +45,30 @@ luego de aplicar las pausas del panel, no los vendedores online en ese momento.
 
 Estado: **implementado en rama, pendiente de deploy**.
 
-### `santa_fe_anses`
+### `santa_fe` y `mutual_paii` — separacion 2026-11-04
 
-- Criterio: Jubilado Nacional de cualquier provincia (prioridad ANSES), o perfil
-  interno habilitado de Santa Fe o de Buenos Aires.
-- Bucket unico compartido para las lineas `Red Mutual - paii` y `Haberes Premium`.
-- Pool inicial confirmado, en este orden:
-  - Patricia Contendi (`10451`)
-  - Susana Contenti (`29`)
-  - Julieta Aguilera (`116561`)
-- Ludmila no integra este bucket. Se conservan recurrencia, round-robin,
-  compensacion de volumen, pausas, disponibilidad, horario y cola existentes.
+- `santa_fe`: perfiles internos habilitados de Santa Fe, linea `Haberes Premium`.
+- `mutual_paii`: Jubilado Nacional de cualquier provincia (prioridad ANSES) y
+  perfiles habilitados de Buenos Aires, linea `Red Mutual - paii`.
+- Los grupos se administran por separado en el panel. Si existia configuracion
+  guardada de `santa_fe_anses`, cada grupo hereda su orden y pausas, incluso un
+  pool vacio, hasta que se guarde su propia configuracion.
+- Sin configuracion previa, ambos comienzan con Patricia Contendi (`10451`),
+  Susana Contenti (`29`) y Julieta Aguilera (`116561`).
+- Renato Rodriguez Barros (`127337`, cuenta confirmada por Santiago) queda
+  disponible en la lista de vendedores; no se incorpora automaticamente a pools.
+- Recurrencia, round-robin, balance y FIFO usan las nuevas claves de forma
+  independiente. No se redistribuyen negociaciones ya asignadas ni se copia el
+  balance historico del grupo compartido.
+- El procesador de cola separa los pendientes con clave antigua por su linea
+  comercial; sin linea resuelve la familia del lead. Conserva decision, etapa
+  destino y fecha de ingreso. Un caso que no pueda identificarse registra error
+  y no bloquea los otros grupos.
+- Compatibilidad de despliegue: el endpoint mantiene `santa_fe_anses` para el
+  runtime anterior; Kestra nuevo prioriza las claves nuevas, incluso vacias,
+  y puede leer el pool antiguo si el panel aun no se desplego. La separacion
+  efectiva requiere desplegar tanto web como namespace files de marketing-crm.
+- Estado: implementado en rama, pendiente de merge y deploy.
 
 ### `neuquen`
 
@@ -64,11 +77,11 @@ Estado: **implementado en rama, pendiente de deploy**.
 - Linea: `MUDON`.
 - Responsable inicial exclusivo: Ludmila Gallardo (`58913`).
 - Se asigna directamente a Ludmila, incluso offline y fuera de horario, por la
-  regla general de vendedor unico. No se reasigna al bucket de Santa Fe/ANSES.
+  regla general de vendedor unico. No se reasigna a Santa Fe ni Mutual PAII.
 
-Ambos grupos se administran desde el panel de Distribucion Bitrix; los defaults de
+Los grupos se administran desde el panel de Distribucion Bitrix; los defaults de
 Git coinciden con estos pools iniciales. Las pausas y pools explicitamente vacios
-conservan la semantica existente. La cola contempla ambos buckets y retira de ella
+conservan la semantica existente. La cola contempla los buckets y retira de ella
 los casos cuyo pool quede con un unico habilitado.
 
 ## Buckets
@@ -91,7 +104,7 @@ los casos cuyo pool quede con un unico habilitado.
 ### `cordoba_jubilados`
 
 - Criterio: Cordoba + `Jubilado Provincial`, `Jubilado Municipal` o `Pensionado`.
-  Jubilado Nacional pasa al bucket compartido `santa_fe_anses` desde la version 2026-10-30.
+  Jubilado Nacional pasa al bucket `mutual_paii`, separado de Santa Fe desde 2026-11-04.
 - Responsables, en orden:
   - Patricia Contendi (`10451`)
   - Natalia Rojo Moyano (`71159`)

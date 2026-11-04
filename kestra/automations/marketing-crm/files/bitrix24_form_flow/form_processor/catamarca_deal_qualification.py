@@ -83,7 +83,8 @@ COMMERCIAL_RULE_VERSION = "2026-11-03-buenos-aires-sin-publico-provincial"
 BCRA_MAX_AGE_DAYS_ENV = "BITRIX24_DEAL_BCRA_MAX_AGE_DAYS"
 BCRA_MAX_AGE_DAYS_DEFAULT = 7
 QUEUE_BUCKET_KEYS = (
-    "santa_fe_anses",
+    "santa_fe",
+    "mutual_paii",
     "neuquen",
     "policia_federal_caba",
     "catamarca_general",
@@ -813,6 +814,15 @@ def process_distribution_queue(
     processed_at = _local_datetime(source, now)
     queued = _list_queued_deals(client, config)
     events: list[dict[str, object]] = []
+    normalized: list[dict[str, Any]] = []
+    for deal in queued:
+        try:
+            _split_legacy_queue_bucket(client, config, deal)
+            normalized.append(deal)
+        except Exception as exc:
+            active_logger.error(f"No se pudo separar el bucket de la negociacion {deal.get('id')}: {exc}")
+            events.append(_queue_error_result(config, deal, processed_at, exc))
+    queued = normalized
 
     within_business_hours = _is_within_business_hours(source, processed_at)
     remaining: list[dict[str, Any]] = []
@@ -943,6 +953,26 @@ def _list_queued_deals(client: Any, config: AppConfig) -> list[dict[str, Any]]:
             break
         start = int(next_start)
     return queued
+
+
+def _split_legacy_queue_bucket(client: Any, config: AppConfig, deal: dict[str, Any]) -> None:
+    """Move only pending shared-queue cases, preserving their commercial decision."""
+    if deal.get(config.deal.routing_bucket_field) != "santa_fe_anses":
+        return
+    line = str(deal.get(config.deal.commercial_line_field) or "").strip()
+    key = {"Haberes Premium": "santa_fe", "Red Mutual - paii": "mutual_paii"}.get(line)
+    if key is None:
+        lead = client.call("crm.lead.get", {"id": _required_int(deal.get("leadId"), "leadId")})
+        routing = resolve_routing_bucket(config, lead)
+        if routing.bucket is None or routing.bucket.key not in {"santa_fe", "mutual_paii"}:
+            raise ValueError("No se pudo determinar el bucket del caso en cola.")
+        key = routing.bucket.key
+    client.call("crm.item.update", {
+        "entityTypeId": DEAL_ENTITY_TYPE_ID,
+        "id": _required_int(deal.get("id"), "id"),
+        "fields": {config.deal.routing_bucket_field: key},
+    })
+    deal[config.deal.routing_bucket_field] = key
 
 
 def _retry_queued_deal(
