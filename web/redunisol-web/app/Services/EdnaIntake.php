@@ -269,7 +269,7 @@ class EdnaIntake
         if (($payload['messageContent']['type'] ?? '') !== 'FLOW') {
             return false;
         }
-        $send = DB::table('edna_flow_sends')->where('request_id', $payload['replyOutMessageExternalRequestId'] ?? '')->first();
+        $send = app(EdnaFlowTransport::class)->find((string) ($payload['replyOutMessageExternalRequestId'] ?? ''));
         if (! $send || $send->flow_id === EdnaFlowRouter::FLOW_ID) {
             return false;
         }

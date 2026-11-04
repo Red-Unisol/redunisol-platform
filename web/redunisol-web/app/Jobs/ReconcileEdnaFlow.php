@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\EdnaApi;
+use App\Services\EdnaFlowTransport;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -20,7 +21,13 @@ class ReconcileEdnaFlow implements ShouldQueue
 
     public int $timeout = 40;
 
-    public function __construct(public readonly int $sendId) {}
+    // Missing aliases in older serialized jobs belong to the original attempt.
+    public ?string $transportRequestId = null;
+
+    public function __construct(public readonly int $sendId, ?string $transportRequestId = null)
+    {
+        $this->transportRequestId = $transportRequestId;
+    }
 
     public function backoff(): array
     {
@@ -31,9 +38,12 @@ class ReconcileEdnaFlow implements ShouldQueue
     {
         try {
             $send = DB::table('edna_flow_sends')->where('id', $this->sendId)->first();
-            if (! $send || ! in_array($send->state, ['sending', 'accepted', 'unknown'], true)) {
+            $transport = app(EdnaFlowTransport::class);
+            if (! $send || ! $transport->matches($send, $this->transportRequestId)
+                || ! in_array($send->state, ['sending', 'accepted', 'unknown'], true)) {
                 return;
             }
+            $transportId = $transport->id($send);
             $phone = Crypt::decryptString($send->recipient);
             $response = (new EdnaApi)->post('messages/history', [
                 'subscriberFilter' => ['address' => $phone, 'type' => 'PHONE'],
@@ -47,7 +57,7 @@ class ReconcileEdnaFlow implements ShouldQueue
             }
             $matches = [];
             foreach ($response->json('content') as $message) {
-                if (($message['comment'] ?? null) !== $send->request_id) {
+                if (($message['comment'] ?? null) !== $transportId) {
                     continue;
                 }
                 if (($message['direction'] ?? '') !== 'OUT' || ($message['channelType'] ?? '') !== 'WHATSAPP'
@@ -85,7 +95,7 @@ class ReconcileEdnaFlow implements ShouldQueue
             } else {
                 throw new RuntimeException('Edna message is not yet sent.');
             }
-            DB::table('edna_flow_sends')->where('id', $send->id)->whereIn('state', ['sending', 'accepted', 'unknown'])->update([
+            $transport->update($send, ['sending', 'accepted', 'unknown'], [
                 'state' => $state, 'reason' => $reason, 'outgoing_message_id' => (string) $message['messageId'], 'updated_at' => now(),
             ]);
         } catch (Throwable) {
@@ -95,7 +105,13 @@ class ReconcileEdnaFlow implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        DB::table('edna_flow_sends')->where('id', $this->sendId)->whereIn('state', ['sending', 'accepted', 'unknown'])
-            ->update(['state' => 'unknown', 'reason' => 'history_exhausted', 'updated_at' => now()]);
+        $send = DB::table('edna_flow_sends')->where('id', $this->sendId)->first();
+        $transport = app(EdnaFlowTransport::class);
+        if (! $send || ! $transport->matches($send, $this->transportRequestId)) {
+            return;
+        }
+        $transport->update($send, ['sending', 'accepted', 'unknown'], [
+            'state' => 'unknown', 'reason' => 'history_exhausted', 'updated_at' => now(),
+        ]);
     }
 }

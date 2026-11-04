@@ -11,7 +11,8 @@ prospecto inicial y el intake lo enriquece por ID. El contrato nuevo
 `whatsapp-intake-v2` nunca usa `crm.lead.add` como alternativa.
 
 Los nuevos casos de este alcance no usan el Router anterior como alternativa.
-El UUID, los eventos, la admisión, el slot y el Flow enviado son inmutables.
+El UUID del caso, la entrada original, la admisión y el slot son inmutables.
+Cada intento conserva su propio UUID de transporte, mensaje y resultado.
 Las respuestas de recorridos históricos siguen procesándose con sus referencias
 originales. Los formularios v3 previos todavía no procesados pueden promoverse
 al nuevo contrato desde su entrada original; no se repite un envío ni se
@@ -66,6 +67,35 @@ aunque el proveedor no incluya contenido del Flow en el mensaje fallido.
 Un HTTP aceptado por el proveedor no demuestra entrega; el reconciliador nunca
 repite el envío. La falta de saldo del proveedor debe corregirse por el operador
 antes de validar nuevas entregas reales.
+
+## Reenvío controlado de un fallo confirmado
+
+Edna exige un `requestId` nuevo para cada solicitud: un UUID ya utilizado produce
+`requestId-is-not-unique`, incluso si el intento quedó fallido. Ver
+[errores del proveedor](https://docs-pulse.edna.io/docs/api/messages/errorcodes/).
+El caso conserva su `request_id`; `transport_request_id` es el alias del intento
+activo. El callback se resuelve por ese alias y después usa el UUID del caso hacia
+Kestra. Un callback del intento anterior no se aplica al nuevo.
+
+`edna_flow_send_attempts` conserva el intento original y el único reenvío
+controlado permitido. La reserva del intento nuevo y su UUID ocurre antes del
+POST, junto con el archivo del fallo original y la cola del envío. No crea otra
+entrada, admisión, contacto ni prospecto. Los jobs antiguos no pueden enviar ni
+degradar el estado de un intento posterior. Un timeout requiere conciliar el
+historial; nunca autoriza otro POST automático.
+
+`php artisan edna:flow-resend ID` muestra el preview sin cambios. La aplicación
+requiere `--apply`, `--expected-case=UUID`, `--expected-lead=ID`,
+`--expected-old-mid=ID`, `--operation=UUID` y `--confirmed-no-attention`.
+El operador debe verificar antes la ausencia de atención posterior. El comando
+revalida un único fallo terminal en el historial completo, la ventana y el contexto,
+y comprueba que el vínculo al prospecto coincida. Los v3 web todavía sin procesar
+se promueven al contrato ligado a la ficha original antes de encolar el reenvío.
+Repetir la misma operación devuelve su intento existente sin otro mensaje.
+
+Confirmar después `SENT`, `DELIVERED` o `READ` por historial y guardar el MID del
+intento activo. Un HTTP aceptado no demuestra entrega. La autorización de un lote
+no autoriza otros destinatarios ni otro intento ante un resultado incierto.
 
 ## Despliegue y rollback
 
