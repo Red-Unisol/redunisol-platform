@@ -386,3 +386,18 @@ historicos. No modifica los perfiles de otras provincias ni la regla ANSES.
 Version: `2026-11-03-buenos-aires-sin-publico-provincial`. Estado: implementado en
 rama, pendiente de merge, deploy y auditoria productiva. La ficha del cambio,
 campos y casos de aceptacion estan en [BUENOS_AIRES.md](BUENOS_AIRES.md).
+
+
+## 2026-11-04 — Separar Santa Fe de Mutual PAII y habilitar Renato
+
+- Pedido: Santiago, a partir de la observacion de Maru sobre el bucket compartido.
+- Distribucion: Santa Fe / Haberes Premium usa `santa_fe`; ANSES nacional y los
+  perfiles habilitados de Buenos Aires / Red Mutual - paii usan `mutual_paii`.
+- Ambos heredan el pool guardado y sus pausas hasta configurarlos por separado.
+  No cambian las reglas de elegibilidad ni la clasificacion comercial.
+- Renato Rodriguez Barros queda seleccionable como vendedor con usuario `127337`,
+  confirmado por Santiago luego de verificar que es la cuenta con actividad reciente.
+  No se agrega automaticamente a ningun pool.
+- Solo los casos pendientes del bucket anterior se separan durante el reintento;
+  se conservan su decision comercial y fecha de ingreso. Sin reasignacion historica.
+- Estado: implementado en rama; pendiente de merge y deploy de web y marketing-crm.
