@@ -112,6 +112,7 @@ describe("ComprobanteRefinanciacionService", () => {
     // entera; al 31/10 es futura y Vimarx cobra solo su capital: 1108457,60 =
     // capital 1081422,05 + 2,5 %. Con el plan de hoy sumaba 1225791,89.
     const plan435844 = [
+      [5, "2026-10-31", 0, 0, 0],
       [6, "2026-11-30", 102820.96, 247190.8, 247190.8],
       [7, "2026-12-31", 116547.55, 247190.8, 116547.55],
       [8, "2027-01-31", 132106.65, 247190.8, 132106.65],
@@ -139,7 +140,7 @@ describe("ComprobanteRefinanciacionService", () => {
       fecha: "2026-10-27",
       prestamos: [
         {
-          cuotas: plan435844.map((cuota) => ({
+          cuotas: plan435844.filter((cuota) => cuota.nroCuota > 5).map((cuota) => ({
             fechaVto: `${cuota.fecha}T00:00:00`,
             interesPagado: 0,
             nroCuota: cuota.nroCuota,
@@ -173,7 +174,49 @@ describe("ComprobanteRefinanciacionService", () => {
     assert.equal(Math.round(total * 100) / 100, 1108457.6);
   });
 
-  it("charges the whole saldo of a cuota due in the month of the fecha, and punitorios to that date", async () => {
+  it("charges the whole first cuota: its period starts with the prestamo", async () => {
+    // FapiTest 4/11/2026, prestamo 441204 (AMEJUCA ESPECIAL): la cuota 1 vence
+    // el 30/11 y Vimarx la cobra entera al 31/10; las siguientes, solo capital.
+    const plan = [
+      // La cuota 0 de gastos vence el 31/10: no cuenta como cuota anterior.
+      { capital: 0, fecha: "2026-10-31", montoTotal: 600000, nroCuota: 0, punitoriosPagos: 0, saldoCuota: 600000, saldoCuotaCapital: 0, saldoCuotaConPunitorios: 600000 },
+      { capital: 528763.9, fecha: "2026-11-30", montoTotal: 989976.38, nroCuota: 1, punitoriosPagos: 0, saldoCuota: 989976.38, saldoCuotaCapital: 528763.9, saldoCuotaConPunitorios: 989976.38 },
+      { capital: 461312.48, fecha: "2026-12-31", montoTotal: 989976.38, nroCuota: 2, punitoriosPagos: 0, saldoCuota: 989976.38, saldoCuotaCapital: 461312.48, saldoCuotaConPunitorios: 461312.48 },
+    ];
+    let recibido: ComprobanteRefinanciacion[] = [];
+    const servicio = build(async (comprobantes) => {
+      recibido = [...comprobantes];
+      return Buffer.from("pdf");
+    }, plan);
+
+    await servicio.armar({
+      fecha: "2026-10-27",
+      prestamos: [
+        {
+          cuotas: [
+            { fechaVto: "2026-11-30T00:00:00", interesPagado: 0, nroCuota: 1, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 0 },
+            { fechaVto: "2026-12-31T00:00:00", interesPagado: 0, nroCuota: 2, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 0 },
+          ],
+          numero: "0",
+          prestamoId: "441204",
+          // (989976,38 + 461312,48) + 2,5 %.
+          totalPago: 1487571.08,
+        },
+      ],
+      simulacion: true,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(
+      recibido[0]?.cuotas.map((cuota) => [cuota.nroCuota, cuota.total - cuota.gastos]),
+      [
+        [1, 989976.38],
+        [2, 461312.48],
+      ],
+    );
+  });
+
+  it("charges the whole saldo of a cuota whose period started, and punitorios to that date", async () => {
     // Fecha de calculo 15/10 (hoy = 28/10 en los tests): la 20 (vencio el
     // 30/9) lleva los punitorios al 15/10 que informa Vimarx menos los ya
     // pagados; una cuota que vence el 31/10 va entera, sin punitorios.

@@ -169,7 +169,17 @@ function cuotasDelComprobante(
     const saldo = cuota.saldoCuota;
     const capital = Math.min(cuota.capital ?? saldo, saldo);
     const aCobrar = fechaCalculo
-      ? aCobrarALaFecha(cuota, cobrada, fechaCalculo, item.prestamoId)
+      ? aCobrarALaFecha(
+          cuota,
+          cobrada,
+          fechaCalculo,
+          item.prestamoId,
+          // La cuota 0 (desembolso, gastos) no es un periodo: la 1 empieza
+          // con el prestamo.
+          cobrada.nroCuota > 1
+            ? (plan.get(cobrada.nroCuota - 1)?.fecha ?? null)
+            : null,
+        )
       : cuota.saldoCuotaConPunitorios;
 
     return {
@@ -209,9 +219,12 @@ function cuotasDelComprobante(
  *
  * - vencida a esa fecha: el saldo mas los punitorios a esa fecha. Vimarx los
  *   informa en el cobro sumados a los que ya se pagaron, que se descuentan;
- * - vence en el mismo mes: el saldo entero;
- * - vence en un mes posterior: solo lo que queda de capital (el interes se
- *   bonifica). Ej.: la cuota que vence el 30/11 calculada al 31/10.
+ * - su periodo todavia no empezo (la cuota anterior vence ese dia o despues):
+ *   solo lo que queda de capital, el interes se bonifica. Ej.: la cuota que
+ *   vence el 30/11 calculada al 31/10, si la anterior vence el 31/10;
+ * - su periodo ya empezo: el saldo entero. La cuota 1 empieza con el prestamo:
+ *   en FapiTest el 441204 (cuota 1 al 30/11, emitido en octubre) cobra la
+ *   cuota 1 entera al 31/10 y al 15/10. No depende del mes del vencimiento.
  *
  * Si no cierra con el TotalPago, el comprobante no se arma (ver abajo).
  */
@@ -220,6 +233,7 @@ function aCobrarALaFecha(
   cobrada: CuotaCobradaLegacy,
   fechaCalculo: string,
   prestamoId: string,
+  vencimientoAnterior: string | null,
 ) {
   const saldo = cuota.saldoCuota ?? 0;
   const vencimiento = (cobrada.fechaVto ?? cuota.fecha ?? "").slice(0, 10);
@@ -236,7 +250,9 @@ function aCobrarALaFecha(
     return saldo + Math.max(0, punitorios);
   }
 
-  if (vencimiento.slice(0, 7) === fechaCalculo.slice(0, 7)) {
+  const inicioDelPeriodo = vencimientoAnterior?.slice(0, 10) ?? null;
+
+  if (!inicioDelPeriodo || inicioDelPeriodo < fechaCalculo) {
     return saldo;
   }
 
