@@ -64,12 +64,15 @@ export class GenerarComprobanteRefinanciacionUseCase {
           ]
         : [],
     );
+    // El comprobante lleva la fecha de calculo, como el de Vimarx.
+    const fecha = guardada.fechaCalculo ?? this.hoy();
     const pdf = await this.dependencies.comprobante.armar({
+      fecha,
       prestamos,
       simulacion: false,
       solicitudId: input.solicitudId,
     });
-    const [anio, mes, dia] = this.hoy().split("-");
+    const [anio, mes, dia] = fecha.split("-");
     const { adjuntoId } = await this.dependencies.archivar.guardar({
       actorId: input.currentUser.id,
       descripcion: `Comprobante de refinanciación (préstamos ${prestamos

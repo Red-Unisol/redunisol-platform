@@ -48,6 +48,25 @@ export function planCobroRefinanciacion(
   return tramos;
 }
 
+/**
+ * Verifica la fecha de calculo que elige el analista: "YYYY-MM-DD", una fecha
+ * que exista y no posterior a hoy (no hay casos de fechas futuras). Hacia
+ * atras no hay limite por ahora (pedido de Nicolas, 4/11/2026).
+ * Devuelve el mensaje de error o null.
+ */
+export function errorFechaCalculo(fecha: string, hoy: string): string | null {
+  const valida =
+    /^\d{4}-\d{2}-\d{2}$/.test(fecha) &&
+    !Number.isNaN(Date.parse(`${fecha}T00:00:00.000Z`)) &&
+    new Date(`${fecha}T00:00:00.000Z`).toISOString().slice(0, 10) === fecha;
+
+  if (!valida) {
+    return "La fecha de cálculo no es válida.";
+  }
+
+  return fecha > hoy ? "La fecha de cálculo no puede ser posterior a hoy." : null;
+}
+
 /** Fecha de hoy en Argentina, "YYYY-MM-DD" (Vimarx vence por dia calendario). */
 export function hoyEnArgentina(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {

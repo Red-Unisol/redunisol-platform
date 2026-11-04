@@ -27,6 +27,7 @@ import {
   resolveInitialCalculadoraSheetName,
 } from "../pages/calculadora-riesgo-view-config";
 import { instalarEdicionNumerica } from "../utils/calculadora-edicion-numerica";
+import { instalarFormatoArgentino } from "../utils/calculadora-formato-argentino";
 import { instalarPegadoNumerico } from "../utils/calculadora-pegado-numerico";
 import { instalarValidacionCarga } from "../utils/calculadora-validacion-carga";
 import { stripLuckyExcelSpuriousBorders } from "../pages/calculadora-riesgo-workbook-fixes";
@@ -127,6 +128,7 @@ export function CalculadoraMutualSheet({
     let disposePegado: (() => void) | undefined;
     let disposeEdicion: (() => void) | undefined;
     let disposeValidacion: (() => void) | undefined;
+    let disposeFormato: (() => void) | undefined;
 
     async function load() {
       try {
@@ -201,6 +203,8 @@ export function CalculadoraMutualSheet({
           disposeValidacion = instalarValidacionCarga(univer, univerAPI);
 
           const workbook = univerAPI.getActiveWorkbook();
+          if (workbook)
+            disposeFormato = instalarFormatoArgentino(univer, workbook);
           workbookRef.current = workbook ?? null;
           univerApiRef.current = univerAPI;
           const sheets = workbook?.getSheets() ?? [];
@@ -296,6 +300,7 @@ export function CalculadoraMutualSheet({
       disposePegado?.();
       disposeEdicion?.();
       disposeValidacion?.();
+      disposeFormato?.();
       workbookRef.current = null;
       univerApiRef.current = null;
       cambiosListenerRef.current?.dispose();

@@ -41,6 +41,7 @@ describe("CobrarRefinanciacionSolicitud", () => {
 
     assert.deepEqual(simulados, [
       {
+        fechaCalculo: null,
         prestamos: [{ nrosCuota: [23, 24], prestamoId: "416228" }],
         solicitudId: "sol-1",
       },
@@ -64,7 +65,7 @@ describe("CobrarRefinanciacionSolicitud", () => {
     const preparada = await servicio.preparar("sol-1");
 
     assert.equal(simulo, false);
-    assert.deepEqual(preparada, { pendientes: [], total: 100, version: refinanciacionVersion({ prestamos: [guardado("416209", [22], [cobro("1", [22], 100)])], updatedAt: null }) });
+    assert.deepEqual(preparada, { fechaCalculo: null, pendientes: [], total: 100, version: refinanciacionVersion({ prestamos: [guardado("416209", [22], [cobro("1", [22], 100)])], updatedAt: null }) });
   });
 
   it("stops before charging when Vimarx would reject a prestamo", async () => {
@@ -131,6 +132,52 @@ describe("CobrarRefinanciacionSolicitud", () => {
       {
         cobro: { cobroId: "PG-23-24-25", nrosCuota: [23, 24, 25], totalCobrado: 100 },
         prestamoId: "416228",
+        solicitudId: "sol-1",
+      },
+    ]);
+  });
+
+  it("charges at the saved fecha de calculo", async () => {
+    const cobros: CobrarPrestamoInput[] = [];
+    const servicio = build({
+      cobrar: async (input) => {
+        cobros.push(input);
+        return { cobroId: `PG-${input.nrosCuota.join("-")}`, totalPago: 100 };
+      },
+    });
+
+    // Al 30/9 la 22 (vence el 30/9) todavia no esta vencida: un solo cobro.
+    await servicio.cobrar("sol-1", {
+      fechaCalculo: "2026-09-30",
+      version: "test",
+      pendientes: [{ nrosCuota: [22, 23], prestamoId: "416228" }],
+      total: 200,
+    });
+
+    assert.deepEqual(
+      cobros.map((item) => [item.nrosCuota, item.permitePagoFueraDeOrden, item.fecha]),
+      [[[22, 23], true, "2026-09-30"]],
+    );
+  });
+
+  it("prepares with the saved fecha de calculo", async () => {
+    const simulados: unknown[] = [];
+    const servicio = build({
+      fechaCalculo: "2026-10-27",
+      guardados: [guardado("416228", [24])],
+      simular: async (input) => {
+        simulados.push(input);
+        return { prestamos: [ok("416228", 100)], total: 100 };
+      },
+    });
+
+    const preparada = await servicio.preparar("sol-1");
+
+    assert.equal(preparada.fechaCalculo, "2026-10-27");
+    assert.deepEqual(simulados, [
+      {
+        fechaCalculo: "2026-10-27",
+        prestamos: [{ nrosCuota: [24], prestamoId: "416228" }],
         solicitudId: "sol-1",
       },
     ]);
@@ -219,6 +266,7 @@ function build(
     cobrar?: (
       input: CobrarPrestamoInput,
     ) => Promise<{ cobroId: string; totalPago: number }>;
+    fechaCalculo?: string | null;
     guardados?: SolicitudRefinanciacionPrestamoGuardado[];
     onAgregarCobro?: (input: {
       cobro: { cobroId: string; nrosCuota: number[]; totalCobrado: number };
@@ -257,6 +305,7 @@ function build(
     },
     refinanciacionRepository: {
       findBySolicitudId: async () => ({
+        fechaCalculo: overrides.fechaCalculo ?? null,
         prestamos: overrides.guardados ?? [],
         updatedAt: null,
       }),

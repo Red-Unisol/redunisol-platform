@@ -512,6 +512,7 @@ export class SolicitudesCoreController {
         req.body ?? {},
       );
       const simulacion = await this.simularRefinanciacionUseCase.execute({
+        fechaCalculo: body.fechaCalculo ?? null,
         prestamos: body.prestamos,
         solicitudId: params.id,
       });
@@ -545,6 +546,7 @@ export class SolicitudesCoreController {
         req.body ?? {},
       );
       const pdf = await this.descargarSimulacionRefinanciacionPdfUseCase.execute({
+        fechaCalculo: body.fechaCalculo ?? null,
         prestamos: body.prestamos,
         solicitudId: params.id,
       });
@@ -619,6 +621,7 @@ export class SolicitudesCoreController {
             workflowOwnerId: user.workflowOwnerId,
             ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
           },
+          fechaCalculo: body.fechaCalculo ?? null,
           prestamos: body.prestamos,
           solicitudId: params.id,
         });
@@ -658,6 +661,7 @@ export class SolicitudesCoreController {
             workflowOwnerId: user.workflowOwnerId,
             ...(user.isSystemAdmin ? { isSystemAdmin: true } : {}),
           },
+          fechaCalculo: body.fechaCalculo ?? null,
           prestamos: body.prestamos,
           solicitudId: params.id,
         });

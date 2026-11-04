@@ -1,0 +1,113 @@
+id: consulta_cuad_masivo
+namespace: redunisol
+
+description: >
+  Consulta masiva de CUAD Santa Fe con las cuentas A y B en simultaneo. La lanza
+  Herramientas con un Excel/JSON de CUILs o con lineas superiores de Vimarx, y la
+  retoma con corrida_id. Cada corrida vive en
+  /srv/redunisol-reports/analisis-credito/cuad-masivo/<namespace>/<corrida_id>/
+  (metadata.json, entrada.json, resultado.ndjson) y publica el estado de cada
+  cuenta en el KV cuad_masivo_estado_<corrida_id>.
+
+# Una sola corrida a la vez: dos corridas juntas loguearian dos veces cada cuenta.
+concurrency:
+  limit: 1
+  behavior: QUEUE
+
+labels:
+  env: prod
+  team: redunisol
+  domain: analisis-credito
+  kind: manual
+  integration: cuad
+
+inputs:
+  - id: archivo
+    type: FILE
+    required: false
+    description: Corrida nueva. .xlsx (primera hoja, columna CUIL o CUIT en las primeras 10 filas) o JSON con un array de CUILs.
+  - id: lineas
+    type: STRING
+    required: false
+    validator: "^[0-9]+(,[0-9]+)*$"
+    description: Corrida nueva desde Vimarx. IDs de linea superior separados por coma (ej. 2703). Si viene archivo, se usa el archivo.
+  - id: corrida_id
+    type: STRING
+    required: false
+    validator: "^[A-Za-z0-9_-]{1,64}$"
+    description: Retomar esta corrida (ignora archivo y lineas).
+  - id: origen
+    type: STRING
+    required: false
+    description: Texto para el historial, ej. "Excel lista.xlsx". Con lineas se arma solo.
+  - id: lanzado_por
+    type: STRING
+    required: false
+  - id: limite
+    type: INT
+    required: false
+    description: Consultar como maximo N CUILs pendientes (pruebas).
+  - id: max_socios
+    type: INT
+    required: false
+    description: Tope de socios que trae Vimarx (por defecto 200000).
+
+variables:
+  corrida_id: "{{ inputs.corrida_id ?? execution.id }}"
+
+tasks:
+  - id: consultar
+    type: io.kestra.plugin.scripts.python.Commands
+    timeout: PT12H
+    namespaceFiles:
+      enabled: true
+      include:
+        - consulta_cuad_masivo/**
+    inputFiles:
+      entrada: "{{ inputs.archivo ?? '' }}"  # vacio al retomar o con lineas
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - "/srv/redunisol-reports:/reports"
+    containerImage: python:3.12-slim
+    beforeCommands:
+      - pip install "ddddocr>=1.6,<2" "requests>=2.32,<3" "pillow>=10" "openpyxl>=3.1,<4" > /dev/null
+    env:
+      PYTHONUNBUFFERED: "1"
+      # B es la cuenta que ya usa consulta_cuad; A es la segunda cuenta.
+      CUAD_USUARIO_A: "{{ secret('CUAD_USUARIO_A') }}"
+      CUAD_PASSWORD_A: "{{ secret('CUAD_PASSWORD_A') }}"
+      CUAD_USUARIO_B: "{{ secret('CUAD_USUARIO') }}"
+      CUAD_PASSWORD_B: "{{ secret('CUAD_PASSWORD') }}"
+      VIMARX_EVAL_BASE_URL: "{{ secret('DEVEXPRESS_EVALUATE_API_BASE_URL') }}"
+      VIMARX_BEARER_TOKEN: "{{ secret('DEVEXPRESS_EVALUATE_API_BEARER_TOKEN') }}"
+      VIMARX_TIMEOUT_SECONDS: "300"
+      VIMARX_VERIFY_TLS: "{{ envs.vimarx_verify_tls ?? 'false' }}"
+      KESTRA_API_URL: "{{ envs.reports_kestra_url }}"
+      KESTRA_TENANT: "{{ envs.reports_kestra_tenant ?? 'main' }}"
+      KESTRA_API_USUARIO: "{{ secret('REPORTS_KESTRA_USERNAME') }}"
+      KESTRA_API_CLAVE: "{{ secret('REPORTS_KESTRA_PASSWORD') }}"
+      KESTRA_NAMESPACE: "{{ flow.namespace }}"
+      KESTRA_EXECUTION_ID: "{{ execution.id }}"
+      CORRIDA_CARPETA: "/reports/analisis-credito/cuad-masivo/{{ flow.namespace }}/{{ render(vars.corrida_id) }}"
+      CORRIDA_ID: "{{ render(vars.corrida_id) }}"
+      CORRIDA_ORIGEN: "{{ inputs.origen ?? '' }}"
+      CORRIDA_LANZADO_POR: "{{ inputs.lanzado_por ?? '' }}"
+      CORRIDA_LINEAS: "{{ inputs.lineas ?? '' }}"
+      CORRIDA_LIMITE: "{{ inputs.limite ?? '' }}"
+      CORRIDA_MAX_SOCIOS: "{{ inputs.max_socios ?? '' }}"
+    # exec: Python recibe el SIGTERM al matar la tarea y deja la corrida "interrumpida".
+    commands:
+      - >-
+        exec python -m consulta_cuad_masivo.kestra_entrypoint
+        --carpeta "$CORRIDA_CARPETA" --corrida-id "$CORRIDA_ID"
+        --origen "$CORRIDA_ORIGEN" --lanzado-por "$CORRIDA_LANZADO_POR"
+        $( [ -s entrada ] && echo --entrada entrada )
+        $( [ -n "$CORRIDA_LINEAS" ] && echo --lineas "$CORRIDA_LINEAS" )
+        $( [ -n "$CORRIDA_MAX_SOCIOS" ] && echo --max-socios "$CORRIDA_MAX_SOCIOS" )
+        $( [ -n "$CORRIDA_LIMITE" ] && echo --limite "$CORRIDA_LIMITE" )
+
+outputs:
+  - id: corrida_id
+    type: STRING
+    value: "{{ render(vars.corrida_id) }}"

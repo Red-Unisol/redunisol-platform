@@ -368,6 +368,8 @@ export type RefinanciacionSimuladaResponse = {
 };
 
 export type SolicitudRefinanciacionResponse = {
+  /** "YYYY-MM-DD" con la que Vimarx calcula el cobro; null = el dia del cobro. */
+  fechaCalculo?: string | null;
   prestamos: (RefinanciacionPrestamoRequest & {
     /**
      * Cobros en Vimarx al generar el prestamo: uno o dos por prestamo (las
@@ -389,14 +391,16 @@ export function getSolicitudRefinanciacion(solicitudId: string) {
   );
 }
 
-// Vimarx calcula el importe de cada cuota a la fecha de hoy, sin guardar nada.
+// Vimarx calcula el importe de cada cuota a la fecha de calculo (null = hoy),
+// sin guardar nada.
 export function simularRefinanciacion(
   solicitudId: string,
   prestamos: RefinanciacionPrestamoRequest[],
+  fechaCalculo: string | null = null,
 ) {
   return apiClient.post<RefinanciacionSimuladaResponse>(
     `/solicitudes/${solicitudId}/refinanciacion/simulacion`,
-    { prestamos },
+    { fechaCalculo, prestamos },
   );
 }
 
@@ -404,6 +408,7 @@ export function simularRefinanciacion(
 export async function descargarSimulacionRefinanciacionPdf(
   solicitudId: string,
   prestamos: RefinanciacionPrestamoRequest[],
+  fechaCalculo: string | null = null,
 ): Promise<Blob> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(
@@ -415,7 +420,7 @@ export async function descargarSimulacionRefinanciacionPdf(
     const response = await fetchConSesion(
       `/solicitudes/${solicitudId}/refinanciacion/simulacion/pdf`,
       {
-        body: JSON.stringify({ prestamos }),
+        body: JSON.stringify({ fechaCalculo, prestamos }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
         signal: controller.signal,
@@ -438,6 +443,7 @@ export async function descargarSimulacionRefinanciacionPdf(
 export function generarComprobanteRefinanciacion(
   solicitudId: string,
   prestamos: RefinanciacionPrestamoRequest[],
+  fechaCalculo: string | null = null,
 ) {
   return withAreaForbiddenMessage(
     apiClient.post<
@@ -445,7 +451,10 @@ export function generarComprobanteRefinanciacion(
         adjuntoId: string | null;
         simulacion: RefinanciacionSimuladaResponse | null;
       }
-    >(`/solicitudes/${solicitudId}/refinanciacion/comprobante`, { prestamos }),
+    >(`/solicitudes/${solicitudId}/refinanciacion/comprobante`, {
+      fechaCalculo,
+      prestamos,
+    }),
   );
 }
 

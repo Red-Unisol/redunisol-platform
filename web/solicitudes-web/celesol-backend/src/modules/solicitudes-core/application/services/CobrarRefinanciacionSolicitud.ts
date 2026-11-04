@@ -37,6 +37,8 @@ type Dependencies = {
 };
 
 export type RefinanciacionPreparada = {
+  /** La fecha de calculo guardada; null = hoy. */
+  fechaCalculo?: string | null;
   version: string;
   /** Por prestamo, las cuotas elegidas que todavia no se cobraron. */
   pendientes: SolicitudRefinanciacionPrestamo[];
@@ -83,11 +85,12 @@ export class CobrarRefinanciacionSolicitud {
       .reduce((total, cobro) => total + cobro.totalCobrado, 0);
 
     if (pendientes.length === 0) {
-      return { pendientes, total: roundToCents(cobrado), version: refinanciacionVersion(guardada) };
+      return { fechaCalculo: guardada.fechaCalculo ?? null, pendientes, total: roundToCents(cobrado), version: refinanciacionVersion(guardada) };
     }
 
     // Tambien vuelve a verificar que cada prestamo sea del titular.
     const simulacion = await this.dependencies.simularRefinanciacion.execute({
+      fechaCalculo: guardada.fechaCalculo ?? null,
       prestamos: pendientes,
       solicitudId,
     });
@@ -100,6 +103,7 @@ export class CobrarRefinanciacionSolicitud {
     }
 
     return {
+      fechaCalculo: guardada.fechaCalculo ?? null,
       version: refinanciacionVersion(guardada),
       pendientes,
       total: roundToCents(cobrado + (simulacion.total ?? 0)),
@@ -107,7 +111,10 @@ export class CobrarRefinanciacionSolicitud {
   }
 
   async cobrar(solicitudId: string, preparada: RefinanciacionPreparada, context?: LoanDiagnosticContext) {
-    const hoy = this.hoy();
+    // Si se guardo una fecha de calculo, se cobra a esa fecha (y con ella se
+    // separan las vencidas), igual que en la simulacion.
+    const fechaCalculo = preparada.fechaCalculo ?? null;
+    const fechaDeCobro = fechaCalculo ?? this.hoy();
     const tramos = [];
 
     for (const prestamo of preparada.pendientes) {
@@ -119,7 +126,7 @@ export class CobrarRefinanciacionSolicitud {
       for (const tramo of planCobroRefinanciacion(
         prestamo.nrosCuota,
         cuotas,
-        hoy,
+        fechaDeCobro,
       )) {
         tramos.push({ ...tramo, prestamoId: prestamo.prestamoId });
       }
@@ -134,6 +141,7 @@ export class CobrarRefinanciacionSolicitud {
       try {
         cobro = await this.dependencies.cobrarPrestamoGateway.cobrar({
           cobradorId: COBRADOR_REFINANCIACION_ID,
+          ...(fechaCalculo ? { fecha: fechaCalculo } : {}),
           motivo: MOTIVO_COBRO_REFINANCIACION,
           nrosCuota: tramo.nrosCuota,
           permitePagoFueraDeOrden: tramo.permitePagoFueraDeOrden,

@@ -1,5 +1,6 @@
 import { FindSolicitudTitularSocioLegacyId } from "../services/FindSolicitudTitularSocioLegacyId";
 import {
+  errorFechaCalculo,
   hoyEnArgentina,
   planCobroRefinanciacion,
 } from "../services/PlanCobroRefinanciacion";
@@ -7,6 +8,7 @@ import {
   PrestamoDelSocioNotFoundError,
   PrestamoLegacyRechazadoError,
   SolicitudCoreNotFoundError,
+  SolicitudRefinanciacionInvalidaError,
 } from "../../domain/solicitudes-core-errors";
 import type { SolicitudesCoreRepository } from "../../domain/repositories/SolicitudesCoreRepository";
 import type { SolicitudesLegacyGateway } from "../../../solicitudes/domain/services/SolicitudesLegacyGateway";
@@ -51,6 +53,8 @@ type Dependencies = {
 };
 
 export type SimularRefinanciacionInput = {
+  /** "YYYY-MM-DD", hoy o antes. Sin ella (o null), Vimarx calcula a hoy. */
+  fechaCalculo?: string | null;
   prestamos: { nrosCuota: number[]; prestamoId: string }[];
   solicitudId: string;
 };
@@ -108,6 +112,14 @@ export class SimularRefinanciacionUseCase {
       throw new SolicitudCoreNotFoundError();
     }
 
+    const hoy = this.hoy();
+    const fechaCalculo = input.fechaCalculo ?? null;
+    const errorFecha = fechaCalculo ? errorFechaCalculo(fechaCalculo, hoy) : null;
+
+    if (errorFecha) {
+      throw new SolicitudRefinanciacionInvalidaError(errorFecha);
+    }
+
     // Se interpolan en la expresion de criterios del legado: solo enteros.
     if (input.prestamos.some((item) => !/^\d+$/.test(item.prestamoId.trim()))) {
       throw new PrestamoDelSocioNotFoundError();
@@ -135,14 +147,20 @@ export class SimularRefinanciacionUseCase {
     }
 
     const prestamos: RefinanciacionPrestamoSimulado[] = [];
-    const hoy = this.hoy();
+    // Con fecha de calculo, las vencidas se separan a esa fecha: es la que
+    // usa Vimarx para los punitorios.
+    const fechaDeCobro = fechaCalculo ?? hoy;
 
     for (const item of input.prestamos) {
       const prestamoId = item.prestamoId.trim();
       const cuotas = await this.legacyGateway.listCuotasDelPrestamo(prestamoId);
       // Uno o dos cobros, como en la pantalla: las vencidas con punitorios y
       // el resto fuera de orden. Se informan juntos, por prestamo.
-      const tramos = planCobroRefinanciacion(item.nrosCuota, cuotas, hoy);
+      const tramos = planCobroRefinanciacion(
+        item.nrosCuota,
+        cuotas,
+        fechaDeCobro,
+      );
 
       try {
         const cobros = [];
@@ -151,6 +169,7 @@ export class SimularRefinanciacionUseCase {
           cobros.push(
             await this.cobrarPrestamoGateway.cobrar({
               cobradorId: COBRADOR_REFINANCIACION_ID,
+              ...(fechaCalculo ? { fecha: fechaCalculo } : {}),
               motivo: MOTIVO_COBRO_REFINANCIACION,
               nrosCuota: tramo.nrosCuota,
               permitePagoFueraDeOrden: tramo.permitePagoFueraDeOrden,
