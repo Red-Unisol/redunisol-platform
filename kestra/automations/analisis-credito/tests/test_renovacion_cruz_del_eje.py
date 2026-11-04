@@ -57,6 +57,15 @@ class RenovacionCruzDelEjeTests(unittest.TestCase):
         self.assertTrue(result["puede_renovar"])
         self.assertEqual(result["saldo_renovacion"], 3000.0)
 
+    def test_vimarx_criteria_does_not_filter_by_non_persistent_account_state(self):
+        # Vimarx responde 400 si el criterio usa Prestamo.Cuenta.Estado.
+        with patch.object(renovacion, "evaluate_list", return_value=[]) as evaluate:
+            renovacion.fetch_cuotas_por_cuil("20123456786")
+
+        criterio = evaluate.call_args.kwargs["cmd"]
+        self.assertNotIn("Cuenta.Estado", criterio)
+        self.assertIn("Prestamo.Cuenta.Estado", evaluate.call_args.kwargs["campos"])
+
     def test_two_active_loans_still_block_renewal(self):
         result = self.evaluate_rows(self.loan_rows() + self.loan_rows(loan_id=2))
 
