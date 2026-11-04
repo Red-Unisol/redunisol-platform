@@ -152,10 +152,9 @@ def fetch_cuotas_por_cuil(cuil: str) -> List[Dict[str, Any]]:
         "Prestamo.LineaPrestamo.Superior.Descripcion",
     )
     criterio_cuil = build_cuil_cmd(cuil)
-    criterio = (
-        f"({criterio_lineas}) And ({criterio_cuil}) And [NroCuota] > 0 "
-        f"And [Prestamo.Cuenta.Estado] = {ESTADO_CUENTA_ACTIVA}"
-    )
+    # Prestamo.Cuenta.Estado no es persistente: Vimarx lo devuelve como campo
+    # pero rechaza usarlo en el criterio (400). El estado se filtra en evaluar_socio.
+    criterio = f"({criterio_lineas}) And ({criterio_cuil}) And [NroCuota] > 0"
 
     filas = evaluate_list(
         cmd=criterio,
