@@ -182,6 +182,9 @@ jobs:
           cd "$target_dir"
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" config -q
           docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" pull php-fpm queue-worker edna-worker scheduler web
+          # Additive migrations must finish before any new worker can consume a job.
+          # Workers override the PHP entrypoint and otherwise race php-fpm startup.
+          docker compose -p "$compose_project_name" --env-file "$staging_dir/.env" -f "$staging_dir/docker-compose.yml" run --rm --no-deps --interactive=false --entrypoint php php-fpm artisan migrate --force < /dev/null
           if [ "${JOURNEY_ENABLED:-false}" = "true" ]; then
             mountpoint -q /srv/redunisol-tracking
             test -f /srv/redunisol-tracking/.redunisol-tracking-volume
