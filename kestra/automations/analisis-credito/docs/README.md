@@ -15,6 +15,7 @@ Dominio para automatizaciones de analisis y calificacion de credito.
 - `consulta_padron_a13`
 - `consulta_empleador`
 - `consulta_cuad`
+- `consulta_cuad_masivo`
 - bcra_archivo_actualizar_poc (POC aislada)
 - bcra_archivo_consultar_poc (POC aislada)
 
@@ -698,6 +699,79 @@ Notas:
 ### Namespace files
 
 - `kestra/automations/analisis-credito/files/consulta_cuad/**`
+
+## consulta_cuad_masivo
+
+Consulta en CUAD Santa Fe una lista de CUILs con dos cuentas en simultaneo (A y B)
+y guarda todo lo que devuelve la pagina (empleado, totales, mensajes y organismos).
+La lanza Herramientas; no tiene triggers. Una sola corrida a la vez (`concurrency: 1`,
+las demas quedan en cola).
+
+### Entrada
+
+Corrida nueva, con uno de:
+
+- `archivo`: `.xlsx` (primera hoja, columna con titulo `CUIL` o `CUIT` en las primeras
+  10 filas, un CUIL por fila con o sin guiones) o JSON con un array de CUILs
+- `lineas`: IDs de linea superior de Vimarx separados por coma (Herramientas usa `2703`,
+  Haberes CUAD SANTA FE). Trae los socios con cualquier prestamo en esas lineas, una vez cada uno
+
+Retomar: `corrida_id` de una corrida existente. Saltea los CUILs con `ok` o
+`sin_resultado` y reintenta los `error`.
+
+Opcionales: `origen` y `lanzado_por` (historial), `limite` (pruebas), `max_socios`.
+
+Los CUILs se validan por digito verificador; invalidos y repetidos no se consultan y
+quedan en `metadata.json`.
+
+### Salida
+
+Cada corrida en `/srv/redunisol-reports/analisis-credito/cuad-masivo/<namespace>/<corrida_id>/`
+(el `corrida_id` es el id de la primera ejecucion; el flow lo devuelve como output):
+
+- `metadata.json`: origen, quien la lanzo, total, `ok`, `sin_resultado`, `error`,
+  `pendientes`, invalidos, advertencias, `estado` y la lista de ejecuciones
+- `entrada.json`: CUILs validos, fijados al crear la corrida
+- `resultado.ndjson`: una linea por CUIL, escrita apenas se consulta. Si un CUIL dio
+  `error` y despues se reintento, vale la ultima linea
+
+Estados de la corrida: `corriendo`, `terminada`, `incompleta` (quedaron pendientes),
+`interrumpida` (se mato la ejecucion; se puede retomar) y `fallo` (con `motivo`, por
+ejemplo un Excel sin columna CUIL o una linea inexistente). Un corte duro (reinicio de
+la VPS) puede dejar `corriendo`: mirar el estado de la ultima ejecucion en Kestra.
+
+Estado en vivo en el KV del namespace, clave `cuad_masivo_estado_<corrida_id>`: avance
+(`hechos`/`total`) y, por cuenta, `estado` (`esperando`, `logueando`, `consultando`,
+`pausa`, `pausa_larga`, `relogueando`, `caida`, `terminada`), `consultados`, `desde` y
+`hasta` (fin de la pausa). Una cuenta sin cambios mucho despues de `hasta` (o de `desde`)
+esta frenada.
+
+Reintentar una cuenta caida: escribir cualquier valor en el KV
+`cuad_masivo_reintentar_<corrida_id>_<alias>`. La corrida lo lee cada 5 s, lo borra y
+vuelve a loguear esa cuenta sin cortar la otra. Si caen todas, la corrida espera hasta
+30 min un reintento antes de cerrar.
+
+### Variables
+
+- `ENV_REPORTS_KESTRA_URL`, `ENV_REPORTS_KESTRA_TENANT`, `ENV_VIMARX_VERIFY_TLS`
+- `SECRET_CUAD_USUARIO_A`, `SECRET_CUAD_PASSWORD_A`: cuenta A
+- `SECRET_CUAD_USUARIO`, `SECRET_CUAD_PASSWORD`: cuenta B, la misma de `consulta_cuad`
+- `SECRET_DEVEXPRESS_EVALUATE_API_BASE_URL`, `SECRET_DEVEXPRESS_EVALUATE_API_BEARER_TOKEN`
+- `SECRET_REPORTS_KESTRA_USERNAME`, `SECRET_REPORTS_KESTRA_PASSWORD`: escritura del KV
+
+Notas:
+
+- ritmo por cuenta: 15 s entre CUILs y 3 min cada 50; las cuentas arrancan escalonadas
+  (~1 consulta cada 7 s en total). Referencia: ~2000 CUILs en ~7 h
+- el captcha se lee con OCR local (ddddocr): 3 lecturas que tienen que coincidir antes
+  de gastar un intento de login
+- una consulta de `consulta_cuad` durante la corrida puede tirar la sesion de B; B se
+  vuelve a loguear sola
+- `python:3.12-slim` con `pip install` al arrancar (~30 s), como `reporte_evaluacion`
+
+### Namespace files
+
+- `kestra/automations/analisis-credito/files/consulta_cuad_masivo/**`
 
 ## reporte_evaluacion_management
 
