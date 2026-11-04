@@ -1,8 +1,8 @@
 import type { BadgeVariant } from "@/shared/components/ui/badge";
 
 // Mapeo semántico estado -> color de Badge. Espejo de la intención de colores
-// de ESTADO_STYLES (admin-dashboard-shared.tsx) pero acotado a los 4 variants
-// que soporta Badge (success/warning/danger/neutral), en vez de una paleta
+// de ESTADO_STYLES (admin-dashboard-shared.tsx) pero acotado a los variants
+// que soporta Badge (success/warning/danger/info/neutral), en vez de una paleta
 // por estado. Estados no listados caen a "neutral".
 const ESTADO_BADGE_VARIANTS: Record<string, BadgeVariant> = {
   CargaVendedor: "warning",
@@ -14,8 +14,9 @@ const ESTADO_BADGE_VARIANTS: Record<string, BadgeVariant> = {
   Rechazada: "danger",
   Revisar: "warning",
   RevisionRiesgo: "warning",
-  Transferir: "success",
+  Transferir: "info",
   Vencida: "danger",
+  VerificarFirmaYDocumentacion: "info",
 };
 
 export function getEstadoBadgeVariant(estadoCode: string): BadgeVariant {

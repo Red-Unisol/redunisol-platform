@@ -31,6 +31,7 @@ function formatDesde(value?: string | null) {
 // Punto de color del estado sobre fondo marino.
 const PUNTO_ESTADO: Record<string, string> = {
   danger: "bg-red-300",
+  info: "bg-sky-300",
   neutral: "bg-white/60",
   success: "bg-verde-claro",
   warning: "bg-amber-300",
@@ -47,6 +48,7 @@ export function CabeceraSolicitudEnBarra({
   estado,
   estadoDesde,
   nroSolicitud,
+  pasoPorVimarx = false,
   prestamo,
   titular,
 }: {
@@ -57,6 +59,8 @@ export function CabeceraSolicitudEnBarra({
   estado: { code: string; name: string | null; owner?: { name: string } };
   estadoDesde?: string | null;
   nroSolicitud: string | null;
+  // Desestimada con "Pasó por Vimarx": se marca al lado del estado.
+  pasoPorVimarx?: boolean;
   // "Préstamo Nº 1015194" cuando ya se genero en Vimarx.
   prestamo?: string | null;
   titular: { apellidoDenominacion: string | null; nombre: string | null };
@@ -89,6 +93,7 @@ export function CabeceraSolicitudEnBarra({
         {/* En celular, el estado va debajo del nombre (no entra la pildora). */}
         <p className="truncate text-xs text-marino-foreground-secondary sm:hidden">
           {nombreEstado(estado.code, estado.name)}
+          {pasoPorVimarx ? " · Vimarx" : ""}
         </p>
       </div>
       <span className={`${PILDORA} max-sm:hidden`}>
@@ -98,6 +103,9 @@ export function CabeceraSolicitudEnBarra({
         />
         {nombreEstado(estado.code, estado.name)}
       </span>
+      {pasoPorVimarx ? (
+        <span className={`${PILDORA} max-sm:hidden`}>Vimarx</span>
+      ) : null}
       {prestamo ? (
         <span className={`${PILDORA} tabular-nums max-md:hidden`}>
           {prestamo}

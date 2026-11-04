@@ -19,6 +19,7 @@ import type {
   VendedorDashboardStatsResult,
 } from "../../domain/repositories/SolicitudesCoreRepository";
 import { assertMontoDentroDelAprobadoPorRiesgo } from "../../domain/services/MontoAprobadoRiesgo";
+import { PASO_POR_VIMARX_ACTION_CODE } from "../../domain/workflow/PasoPorVimarx";
 import { SolicitudCoreNotFoundError, SolicitudEditStateConflictError } from "../../domain/solicitudes-core-errors";
 import { SolicitudCoreMapper } from "../mappers/SolicitudCore.mapper";
 
@@ -418,6 +419,21 @@ export class SolicitudesCorePrismaDatasource {
     return latestBySolicitudId;
   }
 
+  // De las solicitudes de la pagina, las desestimadas con "Paso por Vimarx".
+  private async listPasoPorVimarxIds(solicitudes: { estadoActual: { code: string }; id: string }[]) {
+    const desestimadas = solicitudes
+      .filter((item) => item.estadoActual.code === "Desestimada")
+      .map((item) => item.id);
+    if (desestimadas.length === 0) return new Set<string>();
+
+    const history = await this.prisma.solicitudEstadoHistorial.findMany({
+      where: { actionCode: PASO_POR_VIMARX_ACTION_CODE, solicitudId: { in: desestimadas } },
+      select: { solicitudId: true },
+    });
+
+    return new Set(history.map((item) => item.solicitudId));
+  }
+
   private async listUltimasNovedadesBySolicitudIds(solicitudIds: string[]) {
     if (solicitudIds.length === 0) {
       return new Map<string, string>();
@@ -502,13 +518,16 @@ export class SolicitudesCorePrismaDatasource {
       take: input.limit,
     });
 
-    const ultimasNovedadesBySolicitudId =
-      await this.listUltimasNovedadesBySolicitudIds(
+    const [ultimasNovedadesBySolicitudId, pasoPorVimarxIds] = await Promise.all([
+      this.listUltimasNovedadesBySolicitudIds(
         solicitudes.map((item) => item.id),
-      );
+      ),
+      this.listPasoPorVimarxIds(solicitudes),
+    ]);
 
     return solicitudes.map((item) => ({
       ...SolicitudCoreMapper.toDomain(item),
+      pasoPorVimarx: pasoPorVimarxIds.has(item.id),
       ultimaNovedad: ultimasNovedadesBySolicitudId.get(item.id) ?? null,
     }));
   }
@@ -723,13 +742,16 @@ export class SolicitudesCorePrismaDatasource {
       take: input.limit,
     });
 
-    const ultimasNovedadesBySolicitudId =
-      await this.listUltimasNovedadesBySolicitudIds(
+    const [ultimasNovedadesBySolicitudId, pasoPorVimarxIds] = await Promise.all([
+      this.listUltimasNovedadesBySolicitudIds(
         solicitudes.map((item) => item.id),
-      );
+      ),
+      this.listPasoPorVimarxIds(solicitudes),
+    ]);
 
     return solicitudes.map((item) => ({
       ...SolicitudCoreMapper.toDomain(item),
+      pasoPorVimarx: pasoPorVimarxIds.has(item.id),
       ultimaNovedad: ultimasNovedadesBySolicitudId.get(item.id) ?? null,
     }));
   }
@@ -787,13 +809,16 @@ export class SolicitudesCorePrismaDatasource {
       take: input.limit,
     });
 
-    const ultimasNovedadesBySolicitudId =
-      await this.listUltimasNovedadesBySolicitudIds(
+    const [ultimasNovedadesBySolicitudId, pasoPorVimarxIds] = await Promise.all([
+      this.listUltimasNovedadesBySolicitudIds(
         solicitudes.map((item) => item.id),
-      );
+      ),
+      this.listPasoPorVimarxIds(solicitudes),
+    ]);
 
     return solicitudes.map((item) => ({
       ...SolicitudCoreMapper.toDomain(item),
+      pasoPorVimarx: pasoPorVimarxIds.has(item.id),
       ultimaNovedad: ultimasNovedadesBySolicitudId.get(item.id) ?? null,
     }));
   }
@@ -818,7 +843,11 @@ export class SolicitudesCorePrismaDatasource {
         archivedAt: null,
         ...SolicitudesCorePrismaDatasource.buildSearchFilter(input.search),
         ...(input.creadoPorIn ? { createdBy: { in: input.creadoPorIn } } : {}),
-        OR: [
+        // Con el filtro se ven todas, tambien las que siguen en Recientes.
+        ...(input.pasoPorVimarx ? {
+          estadoActual: { code: "Desestimada" },
+          estadoHistorial: { some: { actionCode: PASO_POR_VIMARX_ACTION_CODE } },
+        } : { OR: [
           {
             estadoActual: {
               code: {
@@ -848,7 +877,7 @@ export class SolicitudesCorePrismaDatasource {
               },
             ],
           },
-        ],
+        ] }),
         titular: input.nroDocumento
           ? {
               nroDocumento: input.nroDocumento,
@@ -863,13 +892,16 @@ export class SolicitudesCorePrismaDatasource {
       take: input.limit,
     });
 
-    const ultimasNovedadesBySolicitudId =
-      await this.listUltimasNovedadesBySolicitudIds(
+    const [ultimasNovedadesBySolicitudId, pasoPorVimarxIds] = await Promise.all([
+      this.listUltimasNovedadesBySolicitudIds(
         solicitudes.map((item) => item.id),
-      );
+      ),
+      this.listPasoPorVimarxIds(solicitudes),
+    ]);
 
     return solicitudes.map((item) => ({
       ...SolicitudCoreMapper.toDomain(item),
+      pasoPorVimarx: pasoPorVimarxIds.has(item.id),
       ultimaNovedad: ultimasNovedadesBySolicitudId.get(item.id) ?? null,
     }));
   }

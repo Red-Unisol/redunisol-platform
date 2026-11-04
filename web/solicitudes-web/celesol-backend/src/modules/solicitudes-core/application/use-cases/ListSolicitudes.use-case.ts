@@ -34,6 +34,7 @@ export class ListSolicitudesUseCase {
           limit: input.limit,
           nroDocumento: input.nroDocumento,
           offset: input.offset,
+          ...(input.pasoPorVimarx ? { pasoPorVimarx: true } : {}),
         })
         .then((solicitudes) => this.decorateSolicitudes(solicitudes, input));
     }

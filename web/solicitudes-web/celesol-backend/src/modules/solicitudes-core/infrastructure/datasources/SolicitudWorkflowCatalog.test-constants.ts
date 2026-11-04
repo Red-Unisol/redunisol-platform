@@ -21,6 +21,7 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "Confirmada|desestimar|Desestimada",
   "Confirmada|liquidar|VerificarFirmaYDocumentacion",
   "Confirmada|liquidar_con_firma|Transferir",
+  "Confirmada|paso_por_vimarx|Desestimada",
   "Confirmada|revisar|Revisar",
   "Liquidada|desestimar|Desestimada",
   "Liquidada|transferir|Transferir",
@@ -36,6 +37,7 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "Revisar|revisar_reenviar|RevisionRiesgo",
   "RevisionRiesgo|confirmar|Confirmada",
   "RevisionRiesgo|desestimar|Desestimada",
+  "RevisionRiesgo|paso_por_vimarx|Desestimada",
   "RevisionRiesgo|preaprobar|PreAprobada",
   "RevisionRiesgo|rechazar|Rechazada",
   "RevisionRiesgo|revisar|Revisar",
@@ -88,7 +90,7 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     sortOrder: 10,
   },
   "Confirmada|liquidar|VerificarFirmaYDocumentacion": {
-    actionLabel: "Mandar a revisar firma",
+    actionLabel: "Enviar a firmar",
     defaultComment: "Análisis finalizado; firma pendiente de aprobación.",
     description: null,
     requiresComment: false,
@@ -204,5 +206,15 @@ export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
     description: null,
     requiresComment: false,
     sortOrder: 20,
+  },
+  "Confirmada|paso_por_vimarx|Desestimada": {
+    actionLabel: "Pasó por Vimarx", defaultComment: "Se siguió en Vimarx",
+    description: "Cierra la solicitud como Desestimada porque se siguió en Vimarx.",
+    requiresComment: true, sortOrder: 90,
+  },
+  "RevisionRiesgo|paso_por_vimarx|Desestimada": {
+    actionLabel: "Pasó por Vimarx", defaultComment: "Se siguió en Vimarx",
+    description: "Cierra la solicitud como Desestimada porque se siguió en Vimarx.",
+    requiresComment: true, sortOrder: 90,
   },
 } as const;

@@ -203,6 +203,7 @@ import { TABLA } from "@/modules/solicitudes-core/utils/tabla-detalle";
 import { esCuitValido } from "@/shared/utils/cuit";
 import {
   ACCIONES_DE_ESTADO,
+  PASO_POR_VIMARX_ACTION_CODE,
   etiquetaDeAccion,
   terminaLaSolicitud,
 } from "@/modules/solicitudes-shared/utils/acciones-de-estado";
@@ -3822,7 +3823,7 @@ export function SolicitudesActualDetallePage() {
   );
   const analysisActionLabel = documentReview.data?.signature?.approved
     ? "Mandar a transferir"
-    : "Mandar a revisar firma";
+    : "Enviar a firmar";
   const analysisBlockedReason =
     analysisTransition?.blockedReason ??
     (linkedLoan.isPending ||
@@ -4984,6 +4985,12 @@ export function SolicitudesActualDetallePage() {
             destino={topbarSlot}
             estado={resolvedSolicitud.estadoActual}
             nroSolicitud={resolvedSolicitud.nroSolicitud ?? null}
+            pasoPorVimarx={
+              resolvedSolicitud.estadoActual.code === "Desestimada" &&
+              workflowHistory.some(
+                (item) => item.actionCode === PASO_POR_VIMARX_ACTION_CODE,
+              )
+            }
             estadoDesde={
               // Ultimo cambio de estado del historial (si no hay, la creacion).
               workflowHistory.reduce<string | null>(

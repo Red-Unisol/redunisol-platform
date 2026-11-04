@@ -455,6 +455,8 @@ export type ListSolicitudesCoreQuery = {
   limit: number;
   nroDocumento?: string;
   offset: number;
+  /** Solo Historicas: las desestimadas con la accion "Paso por Vimarx". */
+  pasoPorVimarx?: "true";
   scope?: "historicas" | "recientes" | "tracking" | "work";
 };
 
@@ -483,6 +485,8 @@ export type SolicitudCoreListItem = {
   nroSolicitud: string | null;
   observaciones: string | null;
   ultimaNovedad: string | null;
+  // Desestimada con la accion "Paso por Vimarx" (lo calcula el backend).
+  pasoPorVimarx?: boolean;
   titular: SolicitudCoreTitularResponse;
   updatedAt: string;
   vendedorSolicitud: string | null;
