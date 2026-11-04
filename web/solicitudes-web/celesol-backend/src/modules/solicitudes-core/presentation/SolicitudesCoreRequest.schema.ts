@@ -278,8 +278,17 @@ const refinanciacionPrestamosSchema = z
     "prestamos must not repeat",
   );
 
+// Fecha de calculo del cobro (hoy o antes; eso lo valida el caso de uso, que
+// sabe que dia es en Argentina). null o ausente = hoy.
+const fechaCalculoSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "fechaCalculo must be YYYY-MM-DD")
+  .nullable()
+  .optional();
+
 export const simularRefinanciacionBodySchema = z
   .object({
+    fechaCalculo: fechaCalculoSchema,
     prestamos: refinanciacionPrestamosSchema.refine(
       (prestamos) => prestamos.length > 0,
       "prestamos must not be empty",
@@ -289,7 +298,10 @@ export const simularRefinanciacionBodySchema = z
 
 // Lista vacia: borra la refinanciacion de la solicitud.
 export const guardarRefinanciacionBodySchema = z
-  .object({ prestamos: refinanciacionPrestamosSchema })
+  .object({
+    fechaCalculo: fechaCalculoSchema,
+    prestamos: refinanciacionPrestamosSchema,
+  })
   .strict();
 
 // Replica la forma de POST /api/redunisol/finSolicitud/:ntrans/:sol (ver

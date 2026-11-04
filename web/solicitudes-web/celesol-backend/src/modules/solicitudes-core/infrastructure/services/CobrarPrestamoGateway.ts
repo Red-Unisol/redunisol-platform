@@ -20,6 +20,13 @@ type CobrarPrestamoGatewayConfig = {
 export type CobrarPrestamoInput = {
   /** ID de F.Module.CobradorCuenta en Vimarx. */
   cobradorId: number;
+  /**
+   * Fecha de calculo "YYYY-MM-DD" (el "utiliza fecha calculo" de la pantalla).
+   * Sin ella Vimarx calcula a hoy. Cambia los punitorios de las vencidas y el
+   * interes que se bonifica de las futuras (FapiTest 4/11/2026, prestamo
+   * 418720: 106791,99 a hoy y 96209,00 al 31/10).
+   */
+  fecha?: string;
   /** Enum MotivoAjuste de Vimarx: 0 Normal, 1 Refinanciacion, 2 Cancelacion anticipada. */
   motivo: number;
   nrosCuota: number[];
@@ -95,6 +102,7 @@ export class CobrarPrestamoGateway {
         {
           body: JSON.stringify({
             cobradorId: input.cobradorId,
+            ...(input.fecha ? { fecha: input.fecha } : {}),
             // Numero: el legado lo espera como entero.
             idPrestamo: Number(input.prestamoId),
             motivo: input.motivo,

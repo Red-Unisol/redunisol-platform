@@ -9,7 +9,9 @@ import {
 // a mano ("Calcular") para no simular en cada tilde.
 export function useSimularRefinanciacionMutation(solicitudId: string) {
   return useMutation({
-    mutationFn: (prestamos: RefinanciacionPrestamoRequest[]) =>
-      simularRefinanciacion(solicitudId, prestamos),
+    mutationFn: (input: {
+      fechaCalculo: string | null;
+      prestamos: RefinanciacionPrestamoRequest[];
+    }) => simularRefinanciacion(solicitudId, input.prestamos, input.fechaCalculo),
   });
 }

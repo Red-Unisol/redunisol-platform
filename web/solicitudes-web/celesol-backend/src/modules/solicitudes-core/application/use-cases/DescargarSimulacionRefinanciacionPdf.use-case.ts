@@ -30,6 +30,7 @@ export class DescargarSimulacionRefinanciacionPdfUseCase {
     }
 
     return this.dependencies.comprobante.armar({
+      ...(input.fechaCalculo ? { fecha: input.fechaCalculo } : {}),
       prestamos: simulacion.prestamos.flatMap((prestamo) =>
         prestamo.ok
           ? [

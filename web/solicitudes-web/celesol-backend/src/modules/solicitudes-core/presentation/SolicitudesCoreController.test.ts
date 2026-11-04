@@ -2077,6 +2077,7 @@ describe("SolicitudesCoreController.simularRefinanciacion", () => {
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.body, { prestamos: [], total: 0 });
     assert.deepEqual(receivedInput, {
+      fechaCalculo: null,
       prestamos: [{ nrosCuota: [24, 25], prestamoId: "414805" }],
       solicitudId: solicitudId(),
     });

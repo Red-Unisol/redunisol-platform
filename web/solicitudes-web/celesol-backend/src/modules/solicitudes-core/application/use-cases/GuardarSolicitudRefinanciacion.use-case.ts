@@ -39,6 +39,8 @@ export type GuardarSolicitudRefinanciacionInput = {
     workflowOwnerCode: string | null;
     workflowOwnerId: string | null;
   };
+  /** "YYYY-MM-DD", hoy o antes; null = el dia del cobro. */
+  fechaCalculo?: string | null;
   prestamos: SolicitudRefinanciacionPrestamo[];
   solicitudId: string;
 };
@@ -109,11 +111,15 @@ export class GuardarSolicitudRefinanciacionUseCase {
       nrosCuota: [...prestamo.nrosCuota].sort((a, b) => a - b),
       prestamoId: prestamo.prestamoId.trim(),
     }));
+    // Sin cuotas no hay nada que calcular: la fecha no se guarda.
+    const fechaCalculo =
+      prestamos.length > 0 ? (input.fechaCalculo ?? null) : null;
     let simulacion: RefinanciacionSimulada | null = null;
 
     if (prestamos.length > 0) {
       // Tambien verifica que cada prestamo sea del titular.
       simulacion = await this.dependencies.simularRefinanciacion.execute({
+        fechaCalculo,
         prestamos,
         solicitudId: input.solicitudId,
       });
@@ -128,6 +134,7 @@ export class GuardarSolicitudRefinanciacionUseCase {
     const guardada = await this.dependencies.refinanciacionRepository.replace({
       expectedSolicitudUpdatedAt: solicitud.updatedAt,
       expectedVersion: refinanciacionVersion(actual),
+      fechaCalculo,
       prestamos,
       solicitudId: input.solicitudId,
       updatedBy: user.id,

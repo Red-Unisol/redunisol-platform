@@ -50,7 +50,7 @@ export function useRefinanciacionTotalQuery(id: string, enabled: boolean) {
         .filter((prestamo) => prestamo.nrosCuota.length > 0);
       const [simulacion, prestamosDelSocio] = await Promise.all([
         pendientes.length > 0
-          ? simularRefinanciacion(id, pendientes)
+          ? simularRefinanciacion(id, pendientes, guardada.fechaCalculo ?? null)
           : Promise.resolve(null),
         // Solo para mostrar el numero de cuenta: si falla, va sin el.
         listPrestamosDelSocio(id).catch(() => null),
