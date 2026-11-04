@@ -162,7 +162,7 @@ def run_worker(client, queue, *, clock=time.monotonic, sleep=time.sleep, _api=No
 def run_batches(client, queue, *, clock=time.monotonic, sleep=time.sleep, **budget):
     """Drain several notices under ONE shared time/call/pacing budget."""
     api = BudgetedClient(client, queue, None, clock=clock, sleep=sleep, **budget)
-    counts, events, batches, last = Counter(), [], 0, None
+    counts, events, batches, deferred, last = Counter(), [], 0, 0, None
     while batches < 20 and sum(api.calls.values()) < api.max_calls and clock() < api.deadline:
         result = run_worker(client, queue, clock=clock, sleep=sleep, _api=api)
         if result["mode"] in {"busy", "idle"}:
@@ -170,12 +170,15 @@ def run_batches(client, queue, *, clock=time.monotonic, sleep=time.sleep, **budg
                 return result
             break
         batches += 1
+        deferred += int(result["outcome"] == "retry")
         counts.update(result["counts"])
         events.extend(result["events"])
         last = result
-        if not result["ok"] or result["mode"] == "fallback" or result["outcome"] == "retry":
+        if not result["ok"] or result["mode"] == "fallback":
             break
-    return {**last, "batches": batches, "counts": dict(counts), "events": events,
+    return {**last, "batches": batches, "deferred_batches": deferred,
+            "outcome": "retry" if deferred and last["ok"] else last["outcome"],
+            "counts": dict(counts), "events": events,
             "checked": len(events), "api_calls": dict(api.calls),
             "api_failed_attempts": dict(api.failures)}
 

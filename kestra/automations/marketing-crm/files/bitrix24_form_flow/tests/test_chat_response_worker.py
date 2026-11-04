@@ -140,6 +140,19 @@ class ChatWorkerTests(unittest.TestCase):
             guarded.call("crm.item.update", {})
         self.assertEqual(api.call_full.call_count, 3)
 
+    def test_waiting_for_a_session_does_not_delay_other_ready_notices(self):
+        api, queue, clock = Api(), Queue(), Clock()
+        api.identities = {}
+        original = queue.request
+        pending = iter([Queue(payload={"phone": "5493510000000"}, attempts=1).claim,
+                        Queue(payload={"deal_id": 1}).claim, {"mode": "idle"}])
+        queue.request = lambda action, **body: next(pending) if action == "claim" else original(action, **body)
+        result = run_batches(api, queue, clock=clock, sleep=clock.sleep)
+        self.assertEqual(result["batches"], 2)
+        self.assertEqual(result["deferred_batches"], 1)
+        self.assertEqual(result["counts"], {"moved": 1})
+        self.assertEqual(result["outcome"], "retry")
+
     def test_no_activity_retries_are_bounded_and_reset_the_case_cursor(self):
         api = Api()
         api.dialogs[1]["text_field_enabled"] = False
