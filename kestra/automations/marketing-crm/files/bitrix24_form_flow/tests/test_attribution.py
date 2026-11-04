@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from bitrix24_form_flow.form_processor.attribution import CRM_FIELDS, WA_FIELDS, copy_to_deal, source_from_lead
+from bitrix24_form_flow.form_processor.attribution import CRM_FIELDS, WA_FIELDS, copy_to_deal, source_from_lead, lead_fields
 from bitrix24_form_flow.form_processor.business_logic import submission_payload_with_original_tracking
 from bitrix24_form_flow.form_processor.config import load_config
 from bitrix24_form_flow.form_processor.input_parser import normalize_business_input
@@ -15,6 +15,14 @@ from bitrix24_form_flow.form_processor.lead_service import create_lead, build_su
 
 
 class AttributionTests(unittest.TestCase):
+    def test_direct_whatsapp_provenance_does_not_become_a_website_visit(self):
+        attribution = {"version": 1, "status": "unknown", "journey_id": None, "first": {}, "last": {},
+                       "wa_assisted": True, "wa": {"WA_ENTRY": "whatsapp_directo"}}
+        fields = lead_fields(self.client, attribution, source_label="Sin origen", source_id="9991")
+        self.assertEqual(fields["UF_CRM_WA_ENTRY"], "whatsapp_directo")
+        self.assertNotIn("UF_CRM_JOURNEY_ID", fields)
+        self.assertNotIn("UF_CRM_FBCLID", fields)
+
     def setUp(self):
         self.config = load_config({"BITRIX24_BASE_URL": "https://example.test/rest", "BITRIX24_WEBHOOK_PATH": "1/test", "BITRIX24_CONTACT_CUIL_FIELD": "UF_CONTACT_CUIL", "BITRIX24_LEAD_STATUS_QUALIFIED": "QUALIFIED", "BITRIX24_LEAD_STATUS_REJECTED": "REJECTED"})
         self.payload = {

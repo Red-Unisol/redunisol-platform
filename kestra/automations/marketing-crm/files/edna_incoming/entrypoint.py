@@ -17,7 +17,11 @@ def main():
     elif isinstance(event, dict) and event.get("operation") == "out_of_hours":
         receipt, normalized = evaluate(event, allowed_subject), None
     else:
-        receipt, normalized = classify(event, allowed_subject)
+        scope = os.environ.get("EDNA_INTAKE_ENTRY_SCOPE", "website")
+        # Keep the default call readable by the previous receiver while the
+        # namespace files are published. Activate the new scope only afterward.
+        receipt, normalized = (classify(event, allowed_subject) if scope == "website" else
+                               classify(event, allowed_subject, entry_scope=scope))
     # PII belongs in restricted execution storage, never the task log or public response.
     Path("event.json").write_text(json.dumps(normalized, ensure_ascii=False), encoding="utf-8")
     Kestra.outputs(receipt)

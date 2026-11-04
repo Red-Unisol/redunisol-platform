@@ -18,6 +18,25 @@ def event(kind='FLOW', data=None):
 
 
 class EdnaReceiverTest(unittest.TestCase):
+    def test_sales_scope_recognizes_direct_text_and_media_without_inventing_web_origin(self):
+        for kind in ("TEXT", "IMAGE", "AUDIO", "DOCUMENT", "VIDEO", "LIST_PICKER"):
+            receipt, parsed = receiver.classify(event(kind, "Hola" if kind == "TEXT" else ""), "2423", entry_scope="sales_channel")
+            self.assertEqual((receipt["kind"], receipt["reason"]), ("router_entry", "channel_entry"))
+            self.assertEqual(parsed["wa_entry"], "whatsapp_directo")
+            self.assertFalse(receipt["out_of_hours_candidate"])
+            self.assertNotIn("text", parsed)
+
+    def test_sales_scope_keeps_channel_and_flow_response_boundaries(self):
+        incoming = event("TEXT", "Hola")
+        incoming["subjectId"] = "2580"
+        self.assertEqual(receiver.classify(incoming, "2423", entry_scope="sales_channel")[0]["reason"], "other_channel")
+        response = event(data={"provincia": "otra"})
+        self.assertEqual(receiver.classify(response, "2423", entry_scope="sales_channel")[0]["kind"], "flow_response")
+        test = event("TEXT", "(ref: PRUEBAFORM)")
+        self.assertEqual(receiver.classify(test, "2423", entry_scope="sales_channel")[0]["reason"], "test_reference")
+        with self.assertRaises(ValueError):
+            receiver.classify(event("TEXT", "Hola"), "2423", entry_scope="all_channels")
+
     def test_required_routes_and_all_allowed_segments(self):
         # Contract of the published router, independent of the parser's enums.
         expected = {
