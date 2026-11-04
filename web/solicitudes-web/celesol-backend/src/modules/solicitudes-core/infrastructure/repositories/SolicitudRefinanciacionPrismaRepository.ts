@@ -49,6 +49,9 @@ export class SolicitudRefinanciacionPrismaRepository
       if (input.prestamos.length > 0) {
         await tx.solicitudRefinanciacion.createMany({
           data: input.prestamos.map((prestamo) => ({
+            fechaCalculo: input.fechaCalculo
+              ? new Date(`${input.fechaCalculo}T00:00:00.000Z`)
+              : null,
             nrosCuota: prestamo.nrosCuota,
             prestamoLegacyId: prestamo.prestamoId,
             solicitudId: input.solicitudId,
@@ -72,7 +75,10 @@ export class SolicitudRefinanciacionPrismaRepository
       where: { solicitudId },
     });
 
+    const fechaCalculo = rows.find((row) => row.fechaCalculo)?.fechaCalculo;
+
     return {
+      fechaCalculo: fechaCalculo ? fechaCalculo.toISOString().slice(0, 10) : null,
       prestamos: rows.map((row) => ({
         cobros: leerCobros(row.cobros).map(
           (cobro): SolicitudRefinanciacionCobro => ({

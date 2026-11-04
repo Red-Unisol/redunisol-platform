@@ -11,6 +11,7 @@ import {
   PrestamoLegacyRechazadoError,
   PrestamoLegacyUnavailableError,
   SolicitudCoreNotFoundError,
+  SolicitudRefinanciacionInvalidaError,
 } from "../../domain/solicitudes-core-errors";
 import type { CobrarPrestamoInput } from "../../infrastructure/services/CobrarPrestamoGateway";
 
@@ -175,6 +176,96 @@ describe("SimularRefinanciacionUseCase", () => {
       PrestamoDelSocioNotFoundError,
     );
     assert.equal(simulo, false);
+  });
+
+  it("sends the fecha de calculo and splits overdue cuotas at that date", async () => {
+    // Caso de la solicitud 500098 (prod, 4/11/2026): el analista calcula al
+    // 31/10. Con hoy = 28/10 de los tests, se usa el 30/10 como fecha pasada.
+    const cobros: CobrarPrestamoInput[] = [];
+    const useCase = buildUseCase({
+      cobrar: async (input) => {
+        cobros.push(input);
+        return cobro(100);
+      },
+      cuotas: [
+        { fecha: "2026-09-30", nroCuota: 22 },
+        { fecha: "2026-10-29", nroCuota: 23 },
+        { fecha: "2026-11-30", nroCuota: 24 },
+      ],
+    });
+
+    await useCase.execute({
+      fechaCalculo: "2026-10-27",
+      prestamos: [{ nrosCuota: [22, 23, 24], prestamoId: "416228" }],
+      solicitudId: "sol-1",
+    });
+
+    // Al 27/10 la 23 (vence el 29/10) todavia no vencio: va con las futuras.
+    assert.deepEqual(
+      cobros.map((item) => [item.nrosCuota, item.permitePagoFueraDeOrden, item.fecha]),
+      [
+        [[22], false, "2026-10-27"],
+        [[23, 24], true, "2026-10-27"],
+      ],
+    );
+  });
+
+  it("does not send a fecha when there is no fecha de calculo", async () => {
+    const cobros: CobrarPrestamoInput[] = [];
+    const useCase = buildUseCase({
+      cobrar: async (input) => {
+        cobros.push(input);
+        return cobro(100);
+      },
+    });
+
+    await useCase.execute({
+      fechaCalculo: null,
+      prestamos: [{ nrosCuota: [3], prestamoId: "420000" }],
+      solicitudId: "sol-1",
+    });
+
+    assert.equal("fecha" in cobros[0]!, false);
+  });
+
+  it("accepts today as fecha de calculo", async () => {
+    const cobros: CobrarPrestamoInput[] = [];
+    const useCase = buildUseCase({
+      cobrar: async (input) => {
+        cobros.push(input);
+        return cobro(100);
+      },
+    });
+
+    await useCase.execute({
+      fechaCalculo: "2026-10-28",
+      prestamos: [{ nrosCuota: [3], prestamoId: "420000" }],
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(cobros[0]?.fecha, "2026-10-28");
+  });
+
+  it("rejects a future or invalid fecha de calculo before calling Vimarx", async () => {
+    for (const fechaCalculo of ["2026-10-29", "2026-02-30", "2026-13-01"]) {
+      let llamadas = 0;
+      const useCase = buildUseCase({
+        cobrar: async () => {
+          llamadas += 1;
+          return cobro(100);
+        },
+      });
+
+      await assert.rejects(
+        useCase.execute({
+          fechaCalculo,
+          prestamos: [{ nrosCuota: [3], prestamoId: "420000" }],
+          solicitudId: "sol-1",
+        }),
+        SolicitudRefinanciacionInvalidaError,
+      );
+      assert.equal(llamadas, 0);
+    }
   });
 
   it("throws when the solicitud does not exist", async () => {

@@ -179,5 +179,12 @@ describe("CobrarPrestamoGateway", () => {
 
     assert.equal(bodies[0]?.permitePagoFueraDeOrden, true);
     assert.equal("permitePagoFueraDeOrden" in (bodies[1] ?? {}), false);
+
+    // La fecha de calculo va en "fecha" (la API ignora "fechaCalculo"); sin
+    // ella Vimarx calcula a hoy.
+    await gateway.cobrar({ ...base, fecha: "2026-10-31" });
+
+    assert.equal(bodies[2]?.fecha, "2026-10-31");
+    assert.equal("fecha" in (bodies[0] ?? {}), false);
   });
 });

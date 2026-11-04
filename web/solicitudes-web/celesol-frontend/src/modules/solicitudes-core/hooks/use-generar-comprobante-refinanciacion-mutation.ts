@@ -12,12 +12,23 @@ export function useGenerarComprobanteRefinanciacionMutation(solicitudId: string)
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (prestamos: RefinanciacionPrestamoRequest[]) =>
-      generarComprobanteRefinanciacion(solicitudId, prestamos),
+    mutationFn: (input: {
+      fechaCalculo: string | null;
+      prestamos: RefinanciacionPrestamoRequest[];
+    }) =>
+      generarComprobanteRefinanciacion(
+        solicitudId,
+        input.prestamos,
+        input.fechaCalculo,
+      ),
     onSuccess: async (resultado) => {
       queryClient.setQueryData(
         solicitudesCoreQueryKeys.refinanciacion(solicitudId),
-        { prestamos: resultado.prestamos, updatedAt: resultado.updatedAt },
+        {
+          fechaCalculo: resultado.fechaCalculo ?? null,
+          prestamos: resultado.prestamos,
+          updatedAt: resultado.updatedAt,
+        },
       );
       await queryClient.invalidateQueries({
         queryKey: solicitudesCoreQueryKeys.adjuntos(solicitudId),

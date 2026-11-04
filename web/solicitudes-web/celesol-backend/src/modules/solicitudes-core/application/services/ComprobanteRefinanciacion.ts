@@ -32,6 +32,8 @@ type Dependencies = {
 };
 
 export type ComprobanteRefinanciacionInput = {
+  /** "YYYY-MM-DD": la fecha de calculo del cobro. Sin ella, hoy. */
+  fecha?: string;
   prestamos: {
     /** Detalle por cuota que devolvio Vimarx al cobrar o simular. */
     cuotas: CuotaCobradaLegacy[];
@@ -92,7 +94,7 @@ export class ComprobanteRefinanciacionService {
 
     const titular = solicitud.titular;
     const socioLegacyId = await this.findSocioLegacyId.execute(titular);
-    const fecha = fechaArgentina(this.hoy());
+    const fecha = fechaArgentina(input.fecha ?? this.hoy());
     const comprobantes: ComprobanteRefinanciacion[] = [];
 
     for (const item of input.prestamos) {

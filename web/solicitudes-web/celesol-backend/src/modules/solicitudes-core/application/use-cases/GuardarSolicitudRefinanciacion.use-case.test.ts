@@ -37,9 +37,9 @@ describe("GuardarSolicitudRefinanciacionUseCase", () => {
     });
 
     const esperado = [{ nrosCuota: [24, 25], prestamoId: "414805" }];
-    assert.deepEqual(simulados, [{ prestamos: esperado, solicitudId: "sol-1" }]);
+    assert.deepEqual(simulados, [{ fechaCalculo: null, prestamos: esperado, solicitudId: "sol-1" }]);
     assert.deepEqual(guardados, [
-      { expectedSolicitudUpdatedAt: new Date(0), expectedVersion: refinanciacionVersion({prestamos: [], updatedAt: null}), prestamos: esperado, solicitudId: "sol-1", updatedBy: "user-1" },
+      { expectedSolicitudUpdatedAt: new Date(0), expectedVersion: refinanciacionVersion({prestamos: [], updatedAt: null}), fechaCalculo: null, prestamos: esperado, solicitudId: "sol-1", updatedBy: "user-1" },
     ]);
     assert.equal(result.simulacion?.total, 57945.57);
   });
@@ -95,7 +95,7 @@ describe("GuardarSolicitudRefinanciacionUseCase", () => {
 
     assert.equal(simulo, false);
     assert.deepEqual(guardados, [
-      { expectedSolicitudUpdatedAt: new Date(0), expectedVersion: refinanciacionVersion({prestamos: [], updatedAt: null}), prestamos: [], solicitudId: "sol-1", updatedBy: "user-1" },
+      { expectedSolicitudUpdatedAt: new Date(0), expectedVersion: refinanciacionVersion({prestamos: [], updatedAt: null}), fechaCalculo: null, prestamos: [], solicitudId: "sol-1", updatedBy: "user-1" },
     ]);
     assert.equal(result.simulacion, null);
   });

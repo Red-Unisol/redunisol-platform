@@ -561,6 +561,11 @@ model SolicitudRefinanciacion {
   /// vencidas aparte, con punitorios). Lista de {cobroId, totalCobrado,
   /// nrosCuota, cobradoAt}. Un reintento no vuelve a cobrar esas cuotas.
   cobros           Json      @default("[]")
+  /// Fecha de calculo del cobro ("utiliza fecha calculo" de la pantalla de
+  /// Vimarx), la misma en todas las filas de la solicitud. null = el dia del
+  /// cobro. La eligen los analistas en algunos casos (ej. el dia en que se
+  /// cobro la ultima cuota).
+  fechaCalculo     DateTime? @map("fecha_calculo") @db.Date
   updatedBy        String?   @map("updated_by") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")

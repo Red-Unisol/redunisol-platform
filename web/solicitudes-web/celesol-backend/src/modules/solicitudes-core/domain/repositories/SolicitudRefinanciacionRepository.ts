@@ -25,6 +25,11 @@ export type SolicitudRefinanciacionPrestamoGuardado =
   };
 
 export type SolicitudRefinanciacion = {
+  /**
+   * Fecha de calculo "YYYY-MM-DD" con la que Vimarx calcula el cobro (el
+   * "utiliza fecha calculo" de la pantalla). null = el dia en que se cobra.
+   */
+  fechaCalculo?: string | null;
   prestamos: SolicitudRefinanciacionPrestamoGuardado[];
   /** Ultimo guardado; null si nunca se cargo. */
   updatedAt: Date | null;
@@ -36,6 +41,7 @@ export interface SolicitudRefinanciacionRepository {
   replace(input: {
     expectedSolicitudUpdatedAt: Date;
     expectedVersion: string;
+    fechaCalculo?: string | null;
     prestamos: SolicitudRefinanciacionPrestamo[];
     solicitudId: string;
     updatedBy: string;
@@ -45,6 +51,8 @@ export interface SolicitudRefinanciacionRepository {
 /** Includes confirmed charges and row revisions, even when the selection is unchanged. */
 export function refinanciacionVersion(value: SolicitudRefinanciacion) {
   return createHash("sha256").update(JSON.stringify({
+    // Solo si hay una: asi las versiones sin fecha no cambian.
+    ...(value.fechaCalculo ? { fechaCalculo: value.fechaCalculo } : {}),
     updatedAt: value.updatedAt?.toISOString() ?? null,
     prestamos: [...value.prestamos].sort((a, b) => a.prestamoId.localeCompare(b.prestamoId)).map(p => ({
       prestamoId: p.prestamoId, nrosCuota: [...p.nrosCuota].sort((a, b) => a - b),

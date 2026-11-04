@@ -81,6 +81,8 @@ export function RefinanciacionSection({
   const simularMutation = useSimularRefinanciacionMutation(solicitudId);
   // null: sin cambios locales, se muestra lo guardado.
   const [borrador, setBorrador] = useState<Seleccion | null>(null);
+  // null: sin cambios locales, se muestra la fecha guardada (o hoy).
+  const [fechaBorrador, setFechaBorrador] = useState<string | null>(null);
   const [simulacion, setSimulacion] =
     useState<RefinanciacionSimuladaResponse | null>(null);
   const [descargando, setDescargando] = useState(false);
@@ -90,7 +92,17 @@ export function RefinanciacionSection({
     [guardadaQuery.data],
   );
   const seleccion = borrador ?? guardada;
-  const hayCambios = borrador !== null && !mismaSeleccion(borrador, guardada);
+  const hoy = diaDeNegocio();
+  // Fecha de calculo del cobro ("utiliza fecha calculo" de Vimarx). Por
+  // defecto hoy; el analista puede poner una anterior. Hoy se manda como null
+  // para que el cobro real se calcule el dia en que se genera el prestamo.
+  const fechaGuardada = guardadaQuery.data?.fechaCalculo ?? null;
+  const fecha = fechaBorrador ?? fechaGuardada ?? hoy;
+  const fechaCalculo = fecha === hoy ? null : fecha;
+  const fechaInvalida = !/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoy;
+  const hayCambios =
+    (borrador !== null && !mismaSeleccion(borrador, guardada)) ||
+    (fechaCalculo ?? null) !== fechaGuardada;
   const prestamos = (prestamosQuery.data?.prestamos ?? []).filter(
     (prestamo) =>
       prestamo.legacyId &&
@@ -106,6 +118,7 @@ export function RefinanciacionSection({
   );
   const ocupado =
     generarMutation.isPending || simularMutation.isPending || descargando;
+  const sinCalcular = cantidadCuotas === 0 || ocupado || fechaInvalida;
   // Un intento de generar el prestamo ya cobro cuotas en Vimarx: la seleccion
   // queda fija (el backend tampoco deja cambiarla).
   const yaCobrada = (guardadaQuery.data?.prestamos ?? []).some(
@@ -128,8 +141,13 @@ export function RefinanciacionSection({
     });
   }
 
+  function cambiarFecha(valor: string) {
+    setSimulacion(null);
+    setFechaBorrador(valor);
+  }
+
   function calcular() {
-    simularMutation.mutate(aRequest(seleccion), {
+    simularMutation.mutate({ fechaCalculo, prestamos: aRequest(seleccion) }, {
       onError: (error) => {
         toast.error(mensajeDeError(error, "No se pudo calcular el total."));
       },
@@ -146,6 +164,7 @@ export function RefinanciacionSection({
       const blob = await descargarSimulacionRefinanciacionPdf(
         solicitudId,
         aRequest(seleccion),
+        fechaCalculo,
       );
       const objectUrl = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -167,7 +186,7 @@ export function RefinanciacionSection({
   // Guarda las cuotas y deja el comprobante en Adjuntos, con los importes de
   // hoy. Se puede volver a generar: reemplaza al anterior.
   function generarPdf() {
-    generarMutation.mutate(aRequest(seleccion), {
+    generarMutation.mutate({ fechaCalculo, prestamos: aRequest(seleccion) }, {
       onError: (error) => {
         toast.error(
           mensajeDeError(error, "No se pudo generar el comprobante."),
@@ -176,6 +195,7 @@ export function RefinanciacionSection({
       },
       onSuccess: (resultado) => {
         setBorrador(null);
+        setFechaBorrador(null);
         setSimulacion(resultado.simulacion);
         toast.success(
           resultado.adjuntoId
@@ -215,6 +235,26 @@ export function RefinanciacionSection({
           cambiar: terminá de generar el préstamo.
         </p>
       ) : null}
+      {prestamos.length > 0 ? (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-medium">Fecha de cálculo</span>
+          <input
+            className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-foreground disabled:opacity-60"
+            disabled={!editable || ocupado}
+            max={hoy}
+            onChange={(event) => cambiarFecha(event.target.value)}
+            type="date"
+            value={fecha}
+          />
+          <span className="text-foreground-secondary">
+            {fechaInvalida
+              ? "Tiene que ser hoy o una fecha anterior."
+              : fechaCalculo
+                ? "Vimarx calcula punitorios e interés a esta fecha."
+                : "Hoy. Cambiala si la refinanciación se calcula a otra fecha."}
+          </span>
+        </label>
+      ) : null}
       {prestamos.length === 0 ? (
         <p className="py-4 text-sm text-foreground-secondary">
           El socio no tiene préstamos activos con saldo para refinanciar.
@@ -223,6 +263,7 @@ export function RefinanciacionSection({
         prestamos.map((prestamo) => (
           <PrestamoRefinanciacion
             canEdit={editable && !ocupado}
+            fechaCalculo={fecha}
             inicialmenteAbierto={
               prestamos.length <= 2 ||
               (seleccion[prestamo.legacyId ?? ""]?.length ?? 0) > 0
@@ -256,14 +297,15 @@ export function RefinanciacionSection({
           </div>
           {simulacion?.total != null ? (
             <div className="text-xs text-foreground-secondary">
-              Calculado por Vimarx a hoy, con punitorios y el cargo de
-              refinanciación de la línea.
+              Calculado por Vimarx{" "}
+              {fechaCalculo ? `al ${formatLegacyDate(fechaCalculo)}` : "a hoy"},
+              con punitorios y el cargo de refinanciación de la línea.
             </div>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
-            disabled={cantidadCuotas === 0 || ocupado}
+            disabled={sinCalcular}
             onClick={calcular}
             type="button"
             variant="outline"
@@ -271,7 +313,7 @@ export function RefinanciacionSection({
             {simularMutation.isPending ? "Calculando..." : "Calcular total"}
           </Button>
           <Button
-            disabled={cantidadCuotas === 0 || ocupado}
+            disabled={sinCalcular}
             onClick={() => void descargarSimulacion()}
             type="button"
             variant="outline"
@@ -280,7 +322,11 @@ export function RefinanciacionSection({
           </Button>
           {editable ? (
             <Button
-              disabled={(cantidadCuotas === 0 && !hayCambios) || ocupado}
+              disabled={
+                (cantidadCuotas === 0 && !hayCambios) ||
+                ocupado ||
+                (cantidadCuotas > 0 && fechaInvalida)
+              }
               onClick={generarPdf}
               type="button"
             >
@@ -299,6 +345,8 @@ export function RefinanciacionSection({
 
 type PrestamoRefinanciacionProps = {
   canEdit: boolean;
+  /** "YYYY-MM-DD": las cuotas vencidas se marcan a esta fecha. */
+  fechaCalculo: string;
   inicialmenteAbierto: boolean;
   nrosSeleccionados: number[];
   onChange: (nros: number[]) => void;
@@ -309,6 +357,7 @@ type PrestamoRefinanciacionProps = {
 
 function PrestamoRefinanciacion({
   canEdit,
+  fechaCalculo,
   inicialmenteAbierto,
   nrosSeleccionados,
   onChange,
@@ -325,8 +374,8 @@ function PrestamoRefinanciacion({
   );
   const hoy = diaDeNegocio();
   const pendientes = useMemo(
-    () => cuotasPendientes(data?.cuotas ?? [], hoy),
-    [data, hoy],
+    () => cuotasPendientes(data?.cuotas ?? [], hoy, fechaCalculo),
+    [data, hoy, fechaCalculo],
   );
   const seleccionadas = new Set(nrosSeleccionados);
   const todas =
@@ -468,10 +517,12 @@ type CuotaPendiente = CuotaPrestamoResponse & {
   tipo: TipoCuota;
 };
 
-// Cuotas del plan sin cobrar y con saldo, de la mas vieja a la mas nueva.
+// Cuotas del plan sin cobrar y con saldo, de la mas vieja a la mas nueva. El
+// tipo (vencida, del mes, futura) va a la fecha de calculo, como en Vimarx.
 function cuotasPendientes(
   cuotas: readonly CuotaPrestamoResponse[],
   hoy: string,
+  fechaCalculo: string,
 ): CuotaPendiente[] {
   return cuotas
     .filter(
@@ -482,7 +533,7 @@ function cuotasPendientes(
         estadoCobro(cuota, hoy) !== "cobrada",
     )
     .sort((a, b) => a.nroCuota - b.nroCuota)
-    .map((cuota) => ({ ...cuota, tipo: tipoCuota(cuota.fecha, hoy) }));
+    .map((cuota) => ({ ...cuota, tipo: tipoCuota(cuota.fecha, fechaCalculo) }));
 }
 
 function tipoCuota(fecha: string | null, hoy: string): TipoCuota {
