@@ -56,11 +56,17 @@ def snapshot():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['stats','shadow','pause','preview','cutover'])
+    parser.add_argument('action', choices=['stats','shadow','pause','preview','cutover','retry'])
     parser.add_argument('--env', default='/opt/bitrix-lead-receiver/.env')
+    parser.add_argument('--lead', action='append', default=[], help='Lead ID to reactivate; repeat for a batch')
     args = parser.parse_args()
     env = read_env(args.env)
     local = 'http://127.0.0.1:8092/internal/'
+    if args.action == 'retry':
+        if not args.lead or any(not x.isdigit() or int(x)<1 for x in args.lead):
+            parser.error('retry requires positive --lead IDs')
+        print(request(local+'enqueue',env,{'leads':args.lead}))
+        return
     if args.action == 'stats':
         print(json.dumps(request(local+'stats',env),indent=2))
         return
