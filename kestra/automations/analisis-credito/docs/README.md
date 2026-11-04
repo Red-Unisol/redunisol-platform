@@ -719,6 +719,10 @@ Corrida nueva, con uno de:
 Retomar: `corrida_id` de una corrida existente. Saltea los CUILs con `ok` o
 `sin_resultado` y reintenta los `error`.
 
+Antes de retomar se repara el final de `resultado.ndjson`: un JSON completo sin
+salto de linea se conserva agregando `\n`; un fragmento JSON o UTF-8 cortado se
+descarta para volver a consultar ese CUIL. Los resultados anteriores no cambian.
+
 Opcionales: `origen` y `lanzado_por` (historial), `limite` (pruebas), `max_socios`.
 
 Los CUILs se validan por digito verificador; invalidos y repetidos no se consultan y

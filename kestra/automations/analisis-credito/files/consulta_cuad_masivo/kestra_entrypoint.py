@@ -30,7 +30,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .corrida import Ritmo, correr, cuiles_resueltos
+from .corrida import Ritmo, correr, cuiles_resueltos, reparar_final_ndjson
 from .entrada import leer_cuiles
 from .estado import EstadoKv, ahora, iso
 from .vimarx import MAX_POR_DEFECTO, ErrorVimarx, cuiles_de_lineas, nombres_de_lineas
@@ -191,6 +191,8 @@ def main(argv=None):
         escribir_json(ruta_metadata, metadata)
         sys.exit("La entrada no tiene ningun CUIL valido.")
 
+    # Tambien antes del primer conteo: el fragmento puede tener UTF-8 cortado.
+    reparar_final_ndjson(ruta_resultado)
     ejecucion = {"execution_id": args.execution_id, "inicio": iso(ahora()), "fin": None, "estado": "corriendo"}
     metadata["ejecuciones"].append(ejecucion)
     metadata["estado"] = "corriendo"

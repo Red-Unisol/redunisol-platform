@@ -47,11 +47,51 @@ def _sin_aviso(alias, estado, **campos):
     pass
 
 
+def reparar_final_ndjson(ruta):
+    """Repara solo el ultimo fragmento, antes de leer o iniciar trabajadores.
+
+    Un corte puede dejar JSON o UTF-8 incompleto. Se descarta ese fragmento
+    para volver a consultar su CUIL; un JSON completo sin LF se conserva.
+    No llamar mientras haya un escritor activo.
+    """
+    if not Path(ruta).exists():
+        return
+    with open(ruta, "r+b") as archivo:
+        fin = archivo.seek(0, 2)
+        if not fin:
+            return
+        archivo.seek(fin - 1)
+        if archivo.read(1) == b"\n":
+            return
+
+        # Buscar hacia atras sin cargar el historial entero en memoria.
+        inicio = 0
+        posicion = fin
+        while posicion:
+            anterior = max(0, posicion - 65536)
+            archivo.seek(anterior)
+            salto = archivo.read(posicion - anterior).rfind(b"\n")
+            if salto >= 0:
+                inicio = anterior + salto + 1
+                break
+            posicion = anterior
+
+        archivo.seek(inicio)
+        try:
+            json.loads(archivo.read().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            archivo.truncate(inicio)
+        else:
+            archivo.seek(0, 2)
+            archivo.write(b"\n")
+
+
 class ArchivoNdjson:
     """Append de lineas JSON, seguro entre hilos."""
 
     def __init__(self, ruta):
-        self._f = open(ruta, "a", encoding="utf-8")
+        reparar_final_ndjson(ruta)
+        self._f = open(ruta, "a", encoding="utf-8", newline="\n")
         self._lock = threading.Lock()
 
     def escribir(self, registro):
@@ -229,6 +269,7 @@ def correr(cuiles, sesiones, ruta_salida, ritmo, informar=_sin_aviso, al_avanzar
     """
     ruta_salida = Path(ruta_salida)
     ruta_salida.parent.mkdir(parents=True, exist_ok=True)
+    reparar_final_ndjson(ruta_salida)
     resueltos = cuiles_resueltos(ruta_salida)
     pendientes = [c for c in cuiles if c not in resueltos]
     print(f"{len(cuiles)} CUILs, {len(cuiles) - len(pendientes)} ya resueltos, {len(pendientes)} pendientes. "

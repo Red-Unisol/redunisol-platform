@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -145,6 +146,101 @@ class ConteosTest(unittest.TestCase):
             ruta.write_text("".join(json.dumps(l) + "\n" for l in lineas) + '{"cortada', encoding="utf-8")
             c = conteos([CUIL_A, CUIL_B, CUIL_C], ruta)
         self.assertEqual(c, {"ok": 1, "sin_resultado": 1, "error": 0, "pendientes": 1})
+
+
+class RecuperacionNdjsonTest(unittest.TestCase):
+    def test_preserva_json_completo_y_descarta_solo_el_fragmento_cortado(self):
+        previo = json.dumps({"cuil": CUIL_A, "estado": "ok"}).encode() + b"\n"
+        completo = json.dumps({"cuil": CUIL_B, "estado": "ok"}).encode()
+        for fragmento, esperado in (
+            (b"", b""),
+            (completo + b"\n", completo + b"\n"),
+            (completo, completo + b"\n"),
+            (b'{"cuil":"200', b""),
+            (b'{"nombre":"Jos\xc3', b""),
+            (b'{"nombre":"' + b"x" * 70000, b""),
+        ):
+            with self.subTest(fragmento_bytes=len(fragmento)), tempfile.TemporaryDirectory() as tmp:
+                ruta = Path(tmp) / "resultado.ndjson"
+                ruta.write_bytes(previo + fragmento)
+                corrida.reparar_final_ndjson(ruta)
+                self.assertEqual(ruta.read_bytes(), previo + esperado)
+                corrida.reparar_final_ndjson(ruta)
+                self.assertEqual(ruta.read_bytes(), previo + esperado)
+
+    def test_repara_archivo_sin_lineas_anteriores_y_admite_archivo_nuevo(self):
+        completo = json.dumps({"cuil": CUIL_A, "estado": "ok"}).encode()
+        for contenido, esperado in ((b"", b""), (b'{"cuil":', b""), (completo, completo + b"\n")):
+            with self.subTest(contenido=contenido), tempfile.TemporaryDirectory() as tmp:
+                ruta = Path(tmp) / "resultado.ndjson"
+                corrida.reparar_final_ndjson(ruta)
+                self.assertFalse(ruta.exists())
+                ruta.write_bytes(contenido)
+                corrida.reparar_final_ndjson(ruta)
+                self.assertEqual(ruta.read_bytes(), esperado)
+
+    def test_escritor_agrega_resultado_legible_y_usa_lf(self):
+        previo = json.dumps({"cuil": CUIL_A, "estado": "ok"}).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "resultado.ndjson"
+            ruta.write_bytes(previo)
+            archivo = corrida.ArchivoNdjson(ruta)
+            try:
+                archivo.escribir({"cuil": CUIL_B, "estado": "ok", "nombre": "José"})
+            finally:
+                archivo.cerrar()
+            self.assertEqual([r["cuil"] for r in leer_ndjson(ruta)], [CUIL_A, CUIL_B])
+            self.assertTrue(ruta.read_bytes().startswith(previo + b"\n"))
+            self.assertNotIn(b"\r\n", ruta.read_bytes())
+
+    def test_reanudacion_consulta_solo_pendientes_y_conserva_resultados(self):
+        previo = json.dumps({"cuil": CUIL_A, "estado": "ok"}).encode() + b"\n"
+        completo = json.dumps({"cuil": CUIL_B, "estado": "sin_resultado"}).encode()
+        for fragmento, esperados in (
+            (b'{"cuil":"200', [CUIL_B, CUIL_C]),
+            (b'{"nombre":"Jos\xc3', [CUIL_B, CUIL_C]),
+            (completo, [CUIL_C]),
+        ):
+            with self.subTest(fragmento=fragmento), tempfile.TemporaryDirectory() as tmp:
+                salida = Path(tmp) / "resultado.ndjson"
+                salida.write_bytes(previo + fragmento)
+                with mock.patch.object(corrida, "consultar", side_effect=consulta_ok) as consultar:
+                    restantes = corrida.correr(
+                        [CUIL_A, CUIL_B, CUIL_C], [SesionFalsa("A")], salida, SIN_PAUSAS)
+                self.assertEqual([call.args[1] for call in consultar.call_args_list], esperados)
+                self.assertEqual(restantes, 0)
+                self.assertEqual(conteos([CUIL_A, CUIL_B, CUIL_C], salida)["pendientes"], 0)
+                self.assertEqual(len(leer_ndjson(salida)), 3)
+                self.assertTrue(salida.read_bytes().startswith(previo))
+
+    def test_entrypoint_repara_utf8_antes_del_primer_conteo(self):
+        from consulta_cuad_masivo import kestra_entrypoint
+        with tempfile.TemporaryDirectory() as tmp:
+            carpeta = Path(tmp)
+            (carpeta / "entrada.json").write_text(json.dumps([CUIL_A, CUIL_B]), encoding="utf-8")
+            (carpeta / "metadata.json").write_text(json.dumps({"ejecuciones": [], "total": 2}), encoding="utf-8")
+            salida = carpeta / "resultado.ndjson"
+            previo = json.dumps({"cuil": CUIL_A, "estado": "ok"}).encode() + b"\n"
+            salida.write_bytes(previo + b'{"nombre":"Jos\xc3')
+            captcha_falso = types.ModuleType("consulta_cuad_masivo.captcha")
+            captcha_falso.LectorCaptcha = mock.Mock()
+            with (
+                mock.patch.dict("os.environ", {"CUAD_USUARIO_A": "ua", "CUAD_PASSWORD_A": "pa"}, clear=True),
+                mock.patch.dict(sys.modules, {captcha_falso.__name__: captcha_falso}),
+                mock.patch("consulta_cuad_masivo.sesion.SesionCuad", side_effect=lambda alias, *_: SesionFalsa(alias)),
+                mock.patch.object(kestra_entrypoint, "EstadoKv"),
+                mock.patch.object(kestra_entrypoint, "Ritmo", return_value=SIN_PAUSAS),
+                mock.patch.object(kestra_entrypoint.signal, "signal"),
+                mock.patch.object(corrida, "consultar", side_effect=consulta_ok) as consultar,
+                self.assertRaises(SystemExit) as salida_proceso,
+            ):
+                kestra_entrypoint.main(["--carpeta", str(carpeta), "--corrida-id", "reanudar"])
+            self.assertEqual(salida_proceso.exception.code, 0)
+            self.assertEqual([call.args[1] for call in consultar.call_args_list], [CUIL_B])
+            metadata = json.loads((carpeta / "metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual((metadata["estado"], metadata["ok"], metadata["pendientes"]), ("terminada", 2, 0))
+            self.assertEqual(len(leer_ndjson(salida)), 2)
+            self.assertTrue(salida.read_bytes().startswith(previo))
 
 
 class CorridaTest(unittest.TestCase):
