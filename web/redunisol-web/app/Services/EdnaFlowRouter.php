@@ -131,9 +131,12 @@ class EdnaFlowRouter
         }
         $request = $payload['replyOutMessageExternalRequestId'] ?? null;
         $outgoing = $payload['replyOutMessageId'] ?? null;
-        $send = $request ? DB::table('edna_flow_sends')->where('request_id', $request)->lockForUpdate()->first() : null;
+        $transport = app(EdnaFlowTransport::class);
+        $found = $request ? $transport->find((string) $request) : null;
+        $send = $found ? DB::table('edna_flow_sends')->where('id', $found->id)->lockForUpdate()->first() : null;
         if (! $send || ! $send->recipient || ! $outgoing || $send->subject_id !== $event->subject_id
-                || ($send->flow_id !== self::FLOW_ID && ! (new EdnaIntake)->canSend($send))
+            || ! $transport->matches($send, (string) $request)
+            || ($send->flow_id !== self::FLOW_ID && ! (new EdnaIntake)->canSend($send))
             || ! hash_equals(Crypt::decryptString($send->recipient), $payload['subscriber']['identifier'])) {
             $this->record($event->id, 'unmatched_response');
 
@@ -161,15 +164,24 @@ class EdnaFlowRouter
         }
 
         return ['send_id' => (int) $send->id, 'flow_id' => $send->flow_id, 'request_id' => $send->request_id,
+            'transport_request_id' => $transport->id($send),
             'outgoing_message_id' => $send->outgoing_message_id, 'verified' => true];
     }
 
     public function complete(object $event, array $context): void
     {
-        DB::table('edna_flow_sends')->where('id', $context['send_id'])->update([
-            'state' => 'completed', 'response_event_id' => $event->id,
-            'completed_at' => now(), 'updated_at' => now(),
-        ]);
+        $send = DB::table('edna_flow_sends')->where('id', $context['send_id'])->lockForUpdate()->first();
+        $transport = app(EdnaFlowTransport::class);
+        $expected = $context['transport_request_id'] ?? $context['request_id'] ?? null;
+        if (! $send || ! $transport->matches($send, $expected)
+            || $send->request_id !== ($context['request_id'] ?? null)
+            || $send->outgoing_message_id !== ($context['outgoing_message_id'] ?? null)
+            || ! $transport->update($send, ['confirmed', 'completed'], [
+                'state' => 'completed', 'response_event_id' => $event->id,
+                'completed_at' => now(), 'updated_at' => now(),
+            ])) {
+            throw new RuntimeException('Edna Flow transport changed before response completion.');
+        }
         $this->record($event->id, 'verified_response', $context['send_id']);
     }
 

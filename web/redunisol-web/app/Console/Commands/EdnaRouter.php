@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\ReconcileEdnaFlow;
+use App\Services\EdnaFlowTransport;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -38,7 +39,7 @@ class EdnaRouter extends Command
 
             return self::FAILURE;
         }
-        Queue::connection('edna')->push(new ReconcileEdnaFlow($send->id), '', 'edna');
+        Queue::connection('edna')->push(new ReconcileEdnaFlow($send->id, app(EdnaFlowTransport::class)->id($send)), '', 'edna');
         $this->info('History reconciliation queued; no Flow will be sent.');
 
         return self::SUCCESS;
