@@ -49,6 +49,14 @@ class ReceiveEdnaInKestra implements ShouldQueue
                 }
                 $payload = json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR);
                 (new BitrixChatResponseQueue)->capture($event, $payload);
+                if ((new EdnaIntake)->receiveEntry($event, $payload)) {
+                    DB::table('edna_incoming_events')->where('id', $event->id)->update([
+                        'status' => 'delivered', 'outcome' => 'unified_intake_entry',
+                        'delivered_at' => now(), 'updated_at' => now(),
+                    ]);
+
+                    return;
+                }
                 if ((new EdnaIntake)->receive($event, $payload)) {
                     DB::table('edna_incoming_events')->where('id', $event->id)->update([
                         'status' => 'delivered', 'outcome' => 'website_intake',

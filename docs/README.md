@@ -22,6 +22,7 @@ Documentacion tecnica transversal de la repo.
 - `journey-data.md`: captura del recorrido web/WhatsApp/Kestra/CRM en volumen dedicado, límites de I/O y exportación JSONL autenticada para Marketing e IA
 - `redunisol-web-production-cutover.md`: runbook de corte productivo de `redunisol.com.ar`, preservando mail en la VPS anterior
 - `whatsapp-out-of-hours.md`: aviso de Ventas fuera de horario, edición de Marketing, recuperación y activación coordinada con Bitrix
+- `whatsapp-unified-intake.md`: intake de todo el canal de Ventas, vínculo comprobable con el prospecto original, compatibilidad y despliegue
 
 ## Cuando agregar un documento nuevo
 

@@ -50,16 +50,17 @@ class ReconcileEdnaFlow implements ShouldQueue
                 if (($message['comment'] ?? null) !== $send->request_id) {
                     continue;
                 }
-                $content = $message['content'] ?? null;
-                $content = is_string($content) ? json_decode($content, true) : $content;
                 if (($message['direction'] ?? '') !== 'OUT' || ($message['channelType'] ?? '') !== 'WHATSAPP'
                     || (string) ($message['subjectId'] ?? '') !== $send->subject_id
                     || (string) ($message['cascadeId'] ?? '') !== $send->cascade_id
-                    || ($message['address'] ?? '') !== $phone || ($content['type'] ?? '') !== 'FLOW'
-                    || (string) ($content['flowId'] ?? '') !== $send->flow_id
+                    || ($message['address'] ?? '') !== $phone
                     || (! is_int($message['messageId'] ?? null) && ! is_string($message['messageId'] ?? null))
-                    || ! preg_match('/^[0-9]{1,64}$/D', (string) ($message['messageId'] ?? ''))) {
+                    || ! preg_match('/^[0-9]{1,64}$/D', (string) ($message['messageId'] ?? ''))
+                    || ($send->outgoing_message_id !== null && $send->outgoing_message_id !== (string) $message['messageId'])) {
                     throw new RuntimeException('Edna history does not match the recorded send.');
+                }
+                if (isset($matches[(string) $message['messageId']]) && $matches[(string) $message['messageId']] !== $message) {
+                    throw new RuntimeException('Edna history contains conflicting message records.');
                 }
                 $matches[(string) $message['messageId']] = $message;
             }
@@ -68,9 +69,17 @@ class ReconcileEdnaFlow implements ShouldQueue
             }
             $message = array_values($matches)[0];
             if (in_array($message['deliveryStatus'] ?? '', ['INVALID', 'FAILED', 'UNDELIVERED', 'CANCELLED'], true)) {
+                // Provider rejection can omit the Flow body. The exact send identity
+                // above proves this failed attempt without implying delivery.
                 $state = 'rejected';
                 $reason = 'outgoing_not_delivered';
             } elseif (in_array($message['deliveryStatus'] ?? '', ['SENT', 'DELIVERED', 'READ'], true)) {
+                $content = $message['content'] ?? null;
+                $content = is_string($content) ? json_decode($content, true) : $content;
+                if (! is_array($content) || ($content['type'] ?? '') !== 'FLOW'
+                    || (string) ($content['flowId'] ?? '') !== $send->flow_id) {
+                    throw new RuntimeException('Edna history does not match the recorded Flow.');
+                }
                 $state = 'confirmed';
                 $reason = null;
             } else {
