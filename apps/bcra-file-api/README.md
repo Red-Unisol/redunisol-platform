@@ -129,6 +129,20 @@ cookies ni campos de sesión. Requiere la aceptación del operador
 El registro público devolvió `result: null` en las verificaciones del 21–23/10;
 se conserva esa advertencia, mientras una negativa explícita impide descargar.
 
+Los campos ocultos del catálogo, incluido `sessionid`, se renuevan **antes de
+cada descarga**, también después de construir la base mensual. No se reutiliza
+una sesión obtenida media hora antes. Se vuelve a registrar la aceptación con
+esa sesión y se pide exactamente el mismo nombre, tipo y período elegidos al
+iniciar el job. Si el catálogo ya retiró ese archivo, el job falla sin mezclar
+períodos ni sustituir silenciosamente el padrón por uno más reciente.
+
+Si MFT devuelve HTML u otra respuesta sin firma 7z, o HTTP 401/403, se renueva
+el catálogo y se reintenta, con un máximo de tres intentos por archivo. Una
+negativa explícita a las condiciones, una descarga truncada o los límites de
+tiempo/disco/tamaño siguen deteniendo el job. No se registran el formulario,
+la respuesta HTML ni los enlaces de sesión. Esta recuperación no inicia trabajo
+fuera de la ventana nocturna.
+
 Se descargan y calculan los SHA-256 de los seis comprimidos **cada noche**,
 para detectar cambios que conserven el nombre. Si no cambian, se omite toda la
 importación. No se confía en metadatos remotos no verificados.

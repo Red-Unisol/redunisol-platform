@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from bcra_file_api.config import Config
@@ -103,6 +104,15 @@ class FormatTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_catalog_requests_fresh_session_instead_of_cached_html(self):
+        client = SourceClient(Config(Path("unused"), "x" * 32))
+        response = io.BytesIO(catalog_html().encode())
+        with patch.object(client.opener, "open", return_value=response) as request:
+            assets = client.catalog()
+        self.assertEqual(len(assets), 3)
+        self.assertEqual(request.call_args.args[0].get_header("Cache-control"), "no-cache")
+        self.assertEqual(request.call_args.args[0].get_header("Pragma"), "no-cache")
+
     def test_current_official_concatenated_links_and_hidden_form_are_parsed(self):
         assets = parse_catalog(catalog_html("202607") + catalog_html())
         self.assertEqual([asset.kind for asset in assets], ["DEUDORES", "INFRET", "INFRETPA"])
@@ -130,6 +140,7 @@ class DownloadTests(unittest.TestCase):
         self.asset = Asset("202608DEUDORES.7Z", "DEUDORES", PERIOD,
                            "https://mft.bcra.gob.ar/apilink.aspx", {"password": "private-fixture"})
         self.target = self.root / self.asset.name
+        self.catalog_mock = self.enterContext(patch.object(SourceClient, "catalog", return_value=[self.asset]))
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -150,6 +161,119 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), payload)
         self.assertEqual(result["bytes"], len(payload))
         self.assertNotIn("private", json.dumps(result))
+        self.catalog_mock.assert_called_once_with()
+
+    def test_download_renews_stale_form_and_link_before_requesting_exact_file(self):
+        client = SourceClient(self.config)
+        fresh = replace(self.asset, url="https://mft.bcra.gob.ar/renewed-link",
+                        form={"sessionid": "fresh-private-session"})
+        self.catalog_mock.return_value = [fresh]
+        payload = b"7z\xbc\xaf\x27\x1cfixture"
+        with patch.object(client, "acknowledge_terms", return_value="accepted") as terms, \
+                patch.object(client.opener, "open", return_value=self.response(payload)) as request:
+            result = client.download(self.asset, self.target)
+        terms.assert_called_once_with(fresh)
+        self.assertEqual(request.call_args.args[0].full_url, fresh.url)
+        self.assertEqual(request.call_args.args[0].data, b"sessionid=fresh-private-session")
+        self.assertNotIn("fresh-private-session", json.dumps(result))
+        self.assertNotIn("renewed-link", json.dumps(result))
+
+    def test_html_response_retries_with_new_catalog_form_and_terms(self):
+        client = SourceClient(self.config)
+        first = replace(self.asset, form={"sessionid": "first-private-session"})
+        second = replace(self.asset, form={"sessionid": "second-private-session"})
+        self.catalog_mock.side_effect = [[first], [second]]
+        payload = b"7z\xbc\xaf\x27\x1cfixture"
+        with patch.object(client, "acknowledge_terms", return_value="accepted") as terms, \
+                patch.object(client.opener, "open", side_effect=[
+                    self.response(b"<html>Session expired; secret-url</html>"), self.response(payload),
+                ]) as request, patch("bcra_file_api.source.time.sleep"):
+            result = client.download(self.asset, self.target)
+        self.assertEqual([call.args[0] for call in terms.call_args_list], [first, second])
+        self.assertEqual([call.args[0].data for call in request.call_args_list],
+                         [b"sessionid=first-private-session", b"sessionid=second-private-session"])
+        self.assertEqual(self.target.read_bytes(), payload)
+        self.assertEqual(result["bytes"], len(payload))
+        self.assertNotIn("private-session", json.dumps(result))
+
+    def test_repeated_html_is_bounded_and_does_not_expose_response_or_session(self):
+        client = SourceClient(self.config)
+        with patch.object(client, "acknowledge_terms", return_value="accepted"), \
+                patch.object(client.opener, "open", side_effect=[
+                    self.response(b"<html>secret-session-and-url</html>") for _ in range(3)
+                ]) as request, patch("bcra_file_api.source.time.sleep"), \
+                self.assertRaisesRegex(SourceError, "after renewing the catalog session") as error:
+            client.download(self.asset, self.target)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(self.catalog_mock.call_count, 3)
+        self.assertNotIn("secret", str(error.exception))
+        self.assertNotIn("private-fixture", str(error.exception))
+        self.assertFalse(self.target.exists())
+
+    def test_http_authentication_failure_renews_session_before_retry(self):
+        payload = b"7z\xbc\xaf\x27\x1cfixture"
+        for code in [401, 403]:
+            with self.subTest(code=code):
+                client = SourceClient(self.config)
+                self.catalog_mock.reset_mock()
+                with patch.object(client, "acknowledge_terms", return_value="accepted"), \
+                        patch.object(client.opener, "open", side_effect=[
+                            HTTPError("https://private-session.invalid", code, "secret", {}, io.BytesIO()),
+                            self.response(payload),
+                        ]), patch("bcra_file_api.source.time.sleep"):
+                    client.download(self.asset, self.target)
+                self.assertEqual(self.catalog_mock.call_count, 2)
+                self.assertEqual(self.target.read_bytes(), payload)
+
+    def test_catalog_rollover_never_substitutes_another_month_or_padron(self):
+        client = SourceClient(self.config)
+        padron = Asset("20261030PADRON.7Z", "PADRON", "20261030", "unused")
+        variants = [(self.asset, replace(self.asset, name="202609DEUDORES.7Z", period="202609")),
+                    (self.asset, replace(self.asset, period="202609")),
+                    (self.asset, padron),
+                    (padron, replace(padron, name="20261104PADRON.7Z", period="20261104"))]
+        for requested, fresh in variants:
+            with self.subTest(kind=fresh.kind, period=fresh.period):
+                self.catalog_mock.return_value = [fresh]
+                with patch.object(client.opener, "open") as request, \
+                        self.assertRaisesRegex(SourceError, "no longer in the current catalog"):
+                    client.download(requested, self.target)
+                request.assert_not_called()
+        self.assertFalse(self.target.exists())
+
+    def test_repeated_http_denial_stops_after_three_attempts_without_leaking_url(self):
+        client = SourceClient(self.config)
+        with patch.object(client, "acknowledge_terms", return_value="accepted"), \
+                patch.object(client.opener, "open", side_effect=[
+                    HTTPError("https://secret-session.invalid", 403, "secret", {}, io.BytesIO())
+                    for _ in range(3)
+                ]) as request, patch("bcra_file_api.source.time.sleep"), \
+                self.assertRaisesRegex(SourceError, "MFT denied") as error:
+            client.download(self.asset, self.target)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(self.catalog_mock.call_count, 3)
+        self.assertNotIn("secret", str(error.exception))
+        self.assertFalse(self.target.exists())
+
+    def test_expired_nightly_budget_prevents_download_and_retry(self):
+        client = SourceClient(self.config, deadline=0)
+        with patch.object(client, "acknowledge_terms", return_value="accepted"), \
+                patch.object(client.opener, "open") as request, \
+                patch("bcra_file_api.source.time.sleep") as sleep, \
+                self.assertRaisesRegex(SourceError, "nightly window"):
+            client.download(self.asset, self.target)
+        request.assert_not_called()
+        sleep.assert_not_called()
+        self.assertFalse(self.target.exists())
+
+    def test_explicit_terms_denial_is_not_retried(self):
+        client = SourceClient(self.config)
+        with patch.object(client.opener, "open", return_value=self.response(b'{"result":false}')) as request, \
+                self.assertRaisesRegex(SourceError, "did not acknowledge"):
+            client.download(self.asset, self.target)
+        self.assertEqual(request.call_count, 1)
+        self.catalog_mock.assert_called_once_with()
+        self.assertFalse(self.target.exists())
 
     def test_html_200_truncation_and_oversize_are_rejected(self):
         for body, length, limit in [
@@ -159,7 +283,9 @@ class DownloadTests(unittest.TestCase):
         ]:
             client = SourceClient(replace(self.config, max_download_bytes=limit))
             client.acknowledge_terms = lambda asset: None
-            with patch.object(client.opener, "open", return_value=self.response(body, length)):
+            responses = [self.response(body, length) for _ in range(3)]
+            with patch.object(client.opener, "open", side_effect=responses), \
+                    patch("bcra_file_api.source.time.sleep"):
                 with self.assertRaises(SourceError):
                     client.download(self.asset, self.target)
             self.assertFalse(self.target.exists())
@@ -181,7 +307,7 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual(client.acknowledge_terms(self.asset), "null_response")
         with patch.object(client.opener, "open", side_effect=[
             self.response(b'{"result":null}'), self.response(b"<html>Login</html>")
-        ]):
+        ] * 3), patch("bcra_file_api.source.time.sleep"):
             with self.assertRaises(SourceError):
                 client.download(self.asset, self.target)
         self.assertFalse(self.target.exists())
@@ -191,6 +317,7 @@ class DownloadTests(unittest.TestCase):
         with patch.object(client.opener, "open") as call, self.assertRaises(SourceError):
             client.download(self.asset, self.target)
         call.assert_not_called()
+        self.catalog_mock.assert_not_called()
 
 
 class StoreTests(unittest.TestCase):
