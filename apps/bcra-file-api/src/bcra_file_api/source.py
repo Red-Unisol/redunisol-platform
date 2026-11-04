@@ -11,6 +11,7 @@ import time
 import shutil
 from datetime import datetime
 from urllib.parse import urlencode, urlsplit
+from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from .config import Config
@@ -18,6 +19,10 @@ from .config import Config
 
 class SourceError(RuntimeError):
     """Messages must not include download URLs, cookies or form credentials."""
+
+
+class _ArchiveSessionError(SourceError):
+    """A non-archive response may mean that the catalog session has expired."""
 
 
 def check_deadline(deadline: float | None) -> None:
@@ -123,7 +128,9 @@ class SourceClient:
 
     def catalog(self) -> list[Asset]:
         try:
-            request = Request(self.config.catalog_url, headers={"User-Agent": "Mozilla/5.0"})
+            request = Request(self.config.catalog_url, headers={
+                "User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache", "Pragma": "no-cache",
+            })
             with self.opener.open(request, timeout=request_timeout(self.config, self.deadline)) as response:
                 body = response.read(2_000_001)
             if len(body) > 2_000_000:
@@ -164,14 +171,22 @@ class SourceClient:
     def download(self, asset: Asset, target: Path) -> dict:
         if not self.config.terms_accepted:
             raise SourceError("BCRA terms must be accepted by the operator before downloading")
-        terms_log_result = self.acknowledge_terms(asset)
         # Use the official form's POST, including its hidden fields. A GET can return
         # an HTML login page with HTTP 200 instead of the archive.
         for attempt in range(3):
             try:
+                # The hidden sessionid can expire during the monthly SQLite build.
+                # Renew it before every download/retry, but keep the exact file:
+                # never mix a newer monthly period or name publication into this job.
+                fresh = next((candidate for candidate in self.catalog()
+                              if (candidate.name, candidate.kind, candidate.period)
+                              == (asset.name, asset.kind, asset.period)), None)
+                if fresh is None:
+                    raise SourceError("BCRA archive is no longer in the current catalog; retry on the next scheduled refresh")
+                terms_log_result = self.acknowledge_terms(fresh)
                 request = Request(
-                    asset.url,
-                    data=urlencode(asset.form).encode("utf-8"),
+                    fresh.url,
+                    data=urlencode(fresh.form).encode("utf-8"),
                     headers={
                         "User-Agent": "Mozilla/5.0",
                         "Referer": self.config.catalog_url,
@@ -184,7 +199,7 @@ class SourceClient:
                 with self.opener.open(request, timeout=request_timeout(self.config, self.deadline)) as response, target.open("wb") as output:
                     signature = response.read(6)
                     if signature != b"7z\xbc\xaf\x27\x1c":
-                        raise SourceError("BCRA returned no 7z archive; verify MFT access and accepted terms")
+                        raise _ArchiveSessionError("BCRA returned no 7z archive after renewing the catalog session; verify MFT access and accepted terms")
                     output.write(signature)
                     digest.update(signature)
                     total = len(signature)
@@ -204,10 +219,18 @@ class SourceClient:
                         "bytes": total, "terms_log_result": terms_log_result}
             except Exception as exc:
                 target.unlink(missing_ok=True)
-                if isinstance(exc, SourceError):
+                if isinstance(exc, _ArchiveSessionError):
+                    if attempt == 2:
+                        raise SourceError(str(exc)) from None
+                elif isinstance(exc, HTTPError) and exc.code in (401, 403):
+                    exc.close()
+                    if attempt == 2:
+                        raise SourceError("BCRA MFT denied the download after renewing the catalog session") from None
+                elif isinstance(exc, SourceError):
                     raise
-                if attempt == 2:
+                elif attempt == 2:
                     raise SourceError("BCRA archive download failed after three attempts") from None
+                check_deadline(self.deadline)
                 time.sleep(2 ** attempt)
         raise AssertionError("unreachable")
 
