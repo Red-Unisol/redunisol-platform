@@ -224,7 +224,7 @@ def build_prequalification_input_from_lead(
 
     # Outside ANSES and the eligible Buenos Aires profiles, only the explicit
     # assisted Caja route allows an absent payment bank.
-    if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake"}
+    if (lead.get("UF_CRM_WA_SUBFLOW") in {"jubilados_cordoba_continuidad", "website_single_intake", "whatsapp_single_intake"}
             and lead.get("UF_CRM_WA_ORGANISMO") == "caja_cordoba"
             and not lead.get(config.fields.lead_payment_bank)):
         if employment.key == "jubilado_provincial" and province.key == "cordoba":

@@ -1,4 +1,4 @@
-"""Authenticated website-origin intake; all business outcomes retain a lead."""
+"""Authenticated WhatsApp intake, retaining readable website-only contracts."""
 import os
 import re
 from datetime import datetime
@@ -6,6 +6,7 @@ from datetime import datetime
 from edna_incoming.intake import VERSION, normalize_answer
 from edna_incoming.test_reference import TEST_CONTRACT, TEST_REFERENCE
 from .attribution import normalize_attribution
+from .intake_context import CHANNEL_CONTRACT, validate_channel_context
 from .whatsapp_intake_crm import persist
 
 
@@ -15,7 +16,7 @@ class InvalidIntake(ValueError):
 
 def process(payload, *, env=None, client=None):
     try:
-        if not isinstance(payload, dict) or payload.get("contract") not in {VERSION, TEST_CONTRACT}:
+        if not isinstance(payload, dict) or payload.get("contract") not in {VERSION, TEST_CONTRACT, CHANNEL_CONTRACT}:
             raise ValueError("Invalid WhatsApp intake contract.")
         source = dict(os.environ if env is None else env)
         flow_id = source.get("EDNA_INTAKE_FLOW_ID", "")
@@ -24,7 +25,10 @@ def process(payload, *, env=None, client=None):
                 or payload.get("flow_id") not in accepted):
             raise ValueError("A dedicated published intake Flow is required.")
         attribution = normalize_attribution(payload.get("attribution"))
-        if (not attribution or attribution.get("status") != "resolved" or not attribution.get("journey_id")
+        channel = payload["contract"] == CHANNEL_CONTRACT
+        if channel:
+            validate_channel_context(payload, source, attribution)
+        elif (not attribution or attribution.get("status") != "resolved" or not attribution.get("journey_id")
                 or attribution.get("wa", {}).get("WA_ENTRY") != "website"):
             raise ValueError("A verified website journey is required.")
         attributed_flow = attribution.get("wa", {}).get("WA_FLOW_ID")
@@ -35,7 +39,7 @@ def process(payload, *, env=None, client=None):
         reference = payload.get("test_reference")
         if reference not in (None, TEST_REFERENCE) or attribution.get("test_reference") != reference:
             raise ValueError("The test reference must match the saved intake journey.")
-        if payload["contract"] != (TEST_CONTRACT if reference else VERSION):
+        if not channel and payload["contract"] != (TEST_CONTRACT if reference else VERSION):
             raise ValueError("The intake contract must match the saved test mode.")
         ack_version = payload.get("acknowledgement_version", 1)
         if isinstance(ack_version, bool) or ack_version not in {1, 2}:
