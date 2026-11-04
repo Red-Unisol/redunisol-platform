@@ -94,7 +94,11 @@ export class ComprobanteRefinanciacionService {
 
     const titular = solicitud.titular;
     const socioLegacyId = await this.findSocioLegacyId.execute(titular);
-    const fecha = fechaArgentina(input.fecha ?? this.hoy());
+    const hoy = this.hoy();
+    const fecha = fechaArgentina(input.fecha ?? hoy);
+    // El plan de Vimarx viene calculado a hoy. Con otra fecha de calculo cada
+    // renglon se calcula a esa fecha.
+    const fechaCalculo = input.fecha && input.fecha !== hoy ? input.fecha : null;
     const comprobantes: ComprobanteRefinanciacion[] = [];
 
     for (const item of input.prestamos) {
@@ -111,7 +115,7 @@ export class ComprobanteRefinanciacionService {
       );
 
       comprobantes.push({
-        cuotas: cuotasDelComprobante(item, plan),
+        cuotas: cuotasDelComprobante(item, plan, fechaCalculo),
         documento: titular.nroDocumento?.trim() || titular.cuit?.trim() || "-",
         domicilio:
           [titular.domicilioCalle, titular.nroPuerta]
@@ -146,6 +150,7 @@ const CARGO_MAXIMO = 0.03;
 function cuotasDelComprobante(
   item: ComprobanteRefinanciacionInput["prestamos"][number],
   plan: Map<number, CuotaPrestamoLegacy>,
+  fechaCalculo: string | null,
 ): ComprobanteRefinanciacionCuota[] {
   const ordenadas = [...item.cuotas].sort((a, b) => a.nroCuota - b.nroCuota);
   const filas = ordenadas.map((cobrada) => {
@@ -162,8 +167,10 @@ function cuotasDelComprobante(
     }
 
     const saldo = cuota.saldoCuota;
-    const aCobrar = cuota.saldoCuotaConPunitorios;
     const capital = Math.min(cuota.capital ?? saldo, saldo);
+    const aCobrar = fechaCalculo
+      ? aCobrarALaFecha(cuota, cobrada, fechaCalculo, item.prestamoId)
+      : cuota.saldoCuotaConPunitorios;
 
     return {
       capital: redondear(capital),
@@ -193,6 +200,50 @@ function cuotasDelComprobante(
   }
 
   return filas;
+}
+
+/**
+ * Lo que Vimarx cobra de la cuota a la fecha de calculo, con las mismas reglas
+ * que aplica a hoy en SaldoCuotaConPunitorios (verificado en FapiTest el
+ * 4/11/2026, prestamo 418720, y en prod con el 435844):
+ *
+ * - vencida a esa fecha: el saldo mas los punitorios a esa fecha. Vimarx los
+ *   informa en el cobro sumados a los que ya se pagaron, que se descuentan;
+ * - vence en el mismo mes: el saldo entero;
+ * - vence en un mes posterior: solo lo que queda de capital (el interes se
+ *   bonifica). Ej.: la cuota que vence el 30/11 calculada al 31/10.
+ *
+ * Si no cierra con el TotalPago, el comprobante no se arma (ver abajo).
+ */
+function aCobrarALaFecha(
+  cuota: CuotaPrestamoLegacy,
+  cobrada: CuotaCobradaLegacy,
+  fechaCalculo: string,
+  prestamoId: string,
+) {
+  const saldo = cuota.saldoCuota ?? 0;
+  const vencimiento = (cobrada.fechaVto ?? cuota.fecha ?? "").slice(0, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimiento)) {
+    throw new SolicitudRefinanciacionInvalidaError(
+      `No se pudo armar el comprobante: falta el vencimiento de la cuota ${cobrada.nroCuota} del préstamo ${prestamoId} en Vimarx.`,
+    );
+  }
+
+  if (vencimiento < fechaCalculo) {
+    const punitorios = cobrada.punitoriosPagados - (cuota.punitoriosPagos ?? 0);
+
+    return saldo + Math.max(0, punitorios);
+  }
+
+  if (vencimiento.slice(0, 7) === fechaCalculo.slice(0, 7)) {
+    return saldo;
+  }
+
+  return Math.min(
+    cuota.saldoCuotaCapital ?? cuota.capital ?? saldo,
+    saldo,
+  );
 }
 
 // "2026-09-30" o "2026-09-30T00:00:00" -> "30/09/2026".
