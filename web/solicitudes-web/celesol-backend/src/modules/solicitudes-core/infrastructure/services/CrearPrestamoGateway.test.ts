@@ -54,6 +54,29 @@ describe("CrearPrestamoGateway", () => {
     });
   });
 
+  it("sends the selected date as editable FechaPrimerVto after all recalculating fields", async () => {
+    const bodies: string[] = [];
+    const gateway = new CrearPrestamoGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },
+      async (_input, init) => {
+        bodies.push(String(init?.body));
+        return { json: async () => ({ ID: 42, Ok: true }), ok: true };
+      },
+    );
+    const base = {
+      cuotas: 12, fechaEmision: "2026-11-05",
+      integrantes: [{ socio: "77", tipoRelacion: "Titular" as const }],
+      lineaPrestamo: "2771", montoDeseado: 230000, vendedor: "92", destino: "61",
+    };
+    await gateway.crear({ ...base, fechaPrimerVencimiento: "2026-12-31" });
+    await gateway.crear(base);
+    const campos = JSON.parse(bodies[0]).campos;
+    assert.equal(campos.FechaPrimerVto, "2026-12-31");
+    assert.equal(Object.keys(campos).at(-1), "FechaPrimerVto");
+    assert.equal("PrimerVencimiento" in campos, false);
+    assert.equal("FechaPrimerVto" in JSON.parse(bodies[1]).campos, false);
+  });
+
   // El legado aplica `campos` en el orden en que llega, y asignar LineaPrestamo
   // resetea Cuotas al minimo de la linea. deepEqual sobre el body parseado NO
   // detecta un reordenamiento (JSON.parse pierde el orden), asi que esto se

@@ -12,6 +12,7 @@ function fixture() {
   let row = {
     id: "sol-1", legacyOid: null as string | null, estadoActualId: "confirmed", updatedAt: new Date("2026-10-26T00:00:00Z"),
     archivedAt: null, montoAFinanciar: 500000, cuotas: 12, lineaPrestamoLegacyOid: "55",
+    fechaPrimerVencimiento: null as string | null,
     lineaPrestamoDescripcion: "Línea", lineaPrestamoCodigoMutual: null as string | null, linkFirmaDigital: null as string | null,
     administrativeCoreControl: {} as Record<string, unknown>, titular: { nroDocumento: "12345678" },
     estadoActual: { id: "confirmed", code: "Confirmada", name: "Confirmada", ownerId: "risk", owner: { id: "risk", code: "RIESGO", name: "Riesgo" } },
@@ -84,6 +85,52 @@ it("reserves durably before calling Core, links without changing state, audits a
   await f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor });
   assert.equal(f.calls(), 1);
   assert.equal(f.notifications.length, 1);
+});
+
+it("rejects a prepared request that omits or changes the saved due date before contacting Core", async () => {
+  const f = fixture();
+  f.mutate({ fechaPrimerVencimiento: "2026-12-31" });
+  f.prepared.solicitud.fechaPrimerVencimiento = "2026-12-31";
+  await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /condiciones cambiaron/);
+  assert.equal(f.calls(), 0);
+});
+
+it("keeps a generated loan reserved when its date differs or is missing, and recovers only the verified date without generating again", async () => {
+  for (const actual of ["2026-11-30", null]) {
+    const f = fixture();
+    f.mutate({ fechaPrimerVencimiento: "2026-12-31" });
+    f.prepared.solicitud.fechaPrimerVencimiento = "2026-12-31";
+    f.prepared.coreInput.fechaPrimerVencimiento = "2026-12-31";
+    const snapshot = f.deps.loanSnapshot;
+    f.deps.loanSnapshot = async (...args) => ({ ...(await snapshot(...args))!, primerVencimiento: actual });
+    await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /vencimiento.*no coincide/);
+    assert.equal(f.row().legacyOid, null);
+    assert.equal(f.notifications.length, 0);
+    const pending = f.row().administrativeCoreControl.generationPending as { status: string; newLoanId: string; requestId: string };
+    assert.equal(pending.status, "CREATED");
+    assert.equal(pending.newLoanId, "444");
+    await assert.rejects(f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor }), /generación.*incierto/);
+    const recovery = { requestId: pending.requestId, expectedUpdatedAt: f.row().updatedAt.toISOString(), newLoanId: "444", reason: "Vencimiento verificado en Vimarx" };
+    const admin = { ...f.actor, id: "admin", isSystemAdmin: true };
+    await assert.rejects(f.service.recover("sol-1", admin, recovery), /vencimiento.*no coincide/);
+    f.deps.loanSnapshot = async (...args) => ({ ...(await snapshot(...args))!, primerVencimiento: "2026-12-31T00:00:00-03:00" });
+    await f.service.recover("sol-1", admin, recovery);
+    assert.equal(f.row().legacyOid, "444");
+    assert.equal(f.notifications.length, 1);
+    assert.equal(f.calls(), 1);
+  }
+});
+
+it("links normally when Vimarx confirms the saved due date", async () => {
+  const f = fixture();
+  f.mutate({ fechaPrimerVencimiento: "2026-12-31" });
+  f.prepared.solicitud.fechaPrimerVencimiento = "2026-12-31";
+  f.prepared.coreInput.fechaPrimerVencimiento = "2026-12-31";
+  const snapshot = f.deps.loanSnapshot;
+  f.deps.loanSnapshot = async (...args) => ({ ...(await snapshot(...args))!, primerVencimiento: "2026-12-31T00:00:00" });
+  await f.service.create(f.prepared, { solicitudId: "sol-1", currentUser: f.actor });
+  assert.equal(f.row().legacyOid, "444");
+  assert.equal(f.calls(), 1);
 });
 
 it("two concurrent operators cannot send two creation requests", async () => {

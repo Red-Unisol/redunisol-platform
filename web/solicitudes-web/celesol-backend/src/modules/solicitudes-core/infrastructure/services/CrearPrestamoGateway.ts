@@ -37,6 +37,8 @@ export type CrearPrestamoInput = {
    */
   destino?: string;
   fechaEmision: string;
+  /** Fecha elegida en Beex; Vimarx la recibe en FechaPrimerVto. */
+  fechaPrimerVencimiento?: string;
   integrantes: CrearPrestamoIntegrante[];
   /**
    * ID de F.Module.Cuentas.Prestamos.LineaPrestamo -- NO el Oid de
@@ -114,6 +116,9 @@ export class CrearPrestamoGateway {
         Vendedor: input.vendedor,
         // Al final, como se probo en FapiTest (prestamo 441210).
         Destino: input.destino,
+        // Al final: la linea y los importes pueden recalcular el plan.
+        // PrimerVencimiento es de lectura; FechaPrimerVto es editable.
+        FechaPrimerVto: input.fechaPrimerVencimiento,
       },
       validar: false,
     });

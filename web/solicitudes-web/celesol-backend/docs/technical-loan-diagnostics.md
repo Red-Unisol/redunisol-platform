@@ -112,6 +112,26 @@ Comparar `REQUEST`, `RESPONSE`, `SUCCESS` y los eventos de vinculación. Ante un
 resultado incierto, verificar el préstamo en Vimarx por las vías existentes antes
 de realizar cualquier recuperación; consultar este registro no modifica datos.
 
+## Primer vencimiento elegido en Beex
+
+La revisión previa simula con `fechaPrimerVencimiento` guardada en la solicitud.
+El alta inicial y el reemplazo la envían como `campos.FechaPrimerVto`, después
+de los campos que recalculan el plan. `PrimerVencimiento` es una propiedad de
+lectura en Vimarx; no es el campo que se debe enviar al alta. Si no hay una fecha
+guardada se conserva la sugerencia de Vimarx.
+
+La vista previa rechaza una respuesta con un vencimiento distinto del elegido.
+En un alta con fecha explícita, el servicio también consulta el préstamo creado
+antes de vincularlo y habilitar su firma. Si falta la fecha o no coincide, conserva
+el ID remoto en la reserva `CREATED`, registra `LINK_FAILED` y bloquea nuevas
+generaciones. La recuperación exige verificar la misma fecha; nunca vuelve a
+generar el préstamo conocido. El reemplazo conserva su conciliación completa.
+
+Estos controles no corrigen préstamos existentes ni sincronizan automáticamente
+cambios hechos después en Vimarx. Al comparar fechas históricas, separar las
+correcciones manuales confirmadas de los errores de generación y de los préstamos
+anulados o eliminados; el estado actual no prueba qué fecha se eligió al generar.
+
 ## Despliegue y conservación
 
 La migración `20261027190000_technical_diagnostics` crea la tabla, sus índices y
