@@ -35,10 +35,10 @@ foundation_monitoring_expected_services:
   - ssh.service
   - apache2.service
 foundation_external_monitoring_configured: false
-foundation_backups_enabled: false
+foundation_backups_enabled: true
 foundation_backups_package: restic=0.18.0-1+b4
 foundation_proxy_package_version: "2.4.69-1~deb13u1"
-# Local backup destination approved; repository activation follows verified initialization.
+# Local filesystem and encrypted repository were initialized and verified.
 foundation_backups_repository_kind: local
 foundation_backups_local_mountpoint: /srv/redunisol-backups
 foundation_backups_local_mount_uuid: df29bb35-b77f-4355-a93c-c53a32580267
@@ -66,3 +66,6 @@ foundation_backups_source_paths:
 
 # Encryption key is retained outside the dedicated before repository initialization.
 foundation_backups_key_custody_confirmed: true
+
+foundation_backups_repository_initialized: true
+foundation_backups_consistency_confirmed: true
