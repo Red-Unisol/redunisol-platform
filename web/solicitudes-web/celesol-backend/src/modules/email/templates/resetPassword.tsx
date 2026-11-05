@@ -5,7 +5,6 @@ import {
   Head,
   Heading,
   Html,
-  Preview,
   Text,
 } from "@react-email/components";
 import * as React from "react";
@@ -45,7 +44,6 @@ export function ResetPasswordTemplate(
   return (
     <Html>
       <Head />
-      <Preview>Restablece tu contraseña de {metadata.appName}</Preview>
       <Body style={bodyStyle}>
         <Container style={containerStyle}>
           <Heading style={{ color: metadata.textColor, margin: "0 0 16px" }}>
