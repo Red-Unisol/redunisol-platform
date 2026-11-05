@@ -94,7 +94,14 @@ export class PrestamosSimulacionGateway {
         }
       }
     }
-    return mapRevisionSimulacion(body);
+    const result = mapRevisionSimulacion(body);
+    if (input.fechaPrimerVencimiento &&
+      result.fechaPrimerVencimiento?.slice(0, 10) !== input.fechaPrimerVencimiento.slice(0, 10)) {
+      throw new PrestamoSimulacionRechazadaError(
+        "El vencimiento del cálculo no coincide con la fecha guardada en la solicitud.",
+      );
+    }
+    return result;
   }
 
   private async request(input: SimularPrestamoGatewayInput): Promise<unknown> {

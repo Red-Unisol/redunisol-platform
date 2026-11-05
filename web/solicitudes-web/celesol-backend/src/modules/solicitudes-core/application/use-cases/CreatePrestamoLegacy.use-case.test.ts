@@ -1020,6 +1020,21 @@ function buildLinkedUseCase(overrides: Partial<ConstructorParameters<typeof Crea
   });
 }
 
+it("uses the saved due date for initial generation and replacement, omitting it only when absent", async () => {
+  for (const fecha of ["2026-12-31", null]) {
+    let sent: { fechaPrimerVencimiento?: string } | undefined;
+    const useCase = buildLinkedUseCase({
+      repository: solicitudesRepository({ findById: async () => solicitud({ legacyOid: null, fechaPrimerVencimiento: fecha }) }),
+      gateway: fakeGateway({ crear: async input => { sent = input; return { id: "555000" }; } }),
+    });
+    const input = { solicitudId: "sol-1", currentUser: { id: "user-1", workflowOwnerId: "owner-2" } };
+    await useCase.execute(input);
+    assert.equal(sent?.fechaPrimerVencimiento, fecha ?? undefined);
+    const replacement = await useCase.prepareReplacement(input);
+    assert.equal(replacement.coreInput.fechaPrimerVencimiento, fecha ?? undefined);
+  }
+});
+
 it("legacy creation fallback correlates gateway and link diagnostics without exposing technical data", async () => {
   let gatewayContext: LoanDiagnosticContext | undefined;
   const events: { context: LoanDiagnosticContext; event: Parameters<LoanDiagnosticWriter>[1] }[] = [];

@@ -28,6 +28,8 @@ type Reservation = {
 const json = (v: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(v));
 const control = (value: unknown) => (value ?? {}) as Prisma.JsonObject;
 const reservation = (value: unknown) => (control(value).generationPending ?? null) as Reservation | null;
+const dateOnly = (value: Date | string | null | undefined) =>
+  value ? new Date(value).toISOString().slice(0, 10) : null;
 
 /** Durable reservation precedes the remote call; uncertain calls never retry blindly. */
 export class InitialLoanGenerationService {
@@ -84,6 +86,7 @@ export class InitialLoanGenerationService {
       const cancellations = s.cancelaciones.filter(c => !c.deletedAt).reduce((sum, c) => sum + Number(c.monto), 0);
       if (s.updatedAt.getTime() !== prepared.solicitud.updatedAt.getTime() ||
         Number(s.montoAFinanciar) !== prepared.coreInput.montoDeseado || s.cuotas !== prepared.coreInput.cuotas ||
+        dateOnly(s.fechaPrimerVencimiento) !== dateOnly(prepared.coreInput.fechaPrimerVencimiento) ||
         s.lineaPrestamoLegacyOid !== prepared.solicitud.lineaPrestamoLegacyOid ||
         s.titular?.nroDocumento !== prepared.solicitud.titular.nroDocumento ||
         Math.round(cancellations * 100) !== (prepared.coreInput.nroLote ?? 0))
@@ -174,6 +177,19 @@ export class InitialLoanGenerationService {
 
   private async link(id: string, requestId: string, newLoanId: string, actorId: string, context: LoanDiagnosticContext, reason: string | null = null) {
     try {
+      const before = await administrativeSource(this.deps.db, id);
+      const intended = reservation(before.administrativeCoreControl);
+      if (intended?.requestId === requestId && intended.coreInput.fechaPrimerVencimiento) {
+        const loan = before.titular?.nroDocumento
+          ? await this.deps.loanSnapshot(newLoanId, before.titular.nroDocumento, true)
+          : null;
+        if (!loan || loan.id !== newLoanId ||
+          dateOnly(loan.primerVencimiento) !== dateOnly(intended.coreInput.fechaPrimerVencimiento)) {
+          throw new AdministrativeCorrectionError(
+            `El préstamo ${newLoanId} fue generado, pero su vencimiento no coincide con la fecha guardada o no pudo verificarse. El ID queda reservado para revisión; no generes otro.`,
+          );
+        }
+      }
       await this.deps.db.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
         const s = await administrativeSource(tx, id);
