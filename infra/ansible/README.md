@@ -1,7 +1,7 @@
 # Base administrada con Ansible
 
 Esta carpeta define la base de los hosts de Red Unisol. Su primer destino es
-`dedicatedprod01`: el dedicado Debian 13 que recibira produccion en migraciones
+`dedicated_prod_01`: el dedicado Debian 13 que recibira produccion en migraciones
 posteriores. La configuracion se revisa en Git antes de aplicarla. Un merge no
 ejecuta Ansible ni habilita por si solo el traslado de servicios.
 
@@ -17,7 +17,7 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | Acceso | Cuentas y claves publicas expresamente configuradas. |
 | Docker | Motor y plugin Compose, configuracion del daemon y verificacion. |
 | Proxy | Configuracion base sin publicar los dominios de las aplicaciones actuales. |
-| Storage | Directorios y montajes expresamente configurados; sin formatear discos. |
+| Storage | Validacion de discos y montajes existentes, y creacion de directorios; sin montar ni formatear discos. |
 | Observabilidad | Agente y comprobaciones del host, con acceso explicito del monitor. |
 | Recuperacion | Copias de la configuracion base y comprobaciones de respaldo. |
 | Mantenimiento | Revision de actualizaciones y necesidad de reinicio, separada del provisionamiento. |
@@ -47,7 +47,7 @@ tests/
 ```
 
 `foundation_hosts` selecciona los hosts de esta base. El inventario de produccion
-identifica `dedicatedprod01`, direccion `168.197.51.104`, puerto SSH `2241`.
+identifica `dedicated_prod_01`, direccion `168.197.51.104`, puerto SSH `2241`.
 Estos datos identifican el destino; no son credenciales. El inventario de
 integracion no autoriza reutilizar la VPS productiva antes de su liberacion.
 
@@ -137,9 +137,9 @@ comprobar el destino y evaluar los cambios:
 
 ```bash
 ansible-playbook -i inventories/production/hosts.yml playbooks/provision.yml \
-  --limit dedicatedprod01 --list-hosts
+  --limit dedicated_prod_01 --list-hosts
 ansible-playbook -i inventories/production/hosts.yml playbooks/provision.yml \
-  --limit dedicatedprod01 --check --diff
+  --limit dedicated_prod_01 --check --diff
 ```
 
 `--check` puede reunir facts y contactar el host. No es una validacion offline ni
@@ -153,10 +153,11 @@ autorizacion expresa como esa referencia:
 ```bash
 FOUNDATION_REVISION="$(git rev-parse HEAD)"
 ansible-playbook -i inventories/production/hosts.yml playbooks/provision.yml \
-  --limit dedicatedprod01 \
+  --limit dedicated_prod_01 \
   --extra-vars "foundation_apply_authorized=true foundation_revision=$FOUNDATION_REVISION"
 ansible-playbook -i inventories/production/hosts.yml playbooks/verify.yml \
-  --limit dedicatedprod01
+  --limit dedicated_prod_01 \
+  --extra-vars "foundation_revision=$FOUNDATION_REVISION"
 ```
 
 No agregar esos comandos a un workflow de deploy de aplicaciones ni ejecutar
@@ -177,6 +178,8 @@ MONITOREO y la politica de red se completan con destinos autorizados y verificad
 Para activar backups hace falta un repositorio real ya inicializado, local o externo,
 custodia de su clave, archivo privado de autenticacion y rutas fuente revisadas.
 El backend local exige un montaje independiente con UUID verificado y distinto del filesystem raiz; el externo exige un destino confirmado.
+Preparar ese montaje corresponde a una intervencion de storage separada; esta
+base valida un montaje existente y no lo crea.
 Los defaults del rol `backups` exigen confirmar esos datos y la consistencia de
 las fuentes. No usar una declaracion `true` para sustituir su verificacion, ni
 agregar bases vivas o volumenes de aplicaciones a esa lista sin su procedimiento.
@@ -188,7 +191,8 @@ aplicacion de provisionamiento con `changed=0`. Todo cambio recurrente debe
 investigarse y corregirse antes de declarar idempotencia.
 
 Tambien requiere metricas consultables desde el monitor autorizado, una copia
-externa identificada y un ensayo de restauracion de la base en un destino aislado.
+externa identificada y un ensayo de restauracion de la configuracion real de la
+base en un destino aislado.
 Un timer habilitado o una copia en otro disco del mismo dedicado no acreditan
 recuperacion ante perdida del host. Si faltan destino externo, acceso del monitor
 o ensayo real, la aceptacion sigue pendiente; no se inventan endpoints ni

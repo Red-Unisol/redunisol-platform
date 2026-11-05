@@ -15,7 +15,7 @@ no son un prerrequisito para escribir esta base.
 
 | Destino | Papel durante esta etapa |
 | --- | --- |
-| `dedicatedprod01` | Nuevo dedicado Debian 13; destino exclusivo de la base. |
+| `dedicated_prod_01` | Nuevo dedicado Debian 13; destino exclusivo de la base. |
 | VPS actual `5779267` | Conserva sus servicios hasta sus respectivos cortes. |
 | MONITOREO `6088737` | Conserva su funcion de observabilidad externa. |
 | TRANSF `5967792` | Conserva su funcion operativa. |
@@ -28,14 +28,16 @@ separado y no forma parte de esta intervencion.
 Esta etapa no traslada aplicaciones, bases, archivos de usuarios, claves OAuth,
 colas, schedulers ni webhooks. No cambia DNS o endpoints productivos, no publica
 dominios de aplicaciones en el proxy nuevo ni modifica el firewall o el login
-root por defecto. Los SATA no se inicializan ni formatean.
+root por defecto. Los SATA no se inicializan, formatean ni montan; storage valida
+la identidad de los discos y montajes existentes y crea directorios de la base.
 
 ## Modelo de operacion
 
 La base separa tres operaciones revisables y ejecutables de forma independiente:
 
 1. **Provisionar:** configurar sistema, acceso expresamente declarado, Docker,
-   proxy base, directorios/montajes optados, observabilidad y respaldo.
+   proxy base, directorios, validacion del storage existente, observabilidad y
+   mecanismos de respaldo.
 2. **Verificar:** contrastar runtime con inventario sin aplicar correcciones.
 3. **Mantener:** refrescar metadata APT y reportar paquetes actualizables y
    necesidad de reinicio con autorizacion independiente. El playbook actual no
@@ -56,7 +58,9 @@ apagado ordenado y comprobaciones funcionales posteriores de cada aplicacion.
 
 ## Recuperacion y observabilidad
 
-Los backups de esta etapa cubren la configuracion base efectivamente administrada.
+El mecanismo de backup de esta etapa se limita a la configuracion base
+efectivamente administrada. El inventario inicial lo mantiene deshabilitado hasta
+disponer de un repositorio verificado.
 Las copias consistentes de PostgreSQL, SQLite, adjuntos, tracking o colas se
 definiran cuando se incorpore cada servicio. Copiar directorios vivos sin revisar
 su contrato no se considera una estrategia de backup valida.
@@ -66,6 +70,9 @@ pendientes cuando no esten configurados. Una copia en SATA local no cubre la
 perdida completa del dedicado. Un timer habilitado tampoco prueba que exista
 una copia externa utilizable: hay que comprobar ejecucion, antiguedad, integridad
 y restauracion.
+
+Las pruebas sinteticas validan scripts y guardas; no demuestran la recuperacion
+de configuracion real ni la existencia de una copia externa.
 
 No se incluye un playbook vacio de `restore` ni uno de `cutover`: esas operaciones
 necesitan un destino y un contrato real antes de automatizarse. La recuperacion de
@@ -81,7 +88,7 @@ Git, recuperando la configuracion aprobada y verificando los accesos y el result
 | Primera aplicacion | Ejecucion autorizada contra el dedicado identificado y verificacion del runtime. |
 | Repetibilidad | Segunda aplicacion de provisionamiento con `changed=0`; `--check` no sustituye una aplicacion real. |
 | Observabilidad | Metricas desde el monitor autorizado y fallos visibles en los canales operativos elegidos. |
-| Recuperacion | Copia externa identificada y restauracion de la base probada en un destino aislado. |
+| Recuperacion | Copia externa identificada y restauracion de configuracion real de la base probada en un destino aislado. |
 
 Hasta reunir evidencia de runtime, repetibilidad, monitor y restauracion externa,
 la etapa queda **preparada en Git, pendiente de aceptacion operativa**. CI no

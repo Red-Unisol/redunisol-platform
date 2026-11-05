@@ -29,7 +29,6 @@
       - "'node_disk_read_bytes_total' in foundation_monitoring_probe.content"
       - "'node_filesystem_avail_bytes' in foundation_monitoring_probe.content"
       - "'foundation_health_collection_success 1' in foundation_monitoring_probe.content.splitlines()"
-      - foundation_monitoring_probe.content | regex_findall('(?m)^foundation_health_last_collection_timestamp_seconds ([0-9]+)$') | length == 1
     fail_msg: Exporter, host health collection or listener verification failed.
   when: foundation_monitoring_enabled
 
@@ -58,21 +57,8 @@
   when: foundation_monitoring_enabled
   check_mode: false
 
-- name: Extract last host health collection timestamp
-  ansible.builtin.set_fact:
-    foundation_monitoring_last_collection: >-
-      {{ foundation_monitoring_probe.content |
-         regex_findall('(?m)^foundation_health_last_collection_timestamp_seconds ([0-9]+)$') |
-         first | int }}
-  when: foundation_monitoring_enabled
-
-- name: Require a recent successful host health collection
-  ansible.builtin.assert:
-    that:
-      - foundation_monitoring_now.stdout | int - foundation_monitoring_last_collection | int >= 0
-      - >-
-        foundation_monitoring_now.stdout | int - foundation_monitoring_last_collection | int <=
-        foundation_monitoring_health_max_age_seconds | int
+- name: Parse and validate the Prometheus health collection timestamp
+  ansible.builtin.include_tasks: parse-health-timestamp.yml
   when: foundation_monitoring_enabled
 
 - name: Read health timer and exporter activation
