@@ -1,0 +1,45 @@
+---
+- name: Provision the dedicated host foundation without application deployment
+  hosts: foundation_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require an explicit apply decision and traceable source revision
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode or (foundation_apply_authorized | default(false) | bool)
+          - ansible_check_mode or (foundation_revision | default('') is match('^[0-9a-f]{40}$'))
+        fail_msg: "Apply requires foundation_apply_authorized=true and foundation_revision=<reviewed Git SHA>."
+      tags: [always]
+  roles:
+    - role: preflight
+      tags: [always]
+    - role: baseline
+      tags: [baseline]
+    - role: access
+      tags: [access]
+    - role: storage
+      tags: [storage]
+    - role: docker
+      tags: [docker]
+    - role: proxy
+      tags: [proxy]
+    - role: monitoring
+      tags: [monitoring]
+    - role: backups
+      tags: [backups]
+    - role: evidence
+      tags: [evidence]
+      when: not ansible_check_mode
+  post_tasks:
+    - name: Flush pending foundation service handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Explain contract-only first-host check mode
+      ansible.builtin.debug:
+        msg: >-
+          Check mode validates identity, storage and configuration contracts.
+          Package installation, service creation and recovery need an apply and verify run.
+      when: ansible_check_mode

@@ -1,0 +1,99 @@
+---
+- name: Read node exporter HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ foundation_monitoring_listen_address }}/metrics"
+    return_content: true
+    status_code: 200
+  register: foundation_monitoring_probe
+  when: foundation_monitoring_enabled
+  check_mode: false
+
+- name: Read actual listener addresses
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -H
+      - -ltn
+      - "sport = :{{ foundation_monitoring_listen_address.rsplit(':', 1)[1] }}"
+  register: foundation_monitoring_listeners
+  changed_when: false
+  when: foundation_monitoring_enabled
+  check_mode: false
+
+- name: Check exporter and freshness metric presence
+  ansible.builtin.assert:
+    that:
+      - foundation_monitoring_listen_address in foundation_monitoring_listeners.stdout
+      - "'node_cpu_seconds_total' in foundation_monitoring_probe.content"
+      - "'node_memory_MemAvailable_bytes' in foundation_monitoring_probe.content"
+      - "'node_disk_read_bytes_total' in foundation_monitoring_probe.content"
+      - "'node_filesystem_avail_bytes' in foundation_monitoring_probe.content"
+      - "'foundation_health_collection_success 1' in foundation_monitoring_probe.content.splitlines()"
+      - foundation_monitoring_probe.content | regex_findall('(?m)^foundation_health_last_collection_timestamp_seconds ([0-9]+)$') | length == 1
+    fail_msg: Exporter, host health collection or listener verification failed.
+  when: foundation_monitoring_enabled
+
+- name: Require expected host services to be active
+  ansible.builtin.assert:
+    that:
+      - "('foundation_service_active{unit=\"' ~ item ~ '\"} 1') in foundation_monitoring_probe.content.splitlines()"
+  loop: "{{ foundation_monitoring_expected_services }}"
+  when: foundation_monitoring_enabled
+
+- name: Confirm default listener does not expose the port externally
+  ansible.builtin.assert:
+    that:
+      - "'0.0.0.0:' not in foundation_monitoring_listeners.stdout"
+      - "'*:' not in foundation_monitoring_listeners.stdout"
+      - "'[::]:' not in foundation_monitoring_listeners.stdout"
+  when:
+    - foundation_monitoring_enabled
+    - foundation_monitoring_listen_address.startswith('127.0.0.1:') or foundation_monitoring_listen_address.startswith('[::1]:')
+
+- name: Read server clock for freshness validation
+  ansible.builtin.command:
+    argv: [date, "+%s"]
+  register: foundation_monitoring_now
+  changed_when: false
+  when: foundation_monitoring_enabled
+  check_mode: false
+
+- name: Extract last host health collection timestamp
+  ansible.builtin.set_fact:
+    foundation_monitoring_last_collection: >-
+      {{ foundation_monitoring_probe.content |
+         regex_findall('(?m)^foundation_health_last_collection_timestamp_seconds ([0-9]+)$') |
+         first | int }}
+  when: foundation_monitoring_enabled
+
+- name: Require a recent successful host health collection
+  ansible.builtin.assert:
+    that:
+      - foundation_monitoring_now.stdout | int - foundation_monitoring_last_collection | int >= 0
+      - >-
+        foundation_monitoring_now.stdout | int - foundation_monitoring_last_collection | int <=
+        foundation_monitoring_health_max_age_seconds | int
+  when: foundation_monitoring_enabled
+
+- name: Read health timer and exporter activation
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ item }}"]
+  register: foundation_monitoring_service_states
+  loop:
+    - prometheus-node-exporter.service
+    - redunisol-foundation-health.timer
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Validate monitoring active state
+  ansible.builtin.assert:
+    that:
+      - item.stdout == ('active' if foundation_monitoring_enabled else 'inactive')
+  loop: "{{ foundation_monitoring_service_states.results }}"
+
+- name: Report external monitoring integration boundary
+  ansible.builtin.debug:
+    msg: >-
+      Local exporter and health checks verified. External scraper and alert
+      delivery verification remain a separate operation.

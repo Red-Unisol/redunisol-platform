@@ -1,0 +1,52 @@
+---
+- name: Verify the foundation using read-only inspections
+  hosts: foundation_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Confirm target identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Verify baseline
+      ansible.builtin.import_role:
+        name: baseline
+        tasks_from: verify
+      tags: [baseline]
+    - name: Verify access preservation
+      ansible.builtin.import_role:
+        name: access
+        tasks_from: verify
+      tags: [access]
+    - name: Verify Docker
+      ansible.builtin.import_role:
+        name: docker
+        tasks_from: verify
+      tags: [docker]
+    - name: Verify the private proxy
+      ansible.builtin.import_role:
+        name: proxy
+        tasks_from: verify
+      tags: [proxy]
+    - name: Verify existing storage and platform directories
+      ansible.builtin.import_role:
+        name: storage
+        tasks_from: verify
+      tags: [storage]
+    - name: Verify local host observability
+      ansible.builtin.import_role:
+        name: monitoring
+        tasks_from: verify
+      tags: [monitoring]
+    - name: Verify backup configuration and truthful readiness
+      ansible.builtin.import_role:
+        name: backups
+        tasks_from: verify
+      tags: [backups]
+    - name: Verify source revision evidence
+      ansible.builtin.import_role:
+        name: evidence
+        tasks_from: verify
+      tags: [evidence]

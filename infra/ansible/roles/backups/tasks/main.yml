@@ -1,0 +1,204 @@
+---
+- name: Validate backup role settings
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_enabled | type_debug == 'bool'
+      - foundation_backups_repository_kind in ['local', 'offsite']
+      - foundation_backups_source_paths | type_debug == 'list'
+      - foundation_backups_max_attempts | int >= 1
+      - foundation_backups_max_attempts | int <= 5
+      - foundation_backups_retry_delay_seconds | int >= 0
+      - foundation_backups_timeout_seconds | int > 0
+      - foundation_backups_check_timeout_seconds | int > 0
+      - foundation_backups_check_mode in ['full', 'metadata', 'subset']
+      - foundation_backups_schedule is match('^[A-Za-z0-9*:/ _.,+-]+$')
+      - foundation_backups_check_schedule is match('^[A-Za-z0-9*:/ _.,+-]+$')
+      - foundation_backups_randomized_delay is match('^[0-9]+[smh]$')
+    fail_msg: Invalid foundation backup settings.
+
+- name: Validate managed backup paths
+  ansible.builtin.assert:
+    that:
+      - item is match('^/[A-Za-z0-9_./-]+$')
+      - item != '/'
+      - "'..' not in item.split('/')"
+    fail_msg: Backup paths must be explicit absolute paths without traversal.
+  loop: >-
+    {{ [foundation_backups_state_directory, foundation_backups_log_directory,
+        foundation_backups_textfile_directory, foundation_backups_restore_smoke_directory,
+        foundation_backups_password_file] +
+       ([foundation_backups_environment_file] if foundation_backups_environment_file | length > 0 else []) +
+       ([foundation_backups_local_mountpoint] if foundation_backups_local_mountpoint | length > 0 else []) +
+       foundation_backups_source_paths }}
+
+- name: Require complete explicit configuration before enabling backup
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_repository | length > 0
+      - foundation_backups_repository_initialized | bool
+      - foundation_backups_key_custody_confirmed | bool
+      - foundation_backups_consistency_confirmed | bool
+      - foundation_backups_source_paths | length > 0
+    fail_msg: >-
+      Backup activation requires an existing repository, externally custodied
+      encryption key and a catalog of consistent platform files.
+      No repository is initialized by this role.
+  when: foundation_backups_enabled
+
+- name: Validate an offsite destination without embedded credentials
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_repository is match('^(sftp:|s3:|b2:|azure:|gs:|swift:|rclone:|rest:https://)')
+      - foundation_backups_repository is not search('[?#\\r\\n]')
+      - foundation_backups_repository is not search('://[^/]*:[^/]*@')
+      - foundation_backups_repository_is_offsite | bool
+    fail_msg: Offsite backup needs a confirmed remote destination without embedded URL secrets.
+  when:
+    - foundation_backups_enabled
+    - foundation_backups_repository_kind == 'offsite'
+
+- name: Validate the selected local repository filesystem
+  ansible.builtin.include_tasks: validate-local.yml
+  when:
+    - foundation_backups_enabled
+    - foundation_backups_repository_kind == 'local'
+
+- name: Validate partial repository read configuration
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_check_read_data_subset is match('^[1-9][0-9]*/[1-9][0-9]*$')
+      - >-
+        foundation_backups_check_read_data_subset.split('/')[0] | int <=
+        foundation_backups_check_read_data_subset.split('/')[1] | int
+  when: foundation_backups_check_mode == 'subset'
+
+- name: Inspect externally provisioned backup credential files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  register: foundation_backups_secret_files
+  loop: >-
+    {{ [foundation_backups_password_file] +
+       ([foundation_backups_environment_file] if foundation_backups_environment_file | length > 0 else []) }}
+  when: foundation_backups_enabled
+  no_log: true
+
+- name: Require root-owned private regular credential files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.mode | default('') in ['0400', '0600']
+      - item.stat.size | default(0) | int > 0
+    fail_msg: >-
+      Backup credential files must already exist, be nonempty regular root-owned
+      files and have mode 0400 or 0600.
+  loop: "{{ foundation_backups_secret_files.results | default([]) }}"
+  when: foundation_backups_enabled
+  no_log: true
+
+- name: Apply backup preparation only outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Install backup and evidence tools
+      ansible.builtin.apt:
+        name:
+          - "{{ foundation_backups_package }}"
+          - python3
+          - util-linux
+          - logrotate
+        state: present
+        policy_rc_d: 101
+
+    - name: Create private backup state and evidence directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - /etc/redunisol-foundation/backup
+        - "{{ foundation_backups_state_directory }}"
+        - "{{ foundation_backups_state_directory }}/cache"
+        - "{{ foundation_backups_log_directory }}"
+        - "{{ foundation_backups_restore_smoke_directory }}"
+
+    - name: Create script and metrics directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /usr/local/libexec/redunisol-foundation
+        - "{{ foundation_backups_textfile_directory }}"
+
+    - name: Install backup and manual fixture restore scripts
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - src: backup.sh.j2
+          dest: /usr/local/libexec/redunisol-foundation/backup
+        - src: restore-smoke.sh.j2
+          dest: /usr/local/libexec/redunisol-foundation/restore-smoke
+
+    - name: Publish backup configuration status without claiming backup success
+      ansible.builtin.template:
+        src: backup-config.prom.j2
+        dest: "{{ foundation_backups_textfile_directory }}/foundation-backup-config.prom"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install backup units
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - redunisol-foundation-backup.service
+        - redunisol-foundation-backup.timer
+        - redunisol-foundation-backup-check.service
+        - redunisol-foundation-backup-check.timer
+      notify: Reload foundation backup systemd
+
+    - name: Configure rotation for redacted backup audit logs
+      ansible.builtin.template:
+        src: logrotate.j2
+        dest: /etc/logrotate.d/redunisol-foundation-backup
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable or stop backup timers without executing backup during provisioning
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: "{{ foundation_backups_enabled }}"
+        state: "{{ 'started' if foundation_backups_enabled else 'stopped' }}"
+        daemon_reload: true
+      loop:
+        - redunisol-foundation-backup.timer
+        - redunisol-foundation-backup-check.timer
+
+- name: Report backup readiness accurately
+  ansible.builtin.debug:
+    msg: >-
+      {{ ('Backup timers configured for ' ~ foundation_backups_repository_kind ~
+          ' repository; runtime backup/check and real-data restore evidence remain required.')
+         if foundation_backups_enabled else
+         'BACKUP INCOMPLETE: backup is disabled. No successful backup or restore is claimed.' }}
+
+- name: Explain backup check-mode boundary
+  ansible.builtin.debug:
+    msg: Check mode validates configuration only; no backup, repository check or restore is executed or evidenced.
+  when: ansible_check_mode

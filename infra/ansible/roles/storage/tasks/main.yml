@@ -1,0 +1,12 @@
+---
+- name: Verify the existing devices and mounts before creating directories
+  ansible.builtin.import_tasks: check.yml
+
+- name: Create platform directories on the existing root filesystem
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop: "{{ foundation_storage_directories }}"

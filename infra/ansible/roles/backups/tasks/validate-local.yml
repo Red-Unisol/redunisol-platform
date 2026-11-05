@@ -1,0 +1,73 @@
+---
+- name: Require an explicit local backup filesystem and repository subtree
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_local_mountpoint is match('^/[A-Za-z0-9_./-]+$')
+      - foundation_backups_local_mountpoint != '/'
+      - "'..' not in foundation_backups_local_mountpoint.split('/')"
+      - not foundation_backups_local_mountpoint.endswith('/')
+      - foundation_backups_local_mount_uuid is match('^[0-9A-Fa-f-]{8,64}$')
+      - foundation_backups_repository is match('^/[A-Za-z0-9_./-]+$')
+      - "'..' not in foundation_backups_repository.split('/')"
+      - foundation_backups_repository.startswith(foundation_backups_local_mountpoint ~ '/')
+    fail_msg: A local repository needs an explicit mounted filesystem UUID and a strict repository subtree.
+
+- name: Read the exact local backup mount
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --json
+      - --mountpoint
+      - "{{ foundation_backups_local_mountpoint }}"
+      - --output
+      - TARGET,UUID,MAJ:MIN
+  register: foundation_backups_local_mount
+  changed_when: false
+  check_mode: false
+
+- name: Read root filesystem identity
+  ansible.builtin.command:
+    argv: [findmnt, --json, --target, /, --output, "TARGET,UUID,MAJ:MIN"]
+  register: foundation_backups_root_mount
+  changed_when: false
+  check_mode: false
+
+- name: Require the intended filesystem rather than the root fallback
+  ansible.builtin.assert:
+    that:
+      - (foundation_backups_local_mount.stdout | from_json).filesystems | length == 1
+      - (foundation_backups_local_mount.stdout | from_json).filesystems[0].target == foundation_backups_local_mountpoint
+      - (foundation_backups_local_mount.stdout | from_json).filesystems[0].uuid == foundation_backups_local_mount_uuid
+      - >-
+        (foundation_backups_local_mount.stdout | from_json).filesystems[0]['maj:min'] !=
+        (foundation_backups_root_mount.stdout | from_json).filesystems[0]['maj:min']
+      - >-
+        (foundation_backups_local_mount.stdout | from_json).filesystems[0].uuid !=
+        (foundation_backups_root_mount.stdout | from_json).filesystems[0].uuid
+    fail_msg: The selected backup filesystem is absent, has the wrong UUID or resolves to the root filesystem.
+
+- name: Inspect the existing local repository configuration
+  ansible.builtin.stat:
+    path: "{{ foundation_backups_repository }}/config"
+    follow: false
+  register: foundation_backups_local_repository_config
+
+- name: Require an existing local restic repository
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_local_repository_config.stat.exists
+      - foundation_backups_local_repository_config.stat.isreg | default(false)
+      - not foundation_backups_local_repository_config.stat.islnk | default(false)
+    fail_msg: The local restic repository must already be initialized by a separately approved operation.
+
+- name: Resolve the existing repository path
+  ansible.builtin.command:
+    argv: [realpath, --canonicalize-existing, --, "{{ foundation_backups_repository }}"]
+  register: foundation_backups_local_repository_realpath
+  changed_when: false
+  check_mode: false
+
+- name: Require the canonical repository to remain within the intended filesystem
+  ansible.builtin.assert:
+    that:
+      - foundation_backups_local_repository_realpath.stdout.startswith(foundation_backups_local_mountpoint ~ '/')

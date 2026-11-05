@@ -1,0 +1,11 @@
+# HELP foundation_backup_configured Offsite backup configuration passed activation preconditions, not a completed backup.
+# TYPE foundation_backup_configured gauge
+foundation_backup_configured {{ 1 if foundation_backups_enabled else 0 }}
+# HELP foundation_backup_enabled Offsite backup timers enabled by configuration.
+# TYPE foundation_backup_enabled gauge
+foundation_backup_enabled {{ 1 if foundation_backups_enabled else 0 }}
+foundation_backup_check_mode_info{mode="{{ foundation_backups_check_mode }}"} 1
+# HELP foundation_backup_offsite_configured A configured offsite destination, not merely a local disk.
+# TYPE foundation_backup_offsite_configured gauge
+foundation_backup_offsite_configured {{ 1 if foundation_backups_enabled and foundation_backups_repository_kind == 'offsite' else 0 }}
+foundation_backup_repository_kind_info{kind="{{ foundation_backups_repository_kind }}"} 1

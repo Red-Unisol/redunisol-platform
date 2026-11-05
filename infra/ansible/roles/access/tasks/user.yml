@@ -1,0 +1,35 @@
+---
+- name: Ensure the explicitly keyed account exists
+  ansible.builtin.user:
+    name: "{{ foundation_access_user.name }}"
+    state: present
+    create_home: true
+    groups: "{{ foundation_access_user.groups | default(omit) }}"
+    append: true
+    shell: "{{ foundation_access_user.shell | default(omit) }}"
+
+- name: Inspect account home directory
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ foundation_access_user.name }}"
+  register: foundation_access_account
+  when: not ansible_check_mode
+
+- name: Add keys without deleting existing authorized keys
+  when: not ansible_check_mode
+  block:
+    - name: Create the account SSH directory
+      ansible.builtin.file:
+        path: "{{ foundation_access_account.ansible_facts.getent_passwd[foundation_access_user.name][4] }}/.ssh"
+        state: directory
+        owner: "{{ foundation_access_user.name }}"
+        mode: "0700"
+
+    - name: Add the managed public key block
+      ansible.builtin.blockinfile:
+        path: "{{ foundation_access_account.ansible_facts.getent_passwd[foundation_access_user.name][4] }}/.ssh/authorized_keys"
+        create: true
+        owner: "{{ foundation_access_user.name }}"
+        mode: "0600"
+        marker: "# {mark} REDUNISOL FOUNDATION PUBLIC KEYS"
+        block: "{{ foundation_access_user.public_keys | join('\n') }}"

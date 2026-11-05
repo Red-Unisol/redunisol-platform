@@ -1,0 +1,79 @@
+---
+- name: Require complete version declarations for verification
+  ansible.builtin.assert:
+    that:
+      - >-
+        foundation_docker_package_versions.keys() | sort ==
+        ['containerd.io', 'docker-buildx-plugin', 'docker-ce', 'docker-ce-cli', 'docker-compose-plugin'] | sort
+
+- name: Inspect installed package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Check each Docker package version
+  ansible.builtin.assert:
+    that:
+      - item.key in ansible_facts.packages
+      - ansible_facts.packages[item.key][0].version == item.value
+    fail_msg: "Installed {{ item.key }} differs from the reviewed DEB version."
+  loop: "{{ foundation_docker_package_versions | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Validate configuration without reloading Docker
+  ansible.builtin.command:
+    argv: [/usr/bin/dockerd, --validate, --config-file, /etc/docker/daemon.json]
+  changed_when: false
+  check_mode: false
+
+- name: Read the managed Docker configuration
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  register: foundation_docker_config_file
+
+- name: Verify the complete desired daemon policy
+  ansible.builtin.assert:
+    that:
+      - foundation_docker_config_file.content | b64decode | from_json == foundation_docker_daemon_config
+
+- name: Read active daemon information
+  ansible.builtin.command:
+    argv:
+      - docker
+      - --host
+      - unix:///var/run/docker.sock
+      - info
+      - --format
+      - >-
+        {"LoggingDriver":{{ '{{json .LoggingDriver}}' }},
+        "LiveRestoreEnabled":{{ '{{json .LiveRestoreEnabled}}' }},
+        "DockerRootDir":{{ '{{json .DockerRootDir}}' }}}
+  register: foundation_docker_info_raw
+  changed_when: false
+  check_mode: false
+
+- name: Verify active logging and recovery settings
+  ansible.builtin.assert:
+    that:
+      - (foundation_docker_info_raw.stdout | from_json).LoggingDriver == foundation_docker_daemon_config['log-driver']
+      - (foundation_docker_info_raw.stdout | from_json).LiveRestoreEnabled | bool
+      - (foundation_docker_info_raw.stdout | from_json).DockerRootDir == foundation_docker_daemon_config['data-root']
+
+- name: Inspect listening TCP sockets without changing them
+  ansible.builtin.command:
+    argv: [ss, -H, -ltnp]
+  register: foundation_docker_sockets
+  changed_when: false
+  check_mode: false
+
+- name: Verify the Docker API has no TCP listener
+  ansible.builtin.assert:
+    that:
+      - foundation_docker_sockets.stdout_lines | select('search', 'dockerd') | list | length == 0
+
+- name: Read Compose plugin version
+  ansible.builtin.command:
+    argv: [docker, compose, version, --short]
+  register: foundation_compose_version
+  changed_when: false
+  check_mode: false

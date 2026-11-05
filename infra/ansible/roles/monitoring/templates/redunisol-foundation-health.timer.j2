@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Red Unisol foundation health metrics
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec={{ foundation_monitoring_health_interval }}
+AccuracySec=5s
+Unit=redunisol-foundation-health.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,74 @@
+---
+- name: Validate bounded logging settings
+  ansible.builtin.assert:
+    that:
+      - foundation_journal_max_use is match('^[1-9][0-9]*[KMGT]$')
+      - foundation_journal_keep_free is match('^[1-9][0-9]*[KMGT]$')
+      - foundation_journal_max_retention is match('^[1-9][0-9]*(day|h|week|month|year)$')
+
+- name: Describe baseline changes in check mode
+  ansible.builtin.debug:
+    msg:
+      packages: "{{ foundation_baseline_packages }}"
+      journal_max_use: "{{ foundation_journal_max_use }}"
+      journal_keep_free: "{{ foundation_journal_keep_free }}"
+      automatic_reboot: false
+      check_mode_note: "Contracts only; installation and new directories are not simulated on an empty host."
+  when: ansible_check_mode
+
+- name: Apply the baseline policy
+  when: not ansible_check_mode
+  block:
+    - name: Install the baseline without a global upgrade
+      ansible.builtin.apt:
+        name: "{{ foundation_baseline_packages }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        fail_on_autoremove: true
+        policy_rc_d: 101
+
+    - name: Prevent unattended package maintenance from rebooting this host
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/52redunisol-no-automatic-reboot
+        content: |
+          // Git-managed foundation policy. Reboots require an operator decision.
+          Unattended-Upgrade::Automatic-Reboot "false";
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Create journald configuration directory
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Enable bounded persistent system logs
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/50-redunisol.conf
+        content: |
+          # Managed by infra/ansible; application logs are configured separately.
+          [Journal]
+          Storage=persistent
+          Compress=yes
+          SystemMaxUse={{ foundation_journal_max_use }}
+          SystemKeepFree={{ foundation_journal_keep_free }}
+          MaxRetentionSec={{ foundation_journal_max_retention }}
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart journald
+
+    - name: Create persistent journal storage
+      ansible.builtin.file:
+        path: /var/log/journal
+        state: directory
+        owner: root
+        group: systemd-journal
+        mode: "2755"
+
+    - name: Apply journal changes before later provisioning can fail
+      ansible.builtin.meta: flush_handlers

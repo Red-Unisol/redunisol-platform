@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule selected restic integrity checks
+
+[Timer]
+OnCalendar={{ foundation_backups_check_schedule }}
+RandomizedDelaySec={{ foundation_backups_randomized_delay }}
+Persistent=true
+Unit=redunisol-foundation-backup-check.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,122 @@
+---
+- name: Require explicit Docker and plugin versions
+  ansible.builtin.assert:
+    that:
+      - >-
+        foundation_docker_package_versions.keys() | sort ==
+        ['containerd.io', 'docker-buildx-plugin', 'docker-ce', 'docker-ce-cli', 'docker-compose-plugin'] | sort
+      - foundation_docker_package_versions.values() | select('match', '^[0-9][0-9A-Za-z.+:~_-]+$') | list | length == 5
+      - "'hosts' not in foundation_docker_daemon_config"
+      - foundation_docker_daemon_config['live-restore'] | bool
+      - foundation_docker_daemon_config['shutdown-timeout'] | int >= 30
+      - foundation_docker_daemon_config['log-driver'] == 'local'
+      - "'max-size' in foundation_docker_daemon_config['log-opts']"
+      - "'max-file' in foundation_docker_daemon_config['log-opts']"
+    fail_msg: "Pin all five Docker DEB versions. No floating packages or TCP daemon listener are supported."
+
+- name: Inspect packages without uninstalling conflicting runtimes
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Refuse automatic removal of another container runtime
+  ansible.builtin.assert:
+    that:
+      - foundation_docker_conflicting_packages | intersect(ansible_facts.packages.keys() | list) | length == 0
+    fail_msg: "Existing distribution runtime requires separate reviewed migration; nothing was uninstalled."
+
+- name: Describe Docker changes in check mode
+  ansible.builtin.debug:
+    msg:
+      packages: "{{ foundation_docker_package_versions }}"
+      daemon_config: "{{ foundation_docker_daemon_config }}"
+      check_mode_note: "Repository and daemon installation are applied only outside check mode."
+  when: ansible_check_mode
+
+- name: Apply the pinned Docker foundation
+  when: not ansible_check_mode
+  block:
+    - name: Create the scoped repository key directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download the official repository key over verified TLS
+      ansible.builtin.get_url:
+        url: "{{ foundation_docker_apt_key_url }}"
+        dest: /etc/apt/keyrings/docker.asc
+        checksum: "sha256:{{ foundation_docker_apt_key_sha256 }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Inspect Docker signing key fingerprint
+      ansible.builtin.command:
+        argv: [gpg, --batch, --show-keys, --with-colons, /etc/apt/keyrings/docker.asc]
+      register: foundation_docker_signing_key
+      changed_when: false
+
+    - name: Verify the reviewed Docker signing key fingerprint
+      ansible.builtin.assert:
+        that:
+          - "('fpr:::::::::' ~ foundation_docker_apt_key_fingerprint ~ ':') in foundation_docker_signing_key.stdout_lines"
+        fail_msg: "Docker signing key differs from the reviewed fingerprint."
+
+    - name: Declare only the signed Docker Debian repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/docker.sources
+        content: |
+          Types: deb
+          URIs: https://download.docker.com/linux/debian
+          Suites: trixie
+          Components: stable
+          Architectures: amd64
+          Signed-By: /etc/apt/keyrings/docker.asc
+        owner: root
+        group: root
+        mode: "0644"
+      register: foundation_docker_repository
+
+    - name: Install exact versions without starting before configuration
+      ansible.builtin.apt:
+        name:
+          - "docker-ce={{ foundation_docker_package_versions['docker-ce'] }}"
+          - "docker-ce-cli={{ foundation_docker_package_versions['docker-ce-cli'] }}"
+          - "containerd.io={{ foundation_docker_package_versions['containerd.io'] }}"
+          - "docker-buildx-plugin={{ foundation_docker_package_versions['docker-buildx-plugin'] }}"
+          - "docker-compose-plugin={{ foundation_docker_package_versions['docker-compose-plugin'] }}"
+        state: present
+        update_cache: "{{ foundation_docker_repository.changed }}"
+        cache_valid_time: 3600
+        fail_on_autoremove: true
+        policy_rc_d: 101
+      notify: Restart Docker
+
+    - name: Create Docker configuration directory
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Validate and install the daemon configuration
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: "{{ foundation_docker_daemon_config | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/bin/dockerd --validate --config-file %s
+      notify: Restart Docker
+
+    - name: Apply changes before inspecting daemon health
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable Docker without deploying applications
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started

@@ -1,0 +1,155 @@
+#!/bin/bash
+# Managed by Ansible. No init, forget, prune, unlock or database hot-copy.
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+readonly enabled={{ 'true' if foundation_backups_enabled else 'false' }}
+readonly repository_kind={{ foundation_backups_repository_kind | quote }}
+readonly local_mountpoint={{ foundation_backups_local_mountpoint | quote }}
+readonly local_mount_uuid={{ foundation_backups_local_mount_uuid | quote }}
+readonly repository={{ foundation_backups_repository | quote }}
+readonly password_file={{ foundation_backups_password_file | quote }}
+readonly environment_file={{ foundation_backups_environment_file | quote }}
+readonly state_dir={{ foundation_backups_state_directory | quote }}
+readonly metrics_dir={{ foundation_backups_textfile_directory | quote }}
+readonly log_dir={{ foundation_backups_log_directory | quote }}
+readonly revision={{ foundation_revision | default('unassigned') | quote }}
+readonly check_mode={{ foundation_backups_check_mode | quote }}
+readonly read_subset={{ foundation_backups_check_read_data_subset | quote }}
+readonly max_attempts={{ foundation_backups_max_attempts | int }}
+readonly retry_delay={{ foundation_backups_retry_delay_seconds | int }}
+sources=(
+{% for path in foundation_backups_source_paths %}
+  {{ path | quote }}
+{% endfor %}
+)
+if (( $# != 1 )); then printf 'Usage: backup {backup|check}\n' >&2; exit 64; fi
+action="$1"
+case "$action" in backup|check) ;; *) printf 'Usage: backup {backup|check}\n' >&2; exit 64;; esac
+if [[ "$enabled" != true ]]; then printf 'Backup is not configured; no operation performed.\n' >&2; exit 78; fi
+# systemd may load EnvironmentFile; never source or eval that file.
+unset RESTIC_PASSWORD RESTIC_PASSWORD_COMMAND RESTIC_REPOSITORY RESTIC_REPOSITORY_FILE
+exec 9>"$state_dir/job.lock"
+if ! flock -n 9; then printf 'Another foundation backup operation holds the lock; skipped.\n' >&2; exit 75; fi
+work="$(mktemp -d -- "$state_dir/.run.XXXXXX")"
+started="$(date +%s)"; attempt=0; stage=credentials; snapshot_id=""
+finish() {
+  rc=$?
+  trap - EXIT
+  set +e
+  finished="$(date +%s)"
+  /usr/bin/python3 - "$state_dir" "$metrics_dir" "$log_dir" "$action" "$started" "$finished" "$rc" "$attempt" "$stage" "$revision" "$snapshot_id" <<'PY'
+import json,os,pathlib,socket,sys,tempfile
+state,metrics,logs,job,start,end,rc,attempt,stage,revision,snapshot=sys.argv[1:]
+start,end,rc,attempt=map(int,(start,end,rc,attempt))
+record=dict(job=job,started_at=start,finished_at=end,exit_code=rc,attempts=attempt,
+            stage=stage,revision=revision,hostname=socket.gethostname(),
+            snapshot_id=snapshot or None,duration_seconds=max(0,end-start),
+            check_mode={{ foundation_backups_check_mode | to_json }},
+            repository_kind={{ foundation_backups_repository_kind | to_json }})
+def atomic(path,text,mode):
+    path=pathlib.Path(path)
+    with tempfile.NamedTemporaryFile(mode="w",dir=str(path.parent),delete=False,encoding="utf-8") as f:
+        temporary=f.name;os.chmod(temporary,mode);f.write(text);f.flush();os.fsync(f.fileno())
+    os.replace(temporary,str(path))
+last=pathlib.Path(state)/(job+".last-success")
+if rc==0: atomic(last,str(end)+"\n",0o600)
+previous=last.read_text().strip() if last.exists() else "0"
+if not previous.isdigit():previous="0"
+atomic(pathlib.Path(state)/(job+".json"),json.dumps(record,sort_keys=True)+"\n",0o600)
+prefix="foundation_backup" if job=="backup" else "foundation_backup_check"
+values={"success":int(rc==0),"last_attempt_timestamp_seconds":start,
+        "last_success_timestamp_seconds":previous,"last_exit_code":rc,
+        "last_duration_seconds":max(0,end-start)}
+atomic(pathlib.Path(metrics)/("foundation-"+job+".prom"),
+       "".join("{}_{} {}\n".format(prefix,k,v) for k,v in values.items()),0o644)
+with open(str(pathlib.Path(logs)/"backup.log"),"a",encoding="utf-8") as f:
+    f.write(json.dumps(record,sort_keys=True)+"\n")
+PY
+  evidence_rc=$?
+  rm -f -- "$work/stdout" "$work/stderr"
+  rmdir -- "$work"
+  printf 'Foundation %s finished: exit=%s attempts=%s stage=%s\n' "$action" "$rc" "$attempt" "$stage"
+  if (( rc == 0 && evidence_rc != 0 )); then exit "$evidence_rc"; fi
+  exit "$rc"
+}
+trap finish EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+private_file() {
+  local path="$1" mode owner
+  [[ -f "$path" && ! -L "$path" && -r "$path" ]] || return 1
+  mode="$(stat -c '%a' -- "$path")"; owner="$(stat -c '%u' -- "$path")"
+  [[ "$owner" == 0 && ( "$mode" == 600 || "$mode" == 400 ) ]]
+}
+private_file "$password_file" || { printf 'Invalid password file ownership, type or permissions.\n' >&2; exit 78; }
+if [[ -n "$environment_file" ]]; then
+  private_file "$environment_file" || { printf 'Invalid backend credential file.\n' >&2; exit 78; }
+fi
+stage=destination-validation
+if [[ "$repository_kind" == local ]]; then
+  [[ -n "$local_mountpoint" && "$local_mountpoint" != / && -n "$local_mount_uuid" ]] || exit 78
+  mount_uuid="$(findmnt -rn --mountpoint "$local_mountpoint" -o UUID)" || exit 78
+  mount_target="$(findmnt -rn --mountpoint "$local_mountpoint" -o TARGET)" || exit 78
+  mount_device="$(findmnt -rn --mountpoint "$local_mountpoint" -o MAJ:MIN)" || exit 78
+  root_device="$(findmnt -rn --target / -o MAJ:MIN)" || exit 78
+  [[ "$mount_uuid" == "$local_mount_uuid" && "$mount_target" == "$local_mountpoint" &&
+     "$mount_device" != "$root_device" && "$(readlink -f -- "$local_mountpoint")" == "$local_mountpoint" ]] || exit 78
+  [[ -d "$repository" && ! -L "$repository" ]] || exit 78
+  repository_real="$(readlink -f -- "$repository")"
+  [[ "$repository_real" == "$local_mountpoint/"* ]] || exit 78
+fi
+common=(--repo "$repository" --password-file "$password_file" --cache-dir "$state_dir/cache")
+if [[ "$action" == backup ]]; then
+  stage=source-validation
+  (( {{ foundation_backups_source_paths | length }} > 0 )) || exit 78
+  for source in "${sources[@]}"; do
+    [[ "$source" == /* && "$source" != / && -e "$source" && ! -L "$source" ]] || exit 78
+    canonical="$(readlink -f -- "$source")"
+    if [[ "$repository_kind" == local ]]; then
+      [[ "$canonical/" != "$repository_real/"* && "$repository_real/" != "$canonical/"* ]] || {
+        printf 'Backup source and local repository must not overlap.\n' >&2; exit 78;
+      }
+    fi
+    case "$canonical/" in /var/lib/docker/*|/var/lib/postgresql/*|/var/lib/mysql/*|/var/lib/containers/*|/proc/*|/sys/*|/dev/*) exit 78;; esac
+    # Database storage is not a consistent file source: export it separately first.
+    if find "$source" -xdev \( -name PG_VERSION -o -name ibdata1 -o -name postmaster.pid \) -print -quit | grep -q .; then
+      printf 'A source contains live database storage; consistent exports are required.\n' >&2
+      exit 78
+    fi
+  done
+  args=(backup --json --one-file-system --tag redunisol-foundation --tag "revision:$revision" -- "${sources[@]}")
+  timeout_seconds={{ foundation_backups_timeout_seconds | int }}
+else
+  args=(check)
+  case "$check_mode" in
+    full) args+=(--read-data);;
+    subset) args+=("--read-data-subset=$read_subset");;
+    metadata) ;;
+    *) exit 78;;
+  esac
+  timeout_seconds={{ foundation_backups_check_timeout_seconds | int }}
+fi
+stage="$action"
+rc=1
+for ((attempt=1; attempt<=max_attempts; attempt++)); do
+  if timeout --signal=TERM --kill-after=30s "$timeout_seconds" /usr/bin/restic "${common[@]}" "${args[@]}" >"$work/stdout" 2>"$work/stderr"; then rc=0; break; else rc=$?; fi
+  if (( attempt < max_attempts )); then sleep "$retry_delay"; fi
+done
+if (( attempt > max_attempts )); then attempt="$max_attempts"; fi
+(( rc == 0 )) || exit "$rc"
+if [[ "$action" == backup ]]; then
+  stage=record-snapshot
+  snapshot_id="$(/usr/bin/python3 - "$work/stdout" <<'PY'
+import json,re,sys
+snapshot=""
+with open(sys.argv[1],encoding="utf-8") as f:
+    for line in f:
+        event=json.loads(line)
+        if event.get("message_type")=="summary":snapshot=event.get("snapshot_id","")
+if not re.fullmatch(r"[0-9a-f]{64}",snapshot):raise SystemExit(1)
+print(snapshot)
+PY
+)"
+fi
+stage=complete

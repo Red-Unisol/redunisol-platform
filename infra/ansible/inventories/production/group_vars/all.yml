@@ -1,0 +1,45 @@
+---
+# Host foundation only. Applications are catalogued before each migration.
+foundation_apply_authorized: false
+foundation_docker_package_versions:
+  docker-ce: "5:29.9.3-1~debian.13~trixie"
+  docker-ce-cli: "5:29.9.3-1~debian.13~trixie"
+  containerd.io: "2.4.2-3~debian.13~trixie"
+  docker-buildx-plugin: "0.38.1-1~debian.13~trixie"
+  docker-compose-plugin: "5.7.0-1~debian.13~trixie"
+foundation_docker_apt_key_sha256: 1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
+foundation_storage_root_source: /dev/nvme0n1p3
+foundation_storage_root_fstype: xfs
+foundation_storage_expected_disks:
+  - name: nvme0n1
+    model: CT500P3SSD8
+    serial: 2315E6C887E6
+    size: 500107862016
+  - name: sda
+    model: ST2000VN003-3CW102
+    serial: ZWD0RXD6
+    size: 2000398934016
+  - name: sdb
+    model: ST2000VN003-3CW102
+    serial: ZWD0RX9Q
+    size: 2000398934016
+# SATA devices stay untouched until a separate storage change is reviewed.
+foundation_storage_unmanaged_devices:
+  - /dev/sda
+  - /dev/sdb
+foundation_access_users: []
+foundation_monitoring_enabled: true
+foundation_monitoring_package: prometheus-node-exporter=1.9.0-1+b4
+foundation_monitoring_listen_address: 127.0.0.1:9100
+foundation_monitoring_expected_services:
+  - docker.service
+  - ssh.service
+  - apache2.service
+foundation_external_monitoring_configured: false
+foundation_backups_enabled: false
+foundation_backups_package: restic=0.18.0-1+b4
+foundation_proxy_package_version: "2.4.69-1~deb13u1"
+# Local SATA backup is the intended first backend; no device has been prepared yet.
+foundation_backups_repository_kind: local
+foundation_backups_local_mountpoint: /srv/redunisol-backups
+foundation_backups_local_mount_uuid: ""
