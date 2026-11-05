@@ -26,9 +26,17 @@ class InventoryIsolationTests(unittest.TestCase):
 
     def test_no_external_backup_is_claimed_without_its_destination(self):
         config = yaml.safe_load((ROOT / "inventories/production/group_vars/all.yml").read_text())
-        self.assertFalse(config["foundation_backups_enabled"])
         self.assertFalse(config["foundation_external_monitoring_configured"])
-        self.assertEqual(config["foundation_storage_unmanaged_devices"], ["/dev/sda", "/dev/sdb"])
+        self.assertEqual(config["foundation_backups_repository_kind"], "local")
+        self.assertFalse(config.get("foundation_backups_repository_is_offsite", False))
+        expected_unmanaged = ["/dev/sda"] if config["foundation_backup_storage_enabled"] else ["/dev/sda", "/dev/sdb"]
+        self.assertEqual(config["foundation_storage_unmanaged_devices"], expected_unmanaged)
+        self.assertEqual(config["foundation_backups_local_mount_uuid"], config["foundation_backup_storage_uuid"])
+        if config["foundation_backups_enabled"]:
+            self.assertTrue(config["foundation_backup_storage_enabled"])
+            self.assertTrue(config["foundation_backups_repository_initialized"])
+            self.assertTrue(config["foundation_backups_key_custody_confirmed"])
+            self.assertTrue(config["foundation_backups_consistency_confirmed"])
 
 
 @unittest.skipUnless(shutil.which("ansible-playbook"), "Linux Ansible controller required")

@@ -23,10 +23,9 @@ foundation_storage_expected_disks:
     model: ST2000VN003-3CW102
     serial: ZWD0RX9Q
     size: 2000398934016
-# SATA devices stay untouched until a separate storage change is reviewed.
+# Only the separately approved backup SATA is adopted; the other SATA stays unmanaged.
 foundation_storage_unmanaged_devices:
   - /dev/sda
-  - /dev/sdb
 foundation_access_users: []
 foundation_monitoring_enabled: true
 foundation_monitoring_package: prometheus-node-exporter=1.9.0-1+b4
@@ -39,13 +38,13 @@ foundation_external_monitoring_configured: false
 foundation_backups_enabled: false
 foundation_backups_package: restic=0.18.0-1+b4
 foundation_proxy_package_version: "2.4.69-1~deb13u1"
-# Local SATA backup is the intended first backend; no device has been prepared yet.
+# Local backup destination approved; repository activation follows verified initialization.
 foundation_backups_repository_kind: local
 foundation_backups_local_mountpoint: /srv/redunisol-backups
 foundation_backups_local_mount_uuid: df29bb35-b77f-4355-a93c-c53a32580267
 
-# Proposed local backup filesystem. Preparation still requires separate approval.
-foundation_backup_storage_enabled: false
+# Approved one-disk preparation; initialization authorization stays a separate one-shot flag.
+foundation_backup_storage_enabled: true
 foundation_backup_storage_by_id: /dev/disk/by-id/ata-ST2000VN003-3CW102_ZWD0RX9Q
 foundation_backup_storage_serial: ZWD0RX9Q
 foundation_backup_storage_model: ST2000VN003-3CW102
@@ -64,3 +63,6 @@ foundation_backups_source_paths:
   - /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
   - /etc/systemd/system/redunisol-foundation-health.service
   - /etc/systemd/system/redunisol-foundation-health.timer
+
+# Encryption key is retained outside the dedicated before repository initialization.
+foundation_backups_key_custody_confirmed: true
