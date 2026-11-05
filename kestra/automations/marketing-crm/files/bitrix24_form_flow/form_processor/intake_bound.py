@@ -73,7 +73,9 @@ def _profile_conflict(lead, answer, config):
     }
     for field, value in expected.items():
         actual = lead.get(field)
-        if actual in (None, "", []):
+        # Bitrix returns false for an unset catalog field, including bank.
+        # Use identity for the boolean sentinel so numeric 0 remains a conflict.
+        if actual is None or actual is False or actual == "" or actual == []:
             continue
         values = actual if isinstance(actual, list) else [actual]
         if [str(item) for item in values] != [str(value)]:

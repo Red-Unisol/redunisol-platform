@@ -68,6 +68,30 @@ Un HTTP aceptado por el proveedor no demuestra entrega; el reconciliador nunca
 repite el envío. La falta de saldo del proveedor debe corregirse por el operador
 antes de validar nuevas entregas reales.
 
+## Catálogos vacíos y recuperación de respuestas guardadas
+
+Bitrix puede representar un catálogo vacío como `false`, además de `null`,
+cadena vacía o lista vacía. En provincia, situación laboral y banco esos valores
+permiten completar la ficha original. Un ID real distinto conserva el bloqueo
+`bound_profile_conflict`; no se ignoran valores numéricos como `0` ni otros tipos
+inesperados.
+
+Ese bloqueo se produce antes de crear contactos o actualizar el prospecto. Su
+acuse contiene el ID del prospecto original verificado, aunque no haya escrituras.
+Para recuperar una respuesta ya auditada se puede usar:
+
+```text
+php artisan edna:intake rescue REQUEST_ID --expected-case=CASE_UUID --expected-lead=LEAD_ID --confirmed-no-writes --apply
+```
+
+El operador debe comprobar la ausencia de escrituras CRM antes de aplicar. Para
+este motivo concreto el comando exige contrato V2, prueba de origen verificada,
+caso/entrada/mensaje/prospecto coincidentes y ningún contacto registrado en el
+acuse. Los estados inciertos o en proceso siguen sin poder repetirse. El preview
+sin `--apply` sólo lee. Se encola el procesamiento de la respuesta cifrada original,
+sin otro formulario, caso, intento de transporte, admisión ni slot. Un caso ya
+sincronizado es un no-op; un segundo apply mientras está pendiente no encola otro job.
+
 ## Reenvío controlado de un fallo confirmado
 
 Edna exige un `requestId` nuevo para cada solicitud: un UUID ya utilizado produce
