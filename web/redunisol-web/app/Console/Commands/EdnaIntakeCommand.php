@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\ProcessEdnaIntake;
 use App\Services\EdnaIntake;
+use App\Services\EdnaIntakeBinding;
 use App\Services\EdnaIntakePilot;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ class EdnaIntakeCommand extends Command
 {
     protected $signature = 'edna:intake {action=status : status, pilot, recover, rescue or prune} {id?}
         {--expected-case= : Original request UUID, required to recover}
+        {--expected-lead= : Verified original lead, required for a bound profile review rescue}
         {--confirmed-no-writes : Operator verified the failed execution made no CRM writes}
         {--apply : Apply the selected recovery or retention operation}';
 
@@ -101,6 +103,20 @@ class EdnaIntakeCommand extends Command
                             'cuil_phone_conflict', 'ambiguous_cuil_contact', 'ambiguous_cuil_lead', 'contact_lead_conflict',
                             'existing_management', 'existing_form_requires_review'], true)
                     : $request->state === 'unknown' && $request->reason === 'crm_acknowledgement_uncertain';
+                if ($this->argument('action') === 'rescue' && $request->state === 'review'
+                    && $request->reason === 'bound_profile_conflict' && ! $request->contact_id) {
+                    // This review returns the bound lead ID before any CRM write.
+                    // An identity in the acknowledgement alone is not a new lead.
+                    $lead = (string) $this->option('expected-lead');
+                    $intake = new EdnaIntake;
+                    $binding = $intake->isChannelContract($send) ? app(EdnaIntakeBinding::class)->verified($send) : null;
+                    $entry = $intake->entryContext($send);
+                    $eligible = preg_match('/^[1-9][0-9]{0,63}$/D', $lead)
+                        && (string) $request->lead_id === $lead && $binding && $entry
+                        && ($binding['lead_id'] ?? null) === $lead
+                        && ($binding['entry_event_id'] ?? null) === $entry['event_id']
+                        && ($binding['entry_message_id'] ?? null) === $entry['message_id'];
+                }
                 if (! $eligible || ! $request->answer || $send->state !== 'completed'
                     || (int) $send->response_event_id !== (int) $request->response_event_id
                     || ! config('edna.intake_crm_enabled') || ! (new EdnaIntake)->canSend($send)) {

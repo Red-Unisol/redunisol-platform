@@ -87,6 +87,88 @@ function unifiedIntakeResolver(?array $proof, ?int $calls = null): void
     app()->instance(EdnaIntakeBinding::class, $resolver);
 }
 
+function unifiedProfileReview(): object
+{
+    $request = unifiedIntakeReply();
+    $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
+    DB::table('edna_intake_bindings')->insert([
+        'flow_send_id' => $send->id, 'case_id' => $send->request_id, 'entry_event_id' => $send->entry_event_id,
+        'lead_id' => '700', 'state' => 'verified', 'proof' => json_encode(unifiedIntakeProof($send)),
+        'verified_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    DB::table('edna_intake_requests')->where('id', $request->id)->update([
+        'state' => 'review', 'reason' => 'bound_profile_conflict', 'lead_id' => '700', 'contact_id' => '',
+    ]);
+
+    return DB::table('edna_intake_requests')->find($request->id);
+}
+
+test('audited empty profile rescue processes the saved answer on its original bound lead once', function () {
+    $request = unifiedProfileReview();
+    $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
+    $before = (array) $send;
+    $binding = (array) DB::table('edna_intake_bindings')->first();
+    $args = ['action' => 'rescue', 'id' => $request->id, '--apply' => true,
+        '--expected-case' => $send->request_id, '--expected-lead' => '700', '--confirmed-no-writes' => true];
+    Queue::fake();
+
+    $this->artisan('edna:intake', ['action' => 'rescue', 'id' => $request->id])->assertSuccessful();
+    Queue::assertNothingPushed();
+    $this->artisan('edna:intake', $args)->assertSuccessful();
+    $this->artisan('edna:intake', $args)->assertFailed();
+    Queue::assertPushed(ProcessEdnaIntake::class, 1);
+    Queue::assertNotPushed(SendEdnaFlow::class);
+    expect((array) DB::table('edna_flow_sends')->find($send->id))->toBe($before)
+        ->and((array) DB::table('edna_intake_bindings')->first())->toBe($binding)
+        ->and(DB::table('edna_intake_requests')->find($request->id)->answer)->toBe($request->answer)
+        ->and(DB::table('edna_intake_pilots')->first()->admitted)->toBe(1)
+        ->and(DB::table('edna_intake_admissions')->count())->toBe(1)
+        ->and(DB::table('edna_intake_requests')->count())->toBe(1);
+
+    Http::fake(['kestra.example.test/bitrix24_whatsapp_intake/*' => fn ($r) => Http::response([
+        'ok' => true, 'case_id' => $r['case_id'], 'action' => 'queued', 'lead_id' => '700', 'contact_id' => '710',
+    ])]);
+    (new ProcessEdnaIntake($request->id))->handle();
+    (new ProcessEdnaIntake($request->id))->handle();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($r) => $r['case_id'] === $send->request_id
+        && $r['contract'] === EdnaIntake::CHANNEL_CONTRACT && $r['crm_binding']['lead_id'] === '700'
+        && $r['answer']['cuil'] === '20301234563');
+    expect(DB::table('edna_intake_requests')->find($request->id)->state)->toBe('synced')
+        ->and(DB::table('edna_intake_requests')->find($request->id)->lead_id)->toBe('700');
+    $this->artisan('edna:intake', $args)->assertSuccessful();
+    Queue::assertPushed(ProcessEdnaIntake::class, 1);
+});
+
+test('bound profile rescue requires exact saved identity proof and a prewrite review', function (string $condition) {
+    $request = unifiedProfileReview();
+    $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
+    $args = ['action' => 'rescue', 'id' => $request->id, '--apply' => true,
+        '--expected-case' => $send->request_id, '--expected-lead' => '700', '--confirmed-no-writes' => true];
+    match ($condition) {
+        'missing_expected_lead' => $args['--expected-lead'] = '',
+        'wrong_expected_lead' => $args['--expected-lead'] = '701',
+        'recorded_other_lead' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['lead_id' => '701']),
+        'recorded_contact' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['contact_id' => '710']),
+        'different_reason' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['reason' => 'bound_identity_conflict']),
+        'unknown', 'processing', 'pending' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['state' => $condition]),
+        'missing_binding' => DB::table('edna_intake_bindings')->delete(),
+        'unverified_binding' => DB::table('edna_intake_bindings')->update(['state' => 'pending']),
+        'different_binding_case' => DB::table('edna_intake_bindings')->update(['case_id' => '00000000-0000-4000-8000-000000000001']),
+        'different_entry_message' => DB::table('edna_intake_bindings')->update(['proof' => json_encode(array_replace(unifiedIntakeProof($send), ['entry_message_id' => '99999']))]),
+        'legacy_contract' => DB::table('edna_flow_sends')->where('id', $send->id)->update(['intake_contract' => null]),
+        'missing_answer' => DB::table('edna_intake_requests')->where('id', $request->id)->update(['answer' => null]),
+        'mismatched_response' => DB::table('edna_flow_sends')->where('id', $send->id)->update(['response_event_id' => 999999]),
+        'missing_audit' => $args['--confirmed-no-writes'] = false,
+    };
+    Queue::fake();
+    $this->artisan('edna:intake', $args)->assertFailed();
+    Queue::assertNothingPushed();
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), '/bitrix24_whatsapp_intake/'));
+})->with(['missing_expected_lead', 'wrong_expected_lead', 'recorded_other_lead', 'recorded_contact', 'different_reason',
+    'unknown', 'processing', 'pending', 'missing_binding', 'unverified_binding', 'different_binding_case',
+    'different_entry_message', 'legacy_contract', 'missing_answer', 'mismatched_response', 'missing_audit']);
+
 function unifiedLegacyWebsiteSend(): object
 {
     config()->set('edna.intake_entry_scope', 'website');
