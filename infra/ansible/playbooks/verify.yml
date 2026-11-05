@@ -35,6 +35,11 @@
         name: storage
         tasks_from: verify
       tags: [storage]
+    - name: Verify explicitly adopted backup storage
+      ansible.builtin.import_role:
+        name: backup_storage
+        tasks_from: verify
+      tags: [backup_storage]
     - name: Verify local host observability
       ansible.builtin.import_role:
         name: monitoring

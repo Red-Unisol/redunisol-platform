@@ -30,6 +30,7 @@ jobs:
     env:
       ANSIBLE_CONFIG: ${{ github.workspace }}/infra/ansible/ansible.cfg
       ANSIBLE_LOCAL_TEMP: ${{ runner.temp }}/ansible-local
+      FOUNDATION_TEST_RESTIC_BINARY: ${{ runner.temp }}/redunisol-restic/restic
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - name: Checkout
@@ -60,6 +61,9 @@ jobs:
           ansible-lint --version
           yamllint --version
 
+      - name: Install pinned Restic for isolated local tests
+        run: python infra/ansible/tools/install-test-restic.py --directory "$RUNNER_TEMP/redunisol-restic"
+
       - name: Check foundation safety contracts
         run: python -m unittest discover -s infra/ansible/tests -v
 
@@ -80,6 +84,6 @@ jobs:
       - name: Check playbook syntax without contacting hosts
         working-directory: infra/ansible
         run: |
-          for playbook in provision verify maintenance; do
+          for playbook in provision verify maintenance storage-prepare backup-initialize restore-local-config; do
             ansible-playbook -i inventories/production/hosts.yml "playbooks/${playbook}.yml" --syntax-check
           done

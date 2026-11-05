@@ -3,6 +3,9 @@
   ansible.builtin.assert:
     that:
       - foundation_backups_enabled | type_debug == 'bool'
+      - foundation_backups_timers_enabled | type_debug == 'bool'
+      - foundation_backups_source_paths | unique | length == foundation_backups_source_paths | length
+      - foundation_backups_source_paths | difference(foundation_backups_foundation_config_files) | length == 0
       - foundation_backups_repository_kind in ['local', 'offsite']
       - foundation_backups_source_paths | type_debug == 'list'
       - foundation_backups_max_attempts | int >= 1
@@ -26,7 +29,7 @@
   loop: >-
     {{ [foundation_backups_state_directory, foundation_backups_log_directory,
         foundation_backups_textfile_directory, foundation_backups_restore_smoke_directory,
-        foundation_backups_password_file] +
+        foundation_backups_password_file, foundation_backups_restore_local_directory] +
        ([foundation_backups_environment_file] if foundation_backups_environment_file | length > 0 else []) +
        ([foundation_backups_local_mountpoint] if foundation_backups_local_mountpoint | length > 0 else []) +
        foundation_backups_source_paths }}
@@ -125,6 +128,7 @@
         - "{{ foundation_backups_state_directory }}/cache"
         - "{{ foundation_backups_log_directory }}"
         - "{{ foundation_backups_restore_smoke_directory }}"
+        - "{{ foundation_backups_restore_local_directory }}"
 
     - name: Create script and metrics directories
       ansible.builtin.file:
@@ -149,6 +153,10 @@
           dest: /usr/local/libexec/redunisol-foundation/backup
         - src: restore-smoke.sh.j2
           dest: /usr/local/libexec/redunisol-foundation/restore-smoke
+        - src: backup-catalog.py.j2
+          dest: /usr/local/libexec/redunisol-foundation/backup-catalog
+        - src: restore-local-config.sh.j2
+          dest: /usr/local/libexec/redunisol-foundation/restore-local-config
 
     - name: Publish backup configuration status without claiming backup success
       ansible.builtin.template:
@@ -183,8 +191,8 @@
     - name: Enable or stop backup timers without executing backup during provisioning
       ansible.builtin.systemd_service:
         name: "{{ item }}"
-        enabled: "{{ foundation_backups_enabled }}"
-        state: "{{ 'started' if foundation_backups_enabled else 'stopped' }}"
+        enabled: "{{ foundation_backups_enabled and foundation_backups_timers_enabled }}"
+        state: "{{ 'started' if foundation_backups_enabled and foundation_backups_timers_enabled else 'stopped' }}"
         daemon_reload: true
       loop:
         - redunisol-foundation-backup.timer
@@ -193,8 +201,9 @@
 - name: Report backup readiness accurately
   ansible.builtin.debug:
     msg: >-
-      {{ ('Backup timers configured for ' ~ foundation_backups_repository_kind ~
-          ' repository; runtime backup/check and real-data restore evidence remain required.')
+      {{ ('Backup execution configured for ' ~ foundation_backups_repository_kind ~
+          ' repository; timers ' ~ ('enabled' if foundation_backups_timers_enabled else 'disabled') ~
+          '; runtime backup/check and real-data restore evidence remain required.')
          if foundation_backups_enabled else
          'BACKUP INCOMPLETE: backup is disabled. No successful backup or restore is claimed.' }}
 

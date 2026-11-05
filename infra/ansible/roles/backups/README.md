@@ -42,14 +42,20 @@ For either destination, activation also requires:
   foundation_backups_consistency_confirmed=true. Database storage/Docker data
   directories are not file-backup sources; produce separately consistent exports.
 
-Runtime guards reject standard database roots, PostgreSQL/MySQL marker files and
+The initial source profile is limited to the eight individual canonical files in
+foundation_backups_foundation_config_files (Docker, Apache, journald, apt and host
+health configuration). Directories, app data and the backup password are not valid
+sources. Runtime guards also reject standard database roots, PostgreSQL/MySQL marker files and
 overlap between a local repository and a source. Those guards do not establish
 consistency of arbitrary application files; the catalog and operator confirmation
 remain necessary. No application database is backed up in this foundation step.
 
 ## Operation, scope and evidence
 
-The default backup timer is daily at 03:00 Argentina time; check is Sunday at
+Scheduled timers are disabled by default independently of backup execution.
+foundation_backups_enabled permits explicit backup/check operations;
+foundation_backups_timers_enabled additionally enables the schedule.
+The default backup timer schedule is daily at 03:00 Argentina time; check is Sunday at
 05:00, with randomized delay and Persistent=true. Provisioning does not explicitly
 execute a backup, although an enabled persistent timer may fire a missed run.
 One nonblocking flock serializes operations; overlap exits 75 without refreshing
@@ -63,7 +69,8 @@ and repository kind. Redacted audit logs rotate daily, 14 rotations, root-only.
 State/evidence live under foundation_backups_state_directory.
 
 foundation_backup_configured means activation configuration passed, not that a
-backup succeeded. foundation_backup_offsite_configured additionally requires
+backup succeeded. foundation_backup_enabled means execution is enabled;
+foundation_backup_timers_enabled reports actual configured schedule enablement. foundation_backup_offsite_configured additionally requires
 kind=offsite. repository_kind_info labels local/offsite explicitly. Runtime
 foundation_backup_success / foundation_backup_check_success and attempt/success,
 exit-code/duration metrics reflect actual operations. Monitoring publishes age
@@ -103,3 +110,47 @@ snapshot, checksums, recovery point and elapsed time. Never restore over product
 Check mode validates contracts and skips package/file/service mutations. It is
 not an empty-host deployment simulation and does not evidence working backups.
 Two SATA disks and an installed timer are not completed backup protection.
+
+## Separate approved local initialization
+
+Use playbooks/backup-initialize.yml only after the storage operation has been
+separately approved and completed. It requires foundation_apply_authorized=true,
+foundation_backups_initialize_authorized=true, a reviewed foundation_revision,
+kind=local and independent key custody. It verifies the host, exact mounted UUID
+and non-root device before any initialization write.
+
+Supply foundation_backups_password through --extra-vars @/private/vars.json, with
+that controller file mode 0600. Never put a secret inline in a playbook, inventory,
+shell argument or command transcript: Ansible error origin excerpts may include
+nearby inline values even when a task has no_log. The original local ignored
+credentials.txt is the custodied source; operators prepare the private input file
+without displaying the key. This playbook does not generate the custody copy.
+
+The remote key is installed root0600 only if absent; a different existing key
+causes failure, never rotation/replacement. An existing initialized repository is
+authenticated and preserved, never reinitialized. An unrelated nonempty directory
+is refused. Initialization does not enable the master flag or timers. After
+successful initialization, review repository_initialized/key_custody flags and
+render the backup role with execution enabled but timers disabled for the first
+manual backup, check and restoration proof.
+
+## Real foundation configuration recovery
+
+Every real configuration backup includes source-catalog.json, containing only
+path, SHA-256, size, mode, UID/GID and source revision metadata. The catalog is
+captured before the backup and recaptured afterwards; a difference makes the
+operation fail and does not refresh successful-backup timestamps.
+
+playbooks/restore-local-config.yml is separate from provision and requires
+foundation_apply_authorized=true, foundation_backups_restore_authorized=true and
+foundation_backups_restore_snapshot=<full 64-hex ID>. It uses the existing key,
+validates the selected local mount, then restores only the approved catalog files
+into a fresh root0700 directory below foundation_backups_restore_local_directory.
+No caller-supplied arbitrary target is accepted; original /etc files are untouched.
+
+The helper reads the catalog from that exact snapshot, validates its scope and
+file allowlist, uses restic restore --verify with explicit --include paths, and
+compares SHA-256, size, mode and ownership. Evidence.json and state/metrics use
+scope=real-local-foundation-config, repository_kind=local and offsite=false.
+This is distinct from the synthetic restore-smoke fixture and still does not
+prove recovery of application databases or protection against server loss.

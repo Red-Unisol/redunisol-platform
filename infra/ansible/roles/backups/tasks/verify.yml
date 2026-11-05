@@ -30,6 +30,14 @@
         regex_findall('(?m)^foundation_backup_offsite_configured ([01])$')) ==
         [('1' if foundation_backups_enabled and foundation_backups_repository_kind == 'offsite' else '0')]
 
+- name: Require an honest timer scheduling gauge
+  ansible.builtin.assert:
+    that:
+      - >-
+        (foundation_backups_configuration_metric.content | b64decode |
+        regex_findall('(?m)^foundation_backup_timers_enabled ([01])$')) ==
+        [('1' if foundation_backups_enabled and foundation_backups_timers_enabled else '0')]
+
 - name: Read backup timer activation
   ansible.builtin.command:
     argv: [systemctl, is-enabled, "{{ item }}"]
@@ -44,7 +52,7 @@
 - name: Validate backup timer enablement
   ansible.builtin.assert:
     that:
-      - item.stdout == ('enabled' if foundation_backups_enabled else 'disabled')
+      - item.stdout == ('enabled' if foundation_backups_enabled and foundation_backups_timers_enabled else 'disabled')
   loop: "{{ foundation_backups_timer_enabled.results }}"
 
 - name: Read backup timer run state
@@ -61,7 +69,7 @@
 - name: Validate backup timer run state
   ansible.builtin.assert:
     that:
-      - item.stdout == ('active' if foundation_backups_enabled else 'inactive')
+      - item.stdout == ('active' if foundation_backups_enabled and foundation_backups_timers_enabled else 'inactive')
   loop: "{{ foundation_backups_timer_active.results }}"
 
 - name: Read actual successful backup and check evidence
@@ -86,6 +94,10 @@
       - (item.content | b64decode | from_json).stage == 'complete'
       - (item.content | b64decode | from_json).check_mode == foundation_backups_check_mode
       - (item.content | b64decode | from_json).repository_kind == foundation_backups_repository_kind
+      - item.item != 'backup' or (item.content | b64decode | from_json).source_consistency_verified
+      - >-
+        item.item != 'backup' or
+        ((item.content | b64decode | from_json).source_catalog_sha256 is match('^[0-9a-f]{64}$'))
       - >-
         foundation_backups_now.stdout | int >=
         (item.content | b64decode | from_json).finished_at | int

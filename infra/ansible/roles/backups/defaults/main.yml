@@ -25,3 +25,17 @@ foundation_backups_timeout_seconds: 7200
 foundation_backups_check_timeout_seconds: 21600
 foundation_backups_check_mode: full
 foundation_backups_check_read_data_subset: ""
+foundation_backups_timers_enabled: false
+foundation_backups_initialize_authorized: false
+foundation_backups_restore_authorized: false
+foundation_backups_restore_snapshot: ""
+foundation_backups_restore_local_directory: /var/lib/redunisol-foundation/restore-local-config
+foundation_backups_foundation_config_files:
+  - /etc/docker/daemon.json
+  - /etc/apache2/ports.conf
+  - /etc/apache2/sites-available/redunisol-foundation.conf
+  - /etc/systemd/journald.conf.d/50-redunisol.conf
+  - /etc/apt/apt.conf.d/52redunisol-no-automatic-reboot
+  - /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
+  - /etc/systemd/system/redunisol-foundation-health.service
+  - /etc/systemd/system/redunisol-foundation-health.timer

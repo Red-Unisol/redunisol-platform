@@ -42,4 +42,25 @@ foundation_proxy_package_version: "2.4.69-1~deb13u1"
 # Local SATA backup is the intended first backend; no device has been prepared yet.
 foundation_backups_repository_kind: local
 foundation_backups_local_mountpoint: /srv/redunisol-backups
-foundation_backups_local_mount_uuid: ""
+foundation_backups_local_mount_uuid: df29bb35-b77f-4355-a93c-c53a32580267
+
+# Proposed local backup filesystem. Preparation still requires separate approval.
+foundation_backup_storage_enabled: false
+foundation_backup_storage_by_id: /dev/disk/by-id/ata-ST2000VN003-3CW102_ZWD0RX9Q
+foundation_backup_storage_serial: ZWD0RX9Q
+foundation_backup_storage_model: ST2000VN003-3CW102
+foundation_backup_storage_size_bytes: 2000398934016
+foundation_backup_storage_uuid: df29bb35-b77f-4355-a93c-c53a32580267
+foundation_backup_storage_label: ru-backups
+foundation_backup_storage_mountpoint: /srv/redunisol-backups
+foundation_backups_repository: /srv/redunisol-backups/restic/foundation
+foundation_backups_timers_enabled: false
+foundation_backups_source_paths:
+  - /etc/docker/daemon.json
+  - /etc/apache2/ports.conf
+  - /etc/apache2/sites-available/redunisol-foundation.conf
+  - /etc/systemd/journald.conf.d/50-redunisol.conf
+  - /etc/apt/apt.conf.d/52redunisol-no-automatic-reboot
+  - /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
+  - /etc/systemd/system/redunisol-foundation-health.service
+  - /etc/systemd/system/redunisol-foundation-health.timer

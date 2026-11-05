@@ -1,0 +1,18 @@
+---
+- name: Prepare only the separately approved dedicated backup SATA
+  hosts: foundation_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Verify the dedicated host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+
+    - name: Plan or perform the approved one-disk preparation
+      ansible.builtin.import_role:
+        name: backup_storage
+        tasks_from: prepare
+      tags: [backup_storage]

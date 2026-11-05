@@ -1,0 +1,25 @@
+---
+- name: Restore a concrete foundation configuration snapshot to an isolated target
+  hosts: foundation_hosts
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require explicit isolated restore approval and reviewed source revision
+      ansible.builtin.assert:
+        that:
+          - foundation_apply_authorized | default(false) | bool
+          - foundation_backups_restore_authorized | default(false) | bool
+          - foundation_revision | default('') is match('^[0-9a-f]{40}$')
+        fail_msg: Restore needs explicit apply and backup-restore authorization for the reviewed Git revision.
+      tags: [always]
+  tasks:
+    - name: Confirm immutable host identity
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+    - name: Restore and validate only the selected local configuration snapshot
+      ansible.builtin.import_role:
+        name: backups
+        tasks_from: restore-local-config

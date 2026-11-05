@@ -22,6 +22,8 @@
       tags: [access]
     - role: storage
       tags: [storage]
+    - role: backup_storage
+      tags: [backup_storage]
     - role: docker
       tags: [docker]
     - role: proxy

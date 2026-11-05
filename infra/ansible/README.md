@@ -17,15 +17,17 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | Acceso | Cuentas y claves publicas expresamente configuradas. |
 | Docker | Motor y plugin Compose, configuracion del daemon y verificacion. |
 | Proxy | Configuracion base sin publicar los dominios de las aplicaciones actuales. |
-| Storage | Validacion de discos y montajes existentes, y creacion de directorios; sin montar ni formatear discos. |
+| Storage habitual | Validacion de discos y montajes existentes, y creacion de directorios. |
+| Preparacion de backup local | Operacion separada y bloqueada por defecto para preparar un unico SATA aprobado; no se ejecuta desde provision. |
 | Observabilidad | Agente y comprobaciones del host, con acceso explicito del monitor. |
 | Recuperacion | Copias de la configuracion base y comprobaciones de respaldo. |
 | Mantenimiento | Revision de actualizaciones y necesidad de reinicio, separada del provisionamiento. |
 
 Por defecto no se cambia el firewall, el puerto SSH ni la politica de login root.
-Los dos SATA observados no se particionan ni formatean por inferir que estan
-vacios: una futura decision de storage debe identificar discos de forma estable y
-revisar su contenido. MONITOREO y TRANSF conservan sus funciones; el correo
+El rol `storage` habitual no inicializa, formatea ni monta discos. La preparacion
+del SATA para backup se declara aparte, se identifica por serial y requiere un
+cambio concreto revisado y autorizado; nunca se deriva de inferir que esta vacio.
+MONITOREO y TRANSF conservan sus funciones; el correo
 historico se verifica por separado y queda fuera de esta etapa.
 
 ## Estructura y destinos
@@ -42,8 +44,12 @@ playbooks/
   provision.yml
   verify.yml
   maintenance.yml
+  storage-prepare.yml
+  backup-initialize.yml
+  restore-local-config.yml
 roles/
 tests/
+tools/install-test-restic.py
 ```
 
 `foundation_hosts` selecciona los hosts de esta base. El inventario de produccion
@@ -53,7 +59,7 @@ integracion no autoriza reutilizar la VPS productiva antes de su liberacion.
 
 ## Controlador y credenciales
 
-Usar Linux o WSL con Python 3.13 y un cliente OpenSSH. Ansible se ejecuta desde ese
+Usar Linux o WSL amd64 con Python 3.13 y un cliente OpenSSH. Ansible se ejecuta desde ese
 controlador, no desde Python nativo de Windows. Desde la raiz del repositorio:
 
 ```bash
@@ -107,7 +113,7 @@ yamllint --strict . ../../.github/workflows/validate-ansible.yml
 ansible-lint --offline
 ansible-inventory -i inventories/production/hosts.yml --graph
 ansible-inventory -i inventories/integration/hosts.yml --graph
-for playbook in provision verify maintenance; do
+for playbook in provision verify maintenance storage-prepare backup-initialize restore-local-config; do
   ansible-playbook -i inventories/production/hosts.yml "playbooks/${playbook}.yml" --syntax-check
 done
 ```
@@ -115,8 +121,15 @@ done
 Desde la raiz del repositorio:
 
 ```bash
+python infra/ansible/tools/install-test-restic.py --directory /tmp/redunisol-restic
+export FOUNDATION_TEST_RESTIC_BINARY=/tmp/redunisol-restic/restic
 python -m unittest discover -s infra/ansible/tests -v
 ```
+
+El instalador de pruebas descarga Restic `0.18.0` para Linux amd64 desde su
+release oficial y comprueba el SHA-256 fijado en el script. No usa root ni instala
+paquetes del host. Las pruebas usan repositorios temporales y datos sinteticos;
+no configuran backups reales ni recuperan archivos de los servidores operativos.
 
 El workflow `Validate Ansible foundation` ejecuta estas validaciones en Linux con
 Python 3.13 y acciones fijadas por commit. Tiene permisos de lectura del repositorio, no abre SSH, no usa
@@ -131,6 +144,19 @@ funcione.
 - `maintenance.yml` refresca metadata APT y reporta paquetes actualizables y
   necesidad de reinicio, con autorizacion independiente. No actualiza paquetes
   ni reinicia el host; tampoco forma parte de un deploy de aplicacion.
+- `storage-prepare.yml` prepara el dispositivo concreto aprobado para backup
+  local y su montaje persistente. Es una operacion separada, bloqueada por
+  defecto; no inicializa los discos desde el provisionamiento habitual.
+- `backup-initialize.yml` inicializa el repositorio local aprobado y comprueba
+  sus prerrequisitos. No sustituye ejecutar y verificar la primera copia real.
+- `restore-local-config.yml` extrae configuracion desde un snapshot real a un
+  directorio nuevo y privado para contrastarla. No restaura sobre `/etc`, no
+  modifica los accesos y no aplica esa configuracion al host.
+
+Los tres nuevos procedimientos de storage, inicializacion y restauracion se
+preparan en Git; su presencia y su syntax-check no acreditan que hayan sido
+aplicados. Sus guardas permanecen desactivadas por defecto hasta la aprobacion
+de la intervencion concreta.
 
 Una futura aplicacion autorizada empieza por revisar inventario y variables,
 comprobar el destino y evaluar los cambios:
@@ -167,22 +193,115 @@ deben mantenerse fuera de Git y las tareas que las consuman ocultar su contenido
 `foundation_revision` para ejecutarse fuera de check mode. Un futuro upgrade o
 reinicio requiere su propia intervencion y criterios de recuperacion.
 
+## Operaciones locales preparadas, pendientes de aprobacion
+
+Primero revisar la [propuesta concreta del SATA](../../docs/dedicated-foundation.md#storage-local-propuesto-pendiente-de-aplicacion)
+y el inventario. Puede consultarse el plan sin habilitar las guardas de escritura:
+
+```bash
+ansible-playbook -i inventories/production/hosts.yml playbooks/storage-prepare.yml \
+  --limit dedicated_prod_01 --check --diff
+```
+
+Este comando inspecciona el host, pero no crea el filesystem ni monta el disco.
+Un plan valido no acredita que la preparacion haya ocurrido.
+
+La aplicacion posterior requiere una revision Git completa y parametros explicitos
+de la intervencion. Estos son los contratos de los tres procedimientos:
+
+| Operacion | Parametros y comprobaciones exigidos |
+| --- | --- |
+| Preparar SATA | `foundation_apply_authorized`, `foundation_backup_storage_enabled` y `foundation_backup_storage_prepare_authorized` habilitados; `foundation_revision`; confirmacion literal indicada debajo. |
+| Inicializar repositorio | `foundation_apply_authorized` y `foundation_backups_initialize_authorized` habilitados; `foundation_revision`; `foundation_backups_key_custody_confirmed`; `foundation_backups_password` privado de al menos 32 caracteres. |
+| Restaurar catalogo | `foundation_apply_authorized` y `foundation_backups_restore_authorized` habilitados; `foundation_revision`; `foundation_backups_restore_snapshot` con el ID completo de 64 caracteres hexadecimales, nunca `latest`. |
+
+Para este dispositivo, `foundation_backup_storage_confirmation` debe coincidir
+exactamente con:
+
+```text
+INITIALIZE ZWD0RX9Q UUID df29bb35-b77f-4355-a93c-c53a32580267
+```
+
+Los flags anteriores estan desactivados en sus defaults. No habilitarlos antes
+de aprobar la intervencion concreta ni dejar una autorizacion de inicializacion
+como parametro habitual de deploy. Conservar los datos de identidad y UUID del
+inventario; no seleccionar el disco solamente por el nombre `/dev/sdb`.
+
+Para una operacion aprobada se puede usar un YAML privado fuera de Git, identificado
+por `FOUNDATION_OPERATION_VARS`, con los flags y valores revisados de esa operacion.
+Agregar siempre `foundation_revision` de la revision que efectivamente se ejecuta.
+La contrasena del repositorio debe leerse de esa fuente privada, nunca de argumentos
+con su valor literal ni de documentacion. No se muestran ejemplos de su contenido.
+La inicializacion no rota ni reemplaza una clave existente diferente.
+
+Orden de ejecucion posterior a la aprobacion:
+
+1. Aplicar `storage-prepare.yml` contra el unico SATA seleccionado y verificar
+   UUID, montaje nativo de systemd e idempotencia. El NVMe y el otro SATA siguen
+   fuera de esa inicializacion.
+2. Aplicar `backup-initialize.yml` con clave custodiada y comprobar que el
+   repositorio local se abre con ella. Esto no ejecuta una copia ni activa timers.
+3. Registrar el filesystem y repositorio realmente preparados en el estado
+   deseado. Revisar las confirmaciones de inicializacion, custodia y consistencia
+   antes de habilitar `foundation_backups_enabled`. Mantener
+   `foundation_backups_timers_enabled: false` durante la validacion inicial.
+4. Provisionar los mecanismos de backup aprobados y ejecutar una primera copia
+   real y su comprobacion de integridad. Identificar el snapshot concreto.
+5. Aplicar `restore-local-config.yml` con ese ID y verificar el reporte de
+   comparacion. El script crea un nuevo directorio privado bajo
+   `foundation_backups_restore_local_directory`; no sobrescribe el sistema activo.
+6. Habilitar los timers solo cuando esa evidencia resulte satisfactoria y quede
+   registrada la decision. Verificar el runtime con la misma revision aplicada.
+
+Estos pasos no se ejecutan desde CI ni equivalen a un traslado de aplicaciones.
+Se implementan con Ansible core y herramientas Debian declaradas, sin agregar
+colecciones Galaxy al controlador ni cambiar el lock Python para esta operacion.
+
 ## Aceptacion y evidencia
 
 El inventario inicial mantiene el exporter en `127.0.0.1:9100`, marca
-`foundation_external_monitoring_configured: false` y deja
-`foundation_backups_enabled: false`. Eso permite preparar la observacion local
+`foundation_external_monitoring_configured: false` y deja desactivados
+`foundation_backup_storage_enabled`, `foundation_backups_enabled` y
+`foundation_backups_timers_enabled`. Eso permite preparar la observacion local
 sin exponer metricas a Internet ni simular una copia externa. El acceso desde
 MONITOREO y la politica de red se completan con destinos autorizados y verificados.
 
 Para activar backups hace falta un repositorio real ya inicializado, local o externo,
 custodia de su clave, archivo privado de autenticacion y rutas fuente revisadas.
 El backend local exige un montaje independiente con UUID verificado y distinto del filesystem raiz; el externo exige un destino confirmado.
-Preparar ese montaje corresponde a una intervencion de storage separada; esta
-base valida un montaje existente y no lo crea.
+Preparar ese montaje corresponde a `storage-prepare.yml`, separado del
+provisionamiento habitual; el rol `storage` existente solo lo valida.
 Los defaults del rol `backups` exigen confirmar esos datos y la consistencia de
 las fuentes. No usar una declaracion `true` para sustituir su verificacion, ni
 agregar bases vivas o volumenes de aplicaciones a esa lista sin su procedimiento.
+
+El repositorio local propuesto es `/srv/redunisol-backups/restic/foundation`,
+sobre el filesystem separado con UUID
+`df29bb35-b77f-4355-a93c-c53a32580267`. El dispositivo se selecciona por by-id y
+serial; ver la [propuesta de storage](../../docs/dedicated-foundation.md#storage-local-propuesto-pendiente-de-aplicacion).
+La presencia de estos valores en Git no indica que el disco o repositorio hayan
+sido preparados.
+
+El catalogo real de esta etapa es `foundation_backups_source_paths`, en
+[`inventories/production/group_vars/all.yml`](inventories/production/group_vars/all.yml).
+Contiene estas ocho configuraciones de la base:
+
+```text
+/etc/docker/daemon.json
+/etc/apache2/ports.conf
+/etc/apache2/sites-available/redunisol-foundation.conf
+/etc/systemd/journald.conf.d/50-redunisol.conf
+/etc/apt/apt.conf.d/52redunisol-no-automatic-reboot
+/etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
+/etc/systemd/system/redunisol-foundation-health.service
+/etc/systemd/system/redunisol-foundation-health.timer
+```
+
+El ensayo de restauracion debe usar un snapshot real de ese catalogo, un destino
+nuevo `0700` en el mismo host y comparacion de contenido. Acredita recuperacion
+de esos archivos dentro de ese alcance, no una reconstruccion integral ni una
+copia externa. El snapshot y su resultado deben quedar identificados en la
+evidencia. La custodia de la clave del repositorio se comprueba por separado.
 
 Registrar revision Git, inventario y limite usados, hora, operador, resultados y
 limitaciones pendientes, sin credenciales ni dumps de variables. La aceptacion
@@ -190,13 +309,20 @@ requiere primera aplicacion autorizada, verificacion del runtime y segunda
 aplicacion de provisionamiento con `changed=0`. Todo cambio recurrente debe
 investigarse y corregirse antes de declarar idempotencia.
 
-Tambien requiere metricas consultables desde el monitor autorizado, una copia
-externa identificada y un ensayo de restauracion de la configuracion real de la
-base en un destino aislado.
-Un timer habilitado o una copia en otro disco del mismo dedicado no acreditan
-recuperacion ante perdida del host. Si faltan destino externo, acceso del monitor
-o ensayo real, la aceptacion sigue pendiente; no se inventan endpoints ni
-credenciales para cerrarla.
+Separar la evidencia local de la proteccion externa:
+
+- Base local: runtime verificado, metricas locales recientes y segunda
+  aplicacion de provisionamiento con `changed=0`.
+- Backup local: dispositivo y montaje correctos, copia real, comprobacion del
+  repositorio y restauracion aislada de configuracion real con comparacion.
+- Proteccion externa: acceso del monitor y entrega de alertas comprobados, y
+  una copia recuperable fuera del dedicado. No se acreditan con una copia SATA.
+
+La conexion externa de monitoreo se difiere expresamente. No bloquea preparar
+manifiestos, imagenes e inventarios de futuros despliegues; tampoco habilita
+activar produccion ni permite declarar completa la aceptacion de proteccion
+externa. Un timer habilitado o una copia local no prueban recuperacion ante
+perdida del host. No se inventan endpoints ni credenciales para cerrar pendientes.
 
 Esta base no contiene restauraciones genericas de bases de aplicaciones. Cada
 servicio tendra despues su procedimiento de consistencia y recuperacion.

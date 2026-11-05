@@ -1,0 +1,31 @@
+---
+- name: Report disabled backup storage without adopting or initializing a disk
+  ansible.builtin.debug:
+    msg: "Backup SATA preparation is pending. No filesystem, mount or backup repository is changed."
+  when: not foundation_backup_storage_enabled
+
+- name: Reconcile only an already prepared backup filesystem
+  when: foundation_backup_storage_enabled
+  block:
+    - name: Validate the fixed storage contract
+      ansible.builtin.import_tasks: contract.yml
+
+    - name: Inspect current storage state
+      ansible.builtin.import_tasks: probe.yml
+
+    - name: Require the expected filesystem before ordinary provisioning
+      ansible.builtin.assert:
+        that:
+          - foundation_backup_storage_probe.state == 'prepared'
+          - ansible_check_mode or (foundation_apply_authorized | default(false) | bool)
+          - ansible_check_mode or (foundation_revision | default('') is match('^[0-9a-f]{40}$'))
+        fail_msg: "Provision cannot initialize disks. Use the separately reviewed storage-prepare operation first."
+
+    - name: Describe mount reconciliation in check mode
+      ansible.builtin.debug:
+        msg: "{{ foundation_backup_storage_probe }}"
+      when: ansible_check_mode
+
+    - name: Apply only the expected persistent mount
+      ansible.builtin.import_tasks: mount.yml
+      when: not ansible_check_mode

@@ -32,21 +32,23 @@ unset RESTIC_PASSWORD RESTIC_PASSWORD_COMMAND RESTIC_REPOSITORY RESTIC_REPOSITOR
 exec 9>"$state_dir/job.lock"
 if ! flock -n 9; then printf 'Another foundation backup operation holds the lock; skipped.\n' >&2; exit 75; fi
 work="$(mktemp -d -- "$state_dir/.run.XXXXXX")"
-started="$(date +%s)"; attempt=0; stage=credentials; snapshot_id=""
+started="$(date +%s)"; attempt=0; stage=credentials; snapshot_id=""; catalog_sha256=""; consistency_verified=false
 finish() {
   rc=$?
   trap - EXIT
   set +e
   finished="$(date +%s)"
-  /usr/bin/python3 - "$state_dir" "$metrics_dir" "$log_dir" "$action" "$started" "$finished" "$rc" "$attempt" "$stage" "$revision" "$snapshot_id" <<'PY'
+  /usr/bin/python3 - "$state_dir" "$metrics_dir" "$log_dir" "$action" "$started" "$finished" "$rc" "$attempt" "$stage" "$revision" "$snapshot_id" "$catalog_sha256" "$consistency_verified" <<'PY'
 import json,os,pathlib,socket,sys,tempfile
-state,metrics,logs,job,start,end,rc,attempt,stage,revision,snapshot=sys.argv[1:]
+state,metrics,logs,job,start,end,rc,attempt,stage,revision,snapshot,catalog_sha256,consistency_verified=sys.argv[1:]
 start,end,rc,attempt=map(int,(start,end,rc,attempt))
 record=dict(job=job,started_at=start,finished_at=end,exit_code=rc,attempts=attempt,
             stage=stage,revision=revision,hostname=socket.gethostname(),
             snapshot_id=snapshot or None,duration_seconds=max(0,end-start),
             check_mode={{ foundation_backups_check_mode | to_json }},
-            repository_kind={{ foundation_backups_repository_kind | to_json }})
+            repository_kind={{ foundation_backups_repository_kind | to_json }},
+            source_catalog_sha256=catalog_sha256 or None,
+            source_consistency_verified=consistency_verified=="true")
 def atomic(path,text,mode):
     path=pathlib.Path(path)
     with tempfile.NamedTemporaryFile(mode="w",dir=str(path.parent),delete=False,encoding="utf-8") as f:
@@ -67,7 +69,7 @@ with open(str(pathlib.Path(logs)/"backup.log"),"a",encoding="utf-8") as f:
     f.write(json.dumps(record,sort_keys=True)+"\n")
 PY
   evidence_rc=$?
-  rm -f -- "$work/stdout" "$work/stderr"
+  rm -f -- "$work/stdout" "$work/stderr" "$work/catalog-before.json" "$work/catalog-after.json"
   rmdir -- "$work"
   printf 'Foundation %s finished: exit=%s attempts=%s stage=%s\n' "$action" "$rc" "$attempt" "$stage"
   if (( rc == 0 && evidence_rc != 0 )); then exit "$evidence_rc"; fi
@@ -118,7 +120,11 @@ if [[ "$action" == backup ]]; then
       exit 78
     fi
   done
-  args=(backup --json --one-file-system --tag redunisol-foundation --tag "revision:$revision" -- "${sources[@]}")
+  stage=source-catalog
+  /usr/local/libexec/redunisol-foundation/backup-catalog capture "$work/catalog-before.json" "${sources[@]}"
+  mv -- "$work/catalog-before.json" "$state_dir/source-catalog.json"
+  catalog_sha256="$(sha256sum -- "$state_dir/source-catalog.json" | cut -d ' ' -f 1)"
+  args=(backup --json --one-file-system --tag redunisol-foundation --tag "revision:$revision" -- "${sources[@]}" "$state_dir/source-catalog.json")
   timeout_seconds={{ foundation_backups_timeout_seconds | int }}
 else
   args=(check)
@@ -139,6 +145,10 @@ done
 if (( attempt > max_attempts )); then attempt="$max_attempts"; fi
 (( rc == 0 )) || exit "$rc"
 if [[ "$action" == backup ]]; then
+  stage=source-consistency
+  /usr/local/libexec/redunisol-foundation/backup-catalog capture "$work/catalog-after.json" "${sources[@]}"
+  /usr/local/libexec/redunisol-foundation/backup-catalog compare "$state_dir/source-catalog.json" "$work/catalog-after.json"
+  consistency_verified=true
   stage=record-snapshot
   snapshot_id="$(/usr/bin/python3 - "$work/stdout" <<'PY'
 import json,re,sys
