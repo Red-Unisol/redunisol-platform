@@ -24,9 +24,11 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | Mantenimiento | Revision de actualizaciones y necesidad de reinicio, separada del provisionamiento. |
 
 Por defecto no se cambia el firewall, el puerto SSH ni la politica de login root.
-El rol `storage` habitual no inicializa, formatea ni monta discos. La preparacion
-del SATA para backup se declara aparte, se identifica por serial y requiere un
-cambio concreto revisado y autorizado; nunca se deriva de inferir que esta vacio.
+El rol `storage` habitual no inicializa, formatea ni monta discos. El rol
+`backup_storage` habilitado reconcilia el montaje del UUID ya preparado; no crea
+su filesystem desde provision. La preparacion del SATA para backup se declara
+aparte, se identifica por serial y requiere un cambio concreto revisado y
+autorizado; nunca se deriva de inferir que esta vacio.
 MONITOREO y TRANSF conservan sus funciones; el correo
 historico se verifica por separado y queda fuera de esta etapa.
 
@@ -153,10 +155,13 @@ funcione.
   directorio nuevo y privado para contrastarla. No restaura sobre `/etc`, no
   modifica los accesos y no aplica esa configuracion al host.
 
-Los tres nuevos procedimientos de storage, inicializacion y restauracion se
-preparan en Git; su presencia y su syntax-check no acreditan que hayan sido
-aplicados. Sus guardas permanecen desactivadas por defecto hasta la aprobacion
-de la intervencion concreta.
+Los procedimientos de storage, inicializacion y restauracion estan definidos en
+Git y se aplicaron al dedicado con autorizacion expresa. Su presencia y su
+syntax-check no demuestran el estado actual del host: ver la
+[evidencia historica de ejecucion](../../docs/dedicated-foundation.md#evidencia-de-aplicacion-y-recuperacion-local).
+Las autorizaciones de escritura de cada operacion permanecen desactivadas por
+defecto; el inventario declara por separado el estado deseado del storage y backup
+ya preparados.
 
 Una futura aplicacion autorizada empieza por revisar inventario y variables,
 comprobar el destino y evaluar los cambios:
@@ -193,9 +198,9 @@ deben mantenerse fuera de Git y las tareas que las consuman ocultar su contenido
 `foundation_revision` para ejecutarse fuera de check mode. Un futuro upgrade o
 reinicio requiere su propia intervencion y criterios de recuperacion.
 
-## Operaciones locales preparadas, pendientes de aprobacion
+## Operaciones locales con autorizacion explicita
 
-Primero revisar la [propuesta concreta del SATA](../../docs/dedicated-foundation.md#storage-local-propuesto-pendiente-de-aplicacion)
+Primero revisar el [estado declarado del SATA](../../docs/dedicated-foundation.md#storage-local-aplicado)
 y el inventario. Puede consultarse el plan sin habilitar las guardas de escritura:
 
 ```bash
@@ -222,10 +227,12 @@ exactamente con:
 INITIALIZE ZWD0RX9Q UUID df29bb35-b77f-4355-a93c-c53a32580267
 ```
 
-Los flags anteriores estan desactivados en sus defaults. No habilitarlos antes
-de aprobar la intervencion concreta ni dejar una autorizacion de inicializacion
-como parametro habitual de deploy. Conservar los datos de identidad y UUID del
-inventario; no seleccionar el disco solamente por el nombre `/dev/sdb`.
+Los defaults de autorizacion siguen desactivados. El inventario de produccion
+habilita el filesystem y mecanismo de backup ya verificados, sin dejar activas
+las autorizaciones de inicializacion o restauracion. No habilitar estas guardas
+antes de aprobar la intervencion concreta ni dejarlas como parametros habituales
+de deploy. Conservar identidad y UUID del inventario; no seleccionar el disco
+solamente por el nombre `/dev/sdb`.
 
 Para una operacion aprobada se puede usar un YAML privado fuera de Git, identificado
 por `FOUNDATION_OPERATION_VARS`, con los flags y valores revisados de esa operacion.
@@ -234,7 +241,9 @@ La contrasena del repositorio debe leerse de esa fuente privada, nunca de argume
 con su valor literal ni de documentacion. No se muestran ejemplos de su contenido.
 La inicializacion no rota ni reemplaza una clave existente diferente.
 
-Orden de ejecucion posterior a la aprobacion:
+Para una reconstruccion autorizada, el orden de ejecucion es el siguiente. El
+dedicado ya cuenta con el filesystem y repositorio verificados; no repetir su
+inicializacion para realizar un backup habitual.
 
 1. Aplicar `storage-prepare.yml` contra el unico SATA seleccionado y verificar
    UUID, montaje nativo de systemd e idempotencia. El NVMe y el otro SATA siguen
@@ -259,11 +268,14 @@ colecciones Galaxy al controlador ni cambiar el lock Python para esta operacion.
 
 ## Aceptacion y evidencia
 
-El inventario inicial mantiene el exporter en `127.0.0.1:9100`, marca
-`foundation_external_monitoring_configured: false` y deja desactivados
+El inventario de produccion mantiene el exporter en `127.0.0.1:9100` y
+`foundation_external_monitoring_configured: false`. Habilita
 `foundation_backup_storage_enabled`, `foundation_backups_enabled` y
-`foundation_backups_timers_enabled`. Eso permite preparar la observacion local
-sin exponer metricas a Internet ni simular una copia externa. El acceso desde
+`foundation_backups_timers_enabled` tras preparar y verificar el repositorio local.
+La programacion deseada es una copia diaria a las 03:00 y una comprobacion completa
+los domingos a las 05:00, zona `America/Argentina/Buenos_Aires`, con hasta 15 minutos
+de demora aleatoria y `Persistent=true`. Esto declara la programacion; no prueba
+por si solo que se haya observado un disparo del timer. El acceso desde
 MONITOREO y la politica de red se completan con destinos autorizados y verificados.
 
 Para activar backups hace falta un repositorio real ya inicializado, local o externo,
@@ -275,12 +287,12 @@ Los defaults del rol `backups` exigen confirmar esos datos y la consistencia de
 las fuentes. No usar una declaracion `true` para sustituir su verificacion, ni
 agregar bases vivas o volumenes de aplicaciones a esa lista sin su procedimiento.
 
-El repositorio local propuesto es `/srv/redunisol-backups/restic/foundation`,
+El repositorio local inicializado y verificado es `/srv/redunisol-backups/restic/foundation`,
 sobre el filesystem separado con UUID
 `df29bb35-b77f-4355-a93c-c53a32580267`. El dispositivo se selecciona por by-id y
-serial; ver la [propuesta de storage](../../docs/dedicated-foundation.md#storage-local-propuesto-pendiente-de-aplicacion).
-La presencia de estos valores en Git no indica que el disco o repositorio hayan
-sido preparados.
+serial; ver el [estado de storage](../../docs/dedicated-foundation.md#storage-local-aplicado).
+Su preparacion se acredita con la evidencia de ejecucion; los valores en Git por
+si solos no sustituyen verificar el runtime.
 
 El catalogo real de esta etapa es `foundation_backups_source_paths`, en
 [`inventories/production/group_vars/all.yml`](inventories/production/group_vars/all.yml).
@@ -302,6 +314,16 @@ nuevo `0700` en el mismo host y comparacion de contenido. Acredita recuperacion
 de esos archivos dentro de ese alcance, no una reconstruccion integral ni una
 copia externa. El snapshot y su resultado deben quedar identificados en la
 evidencia. La custodia de la clave del repositorio se comprueba por separado.
+
+Se verifico una copia real, una comprobacion completa y la restauracion aislada
+de esos ocho archivos, con comparacion independiente de SHA-256, modo, UID y GID.
+La clave privada custodiada por el operador fuera del dedicado se uso para abrir
+el repositorio. El snapshot y reporte del ensayo estan identificados en la
+[evidencia de recuperacion local](../../docs/dedicated-foundation.md#evidencia-de-aplicacion-y-recuperacion-local).
+Para revisar los ultimos resultados del host, consultar
+`/var/lib/redunisol-foundation/backup-state/backup.json`, `check.json` y
+`local-config-restore.json`, y ejecutar `verify.yml` con la revision aplicada.
+Los reportes y la copia SATA no acreditan proteccion fuera del host.
 
 Registrar revision Git, inventario y limite usados, hora, operador, resultados y
 limitaciones pendientes, sin credenciales ni dumps de variables. La aceptacion

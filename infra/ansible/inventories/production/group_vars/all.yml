@@ -53,7 +53,7 @@ foundation_backup_storage_uuid: df29bb35-b77f-4355-a93c-c53a32580267
 foundation_backup_storage_label: ru-backups
 foundation_backup_storage_mountpoint: /srv/redunisol-backups
 foundation_backups_repository: /srv/redunisol-backups/restic/foundation
-foundation_backups_timers_enabled: false
+foundation_backups_timers_enabled: true
 foundation_backups_source_paths:
   - /etc/docker/daemon.json
   - /etc/apache2/ports.conf

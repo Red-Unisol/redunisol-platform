@@ -28,10 +28,12 @@ separado y no forma parte de esta intervencion.
 Esta etapa no traslada aplicaciones, bases, archivos de usuarios, claves OAuth,
 colas, schedulers ni webhooks. No cambia DNS o endpoints productivos, no publica
 dominios de aplicaciones en el proxy nuevo ni modifica el firewall o el login
-root por defecto. El provisionamiento habitual no inicializa, formatea ni monta
-los SATA: valida su identidad y los montajes existentes y crea directorios de la
-base. La preparacion de un SATA para backup se define en una operacion separada,
-bloqueada por defecto y pendiente de aprobar y aplicar su cambio concreto.
+root por defecto. El provisionamiento habitual nunca inicializa ni formatea los
+SATA. El rol `storage` valida identidad y montajes existentes y crea directorios;
+`backup_storage`, habilitado expresamente en este inventario, reconcilia el
+montaje del UUID de backup ya preparado. La inicializacion del SATA se aplico
+mediante una operacion separada y autorizada; su guarda de escritura sigue
+desactivada por defecto.
 
 ## Modelo de operacion
 
@@ -58,14 +60,14 @@ documenta un reinicio automatico gestionado por Ansible; no acredita que ese
 Ansible perteneciera a este repositorio. Una futura migracion debe definir
 apagado ordenado y comprobaciones funcionales posteriores de cada aplicacion.
 
-## Storage local propuesto, pendiente de aplicacion
+## Storage local aplicado
 
-El nuevo procedimiento se prepara en Git para un solo SATA. Todavia no acredita
-un disco preparado, un repositorio creado ni un backup ejecutado. La asignacion
-del rol de backup se propone por identidad observada del dispositivo; no es una
+El procedimiento separado se aplico y verifico sobre un solo SATA. La evidencia
+de ejecucion y recuperacion local se registra mas abajo. La asignacion
+del rol de backup corresponde a la identidad observada del dispositivo; no es una
 confirmacion de que DonWeb etiquete ese serial como su disco de backup.
 
-| Elemento | Propuesta revisable |
+| Elemento | Estado aplicado y verificado |
 | --- | --- |
 | Dispositivo | SATA identificado por by-id y serial `ZWD0RX9Q`, actualmente presentado como `/dev/sdb`. |
 | Modelo y capacidad | `ST2000VN003-3CW102`, `2000398934016` bytes. |
@@ -74,18 +76,19 @@ confirmacion de que DonWeb etiquete ese serial como su disco de backup.
 | Montaje | `/srv/redunisol-backups`, persistente mediante `srv-redunisol\x2dbackups.mount` de systemd. |
 | Fuera del cambio | NVMe raiz y el otro SATA, serial `ZWD0RXD6`. |
 
-La preparacion debe comprobar nuevamente identidad, capacidad, firmas,
+Toda preparacion debe comprobar nuevamente identidad, capacidad, firmas,
 particiones y montajes antes de inicializar. Un resultado desconocido o una
 firma inesperada detienen la operacion; no justifican un borrado forzado. La
 convergencia posterior debe reconocer el UUID ya preparado y conservar los datos.
-La revision del plan y la aprobacion concreta preceden a activar sus guardas;
-los defaults siguen desactivados.
+La revision del plan y la aprobacion concreta preceden a activar sus guardas de
+inicializacion; sus defaults siguen desactivados. El inventario conserva
+habilitada la reconciliacion del filesystem preparado.
 
 ## Recuperacion y observabilidad
 
-El mecanismo de backup de esta etapa se limita a la configuracion base
-efectivamente administrada. El inventario inicial lo mantiene deshabilitado hasta
-disponer de un repositorio verificado.
+El backup de esta etapa se limita a ocho archivos de configuracion base
+efectivamente administrados. El repositorio cifrado local esta inicializado y
+verificado; el inventario de produccion habilita el mecanismo de backup.
 Las copias consistentes de PostgreSQL, SQLite, adjuntos, tracking o colas se
 definiran cuando se incorpore cada servicio. Copiar directorios vivos sin revisar
 su contrato no se considera una estrategia de backup valida.
@@ -109,14 +112,45 @@ No se incluye una restauracion generica de servidores o aplicaciones ni un
 recuperacion integral del host se ensaya por separado en un destino aislado,
 con inventario propio y revision conocida de Git.
 
-Los procedimientos preparados de storage y backup local se separan del deploy:
+Los procedimientos de storage y backup local se separan del deploy:
 `storage-prepare.yml` identifica y prepara solo el dispositivo aprobado;
 `backup-initialize.yml` inicializa su repositorio; `restore-local-config.yml`
 extrae el catalogo acotado de configuracion de un snapshot real a un directorio
 nuevo `0700` en el mismo host y lo compara. Este ultimo no sobrescribe `/etc`, no
 modifica los accesos ni acredita una reconstruccion integral del servidor.
-Preparar estos playbooks en Git no los ejecuta. Mantienen guardas desactivadas
-hasta la aprobacion y aplicacion de la intervencion concreta.
+Su presencia en Git no los ejecuta. Las autorizaciones de inicializacion y
+restauracion siguen desactivadas por defecto y se otorgan para cada intervencion.
+
+## Evidencia de aplicacion y recuperacion local
+
+El 5 de noviembre de 2026 se verificaron las siguientes operaciones autorizadas.
+Es evidencia historica: para conocer el estado presente hay que ejecutar
+`verify.yml` contra el inventario y la revision correspondientes.
+
+| Operacion | Revision y resultado observado |
+| --- | --- |
+| Preparacion del SATA y montaje | `0362beb7ed83de5048fa3a0210b32ca8fc0e92b4`: primera aplicacion `ok=28 changed=6 failed=0`; repeticion `ok=25 changed=0 failed=0`. UUID esperado, XFS y unidad nativa activa y habilitada. |
+| Inicializacion del repositorio | Primera aplicacion `ok=27 changed=3 failed=0`; repeticion `ok=29 changed=0 failed=0`, conservando la clave existente. La copia privada del operador, fuera del dedicado, se uso para abrir el repositorio. |
+| Mecanismo de backup local | `236123f237bce89778b265cf895c34a346b009bc`: provisionamiento `ok=98 changed=6 failed=0`; primera copia y comprobacion completa con `exit_code=0`, `stage=complete` y consistencia de fuentes confirmada. |
+| Restauracion aislada real | Ocho de ocho archivos recuperados y comparados de forma independiente por SFTP: SHA-256, modo, UID y GID coincidentes. Alcance `real-local-foundation-config`, `offsite=false`. |
+
+El snapshot recuperado es
+`f92b314c743395e930cf1724feec005ae25582481cb6cec822b6c8820834951a`.
+Su reporte se conserva en el dedicado en
+`/var/lib/redunisol-foundation/restore-local-config/run.M5R1fz/evidence.json`.
+Las evidencias de las ultimas operaciones estan en
+`/var/lib/redunisol-foundation/backup-state/backup.json`, `check.json` y
+`local-config-restore.json`. Estos resultados acreditan la recuperacion local de
+ese catalogo acotado; no acreditan datos de aplicaciones ni una reconstruccion
+integral del host.
+
+El estado deseado versionado habilita la programacion de copias diarias a las
+03:00 y comprobaciones completas los domingos a las 05:00, en
+`America/Argentina/Buenos_Aires`, con demora aleatoria de hasta 15 minutos y
+`Persistent=true`. La ejecucion programada debe comprobarse por separado: esta
+evidencia registra la copia y la comprobacion manuales, no un disparo observado
+del timer. Monitoreo externo y copia recuperable fuera del dedicado siguen
+pendientes.
 
 ## Puertas de salida
 
