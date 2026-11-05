@@ -19,6 +19,7 @@ const MOVIMIENTOS_TABLE_COLUMNS = [
   "Tipo",
   "Fecha",
   "Monto",
+  "Creado",
 ] as const;
 
 type MovimientosCuotaDialogProps = {
@@ -48,7 +49,7 @@ export function MovimientosCuotaDialog({
 
   return (
     <DialogRoot onOpenChange={onOpenChange} open={cuotaId !== null}>
-      <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[640px] flex-col overflow-hidden p-0">
+      <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[820px] flex-col overflow-hidden p-0">
         <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
           <div className="min-w-0">
             <DialogTitle className="truncate text-lg font-semibold leading-tight text-foreground">
@@ -82,7 +83,7 @@ export function MovimientosCuotaDialog({
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] border-collapse text-sm">
+              <table className="w-full min-w-[680px] border-collapse text-sm">
                 <caption className="sr-only">Movimientos de la cuota</caption>
                 <thead className="bg-background text-left text-xs text-foreground-secondary">
                   <tr>
@@ -113,8 +114,11 @@ export function MovimientosCuotaDialog({
                         <td className="border-r border-border px-3 py-2 whitespace-nowrap">
                           {formatLegacyDate(movimiento.fecha)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap">
+                        <td className="border-r border-border px-3 py-2 whitespace-nowrap">
                           {formatMonto(movimiento.monto)}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {movimiento.creado || PLACEHOLDER}
                         </td>
                       </tr>
                     ))

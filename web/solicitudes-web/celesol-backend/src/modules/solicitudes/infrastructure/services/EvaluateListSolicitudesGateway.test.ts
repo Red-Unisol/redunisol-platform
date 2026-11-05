@@ -508,9 +508,9 @@ describe("EvaluateListSolicitudesGateway", () => {
   it("lists the movements of an installment of the prestamo, in the order they were recorded", async () => {
     // Filas reales de FapiTest: cuota 5 del prestamo 438893, cobrada adelantada.
     const { gateway, requests } = createGateway([
-      [41960337, "1013352/5", "Capital", "2026-10-27", -48627.48],
-      [41532222, "1013352/5", "Capital", "2026-12-31", 48627.48],
-      [41960335, "1013352/5", "Interes", "2026-10-27", -17370.95],
+      [41960337, "1013352/5", "Capital", "2026-10-27", -48627.48, "27/10/26 16:13:36 nsallitto"],
+      [41532222, "1013352/5", "Capital", "2026-12-31", 48627.48, ""],
+      [41960335, "1013352/5", "Interes", "2026-10-27", -17370.95, "27/10/26 16:13:36 nsallitto"],
     ]);
 
     const movimientos = await gateway.listMovimientosDeCuota(
@@ -524,11 +524,13 @@ describe("EvaluateListSolicitudesGateway", () => {
     );
     assert.deepEqual(movimientos[0], {
       cuotaAfectada: "1013352/5",
+      creado: null,
       fecha: "2026-12-31",
       id: "41532222",
       monto: 48627.48,
       tipo: "Capital",
     });
+    assert.equal(movimientos[2]?.creado, "27/10/26 16:13:36 nsallitto");
     const body = requests[0]?.body as { cmd: string; tipo: string };
     // El filtro por prestamo impide pedir una cuota de otro prestamo.
     assert.equal(

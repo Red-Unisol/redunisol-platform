@@ -234,6 +234,7 @@ function cuota() {
 function movimiento() {
   return {
     cuotaAfectada: "1004051/1",
+    creado: "02/09/25 10:15:00 aortega",
     fecha: "2025-09-02",
     id: "41532214",
     monto: -58770.31,
