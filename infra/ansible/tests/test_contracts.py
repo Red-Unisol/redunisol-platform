@@ -182,6 +182,38 @@ class ExecutableContractTests(unittest.TestCase):
             repository_changed=False, missing_pin=None, expected=False,
         )
 
+    def run_listener_contract(self, output):
+        task = next(
+            task for task in read_yaml("roles/monitoring/tasks/verify.yml")
+            if task.get("name") == "Require only the configured node exporter listener"
+        )
+        values = {
+            "foundation_monitoring_enabled": True,
+            "foundation_monitoring_listen_address": "127.0.0.1:9100",
+            "foundation_monitoring_listeners": {"stdout": output},
+        }
+        return self.run_contract([task], values)
+
+    def test_private_listener_with_wildcard_peer_is_accepted(self):
+        code, output = self.run_listener_contract(
+            "LISTEN 0 4096 127.0.0.1:9100 0.0.0.0:*\n"
+        )
+        self.assertEqual(code, 0, output)
+        self.assertIn("changed=0", output)
+
+    def test_public_extra_absent_or_malformed_listener_is_rejected(self):
+        for listeners in (
+            "LISTEN 0 4096 0.0.0.0:9100 0.0.0.0:*\n",
+            "LISTEN 0 4096 127.0.0.1:9100 0.0.0.0:*\n"
+            "LISTEN 0 4096 [::]:9100 [::]:*\n",
+            "",
+            "malformed output",
+        ):
+            with self.subTest(listeners=listeners):
+                code, output = self.run_listener_contract(listeners)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("must listen only", output)
+
     def test_account_without_public_key_is_rejected(self):
         values = self.variables()
         values["foundation_access_users"] = [{"name": "fixture_without_key"}]

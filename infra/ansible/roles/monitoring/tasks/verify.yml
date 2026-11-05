@@ -23,7 +23,6 @@
 - name: Check exporter and freshness metric presence
   ansible.builtin.assert:
     that:
-      - foundation_monitoring_listen_address in foundation_monitoring_listeners.stdout
       - "'node_cpu_seconds_total' in foundation_monitoring_probe.content"
       - "'node_memory_MemAvailable_bytes' in foundation_monitoring_probe.content"
       - "'node_disk_read_bytes_total' in foundation_monitoring_probe.content"
@@ -39,15 +38,15 @@
   loop: "{{ foundation_monitoring_expected_services }}"
   when: foundation_monitoring_enabled
 
-- name: Confirm default listener does not expose the port externally
+- name: Require only the configured node exporter listener
   ansible.builtin.assert:
     that:
-      - "'0.0.0.0:' not in foundation_monitoring_listeners.stdout"
-      - "'*:' not in foundation_monitoring_listeners.stdout"
-      - "'[::]:' not in foundation_monitoring_listeners.stdout"
-  when:
-    - foundation_monitoring_enabled
-    - foundation_monitoring_listen_address.startswith('127.0.0.1:') or foundation_monitoring_listen_address.startswith('[::1]:')
+      - >-
+        (foundation_monitoring_listeners.stdout |
+         regex_findall('(?m)^\S+\s+\d+\s+\d+\s+(\S+)\s+')) ==
+        [foundation_monitoring_listen_address]
+    fail_msg: Node exporter must listen only on its configured loopback address.
+  when: foundation_monitoring_enabled
 
 - name: Read server clock for freshness validation
   ansible.builtin.command:
