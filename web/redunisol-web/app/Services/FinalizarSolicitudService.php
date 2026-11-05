@@ -105,6 +105,15 @@ class FinalizarSolicitudService
         if (!$response->successful()) {
             $result['error'] = 'La API de consulta de solicitudes respondio con error.';
 
+            // Solo mostrar este aviso cuando la API confirma que ya fue pagada.
+            // Otros rechazos o fallos no implican que el prestamo se haya pagado.
+            $paidMessage = 'Esta solicitud ya fue pagada; el enlace de firma ya no está habilitado.';
+            if ($desdeSolicitudesWeb && $response->status() === 409
+                && $response->json('error.code') === 'AdministrativeCorrectionError'
+                && $response->json('error.message') === $paidMessage) {
+                $result['error'] = $paidMessage;
+            }
+
             return $result;
         }
 
