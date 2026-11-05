@@ -31,6 +31,12 @@ def channel_payload(origin="whatsapp_directo", **answer):
 
 
 class BoundCrm(IntakeCrm):
+    def get_lead_field(self, name):
+        field = super().get_lead_field(name)
+        if name == self.config.fields.lead_commercial_owner:
+            field = {**field, "items": [*field["items"], {"ID": "7", "VALUE": "Bitrix"}]}
+        return field
+
     def __init__(self, *, lead=None, **kwargs):
         lead = lead if lead is not None else {"ID": "10", "STATUS_ID": "UC_5N2OEO", "STATUS_SEMANTIC_ID": "P",
                                               "ASSIGNED_BY_ID": "999", "NAME": "Channel profile", "TITLE": "Channel inquiry",
@@ -51,6 +57,37 @@ class BoundCrm(IntakeCrm):
 
 
 class BoundIntakeTests(unittest.TestCase):
+    def test_native_bitrix_initial_records_handoff_once_without_new_leads_or_contacts(self):
+        for stage in ("UC_PWTVG6", "UC_5N2OEO", "NEW"):
+            for policy in (None, False, "", []):
+                with self.subTest(stage=stage, policy=policy):
+                    api = BoundCrm(contact=person())
+                    api.leads["10"].update(STATUS_ID=stage, UF_CRM_COMM_OWNER="7",
+                                           UF_CRM_PROCESSING_POLICY=policy,
+                                           **{api.config.fields.lead_payment_bank: False})
+                    result = process(channel_payload(), env=CHANNEL_ENV, client=api)
+                    self.assertEqual((result["action"], result["lead_id"], result["contact_id"]), ("queued", "10", "1"))
+                    self.assertEqual(api.leads["10"]["UF_CRM_COMM_OWNER"], "2")
+                    self.assertEqual(api.leads["10"]["ASSIGNED_BY_ID"], "999")
+                    self.assertEqual(api.leads["10"]["STATUS_ID"], "UC_5N2OEO" if stage == "UC_PWTVG6" else stage)
+                    self.assertEqual((len(api.leads), len(api.contacts)), (1, 1))
+                    writes = copy.deepcopy(api.writes)
+                    self.assertEqual(process(channel_payload(), env=CHANNEL_ENV, client=api)["action"], "already_processed")
+                    self.assertEqual(api.writes, writes)
+
+    def test_native_handoff_does_not_take_manual_unknown_explicit_policy_or_advanced_management(self):
+        cases = [{"UF_CRM_COMM_OWNER": "3"}, {"UF_CRM_COMM_OWNER": "999"},
+                 *({"UF_CRM_COMM_OWNER": "7", "UF_CRM_PROCESSING_POLICY": v} for v in ("4", "5", 0, True)),
+                 {"UF_CRM_COMM_OWNER": "7", "STATUS_ID": "CONVERTED", "STATUS_SEMANTIC_ID": "S"}]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                api = BoundCrm(); api.leads["10"].update(changes)
+                before = copy.deepcopy((api.leads, api.contacts))
+                result = process(channel_payload(), env=CHANNEL_ENV, client=api)
+                self.assertEqual((result["action"], result["reason"]), ("manual_review", "bound_management_requires_review"))
+                self.assertEqual((api.leads, api.contacts), before)
+                self.assertEqual(api.writes, [])
+
     def test_empty_bitrix_catalog_sentinels_enrich_the_original_and_replay_without_duplicates(self):
         sample = BoundCrm()
         fields = (sample.config.fields.lead_province, sample.config.fields.lead_employment_status,

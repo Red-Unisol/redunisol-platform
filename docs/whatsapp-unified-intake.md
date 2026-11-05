@@ -53,6 +53,13 @@ perfil, atribución o caso previo. No reabre una gestión finalizada ajena.
 Ingreso y Preclasificación no invalidan el vínculo. Los resultados explícitos
 de rechazo o corrección siguen teniendo su tratamiento comercial.
 
+La ficha nativa puede iniciar con motor comercial `Bitrix`. El intake autenticado
+puede traspasarla a Kestra sólo si sigue en Guest, Ingreso o Preclasificación, sin
+caso anterior ni política de procesamiento explícita. Conserva su responsable;
+un owner Manual/desconocido, una política explícita o una etapa avanzada siguen
+en revisión. La identidad, el contacto y las gestiones existentes se comprueban
+antes de persistir, igual que en los demás ingresos.
+
 La atribución web resuelta conserva su journey y campañas. Los ingresos directos
 se registran como `whatsapp_directo`; una referencia no verificable queda sin
 atribución confirmada. No se inventan journeys ni UTM. El contexto se congela por
@@ -76,7 +83,8 @@ permiten completar la ficha original. Un ID real distinto conserva el bloqueo
 `bound_profile_conflict`; no se ignoran valores numéricos como `0` ni otros tipos
 inesperados.
 
-Ese bloqueo se produce antes de crear contactos o actualizar el prospecto. Su
+Ese bloqueo, y `bound_management_requires_review`, se producen antes de crear
+contactos o actualizar el prospecto. Su
 acuse contiene el ID del prospecto original verificado, aunque no haya escrituras.
 Para recuperar una respuesta ya auditada se puede usar:
 
@@ -85,7 +93,7 @@ php artisan edna:intake rescue REQUEST_ID --expected-case=CASE_UUID --expected-l
 ```
 
 El operador debe comprobar la ausencia de escrituras CRM antes de aplicar. Para
-este motivo concreto el comando exige contrato V2, prueba de origen verificada,
+estos motivos concretos el comando exige contrato V2, prueba de origen verificada,
 caso/entrada/mensaje/prospecto coincidentes y ningún contacto registrado en el
 acuse. Los estados inciertos o en proceso siguen sin poder repetirse. El preview
 sin `--apply` sólo lee. Se encola el procesamiento de la respuesta cifrada original,

@@ -17,7 +17,7 @@ class EdnaIntakeCommand extends Command
 {
     protected $signature = 'edna:intake {action=status : status, pilot, recover, rescue or prune} {id?}
         {--expected-case= : Original request UUID, required to recover}
-        {--expected-lead= : Verified original lead, required for a bound profile review rescue}
+        {--expected-lead= : Verified original lead, required for a bound pre-write review rescue}
         {--confirmed-no-writes : Operator verified the failed execution made no CRM writes}
         {--apply : Apply the selected recovery or retention operation}';
 
@@ -104,7 +104,8 @@ class EdnaIntakeCommand extends Command
                             'existing_management', 'existing_form_requires_review'], true)
                     : $request->state === 'unknown' && $request->reason === 'crm_acknowledgement_uncertain';
                 if ($this->argument('action') === 'rescue' && $request->state === 'review'
-                    && $request->reason === 'bound_profile_conflict' && ! $request->contact_id) {
+                    && in_array($request->reason, ['bound_profile_conflict', 'bound_management_requires_review'], true)
+                    && ! $request->contact_id) {
                     // This review returns the bound lead ID before any CRM write.
                     // An identity in the acknowledgement alone is not a new lead.
                     $lead = (string) $this->option('expected-lead');
