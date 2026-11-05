@@ -4,6 +4,32 @@ use App\Models\SiteSetting;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
+beforeEach(function () {
+    $this->withoutVite();
+});
+
+it('explains paid signature links and keeps unrelated api failures generic', function (string $path, int $status, string $code, string $message, string $expected) {
+    config()->set('finalizar.legacy_clients.solicitudes.base_url', 'https://solicitudes.example.test');
+    config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
+    Http::fake(['*' => Http::response([
+        'error' => ['code' => $code, 'message' => $message],
+    ], $status)]);
+
+    $this->get("{$path}?sol=443861&ntrans=0&linea=amejuca")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('finalizar')
+            ->where('finalizar.error', $expected)
+            ->where('finalizar.loan', null)
+            ->where('finalizar.metamap.metadata', null)
+        );
+})->with([
+    'paid' => ['/finalizar-nvo', 409, 'AdministrativeCorrectionError', 'Esta solicitud ya fue pagada; el enlace de firma ya no está habilitado.', 'Esta solicitud ya fue pagada; el enlace de firma ya no está habilitado.'],
+    'another state' => ['/finalizar-nvo', 409, 'AdministrativeCorrectionError', 'La solicitud no admite firma en su estado actual.', 'La API de consulta de solicitudes respondio con error.'],
+    'server failure' => ['/finalizar-nvo', 500, 'InternalError', 'Internal database details', 'La API de consulta de solicitudes respondio con error.'],
+    'legacy route' => ['/finalizar', 409, 'AdministrativeCorrectionError', 'Esta solicitud ya fue pagada; el enlace de firma ya no está habilitado.', 'La API de consulta de solicitudes respondio con error.'],
+]);
+
 it('resolves loan data and signature metadata for the requested line', function (string $path, string $line, string $flowId, string $docId) {
     config()->set('finalizar.metamap.client_id', 'public-client-id');
     config()->set('finalizar.legacy_clients.caja.base_url', 'https://caja.example.test');
