@@ -32,6 +32,10 @@ operativa privada están en
 [docs/technical-loan-diagnostics.md](docs/technical-loan-diagnostics.md).
 Estos registros se guardan en PostgreSQL y no se muestran al vendedor.
 
+La reparación excepcional de vínculos a préstamos cuya eliminación fue
+confirmada en Vimarx está en
+[docs/deleted-loan-recovery.md](docs/deleted-loan-recovery.md).
+
 ## Edición del convenio al generar préstamos
 
 `POST /solicitudes/:id/prestamo-legacy` admite, por ejemplo,
