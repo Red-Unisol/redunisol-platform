@@ -273,6 +273,9 @@ const CUOTAS_DEL_PRESTAMO_FIELDS = [
   "Prestamo.NroCuenta",
   "FechaCobro",
   "ID",
+  // Para el comprobante de una refinanciacion con fecha de calculo.
+  "SaldoCuotaCapital",
+  "PunitoriosPagos",
 ] as const;
 
 // Movimientos de una cuota (MovimientoPrestamo): la coleccion
@@ -2319,6 +2322,11 @@ function mapPrestamoDelSocioDetalleRow(
   };
 }
 
+// Un campo que solo va si Vimarx lo trajo.
+function opcional<K extends string>(clave: K, valor: number | null) {
+  return valor === null ? {} : ({ [clave]: valor } as Record<K, number>);
+}
+
 function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
   const nroCuota = getNumberValue(row, cuotasDelPrestamoFieldIndex, "NroCuota");
 
@@ -2349,6 +2357,14 @@ function mapCuotaDelPrestamoRow(row: EvaluateListRow) {
         row,
         cuotasDelPrestamoFieldIndex,
         "SaldoCuotaConPunitorios",
+      ),
+      ...opcional(
+        "saldoCuotaCapital",
+        getNumberValue(row, cuotasDelPrestamoFieldIndex, "SaldoCuotaCapital"),
+      ),
+      ...opcional(
+        "punitoriosPagos",
+        getNumberValue(row, cuotasDelPrestamoFieldIndex, "PunitoriosPagos"),
       ),
     },
     esCuotaDelPlan: esCuotaDelPlan({

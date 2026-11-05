@@ -524,6 +524,12 @@ function cuotasPendientes(
   hoy: string,
   fechaCalculo: string,
 ): CuotaPendiente[] {
+  const vencimientos = new Map(
+    cuotas
+      .filter((cuota) => typeof cuota.nroCuota === "number" && cuota.nroCuota > 0)
+      .map((cuota) => [cuota.nroCuota as number, diaLegacy(cuota.fecha)]),
+  );
+
   return cuotas
     .filter(
       (cuota): cuota is CuotaPrestamoResponse & { nroCuota: number } =>
@@ -533,21 +539,37 @@ function cuotasPendientes(
         estadoCobro(cuota, hoy) !== "cobrada",
     )
     .sort((a, b) => a.nroCuota - b.nroCuota)
-    .map((cuota) => ({ ...cuota, tipo: tipoCuota(cuota.fecha, fechaCalculo) }));
+    .map((cuota) => ({
+      ...cuota,
+      tipo: tipoCuota(
+        cuota.fecha,
+        vencimientos.get(cuota.nroCuota - 1) ?? null,
+        fechaCalculo,
+      ),
+    }));
 }
 
-function tipoCuota(fecha: string | null, hoy: string): TipoCuota {
+// Como Vimarx: vencida si vencio antes de la fecha; futura (sin interes) si
+// su periodo todavia no empezo, o sea si la cuota anterior vence esa fecha o
+// despues. La cuota 1 empieza con el prestamo: nunca es futura.
+function tipoCuota(
+  fecha: string | null,
+  vencimientoAnterior: string | null,
+  fechaCalculo: string,
+): TipoCuota {
   const vencimiento = diaLegacy(fecha);
 
   if (!vencimiento) {
     return "del-mes";
   }
 
-  if (vencimiento < hoy) {
+  if (vencimiento < fechaCalculo) {
     return "vencida";
   }
 
-  return vencimiento.slice(0, 7) === hoy.slice(0, 7) ? "del-mes" : "futura";
+  return vencimientoAnterior && vencimientoAnterior >= fechaCalculo
+    ? "futura"
+    : "del-mes";
 }
 
 function aSeleccion(prestamos: RefinanciacionPrestamoRequest[]): Seleccion {

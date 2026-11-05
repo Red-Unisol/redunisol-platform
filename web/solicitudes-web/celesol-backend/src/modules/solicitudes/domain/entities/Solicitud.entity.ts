@@ -259,7 +259,11 @@ export type CuotaPrestamoLegacy = {
   id?: string | null;
   montoTotal: number | null;
   nroCuota: number | null;
+  /** Punitorios ya pagados de la cuota (PunitoriosPagos). */
+  punitoriosPagos?: number | null;
   saldoCuota: number | null;
+  /** Lo que queda de capital de la cuota (SaldoCuotaCapital). */
+  saldoCuotaCapital?: number | null;
   saldoCuotaConPunitorios: number | null;
 };
 

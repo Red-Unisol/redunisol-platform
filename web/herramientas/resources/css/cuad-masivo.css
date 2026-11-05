@@ -1,0 +1,25 @@
+/* Consulta CUAD masiva: lo que no trae bcra.css. */
+.cuad-page h3 { font-size: 1rem; margin: 0 0 12px; }
+.cuad-nombre { max-width: 420px; margin: 8px 0 20px; }
+.cuad-opciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.cuad-opcion { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #fbfcfd; }
+.cuad-opcion .bcra-primary { align-self: flex-start; margin-top: auto; }
+.cuad-opcion p { margin: 0; }
+.cuad-formato ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.cuad-progreso { height: 10px; border-radius: 10px; background: rgba(255, 255, 255, .7); border: 1px solid var(--line-strong); overflow: hidden; margin-top: 18px; }
+.cuad-progreso span { display: block; height: 100%; background: var(--navy); transition: width .4s ease; }
+.cuad-cuentas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.cuad-cuenta { padding: 16px 18px; border-radius: 12px; background: white; border: 1px solid var(--line-strong); }
+.cuad-cuenta p { margin: 8px 0 0; font-size: .85rem; }
+.cuad-cuenta button { margin-top: 12px; }
+.cuad-cuenta__estado { font-size: .8rem; font-weight: 700; padding: 4px 10px; border-radius: 50px; background: var(--teal-soft); }
+.cuad-cuenta--caida { border-color: var(--red); }
+.cuad-cuenta--caida .cuad-cuenta__estado { background: var(--red-soft); color: var(--red); }
+.cuad-cuenta--frenada { border-color: #d7b96a; }
+.cuad-cuenta--frenada .cuad-cuenta__estado { background: #fff7e5; color: #7a5b12; }
+.cuad-cuenta--fin .cuad-cuenta__estado { background: #eef1f4; color: var(--muted); }
+.cuad-motivo { display: block; color: var(--muted); font-size: .75rem; margin-top: 4px; }
+
+@media (max-width: 760px) {
+    .cuad-opciones, .cuad-cuentas { grid-template-columns: 1fr; }
+}

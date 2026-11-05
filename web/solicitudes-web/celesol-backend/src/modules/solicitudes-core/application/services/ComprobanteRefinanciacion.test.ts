@@ -106,6 +106,221 @@ describe("ComprobanteRefinanciacionService", () => {
     ]);
   });
 
+  it("uses outstanding capital in the breakdown of a partially paid cuota", async () => {
+    // Capital original 100; ya se pagaron 40 de capital y 10 de interes.
+    // Quedan 60 de capital y 90 de interes. Si el periodo no empezo, se
+    // bonifican esos 90 y el cobro es 60, tanto a hoy como a una fecha pasada.
+    const plan = [
+      { capital: 100, fecha: "2026-10-31", nroCuota: 1, saldoCuota: 0, saldoCuotaCapital: 0, saldoCuotaConPunitorios: 0 },
+      { capital: 100, fecha: "2026-11-30", nroCuota: 2, saldoCuota: 150, saldoCuotaCapital: 60, saldoCuotaConPunitorios: 60, punitoriosPagos: 0 },
+    ];
+
+    for (const fecha of [undefined, "2026-10-27"]) {
+      let recibido: ComprobanteRefinanciacion[] = [];
+      const servicio = build(async (comprobantes) => {
+        recibido = [...comprobantes];
+        return Buffer.from("pdf");
+      }, plan);
+
+      await servicio.armar({
+        fecha,
+        prestamos: [{
+          cuotas: [{ fechaVto: "2026-11-30", interesPagado: 10, nroCuota: 2, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 110 }],
+          numero: "0",
+          prestamoId: "1",
+          totalPago: 60,
+        }],
+        simulacion: true,
+        solicitudId: "sol-1",
+      });
+
+      assert.deepEqual(recibido[0]?.cuotas, [{
+        capital: 60,
+        creditoPagoAdelantado: 90,
+        gastos: 0,
+        interes: 90,
+        nroCuota: 2,
+        punitorios: 0,
+        total: 60,
+        vencimiento: "30/11/2026",
+      }], `fecha=${fecha ?? "hoy"}`);
+    }
+  });
+
+  it("preserves a zero outstanding capital instead of falling back to the original", async () => {
+    const plan = [{ capital: 100, fecha: "2026-09-30", nroCuota: 1,
+      saldoCuota: 50, saldoCuotaCapital: 0, saldoCuotaConPunitorios: 50 }];
+    let recibido: ComprobanteRefinanciacion[] = [];
+    const servicio = build(async (comprobantes) => {
+      recibido = [...comprobantes];
+      return Buffer.from("pdf");
+    }, plan);
+
+    await servicio.armar({
+      prestamos: [{
+        cuotas: [{ fechaVto: "2026-09-30", interesPagado: 50, nroCuota: 1, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 150 }],
+        numero: "0", prestamoId: "1", totalPago: 50,
+      }],
+      simulacion: true,
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(recibido[0]?.cuotas[0]?.capital, 0);
+    assert.equal(recibido[0]?.cuotas[0]?.interes, 50);
+    assert.equal(recibido[0]?.cuotas[0]?.total, 50);
+  });
+
+  it("builds the rows at the fecha de calculo, not with the plan of today", async () => {
+    // Caso real de prod (4/11/2026): solicitud 500098, prestamo 435844, cuotas
+    // 6 a 12 al 31/10. A hoy la 6 (vence el 30/11) es del mes y el plan la trae
+    // entera; al 31/10 es futura y Vimarx cobra solo su capital: 1108457,60 =
+    // capital 1081422,05 + 2,5 %. Con el plan de hoy sumaba 1225791,89.
+    const plan435844 = [
+      [5, "2026-10-31", 0, 0, 0],
+      [6, "2026-11-30", 102820.96, 247190.8, 247190.8],
+      [7, "2026-12-31", 116547.55, 247190.8, 116547.55],
+      [8, "2027-01-31", 132106.65, 247190.8, 132106.65],
+      [9, "2027-02-28", 149742.89, 247190.8, 149742.89],
+      [10, "2027-03-31", 169733.57, 247190.8, 169733.57],
+      [11, "2027-04-30", 192393.0, 247190.8, 192393.0],
+      [12, "2027-05-31", 218077.43, 247190.77, 218077.43],
+    ].map(([nroCuota, fecha, capital, saldo, conPunitorios]) => ({
+      capital: capital as number,
+      fecha: fecha as string,
+      montoTotal: saldo as number,
+      nroCuota: nroCuota as number,
+      punitoriosPagos: 0,
+      saldoCuota: saldo as number,
+      saldoCuotaCapital: capital as number,
+      saldoCuotaConPunitorios: conPunitorios as number,
+    }));
+    let recibido: ComprobanteRefinanciacion[] = [];
+    const servicio = build(async (comprobantes) => {
+      recibido = [...comprobantes];
+      return Buffer.from("pdf");
+    }, plan435844);
+
+    await servicio.armar({
+      fecha: "2026-10-27",
+      prestamos: [
+        {
+          cuotas: plan435844.filter((cuota) => cuota.nroCuota > 5).map((cuota) => ({
+            fechaVto: `${cuota.fecha}T00:00:00`,
+            interesPagado: 0,
+            nroCuota: cuota.nroCuota,
+            otrosPagado: 0,
+            punitoriosPagados: 0,
+            totalPagado: cuota.capital,
+          })),
+          numero: "Pendiente de cobro",
+          prestamoId: "435844",
+          totalPago: 1108457.6,
+        },
+      ],
+      simulacion: false,
+      solicitudId: "sol-1",
+    });
+
+    const cuotas = recibido[0]!.cuotas;
+    assert.equal(recibido[0]?.fecha, "27/10/2026");
+    assert.deepEqual(cuotas[0], {
+      capital: 102820.96,
+      creditoPagoAdelantado: 144369.84,
+      gastos: 0,
+      interes: 144369.84,
+      nroCuota: 6,
+      punitorios: 0,
+      total: 102820.96,
+      vencimiento: "30/11/2026",
+    });
+    assert.equal(cuotas.at(-1)?.gastos, 27035.55);
+    const total = cuotas.reduce((suma, cuota) => suma + cuota.total, 0);
+    assert.equal(Math.round(total * 100) / 100, 1108457.6);
+  });
+
+  it("charges the whole first cuota: its period starts with the prestamo", async () => {
+    // FapiTest 4/11/2026, prestamo 441204 (AMEJUCA ESPECIAL): la cuota 1 vence
+    // el 30/11 y Vimarx la cobra entera al 31/10; las siguientes, solo capital.
+    const plan = [
+      // La cuota 0 de gastos vence el 31/10: no cuenta como cuota anterior.
+      { capital: 0, fecha: "2026-10-31", montoTotal: 600000, nroCuota: 0, punitoriosPagos: 0, saldoCuota: 600000, saldoCuotaCapital: 0, saldoCuotaConPunitorios: 600000 },
+      { capital: 528763.9, fecha: "2026-11-30", montoTotal: 989976.38, nroCuota: 1, punitoriosPagos: 0, saldoCuota: 989976.38, saldoCuotaCapital: 528763.9, saldoCuotaConPunitorios: 989976.38 },
+      { capital: 461312.48, fecha: "2026-12-31", montoTotal: 989976.38, nroCuota: 2, punitoriosPagos: 0, saldoCuota: 989976.38, saldoCuotaCapital: 461312.48, saldoCuotaConPunitorios: 461312.48 },
+    ];
+    let recibido: ComprobanteRefinanciacion[] = [];
+    const servicio = build(async (comprobantes) => {
+      recibido = [...comprobantes];
+      return Buffer.from("pdf");
+    }, plan);
+
+    await servicio.armar({
+      fecha: "2026-10-27",
+      prestamos: [
+        {
+          cuotas: [
+            { fechaVto: "2026-11-30T00:00:00", interesPagado: 0, nroCuota: 1, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 0 },
+            { fechaVto: "2026-12-31T00:00:00", interesPagado: 0, nroCuota: 2, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 0 },
+          ],
+          numero: "0",
+          prestamoId: "441204",
+          // (989976,38 + 461312,48) + 2,5 %.
+          totalPago: 1487571.08,
+        },
+      ],
+      simulacion: true,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(
+      recibido[0]?.cuotas.map((cuota) => [cuota.nroCuota, cuota.total - cuota.gastos]),
+      [
+        [1, 989976.38],
+        [2, 461312.48],
+      ],
+    );
+  });
+
+  it("charges the whole saldo of a cuota whose period started, and punitorios to that date", async () => {
+    // Fecha de calculo 15/10 (hoy = 28/10 en los tests): la 20 (vencio el
+    // 30/9) lleva los punitorios al 15/10 que informa Vimarx menos los ya
+    // pagados; una cuota que vence el 31/10 va entera, sin punitorios.
+    const plan = [
+      { capital: 22794.34, fecha: "2026-09-30", montoTotal: 38409.77, nroCuota: 20, punitoriosPagos: 1000, saldoCuota: 37409.77, saldoCuotaCapital: 22794.34, saldoCuotaConPunitorios: 37821.28 },
+      { capital: 28084.9, fecha: "2026-10-31", montoTotal: 38409.77, nroCuota: 21, punitoriosPagos: 0, saldoCuota: 38409.77, saldoCuotaCapital: 28084.9, saldoCuotaConPunitorios: 38500 },
+    ];
+    let recibido: ComprobanteRefinanciacion[] = [];
+    const servicio = build(async (comprobantes) => {
+      recibido = [...comprobantes];
+      return Buffer.from("pdf");
+    }, plan);
+
+    await servicio.armar({
+      fecha: "2026-10-15",
+      prestamos: [
+        {
+          cuotas: [
+            { fechaVto: "2026-09-30T00:00:00", interesPagado: 0, nroCuota: 20, otrosPagado: 0, punitoriosPagados: 1200, totalPagado: 0 },
+            { fechaVto: "2026-10-31T00:00:00", interesPagado: 0, nroCuota: 21, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 0 },
+          ],
+          numero: "0",
+          prestamoId: "418720",
+          // 37609,77 + 38409,77, sin cargo.
+          totalPago: 76019.54,
+        },
+      ],
+      simulacion: true,
+      solicitudId: "sol-1",
+    });
+
+    assert.deepEqual(
+      recibido[0]?.cuotas.map((cuota) => [cuota.nroCuota, cuota.punitorios, cuota.total]),
+      [
+        [20, 200, 37609.77],
+        [21, 0, 38409.77],
+      ],
+    );
+  });
+
   it("refuses a comprobante that does not add up to what Vimarx charges", async () => {
     const servicio = build(async () => {
       throw new Error("no deberia armar el PDF");
@@ -178,6 +393,7 @@ function build(
     comprobantes: readonly ComprobanteRefinanciacion[],
     options: { simulacion: boolean },
   ) => Promise<Buffer>,
+  plan: readonly unknown[] = PLAN,
 ) {
   return new ComprobanteRefinanciacionService({
     build: fake,
@@ -187,7 +403,7 @@ function build(
         lineaPrestamoDescripcion: "AMEJUCA ESPECIAL",
         nroCuenta: "998314",
       })) as never,
-      listCuotasDelPrestamo: (async () => PLAN) as never,
+      listCuotasDelPrestamo: (async () => plan) as never,
       lookupSocioRapido: async () => [{ id: "1" }],
     },
     repository: {
