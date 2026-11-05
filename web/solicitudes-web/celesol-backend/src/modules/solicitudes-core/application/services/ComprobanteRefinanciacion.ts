@@ -167,7 +167,8 @@ function cuotasDelComprobante(
     }
 
     const saldo = cuota.saldoCuota;
-    const capital = Math.min(cuota.capital ?? saldo, saldo);
+    // El desglose muestra lo pendiente, no el capital original ya pagado.
+    const capital = Math.min(cuota.saldoCuotaCapital ?? cuota.capital ?? saldo, saldo);
     const aCobrar = fechaCalculo
       ? aCobrarALaFecha(
           cuota,

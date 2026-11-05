@@ -106,6 +106,70 @@ describe("ComprobanteRefinanciacionService", () => {
     ]);
   });
 
+  it("uses outstanding capital in the breakdown of a partially paid cuota", async () => {
+    // Capital original 100; ya se pagaron 40 de capital y 10 de interes.
+    // Quedan 60 de capital y 90 de interes. Si el periodo no empezo, se
+    // bonifican esos 90 y el cobro es 60, tanto a hoy como a una fecha pasada.
+    const plan = [
+      { capital: 100, fecha: "2026-10-31", nroCuota: 1, saldoCuota: 0, saldoCuotaCapital: 0, saldoCuotaConPunitorios: 0 },
+      { capital: 100, fecha: "2026-11-30", nroCuota: 2, saldoCuota: 150, saldoCuotaCapital: 60, saldoCuotaConPunitorios: 60, punitoriosPagos: 0 },
+    ];
+
+    for (const fecha of [undefined, "2026-10-27"]) {
+      let recibido: ComprobanteRefinanciacion[] = [];
+      const servicio = build(async (comprobantes) => {
+        recibido = [...comprobantes];
+        return Buffer.from("pdf");
+      }, plan);
+
+      await servicio.armar({
+        fecha,
+        prestamos: [{
+          cuotas: [{ fechaVto: "2026-11-30", interesPagado: 10, nroCuota: 2, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 110 }],
+          numero: "0",
+          prestamoId: "1",
+          totalPago: 60,
+        }],
+        simulacion: true,
+        solicitudId: "sol-1",
+      });
+
+      assert.deepEqual(recibido[0]?.cuotas, [{
+        capital: 60,
+        creditoPagoAdelantado: 90,
+        gastos: 0,
+        interes: 90,
+        nroCuota: 2,
+        punitorios: 0,
+        total: 60,
+        vencimiento: "30/11/2026",
+      }], `fecha=${fecha ?? "hoy"}`);
+    }
+  });
+
+  it("preserves a zero outstanding capital instead of falling back to the original", async () => {
+    const plan = [{ capital: 100, fecha: "2026-09-30", nroCuota: 1,
+      saldoCuota: 50, saldoCuotaCapital: 0, saldoCuotaConPunitorios: 50 }];
+    let recibido: ComprobanteRefinanciacion[] = [];
+    const servicio = build(async (comprobantes) => {
+      recibido = [...comprobantes];
+      return Buffer.from("pdf");
+    }, plan);
+
+    await servicio.armar({
+      prestamos: [{
+        cuotas: [{ fechaVto: "2026-09-30", interesPagado: 50, nroCuota: 1, otrosPagado: 0, punitoriosPagados: 0, totalPagado: 150 }],
+        numero: "0", prestamoId: "1", totalPago: 50,
+      }],
+      simulacion: true,
+      solicitudId: "sol-1",
+    });
+
+    assert.equal(recibido[0]?.cuotas[0]?.capital, 0);
+    assert.equal(recibido[0]?.cuotas[0]?.interes, 50);
+    assert.equal(recibido[0]?.cuotas[0]?.total, 50);
+  });
+
   it("builds the rows at the fecha de calculo, not with the plan of today", async () => {
     // Caso real de prod (4/11/2026): solicitud 500098, prestamo 435844, cuotas
     // 6 a 12 al 31/10. A hoy la 6 (vence el 30/11) es del mes y el plan la trae
