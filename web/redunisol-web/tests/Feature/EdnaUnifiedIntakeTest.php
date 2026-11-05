@@ -87,7 +87,7 @@ function unifiedIntakeResolver(?array $proof, ?int $calls = null): void
     app()->instance(EdnaIntakeBinding::class, $resolver);
 }
 
-function unifiedProfileReview(): object
+function unifiedProfileReview(string $reason = 'bound_profile_conflict'): object
 {
     $request = unifiedIntakeReply();
     $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
@@ -97,14 +97,14 @@ function unifiedProfileReview(): object
         'verified_at' => now(), 'created_at' => now(), 'updated_at' => now(),
     ]);
     DB::table('edna_intake_requests')->where('id', $request->id)->update([
-        'state' => 'review', 'reason' => 'bound_profile_conflict', 'lead_id' => '700', 'contact_id' => '',
+        'state' => 'review', 'reason' => $reason, 'lead_id' => '700', 'contact_id' => '',
     ]);
 
     return DB::table('edna_intake_requests')->find($request->id);
 }
 
-test('audited empty profile rescue processes the saved answer on its original bound lead once', function () {
-    $request = unifiedProfileReview();
+test('audited bound prewrite rescue processes the saved answer on its original lead once', function (string $reason) {
+    $request = unifiedProfileReview($reason);
     $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
     $before = (array) $send;
     $binding = (array) DB::table('edna_intake_bindings')->first();
@@ -138,10 +138,10 @@ test('audited empty profile rescue processes the saved answer on its original bo
         ->and(DB::table('edna_intake_requests')->find($request->id)->lead_id)->toBe('700');
     $this->artisan('edna:intake', $args)->assertSuccessful();
     Queue::assertPushed(ProcessEdnaIntake::class, 1);
-});
+})->with(['bound_profile_conflict', 'bound_management_requires_review']);
 
-test('bound profile rescue requires exact saved identity proof and a prewrite review', function (string $condition) {
-    $request = unifiedProfileReview();
+test('bound rescue requires exact saved identity proof and a prewrite review', function (string $condition, string $reason) {
+    $request = unifiedProfileReview($reason);
     $send = DB::table('edna_flow_sends')->find($request->flow_send_id);
     $args = ['action' => 'rescue', 'id' => $request->id, '--apply' => true,
         '--expected-case' => $send->request_id, '--expected-lead' => '700', '--confirmed-no-writes' => true];
@@ -167,7 +167,8 @@ test('bound profile rescue requires exact saved identity proof and a prewrite re
     Http::assertNotSent(fn ($r) => str_contains($r->url(), '/bitrix24_whatsapp_intake/'));
 })->with(['missing_expected_lead', 'wrong_expected_lead', 'recorded_other_lead', 'recorded_contact', 'different_reason',
     'unknown', 'processing', 'pending', 'missing_binding', 'unverified_binding', 'different_binding_case',
-    'different_entry_message', 'legacy_contract', 'missing_answer', 'mismatched_response', 'missing_audit']);
+    'different_entry_message', 'legacy_contract', 'missing_answer', 'mismatched_response', 'missing_audit'])
+    ->with(['bound_profile_conflict', 'bound_management_requires_review']);
 
 function unifiedLegacyWebsiteSend(): object
 {
