@@ -79,6 +79,27 @@
         mode: "0644"
       register: foundation_docker_repository
 
+    - name: Probe every exact Docker package pin in the local APT metadata
+      ansible.builtin.command:
+        argv:
+          - apt-cache
+          - show
+          - "{{ item.key }}={{ item.value }}"
+      loop: "{{ foundation_docker_package_versions | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
+      register: foundation_docker_cached_packages
+      changed_when: false
+      failed_when: false
+
+    - name: Refresh Docker metadata when the repository changed or a pin is absent
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+      when: >-
+        foundation_docker_repository.changed or
+        (foundation_docker_cached_packages.results | selectattr('rc', 'ne', 0) | list | length > 0)
+
     - name: Install exact versions without starting before configuration
       ansible.builtin.apt:
         name:
@@ -88,8 +109,7 @@
           - "docker-buildx-plugin={{ foundation_docker_package_versions['docker-buildx-plugin'] }}"
           - "docker-compose-plugin={{ foundation_docker_package_versions['docker-compose-plugin'] }}"
         state: present
-        update_cache: "{{ foundation_docker_repository.changed }}"
-        cache_valid_time: 3600
+        update_cache: false
         fail_on_autoremove: true
         policy_rc_d: 101
       notify: Restart Docker

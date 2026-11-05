@@ -1,9 +1,9 @@
 """Execute the production assert tasks locally; never provision a host.
 
-These are contract execution tests, not a mocked copy of their conditions. They
-select only ansible.builtin.assert tasks from the actual roles/playbook and run
-them with an explicit localhost inventory and local connection. No role, package,
-service, account, SSH connection, or privileged action is executed.
+These tests execute the real assert tasks and evaluate the Docker metadata retry
+condition directly from the production YAML. They use an explicit localhost
+inventory and local connection. No role, package manager, service, account,
+SSH connection, or privileged action is executed.
 """
 import copy
 import os
@@ -139,6 +139,48 @@ class ExecutableContractTests(unittest.TestCase):
         code, output = self.run_contract([task], values)
         self.assertNotEqual(code, 0, output)
         self.assertIn(task["ansible.builtin.assert"]["fail_msg"], output)
+
+    def assert_metadata_refresh(self, *, repository_changed, missing_pin, expected):
+        blocks = read_yaml("roles/docker/tasks/main.yml")
+        block = next(task["block"] for task in blocks if "block" in task)
+        refresh = next(
+            task for task in block
+            if task.get("ansible.builtin.apt", {}).get("update_cache") is True
+            and task.get("ansible.builtin.apt", {}).get("cache_valid_time") == 0
+        )
+        values = self.variables()
+        values["foundation_docker_repository"] = {"changed": repository_changed}
+        values["foundation_docker_cached_packages"] = {
+            "results": [
+                {"rc": 100 if name == missing_pin else 0}
+                for name in values["foundation_docker_package_versions"]
+            ]
+        }
+        values["expected_refresh"] = expected
+        task = {
+            "name": "Evaluate the real Docker metadata refresh condition locally",
+            "ansible.builtin.assert": {
+                "that": [f"({refresh['when']}) == expected_refresh"],
+            },
+        }
+        code, output = self.run_contract([task], values)
+        self.assertEqual(code, 0, output)
+        self.assertIn("changed=0", output)
+
+    def test_new_docker_repository_requires_metadata_refresh(self):
+        self.assert_metadata_refresh(
+            repository_changed=True, missing_pin=None, expected=True,
+        )
+
+    def test_retry_refreshes_missing_docker_metadata_after_repository_was_written(self):
+        self.assert_metadata_refresh(
+            repository_changed=False, missing_pin="docker-ce", expected=True,
+        )
+
+    def test_cached_pins_skip_metadata_refresh_on_the_second_run(self):
+        self.assert_metadata_refresh(
+            repository_changed=False, missing_pin=None, expected=False,
+        )
 
     def test_account_without_public_key_is_rejected(self):
         values = self.variables()
