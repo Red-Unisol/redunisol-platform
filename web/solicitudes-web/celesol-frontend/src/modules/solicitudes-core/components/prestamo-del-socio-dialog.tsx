@@ -214,7 +214,10 @@ function CuotasTable({
                 {...(cuota.id && {
                   onDoubleClick: () => abrirMovimientos(cuota),
                   onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
-                    if (event.key === "Enter") abrirMovimientos(cuota);
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      abrirMovimientos(cuota);
+                    }
                   },
                   tabIndex: 0,
                   title: "Doble clic para ver los movimientos de la cuota",
@@ -313,6 +316,7 @@ function CuotasTable({
       </p>
       {suma.flotante}
       <MovimientosCuotaDialog
+        key={cuotaAbierta?.id ?? "cerrada"}
         cuotaId={cuotaAbierta?.id ?? null}
         nroCuota={cuotaAbierta?.nroCuota ?? null}
         onOpenChange={(open) => {

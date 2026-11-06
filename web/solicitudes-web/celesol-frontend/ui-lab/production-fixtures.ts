@@ -420,6 +420,25 @@ export function productionFixture(
       amountEditable: false,
       recovery: null,
     };
+  else if (pathname === `${base}/prestamos-socio`)
+    body = {
+      prestamos: [
+        {
+          legacyId: HEADER_SAMPLE.loanId,
+          nroCuenta: "DEMO-100241",
+          lineaPrestamoDescripcion: HEADER_SAMPLE.convenio,
+          estado: 0,
+          vigente: true,
+          fechaEmision: "2026-10-23",
+          montoPrestamo: 300,
+          montoADesembolsar: 240,
+          capital: 240,
+          saldo: 300,
+          primerVencimiento: "2099-01-01",
+          vencimiento: "2099-02-01",
+        },
+      ],
+    };
   else if (pathname === `${base}/prestamos-socio/${HEADER_SAMPLE.loanId}`)
     body = {
       prestamo: {
@@ -433,9 +452,37 @@ export function productionFixture(
         ordenCompra: null,
         tasaInicial: null,
       },
-      cuotas: [],
+      cuotas: [1, 2].map((numero) => ({
+        id: `demo-cuota-${numero}`,
+        nroCuota: numero,
+        fecha: `2099-0${numero}-01`,
+        fechaCobro: null,
+        capital: numero * 80,
+        montoTotal: numero * 100,
+        saldoCuota: numero * 100,
+        saldoCuotaConPunitorios: numero * 100,
+      })),
     };
-  else if (pathname === `${base}/admin-loan-replacements`)
+  else if (
+    [1, 2].some(
+      (numero) =>
+        pathname === `${base}/prestamos-socio/${HEADER_SAMPLE.loanId}/cuotas/demo-cuota-${numero}/movimientos`,
+    )
+  ) {
+    const numero = pathname.endsWith("demo-cuota-1/movimientos") ? 1 : 2;
+    body = {
+      movimientos: [
+        {
+          id: `demo-movimiento-${numero}`,
+          cuotaAfectada: `DEMO-100241/${numero}`,
+          tipo: "Capital",
+          fecha: `2099-0${numero}-01`,
+          monto: numero * 100,
+          creado: null,
+        },
+      ],
+    };
+  } else if (pathname === `${base}/admin-loan-replacements`)
     body = {
       canAdmin: false,
       canReplace: false,
