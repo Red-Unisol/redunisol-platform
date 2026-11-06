@@ -7,6 +7,8 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { assess, digest, providerFingerprint, REVIEW_POLICY_VERSION } from "../document-review/domain";
 import { candidateFixture } from "../document-review/fixtures";
 import { reviewSource, signatureSourceInclude } from "../document-review/signature-workflow";
+import { DocumentReviewService } from "../document-review/DocumentReviewService";
+import { PDFDocument } from "pdf-lib";
 import { TransferenciasService } from "./TransferenciasService";
 import { createTransferenciasRouter } from "./router";
 import { createPayWorkflow } from "./workflow";
@@ -118,7 +120,7 @@ test(
       },
     };
     let counter = 0;
-    async function sourceFixture() {
+    async function sourceFixture(withSignature = true) {
       const source = await db.solicitud.create({
         data: {
           legacyOid: `${Date.now()}${counter++}`,
@@ -142,7 +144,7 @@ test(
           },
         },
       });
-      await approveSourceSignature(source.id);
+      if (withSignature) await approveSourceSignature(source.id);
       return source;
     }
     async function approveSourceSignature(id: string) {
@@ -193,6 +195,33 @@ test(
       };
       return { source, service, plan, input };
     }
+    await t.test("external legajo allows a plan and reservation without MetaMap while preserving the digital-signing setting", async () => {
+      const source = await sourceFixture(false);
+      const service = new TransferenciasService(deps);
+      await assert.rejects(service.plan(source.id), /firma vigente aprobada/);
+      const reviewService = new DocumentReviewService({
+        db, bucket: "test-signatures", storage: deps.storage, maxPdfBytes: 2_000_000,
+        gateway: { candidates: async () => { throw new Error("MetaMap must never be called"); }, download: async () => { throw new Error("unused"); } },
+        buildLegajo: async () => { throw new Error("digital builder must never be called"); },
+        transition: async () => { throw new Error("already in Transferir"); },
+      });
+      const row = await db.solicitud.findUniqueOrThrow({ where: { id: source.id }, include: signatureSourceInclude });
+      const file = await PDFDocument.create(); file.addPage().drawText("Legajo externo de prueba");
+      await reviewService.approveExternal(source.id, { ...reviewer, workflowOwner: { id: legajos.id, code: legajos.code, name: legajos.name } }, {
+        requestId: randomUUID(), sourceFingerprint: digest(reviewSource(row)), confirmed: true, reason: "PDF exportado de MetaMap",
+        files: [{ name: "legajo.pdf", contentType: "application/pdf", bytes: Buffer.from(await file.save()) }],
+      });
+      const plan = await service.plan(source.id);
+      assert.equal(plan.verification.required, false);
+      assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: source.id } })).firmaDigitalmente, true);
+      const reserved = await service.reserve(source.id, { ...audit, idempotencyKey: randomUUID(), planVersion: plan.version,
+        verificationId: null, payments: plan.payments.map(payment => ({ paymentKey: payment.paymentKey, bankTransactionId: randomUUID() })) }, actor);
+      assert.equal(reserved.verificationId, null);
+      await assert.rejects(reviewService.approveExternal(source.id, { ...reviewer, isSystemAdmin: true }, {
+        requestId: randomUUID(), sourceFingerprint: digest(reviewSource(row)), confirmed: true, reason: "Cambiar después de reservar",
+        files: [{ name: "legajo.pdf", contentType: "application/pdf", bytes: Buffer.from(await file.save()) }],
+      }), /no está disponible/);
+    });
     await t.test("bank numbers are durable, unique, concurrent and immutable", async () => {
       const source = await sourceFixture();
       const service = new TransferenciasService(deps);

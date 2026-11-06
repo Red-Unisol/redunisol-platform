@@ -22,7 +22,9 @@ installUiLabNetworkGuard(
             : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,
         },
       }
-    : {},
+    : window.location.pathname.startsWith("/external-legajo") ? {
+        externalLegajo: search.get("scenario") === "approved" ? "approved" : search.get("scenario") === "error" ? "error" : "waiting",
+      } : {},
 );
 async function start() {
   const pathname = window.location.pathname;
@@ -42,7 +44,7 @@ async function start() {
       ? import("./production-entry")
       : pathname.startsWith("/headers")
         ? import("./header-gallery")
-        : import("./app"),
+        : pathname.startsWith("/external-legajo") ? import("./external-legajo-entry") : import("./app"),
     import("react-router-dom"),
   ]);
   const element = document.getElementById("root");

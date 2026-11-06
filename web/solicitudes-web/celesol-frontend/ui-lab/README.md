@@ -1,5 +1,11 @@
 # Laboratorio de interfaces de Beex
 
+`/external-legajo` renderiza el panel real de Legajos con cero intentos de MetaMap.
+Permite simular la carga y aprobación local de PDF/fotos. `?scenario=approved`
+muestra la aprobación externa y `?scenario=error` simula un fallo de almacenamiento
+para revisar el reintento. Solo esa ruta de carga tiene una respuesta POST ficticia
+cuando se elige este escenario; las demás escrituras y conexiones reales se bloquean.
+
 El laboratorio usa datos ficticios y componentes de la aplicación. Su entrada y
 build están separados del sitio operativo. No carga archivos `.env`, no usa
 sesiones reales y bloquea llamadas a APIs. Los enlaces de ejemplo usan `.invalid`.

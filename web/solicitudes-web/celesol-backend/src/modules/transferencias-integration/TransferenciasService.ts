@@ -75,7 +75,7 @@ export class TransferenciasService {
   constructor(private readonly deps: Dependencies) {}
 
   private async signatureReady(db: Db, id: string) {
-    try { await assertSignatureTransferReady(db, id); }
+    try { return await assertSignatureTransferReady(db, id); }
     catch (error) {
       if (error instanceof DocumentReviewError) fail("SIGNATURE_GATE_BLOCKED", error.message, error.statusCode);
       throw error;
@@ -143,7 +143,7 @@ export class TransferenciasService {
 
   private async currentPlan(id: string) {
     const source = await this.source(this.deps.db, id);
-    await this.signatureReady(this.deps.db, id);
+    const signature = await this.signatureReady(this.deps.db, id);
     if (!source.legacyOid || !source.titular?.cuit)
       return fail("INCOMPLETE_PLAN", "Falta préstamo o CUIT del titular.");
     const cuit = source.titular.cuit.replace(/[-.\s]/g, "");
@@ -169,7 +169,9 @@ export class TransferenciasService {
       );
       creditors.set(cancellation.id, creditor.cuit);
     }
-    const built = buildPlan(source, loan, creditors);
+    // Only a recorded, current external approval can waive the desktop client's
+    // independent MetaMap check. The financial and signature gates still run.
+    const built = buildPlan({ ...source, firmaDigitalmente: signature.evidenceType === "external" ? false : source.firmaDigitalmente }, loan, creditors);
     // Concurrent readers allocate once. Gaps are intentional; never recycle IDs.
     await this.deps.db.transferenciaIdentificador.createMany({
       data: built.payments.map((p) => ({
@@ -194,7 +196,7 @@ export class TransferenciasService {
     };
     return {
       plan: { ...numbered, version: digest(numbered) },
-      sourceVersion: digest(source),
+      sourceVersion: digest({ source, signature: { decisionId: signature.decisionId, evidenceType: signature.evidenceType } }),
     };
   }
 
@@ -316,8 +318,8 @@ export class TransferenciasService {
           include: orderInclude,
         });
         if (existing) return replay(existing);
-        await this.signatureReady(tx, id);
-        if (digest(await this.source(tx, id)) !== sourceVersion)
+        const signature = await this.signatureReady(tx, id);
+        if (digest({ source: await this.source(tx, id), signature: { decisionId: signature.decisionId, evidenceType: signature.evidenceType } }) !== sourceVersion)
           fail("PLAN_CHANGED", "Los datos BEEX cambiaron durante la reserva.");
         const order = await tx.transferenciaDesembolso.create({
           data: {

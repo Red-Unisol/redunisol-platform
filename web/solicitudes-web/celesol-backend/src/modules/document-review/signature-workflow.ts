@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type SolicitudDocumentReview, type SolicitudDocumentDecision } from "@prisma/client";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
 import { digest, hasMatchingSignedOperation, type Assessment, type ProviderCandidate, type ReviewSource } from "./domain";
+import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 
 export const SIGNATURE_OWNER = "LEGAJOS_DIGITALES";
 export const signatureSourceInclude = {
@@ -22,6 +23,7 @@ export type SignatureSummary = {
   cycle: string;
   decisionId: string | null;
   sourceFingerprint: string;
+  evidenceType: "external" | "metamap" | null;
   requestedAgain: boolean;
 };
 
@@ -81,7 +83,15 @@ export function signatureSummary(row: SignatureSourceRow, review: SolicitudDocum
   const completed = completedSignatureAttempts(assessment);
   const selectedNow = assessment?.attempts.find(a => a.verificationId === decision?.verificationId);
   const selectedAtApproval = (decision?.review.assessment as unknown as Assessment | undefined)?.attempts.find(a => a.verificationId === decision?.verificationId);
-  const approved = Boolean(row.legacyOid && decision?.review.sourceFingerprint === sourceFingerprint && review?.sourceFingerprint === sourceFingerprint && decision?.humanDecision === "approve" && decision.legajoAdjuntoId && selectedNow?.evidenceAvailable && selectedNow.completedAt && Number.isFinite(Date.parse(selectedNow.completedAt)) && hasMatchingSignedOperation(selectedNow, { requireCycle: Boolean(row.signatureRequestedAt) }) && selectedNow.resourceFingerprint === selectedAtApproval?.resourceFingerprint);
+  const audit = decision?.actingAudit as Record<string, unknown> | null;
+  const external = decision?.review.policyVersion === EXTERNAL_LEGAJO_POLICY_VERSION &&
+    decision.verificationId === null && Boolean(decision.reason.trim()) && audit?.confirmed === true &&
+    audit.evidenceType === "external" && Array.isArray(audit.externalDocuments) && audit.externalDocuments.length > 0 &&
+    Boolean(decision.review.evidencePath) && decision.review.legajoAdjuntoId === decision.legajoAdjuntoId;
+  const digital = review?.sourceFingerprint === sourceFingerprint && selectedNow?.evidenceAvailable && selectedNow.completedAt &&
+    Number.isFinite(Date.parse(selectedNow.completedAt)) && hasMatchingSignedOperation(selectedNow, { requireCycle: Boolean(row.signatureRequestedAt) }) &&
+    selectedNow.resourceFingerprint === selectedAtApproval?.resourceFingerprint;
+  const approved = Boolean(row.legacyOid && decision?.review.sourceFingerprint === sourceFingerprint && decision.humanDecision === "approve" && decision.legajoAdjuntoId && (external || digital));
   const requestedAgain = Boolean(row.signatureRequestedAt && !approved);
   return {
     status: approved ? "approved" : completed.length ? "to_review" : requestedAgain ? "requested_again" : "waiting",
@@ -93,6 +103,7 @@ export function signatureSummary(row: SignatureSourceRow, review: SolicitudDocum
     cycle: source.cycleId,
     decisionId: approved ? decision!.id : null,
     sourceFingerprint,
+    evidenceType: approved ? external ? "external" : "metamap" : null,
     requestedAgain,
   };
 }
@@ -104,7 +115,7 @@ export async function getSignatureApprovals(db: SignatureDatabase, rows: Signatu
     const batch = rows.slice(offset, offset + 200);
     const matches = batch.map(row => ({ solicitudId: row.id, sourceFingerprint: digest(reviewSource(row)) }));
     const [reviews, decisions] = await Promise.all([
-      db.solicitudDocumentReview.findMany({ where: { OR: matches }, orderBy: [{ evaluatedAt: "desc" }, { id: "desc" }], distinct: ["solicitudId"] }),
+      db.solicitudDocumentReview.findMany({ where: { OR: matches, policyVersion: { not: EXTERNAL_LEGAJO_POLICY_VERSION } }, orderBy: [{ evaluatedAt: "desc" }, { id: "desc" }], distinct: ["solicitudId"] }),
       db.solicitudDocumentDecision.findMany({ where: { review: { OR: matches } }, orderBy: [{ decidedAt: "desc" }, { id: "desc" }], include: { review: true } }),
     ]);
     const byReview = new Map(reviews.map(review => [review.solicitudId, review]));

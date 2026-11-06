@@ -15,6 +15,7 @@ import {
   type ReviewAttempt,
 } from "../services/document-review-api";
 import { SignatureStatusCard } from "./signature-status-card";
+import { ExternalLegajoForm } from "./external-legajo-form";
 
 const decisionLabel = (value: DocumentDecision) =>
   value === "approve" ? "Aprobar" : "No aprobar";
@@ -259,17 +260,28 @@ export function DocumentReviewPanel({
       ) : (
         <>
           <div
-            className={`rounded-md border p-3 ${current.systemDecision === "approve" ? "border-green-600/30 bg-green-600/5" : "border-amber-600/30 bg-amber-600/5"}`}
+            className={`rounded-md border p-3 ${current.systemDecision === "approve" || current.evidenceType === "external" ? "border-green-600/30 bg-green-600/5" : "border-amber-600/30 bg-amber-600/5"}`}
           >
             <p className="font-medium">
-              El sistema hubiera decidido:{" "}
-              {decisionLabel(current.systemDecision)}
+              {current.evidenceType === "external" ? (
+                "Legajo externo aprobado por el revisor"
+              ) : (
+                <>
+                  El sistema hubiera decidido:{" "}
+                  {decisionLabel(current.systemDecision)}
+                </>
+              )}
             </p>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
               {current.reasons.map((r, i) => (
                 <li key={i}>{r}</li>
               ))}
             </ul>
+            {current.evidenceType === "external" && current.decisions[0] && (
+              <p className="mt-2 text-sm">
+                {current.decisions[0].actorName}: {current.decisions[0].reason}
+              </p>
+            )}
             <p className="mt-2 text-xs text-foreground-secondary">
               Evaluación: {date(current.evaluatedAt)}
             </p>
@@ -279,37 +291,43 @@ export function DocumentReviewPanel({
               {current.artifactError}
             </p>
           )}
-          <fieldset className="space-y-2">
-            <legend className="mb-2 text-sm font-medium">
-              Intentos de firma ({current.attempts.length}). Basta uno conforme.
-            </legend>
-            {current.attempts.map((a) => (
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${a.verificationId === selectedId ? "border-primary" : "border-border"}`}
-                key={a.verificationId}
-              >
-                <input
-                  type="radio"
-                  className="mt-1"
-                  name={`signature-${solicitudId}`}
-                  checked={a.verificationId === selectedId}
-                  disabled={busy}
-                  onChange={() =>
-                    setSelection({ reviewId: current.id, id: a.verificationId })
-                  }
-                />
-                <span className="min-w-0 text-sm">
-                  <span className="block break-all font-medium">
-                    {a.verificationId}
+          {current.evidenceType !== "external" && (
+            <fieldset className="space-y-2">
+              <legend className="mb-2 text-sm font-medium">
+                Intentos de firma ({current.attempts.length}). Basta uno
+                conforme.
+              </legend>
+              {current.attempts.map((a) => (
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${a.verificationId === selectedId ? "border-primary" : "border-border"}`}
+                  key={a.verificationId}
+                >
+                  <input
+                    type="radio"
+                    className="mt-1"
+                    name={`signature-${solicitudId}`}
+                    checked={a.verificationId === selectedId}
+                    disabled={busy}
+                    onChange={() =>
+                      setSelection({
+                        reviewId: current.id,
+                        id: a.verificationId,
+                      })
+                    }
+                  />
+                  <span className="min-w-0 text-sm">
+                    <span className="block break-all font-medium">
+                      {a.verificationId}
+                    </span>
+                    <span>
+                      {date(a.completedAt)} · {statusLabel(a.providerStatus)} ·
+                      Propuesta: {decisionLabel(a.decision)}
+                    </span>
                   </span>
-                  <span>
-                    {date(a.completedAt)} · {statusLabel(a.providerStatus)} ·
-                    Propuesta: {decisionLabel(a.decision)}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+                </label>
+              ))}
+            </fieldset>
+          )}
           {attempt && <AttemptDetails attempt={attempt} />}
           {current.legajoAdjuntoId && (
             <Button
@@ -318,7 +336,9 @@ export function DocumentReviewPanel({
               onClick={() => void download(current)}
             >
               <Download className="size-4" />
-              Descargar legajo de la propuesta
+              {current.evidenceType === "external"
+                ? "Descargar legajo externo aprobado"
+                : "Descargar legajo de la propuesta"}
             </Button>
           )}
           {canDecide && (
@@ -340,30 +360,32 @@ export function DocumentReviewPanel({
                   setComment({ reviewId: commentKey, value: e.target.value })
                 }
               />
-              {override && (
+              {override && current.evidenceType !== "external" && (
                 <p className="text-sm text-amber-700">
                   Aprobar este intento difiere de la evaluación automática.
                   Indicá por qué; ambas decisiones quedarán conservadas.
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={
-                    busy ||
-                    !attempt?.evidenceAvailable ||
-                    Boolean(current.artifactError) ||
-                    !current.legajoAdjuntoId ||
-                    (override && !reason.trim())
-                  }
-                  onClick={() => decide.mutate("approve")}
-                >
-                  <CheckCircle2 className="size-4" />
-                  {decide.isPending
-                    ? "Guardando decisión…"
-                    : query.data.analysisReady
-                      ? "Aprobar y mandar a transferir"
-                      : "Aprobar firma"}
-                </Button>
+                {current.evidenceType !== "external" && (
+                  <Button
+                    disabled={
+                      busy ||
+                      !attempt?.evidenceAvailable ||
+                      Boolean(current.artifactError) ||
+                      !current.legajoAdjuntoId ||
+                      (override && !reason.trim())
+                    }
+                    onClick={() => decide.mutate("approve")}
+                  >
+                    <CheckCircle2 className="size-4" />
+                    {decide.isPending
+                      ? "Guardando decisión…"
+                      : query.data.analysisReady
+                        ? "Aprobar y mandar a transferir"
+                        : "Aprobar firma"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   disabled={busy || !reason.trim()}
@@ -406,6 +428,15 @@ export function DocumentReviewPanel({
           </Button>
         </div>
       )}
+      {canDecide && summary?.sourceFingerprint && (
+        <ExternalLegajoForm
+          key={summary.sourceFingerprint}
+          solicitudId={solicitudId}
+          sourceFingerprint={summary.sourceFingerprint}
+          analysisReady={query.data.analysisReady ?? false}
+          disabled={busy}
+        />
+      )}
       {query.data.history.length > 0 && (
         <details className="border-t border-border pt-3">
           <summary className="cursor-pointer text-sm font-medium">
@@ -418,8 +449,12 @@ export function DocumentReviewPanel({
                 key={r.id}
               >
                 <p>
-                  <strong>Sistema: {decisionLabel(r.systemDecision)}</strong> ·{" "}
-                  {date(r.evaluatedAt)}
+                  <strong>
+                    {r.evidenceType === "external"
+                      ? "Legajo externo"
+                      : `Sistema: ${decisionLabel(r.systemDecision)}`}
+                  </strong>{" "}
+                  · {date(r.evaluatedAt)}
                 </p>
                 {r.decisions.length === 0 ? (
                   <p className="text-foreground-secondary">
@@ -437,19 +472,28 @@ export function DocumentReviewPanel({
                       <p>
                         {d.reason || "Conforme con la propuesta del sistema."}
                       </p>
-                      <p>
-                        Disparidad con el sistema:{" "}
-                        {d.disagreesWithSystem ? "Sí" : "No"}
-                        {d.overridesAttempt
-                          ? ". Se aprobó un intento que el sistema no aprobaría."
-                          : ""}
-                      </p>
-                      <p>
-                        Firma elegida: {d.verificationId ?? "Ninguna"}
-                        {d.providerCheckedAt
-                          ? ` · Comprobada: ${date(d.providerCheckedAt)}`
-                          : ""}
-                      </p>
+                      {r.evidenceType !== "external" && (
+                        <p>
+                          Disparidad con el sistema:{" "}
+                          {d.disagreesWithSystem ? "Sí" : "No"}
+                          {d.overridesAttempt
+                            ? ". Se aprobó un intento que el sistema no aprobaría."
+                            : ""}
+                        </p>
+                      )}
+                      {r.evidenceType !== "external" && (
+                        <p>
+                          Firma elegida: {d.verificationId ?? "Ninguna"}
+                          {d.providerCheckedAt
+                            ? ` · Comprobada: ${date(d.providerCheckedAt)}`
+                            : ""}
+                        </p>
+                      )}
+                      {d.externalDocuments?.map((file, index) => (
+                        <p key={index} className="break-all">
+                          Archivo: {file.name}
+                        </p>
+                      ))}
                       {d.attemptsAtDecision.length > 0 && (
                         <details>
                           <summary className="cursor-pointer">
