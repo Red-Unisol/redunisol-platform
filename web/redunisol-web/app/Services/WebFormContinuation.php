@@ -64,7 +64,7 @@ class WebFormContinuation
     {
         return DB::transaction(function () use ($id, $apply) {
             $request = DB::table('edna_intake_requests')->where('id', $id)->lockForUpdate()->first();
-            if (! $request || ! $request->answer || $request->contact_id
+            if (! $request || ! $request->answer
                 || ! ($request->state === 'pending' || ($request->state === 'review'
                     && in_array($request->reason, ['bound_management_requires_review', 'bound_profile_conflict'], true)))) {
                 return null;
@@ -89,7 +89,7 @@ class WebFormContinuation
                 ->where('identity_hash', $identity)->where('phone_hash', $hash)
                 ->where('received_at', '<=', $entryAt)->where('received_at', '>=', $entryAt->subDay())
                 ->whereNotNull('persisted_at')->orderByDesc('received_at')->first();
-            if (! $receipt) {
+            if (! $receipt || ($request->contact_id && $receipt->contact_id && $request->contact_id !== $receipt->contact_id)) {
                 return null;
             }
             $result = ['request_id' => $id, 'send_id' => $send->id, 'lead_id' => $receipt->lead_id,
@@ -97,7 +97,7 @@ class WebFormContinuation
             if ($apply) {
                 DB::table('edna_intake_requests')->where('id', $id)->update([
                     'state' => 'synced', 'reason' => 'web_form_already_processed', 'lead_id' => $receipt->lead_id,
-                    'contact_id' => $receipt->contact_id, 'updated_at' => now(),
+                    'contact_id' => $request->contact_id ?: $receipt->contact_id, 'updated_at' => now(),
                 ]);
                 DB::table('web_form_continuations')->updateOrInsert(['entry_event_id' => $send->entry_event_id], [
                     'submission_id' => $receipt->id, 'flow_send_id' => $send->id, 'state' => 'ready',

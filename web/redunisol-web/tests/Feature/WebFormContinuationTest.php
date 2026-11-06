@@ -171,13 +171,21 @@ test('reconciliation rejects conflicting identities leads timings bindings and u
         'phone' => DB::table('web_form_receipts')->update(['phone_hash' => str_repeat('a', 64)]),
         'late' => DB::table('web_form_receipts')->update(['received_at' => now()->addMinute()]),
         'binding' => DB::table('edna_intake_bindings')->update(['state' => 'pending']),
-        'contact' => DB::table('edna_intake_requests')->update(['contact_id' => '710']),
+        'contact' => DB::table('edna_intake_requests')->update(['contact_id' => '711']),
         'unknown' => DB::table('edna_intake_requests')->update(['state' => 'unknown']),
         'not_synced' => DB::table('web_form_receipts')->update(['state' => 'uncertain']),
     };
     expect(app(WebFormContinuation::class)->settleRedundant($request->id, true))->toBeNull();
     Http::assertNothingSent();
 })->with(['identity', 'lead', 'phone', 'late', 'binding', 'contact', 'unknown', 'not_synced']);
+
+test('a prewrite review can acknowledge the existing contact without creating or replacing it', function () {
+    $request = redundantWebRequest();
+    DB::table('edna_intake_requests')->where('id', $request->id)->update(['contact_id' => '710']);
+    expect(app(WebFormContinuation::class)->settleRedundant($request->id, true)['applied'])->toBeTrue()
+        ->and(DB::table('edna_intake_requests')->find($request->id)->contact_id)->toBe('710');
+    Http::assertNothingSent();
+});
 
 test('journal import previews without writes and preserves the original server evidence on repeated apply', function (bool $conflict) {
     $root = sys_get_temp_dir().'/web-form-import-'.Str::uuid();

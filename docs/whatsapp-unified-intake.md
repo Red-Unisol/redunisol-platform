@@ -102,7 +102,10 @@ se inventan ni se envían al cliente.
 
 Para conciliar respuestas redundantes ya guardadas, el operador debe verificar
 que la ficha web sigue disponible, que los datos no contradicen el formulario
-y que conserva su continuidad comercial. Después puede aplicar sobre IDs
+y que conserva su continuidad comercial. Si el acuse incluye un contacto previo,
+comprobar también que sigue vinculado a esa ficha y al mismo CUIL; el ID informado
+por una revisión previa a las escrituras no implica que el intake lo haya creado.
+Después puede aplicar sobre IDs
 explícitos con `reconcile --request=ID --confirmed-crm-continuity --apply`.
 El comando exige además respuesta sin escrituras CRM, vínculo original verificado,
 mismo CUIL y teléfono, mismo lead web y recepción web dentro de las 24 horas
