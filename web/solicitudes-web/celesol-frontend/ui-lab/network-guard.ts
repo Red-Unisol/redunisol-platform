@@ -1,5 +1,6 @@
 import { INSTALLMENTS, SAMPLE_REQUEST } from "./header-sample.ts";
 import { SCENARIOS } from "./scenarios.ts";
+import { externalLegajoFixture } from "./external-legajo-fixtures.ts";
 import {
   HEADER_DOCUMENT_REVIEW_FIXTURE,
   HEADER_SAMPLE,
@@ -10,7 +11,7 @@ import {
   type ProductionFixtureOptions,
 } from "./production-fixtures.ts";
 
-type UiLabFixtureOptions = { production?: ProductionFixtureOptions };
+type UiLabFixtureOptions = { production?: ProductionFixtureOptions; externalLegajo?: "waiting" | "approved" | "error" };
 
 /** Fixture-only transport for the UI lab. No request ever reaches a real API. */
 export const UI_LAB_API_ORIGIN = "http://beex-ui-lab.local";
@@ -60,12 +61,21 @@ const revisionFixture = {
 export function createUiLabFetch(
   options: UiLabFixtureOptions = {},
 ): typeof fetch {
+  let externalApproved = options.externalLegajo === "approved";
   return async (input, init) => {
     const request = input instanceof Request ? input : null;
     const url = new URL(request?.url ?? String(input), UI_LAB_API_ORIGIN);
     const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
     const signal = init?.signal ?? request?.signal;
     signal?.throwIfAborted();
+    if (options.externalLegajo && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password &&
+      method === "POST" && url.pathname === `/solicitudes/${UI_LAB_SOLICITUD_ID}/document-review/external`) {
+      if (options.externalLegajo !== "error") externalApproved = true;
+      return new Response(JSON.stringify(options.externalLegajo === "error"
+        ? { error: { message: "No se pudo guardar el legajo externo. Podés reintentar la carga." } }
+        : externalLegajoFixture(true)), { status: options.externalLegajo === "error" ? 503 : 200,
+        headers: { "Content-Type": "application/json" } });
+    }
     if (
       method !== "GET" ||
       url.origin !== UI_LAB_API_ORIGIN ||
@@ -95,7 +105,7 @@ export function createUiLabFetch(
     else if (url.pathname === `${base}/datos-rapidos/creditos`)
       body = { activos: true };
     else if (url.pathname === `${base}/document-review`)
-      body = HEADER_DOCUMENT_REVIEW_FIXTURE;
+      body = options.externalLegajo ? externalLegajoFixture(externalApproved) : HEADER_DOCUMENT_REVIEW_FIXTURE;
     else throw new UiLabNetworkBlockedError(method, url.pathname);
     return new Response(JSON.stringify(body), {
       status: 200,

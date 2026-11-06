@@ -7,7 +7,9 @@ import type { AuthUser } from "../auth/domain/entities/User.entity";
 import { DocumentReviewService } from "./DocumentReviewService";
 import { createDocumentReviewWorkflow } from "./workflow";
 import { candidateFixture } from "./fixtures";
-import { REVIEW_STATE, type ProviderCandidate } from "./domain";
+import { REVIEW_STATE, digest, type ProviderCandidate } from "./domain";
+import { getSignatureApproval, reviewSource, signatureSourceInclude } from "./signature-workflow";
+import { PDFDocument } from "pdf-lib";
 import { coreConditionsFingerprint } from "../solicitudes-core/domain/workflow/AdministrativeCorrection";
 import { administrativeSource } from "../solicitudes-core/infrastructure/services/AdministrativeCorrectionService";
 
@@ -52,6 +54,7 @@ test(
       },
     });
     const objects = new Map<string, Buffer>();
+    let providerReads = 0;
     let provider: ProviderCandidate[] = [],
       storageFails = false,
       workflowFails = false,
@@ -64,7 +67,7 @@ test(
       bucket: "test-bucket",
       maxPdfBytes: 2000000,
       gateway: {
-        candidates: async () => structuredClone(provider),
+        candidates: async () => { providerReads++; return structuredClone(provider); },
         download: async () => Buffer.from("unused"),
       },
       buildLegajo: async (i) =>
@@ -144,6 +147,65 @@ test(
       decision: approve ? ("approve" as const) : ("not_approve" as const),
       verificationId: "good-old",
       reason,
+    });
+
+    async function externalInput(id: string) {
+      const row = await db.solicitud.findUniqueOrThrow({ where: { id }, include: signatureSourceInclude });
+      const pdf = await PDFDocument.create(); pdf.addPage().drawText("Legajo externo firmado de prueba");
+      return { requestId: randomUUID(), sourceFingerprint: digest(reviewSource(row)), reason: "Legajo físico verificado",
+        confirmed: true, files: [{ name: "legajo.pdf", contentType: "application/pdf", bytes: Buffer.from(await pdf.save()) }] };
+    }
+
+    await t.test("external approval needs no provider attempts, is immutable, idempotent and advances atomically", async () => {
+      const row = await fixture(); provider = [];
+      const input = await externalInput(row.id);
+      providerReads = 0;
+      const [result] = await Promise.all([service.approveExternal(row.id, actor, input), service.approveExternal(row.id, actor, input)]);
+      assert.equal(providerReads, 0);
+      assert.equal(result.signature?.approved, true);
+      assert.equal(result.signature?.evidenceType, "external");
+      assert.equal(result.signature?.completedAttempts, 0);
+      assert.equal(result.state, "Transferir");
+      const saved = await db.solicitudDocumentDecision.findUniqueOrThrow({ where: { requestId: input.requestId }, include: { review: true } });
+      assert.equal(saved.verificationId, null);
+      assert.equal(saved.legajoAdjuntoId, saved.review.legajoAdjuntoId);
+      await assert.rejects(db.solicitudAdjunto.update({ where: { id: saved.legajoAdjuntoId! }, data: { deletedAt: new Date() } }), /IMMUTABLE/);
+      const objectCount = objects.size;
+      await Promise.all([service.approveExternal(row.id, actor, input), service.approveExternal(row.id, actor, input)]);
+      assert.equal(objects.size, objectCount);
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 1);
+      await assert.rejects(service.approveExternal(row.id, actor, { ...input, reason: "Otro motivo" }), /otros datos/);
+    });
+
+    await t.test("external approval waits for analysis and is invalidated by a new cycle or loan", async () => {
+      const row = await fixture(); provider = [];
+      const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });
+      await db.solicitud.update({ where: { id: row.id }, data: { estadoActualId: confirmed.id } });
+      const input = await externalInput(row.id);
+      assert.equal((await service.approveExternal(row.id, actor, input)).state, "Confirmada");
+      await db.solicitud.update({ where: { id: row.id }, data: { signatureCycleId: randomUUID() } });
+      assert.equal((await getSignatureApproval(db, row.id)).approved, false);
+      await assert.rejects(service.approveExternal(row.id, actor, { ...input, requestId: randomUUID() }), /cambió/);
+    });
+
+    await t.test("external load fails closed for permissions, missing confirmation, storage, changed data and workflow rollback", async () => {
+      const row = await fixture(); const input = await externalInput(row.id);
+      const before = objects.size;
+      await assert.rejects(service.approveExternal(row.id, outsider as AuthUser, input), /Solo Legajos/);
+      await assert.rejects(service.approveExternal(row.id, actor, { ...input, confirmed: false }), /confirmá/);
+      storageFails = true;
+      await assert.rejects(service.approveExternal(row.id, actor, input), /No se pudo guardar/);
+      storageFails = false;
+      workflowFails = true;
+      await assert.rejects(service.approveExternal(row.id, actor, input), /post-workflow/);
+      workflowFails = false;
+      assert.equal(objects.size, before);
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 0);
+      assert.equal((await db.solicitud.findUniqueOrThrow({ where: { id: row.id } })).estadoActualId, state.id);
+      changeDuringPreflight = true;
+      await assert.rejects(service.approveExternal(row.id, actor, input), /cambió/);
+      changeDuringPreflight = false;
+      assert.equal(objects.size, before);
     });
 
     await t.test(

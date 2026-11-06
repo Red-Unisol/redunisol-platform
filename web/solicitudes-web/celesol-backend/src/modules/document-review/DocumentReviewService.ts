@@ -21,6 +21,8 @@ import {
 } from "./domain";
 import type { EvidenceGateway } from "./MetaMapGateway";
 import type { HumanReport, LegajoBuilder } from "./LegajoPdf";
+import { buildExternalLegajo, externalDocuments, type ExternalFile } from "./ExternalLegajo";
+import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 import type { SignatureInboxLoanState } from "../solicitudes/infrastructure/services/EvaluateListSolicitudesGateway";
 import {
   canManageSignature, completedSignatureAttempts, eligibleSignatureCandidates, getSignatureApproval, getSignatureApprovals,
@@ -143,6 +145,7 @@ export class DocumentReviewService {
       return {
         id: r.id,
         policyVersion: r.policyVersion,
+        evidenceType: r.policyVersion === EXTERNAL_LEGAJO_POLICY_VERSION ? "external" : "metamap",
         evaluatedAt: r.evaluatedAt.toISOString(),
         sourceFingerprint: r.sourceFingerprint,
         source: r.sourceSnapshot,
@@ -173,6 +176,7 @@ export class DocumentReviewService {
           attemptsAtDecision:
             (d.actingAudit as Record<string, unknown> | null)
               ?.attemptsAtDecision ?? [],
+          externalDocuments: (d.actingAudit as Record<string, unknown> | null)?.externalDocuments ?? [],
         })),
       };
     });
@@ -183,7 +187,9 @@ export class DocumentReviewService {
       signature,
       analysisReady: isAnalysisReady(row),
       currentReview:
-        publicRecords.find((r) => r.sourceFingerprint === fingerprint) ?? null,
+        (signature.evidenceType === "external"
+          ? publicRecords.find(r => r.decisions.some(d => d.id === signature.decisionId))
+          : publicRecords.find((r) => r.sourceFingerprint === fingerprint)) ?? null,
       history: publicRecords,
     };
   }
@@ -450,13 +456,14 @@ export class DocumentReviewService {
       human: AuthUser | null;
       verificationId: string | null;
       title: string;
+      external?: boolean;
     },
   ) {
     return tx.solicitudAdjunto.create({
       data: {
         id: input.id,
         solicitudId: input.solicitudId,
-        archivoNombre: `legajo-digital-${input.id}.pdf`,
+        archivoNombre: `legajo-${input.external ? "externo" : "digital"}-${input.id}.pdf`,
         archivoPath: input.path,
         archivoMimeType: "application/pdf",
         archivoSizeBytes: BigInt(input.bytes.length),
@@ -471,6 +478,99 @@ export class DocumentReviewService {
           "Legajo generado por BEEX. Las decisiones y la evidencia se conservan en el historial de revisión.",
       },
     });
+  }
+
+  async approveExternal(id: string, user: AuthUser, input: {
+    requestId: string;
+    sourceFingerprint: string;
+    reason: string;
+    confirmed: boolean;
+    files: ExternalFile[];
+  }): Promise<Awaited<ReturnType<DocumentReviewService["view"]>>> {
+    if (!isLegajosUser(user)) throw new DocumentReviewError("Solo Legajos Digitales puede aprobar un legajo externo.", 403);
+    const reason = input.reason.trim();
+    if (!reason || reason.length > 4000 || input.confirmed !== true)
+      throw new DocumentReviewError("Indicá el motivo y confirmá que revisaste las firmas, el titular y las condiciones del préstamo.", 400);
+    const documents = externalDocuments(input.files);
+    const requestFingerprint = digest({ sourceFingerprint: input.sourceFingerprint, reason, documents });
+    const checkReplay = (decision: { decidedBy: string; actingAudit: unknown; review: { solicitudId: string; policyVersion: string } }) => {
+      const audit = decision.actingAudit as Record<string, unknown>;
+      if (decision.decidedBy !== user.id || decision.review.solicitudId !== id ||
+        decision.review.policyVersion !== EXTERNAL_LEGAJO_POLICY_VERSION || audit.requestFingerprint !== requestFingerprint)
+        throw new DocumentReviewError("La clave de esta carga ya fue utilizada con otros datos.");
+    };
+    const duplicate = await this.deps.db.solicitudDocumentDecision.findUnique({ where: { requestId: input.requestId }, include: { review: true } });
+    if (duplicate) { checkReplay(duplicate); return this.view(id, user); }
+    const row = await this.source(id);
+    if (!this.canDecide(row, user)) throw new DocumentReviewError("La solicitud no está disponible para aprobar un legajo externo.", 403);
+    const source = reviewSource(row), fingerprint = digest(source);
+    if (fingerprint !== input.sourceFingerprint)
+      throw new DocumentReviewError("La solicitud cambió. Revisá el préstamo antes de cargar el legajo externo.");
+    const financialProof = await this.deps.financialPreflight?.(id, user);
+    const reviewId = randomUUID(), decisionId = randomUUID(), adjuntoId = randomUUID();
+    const decidedAt = this.now();
+    const actorName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.legacyUser;
+    const bytes = await buildExternalLegajo({ source, files: input.files, documents, actor: actorName, reason, decidedAt, decisionId });
+    if (bytes.length > this.deps.maxPdfBytes) throw new DocumentReviewError("El legajo generado supera el tamaño permitido.", 400);
+    const path = `solicitudes/${id}/revision-documental/${reviewId}/externo.pdf`;
+    const evidencePath = `solicitudes/${id}/revision-documental/${reviewId}/externo.json`;
+    const assessment: Assessment = {
+      decision: "not_approve", selectedVerificationId: null, attempts: [],
+      reasons: ["Legajo externo: requiere revisión humana; no se realizó validación automática de MetaMap."],
+    };
+    const uploaded: string[] = [];
+    const cleanup = async () => {
+      await Promise.all(uploaded.map(key => this.deps.storage.deleteObject({ bucket: this.deps.bucket, key }).catch(() => undefined)));
+    };
+    let replayed = false;
+    try {
+      try {
+        for (const object of [
+          { key: path, body: bytes, contentType: "application/pdf" },
+          { key: evidencePath, body: Buffer.from(JSON.stringify({ source, documents, actorName, reason, decidedAt, decisionId, requestFingerprint })), contentType: "application/json" },
+        ]) {
+          uploaded.push(object.key);
+          await this.deps.storage.uploadObject({ bucket: this.deps.bucket, ...object });
+        }
+      } catch {
+        throw new DocumentReviewError("No se pudo guardar el legajo externo. La solicitud no avanzó; podés reintentar la carga.", 503);
+      }
+      await this.deps.db.$transaction(async tx => {
+        await this.lockSource(tx, id);
+        const actor = await tx.user.findFirst({ where: { id: user.id, state: 1, deletedAt: null }, include: { workflowOwner: true } });
+        if (!actor || !isLegajosUser(actor) || (!actor.isSystemAdmin && !actor.workflowOwner?.isActive))
+          throw new DocumentReviewError("Tus permisos para revisar legajos cambiaron. No se registró la decisión.", 403);
+        const replay = await tx.solicitudDocumentDecision.findUnique({ where: { requestId: input.requestId }, include: { review: true } });
+        if (replay) { checkReplay(replay); replayed = true; return; }
+        const current = await this.source(id, tx);
+        if (!this.canDecide(current, actor) || digest(reviewSource(current)) !== fingerprint)
+          throw new DocumentReviewError("La solicitud cambió durante la carga. Revisá los datos antes de aprobar el legajo.");
+        await this.attach(tx, { id: adjuntoId, solicitudId: id, path, bytes, human: actor, verificationId: null, title: "Legajo externo - aprobación humana", external: true });
+        await tx.solicitudDocumentReview.create({ data: {
+          id: reviewId, solicitudId: id, evaluationKey: `external:${input.requestId}`,
+          policyVersion: EXTERNAL_LEGAJO_POLICY_VERSION, sourceFingerprint: fingerprint,
+          providerFingerprint: digest(documents), sourceSnapshot: json(source), assessment: json(assessment),
+          systemDecision: "not_approve", selectedVerificationId: null, evidencePath, legajoAdjuntoId: adjuntoId, evaluatedAt: decidedAt,
+        } });
+        await tx.solicitudDocumentDecision.create({ data: {
+          id: decisionId, requestId: input.requestId, reviewId, humanDecision: "approve",
+          systemDecision: "not_approve", verificationId: null, attemptSystemDecision: null,
+          disagreesWithSystem: true, overridesAttempt: false, reason, decidedBy: user.id, actorName,
+          actingAudit: json({ ...actingHistoryFields(), evidenceType: "external", externalDocuments: documents,
+            confirmed: true, requestFingerprint, decisionEvidencePath: evidencePath, providerCheckedAt: null, attemptsAtDecision: [] }),
+          decidedAt, legajoAdjuntoId: adjuntoId,
+        } });
+        if (isAnalysisReady(current) && current.estadoActual.code !== "Transferir")
+          await this.deps.transition(tx, id, actor, decisionId, "transferir", `Legajo externo aprobado ${decisionId}. ${reason}`, financialProof);
+      }, { timeout: 20000 });
+    } catch (error) {
+      await cleanup();
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+        return this.approveExternal(id, user, input);
+      throw error;
+    }
+    if (replayed) await cleanup();
+    return this.view(id, user);
   }
 
   async decide(

@@ -41,11 +41,18 @@ export type ReviewHumanDecision = {
   legajoAdjuntoId: string | null;
   providerCheckedAt: string | null;
   attemptsAtDecision: ReviewAttempt[];
+  externalDocuments?: {
+    name: string;
+    contentType: string;
+    size: number;
+    sha256: string;
+  }[];
 };
 export type DocumentReview = {
   id: string;
   evaluatedAt: string;
   policyVersion: string;
+  evidenceType?: "external" | "metamap";
   sourceFingerprint: string;
   systemDecision: DocumentDecision;
   reasons: string[];
@@ -73,6 +80,8 @@ export type SignatureSummary = {
   link: string | null;
   cycle: string;
   decisionId: string | null;
+  sourceFingerprint?: string;
+  evidenceType?: "external" | "metamap" | null;
 };
 export type SignatureInboxItem = {
   solicitudId: string;
@@ -152,6 +161,40 @@ export function decideDocumentReview(
     body,
     300000,
   );
+}
+export async function approveExternalLegajo(
+  id: string,
+  input: {
+    requestId: string;
+    sourceFingerprint: string;
+    reason: string;
+    files: File[];
+  },
+) {
+  const body = new FormData();
+  body.set("requestId", input.requestId);
+  body.set("sourceFingerprint", input.sourceFingerprint);
+  body.set("reason", input.reason);
+  body.set("confirmed", "true");
+  for (const file of input.files) body.append("files", file);
+  const response = await fetchConSesion(
+    `/solicitudes/${id}/document-review/external`,
+    {
+      method: "POST",
+      body,
+      signal: AbortSignal.timeout(300000),
+    },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new ApiError(
+      error?.error?.message ??
+        error?.message ??
+        "No se pudo guardar el legajo externo.",
+      response.status,
+    );
+  }
+  return (await response.json()) as DocumentReviewResponse;
 }
 export async function downloadDocumentLegajo(
   id: string,

@@ -4,6 +4,7 @@ import { Prisma, type SolicitudDocumentDecision, type SolicitudDocumentReview } 
 import type { AuthUser } from "../auth/domain/entities/User.entity";
 import { assess, digest, hasMatchingSignedOperation, type Assessment } from "./domain";
 import { candidateFixture } from "./fixtures";
+import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 import {
   canManageSignature, completedSignatureAttempts, eligibleSignatureCandidates,
   isAnalysisReady, isLegajosUser, reviewSource, signatureSummary, type SignatureSourceRow,
@@ -36,6 +37,28 @@ function approval(review: SolicitudDocumentReview) {
     verificationId: "valid-1",
   } as SolicitudDocumentDecision & { review: SolicitudDocumentReview };
 }
+
+test("external evidence approves with zero MetaMap attempts and survives provider outages; source and cycle changes revoke it", () => {
+  const row = sourceRow();
+  const review = observation(row, []);
+  review.policyVersion = EXTERNAL_LEGAJO_POLICY_VERSION;
+  review.evidencePath = "private/externo.json";
+  review.legajoAdjuntoId = "private-legajo";
+  const decision = { ...approval(review), verificationId: null, reason: "Legajo en papel",
+    actingAudit: { evidenceType: "external", confirmed: true, externalDocuments: [{ name: "legajo.pdf", sha256: "abc" }] } };
+  const summary = signatureSummary(row, observation(row, []), decision);
+  assert.equal(summary.approved, true);
+  assert.equal(summary.completedAttempts, 0);
+  assert.equal(summary.evidenceType, "external");
+  for (const change of [{ legacyOid: "202" }, { cuotas: 7 }, { montoAFinanciar: new Prisma.Decimal("2000") }, { signatureCycleId: "new-cycle" }]) {
+    assert.equal(signatureSummary({ ...row, ...change }, review, decision).approved, false);
+  }
+  assert.equal(signatureSummary(row, review, { ...decision, legajoAdjuntoId: null }).approved, false);
+  assert.equal(signatureSummary(row, review, { ...decision, actingAudit: {} }).approved, false);
+  assert.equal(signatureSummary(row, review, { ...decision, humanDecision: "not_approve" }).approved, false);
+  const digital = { ...decision, review: { ...review, policyVersion: "beex-document-review/2" } };
+  assert.equal(signatureSummary(row, digital.review, digital).approved, false);
+});
 
 test("signature source and approval survive analysis handoff; state alone does not change the signed operation", () => {
   const row = sourceRow(), before = digest(reviewSource(row)), review = observation(row);

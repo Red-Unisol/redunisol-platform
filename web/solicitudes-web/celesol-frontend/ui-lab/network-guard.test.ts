@@ -11,6 +11,19 @@ import {
 } from "./network-guard.ts";
 const route = `/solicitudes/${UI_LAB_SOLICITUD_ID}`;
 
+it("external-legajo fixture supports only its opted-in local upload and preserves zero real attempts after approval", async () => {
+  const fetcher = createUiLabFetch({ externalLegajo: "waiting" });
+  assert.equal((await (await fetcher(`${route}/document-review`)).json()).signature.approved, false);
+  const response = await fetcher(`${route}/document-review/external`, { method: "POST", body: new FormData() });
+  assert.equal(response.status, 200);
+  const summary = (await (await fetcher(`${route}/document-review`)).json()).signature;
+  assert.equal(summary.evidenceType, "external");
+  assert.equal(summary.completedAttempts, 0);
+  assert.equal(summary.approved, true);
+  await assert.rejects(fetcher(`${route}/document-review/decisions`, { method: "POST" }), UiLabNetworkBlockedError);
+  await assert.rejects(fetcher(`https://example.com${route}/document-review/external`, { method: "POST" }), UiLabNetworkBlockedError);
+});
+
 it("serves explicit real-page read fixtures with role controls while rejecting writes and unknown IDs", async () => {
   const fetcher = createUiLabFetch({ production: { role: "vendedor" } });
   const get = async (pathname: string) =>
