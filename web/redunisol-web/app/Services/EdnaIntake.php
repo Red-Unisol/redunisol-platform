@@ -83,6 +83,9 @@ class EdnaIntake
         if (! $this->salesChannelEntry($event, $payload)) {
             return false;
         }
+        if (app(WebFormContinuation::class)->receive($event, $payload)) {
+            return true;
+        }
         (new EdnaFlowRouter)->start($event, $payload);
 
         return true;

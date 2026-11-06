@@ -7,6 +7,7 @@ use App\Services\EdnaApi;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFlowTransport;
 use App\Services\EdnaIntake;
+use App\Services\WebFormContinuation;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -90,9 +91,9 @@ class SendEdnaFlow implements ShouldQueue
                         : 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.')]],
             ];
             // Commit the claim before any external side effect. One worker alone can win it.
-            $claimed = $transport->update($send, ['pending'], [
+            $claimed = app(WebFormContinuation::class)->claimFlow($send, fn () => $transport->update($send, ['pending'], [
                 'state' => 'sending', 'send_started_at' => now(), 'updated_at' => now(),
-            ]);
+            ]));
             if (! $claimed) {
                 return;
             }

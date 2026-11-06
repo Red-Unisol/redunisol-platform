@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Actions\SubmitFormToKestra;
 use App\Services\JourneyLedger;
 use App\Services\MetaConversionsApiService;
+use App\Services\WebFormReceipt;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -34,6 +35,12 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
         $response = $submitFormToKestra->execute($this->input, $this->prequalification);
 
         $body = $response->json();
+        try {
+            app(WebFormReceipt::class)->result($this->input, is_array($body) ? $body : null, $response->successful());
+        } catch (\Throwable $error) {
+            // A local projection failure must not retry a confirmed external CRM write.
+            report($error);
+        }
         app(JourneyLedger::class)->record('form.persistence_result', [
             'http_status' => $response->status(),
             'result' => is_array($body) ? array_intersect_key($body, array_flip(['ok', 'action', 'reason', 'message', 'execution_id', 'lead_id', 'contact_id'])) : null,
@@ -57,6 +64,7 @@ class PersistFormSubmission implements ShouldBeEncrypted, ShouldQueue
 
     public function failed(?\Throwable $error): void
     {
+        app(WebFormReceipt::class)->failed($this->input);
         app(JourneyLedger::class)->record('form.persistence_failed', [], $this->input['_journey_links'] ?? [], 'kestra.form');
         app(JourneyLedger::class)->flush();
     }

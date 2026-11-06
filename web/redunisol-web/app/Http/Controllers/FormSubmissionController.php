@@ -8,6 +8,7 @@ use App\Jobs\PersistFormSubmission;
 use App\Services\AttributionJourney;
 use App\Services\EdnaAssistance;
 use App\Services\JourneyLedger;
+use App\Services\WebFormReceipt;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 use Throwable;
@@ -38,6 +39,13 @@ class FormSubmissionController extends Controller
             'input' => $trackingInput,
             'receipt_present' => ! empty($input['recibo_url']),
         ], $input['_journey_links']);
+        try {
+            $continuationReference = app(WebFormReceipt::class)->register($input);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->loadFailure(503);
+        }
         $prequalificationResponse = null;
 
         try {
@@ -83,8 +91,12 @@ class FormSubmissionController extends Controller
             );
         } catch (Throwable $exception) {
             report($exception);
+            if ($continuationReference !== null) {
+                app(WebFormReceipt::class)->failed($input);
+            }
 
             app(JourneyLedger::class)->record('form.queue_failed', [], $input['_journey_links']);
+
             return $this->loadFailure(503);
         }
 
@@ -120,6 +132,7 @@ class FormSubmissionController extends Controller
             'message' => (string) ($prequalification['message'] ?? ''),
             'rule_version' => (string) ($prequalification['rule_version'] ?? ''),
             'persistence' => 'queued',
+            'web_form_reference' => $routeToWhatsapp ? $continuationReference : null,
         ]);
     }
 
