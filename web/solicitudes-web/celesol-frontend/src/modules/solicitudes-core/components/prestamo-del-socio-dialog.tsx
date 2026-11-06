@@ -3,6 +3,10 @@ import { Landmark, X } from "lucide-react";
 
 import type { CuotaPrestamoResponse } from "@/modules/solicitudes-core/services/solicitudes-core-api";
 import { MovimientosCuotaDialog } from "@/modules/solicitudes-core/components/movimientos-cuota-dialog";
+import {
+  useSumaSeleccion,
+  type PropsCeldaSumable,
+} from "@/modules/solicitudes-core/hooks/use-suma-seleccion";
 import { usePrestamoDelSocioQuery } from "@/modules/solicitudes-core/hooks/use-prestamo-del-socio-query";
 import {
   diaDeNegocio,
@@ -157,6 +161,13 @@ function CuotasTable({
   const tableId = useId();
   const hoy = diaDeNegocio();
   const { filas, cantidadOcultas } = vistaCuotas(cuotas, expandida, hoy);
+  const suma = useSumaSeleccion<CampoSumable>();
+
+  function abrirMovimientos(cuota: CuotaPrestamoResponse) {
+    suma.limpiar();
+    setCuotaAbierta(cuota);
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -201,9 +212,9 @@ function CuotasTable({
                 className={`border-t border-border ${ROW_STYLES[estado]} ${resaltadoCuota(cuota, hoy).noVencida ? "font-bold" : ""} ${cuota.id ? "cursor-pointer hover:bg-background focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring" : ""}`}
                 key={`${cuota.nroCuota}-${index}`}
                 {...(cuota.id && {
-                  onDoubleClick: () => setCuotaAbierta(cuota),
+                  onDoubleClick: () => abrirMovimientos(cuota),
                   onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
-                    if (event.key === "Enter") setCuotaAbierta(cuota);
+                    if (event.key === "Enter") abrirMovimientos(cuota);
                   },
                   tabIndex: 0,
                   title: "Doble clic para ver los movimientos de la cuota",
@@ -217,9 +228,15 @@ function CuotasTable({
                     ? formatLegacyDate(diaLegacy(cuota.fecha))
                     : "No disponible"}
                 </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatNullableAmount(cuota.montoTotal) || PLACEHOLDER}
-                </td>
+                <CeldaMonto
+                  bordeDerecho
+                  celda={suma.celda(
+                    "montoTotal",
+                    claveCuota(cuota, index),
+                    cuota.montoTotal,
+                  )}
+                  valor={cuota.montoTotal}
+                />
                 <td
                   className={`border-r border-border px-3 py-2 whitespace-nowrap ${resaltadoCuota(cuota, hoy).cobroEnOtroDia ? "bg-warning text-warning-foreground font-bold" : ""}`}
                   title={
@@ -234,13 +251,23 @@ function CuotasTable({
                       ? "No disponible"
                       : "Sin cobro"}
                 </td>
-                <td className="border-r border-border px-3 py-2">
-                  {formatNullableAmount(cuota.saldoCuotaConPunitorios) ||
-                    PLACEHOLDER}
-                </td>
-                <td className="px-3 py-2">
-                  {formatNullableAmount(cuota.capital) || PLACEHOLDER}
-                </td>
+                <CeldaMonto
+                  bordeDerecho
+                  celda={suma.celda(
+                    "saldoCuotaConPunitorios",
+                    claveCuota(cuota, index),
+                    cuota.saldoCuotaConPunitorios,
+                  )}
+                  valor={cuota.saldoCuotaConPunitorios}
+                />
+                <CeldaMonto
+                  celda={suma.celda(
+                    "capital",
+                    claveCuota(cuota, index),
+                    cuota.capital,
+                  )}
+                  valor={cuota.capital}
+                />
               </tr>
             ))
           ) : (
@@ -281,6 +308,10 @@ function CuotasTable({
           </tfoot>
         )}
       </table>
+      <p className="mt-2 text-xs text-foreground-secondary">
+        Ctrl+clic en montos de una misma columna para ver su suma.
+      </p>
+      {suma.flotante}
       <MovimientosCuotaDialog
         cuotaId={cuotaAbierta?.id ?? null}
         nroCuota={cuotaAbierta?.nroCuota ?? null}
@@ -294,13 +325,41 @@ function CuotasTable({
   );
 }
 
+type CampoSumable = "capital" | "montoTotal" | "saldoCuotaConPunitorios";
+
+// Clave estable de la cuota para la suma por seleccion: no cambia al mostrar
+// u ocultar las cuotas cobradas anteriores.
+function claveCuota(cuota: CuotaPrestamoResponse, index: number) {
+  if (cuota.id) {
+    return cuota.id;
+  }
+
+  return cuota.nroCuota == null ? `fila-${index}` : `nro-${cuota.nroCuota}`;
+}
+
+function CeldaMonto({
+  bordeDerecho = false,
+  celda,
+  valor,
+}: {
+  bordeDerecho?: boolean;
+  celda: PropsCeldaSumable;
+  valor: number | null;
+}) {
+  return (
+    <td
+      {...celda}
+      className={`px-3 py-2 ${bordeDerecho ? "border-r border-border" : ""} ${celda.className}`}
+    >
+      {formatNullableAmount(valor) || PLACEHOLDER}
+    </td>
+  );
+}
+
 // Suma todas las cuotas del prestamo, tambien las cobradas que estan ocultas.
 // Redondea a centavos para no arrastrar el error de los decimales. Si ninguna
 // cuota tiene el dato, devuelve null.
-function sumar(
-  cuotas: CuotaPrestamoResponse[],
-  campo: "capital" | "montoTotal" | "saldoCuotaConPunitorios",
-) {
+function sumar(cuotas: CuotaPrestamoResponse[], campo: CampoSumable) {
   const valores = cuotas
     .map((cuota) => cuota[campo])
     .filter((valor): valor is number => typeof valor === "number");
