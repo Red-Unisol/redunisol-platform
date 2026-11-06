@@ -22,6 +22,7 @@ export type ProductionFixtureOptions = {
   role?: ProductionRole;
   externalPayment?: boolean;
   allowEdit?: boolean;
+  workflowState?: "RevisionRiesgo" | "EvaluacionExterna";
 };
 
 const timestamp = "2026-10-23T20:05:00.000Z";
@@ -350,6 +351,21 @@ export function productionFixture(
 ): ProductionFixtureResult {
   const base = `/solicitudes/${HEADER_SAMPLE.id}`;
   const riskBase = `/api/riesgo/calculadora/core/${HEADER_SAMPLE.id}`;
+  const solicitud = options.workflowState ? {
+    ...PRODUCTION_SOLICITUD,
+    legacyOid: null,
+    estadoActual: {
+      ...PRODUCTION_SOLICITUD.estadoActual,
+      code: options.workflowState,
+      name: options.workflowState === "EvaluacionExterna" ? "Evaluación Externa" : "Revision Riesgo",
+      ownerId: "demo-riesgo",
+      owner: { code: "RIESGO", id: "demo-riesgo", name: "Riesgo de ejemplo" },
+    },
+    capabilities: {
+      ...PRODUCTION_SOLICITUD.capabilities!,
+      canChangeState: options.role !== "vendedor",
+    },
+  } : PRODUCTION_SOLICITUD;
   let body: unknown;
   if (pathname === "/auth/me") body = productionSession(options.role);
   else if (pathname === "/auth/users") body = { users: USERS_FIXTURE };
@@ -372,7 +388,20 @@ export function productionFixture(
             },
           },
         }
-      : PRODUCTION_SOLICITUD;
+      : solicitud;
+  else if (pathname === `${base}/transitions` && options.workflowState)
+    body = options.role === "vendedor" ? [] : (options.workflowState === "EvaluacionExterna" ? [
+      { actionCode: "volver_a_revision_riesgo", actionLabel: "Volver a Revisión Riesgo", toCode: "RevisionRiesgo", toName: "Revision Riesgo" },
+    ] : [
+      { actionCode: "preaprobar", actionLabel: "Preaprobar", toCode: "PreAprobada", toName: "Pre Aprobada" },
+      { actionCode: "revisar", actionLabel: "Revisar", toCode: "Revisar", toName: "Revisar" },
+      { actionCode: "evaluacion_externa", actionLabel: "Enviar a Evaluación Externa", toCode: "EvaluacionExterna", toName: "Evaluación Externa" },
+    ]).map((route, index) => ({
+      id: `demo-transicion-${index}`, actionCode: route.actionCode, actionLabel: route.actionLabel,
+      defaultComment: null, description: null, blockedReason: null,
+      requiresComment: false, saveAndExit: false, sortOrder: index,
+      toState: { code: route.toCode, name: route.toName, owner: { code: "RIESGO", name: "Riesgo" } },
+    }));
   else if (pathname === `${base}/adjuntos`) body = attachments;
   else if (pathname === `${base}/history`) body = history;
   // The editing scenario exercises save/cancel with notes only. No available
@@ -449,7 +478,7 @@ export function productionFixture(
   else if (pathname === `${base}/document-review`)
     body = {
       ...HEADER_DOCUMENT_REVIEW_FIXTURE,
-      analysisReady: true,
+      analysisReady: !options.workflowState,
       signature: {
         status: "approved",
         completedAttempts: 1,

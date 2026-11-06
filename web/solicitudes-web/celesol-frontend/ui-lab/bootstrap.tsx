@@ -17,6 +17,9 @@ installUiLabNetworkGuard(
           role: productionRole,
           externalPayment: search.get("payment") === "external",
           allowEdit: search.get("edit") === "1",
+          workflowState: search.get("state") === "evaluacion-externa"
+            ? "EvaluacionExterna"
+            : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,
         },
       }
     : {},
