@@ -65,6 +65,51 @@ se registran como `whatsapp_directo`; una referencia no verificable queda sin
 atribución confirmada. No se inventan journeys ni UTM. El contexto se congela por
 caso, sin consultar el último contexto mutable del teléfono al recibir la respuesta.
 
+## Continuación de un formulario web
+
+El servidor registra `web_form_receipts` antes de la precalificación y del job
+que persiste el formulario. La respuesta de éxito devuelve una referencia opaca;
+el botón de WhatsApp la incluye como `(solicitud: ...)`. Sólo se almacena su hash.
+El mensaje autenticado debe presentar una única referencia vigente y el mismo
+teléfono normalizado. Esta referencia conserva la solicitud original y no agrega
+una campaña ni un journey nuevos.
+
+Antes de reservar un Flow, el intake registra esa continuación: espera el acuse
+web si sigue pendiente, reutiliza el lead si ya fue persistido o pasa a revisión
+si la persistencia falló o quedó incierta. No escribe CRM ni envía otro formulario.
+El acuse web actualiza las continuaciones ligadas a su submission_id. Un teléfono
+compartido sin referencia, o la frase post-formulario sin evidencia del servidor,
+se conserva en revisión sin seleccionar una persona o un lead.
+
+El registro web y la reserva final de envío comparten un bloqueo por teléfono
+normalizado. Si el formulario fue aceptado antes del claim de envío, se cancela
+el Flow todavía pendiente; no se cambian las admisiones ni los slots históricos.
+Un envío que ya fue reclamado o aceptado debe conciliarse, nunca repetirse.
+Las referencias duran 24 horas y no contienen teléfono, CUIL ni IDs de CRM.
+
+Para incorporar los formularios anteriores al despliegue, inspeccionar primero:
+
+```text
+php artisan edna:web-forms import --date=2026-11-04 --date=2026-11-05 --date=2026-11-06
+php artisan edna:web-forms status
+php artisan edna:web-forms reconcile
+```
+
+`import --apply` agrega sólo recibos ausentes desde el journal del servidor,
+validando sus hashes, UUIDs y acuses; no toca CRM ni vuelve a encolar formularios.
+Un formulario importado sin acuse queda incierto. Las referencias históricas no
+se inventan ni se envían al cliente.
+
+Para conciliar respuestas redundantes ya guardadas, el operador debe verificar
+que la ficha web sigue disponible, que los datos no contradicen el formulario
+y que conserva su continuidad comercial. Después puede aplicar sobre IDs
+explícitos con `reconcile --request=ID --confirmed-crm-continuity --apply`.
+El comando exige además respuesta sin escrituras CRM, vínculo original verificado,
+mismo CUIL y teléfono, mismo lead web y recepción web dentro de las 24 horas
+anteriores al ingreso. Conserva respuesta cifrada, envío y contadores; registra
+el motivo anterior y la evidencia de conciliación. Los casos ambiguos o con
+acuse de escritura incierto quedan para revisión.
+
 ## Fallos de entrega
 
 El historial Edna debe ser completo y contener un único mensaje de identidad
