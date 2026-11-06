@@ -39,19 +39,28 @@ export function ActualizarListaButton({
   );
 }
 
+// total: si la lista lo conoce, define si hay otra página y se muestra en el resumen.
+// nombres: para listas que no son de solicitudes (p. ej. socios).
 export function ListaPaginacion({
   page,
   pageSize,
   rowsCount,
   onPageChange,
+  total,
+  nombres = { singular: "solicitud", plural: "solicitudes" },
 }: {
   page: number;
   pageSize: number;
   rowsCount: number;
   onPageChange: (page: number) => void;
+  total?: number;
+  nombres?: { singular: string; plural: string };
 }) {
-  const hasNextPage = rowsCount === pageSize;
   const firstItem = (page - 1) * pageSize + 1;
+  const hasNextPage =
+    total === undefined
+      ? rowsCount === pageSize
+      : firstItem + rowsCount - 1 < total;
 
   if (rowsCount === 0 && page === 1) {
     return null;
@@ -62,8 +71,10 @@ export function ListaPaginacion({
     rowsCount === 0
       ? "Sin resultados en esta página"
       : page === 1 && !hasNextPage
-        ? `${rowsCount} ${rowsCount === 1 ? "solicitud" : "solicitudes"}`
-        : `Solicitudes ${firstItem} a ${firstItem + rowsCount - 1}`;
+        ? `${rowsCount} ${rowsCount === 1 ? nombres.singular : nombres.plural}`
+        : `${nombres.plural.charAt(0).toUpperCase()}${nombres.plural.slice(1)} ${firstItem} a ${firstItem + rowsCount - 1}${
+            total === undefined ? "" : ` de ${total.toLocaleString("es-AR")}`
+          }`;
 
   return (
     <div className="flex items-center justify-between gap-2 px-1 text-sm text-foreground-secondary">
