@@ -1,5 +1,9 @@
 import { X } from "lucide-react";
 
+import {
+  useSumaSeleccion,
+  type PropsCeldaSumable,
+} from "@/modules/solicitudes-core/hooks/use-suma-seleccion";
 import { useMovimientosDeCuotaQuery } from "@/modules/solicitudes-core/hooks/use-movimientos-de-cuota-query";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { Button } from "@/shared/components/ui/button";
@@ -46,6 +50,7 @@ export function MovimientosCuotaDialog({
     cuotaId,
   );
   const movimientos = data?.movimientos ?? [];
+  const suma = useSumaSeleccion<"monto">();
 
   return (
     <DialogRoot onOpenChange={onOpenChange} open={cuotaId !== null}>
@@ -114,9 +119,14 @@ export function MovimientosCuotaDialog({
                         <td className="border-r border-border px-3 py-2 whitespace-nowrap">
                           {formatLegacyDate(movimiento.fecha)}
                         </td>
-                        <td className="border-r border-border px-3 py-2 whitespace-nowrap">
-                          {formatMonto(movimiento.monto)}
-                        </td>
+                        <CeldaMonto
+                          celda={suma.celda(
+                            "monto",
+                            movimiento.id ?? `fila-${index}`,
+                            movimiento.monto,
+                          )}
+                          monto={movimiento.monto}
+                        />
                         <td className="px-3 py-2 whitespace-nowrap">
                           {movimiento.creado || PLACEHOLDER}
                         </td>
@@ -134,11 +144,34 @@ export function MovimientosCuotaDialog({
                   )}
                 </tbody>
               </table>
+              {movimientos.length > 0 && (
+                <p className="mt-2 text-xs text-foreground-secondary">
+                  Ctrl+clic en los montos para ver su suma.
+                </p>
+              )}
+              {suma.flotante}
             </div>
           )}
         </div>
       </DialogContent>
     </DialogRoot>
+  );
+}
+
+function CeldaMonto({
+  celda,
+  monto,
+}: {
+  celda: PropsCeldaSumable;
+  monto: number | null;
+}) {
+  return (
+    <td
+      {...celda}
+      className={`border-r border-border px-3 py-2 whitespace-nowrap ${celda.className}`}
+    >
+      {formatMonto(monto)}
+    </td>
   );
 }
 
