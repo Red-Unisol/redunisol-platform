@@ -7,6 +7,7 @@ import {
   FileChartColumn,
   FileCheck2,
   Bell,
+  CalendarDays,
   History,
   LayoutDashboard,
   Shield,
@@ -21,6 +22,7 @@ import {
   canCreateSolicitud,
   canManageUsers,
   canReviewSignatures,
+  canAccessRiesgoTools,
 } from "@/modules/auth/utils/auth-user";
 import { solicitudesCoreQueryKeys } from "@/modules/solicitudes-core/services/solicitudes-core-query-keys";
 
@@ -77,6 +79,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
             label: "Históricas",
             to: "/solicitudes/core/historicas",
           },
+          { icon: CalendarDays, label: "Fechas de corte", to: "/solicitudes/fechas-de-corte" },
         ],
       },
     ],
@@ -129,8 +132,8 @@ export function AppSidebar({ isDesktop, isOpen, onClose }: AppSidebarProps) {
         ...section,
         items: section.items.filter(
           (item) =>
-            item.to !== "/solicitudes/core/precarga" ||
-            canCreateSolicitud(user),
+            (item.to !== "/solicitudes/core/precarga" || canCreateSolicitud(user)) &&
+            (item.to !== "/solicitudes/fechas-de-corte" || canAccessRiesgoTools(user)),
         ),
       })),
     })),

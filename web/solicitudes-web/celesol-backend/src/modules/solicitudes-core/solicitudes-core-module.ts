@@ -24,6 +24,8 @@ import { ListSolicitudesDelTitularUseCase } from "./application/use-cases/ListSo
 import { GetDatosRapidosUseCase } from "./application/use-cases/GetDatosRapidos.use-case";
 import { addDatosRapidosRoutes } from "./presentation/DatosRapidosRoutes";
 import { env } from "../../config/env";
+import { monthlyCutoffs } from "../monthly-cutoffs/module";
+import { businessDate } from "../monthly-cutoffs/domain";
 import { DocumentReviewError } from "../document-review/domain";
 import { prisma } from "../../db/prisma";
 import { createLoanDiagnosticWriter } from "../technical-diagnostics/LoanDiagnostics";
@@ -195,6 +197,7 @@ export function createSolicitudesCoreRouter(
   const prestamosSimulacionGateway = new PrestamosSimulacionGateway({
     baseUrl: env.LEGACY_API_BASE_URL,
     timeoutMs: env.LEGACY_API_TIMEOUT_MS,
+    resolveDueDate: (id) => monthlyCutoffs.resolve(id),
   });
   const loanDiagnostics = createLoanDiagnosticWriter(prisma);
   const crearPrestamoGateway = new CrearPrestamoGateway({
@@ -371,6 +374,7 @@ export function createSolicitudesCoreRouter(
     creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
   const createPrestamoLegacyUseCase = new CreatePrestamoLegacyUseCase({
+    monthlyCutoffs,
     linkedLoanReader, initialGeneration,
     diagnostics: loanDiagnostics,
     replaceCancelledLoan: async (input, solicitud) => {
@@ -396,7 +400,7 @@ export function createSolicitudesCoreRouter(
     repository: solicitudesCoreRepository,
     sociosRepository,
     solicitudesLegacyGateway,
-    today: () => new Date().toISOString().slice(0, 10),
+    today: businessDate,
   });
   const listSolicitudTransitionsUseCase = new ListSolicitudTransitionsUseCase({
     repository: solicitudWorkflowRepository,

@@ -8,6 +8,36 @@ import {
 import { PrestamosSimulacionGateway } from "./PrestamosSimulacionGateway";
 
 describe("PrestamosSimulacionGateway", () => {
+  it("uses the legacy estimate for an unconfirmed AMEJUCA month and preserves other lines", async () => {
+    let sent: { fechaPrimerVencimiento?: string } | undefined;
+    const gateway = new PrestamosSimulacionGateway({
+      baseUrl: "https://legacy.example.invalid", timeoutMs: 1000, resolveDueDate: async () => null,
+    }, async (_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return { ok: true, status: 200, json: async () => ({ FechaPrimerVencimiento: "2026-12-31" }) };
+    });
+    const input = { capitalPuro: false, cuotas: 12, lineaId: 2519, montoAFinanciar: 500000, fechaPrimerVencimiento: "2026-10-31" };
+    await gateway.simular(input);
+    assert.equal(sent?.fechaPrimerVencimiento, undefined);
+    await gateway.simular({ ...input, lineaId: 2670 });
+    assert.equal(sent?.fechaPrimerVencimiento, "2026-10-31");
+  });
+  it("uses the confirmed monthly date instead of a stale supplied date and verifies the response", async () => {
+    let sent: { fechaPrimerVencimiento?: string } | undefined;
+    let responseDate = "2026-12-31";
+    const gateway = new PrestamosSimulacionGateway({
+      baseUrl: "https://legacy.example.invalid", timeoutMs: 1000,
+      resolveDueDate: async () => ({ firstDueDate: "2026-12-31" }),
+    }, async (_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return { ok: true, status: 200, json: async () => ({ FechaPrimerVencimiento: responseDate }) };
+    });
+    const input = { capitalPuro: false, cuotas: 12, lineaId: 2519, montoAFinanciar: 500000, fechaPrimerVencimiento: "2026-11-30" };
+    assert.equal((await gateway.simular(input)).fechaPrimerVencimiento, "2026-12-31");
+    assert.equal(sent?.fechaPrimerVencimiento, "2026-12-31");
+    responseDate = "2026-11-30";
+    await assert.rejects(gateway.simular(input), /no respetó el vencimiento/);
+  });
   it("maps a successful PascalCase response with cuotas detalle to camelCase", async () => {
     const gateway = new PrestamosSimulacionGateway(
       { baseUrl: "https://legacy.example.com", timeoutMs: 5000 },

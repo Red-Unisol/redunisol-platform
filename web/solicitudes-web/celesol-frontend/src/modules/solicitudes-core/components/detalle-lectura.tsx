@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { MonthlyCutoffNotice } from "@/modules/monthly-cutoffs/MonthlyCutoffNotice";
 
 import type { SolicitudCoreResponse } from "@/modules/solicitudes/types/solicitudes-core";
 import { calculateAge } from "@/modules/solicitudes-editor/utils/calculate-age";
@@ -205,6 +206,7 @@ export function DetalleLectura({
         </Tarjeta>
 
         <Tarjeta title="Préstamo">
+          <MonthlyCutoffNotice lineId={solicitud.lineaPrestamoLegacyOid} hasLoan={Boolean(solicitud.legacyOid)} />
           {prestamoEditable ?? (
             <>
               <dl className={DOS_COLUMNAS}>

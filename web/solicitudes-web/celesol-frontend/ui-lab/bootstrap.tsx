@@ -27,7 +27,7 @@ installUiLabNetworkGuard(
 async function start() {
   const pathname = window.location.pathname;
   const ownsRouter =
-    pathname.startsWith("/headers") || pathname.startsWith("/production");
+    pathname.startsWith("/headers") || pathname.startsWith("/production") || pathname.startsWith("/cutoffs");
   const [
     { createRoot },
     { QueryClient, QueryClientProvider },
@@ -36,7 +36,9 @@ async function start() {
   ] = await Promise.all([
     import("react-dom/client"),
     import("@tanstack/react-query"),
-    pathname.startsWith("/production")
+    pathname.startsWith("/cutoffs")
+      ? import("./cutoffs-entry")
+      : pathname.startsWith("/production")
       ? import("./production-entry")
       : pathname.startsWith("/headers")
         ? import("./header-gallery")

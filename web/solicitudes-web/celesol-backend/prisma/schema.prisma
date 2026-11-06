@@ -61,9 +61,40 @@ model User {
   documentReviewDecisions        SolicitudDocumentDecision[]
   pagosExternos                 SolicitudPagoExterno[]
   notifications                 BeexNotification[]
+  monthlyCutoffChanges          MonthlyCutoffChange[] @relation("CutoffActor")
+  realMonthlyCutoffChanges      MonthlyCutoffChange[] @relation("CutoffRealActor")
 
   @@index([workflowOwnerId])
   @@map("users")
+}
+
+model MonthlyCutoff {
+  period String @id
+  cutoffDate DateTime @map("cutoff_date") @db.Date
+  note String?
+  version Int @default(1)
+  actorName String @map("actor_name")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  changes MonthlyCutoffChange[]
+  @@map("monthly_cutoffs")
+}
+
+model MonthlyCutoffChange {
+  id String @id @default(uuid()) @db.Uuid
+  period String
+  cutoffDate DateTime @map("cutoff_date") @db.Date
+  previousDate DateTime? @map("previous_date") @db.Date
+  note String?
+  version Int
+  actorId String @map("actor_id") @db.Uuid
+  realActorId String @map("real_actor_id") @db.Uuid
+  actorName String @map("actor_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  cutoff MonthlyCutoff @relation(fields: [period], references: [period], onDelete: Restrict)
+  actor User @relation("CutoffActor", fields: [actorId], references: [id], onDelete: Restrict)
+  realActor User @relation("CutoffRealActor", fields: [realActorId], references: [id], onDelete: Restrict)
+  @@unique([period, version])
+  @@map("monthly_cutoff_changes")
 }
 
 model WorkflowOwner {
