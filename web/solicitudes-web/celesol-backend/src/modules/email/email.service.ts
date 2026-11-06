@@ -44,11 +44,24 @@ export class EmailService implements EmailSender {
 
   async sendMail(payload: EmailPayload) {
     await this.transporter.sendMail({
-      from: payload.from ?? this.config.defaultSender,
+      from: payload.from ?? this.formatDefaultSender(),
+      // Sin X-Mailer el filtro de salida de DonWeb suma MISSING_XM_UA.
+      headers: { "X-Mailer": this.config.appName },
       html: payload.html,
       subject: payload.subject,
+      ...(payload.text ? { text: payload.text } : {}),
       to: payload.to,
     });
+  }
+
+  // Remitente con nombre visible ("Celesol <noreply@...>"). Si la variable ya
+  // trae un nombre, se respeta tal cual.
+  private formatDefaultSender() {
+    const sender = this.config.defaultSender.trim();
+    if (sender.includes("<")) {
+      return sender;
+    }
+    return `"${this.config.appName}" <${sender}>`;
   }
 
   async sendConfirmAccountEmail(input: { code: string; to: string }) {
@@ -61,9 +74,17 @@ export class EmailService implements EmailSender {
       ),
     );
 
+    // El asunto anterior ("Código de verificación - Confirma tu cuenta") esta
+    // en la lista de asuntos de spam del filtro de salida de DonWeb
+    // (MB_SUBJECT_USED_IN_SPAM_CLAMAV) y los correos rebotaban con 550.
     await this.sendMail({
       html,
-      subject: "Código de verificación - Confirma tu cuenta",
+      subject: `Tu código de acceso a ${this.config.appName}`,
+      text: [
+        `Tu código para verificar tu cuenta en ${this.config.appName} es: ${input.code}`,
+        "",
+        "Si no solicitaste este registro, podés ignorar este mensaje.",
+      ].join("\n"),
       to: input.to,
     });
   }
@@ -80,7 +101,14 @@ export class EmailService implements EmailSender {
 
     await this.sendMail({
       html,
-      subject: "Restablece tu contraseña",
+      subject: `Cambio de contraseña en ${this.config.appName}`,
+      text: [
+        `Recibimos una solicitud para cambiar la contraseña de tu cuenta en ${this.config.appName}.`,
+        "",
+        `Para elegir una nueva, abrí este enlace: ${input.resetUrl}`,
+        "",
+        "El enlace vence pronto. Si no solicitaste este cambio, podés ignorar este mensaje.",
+      ].join("\n"),
       to: input.to,
     });
   }

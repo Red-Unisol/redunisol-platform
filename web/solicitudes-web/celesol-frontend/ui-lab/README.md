@@ -133,3 +133,9 @@ Más acciones. `/production?state=evaluacion-externa` muestra el nuevo estado y
 Volver a Revisión Riesgo como acción principal. Usar `role=vendedor` para
 revisar la lectura sin permisos de transición. Son fixtures locales de lectura;
 confirmar una transición sigue bloqueado por el transporte del laboratorio.
+
+## Suma de cuotas y movimientos
+
+`npm run ui:visual:cuotas` prueba la suma con Ctrl+clic en escritorio y 390 px:
+cierre y reapertura por teclado entre cuotas, cambio de columna y Escape.
+Usa dos cuotas ficticias de $100 y $200 en la pestaña Préstamos de `/production`.

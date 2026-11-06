@@ -1,5 +1,9 @@
 import { X } from "lucide-react";
 
+import {
+  useSumaSeleccion,
+  type PropsCeldaSumable,
+} from "@/modules/solicitudes-core/hooks/use-suma-seleccion";
 import { useMovimientosDeCuotaQuery } from "@/modules/solicitudes-core/hooks/use-movimientos-de-cuota-query";
 import { formatLegacyDate } from "@/modules/solicitudes-core/utils/legacy-date-format";
 import { Button } from "@/shared/components/ui/button";
@@ -19,6 +23,7 @@ const MOVIMIENTOS_TABLE_COLUMNS = [
   "Tipo",
   "Fecha",
   "Monto",
+  "Creado",
 ] as const;
 
 type MovimientosCuotaDialogProps = {
@@ -45,10 +50,11 @@ export function MovimientosCuotaDialog({
     cuotaId,
   );
   const movimientos = data?.movimientos ?? [];
+  const suma = useSumaSeleccion<"monto">();
 
   return (
     <DialogRoot onOpenChange={onOpenChange} open={cuotaId !== null}>
-      <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[640px] flex-col overflow-hidden p-0">
+      <DialogContent className="flex max-h-[calc(100vh-3rem)] max-w-[820px] flex-col overflow-hidden p-0">
         <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
           <div className="min-w-0">
             <DialogTitle className="truncate text-lg font-semibold leading-tight text-foreground">
@@ -82,7 +88,7 @@ export function MovimientosCuotaDialog({
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] border-collapse text-sm">
+              <table className="w-full min-w-[680px] border-collapse text-sm">
                 <caption className="sr-only">Movimientos de la cuota</caption>
                 <thead className="bg-background text-left text-xs text-foreground-secondary">
                   <tr>
@@ -113,8 +119,16 @@ export function MovimientosCuotaDialog({
                         <td className="border-r border-border px-3 py-2 whitespace-nowrap">
                           {formatLegacyDate(movimiento.fecha)}
                         </td>
+                        <CeldaMonto
+                          celda={suma.celda(
+                            "monto",
+                            movimiento.id ?? `fila-${index}`,
+                            movimiento.monto,
+                          )}
+                          monto={movimiento.monto}
+                        />
                         <td className="px-3 py-2 whitespace-nowrap">
-                          {formatMonto(movimiento.monto)}
+                          {movimiento.creado || PLACEHOLDER}
                         </td>
                       </tr>
                     ))
@@ -130,11 +144,34 @@ export function MovimientosCuotaDialog({
                   )}
                 </tbody>
               </table>
+              {movimientos.length > 0 && (
+                <p className="mt-2 text-xs text-foreground-secondary">
+                  Ctrl+clic en los montos para ver su suma.
+                </p>
+              )}
+              {suma.flotante}
             </div>
           )}
         </div>
       </DialogContent>
     </DialogRoot>
+  );
+}
+
+function CeldaMonto({
+  celda,
+  monto,
+}: {
+  celda: PropsCeldaSumable;
+  monto: number | null;
+}) {
+  return (
+    <td
+      {...celda}
+      className={`border-r border-border px-3 py-2 whitespace-nowrap ${celda.className}`}
+    >
+      {formatMonto(monto)}
+    </td>
   );
 }
 

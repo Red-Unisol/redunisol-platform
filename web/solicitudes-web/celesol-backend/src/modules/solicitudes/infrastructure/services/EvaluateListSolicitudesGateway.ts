@@ -286,6 +286,9 @@ const MOVIMIENTOS_DE_CUOTA_FIELDS = [
   "Tipo.Descripcion",
   "Fecha",
   "Monto",
+  // Alta del cobro (la transaccion "PG ..."): lo que Vimarx muestra como
+  // "Creado" en la ventana del cobro. Las filas del plan no tienen cobro.
+  "TransaccionAjuste.Creado.Descripcion",
 ] as const;
 
 const LINEAS_PRESTAMO_PRESOLICITUD_FIELDS = [
@@ -2390,6 +2393,12 @@ function mapMovimientoDeCuotaRow(row: EvaluateListRow): MovimientoCuotaLegacy {
       movimientosDeCuotaFieldIndex,
       "TransaccionPrestamo.Descripcion",
     ),
+    creado:
+      getStringValue(
+        row,
+        movimientosDeCuotaFieldIndex,
+        "TransaccionAjuste.Creado.Descripcion",
+      )?.trim() || null,
     fecha: getStringValue(row, movimientosDeCuotaFieldIndex, "Fecha"),
     id: getStringValue(row, movimientosDeCuotaFieldIndex, "ID"),
     monto: getNumberValue(row, movimientosDeCuotaFieldIndex, "Monto"),
