@@ -4,6 +4,8 @@ import express, { type NextFunction, type Request, type Response } from "express
 import swaggerUi from "swagger-ui-express";
 
 import { env } from "./config/env";
+import { createMonthlyCutoffRouter } from "./modules/monthly-cutoffs/router";
+import { monthlyCutoffs } from "./modules/monthly-cutoffs/module";
 import { prisma } from "./db/prisma";
 import { swaggerSpec } from "./docs/swagger";
 import { errorHandler } from "./middleware/error-handler";
@@ -49,6 +51,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/auth", authRouter);
 app.use("/auth/users", usersRouter);
 app.use("/api/notifications", createNotificationsRouter(getCurrentUserUseCase));
+app.use("/api/monthly-cutoffs", createMonthlyCutoffRouter(getCurrentUserUseCase, monthlyCutoffs));
 app.use(
   "/api/socios",
   createSociosRouter({

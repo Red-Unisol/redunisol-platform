@@ -69,8 +69,12 @@ Los PDFs ya emitidos conservan su contenido original. La secuencia puede tener
 saltos por transacciones fallidas o eliminaciones; esos números no se reutilizan.
 Este rango inicial no reserva números en sistemas externos.
 
-## Tech Stack
+## Cortes mensuales
 
+La carga mensual de AMEJUCA, sus permisos y reglas de cálculo están en
+[Cortes mensuales](docs/monthly-cutoffs.md).
+
+## Tech Stack
 - Node.js 22+
 - TypeScript
 - Express

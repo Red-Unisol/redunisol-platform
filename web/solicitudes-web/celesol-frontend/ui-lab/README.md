@@ -44,6 +44,13 @@ queda en `.local/ui-lab-dist`; el build operativo continúa en `dist`.
 
 - `/headers?layout=slim`: comparación de cabeceras Actual, A, B y C.
 - `/production`: ficha real de la aplicación con datos de ejemplo aislados.
+- `/cutoffs?scenario=pending`: pantalla operativa de cortes de AMEJUCA, sin fecha confirmada.
+- `/cutoffs?scenario=confirmed`: corte confirmado e historial.
+- `/cutoffs?scenario=error`: error al guardar que conserva el borrador.
+
+En /cutoffs, Guardar corte modifica sólo la memoria de la galería. Ejecutar
+`node ui-lab/cutoffs.browser-test.mjs` con ui:dev levantado para verificar esos
+estados y guardar capturas de escritorio y móvil con datos ficticios.
 
 `bootstrap.tsx` instala el transporte de fixtures antes de cargar componentes. Sólo se permiten GET de escenarios y rutas explícitas para las solicitudes ficticias; las mutaciones, rutas no previstas y orígenes externos fallan sin recurrir a la red real. La CSP permite iframes del mismo origen para el viewport móvil y bloquea conexiones externas. No se cargan archivos `.env`.
 
