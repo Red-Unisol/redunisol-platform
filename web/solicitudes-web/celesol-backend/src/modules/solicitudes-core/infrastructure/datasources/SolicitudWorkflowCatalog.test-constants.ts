@@ -2,6 +2,7 @@ export const EXPECTED_ACTIVE_WORKFLOW_STATES = [
   "CargaVendedor|VENDEDORES",
   "Confirmada|RIESGO",
   "Desestimada|HISTORIAL",
+  "EvaluacionExterna|RIESGO",
   "Liquidada|VENDEDORES",
   "Motor|SISTEMA",
   "Pagada|HISTORIAL",
@@ -23,6 +24,7 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "Confirmada|liquidar_con_firma|Transferir",
   "Confirmada|paso_por_vimarx|Desestimada",
   "Confirmada|revisar|Revisar",
+  "EvaluacionExterna|volver_a_revision_riesgo|RevisionRiesgo",
   "Liquidada|desestimar|Desestimada",
   "Liquidada|transferir|Transferir",
   "Liquidada|verificar_firma|VerificarFirmaYDocumentacion",
@@ -37,6 +39,7 @@ export const EXPECTED_ACTIVE_WORKFLOW_TRANSITIONS = [
   "Revisar|revisar_reenviar|RevisionRiesgo",
   "RevisionRiesgo|confirmar|Confirmada",
   "RevisionRiesgo|desestimar|Desestimada",
+  "RevisionRiesgo|evaluacion_externa|EvaluacionExterna",
   "RevisionRiesgo|paso_por_vimarx|Desestimada",
   "RevisionRiesgo|preaprobar|PreAprobada",
   "RevisionRiesgo|rechazar|Rechazada",
@@ -57,6 +60,20 @@ export const LEGACY_WORKFLOW_STATE_CODES = [
 ] as const;
 
 export const EXPECTED_WORKFLOW_BOOTSTRAP_METADATA = {
+  "RevisionRiesgo|evaluacion_externa|EvaluacionExterna": {
+    actionLabel: "Enviar a Evaluación Externa",
+    defaultComment: "Evaluación externa solicitada",
+    description: null,
+    requiresComment: false,
+    sortOrder: 50,
+  },
+  "EvaluacionExterna|volver_a_revision_riesgo|RevisionRiesgo": {
+    actionLabel: "Volver a Revisión Riesgo",
+    defaultComment: "Evaluación externa finalizada",
+    description: null,
+    requiresComment: false,
+    sortOrder: 10,
+  },
   ...Object.fromEntries(["Motor", "Pagada", "Rechazada", "RevisionRiesgo", "Transferir", "Vencida", "VerificarFirmaYDocumentacion"]
     .map(code => [code + "|desestimar|Desestimada", {
       actionLabel: "Desestimar", defaultComment: null, description: null, requiresComment: true, sortOrder: 100,

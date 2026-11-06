@@ -84,9 +84,10 @@ export const HISTORICAS_NEGATIVE_STATE_CODES = [
   "Pagada",
   "ParaTransferir",
 ] as const;
-const ANALISTA_BACKLOG_ESTADO_CODES = ["RevisionRiesgo", "Confirmada", "Motor"];
+const ANALISTA_BACKLOG_ESTADO_CODES = ["RevisionRiesgo", "EvaluacionExterna", "Confirmada", "Motor"];
 const ANALISTA_TRANSICION_ESPERADA: Record<string, string> = {
   Confirmada: "Liquidada",
+  EvaluacionExterna: "RevisionRiesgo",
   Motor: "RevisionRiesgo",
   Revisar: "RevisionRiesgo",
   RevisionRiesgo: "Confirmada",

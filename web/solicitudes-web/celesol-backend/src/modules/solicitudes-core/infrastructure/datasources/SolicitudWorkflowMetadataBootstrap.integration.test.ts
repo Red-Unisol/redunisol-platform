@@ -220,6 +220,10 @@ describe("Solicitud workflow metadata bootstrap", () => {
       version: 2,
     });
     assert.equal(rulesByState.has("VerificacionDocumentacion"), false);
+    assert.deepEqual(rulesByState.get("EvaluacionExterna"), {
+      ...rulesByState.get("RevisionRiesgo"),
+      version: 1,
+    });
     assert.deepEqual(rulesByState.get("Desestimada"), {
       active: true,
       backgroundColor: "#FF7F7F",

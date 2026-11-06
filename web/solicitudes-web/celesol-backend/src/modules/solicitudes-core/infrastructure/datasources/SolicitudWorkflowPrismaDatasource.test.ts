@@ -66,6 +66,54 @@ describe("SolicitudWorkflowPrismaDatasource", () => {
     );
   });
 
+  it("records each external evaluation boundary without changing the Riesgo assignee", async () => {
+    const routes = [
+      { from: "state-riesgo", to: "state-externa", action: "evaluacion_externa", at: "2026-11-06T12:00:00Z" },
+      { from: "state-externa", to: "state-riesgo", action: "volver_a_revision_riesgo", at: "2026-11-06T14:00:00Z" },
+    ];
+    for (const route of routes) {
+      const prisma = new FakeWorkflowPrisma({
+        currentSolicitud: solicitudRecord({
+          estadoActual: resolveStateById(route.from),
+          assignedToUserId: "analista-1",
+          ejecutivoSolicitud: "Analista de ejemplo",
+        }),
+        activeTransition: transitionRecord({
+          actionCode: route.action,
+          fromStateId: route.from,
+          toState: resolveStateById(route.to),
+          toStateId: route.to,
+        }),
+      });
+      const datasource = new SolicitudWorkflowPrismaDatasource(prisma.client());
+      const now = new Date(route.at);
+      const result = await executeDomainStepPlan(datasource, {
+        actionCode: route.action,
+        changedBy: "analista-1",
+        expectedFromStateId: route.from,
+        expectedToStateId: route.to,
+        now,
+        solicitudId: "sol-1",
+        workflowOwnerId: "owner-riesgo",
+      });
+      assert.equal(result.solicitud.estadoActual.id, route.to);
+      assert.equal(result.solicitud.estadoActual.owner?.code, "RIESGO");
+      assert.equal(result.solicitud.assignedToUserId, "analista-1");
+      assert.equal(result.solicitud.ejecutivoSolicitud, "Analista de ejemplo");
+      assert.equal(prisma.credixsaInformeDeleteCalls.length, 0);
+      assert.equal(prisma.historyCreateCalls.length, 1);
+      const event = prisma.historyCreateCalls[0]!.data as {
+        changedAt: Date; fromStateCodeSnapshot: string; toStateCodeSnapshot: string;
+        fromOwnerCodeSnapshot: string; toOwnerCodeSnapshot: string;
+      };
+      assert.deepEqual(event.changedAt, now);
+      assert.equal(event.fromStateCodeSnapshot, resolveStateById(route.from).code);
+      assert.equal(event.toStateCodeSnapshot, resolveStateById(route.to).code);
+      assert.equal(event.fromOwnerCodeSnapshot, "RIESGO");
+      assert.equal(event.toOwnerCodeSnapshot, "RIESGO");
+    }
+  });
+
   it("executes workflow plan in one transaction and writes audit snapshots", async () => {
     const prisma = new FakeWorkflowPrisma();
     const now = new Date("2026-05-18T12:00:00.000Z");
@@ -1592,6 +1640,12 @@ function resolveStateById(stateId: string) {
           id: "owner-riesgo",
           name: "Riesgo",
         }),
+      });
+    case "state-externa":
+      return stateRecord({
+        code: "EvaluacionExterna", id: stateId, isInitial: false,
+        name: "Evaluación Externa",
+        owner: ownerRecord({ code: "RIESGO", id: "owner-riesgo", name: "Riesgo" }),
       });
     case "state-confirmada":
       return stateRecord({

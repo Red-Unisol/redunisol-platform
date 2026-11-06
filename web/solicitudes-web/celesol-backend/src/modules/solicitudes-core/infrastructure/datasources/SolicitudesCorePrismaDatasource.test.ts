@@ -723,6 +723,7 @@ describe("SolicitudesCorePrismaDatasource", () => {
     const prisma = new FakeSolicitudesCorePrisma();
     prisma.workflowStateFindManyResult = [
       { code: "RevisionRiesgo", name: "Revisión Riesgo" },
+      { code: "EvaluacionExterna", name: "Evaluación Externa" },
       { code: "Confirmada", name: "Confirmada" },
       { code: "Motor", name: "Motor" },
     ];
@@ -737,14 +738,14 @@ describe("SolicitudesCorePrismaDatasource", () => {
 
     assert.deepEqual(
       stats.backlogPorEstado.map((b) => b.estado).sort(),
-      ["Confirmada", "Motor", "Revisión Riesgo"].sort(),
+      ["Confirmada", "Evaluación Externa", "Motor", "Revisión Riesgo"].sort(),
     );
     const stateCall = prisma.workflowStateFindManyCalls[0] as {
       where: { code: { in: string[] } };
     };
     assert.deepEqual(
       stateCall.where.code.in.sort(),
-      ["Confirmada", "Motor", "RevisionRiesgo"].sort(),
+      ["Confirmada", "EvaluacionExterna", "Motor", "RevisionRiesgo"].sort(),
     );
   });
 

@@ -124,3 +124,12 @@ El runner guarda capturas e informe en `.local/ui-production-review/`. Verifica 
 real con distintos roles, pantallas de poca altura, móvil, las tres pestañas, persistencia
 de la preferencia y edición/cancelación. Las operaciones y solicitudes no previstas siguen
 bloqueadas; los datos de evaluación son ficticios y no validan reglas financieras.
+
+
+## Evaluación externa
+
+`/production?state=revision-riesgo` muestra la entrada a Evaluación Externa en
+Más acciones. `/production?state=evaluacion-externa` muestra el nuevo estado y
+Volver a Revisión Riesgo como acción principal. Usar `role=vendedor` para
+revisar la lectura sin permisos de transición. Son fixtures locales de lectura;
+confirmar una transición sigue bloqueado por el transporte del laboratorio.

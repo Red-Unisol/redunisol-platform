@@ -147,8 +147,9 @@ La politica funcional vigente queda separada en lectura y operacion:
 
 ## Desestimación y reversión
 
-- Todos los estados activos excepto Desestimada tienen la acción de catálogo
+- Todos los estados activos excepto Desestimada y EvaluacionExterna tienen la acción de catálogo
   `desestimar`, con motivo obligatorio y los permisos del área de origen.
+  EvaluacionExterna vuelve primero a RevisionRiesgo antes de cualquier cierre.
 - Se bloquea si hay generación/reemplazo pendiente, archivo, reserva de
   transferencia o pago registrado. Estos últimos requieren resolución operativa
   antes del cierre; anular en Vimarx no revierte un movimiento bancario.

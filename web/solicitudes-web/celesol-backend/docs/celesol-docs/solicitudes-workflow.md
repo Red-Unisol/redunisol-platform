@@ -29,6 +29,7 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `CargaVendedor` | `Carga Vendedor` | `VENDEDORES` | yes | no |
 | `Motor` | `Motor` | `SISTEMA` | no | no |
 | `RevisionRiesgo` | `Revision Riesgo` | `RIESGO` | no | no |
+| `EvaluacionExterna` | `Evaluación Externa` | `RIESGO` | no | no |
 | `Revisar` | `Revisar` | `VENDEDORES` | no | no |
 | `PreAprobada` | `Pre Aprobada` | `VENDEDORES` | no | no |
 | `Confirmada` | `Confirmada` | `RIESGO` | no | no |
@@ -55,6 +56,8 @@ Este documento describe el catalogo tecnico vigente del workflow de `solicitudes
 | `PreAprobada` | `desestimar` | `Desestimar` | `Desestimada` | yes |
 | `PreAprobada` | `revisar_monto_cuota` | `Revisar si es posible brindar un monto o cuota distinta` | `RevisionRiesgo` | yes |
 | `PreAprobada` | `confirmar` | `Confirmar` | `Confirmada` | no |
+| `RevisionRiesgo` | `evaluacion_externa` | `Enviar a Evaluación Externa` | `EvaluacionExterna` | no |
+| `EvaluacionExterna` | `volver_a_revision_riesgo` | `Volver a Revisión Riesgo` | `RevisionRiesgo` | no |
 | `RevisionRiesgo` | `rechazar` | `Rechazada` | `Rechazada` | yes |
 | `RevisionRiesgo` | `revisar` | `Revisar` | `Revisar` | yes |
 | `RevisionRiesgo` | `preaprobar` | `PreAprobada` | `PreAprobada` | no |
@@ -254,3 +257,28 @@ el evento de devolución identifica `correctionId`, por lo que sigue siendo comp
 el reemplazo controlado exclusivamente para administradores. Si no existe préstamo, no se
 introduce conciliación. La devolución no anula ni genera préstamos, ni cambia la firma o el
 orden del circuito actual. La corrección administrativa anterior se mantiene por compatibilidad.
+
+
+## Evaluación externa (2026-11-06)
+
+`EvaluacionExterna` representa la espera de confirmación de un dato por otra
+persona durante el análisis. Pertenece a `RIESGO`, conserva el ejecutivo y se
+incluye como categoría propia en la bandeja/backlog del analista. Al incorporarse
+copia los permisos de campos y adjuntos vigentes de `RevisionRiesgo`.
+
+```mermaid
+flowchart LR
+    R["Revisión Riesgo · Riesgo"] -->|Enviar a Evaluación Externa| E["Evaluación Externa · Riesgo"]
+    E -->|Volver a Revisión Riesgo| R
+```
+
+Su única salida es `volver_a_revision_riesgo`; para confirmar, rechazar o
+desestimar hay que volver primero a `RevisionRiesgo`. Las dos acciones permiten
+un comentario opcional y conservan uno automático en el historial.
+
+Cada entrada y salida guarda su fecha, actor y snapshots de estado/área en el
+historial habitual. Para las futuras métricas, cada intervalo desde la entrada
+a `EvaluacionExterna` hasta su salida (o hasta el momento de consulta si sigue
+abierto) corresponde a **tiempo de evaluación externa**, separado del tiempo de
+análisis. Si se entra varias veces, esos intervalos se suman. No se agrega aún
+un contador ni se define calendario hábil o SLA.
