@@ -29,7 +29,7 @@ def identifier(value):
     return value if re.fullmatch(r"[0-9]{1,64}", value) else None
 
 
-def classify(event, allowed_subject):
+def classify(event, allowed_subject, *, entry_scope="website"):
     """Return a receipt and, only for relevant messages, a normalized artifact.
 
     FLOW shape alone is not proof of identity. The authenticated web bridge adds
@@ -45,6 +45,8 @@ def classify(event, allowed_subject):
     receipt["event_key"] = f"{subject}:{message}"
     if not identifier(allowed_subject):
         raise ValueError("EDNA_INCOMING_SUBJECT_ID must be configured")
+    if entry_scope not in {"website", "sales_channel"}:
+        raise ValueError("The intake entry scope must be configured explicitly.")
     if subject != str(allowed_subject):
         return {**receipt, "kind": "ignored", "reason": "other_channel"}, None
     subscriber = event.get("subscriber")
@@ -79,6 +81,13 @@ def classify(event, allowed_subject):
     text = content.get("text")
     if not isinstance(text, str) or len(text.encode("utf-8")) > 32768:
         return {**receipt, "reason": "invalid_text"}, None
+    if (entry_scope == "sales_channel" and content.get("type") in {"TEXT", "IMAGE", "AUDIO", "DOCUMENT", "VIDEO", "LIST_PICKER"}
+            and not is_test_entry(text)):
+        # This only recognizes a potential entry. The authenticated Web ledger
+        # still decides eligibility, existing conversations, cooldown and origin.
+        return {**receipt, "kind": "router_entry", "reason": "channel_entry"}, {
+            **normalized, "kind": "router_entry", "wa_entry": "whatsapp_directo",
+        }
     if content.get("type") == "TEXT":
         test = is_test_entry(text)
         if not test and ENTRY_PHRASE not in " ".join(text.casefold().split()):

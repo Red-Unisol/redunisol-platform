@@ -1,6 +1,9 @@
 import base64
 import importlib.util
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -26,6 +29,24 @@ class ManageEncryptedEnvTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "requires Bash on Linux")
+    def test_quoted_bcrypt_survives_encryption_and_bash_without_expansion(self) -> None:
+        # Valor ficticio: el hash sin comillas hace que Bash intente expandir $2.
+        bcrypt = "$2y$10$" + "A" * 53
+        path = self.root / "herramientas.env"
+        command = ["bash", "-euo", "pipefail", "-c",
+                   '. "$1"; printf "%s" "$CUAD_MASIVO_PASSWORD_HASH"', "bash", str(path)]
+        path.write_text(f"CUAD_MASIVO_PASSWORD_HASH={bcrypt}\n", encoding="utf-8")
+        broken = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(broken.returncode, 0)
+
+        plaintext = f"CUAD_MASIVO_PASSWORD_HASH='{bcrypt}'\n".encode("utf-8")
+        cipher = manage_encrypted_env.load_aessiv(self.key_file)
+        encrypted = manage_encrypted_env.encrypt_env_lines(cipher, plaintext)
+        path.write_bytes(manage_encrypted_env.decrypt_env_lines(cipher, encrypted))
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout, bcrypt)
 
     def test_encrypt_decrypt_roundtrip_preserves_comments(self) -> None:
         plaintext = (

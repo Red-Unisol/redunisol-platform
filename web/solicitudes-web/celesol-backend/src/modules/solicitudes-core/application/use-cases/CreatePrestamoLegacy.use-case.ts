@@ -350,6 +350,9 @@ export class CreatePrestamoLegacyUseCase {
       refinanciacionVersion: refinanciacion?.version,
       coreInput: {
         cuotas: efectivos.cuotas as number, fechaEmision: this.today(),
+        ...(solicitud.fechaPrimerVencimiento
+          ? { fechaPrimerVencimiento: solicitud.fechaPrimerVencimiento }
+          : {}),
         integrantes: [{ socio: socio.nroSocioLegacy, tipoRelacion: "Titular" as const }],
         lineaPrestamo: lineaPrestamo.id, montoDeseado: efectivos.montoAFinanciar as number,
         ...nroLote,

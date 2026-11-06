@@ -13,6 +13,7 @@ from .bitrix_client import BitrixClient
 from .catalogs import BANCOS, ORIGENES_LEAD, PROVINCIAS, SITUACIONES_LABORALES
 from .config import load_config
 from .intake_crm_client import IntakeCrmClient
+from .intake_context import CHANNEL_CONTRACT, CHANNEL_SUBFLOW
 from .lead_service import _resolve_enum_id, resolve_commercial_owner_enum_id, resolve_processing_policy_enum_id
 from .logger import create_logger
 from .normalization import normalize_whatsapp
@@ -57,6 +58,11 @@ def persist(payload, answer, *, env, client=None):
     ))
     review_status = env.get("BITRIX24_LEAD_STATUS_ASSISTANCE_REVIEW", "").strip()
     _validate_schema(api, config, review_status, test=test)
+    if payload.get("contract") == CHANNEL_CONTRACT:
+        # The bound contract must never enter the legacy phone/Guest fallback.
+        from .intake_bound import persist_bound
+        return persist_bound(payload, answer, env=env, api=api, config=config,
+                             review_status=review_status, result=result, phone=phone, case_id=case_id)
 
     # The UUID belongs to the original saved response, not to a phone or a CUIL.
     existing = _rows(api, "crm.lead.list", {"filter": {"=UF_CRM_WA_ASSISTANCE_ID": case_id},
@@ -183,7 +189,7 @@ def _test_record(record):
     return isinstance(snapshot, dict) and snapshot.get("test_reference") == TEST_REFERENCE
 
 
-def _resolve(api, config, answer, phone):
+def _resolve(api, config, answer, phone, *, bound_lead=None):
     contact = None
     reason = ""
     related = {"contact_ids": [], "lead_ids": [], "deal_ids": []}
@@ -204,7 +210,8 @@ def _resolve(api, config, answer, phone):
             raise ValueError("CRM lead CUIL does not match the requested identity.")
         # Test cases must not block a new test or an ordinary inquiry. Real
         # inquiries and open management still retain all identity protections.
-        leads = [r for r in leads if not _test_record(r)]
+        leads = [r for r in leads if not _test_record(r)
+                 and (bound_lead is None or str(r["ID"]) != str(bound_lead["ID"]))]
         related["lead_ids"] = [str(r["ID"]) for r in leads]
         if len(leads) > 1 and not reason:
             reason = "ambiguous_cuil_lead"
@@ -223,6 +230,9 @@ def _resolve(api, config, answer, phone):
         elif leads and not reason:
             reason = "existing_form_requires_review"
 
+    if bound_lead is not None:
+        # A proven Open Lines record replaces the legacy phone/Guest search.
+        return contact, bound_lead, reason, related
     # Phone lookup is only for reusing an empty channel-created Guest. It never
     # chooses a contact, borrows a known CUIL, or overwrites a completed inquiry.
     matches = api.call("crm.duplicate.findbycomm", {"entity_type": "LEAD", "type": "PHONE", "values": [phone]})
@@ -285,12 +295,15 @@ def _lead_fields(api, config, payload, answer, env, case_id, phone, contact, gue
         "STATUS_ID": status, "ASSIGNED_BY_ID": int(env.get("BITRIX24_ASSISTANCE_REVIEW_USER_ID", "57")),
         "PHONE": _merge((guest or {}).get("PHONE"), phone),
         "UF_CRM_WA_ASSISTANCE_ID": case_id, "UF_CRM_WA_ASSISTANCE_STATE": state,
-        "UF_CRM_WA_SUBFLOW": "website_single_intake", "UF_CRM_WA_SUBFLOW_ID": payload["flow_id"],
+        "UF_CRM_WA_SUBFLOW": CHANNEL_SUBFLOW if payload.get("contract") == CHANNEL_CONTRACT else "website_single_intake",
+        "UF_CRM_WA_SUBFLOW_ID": payload["flow_id"],
         "UF_CRM_WA_ORGANISMO": answer["organism"], "UF_CRM_WA_BANCO": answer["bank"],
         "UF_CRM_WA_CONTINUIDAD": "whatsapp", "UF_CRM_WA_ASSISTED": "SI",
-        "UF_CRM_WA_FLOW": "web_whatsapp_intake", "UF_CRM_WA_FLOW_ID": payload["flow_id"],
+        "UF_CRM_WA_FLOW": "whatsapp_intake" if payload.get("contract") == CHANNEL_CONTRACT else "web_whatsapp_intake",
+        "UF_CRM_WA_FLOW_ID": payload["flow_id"],
         "UF_CRM_WA_PROVINCE": answer["province_key"], "UF_CRM_WA_SEGMENT": answer["segment"],
-        "UF_CRM_WA_ENTRY": "website", "UF_CRM_WA_TIMESTAMP": payload["received_at"],
+        "UF_CRM_WA_ENTRY": attribution.get("wa", {}).get("WA_ENTRY", "website"),
+        "UF_CRM_WA_TIMESTAMP": payload["received_at"],
         INVALID_CUIL_FIELD: answer["reported_cuil"], REVIEW_REASON_FIELD: "" if rejected else reason or "",
         config.fields.lead_province: PROVINCIAS.resolve(answer["province"], "province").bitrix_id,
         config.fields.lead_source: source_id,

@@ -67,7 +67,8 @@ def lead_fields(client: Any, attribution: dict[str, Any] | None, *, source_label
     if attribution.get("journey_id"):
         fields["UF_CRM_JOURNEY_ID"] = attribution["journey_id"]
     if attribution.get("wa_assisted") is True:
-        fields.update(UF_CRM_WA_ASSISTED="SI", UF_CRM_WA_ENTRY="website")
+        fields.update(UF_CRM_WA_ASSISTED="SI",
+                      UF_CRM_WA_ENTRY=str(attribution.get("wa", {}).get("WA_ENTRY") or "website"))
         for name in WA_FIELDS:
             value = attribution.get("wa", {}).get(name[7:])
             if value and name not in fields:

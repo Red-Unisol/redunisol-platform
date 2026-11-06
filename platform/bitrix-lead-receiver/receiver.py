@@ -21,7 +21,31 @@ from urllib.request import Request, urlopen
 LOG = logging.getLogger("receiver")
 TERMINAL = {"SUCCESS", "FAILED", "KILLED", "CANCELLED", "WARNING"}
 WAITING_FOR_UPDATE = "waiting_for_update"
+REVIEW_REQUIRED = "review_required"
 RECEIPT_TERMINAL = {"done", "failed", WAITING_FOR_UPDATE}
+
+
+class ReadFailure(RuntimeError):
+    """Only fixed reason codes cross the HTTP/privacy boundary."""
+    def __init__(self, reason, http_status=None, shared=False):
+        super().__init__(reason)
+        self.reason, self.http_status, self.shared = reason, http_status, shared
+
+
+def classify_read_failure(status, payload):
+    payload = payload if isinstance(payload, dict) else {}
+    code = str(payload.get("error") or "").upper()
+    description = str(payload.get("error_description") or "").strip().lower().rstrip(".")
+    if status in (401, 403) or code in {"INVALID_CREDENTIALS", "INVALID_TOKEN", "EXPIRED_TOKEN", "NO_AUTH_FOUND", "ACCESS_DENIED", "ERROR_ACCESS_DENIED", "INSUFFICIENT_SCOPE"}:
+        return ReadFailure("authentication", status, shared=True)
+    if status == 429 or code == "QUERY_LIMIT_EXCEEDED":
+        return ReadFailure("rate_limited", status, shared=True)
+    if status in (200, 400, 404) and (code in {"NOT_FOUND", "ERROR_NOT_FOUND", "LEAD_NOT_FOUND"}
+            or description in {"not found", "lead not found", "the lead is not found"}):
+        return ReadFailure("not_found", status)
+    if status == 400:
+        return ReadFailure("invalid_request", status)
+    return ReadFailure("service_unavailable" if status >= 500 or status == 404 else "invalid_response", status, shared=True)
 
 
 class Store:
@@ -46,6 +70,13 @@ class Store:
                     last_submit REAL NOT NULL DEFAULT 0, created REAL NOT NULL, updated REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
             """)
+            # Additive migration: existing jobs/receipts and their versions survive.
+            columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
+            for name, definition in {"read_attempts": "INTEGER NOT NULL DEFAULT 0",
+                    "not_found_attempts": "INTEGER NOT NULL DEFAULT 0",
+                    "read_failed_at": "REAL"}.items():
+                if name not in columns:
+                    db.execute("ALTER TABLE jobs ADD COLUMN "+name+" "+definition)
 
     @contextlib.contextmanager
     def db(self):
@@ -77,10 +108,11 @@ class Store:
                 old = db.execute("SELECT state FROM jobs WHERE lead=?", (lead,)).fetchone()
                 db.execute("""INSERT INTO jobs(lead,version,available,created,updated) VALUES (?,1,?,?,?)
                     ON CONFLICT(lead) DO UPDATE SET version=version+1, events=events+1, updated=excluded.updated,
-                    state=CASE WHEN jobs.state IN ('done','shadow','waiting_for_update') THEN 'pending' ELSE jobs.state END,
-                    available=CASE WHEN jobs.state IN ('done','shadow','waiting_for_update') THEN excluded.available ELSE jobs.available END""", (lead, now, now, now))
+                    read_attempts=0,not_found_attempts=0,read_failed_at=NULL,
+                    state=CASE WHEN jobs.state IN ('done','shadow','waiting_for_update','review_required') THEN 'pending' ELSE jobs.state END,
+                    available=CASE WHEN jobs.state IN ('done','shadow','waiting_for_update','review_required') THEN excluded.available ELSE jobs.available END""", (lead, now, now, now))
                 self.count(db, "events_received")
-                if old and old["state"] not in ("done", "shadow", WAITING_FOR_UPDATE):
+                if old and old["state"] not in ("done", "shadow", WAITING_FOR_UPDATE, REVIEW_REQUIRED):
                     self.count(db, "events_coalesced")
 
     def mode(self, value=None):
@@ -96,6 +128,9 @@ class Store:
     def take(self):
         now = self.clock()
         with self.db() as db:
+            pause = db.execute("SELECT value FROM settings WHERE key='read_pause_until'").fetchone()
+            if pause and float(pause[0]) > now:
+                return None
             db.execute("UPDATE jobs SET state='pending' WHERE state='checking' AND lease<?", (now,))
             row = db.execute("SELECT * FROM jobs WHERE state='pending' AND available<=? ORDER BY available,created LIMIT 1", (now,)).fetchone()
             if row:
@@ -107,10 +142,43 @@ class Store:
             db.execute("UPDATE jobs SET state='pending',available=?,lease=NULL,error=? WHERE lead=? AND state='checking'", (self.clock()+delay, error, job["lead"]))
             self.count(db, "read_errors" if error != "capacity" else "capacity_deferrals")
 
+    def fail_read(self, job, failure):
+        now = self.clock()
+        with self.db() as db:
+            row = db.execute("SELECT * FROM jobs WHERE lead=? AND state='checking'", (job['lead'],)).fetchone()
+            if not row:
+                return None
+            self.count(db, "read_errors")
+            self.count(db, "read_error_"+failure.reason)
+            circuit_opened = False
+            if failure.shared:
+                previous = db.execute("SELECT value FROM settings WHERE key='read_pause_until'").fetchone()
+                previous_until = float(previous[0]) if previous else 0
+                pause = 300 if failure.reason == 'authentication' else 60
+                circuit_opened = previous_until <= now
+                db.execute("INSERT INTO settings VALUES ('read_pause_until',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(max(previous_until, now+pause)),))
+                db.execute("INSERT INTO settings VALUES ('read_pause_reason',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (failure.reason,))
+                if circuit_opened:
+                    self.count(db, 'read_circuit_opened')
+            # An error from an older read must not park a newer incoming event.
+            if row['version'] != job['version']:
+                db.execute("UPDATE jobs SET state='pending',available=?,lease=NULL,error=NULL,read_attempts=0,not_found_attempts=0,read_failed_at=NULL WHERE lead=?", (now,job['lead']))
+                return {'state':'pending','reason':failure.reason,'attempts':0,'delay':0,'circuit_opened':circuit_opened}
+            attempts = row['read_attempts']+1
+            missing = row['not_found_attempts']+1 if failure.reason == 'not_found' else 0
+            review = (failure.reason == 'not_found' and missing >= 2) or failure.reason == 'invalid_request' or (attempts >= 6 and failure.reason not in {'authentication','rate_limited'})
+            delay = 60 if failure.reason == 'not_found' else min(1800,30 * 2**min(attempts-1,6))
+            state = REVIEW_REQUIRED if review else 'pending'
+            db.execute("UPDATE jobs SET state=?,available=?,lease=NULL,error=?,read_attempts=?,not_found_attempts=?,read_failed_at=coalesce(read_failed_at,?) WHERE lead=?",
+                       (state,now+delay,failure.reason,attempts,missing,now,job['lead']))
+            if review:
+                self.count(db,'read_review_required')
+            return {'state':state,'reason':failure.reason,'attempts':attempts,'delay':delay,'circuit_opened':circuit_opened}
+
     def finish_check(self, job, status, shadow=False):
         with self.db() as db:
             # A new event arriving during the API read must get another read.
-            db.execute("""UPDATE jobs SET finished=?,last_status=?,lease=NULL,error=NULL,
+            db.execute("""UPDATE jobs SET finished=?,last_status=?,lease=NULL,error=NULL,read_attempts=0,not_found_attempts=0,read_failed_at=NULL,
                 state=CASE WHEN version>? THEN 'pending' ELSE ? END,available=?
                 WHERE lead=? AND state='checking'""",
                 (job["version"], status if not shadow else job["last_status"], job["version"], "shadow" if shadow else "done", self.clock(), job["lead"]))
@@ -123,7 +191,7 @@ class Store:
                 return None
             token = uuid.uuid4().hex
             db.execute("INSERT INTO receipts(id,lead,version,status,created,updated) VALUES (?,?,?,?,?,?)", (token, job["lead"], job["version"], status, now, now))
-            db.execute("UPDATE jobs SET state='waiting',receipt=?,lease=NULL WHERE lead=? AND state='checking'", (token, job["lead"]))
+            db.execute("UPDATE jobs SET state='waiting',receipt=?,lease=NULL,error=NULL,read_attempts=0,not_found_attempts=0,read_failed_at=NULL WHERE lead=? AND state='checking'", (token, job["lead"]))
             self.count(db, "business_requested")
             return token
 
@@ -187,10 +255,17 @@ class Store:
             oldest = db.execute("SELECT min(created) FROM jobs WHERE state IN ('pending','checking','waiting')").fetchone()[0]
             uncertain = db.execute("SELECT count(*) FROM receipts WHERE state='created' AND attempts>=3 AND last_submit<?", (self.clock()-60,)).fetchone()[0]
             stale = db.execute("SELECT count(*) FROM receipts WHERE state='running' AND updated<?", (self.clock()-600,)).fetchone()[0]
+            pause = dict(db.execute("SELECT key,value FROM settings WHERE key IN ('read_pause_until','read_pause_reason')"))
+            review = dict(db.execute("SELECT error,count(*) FROM jobs WHERE state='review_required' GROUP BY error"))
+            failed_since = db.execute("SELECT min(read_failed_at) FROM jobs WHERE state IN ('pending','checking','review_required')").fetchone()[0]
             return {"mode": db.execute("SELECT value FROM settings WHERE key='mode'").fetchone()[0],
                     "jobs": states, "counters": dict(db.execute("SELECT * FROM counters").fetchall()),
                     "oldest_pending_seconds": round(self.clock()-oldest, 1) if oldest else 0,
-                    "unconfirmed_submissions": uncertain, "stale_business_receipts": stale}
+                    "unconfirmed_submissions": uncertain, "stale_business_receipts": stale,
+                    "read_circuit": {"active":float(pause.get('read_pause_until',0))>self.clock(),
+                                     "until":float(pause.get('read_pause_until',0)),"reason":pause.get('read_pause_reason')},
+                    "review_by_reason":review,
+                    "oldest_read_error_seconds":round(self.clock()-failed_since,1) if failed_since is not None else 0}
 
 
 class Client:
@@ -202,15 +277,29 @@ class Client:
         self.next_read = 0.0
 
     @staticmethod
-    def post(url, body, timeout=20):
+    def post(url, body, timeout=20, classify_read=False):
         request = Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
         try:
             with urlopen(request, timeout=timeout) as response:
-                return json.load(response)
+                result = json.load(response)
+                if classify_read and (not isinstance(result,dict) or 'error' in result):
+                    raise classify_read_failure(200,result)
+                return result
+        except ReadFailure:
+            raise
         except HTTPError as exc:
+            if classify_read:
+                try:
+                    payload=json.loads(exc.read(65536))
+                except Exception:
+                    payload={}
+                raise classify_read_failure(exc.code,payload) from None
             # Do not include request URL, authentication, or response data in logs.
             raise RuntimeError("http_"+str(exc.code)) from None
         except Exception as exc:
+            if classify_read:
+                reason = 'invalid_response' if isinstance(exc,(ValueError,TypeError)) else 'transport_error'
+                raise ReadFailure(reason,shared=True) from None
             raise RuntimeError(type(exc).__name__) from None
 
     def status(self, lead):
@@ -221,13 +310,11 @@ class Client:
             if delay > 0:
                 time.sleep(delay)
             self.next_read = time.monotonic()+0.75
-        result = self.post(self.bitrix_url.rstrip('/')+'/crm.lead.get.json', {"id": lead})
-        if result.get("error"):
-            # Deleted/permission-denied records are not silently acknowledged.
-            raise RuntimeError("bitrix_read_error")
-        status = result.get("result", {}).get("STATUS_ID")
+        result = self.post(self.bitrix_url.rstrip('/')+'/crm.lead.get.json', {"id": lead},classify_read=True)
+        item = result.get('result')
+        status = item.get('STATUS_ID') if isinstance(item,dict) else None
         if not isinstance(status, str) or not status:
-            raise RuntimeError("missing_status")
+            raise ReadFailure("invalid_response",shared=True)
         return status
 
     def submit(self, receipt):
@@ -286,8 +373,12 @@ class Engine:
             elif not self.store.dispatch(job, status):
                 self.store.defer(job, "capacity", 30)
         except Exception as exc:
-            LOG.warning("lead_read_failed type=%s", type(exc).__name__)
-            self.store.defer(job, type(exc).__name__)
+            failure = exc if isinstance(exc,ReadFailure) else ReadFailure('unexpected_read_error')
+            result = self.store.fail_read(job,failure)
+            if result:
+                log = LOG.error if result['state']==REVIEW_REQUIRED or result['circuit_opened'] else LOG.warning
+                log("lead_read_failed lead=%s reason=%s http=%s attempts=%s state=%s retry_seconds=%s circuit_opened=%s exception_type=%s",
+                    job['lead'],failure.reason,failure.http_status,result['attempts'],result['state'],result['delay'] if result['state']=='pending' else None,result['circuit_opened'],type(exc).__name__)
         return True
 
     def send(self):

@@ -40,6 +40,8 @@ Artisan::command('edna:prune {--days=30 : Retention of delivered payloads in day
         ->where('delivered_at', '<', now()->subDays($days))->whereNotNull('payload')
         ->update(['payload' => null, 'updated_at' => now()]);
     $this->info("Cleared {$count} delivered payloads; deduplication keys retained.");
+    DB::table('bitrix_chat_response_queue')->whereColumn('version', '<=', 'processed_version')
+        ->where('updated_at', '<', now()->subDays(7))->delete();
     $sends = DB::table('edna_flow_sends')->whereIn('state', ['confirmed', 'completed', 'rejected', 'cancelled', 'expired', 'failed'])
         ->where('created_at', '<', now()->subDays(max(2, $days)))->whereNotNull('recipient')
         ->whereNotExists(function ($query) {

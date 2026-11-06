@@ -24,6 +24,7 @@ tasks:
       - event.json
     env:
       EDNA_INCOMING_SUBJECT_ID: "{{ envs.edna_incoming_subject_id ?? '' }}"
+      EDNA_INTAKE_ENTRY_SCOPE: "{{ envs.edna_intake_entry_scope ?? 'website' }}"
     commands:
       - python -m edna_incoming.entrypoint
 

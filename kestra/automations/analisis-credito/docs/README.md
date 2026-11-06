@@ -36,6 +36,8 @@ Evalua si un socio puede renovar un prestamo de las lineas Cruz del Eje.
 
 - Solo considera prestamos con cuenta activa (`Prestamo.Cuenta.Estado = 0`),
   tanto para contar prestamos como para evaluar deuda, avance y saldo.
+  Ese campo no es persistente en Vimarx: se pide como columna y se filtra en
+  Python, porque usarlo en el criterio de `EvaluateList` da 400.
 - Un prestamo cancelado no bloquea la renovacion de otro activo. Dos prestamos
   activos de las lineas admitidas siguen devolviendo `tiene_mas_de_un_prestamo`.
 - Si no hay prestamos activos admitidos, devuelve

@@ -20,12 +20,19 @@ class BitrixRoutingConfig
         53121 => 'Gloria Fernandez',
         8057 => 'Stefania Salguero',
         58913 => 'Ludmila Gallardo',
+        127337 => 'Renato Rodriguez Barros',
+        125693 => 'Saira Cardoso',
     ];
 
     public const BUCKETS = [
-        'santa_fe_anses' => [
-            'label' => 'Santa Fe y ANSES',
-            'description' => 'Haberes Premium de Santa Fe y Red Mutual - paii de ANSES, en un grupo compartido.',
+        'santa_fe' => [
+            'label' => 'Santa Fe',
+            'description' => 'Haberes Premium de Santa Fe. Jubilados nacionales se distribuyen por Mutual PAII.',
+            'sellers' => [10451, 29, 116561],
+        ],
+        'mutual_paii' => [
+            'label' => 'Mutual PAII',
+            'description' => 'Red Mutual - paii: ANSES de cualquier provincia y perfiles habilitados de Buenos Aires.',
             'sellers' => [10451, 29, 116561],
         ],
         'neuquen' => [
@@ -69,13 +76,23 @@ class BitrixRoutingConfig
 
     public function activePools(): array
     {
-        return $this->buckets()
+        $pools = $this->buckets()
             ->map(fn (array $bucket): array => collect($bucket['sellers'])
                 ->reject(fn (array $seller): bool => $seller['paused'])
                 ->pluck('user_id')
                 ->values()
                 ->all())
             ->all();
+
+        // Keep the previous contract during the independent web/Kestra rollouts.
+        $legacy = BitrixRoutingBucket::query()->find('santa_fe_anses');
+        $pools['santa_fe_anses'] = $legacy
+            ? collect($this->normalizeSellers($legacy->sellers))
+                ->reject(fn (array $seller): bool => $seller['paused'])
+                ->pluck('user_id')->values()->all()
+            : self::BUCKETS['santa_fe']['sellers'];
+
+        return $pools;
     }
 
     public function save(array $state): void
@@ -120,12 +137,15 @@ class BitrixRoutingConfig
     private function buckets(): Collection
     {
         $stored = BitrixRoutingBucket::query()
-            ->whereIn('key', array_keys(self::BUCKETS))
+            ->whereIn('key', [...array_keys(self::BUCKETS), 'santa_fe_anses'])
             ->get()
             ->keyBy('key');
 
         return collect(self::BUCKETS)->map(function (array $definition, string $key) use ($stored): array {
             $row = $stored->get($key);
+            if (! $row && in_array($key, ['santa_fe', 'mutual_paii'], true)) {
+                $row = $stored->get('santa_fe_anses');
+            }
             $sellers = $row
                 ? $this->normalizeSellers($row->sellers)
                 : collect($definition['sellers'])

@@ -30,7 +30,7 @@ export async function assertSignatureLinkFinancialReady(
   assertNoLoanReplacementPending(source);
   if (source.estadoActual.code === "Pagada")
     throw new AdministrativeCorrectionError("Esta solicitud ya fue pagada; el enlace de firma ya no está habilitado.");
-  if (source.archivedAt || !["Revisar", "RevisionRiesgo", "PreAprobada", "Confirmada", "Liquidada", "VerificarFirmaYDocumentacion", "Transferir"].includes(source.estadoActual.code))
+  if (source.archivedAt || !["Revisar", "RevisionRiesgo", "EvaluacionExterna", "PreAprobada", "Confirmada", "Liquidada", "VerificarFirmaYDocumentacion", "Transferir"].includes(source.estadoActual.code))
     throw new AdministrativeCorrectionError("La solicitud no admite firma en su estado actual.");
   const snapshots: CoreLoanSnapshot[] = [];
   const status = await inspectLinkedLoan(source, {

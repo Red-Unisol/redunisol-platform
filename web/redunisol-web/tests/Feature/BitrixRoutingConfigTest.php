@@ -55,18 +55,20 @@ test('federal police sellers can be changed and paused without changing other po
         ->assertJsonPath('cordoba_unc', [53121]);
 });
 
-test('the shared Santa Fe and ANSES pool and exclusive Neuquen pool have the approved sellers', function () {
+test('Santa Fe and Mutual PAII have separate pools and Renato is available', function () {
     $this->getJson('/api/internal/bitrix-routing')
         ->assertOk()
-        ->assertJsonPath('santa_fe_anses', [10451, 29, 116561])
+        ->assertJsonPath('santa_fe', [10451, 29, 116561])
+        ->assertJsonPath('mutual_paii', [10451, 29, 116561])
         ->assertJsonPath('neuquen', [58913]);
 
     expect(BitrixRoutingConfig::sellerOptions()[58913])->toBe('Ludmila Gallardo');
+    expect(BitrixRoutingConfig::sellerOptions()[127337])->toBe('Renato Rodriguez Barros');
 });
 
 test('the new pools preserve explicit pauses and do not mix their assignments', function () {
     app(BitrixRoutingConfig::class)->save([
-        'santa_fe_anses' => [
+        'santa_fe' => [
             ['user_id' => 29, 'paused' => false],
             ['user_id' => 10451, 'paused' => true],
         ],
@@ -77,6 +79,36 @@ test('the new pools preserve explicit pauses and do not mix their assignments', 
 
     $this->getJson('/api/internal/bitrix-routing')
         ->assertOk()
-        ->assertJsonPath('santa_fe_anses', [29])
+        ->assertJsonPath('santa_fe', [29])
+        ->assertJsonPath('mutual_paii', [10451, 29, 116561])
         ->assertJsonPath('neuquen', []);
+});
+
+test('both split pools inherit the stored order and pauses until independently saved', function () {
+    $sellers = [
+        ['user_id' => 29, 'paused' => true],
+        ['user_id' => 116561, 'paused' => false],
+    ];
+    BitrixRoutingBucket::query()->create(['key' => 'santa_fe_anses', 'sellers' => $sellers]);
+    $config = app(BitrixRoutingConfig::class);
+    expect($config->forForm()['santa_fe'])->toBe($sellers);
+    expect($config->forForm()['mutual_paii'])->toBe($sellers);
+
+    $config->save(['mutual_paii' => [['user_id' => 127337, 'paused' => false]]]);
+    $this->getJson('/api/internal/bitrix-routing')->assertOk()
+        ->assertJsonPath('santa_fe', [116561])
+        ->assertJsonPath('mutual_paii', [127337])
+        ->assertJsonPath('santa_fe_anses', [116561]);
+
+    $config->save(['santa_fe' => []]);
+    $this->getJson('/api/internal/bitrix-routing')->assertOk()
+        ->assertJsonPath('santa_fe', [])
+        ->assertJsonPath('mutual_paii', [127337]);
+});
+
+test('a paused legacy group stays paused after the split', function () {
+    BitrixRoutingBucket::query()->create(['key' => 'santa_fe_anses', 'sellers' => []]);
+    $this->getJson('/api/internal/bitrix-routing')->assertOk()
+        ->assertJsonPath('santa_fe', [])
+        ->assertJsonPath('mutual_paii', []);
 });

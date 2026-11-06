@@ -250,6 +250,26 @@ describe("PrestamosSimulacionGateway", () => {
   });
 });
 
+it("preview rejects a missing or different due date when Beex supplied one", async () => {
+  for (const returned of [null, "2026-11-30T00:00:00", "2026-12-31T00:00:00-03:00"]) {
+    let sent: unknown;
+    const gateway = new PrestamosSimulacionGateway(
+      { baseUrl: "https://legacy.example.com", timeoutMs: 1000 },
+      async (_url, init) => {
+        sent = JSON.parse(String(init?.body));
+        return { ok: true, status: 200, json: async () => ({ FechaPrimerVencimiento: returned }) };
+      },
+    );
+    const input = { capitalPuro: false, cuotas: 12, lineaId: 2519, montoAFinanciar: 230000, fechaPrimerVencimiento: "2026-12-31" };
+    if (returned?.startsWith("2026-12-31")) {
+      assert.equal((await gateway.simularRevision(input)).fechaPrimerVencimiento, returned);
+    } else {
+      await assert.rejects(gateway.simularRevision(input), /vencimiento.*no coincide/);
+    }
+    assert.deepEqual(sent, input);
+  }
+});
+
 it("preview keeps absent values null and only sends the system calculation inputs", async () => {
   let sent: unknown;
   const gateway = new PrestamosSimulacionGateway(

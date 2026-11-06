@@ -75,10 +75,10 @@ familia provincial. El resto de los perfiles debe haber superado la precalificac
 
 | Regla | Perfil | Condicion | Decision | Etapa | Linea | Bucket |
 |---|---|---|---|---|---|---|
-| `ANSES-010` | Jubilado Nacional, cualquier provincia | Sin condiciones BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
-| `PBA-010` | Buenos Aires + Policia, Docente o Jubilado Provincial | Mismas condiciones que ANSES; sin filtros BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `santa_fe_anses` |
-| `SFE-010` | Perfil interno habilitado de Santa Fe | Hasta 7 entidades informadas en el ultimo periodo BCRA | Aprobado | PRESENTACION | `Haberes Premium` | `santa_fe_anses` |
-| `SFE-020` | Perfil interno habilitado de Santa Fe | 8 o mas entidades informadas en ese periodo | Rechazo BCRA, sin distribuir | SIT. NEG. EN BCRA | No aplica | `santa_fe_anses` |
+| `ANSES-010` | Jubilado Nacional, cualquier provincia | Sin condiciones BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `mutual_paii` |
+| `PBA-010` | Buenos Aires + Policia, Docente o Jubilado Provincial | Mismas condiciones que ANSES; sin filtros BCRA | Aprobado | PRESENTACION | `Red Mutual - paii` | `mutual_paii` |
+| `SFE-010` | Perfil interno habilitado de Santa Fe | Hasta 7 entidades informadas en el ultimo periodo BCRA | Aprobado | PRESENTACION | `Haberes Premium` | `santa_fe` |
+| `SFE-020` | Perfil interno habilitado de Santa Fe | 8 o mas entidades informadas en ese periodo | Rechazo BCRA, sin distribuir | SIT. NEG. EN BCRA | No aplica | `santa_fe` |
 | `NEU-010` | Perfil interno habilitado de Neuquen | Sin restricciones BCRA por el momento | Aprobado | PRESENTACION | `MUDON` | `neuquen` |
 
 Santa Fe cuenta todas las entidades del ultimo periodo informado. No filtra por

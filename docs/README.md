@@ -11,6 +11,7 @@ Documentacion tecnica transversal de la repo.
 - `ui-prototyping.md`: proceso de maquetado local con datos ficticios y galería de escenarios para revisar interfaces antes de conectarlas a operaciones reales
 - `kestra-configuration.md`: catalogo de variables y secretos, convenciones y alta de configuracion nueva
 - `kestra-worker-delivery-20260921.md`: diagnostico reproducible de tareas SUBMITTED, mitigacion de reconexiones y limites de recuperacion en Kestra 2.0.0
+- `kestra-scheduler-recovery-20261103.md`: recuperacion de disparadores comerciales bloqueados tras un reinicio por actualizaciones, evidencia de causa y runbook
 - `reportes-operativos.md`: patrón recurrente para generar, publicar y reejecutar informes diarios
 - `metamap-client-server-redesign-plan.md`: plan de reescritura de Notificaciones MetaMap; hoy el server quedo acotado a ingest y busqueda de validaciones, con workflow y tunel bancario diferidos
 - `transferencias-automaticas.md`: plan historico de automaticas y diferencias respecto del contrato vigente de Transferencias Celesol 2.0.0
@@ -21,6 +22,7 @@ Documentacion tecnica transversal de la repo.
 - `journey-data.md`: captura del recorrido web/WhatsApp/Kestra/CRM en volumen dedicado, límites de I/O y exportación JSONL autenticada para Marketing e IA
 - `redunisol-web-production-cutover.md`: runbook de corte productivo de `redunisol.com.ar`, preservando mail en la VPS anterior
 - `whatsapp-out-of-hours.md`: aviso de Ventas fuera de horario, edición de Marketing, recuperación y activación coordinada con Bitrix
+- `whatsapp-unified-intake.md`: intake de todo el canal de Ventas, vínculo comprobable con el prospecto original, compatibilidad y despliegue
 
 ## Cuando agregar un documento nuevo
 

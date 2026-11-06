@@ -32,7 +32,7 @@ def resolve_routing_bucket(
 ) -> RoutingResolution:
     family = expanded_deal_family(config, lead)
     if family:
-        key = "santa_fe_anses" if family in {"anses", "santa_fe", "buenos_aires"} else "neuquen"
+        key = "mutual_paii" if family in {"anses", "buenos_aires"} else family
         try:
             province_label = PROVINCIAS.resolve(lead.get(config.fields.lead_province), "province").label
         except ValueError:
@@ -117,9 +117,8 @@ def resolve_routing_bucket(
 
 def routing_bucket_by_key(config: AppConfig, key: str) -> RoutingBucket | None:
     definitions = {
-        "santa_fe_anses": RoutingBucket(
-            "santa_fe_anses", "Santa Fe y ANSES", config.deal.santa_fe_anses_user_ids,
-        ),
+        "santa_fe": RoutingBucket("santa_fe", "Santa Fe", config.deal.santa_fe_user_ids),
+        "mutual_paii": RoutingBucket("mutual_paii", "Mutual PAII", config.deal.mutual_paii_user_ids),
         "neuquen": RoutingBucket("neuquen", "Neuquen", config.deal.neuquen_user_ids),
         "policia_federal_caba": RoutingBucket(
             "policia_federal_caba",

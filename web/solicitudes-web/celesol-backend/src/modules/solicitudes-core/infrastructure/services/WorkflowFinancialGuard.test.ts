@@ -92,14 +92,16 @@ it("an already reconciled loan is still checked as active, without duplicate rec
   assert.equal(f.writes(), 0);
 });
 
-it("a returned request can serve a fully verified signature while reconciliation remains pending, without writes", async () => {
-  const f = fixture();
-  f.row.estadoActual.code = "Revisar";
-  const result = await assertSignatureLinkFinancialReady(f.db, "s", f.deps);
-  assert.deepEqual(result, { loanId: "444", conditionsFingerprint: coreConditionsFingerprint(f.row) });
-  assert.equal(coreReconciliationPending(f.row), true);
-  assert.equal(f.writes(), 0);
-  assert.equal(f.audits.length, 0);
+it("returned requests and external evaluations can serve verified signatures without marking reconciliation done", async () => {
+  for (const state of ["Revisar", "EvaluacionExterna"]) {
+    const f = fixture();
+    f.row.estadoActual.code = state;
+    const result = await assertSignatureLinkFinancialReady(f.db, "s", f.deps);
+    assert.deepEqual(result, { loanId: "444", conditionsFingerprint: coreConditionsFingerprint(f.row) });
+    assert.equal(coreReconciliationPending(f.row), true);
+    assert.equal(f.writes(), 0);
+    assert.equal(f.audits.length, 0);
+  }
 });
 
 it("signature links reject mismatched contracts, cancelled loans and terminal/archived requests without writes", async () => {

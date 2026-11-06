@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Jobs\Middleware\TracksJourney;
 use App\Services\EdnaApi;
 use App\Services\EdnaFlowRouter;
+use App\Services\EdnaFlowTransport;
 use App\Services\EdnaIntake;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -24,7 +25,13 @@ class SendEdnaFlow implements ShouldQueue
 
     public int $timeout = 40;
 
-    public function __construct(public readonly int $sendId) {}
+    // A real property default also applies to payloads serialized before aliases existed.
+    public ?string $transportRequestId = null;
+
+    public function __construct(public readonly int $sendId, ?string $transportRequestId = null)
+    {
+        $this->transportRequestId = $transportRequestId;
+    }
 
     public function backoff(): array
     {
@@ -35,28 +42,31 @@ class SendEdnaFlow implements ShouldQueue
     {
         try {
             $send = DB::table('edna_flow_sends')->where('id', $this->sendId)->first();
-            if (! $send || in_array($send->state, ['confirmed', 'completed', 'rejected', 'cancelled', 'expired', 'failed'], true)) {
+            $transport = app(EdnaFlowTransport::class);
+            if (! $send || ! $transport->matches($send, $this->transportRequestId)
+                || in_array($send->state, ['confirmed', 'completed', 'rejected', 'cancelled', 'expired', 'failed'], true)) {
                 return;
             }
+            $transportId = $transport->id($send);
             if ($send->state !== 'pending') {
                 // A previous process may have died after the POST. Only reconcile, never resend.
-                Queue::connection('edna')->push(new ReconcileEdnaFlow($send->id), '', 'edna');
+                Queue::connection('edna')->push(new ReconcileEdnaFlow($send->id, $transportId), '', 'edna');
 
                 return;
             }
             if (! config('edna.enabled') || ! config('edna.router_enabled') || $send->subject_id !== (string) config('edna.subject_id')) {
-                $this->closePending('cancelled', 'router_disabled');
+                $this->closePending($send, 'cancelled', 'router_disabled');
 
                 return;
             }
             if (CarbonImmutable::parse($send->entry_received_at)->lt(now()->subHours(23))) {
-                $this->closePending('expired', 'send_window_elapsed');
+                $this->closePending($send, 'expired', 'send_window_elapsed');
 
                 return;
             }
             $intake = $send->flow_id !== EdnaFlowRouter::FLOW_ID;
             if ($intake && ! (new EdnaIntake)->canSend($send)) {
-                $this->closePending('cancelled', 'intake_context_changed');
+                $this->closePending($send, 'cancelled', 'intake_context_changed');
 
                 return;
             }
@@ -64,12 +74,12 @@ class SendEdnaFlow implements ShouldQueue
             $phone = Crypt::decryptString($send->recipient);
             $allowed = config('edna.router_recipients', []);
             if (! ($send->intake_test ?? false) && $allowed && ! in_array($phone, $allowed, true)) {
-                $this->closePending('cancelled', 'outside_pilot');
+                $this->closePending($send, 'cancelled', 'outside_pilot');
 
                 return;
             }
             $api->assertCascade($send);
-            $payload = ['requestId' => $send->request_id, 'comment' => $send->request_id,
+            $payload = ['requestId' => $transportId, 'comment' => $transportId,
                 'cascadeId' => $send->cascade_id, 'subscriberFilter' => ['address' => $phone, 'type' => 'PHONE'],
                 'content' => ['whatsappContent' => ['contentType' => 'FLOW', 'flowId' => (int) $send->flow_id,
                     'action' => 'navigate', 'caption' => 'Completar datos',
@@ -80,7 +90,7 @@ class SendEdnaFlow implements ShouldQueue
                         : 'Para orientarte con tu consulta, indicá tu provincia y situación laboral en este formulario.')]],
             ];
             // Commit the claim before any external side effect. One worker alone can win it.
-            $claimed = DB::table('edna_flow_sends')->where('id', $send->id)->where('state', 'pending')->update([
+            $claimed = $transport->update($send, ['pending'], [
                 'state' => 'sending', 'send_started_at' => now(), 'updated_at' => now(),
             ]);
             if (! $claimed) {
@@ -90,7 +100,7 @@ class SendEdnaFlow implements ShouldQueue
             $reason = 'schedule_uncertain';
             try {
                 $response = $api->post('cascade/schedule', $payload);
-                if ($response->status() === 200 && $response->json('requestId') === $send->request_id) {
+                if ($response->status() === 200 && $response->json('requestId') === $transportId) {
                     $state = 'accepted';
                     $reason = null;
                 } elseif ($response->clientError() && ! in_array($response->status(), [408, 429], true)) {
@@ -100,13 +110,13 @@ class SendEdnaFlow implements ShouldQueue
             } catch (Throwable) {
                 // Timeout does not mean the message was not sent.
             }
-            DB::transaction(function () use ($send, $state, $reason): void {
-                DB::table('edna_flow_sends')->where('id', $send->id)->where('state', 'sending')->update([
+            DB::transaction(function () use ($send, $state, $reason, $transport, $transportId): void {
+                $updated = $transport->update($send, ['sending'], [
                     'state' => $state, 'reason' => $reason,
                     'accepted_at' => $state === 'accepted' ? now() : null, 'updated_at' => now(),
                 ]);
-                if ($state !== 'rejected') {
-                    Queue::connection('edna')->later(5, new ReconcileEdnaFlow($send->id), '', 'edna');
+                if ($updated && $state !== 'rejected') {
+                    Queue::connection('edna')->later(5, new ReconcileEdnaFlow($send->id, $transportId), '', 'edna');
                 }
             });
         } catch (Throwable) {
@@ -114,16 +124,23 @@ class SendEdnaFlow implements ShouldQueue
         }
     }
 
-    private function closePending(string $state, string $reason): void
+    private function closePending(object $send, string $state, string $reason): void
     {
-        DB::table('edna_flow_sends')->where('id', $this->sendId)->where('state', 'pending')
-            ->update(['state' => $state, 'reason' => $reason, 'updated_at' => now()]);
+        app(EdnaFlowTransport::class)->update($send, ['pending'], [
+            'state' => $state, 'reason' => $reason, 'updated_at' => now(),
+        ]);
     }
 
     public function failed(?Throwable $exception): void
     {
-        $this->closePending('failed', 'preflight_exhausted');
-        DB::table('edna_flow_sends')->where('id', $this->sendId)->where('state', 'sending')
-            ->update(['state' => 'unknown', 'reason' => 'worker_interrupted', 'updated_at' => now()]);
+        $send = DB::table('edna_flow_sends')->where('id', $this->sendId)->first();
+        $transport = app(EdnaFlowTransport::class);
+        if (! $send || ! $transport->matches($send, $this->transportRequestId)) {
+            return;
+        }
+        $this->closePending($send, 'failed', 'preflight_exhausted');
+        $transport->update($send, ['sending'], [
+            'state' => 'unknown', 'reason' => 'worker_interrupted', 'updated_at' => now(),
+        ]);
     }
 }

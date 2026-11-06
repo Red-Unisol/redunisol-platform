@@ -86,7 +86,7 @@ class EdnaIncomingController extends Controller
                         continue;
                     }
                     $types = ['TEXT', 'FLOW'];
-                    if (config('edna.out_of_hours_enabled')) {
+                    if (config('edna.out_of_hours_enabled') || config('edna.intake_entry_scope', 'website') === 'sales_channel') {
                         $types = array_merge($types, ['IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER']);
                     }
                     if (! in_array($content['type'], $types, true)) {
@@ -113,6 +113,20 @@ class EdnaIncomingController extends Controller
                     ];
                     if (isset($content['payload']) && is_string($content['payload']) && strlen($content['payload']) <= 256) {
                         $payload['messageContent']['payload'] = $content['payload'];
+                    }
+                    // Keep only bounded acquisition metadata from the authenticated
+                    // callback. Never accept entry_context or a CRM binding here.
+                    if (isset($content['referral']) && is_array($content['referral'])) {
+                        $referral = [];
+                        foreach (['source_id', 'source_type', 'source_url', 'headline', 'body', 'ctwa_clid'] as $name) {
+                            $value = $content['referral'][$name] ?? null;
+                            if (is_string($value) && strlen($value) <= 2048) {
+                                $referral[$name] = $value;
+                            }
+                        }
+                        if ($referral !== [] && strlen(json_encode($referral, JSON_THROW_ON_ERROR)) <= 8192) {
+                            $payload['messageContent']['referral'] = $referral;
+                        }
                     }
                     // Edna links FLOW replies to the outgoing message and our requestId.
                     // Keep these references for correlation; they are not proof of a Flow ID.

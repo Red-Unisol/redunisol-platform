@@ -13,8 +13,8 @@
 
 Un caso de Buenos Aires con Policia, Docente o Jubilado Provincial, sin coincidencia
 CUAD, llega a GANADO y genera negociacion interna. La negociacion se aprueba en
-PRESENTACION con `Red Mutual - paii` y se distribuye en el bucket existente
-`santa_fe_anses`.
+PRESENTACION con `Red Mutual - paii` y se distribuye en el bucket `mutual_paii`,
+separado de Santa Fe desde la version del 04/11/2026 (pendiente de deploy).
 
 ## Condiciones
 
@@ -47,7 +47,7 @@ incluida la pausa comercial de CABA. No se abre una nueva ruta PFA en Buenos Air
 - **Resultado esperado con datos completos:** rechazo automatico del lead en
   RESULTADO PERDIDO, motivo `NO CUMPLE REQUISITOS PARA CONVENIO`, razon
   `employment_status_not_eligible`. No genera una negociacion interna nueva,
-  linea ni asignacion al bucket compartido por esta regla.
+  linea ni asignacion al bucket Mutual PAII por esta regla.
 - **Prioridad y datos faltantes:** CUAD conserva la derivacion externa prioritaria.
   Sin banco se conserva la politica habitual: el clasificador del lead espera
   actualizacion (`waiting_for_update / missing_required_field`); el endpoint
@@ -70,11 +70,13 @@ Las negociaciones nuevas usan PENDIENTE CALIFICACION KESTRA con responsable
 provisional Maru (`57`); la aprobacion posterior usa motivo
 `buenos_aires_approved`, PRESENTACION (`C1:NEW`) y `Red Mutual - paii`.
 
-El bucket `santa_fe_anses` conserva su clave y configuracion del panel: Patricia
-Contendi (`10451`), Susana Contenti (`29`) y Julieta Aguilera (`116561`) como pool
-inicial. Comparte recurrencia, compensacion, disponibilidad, horarios y cola con
-ANSES/Santa Fe. Si queda un unico vendedor habilitado, aplica la asignacion directa
-general, incluso offline y fuera de horario.
+El bucket `mutual_paii` comparte ANSES y Buenos Aires y se administra por separado
+de Santa Fe. Hereda el orden y pausas guardados del antiguo `santa_fe_anses`
+hasta guardar su propia configuracion. El pool inicial sin configuracion es Patricia
+Contendi (`10451`), Susana Contenti (`29`) y Julieta Aguilera (`116561`). Conserva
+recurrencia, compensacion, disponibilidad, horarios y cola dentro de Mutual PAII.
+Si queda un unico vendedor habilitado, aplica la asignacion directa general,
+incluso offline y fuera de horario.
 
 ## Prioridad y datos faltantes
 
@@ -87,7 +89,7 @@ por identidad. Se conservan ownership y exclusiones operativas existentes.
 
 | Caso | Resultado |
 |---|---|
-| Docente de Buenos Aires sin banco, con CUIL incompleto y sin BCRA | GANADO; negociacion Red Mutual - paii en el bucket compartido |
+| Docente de Buenos Aires sin banco, con CUIL incompleto y sin BCRA | GANADO; negociacion Red Mutual - paii en el bucket Mutual PAII |
 | Policia de Buenos Aires con 30 entidades en situacion 5 | Aprobado; BCRA no limita esta familia |
 | Jubilado Provincial de Buenos Aires con consulta BCRA fallida o reintento pendiente | Aprobado; no espera BCRA ni Vimarx |
 | Perfil habilitado de Buenos Aires con antecedente CUAD | Derivacion externa; sin negociacion interna nueva |

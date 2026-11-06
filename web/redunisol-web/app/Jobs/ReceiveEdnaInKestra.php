@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\Middleware\TracksJourney;
+use App\Services\BitrixChatResponseQueue;
 use App\Services\EdnaAssistance;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaFormLink;
@@ -47,6 +48,15 @@ class ReceiveEdnaInKestra implements ShouldQueue
                     throw new RuntimeException('Edna receiver is not configured.');
                 }
                 $payload = json_decode(Crypt::decryptString($event->payload), true, 32, JSON_THROW_ON_ERROR);
+                (new BitrixChatResponseQueue)->capture($event, $payload);
+                if ((new EdnaIntake)->receiveEntry($event, $payload)) {
+                    DB::table('edna_incoming_events')->where('id', $event->id)->update([
+                        'status' => 'delivered', 'outcome' => 'unified_intake_entry',
+                        'delivered_at' => now(), 'updated_at' => now(),
+                    ]);
+
+                    return;
+                }
                 if ((new EdnaIntake)->receive($event, $payload)) {
                     DB::table('edna_incoming_events')->where('id', $event->id)->update([
                         'status' => 'delivered', 'outcome' => 'website_intake',

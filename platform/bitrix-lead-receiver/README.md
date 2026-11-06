@@ -34,13 +34,54 @@ por evento. Como maximo hay dos recibos comerciales pendientes en el receptor.
   los campos cambiados. Una transicion intermedia que se revierte antes de la
   lectura no se detecta. Cambios de otros campos dentro de un estado ya completado
   no vuelven a disparar la logica comercial.
-- Lecturas fallidas se reintentan a los 30 segundos; fallos comerciales a los 60,
-  excepto la falta de datos obligatorios descrita a continuacion.
-  Leads borrados o sin permiso siguen pendientes para revision. Tras tres envios
+- Las lecturas usan la politica acotada descrita abajo; fallos comerciales se
+  reintentan a los 60 segundos, excepto la falta de datos obligatorios.
+  Tras tres envios
   sin claim, el recibo queda visible como no confirmado y requiere investigacion.
   No liberar automaticamente esos recibos: podria existir una ejecucion demorada.
 - El servicio reduce trabajo innecesario; no corrige el incidente de despacho
   interno de workers de Kestra ni prueba su causa.
+
+## Fallos de lectura y revision requerida
+
+`crm.lead.get` clasifica respuestas por estado HTTP y codigo/descripcion conocidos.
+Un HTTP 400 generico no se interpreta como lead inexistente. La respuesta observada
+en este portal (`error` vacio, descripcion `Not found.`) se reconoce expresamente.
+
+- **No encontrado:** segunda lectura a los 60 segundos; dos confirmaciones de la
+  misma generacion dejan el job en `review_required`, conservando el aviso y sin
+  confirmar su procesamiento comercial. Sale de la seleccion automatica.
+- **Solicitud invalida:** revision inmediata. Una ruta HTTP 404 sin la respuesta
+  semantica de Bitrix se considera un fallo del servicio, no un lead inexistente.
+- **Fallo temporal, de transporte o respuesta invalida:** esperas de 30, 60, 120,
+  240 y 480 segundos; el sexto fallo deja el caso en revision. Un fallo compartido
+  abre ademas una pausa persistida de 60 segundos para ambos consumidores.
+- **Autenticacion/permisos HTTP 401/403:** pausa compartida de cinco minutos y
+  log ERROR. **QUERY_LIMIT_EXCEEDED/429:** pausa de 60 segundos. Estos problemas
+  compartidos conservan los jobs pendientes; el backoff individual crece hasta
+  30 minutos, sin agotarlos por un problema de credenciales o de cupo.
+
+El webhook siguiente reactiva automaticamente un job en revision y reinicia sus
+contadores. Si llega durante una lectura fallida, el error de la version anterior
+no puede dejar la nueva version en revision. Un operador puede usar la misma
+reactivacion autenticada, sin reproducir escrituras comerciales:
+
+```sh
+python3 operate.py retry --lead 397203
+```
+
+Los logs registran ID de lead, motivo normalizado, HTTP, tipo de excepcion,
+intentos, proxima espera y apertura de pausa. No incluyen URL, credenciales ni
+cuerpo de respuesta. La entrada en revision y la apertura de pausa emiten ERROR;
+los reintentos emiten WARNING. `stats` agrega `review_by_reason`, `read_circuit`,
+`oldest_read_error_seconds` y contadores `read_error_*`/`read_review_required`.
+
+La migracion SQLite agrega contadores y fecha del primer fallo sin reemplazar
+jobs ni recibos. Respaldar mediante SQLite backup antes de instalar. Desplegar
+solamente la fase **install**, conservando el modo y el ingreso ya habilitados.
+Los 12 casos antiguos detectados el 4/11 pasan por las dos lecturas del runtime;
+no se corrigen filas a mano. Una vuelta atras requiere una version que conozca
+`review_required`, para que los webhooks puedan seguir reactivando esos casos.
 
 ## Espera por datos obligatorios
 
