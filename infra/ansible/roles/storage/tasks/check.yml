@@ -1,0 +1,64 @@
+---
+- name: Require explicit root filesystem and disk identities
+  ansible.builtin.assert:
+    that:
+      - foundation_storage_root_source | length > 0
+      - foundation_storage_root_fstype | length > 0
+      - foundation_storage_expected_disks | length > 0
+    fail_msg: Storage needs reviewed device identities; formatting is outside this role.
+
+- name: Read physical device identities without writing devices
+  ansible.builtin.command:
+    argv: [lsblk, --json, --bytes, --nodeps, --output, "NAME,MODEL,SERIAL,SIZE"]
+  register: foundation_storage_lsblk
+  changed_when: false
+  check_mode: false
+
+- name: Collect observed physical disks
+  ansible.builtin.set_fact:
+    foundation_storage_observed_disks: "{{ (foundation_storage_lsblk.stdout | from_json).blockdevices }}"
+
+- name: Match every declared device to its physical identity
+  ansible.builtin.assert:
+    that:
+      - foundation_storage_matched_disks | length == 1
+      - (foundation_storage_matched_disks | first).model | trim == item.model
+      - (foundation_storage_matched_disks | first).serial | trim == item.serial
+      - (foundation_storage_matched_disks | first).size | int == item.size | int
+    fail_msg: A disk identity differs from inventory; no storage change may proceed.
+  vars:
+    foundation_storage_matched_disks: "{{ foundation_storage_observed_disks | selectattr('name', 'equalto', item.name) | list }}"
+  loop: "{{ foundation_storage_expected_disks }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Match the existing root mount without recreating it
+  ansible.builtin.assert:
+    that:
+      - foundation_storage_root_mounts | length == 1
+      - (foundation_storage_root_mounts | first).device == foundation_storage_root_source
+      - (foundation_storage_root_mounts | first).fstype == foundation_storage_root_fstype
+    fail_msg: The root filesystem differs from the reviewed existing mount.
+  vars:
+    foundation_storage_root_mounts: "{{ ansible_facts.mounts | selectattr('mount', 'equalto', '/') | list }}"
+
+- name: Restrict platform directories to the foundation namespaces
+  ansible.builtin.assert:
+    that:
+      - item is match('^(/srv/redunisol/(platform|state)|/var/lib/redunisol-foundation)(/[a-zA-Z0-9_-]+)*$')
+  loop: "{{ foundation_storage_directories }}"
+
+- name: Inspect existing platform paths without following symbolic links
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop: "{{ foundation_storage_directories }}"
+  register: foundation_storage_paths
+
+- name: Reject symbolic links and non-directory platform paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir and not item.stat.islnk)
+  loop: "{{ foundation_storage_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"

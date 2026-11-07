@@ -1,0 +1,5 @@
+---
+foundation_environment: integration
+foundation_apply_authorized: false
+foundation_backups_enabled: false
+foundation_external_monitoring_configured: false

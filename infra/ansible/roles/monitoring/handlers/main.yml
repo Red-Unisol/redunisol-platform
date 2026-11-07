@@ -1,0 +1,10 @@
+---
+- name: Restart foundation node exporter
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter.service
+    state: "{{ 'restarted' if foundation_monitoring_enabled else 'stopped' }}"
+    daemon_reload: true
+
+- name: Reload foundation monitoring systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true

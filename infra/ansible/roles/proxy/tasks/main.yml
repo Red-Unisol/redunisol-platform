@@ -1,0 +1,114 @@
+---
+- name: Keep the foundation proxy private until application cutover
+  ansible.builtin.assert:
+    that:
+      - foundation_proxy_listen_address == '127.0.0.1'
+      - foundation_proxy_listen_port | int == 8088
+      - foundation_proxy_document_root == '/var/www/redunisol-foundation'
+      - foundation_proxy_package_version is match('^[0-9][0-9A-Za-z.+:~_-]+$')
+    fail_msg: "Foundation only permits 127.0.0.1:8088. Public sites require a separate change."
+
+- name: Describe private proxy changes in check mode
+  ansible.builtin.debug:
+    msg: "Apache will listen only on 127.0.0.1:8088, with a local health endpoint and no migrated application."
+  when: ansible_check_mode
+
+- name: Configure the private Apache foundation
+  when: not ansible_check_mode
+  block:
+    - name: Install Apache without starting its public default listener
+      ansible.builtin.apt:
+        name: "apache2={{ foundation_proxy_package_version }}"
+        state: present
+        policy_rc_d: 101
+        fail_on_autoremove: true
+
+    - name: Inspect sites before adopting Apache
+      ansible.builtin.find:
+        paths: /etc/apache2/sites-enabled
+        file_type: any
+        patterns: "*.conf"
+      register: foundation_proxy_existing_sites
+
+    - name: Refuse to replace existing application sites
+      ansible.builtin.assert:
+        that:
+          - >-
+            foundation_proxy_existing_sites.files | map(attribute='path') | map('basename') |
+            difference(['000-default.conf', 'redunisol-foundation.conf']) | length == 0
+        fail_msg: "Existing Apache sites require an adoption plan; they were not modified."
+
+    - name: Replace only the package-default listener declaration
+      ansible.builtin.copy:
+        dest: /etc/apache2/ports.conf
+        content: |
+          # Foundation only. Application/TLS listeners require a reviewed follow-up.
+          Listen {{ foundation_proxy_listen_address }}:{{ foundation_proxy_listen_port }}
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload Apache
+
+    - name: Create the local health document root
+      ansible.builtin.file:
+        path: "{{ foundation_proxy_document_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install a non-sensitive local readiness response
+      ansible.builtin.copy:
+        dest: "{{ foundation_proxy_document_root }}/health.txt"
+        content: "redunisol-foundation-ready\n"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Declare the private foundation site
+      ansible.builtin.copy:
+        dest: /etc/apache2/sites-available/redunisol-foundation.conf
+        content: |
+          # Foundation only: no public domains, backend routes or certificates.
+          <VirtualHost {{ foundation_proxy_listen_address }}:{{ foundation_proxy_listen_port }}>
+              ServerName localhost
+              DocumentRoot {{ foundation_proxy_document_root }}
+              <Directory {{ foundation_proxy_document_root }}>
+                  Options -Indexes
+                  AllowOverride None
+                  Require local
+              </Directory>
+              ErrorLog /var/log/apache2/redunisol-foundation-error.log
+              CustomLog /var/log/apache2/redunisol-foundation-access.log combined
+          </VirtualHost>
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload Apache
+
+    - name: Disable only the package-default site
+      ansible.builtin.file:
+        path: /etc/apache2/sites-enabled/000-default.conf
+        state: absent
+      notify: Reload Apache
+
+    - name: Enable the private foundation site
+      ansible.builtin.file:
+        src: ../sites-available/redunisol-foundation.conf
+        dest: /etc/apache2/sites-enabled/redunisol-foundation.conf
+        state: link
+      notify: Reload Apache
+
+    - name: Validate Apache before reloading
+      ansible.builtin.command:
+        argv: [/usr/sbin/apache2ctl, configtest]
+      changed_when: false
+
+    - name: Apply the validated private listener
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable Apache with the private foundation site
+      ansible.builtin.systemd_service:
+        name: apache2
+        enabled: true
+        state: started

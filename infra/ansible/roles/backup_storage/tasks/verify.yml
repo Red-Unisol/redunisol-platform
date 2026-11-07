@@ -1,0 +1,40 @@
+---
+- name: Report backup storage is still pending
+  ansible.builtin.debug:
+    msg: "Backup storage is disabled; no initialized filesystem or persistent backup mount is claimed."
+  when: not foundation_backup_storage_enabled
+
+- name: Verify enabled backup storage without changes
+  when: foundation_backup_storage_enabled
+  block:
+    - name: Verify the fixed storage contract
+      ansible.builtin.import_tasks: contract.yml
+
+    - name: Read exact disk and mount identities
+      ansible.builtin.import_tasks: probe.yml
+
+    - name: Require the intended mounted XFS filesystem
+      ansible.builtin.assert:
+        that:
+          - foundation_backup_storage_probe.state == 'prepared'
+          - foundation_backup_storage_probe.mounted | bool
+
+    - name: Inspect native mount enablement
+      ansible.builtin.command:
+        argv: [systemctl, is-enabled, "{{ foundation_backup_storage_probe.mount_unit }}"]
+      register: foundation_backup_storage_enabled_unit
+      changed_when: false
+      check_mode: false
+
+    - name: Inspect native mount activation
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ foundation_backup_storage_probe.mount_unit }}"]
+      register: foundation_backup_storage_active_unit
+      changed_when: false
+      check_mode: false
+
+    - name: Require the mount to be persistent and active
+      ansible.builtin.assert:
+        that:
+          - foundation_backup_storage_enabled_unit.stdout == 'enabled'
+          - foundation_backup_storage_active_unit.stdout == 'active'

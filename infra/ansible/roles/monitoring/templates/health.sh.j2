@@ -1,0 +1,50 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 022
+readonly metrics_dir={{ foundation_monitoring_textfile_directory | quote }}
+readonly state_dir={{ foundation_monitoring_backup_state_directory | quote }}
+readonly revision={{ foundation_revision | default('unassigned') | quote }}
+readonly now="$(date +%s)"
+tmp="$(mktemp -- "$metrics_dir/.foundation-health.XXXXXX")"
+trap 'rm -f -- "$tmp"' EXIT
+collection_ok=1
+{
+  printf '# HELP foundation_health_last_collection_timestamp_seconds Last host health collection.\n'
+  printf '# TYPE foundation_health_last_collection_timestamp_seconds gauge\n'
+  printf 'foundation_health_last_collection_timestamp_seconds %s\n' "$now"
+  printf 'foundation_revision_info{revision="%s"} 1\n' "$revision"
+{% for unit in foundation_monitoring_expected_services %}
+  if systemctl is-active --quiet {{ unit | quote }}; then active=1; else active=0; fi
+  printf 'foundation_service_active{unit="%s"} %s\n' {{ unit | quote }} "$active"
+{% endfor %}
+  if failed="$(systemctl --failed --no-legend --plain --no-pager)"; then
+    count="$(printf '%s\n' "$failed" | awk 'NF {n++} END {print n+0}')"
+    printf 'foundation_failed_systemd_units_count %s\n' "$count"
+  else
+    collection_ok=0
+  fi
+  for job in backup check; do
+    last=0
+    if [[ -f "$state_dir/$job.last-success" ]]; then
+      value="$(cat -- "$state_dir/$job.last-success")"
+      if [[ "$value" =~ ^[0-9]{1,12}$ ]]; then last="$value"; else collection_ok=0; fi
+    fi
+    if [[ "$job" == backup ]]; then
+      max_age={{ foundation_monitoring_backup_max_age_seconds | int }}
+    else
+      max_age={{ foundation_monitoring_backup_check_max_age_seconds | int }}
+    fi
+    age=-1; stale=1
+    if (( last > 0 && last <= now )); then
+      age=$((now-last))
+      if (( age <= max_age )); then stale=0; fi
+    fi
+    printf 'foundation_backup_age_seconds{job="%s"} %s\n' "$job" "$age"
+    printf 'foundation_backup_stale{job="%s"} %s\n' "$job" "$stale"
+  done
+  printf 'foundation_health_collection_success %s\n' "$collection_ok"
+} > "$tmp"
+chmod 0644 -- "$tmp"
+mv -f -- "$tmp" "$metrics_dir/foundation-health.prom"
+(( collection_ok == 1 ))
