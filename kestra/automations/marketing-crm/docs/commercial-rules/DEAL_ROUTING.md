@@ -195,6 +195,14 @@ los pools con un unico habilitado reciben asignacion directa.
 - la clasificacion, linea y etapa destino originales quedan persistidas y no se
   recalculan durante el reintento;
 - al distribuir, se sincronizan negociacion y prospecto y se transfiere el chat;
+- antes de reintentar o cerrar un caso se releen su etapa y los responsables de
+  negociacion, prospecto y chats comerciales activos. Si ya salio de la cola, no
+  se modifica. Si existe un responsable distinto de Maru, se conserva esa
+  asignacion, se sincronizan negociacion y prospecto y se libera la etapa destino
+  original sin transferir chats. No depende de que ese responsable este online;
+- si hay responsables distintos entre esos registros, el caso sale a revision
+  manual conservando todos los responsables y sin transferir chats. Los chats
+  cerrados o de lineas no comerciales no determinan el responsable comercial;
 - el viernes a las 17:00, todo remanente sale definitivamente de la cola y queda en
   `REVISION MANUAL KESTRA` con Maru;
 - el remanente no vuelve a entrar automaticamente el lunes.

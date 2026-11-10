@@ -526,16 +526,13 @@ def bind_open_line_activities_to_deal(
     return linked_count
 
 
-def assign_open_line_chats_to_user(
+def _crm_open_line_chat_ids(
     client: BitrixClient,
     *,
     lead_id: int,
     contact_id: int | None,
     deal_id: int,
-    assigned_by_id: int,
-    distributable_open_line_ids: tuple[int, ...],
-    logger: Logger,
-) -> ChatTransferResult:
+) -> tuple[int, ...]:
     chat_ids: list[int] = []
     for entity_type, entity_id in (
         ("lead", lead_id),
@@ -554,7 +551,34 @@ def assign_open_line_chats_to_user(
             if isinstance(chat, dict) and _is_positive_int(chat.get("CHAT_ID") or chat.get("chat_id")):
                 chat_ids.append(int(str(chat.get("CHAT_ID") or chat.get("chat_id"))))
 
-    found_chat_ids = tuple(dict.fromkeys(chat_ids))
+    return tuple(dict.fromkeys(chat_ids))
+
+
+def active_open_line_owners(
+    client: BitrixClient, *, lead_id: int, contact_id: int | None,
+    deal_id: int, distributable_open_line_ids: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Read ownership without accepting or transferring a conversation."""
+    owners: set[int] = set()
+    for chat_id in _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id):
+        dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
+        if not isinstance(dialog, dict) or _open_line_id(dialog) is None:
+            raise RuntimeError("No se pudo verificar el responsable del chat comercial.")
+        if _open_line_id(dialog) not in distributable_open_line_ids or active_open_line_session_id(dialog) is None:
+            continue
+        owner = dialog.get("owner", dialog.get("OWNER"))
+        if _is_positive_int(owner):
+            owners.add(int(str(owner)))
+    return tuple(sorted(owners))
+
+
+def assign_open_line_chats_to_user(
+    client: BitrixClient, *, lead_id: int, contact_id: int | None,
+    deal_id: int, assigned_by_id: int,
+    distributable_open_line_ids: tuple[int, ...], logger: Logger,
+    preserve_existing_ownership: bool = False, provisional_user_id: int = 57,
+) -> ChatTransferResult:
+    found_chat_ids = _crm_open_line_chat_ids(client, lead_id=lead_id, contact_id=contact_id, deal_id=deal_id)
     transferred_chat_ids: list[int] = []
     skipped_chats: list[tuple[int, str]] = []
     for chat_id in found_chat_ids:
@@ -563,6 +587,7 @@ def assign_open_line_chats_to_user(
             chat_id=chat_id,
             distributable_open_line_ids=distributable_open_line_ids,
             logger=logger,
+            allowed_owner_ids=(0, provisional_user_id, assigned_by_id) if preserve_existing_ownership else None,
         )
         if not transferable:
             skipped_chats.append((chat_id, reason))
@@ -593,6 +618,7 @@ def _open_line_session_transferability(
     chat_id: int,
     distributable_open_line_ids: tuple[int, ...],
     logger: Logger,
+    allowed_owner_ids: tuple[int, ...] | None = None,
 ) -> tuple[bool, str]:
     try:
         dialog = client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
@@ -620,6 +646,9 @@ def _open_line_session_transferability(
     if active_open_line_session_id(dialog) is None:
         logger.info(f"Chat Open Lines {chat_id} sin sesion actual transferible; se omite.")
         return False, "no_current_transferable_session"
+    owner = dialog.get("owner", dialog.get("OWNER", 0))
+    if allowed_owner_ids is not None and _is_positive_int(owner) and int(str(owner)) not in allowed_owner_ids:
+        return False, "manual_owner_preserved"
     return True, "transferable"
 
 
