@@ -84,6 +84,11 @@ class WebFormReceipt
                 'reason' => $synced ? 'web_form_already_processed' : 'web_form_persistence_uncertain',
                 'lead_id' => $synced ? $lead : null, 'updated_at' => now(),
             ]);
+            if ($synced) {
+                foreach (DB::table('web_form_continuations')->where('submission_id', $id)->where('state', 'ready')->pluck('entry_event_id') as $entryEventId) {
+                    app(WebFormChatRouting::class)->schedule((int) $entryEventId, $id);
+                }
+            }
         });
     }
 

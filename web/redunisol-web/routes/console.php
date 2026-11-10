@@ -24,6 +24,8 @@ Schedule::command('edna:out-of-hours prune --apply')->dailyAt('04:25')->withoutO
 
 Schedule::command('edna:form-links poll')->everyMinute()->withoutOverlapping(5);
 Schedule::command('edna:form-links prune --apply')->dailyAt('04:20')->withoutOverlapping();
+Schedule::command('edna:web-chat-routes poll')->everyMinute()->withoutOverlapping(5)
+    ->when(fn () => config('edna.enabled') && config('edna.intake_crm_enabled'));
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

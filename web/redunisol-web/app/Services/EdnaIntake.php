@@ -83,6 +83,9 @@ class EdnaIntake
         if (! $this->salesChannelEntry($event, $payload)) {
             return false;
         }
+        if (app(WebFormChatRouting::class)->receiveReentry($event, $payload)) {
+            return true;
+        }
         if (app(WebFormContinuation::class)->receive($event, $payload)) {
             return true;
         }
