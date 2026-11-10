@@ -28,7 +28,8 @@ separado y no forma parte de esta intervencion.
 Esta etapa no traslada aplicaciones, bases, archivos de usuarios, claves OAuth,
 colas, schedulers ni webhooks. No cambia DNS o endpoints productivos, no publica
 dominios de aplicaciones en el proxy nuevo ni modifica el firewall o el login
-root por defecto. El provisionamiento habitual nunca inicializa ni formatea los
+root por defecto; fail2ban solo agrega los bloqueos de SSH en su propia tabla
+nftables. El provisionamiento habitual nunca inicializa ni formatea los
 SATA. El rol `storage` valida identidad y montajes existentes y crea directorios;
 `backup_storage`, habilitado expresamente en este inventario, reconcilia el
 montaje del UUID de backup ya preparado. La inicializacion del SATA se aplico
@@ -39,9 +40,9 @@ desactivada por defecto.
 
 La base separa tres operaciones revisables y ejecutables de forma independiente:
 
-1. **Provisionar:** configurar sistema, acceso expresamente declarado, Docker,
-   proxy base, directorios, validacion del storage existente, observabilidad y
-   mecanismos de respaldo.
+1. **Provisionar:** configurar sistema, acceso expresamente declarado,
+   proteccion de SSH con fail2ban, Docker, proxy base, directorios, validacion
+   del storage existente, observabilidad y mecanismos de respaldo.
 2. **Verificar:** contrastar runtime con inventario sin aplicar correcciones.
 3. **Mantener:** refrescar metadata APT y reportar paquetes actualizables y
    necesidad de reinicio con autorizacion independiente. El playbook actual no

@@ -34,10 +34,12 @@ foundation_monitoring_expected_services:
   - docker.service
   - ssh.service
   - apache2.service
+  - fail2ban.service
 foundation_external_monitoring_configured: false
 foundation_backups_enabled: true
 foundation_backups_package: restic=0.18.0-1+b4
 foundation_proxy_package_version: "2.4.69-1~deb13u1"
+foundation_security_fail2ban_package: fail2ban=1.1.0-8
 # Local filesystem and encrypted repository were initialized and verified.
 foundation_backups_repository_kind: local
 foundation_backups_local_mountpoint: /srv/redunisol-backups
@@ -63,6 +65,7 @@ foundation_backups_source_paths:
   - /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
   - /etc/systemd/system/redunisol-foundation-health.service
   - /etc/systemd/system/redunisol-foundation-health.timer
+  - /etc/fail2ban/jail.d/redunisol-security.local
 
 # Encryption key is retained outside the dedicated before repository initialization.
 foundation_backups_key_custody_confirmed: true

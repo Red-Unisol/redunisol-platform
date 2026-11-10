@@ -26,6 +26,14 @@ def security_contract():
 
 
 class PlaybookWiringTests(unittest.TestCase):
+    def test_jail_is_monitored_and_backed_up(self):
+        inventory = read_yaml("inventories/production/group_vars/all.yml")
+        jail = read_yaml("roles/security/defaults/main.yml")["foundation_security_fail2ban_jail_path"]
+        allowed = read_yaml("roles/backups/defaults/main.yml")["foundation_backups_foundation_config_files"]
+        self.assertIn("fail2ban.service", inventory["foundation_monitoring_expected_services"])
+        self.assertIn(jail, inventory["foundation_backups_source_paths"])
+        self.assertIn(jail, allowed)
+
     def test_provision_applies_security_after_access(self):
         play = read_yaml("playbooks/provision.yml")[0]
         roles = [entry["role"] for entry in play["roles"]]
@@ -52,6 +60,8 @@ class PlaybookWiringTests(unittest.TestCase):
 class SecurityContractTests(unittest.TestCase):
     def variables(self):
         values = read_yaml("roles/security/defaults/main.yml")
+        inventory = read_yaml("inventories/production/group_vars/all.yml")
+        values.update({key: value for key, value in inventory.items() if key.startswith("foundation_security_")})
         values["foundation_expected_ssh_port"] = 2241
         return values
 
@@ -96,6 +106,13 @@ class SecurityContractTests(unittest.TestCase):
 
     def test_floating_package_is_rejected(self):
         self.assert_rejected(foundation_security_fail2ban_package="fail2ban")
+
+    def test_role_default_without_reviewed_version_is_rejected(self):
+        self.assert_rejected(
+            foundation_security_fail2ban_package=read_yaml("roles/security/defaults/main.yml")[
+                "foundation_security_fail2ban_package"
+            ],
+        )
 
     def test_unwatched_management_port_is_rejected(self):
         self.assert_rejected(foundation_security_fail2ban_ssh_ports=[22])

@@ -39,3 +39,4 @@ foundation_backups_foundation_config_files:
   - /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
   - /etc/systemd/system/redunisol-foundation-health.service
   - /etc/systemd/system/redunisol-foundation-health.timer
+  - /etc/fail2ban/jail.d/redunisol-security.local

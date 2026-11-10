@@ -14,10 +14,18 @@ rules it creates, in the table that fail2ban manages itself.
 
 | File | Purpose |
 | --- | --- |
-| `defaults/main.yml` | Package version, watched ports, thresholds and never-banned addresses. |
+| `defaults/main.yml` | Watched ports, thresholds and never-banned addresses. The package version is empty here. |
 | `tasks/main.yml` | Contract, check-mode description, installation, jail and service. |
 | `handlers/main.yml` | When the jail changes: `fail2ban-client --test`, then reload. |
 | `tasks/verify.yml` | Read-only: package version, service, configuration test, jail settings and live status. |
+
+## Reviewed inventory
+
+The production inventory declares the exact package
+(`foundation_security_fail2ban_package: fail2ban=1.1.0-8`), lists
+`fail2ban.service` in `foundation_monitoring_expected_services` and includes the
+managed jail in `foundation_backups_source_paths`, so the health collector
+reports the service and the nightly configuration backup covers the jail.
 
 ## Debian 13 log source
 
