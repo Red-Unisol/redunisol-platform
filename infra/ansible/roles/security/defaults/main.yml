@@ -1,0 +1,14 @@
+---
+# Reviewed Debian 13 package; a floating version is rejected by the role contract.
+foundation_security_fail2ban_package: fail2ban=1.1.0-8
+# SSH ports watched by fail2ban. The dedicated currently serves SSH on both.
+foundation_security_fail2ban_ssh_ports: [22, 2241]
+# An address failing maxretry times within findtime is banned for bantime.
+foundation_security_fail2ban_maxretry: 5
+foundation_security_fail2ban_findtime: 10m
+foundation_security_fail2ban_bantime: 1h
+# Never banned. Add the office public address in the reviewed inventory before applying.
+foundation_security_fail2ban_ignoreip:
+  - 127.0.0.1/8
+  - ::1
+foundation_security_fail2ban_jail_path: /etc/fail2ban/jail.d/redunisol-security.local

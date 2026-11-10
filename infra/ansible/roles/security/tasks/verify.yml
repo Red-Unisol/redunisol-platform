@@ -1,0 +1,54 @@
+---
+- name: Read installed fail2ban package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Verify the reviewed fail2ban package version
+  ansible.builtin.assert:
+    that:
+      - "'fail2ban' in ansible_facts.packages"
+      - ansible_facts.packages['fail2ban'][0].version == foundation_security_fail2ban_package.split('=', 1)[1]
+    fail_msg: "fail2ban is missing or differs from the reviewed version."
+
+- name: Verify fail2ban is running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, fail2ban.service]
+  changed_when: false
+  check_mode: false
+
+- name: Test fail2ban configuration without applying it
+  ansible.builtin.command:
+    argv: [/usr/bin/fail2ban-client, --test]
+  changed_when: false
+  check_mode: false
+
+- name: Read the managed SSH jail
+  ansible.builtin.slurp:
+    src: "{{ foundation_security_fail2ban_jail_path }}"
+  register: foundation_security_jail
+
+- name: Verify the managed SSH jail settings
+  ansible.builtin.assert:
+    that:
+      - "'[sshd]' in (foundation_security_jail.content | b64decode)"
+      - "('port = ' ~ (foundation_security_fail2ban_ssh_ports | join(','))) in (foundation_security_jail.content | b64decode)"
+      - "('maxretry = ' ~ foundation_security_fail2ban_maxretry) in (foundation_security_jail.content | b64decode)"
+      - "'banaction = nftables-multiport' in (foundation_security_jail.content | b64decode)"
+    fail_msg: "The SSH jail differs from the reviewed inventory."
+
+- name: Read the live SSH jail status
+  ansible.builtin.command:
+    argv: [/usr/bin/fail2ban-client, status, sshd]
+  register: foundation_security_sshd_status
+  changed_when: false
+  check_mode: false
+
+- name: Verify the SSH jail is active
+  ansible.builtin.assert:
+    that:
+      - "'Currently banned' in foundation_security_sshd_status.stdout"
+    fail_msg: "The sshd jail is not active."
+
+- name: Report SSH failures and bans observed by fail2ban
+  ansible.builtin.debug:
+    var: foundation_security_sshd_status.stdout_lines

@@ -1,0 +1,70 @@
+---
+- name: Validate fail2ban settings before changing the host
+  ansible.builtin.assert:
+    that:
+      - foundation_security_fail2ban_package is match('^fail2ban=[0-9][0-9A-Za-z.+:~_-]+$')
+      - foundation_security_fail2ban_ssh_ports | length > 0
+      - >-
+        foundation_security_fail2ban_ssh_ports | map('int') | select('ge', 1) | select('le', 65535) | list | length
+        == foundation_security_fail2ban_ssh_ports | length
+      - (foundation_expected_ssh_port | default(2241) | int) in (foundation_security_fail2ban_ssh_ports | map('int') | list)
+      - foundation_security_fail2ban_maxretry | int >= 3
+      - foundation_security_fail2ban_findtime is match('^[1-9][0-9]*[smhd]$')
+      - foundation_security_fail2ban_bantime is match('^[1-9][0-9]*[smhd]$')
+      - "'127.0.0.1/8' in foundation_security_fail2ban_ignoreip"
+      - >-
+        foundation_security_fail2ban_ignoreip | select('match', '^[0-9A-Fa-f:./]+$') | list | length
+        == foundation_security_fail2ban_ignoreip | length
+    fail_msg: "Invalid fail2ban settings; the host was not modified."
+
+- name: Describe fail2ban changes in check mode
+  ansible.builtin.debug:
+    msg:
+      package: "{{ foundation_security_fail2ban_package }}"
+      ssh_ports: "{{ foundation_security_fail2ban_ssh_ports }}"
+      maxretry: "{{ foundation_security_fail2ban_maxretry }}"
+      findtime: "{{ foundation_security_fail2ban_findtime }}"
+      bantime: "{{ foundation_security_fail2ban_bantime }}"
+      check_mode_note: "Contracts only; installation is not simulated on a host without fail2ban."
+  when: ansible_check_mode
+
+- name: Apply fail2ban only outside check mode
+  when: not ansible_check_mode
+  block:
+    - name: Install reviewed fail2ban with the nftables ban backend
+      ansible.builtin.apt:
+        name:
+          - "{{ foundation_security_fail2ban_package }}"
+          - nftables
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        fail_on_autoremove: true
+
+    - name: Declare the SSH jail
+      ansible.builtin.copy:
+        dest: "{{ foundation_security_fail2ban_jail_path }}"
+        content: |
+          # Managed by infra/ansible (role security). Manual changes are overwritten.
+          [DEFAULT]
+          banaction = nftables-multiport
+          banaction_allports = nftables-allports
+          ignoreip = {{ foundation_security_fail2ban_ignoreip | join(' ') }}
+
+          [sshd]
+          enabled = true
+          backend = systemd
+          port = {{ foundation_security_fail2ban_ssh_ports | join(',') }}
+          maxretry = {{ foundation_security_fail2ban_maxretry }}
+          findtime = {{ foundation_security_fail2ban_findtime }}
+          bantime = {{ foundation_security_fail2ban_bantime }}
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload fail2ban
+
+    - name: Enable fail2ban
+      ansible.builtin.systemd_service:
+        name: fail2ban.service
+        enabled: true
+        state: started

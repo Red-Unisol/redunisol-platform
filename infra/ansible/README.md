@@ -15,6 +15,7 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | --- | --- |
 | Sistema | Configuracion declarativa de Debian, paquetes base, hora y registros. |
 | Acceso | Cuentas y claves publicas expresamente configuradas. |
+| Seguridad | fail2ban para SSH, con version revisada; sin politica de firewall. |
 | Docker | Motor y plugin Compose, configuracion del daemon y verificacion. |
 | Proxy | Configuracion base sin publicar los dominios de las aplicaciones actuales. |
 | Storage habitual | Validacion de discos y montajes existentes, y creacion de directorios. |
@@ -24,6 +25,8 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 | Mantenimiento | Revision de actualizaciones y necesidad de reinicio, separada del provisionamiento. |
 
 Por defecto no se cambia el firewall, el puerto SSH ni la politica de login root.
+El rol `security` solo agrega fail2ban para SSH: sus bloqueos son las unicas
+reglas nftables que crea, en la tabla que administra fail2ban.
 El rol `storage` habitual no inicializa, formatea ni monta discos. El rol
 `backup_storage` habilitado reconcilia el montaje del UUID ya preparado; no crea
 su filesystem desde provision. La preparacion del SATA para backup se declara

@@ -20,6 +20,11 @@
         name: access
         tasks_from: verify
       tags: [access]
+    - name: Verify SSH brute-force protection
+      ansible.builtin.import_role:
+        name: security
+        tasks_from: verify
+      tags: [security]
     - name: Verify Docker
       ansible.builtin.import_role:
         name: docker
