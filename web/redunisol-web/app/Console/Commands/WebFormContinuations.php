@@ -18,7 +18,7 @@ class WebFormContinuations extends Command
         {--date=* : UTC journal dates to import, YYYY-MM-DD; maximum 3}
         {--request=* : Audited intake request IDs to reconcile; maximum 100}
         {--confirmed-crm-continuity : Operator verified the existing CRM leads and their management}
-        {--apply : Apply the previewed local receipts or reconciliation; never sends or writes CRM}';
+        {--apply : Apply the preview; ready reconciliation can enqueue guarded CRM linking}';
 
     protected $description = 'Inspect web continuations and settle proven redundant responses without sending forms';
 

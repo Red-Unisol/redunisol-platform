@@ -76,16 +76,138 @@ una campaña ni un journey nuevos.
 
 Antes de reservar un Flow, el intake registra esa continuación: espera el acuse
 web si sigue pendiente, reutiliza el lead si ya fue persistido o pasa a revisión
-si la persistencia falló o quedó incierta. No escribe CRM ni envía otro formulario.
-El acuse web actualiza las continuaciones ligadas a su submission_id. Un teléfono
-compartido sin referencia, o la frase post-formulario sin evidencia del servidor,
-se conserva en revisión sin seleccionar una persona o un lead.
+si la persistencia falló o quedó incierta. `WebFormContinuation` no hace HTTP al
+CRM ni envía otro formulario: una continuación `ready` encola `LinkWebFormChat`,
+que ejecuta el servicio `WebFormChatLinker` por separado. El acuse web actualiza
+las continuaciones ligadas a su `submission_id` y también encola el vínculo cuando
+una espera termina en `ready`. Sin referencia ni una reentrada exactamente
+comprobada, un teléfono compartido o la frase post-formulario sin evidencia del
+servidor se conservan en revisión sin seleccionar una persona o un lead.
 
 El registro web y la reserva final de envío comparten un bloqueo por teléfono
 normalizado. Si el formulario fue aceptado antes del claim de envío, se cancela
 el Flow todavía pendiente; no se cambian las admisiones ni los slots históricos.
 Un envío que ya fue reclamado o aceptado debe conciliarse, nunca repetirse.
 Las referencias duran 24 horas y no contienen teléfono, CUIL ni IDs de CRM.
+
+### Vínculo con una negociación ya asignada
+
+Seguimiento: [tarea Bitrix 23571 — completar la distribución automática de chats](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/23571/).
+
+El puente sólo procesa una referencia de solicitud comprobada o un reingreso
+cuya conversación anterior y nuevo mensaje puedan demostrarse exactamente.
+`web_form_chat_routes` conserva una fila por `entry_event_id`, con solicitud,
+prueba de IDs técnicos, destino, lease, disponibilidad y fases independientes
+`link_state` y `transfer_state`. Los callbacks y acuses duplicados no crean otro
+trabajo original ni reemplazan la solicitud de una fila existente.
+
+Además del lease por evento, un lock compartido por `chat_id` evita que mensajes
+distintos de la misma conversación transfieran en paralelo. En producción se
+exige un cache compartido de base de datos o Redis; sin él, la ruta espera.
+
+Para resolver la conversación, `EdnaMessageBinding` exige el mensaje autenticado
+de Edna en el `connectorMid` de una sesión concreta de Bitrix, su actividad
+`IMOPENLINES_SESSION`, historial completo y el conector de Ventas de la línea 1.
+El teléfono sólo permite descubrir candidatos; no demuestra una relación CRM.
+Si la persistencia web, la sesión nativa o la asignación comercial siguen
+pendientes, el trabajo espera y se recupera sin crear prospectos ni negociaciones.
+
+El destino debe ser una única negociación vigente de categoría 1, con semántica
+`P` y `LEAD_ID` igual al prospecto confirmado del recibo web. Prospecto y
+negociación deben conservar el mismo contacto y vendedor actual; el CUIL del
+prospecto y del contacto debe coincidir con la identidad del recibo. Se exige
+un vendedor interno activo y una asignación comercial finalizada, no una ficha
+todavía en la cola o con responsable provisional. No se elige una negociación
+entre varias por compartir teléfono o contacto. Una discrepancia de identidad
+requiere revisión; una asignación humana diferente se conserva.
+
+El responsable del Guest tampoco se considera provisional sólo por ser Maru o
+Nico: cuando difiere del vendedor, se exige además que coincida con el creador
+nativo entre esos receptores. Un Guest creado por Maru y actualmente asignado a
+Nico se conserva. Esta coincidencia es una restricción conservadora, no una prueba
+absoluta del historial de responsables. El usuario de API compartido y la fecha
+de modificación no demuestran una asignación automática.
+
+El vínculo se materializa con `crm.activity.binding.add` sobre la actividad
+nativa, añadiendo el contacto y la negociación a su timeline. Se comprueba el
+resultado con `crm.activity.binding.list`. Esto no equivale a reasignar la
+identidad nativa del chat: se mantiene su asociación original, incluido el
+prospecto Guest cuando lo hay. El puente no borra esa asociación, no crea
+fichas ni escribe perfiles, CUIL o responsables comerciales para forzar una
+coincidencia. Un vínculo con otro contacto o negociación bloquea la operación.
+
+Antes de transferir, `WebFormChatGuard` comprueba la sesión y su historial de
+transferencias y atención. Una aceptación humana, una respuesta del operador,
+una transferencia explícita o un responsable distinto se conservan incluso
+cuando el dueño visible sigue siendo el mismo receptor de la cola. Se releen
+la negociación, el prospecto, el contacto, la identidad nativa y el diálogo
+después de añadir vínculos y justo antes del único POST de transferencia. Un
+cambio de vendedor, contacto, sesión o responsable detiene la derivación; si
+el chat ya está con el vendedor correcto, no se vuelve a transferir. La sesión
+cerrada puede quedar vinculada sin que se la reabra.
+
+**Límite de concurrencia:** Bitrix no ofrece una operación de comparación y
+actualización atómica del responsable y la sesión para este POST. Las lecturas
+finales reducen la carrera con una acción humana, pero no la eliminan: un cambio
+entre la última lectura y la transferencia todavía es posible. El lease de la
+tabla coordina nuestros workers, no bloquea a los operadores de Bitrix. No se
+promete atomicidad del proveedor. Se verifica el resultado y cualquier cambio
+inesperado de responsable CRM queda para revisión, sin restaurar un valor viejo
+que pudiera reemplazar una decisión humana posterior.
+
+Una reapertura sin referencia puede despertar resolución si ya existe una ruta
+comprobada para ese teléfono. El trabajo empieza sin seleccionar solicitud,
+negociación ni vendedor: debe probar el nuevo mensaje y encontrar una única
+relación anterior para el mismo `chat_id`. La asignación y la identidad vigentes
+se verifican de nuevo. La atención/asignación humana protegida del mismo caso se
+conserva también en la reapertura; sólo se habilita el destino cuando la asignación
+comercial vigente coincide con esa persona. Una ruta comprobada que espera vendedor
+también puede recuperarse al reabrirse la conversación. Si hay otra solicitud
+reciente para ese teléfono, se exige su referencia. Un teléfono compartido, una
+conversación distinta o una relación no única nunca autorizan reutilizar una ficha.
+
+Si la transferencia queda `sending` o `unknown`, el siguiente intento sólo
+consulta su resultado; no repite el POST. Encontrar después al vendedor esperado
+puede producir `transfer_state=observed`, pero eso por sí solo no prueba que la
+automatización haya realizado la transferencia. Para atribuir autoría en el reporte,
+se necesita evidencia del proceso y una transferencia nativa correlacionada; no
+basta con la fase guardada o con que el vendedor ya sea dueño. Si aparece otra sesión o una decisión
+humana posterior, se conserva; los resultados inciertos que no se resuelven
+terminan en revisión.
+
+### Operación y recuperación del puente
+
+Se mantienen las compuertas existentes `EDNA_INCOMING_ENABLED` e
+`EDNA_INTAKE_CRM_ENABLED`. El worker no modifica CRM con ellas deshabilitadas;
+el scheduler sólo despacha recuperación cuando ambas están activas. La
+recuperación corre cada minuto y toma un lote acotado, con disponibilidad cumplida
+y sin lease vigente. Los estados `unknown` sólo se despiertan para conciliación
+de una transferencia `sending`/`unknown`, mediante lecturas.
+
+```text
+php artisan edna:web-forms status
+php artisan edna:web-chat-routes status --limit=25
+php artisan edna:web-chat-routes poll --limit=25
+```
+
+Los comandos `status` muestran recibos/continuaciones y estados del puente,
+respectivamente, sin HTTP a Bitrix ni encolados. `poll` devuelve la
+cantidad encolada, admite límites de 1 a 100 y no selecciona fichas ni transfiere
+chats directamente. Para el estado por evento del puente se conservan `state`,
+`reason`, `link_state`, `transfer_state`, `attempts` y la prueba técnica en
+`web_form_chat_routes`. No se debe interpretar una fase incierta como permiso
+para repetir una escritura. El poll no crea trabajo a partir de continuaciones
+históricas ni recupera automáticamente casos `review` o ambiguos.
+
+Cada resultado agrega `whatsapp.web_chat_route` al journal con IDs técnicos y
+fases, sin teléfonos ni texto del cliente. La fila durable sigue siendo la fuente
+primaria si falla el tracking; ese fallo nunca permite repetir una transferencia.
+
+El seguimiento de la tarea 23571 usa un chequeo diario en Codex a las 09:30 de
+Argentina, separado de este scheduler operativo. Entrega un borrador para comentar
+en la tarea con los números del día calendario anterior: chats automáticos,
+manuales y mixtos, intervención humana total, pendientes y cobertura de evidencia.
+El borrador se revisa en Codex y nunca se publica automáticamente en Bitrix.
 
 Para incorporar los formularios anteriores al despliegue, inspeccionar primero:
 
@@ -112,6 +234,11 @@ mismo CUIL y teléfono, mismo lead web y recepción web dentro de las 24 horas
 anteriores al ingreso. Conserva respuesta cifrada, envío y contadores; registra
 el motivo anterior y la evidencia de conciliación. Los casos ambiguos o con
 acuse de escritura incierto quedan para revisión.
+La aplicación de una conciliación comprobada que termine en `ready` también
+puede encolar el puente. El comando no hace HTTP directo, pero el trabajo
+posterior puede añadir vínculos y derivar el chat con las comprobaciones
+anteriores; no debe considerarse una operación exclusivamente local de extremo
+a extremo.
 
 ## Fallos de entrega
 
@@ -185,6 +312,8 @@ no autoriza otros destinatarios ni otro intento ante un resultado incierto.
    clasificador histórico.
 3. Publicar Web con las migraciones de contexto y bindings; luego habilitar el
    scope y su corte mediante configuración cifrada Git-managed.
+   El puente necesita además la migración de `web_form_chat_routes` y workers
+   compatibles con `LinkWebFormChat`; verificar también el scheduler de su poll.
 4. Verificar configuración, migraciones, workers y páginas públicas. La lectura
    de una conversación real permite comprobar los IDs de origen sin enviar nada.
 5. Comprobar, cuando el saldo permita tráfico auténtico, una respuesta que actualice
@@ -194,3 +323,8 @@ Rollback: `EDNA_INTAKE_ENTRY_SCOPE=website` restringe las nuevas entradas; conse
 el consumidor y las tablas capaces de finalizar los casos V2 ya abiertos.
 No borrar bindings, respuestas, admisiones ni contadores; no apagar recepción o
 CRM para ejecutar el rollback.
+Para el puente, conservar `web_form_receipts`, `web_form_continuations`,
+`web_form_chat_routes`, sus pruebas y fases, y un consumidor compatible con los
+jobs ya encolados. Revertir código no autoriza borrar rutas, quitar vínculos
+nativos ni repetir transferencias con acuse incierto. Una versión de rollback
+debe seguir pudiendo conciliar esos resultados mediante lecturas.

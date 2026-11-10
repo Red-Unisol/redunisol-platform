@@ -54,6 +54,9 @@ class WebFormContinuation
         DB::table('web_form_continuations')->updateOrInsert(['entry_event_id' => $event->id],
             $decision + ['created_at' => now(), 'updated_at' => now()]);
         (new EdnaFlowRouter)->record($event->id, $state === 'review' ? 'web_form_review' : 'web_form_continuation', $sendId);
+        if ($state === 'ready') {
+            app(WebFormChatRouting::class)->schedule((int) $event->id, $receipt->id);
+        }
 
         return $decision;
     }
@@ -104,6 +107,7 @@ class WebFormContinuation
                     'reason' => 'web_form_already_processed', 'previous_reason' => $request->reason,
                     'proof_source' => 'crm_binding', 'lead_id' => $receipt->lead_id, 'created_at' => now(), 'updated_at' => now(),
                 ]);
+                app(WebFormChatRouting::class)->schedule((int) $send->entry_event_id, $receipt->id);
             }
 
             return $result;
