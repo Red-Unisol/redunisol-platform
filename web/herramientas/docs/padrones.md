@@ -73,6 +73,8 @@ y no devuelve filas; no se interpreta como ausencia de empleo.
 
 Configurar el mismo token exclusivamente en los backends de Herramientas y Beex
 antes de habilitar la integración. El endpoint no modifica ni reimporta versiones.
+Los archivos de runtime cifrados de dev/prod incluyen credenciales distintas por
+ambiente; el consumidor de Beex está preparado con los valores correspondientes.
 La carga de Administración observada el 11/11/2026 debe revisarse desde la interfaz
 de padrones: tiene una fila de datos seleccionada como encabezado. Esta API la
 señala como `needs_review` hasta que se publique una versión corregida.
