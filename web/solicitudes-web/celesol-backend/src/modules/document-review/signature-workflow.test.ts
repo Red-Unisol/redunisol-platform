@@ -72,6 +72,15 @@ test("signature source and approval survive analysis handoff; state alone does n
   assert.equal(signatureSummary(row, review, approval(review)).approved, true);
 });
 
+test("reliquidation pause suppresses an otherwise valid approval and signature link", () => {
+  const row = sourceRow(), review = observation(row), decision = approval(review);
+  assert.equal(signatureSummary(row, review, decision).approved, true);
+  row.administrativeCoreControl = { reliquidationHold: { requestId: "pending" } };
+  assert.equal(signatureSummary(row, review, decision).approved, false);
+  assert.equal(signatureSummary(row, review, decision).link, null);
+  assert.equal(canManageSignature(row), false);
+});
+
 test("the first checkmark requires a completed submission, not an opened or incomplete attempt", () => {
   const row = sourceRow(), candidate = candidateFixture();
   candidate.completedAt = null;

@@ -42,6 +42,8 @@ async function start() {
     import("@tanstack/react-query"),
     pathname.startsWith("/socio-create")
       ? import("./socio-create-entry")
+      : pathname.startsWith("/reliquidacion")
+      ? import("./reliquidacion-entry")
       : pathname.startsWith("/cutoffs")
       ? import("./cutoffs-entry")
       : pathname.startsWith("/production")

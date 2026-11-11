@@ -166,3 +166,10 @@ destino no habitual con datos ficticios. El runner
 ausencias, errores y recuperación, edición de identidad, escritorio y móvil.
 Los escenarios y el contrato están en
 [CBU habitual en Beex](../../../../docs/apis/vimarx/cbu-habitual-beex.md).
+
+## Reliquidación conservadora
+
+`/reliquidacion` usa el panel operativo con datos ficticios y mutaciones en memoria.
+Escenarios: `?scenario=prepared`, `pending`, `blocked` y `error`.
+`node ui-lab/reliquidacion.browser-test.mjs` verifica el circuito en escritorio y
+390/320 px y guarda capturas en `.local/reliquidacion-review`.
