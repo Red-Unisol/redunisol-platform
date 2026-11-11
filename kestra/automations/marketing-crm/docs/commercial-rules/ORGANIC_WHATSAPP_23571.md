@@ -1,7 +1,8 @@
 # Ingreso orgánico de WhatsApp — tarea 23571
 
 Versión: `2026-11-11-organic-menu-profile-reuse`.
-Estado: **implementado en rama, pendiente de integración y despliegue**.
+Estado: **regla aprobada e implementada**. La activación efectiva se comprueba en
+la configuración y revisión publicadas; este documento define el comportamiento.
 Decisión funcional: Santiago, en esta conversación del 11/11/2026.
 Seguimiento: [Bitrix 23571](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/23571/).
 
