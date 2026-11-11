@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'service_token' => env('PADRONES_SERVICE_TOKEN', ''),
     'directory' => env('PADRONES_DIRECTORY', storage_path('app/private/padrones')),
     'max_rows' => 100000,
     'max_columns' => 60,

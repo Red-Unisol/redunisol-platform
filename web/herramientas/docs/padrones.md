@@ -54,3 +54,25 @@ compartido)”: no atribuye acciones a una persona porque no hay cuentas individ
 Las versiones publicadas son inmutables y la activación es una transacción SQLite.
 
 Pruebas: `php artisan test --filter=PadronesTest`; frontend: `npm run build`.
+
+## Consulta desde Beex
+
+`POST /api/internal/padrones/lookup` recibe `{"document":"12345678"}` y exige
+un bearer `PADRONES_SERVICE_TOKEN` de al menos 32 caracteres, distinto del acceso
+compartido de Análisis. La credencial sólo habilita esta consulta; las rutas de
+carga, publicación y administración siguen requiriendo su sesión habitual.
+Sin token configurado responde 503. Las respuestas son privadas y no se cachean.
+
+La lectura abre SQLite en modo de sólo lectura, no crea bases y toma un snapshot
+consistente. Devuelve `document`, `queried_at` y todas las fuentes, con nombre,
+tipo, período, `loaded_at`, estado y filas coincidentes (`row`, `data`). Cada fuente
+distingue `ready`, `unpublished` y `needs_review`. Los archivos de bajas conservan
+su tipo explícito. Una publicación con datos personales usados como encabezado
+de documento, estructura inválida o más de 500 coincidencias requiere revisión
+y no devuelve filas; no se interpreta como ausencia de empleo.
+
+Configurar el mismo token exclusivamente en los backends de Herramientas y Beex
+antes de habilitar la integración. El endpoint no modifica ni reimporta versiones.
+La carga de Administración observada el 11/11/2026 debe revisarse desde la interfaz
+de padrones: tiene una fila de datos seleccionada como encabezado. Esta API la
+señala como `needs_review` hasta que se publique una versión corregida.
