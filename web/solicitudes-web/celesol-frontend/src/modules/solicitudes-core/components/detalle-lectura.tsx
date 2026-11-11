@@ -100,6 +100,7 @@ function pesos(value: number | string | null | undefined) {
 }
 
 export function DetalleLectura({
+  comparacionBancaria,
   ejecutivo,
   firmaLegajo,
   prestamoEditable,
@@ -107,6 +108,7 @@ export function DetalleLectura({
   solicitud,
   titularEditable,
 }: {
+  comparacionBancaria?: ReactNode;
   // undefined = no se muestra (el vendedor no ve quien analiza su solicitud).
   ejecutivo?: string | null;
   // Panel de firma del legajo digital (Beex), abajo a todo el ancho.
@@ -191,18 +193,23 @@ export function DetalleLectura({
                 value={pesos(laborales.montoRecibo)}
               />
 
-              <Campo
-                className="lg:col-span-2"
-                label="CBU"
-                value={titular.cbu}
-              />
-              <Campo
-                className="lg:col-span-2"
-                label="CBU cuenta no habitual"
-                value={titular.cbuNoHabitual}
-              />
+              {!comparacionBancaria ? (
+                <>
+                  <Campo
+                    className="lg:col-span-2"
+                    label="CBU"
+                    value={titular.cbu}
+                  />
+                  <Campo
+                    className="lg:col-span-2"
+                    label="CBU cuenta no habitual"
+                    value={titular.cbuNoHabitual}
+                  />
+                </>
+              ) : null}
             </dl>
           )}
+          {comparacionBancaria}
         </Tarjeta>
 
         <Tarjeta title="Préstamo">

@@ -734,6 +734,25 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return rows;
   }
 
+  async lookupCbuHabitual(documento: string, tipoDocumento?: string) {
+    if (!/^\d{1,12}$/.test(documento) || /^0+$/.test(documento)) {
+      throw new LegacySolicitudesUnavailableError();
+    }
+    return this.executeEvaluateList({
+      buildCmd: () => `[NroDoc] = ${documento}${tipoDocumento ? ` And [TipoDoc.Descripcion] = '${escapeLegacyString(tipoDocumento)}'` : ""}`,
+      defaultMax: 2,
+      fields: ["ID", "CuentaBancariaHabitual.CBU"],
+      tipo: "F.Module.SocioMutual",
+      mapRow: (row) => {
+        if (row.length !== 2 || !/^\d+$/.test(String(row[0] ?? "")) ||
+            (row[1] !== null && typeof row[1] !== "string")) {
+          throw new LegacySolicitudesUnavailableError();
+        }
+        return { id: String(row[0]), cbu: typeof row[1] === "string" ? row[1].trim() || null : null };
+      },
+    }, 2, true);
+  }
+
   async getConvenioRapido(lineaOid: string) {
     if (!/^\d+$/.test(lineaOid)) throw new LegacySolicitudesUnavailableError();
     const rows = await this.executeEvaluateList({

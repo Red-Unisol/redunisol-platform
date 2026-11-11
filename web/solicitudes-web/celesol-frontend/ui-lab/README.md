@@ -157,3 +157,12 @@ confirmar una transición sigue bloqueado por el transporte del laboratorio.
 `npm run ui:visual:cuotas` prueba la suma con Ctrl+clic en escritorio y 390 px:
 cierre y reapertura por teclado entre cuotas, cambio de columna y Escape.
 Usa dos cuotas ficticias de $100 y $200 en la pestaña Préstamos de `/production`.
+
+## Comparación del CBU habitual
+
+`/production?cbu=nonhabitual` muestra el CBU de Vimarx, el de la solicitud y el
+destino no habitual con datos ficticios. El runner
+`node ui-lab/cbu-comparison.browser-test.mjs` revisa coincidencia, diferencia,
+ausencias, errores y recuperación, edición de identidad, escritorio y móvil.
+Los escenarios y el contrato están en
+[CBU habitual en Beex](../../../../docs/apis/vimarx/cbu-habitual-beex.md).

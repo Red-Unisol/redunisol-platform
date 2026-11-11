@@ -1,4 +1,5 @@
 import { installUiLabNetworkGuard } from "./network-guard";
+import { parseCbuScenario } from "./cbu-fixtures";
 import "./theme.css";
 
 // Dynamic imports are intentional: production API modules may capture fetch.
@@ -17,6 +18,7 @@ installUiLabNetworkGuard(
           role: productionRole,
           externalPayment: search.get("payment") === "external",
           allowEdit: search.get("edit") === "1",
+          cbuScenario: parseCbuScenario(search.get("cbu")),
           workflowState: search.get("state") === "evaluacion-externa"
             ? "EvaluacionExterna"
             : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,

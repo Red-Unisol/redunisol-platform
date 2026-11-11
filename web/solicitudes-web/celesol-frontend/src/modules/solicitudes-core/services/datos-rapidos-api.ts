@@ -1,7 +1,12 @@
 import { apiClient } from "@/shared/services/http/api-client";
 
 export type CondicionSocio = "member" | "none" | "unknown";
+export type CbuHabitualResponse =
+  | { status: "available"; cbu: string }
+  | { status: "missing" | "not_member" | "ambiguous" | "unavailable"; cbu: null };
 export const datosRapidosApi = {
+  cbu: (id: string) =>
+    apiClient.get<CbuHabitualResponse>(`/solicitudes/${id}/datos-rapidos/cbu`),
   socio: (id: string) =>
     apiClient.get<{ condicion: CondicionSocio }>(
       `/solicitudes/${id}/datos-rapidos/socio`,

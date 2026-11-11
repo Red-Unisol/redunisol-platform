@@ -56,7 +56,8 @@ vacío no crea una cuenta. Desde una solicitud se precarga el CBU del titular;
 El operador puede revisar o corregir el CBU antes de crear el socio.
 
 Este campo sólo se envía a Vimarx al dar de alta. El padrón local de socios y su
-edición no sincronizan datos bancarios; la consulta del CBU habitual de socios
-existentes es otro cambio. No se cambian categoría ni fecha del alta en esta
-corrección. La evidencia funcional corresponde a FapiTest; no se hicieron altas
+edición no sincronizan datos bancarios. La [consulta del CBU habitual de socios
+existentes](cbu-habitual-beex.md) se realiza por separado desde el detalle de la
+solicitud, sin sobrescribir el CBU cargado. No se cambian categoría ni fecha del
+alta en esta corrección. La evidencia funcional corresponde a FapiTest; no se hicieron altas
 de prueba en producción.
