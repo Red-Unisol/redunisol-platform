@@ -148,6 +148,7 @@ describe("CreateSocioUseCase", () => {
       nombre: "Juan",
       nroDocumento: " 12.345.678 ",
       observaciones: "DEPOSITO MP",
+      cbu: "0110000699111100000248",
       sexo: "M",
       socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
       tipoDocumento: "DNI",
@@ -178,6 +179,7 @@ describe("CreateSocioUseCase", () => {
       nombre: "Juan",
       nroDocumento: "12345678",
       observaciones: "DEPOSITO MP",
+      cbu: "0110000699111100000248",
       sexo: "M",
       socAux: { beneficio: "733767/0", caja40: 50, convAux: 80 },
     });

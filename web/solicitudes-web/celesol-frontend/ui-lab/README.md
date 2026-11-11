@@ -48,6 +48,11 @@ queda en `.local/ui-lab-dist`; el build operativo continúa en `dist`.
 
 ## Galerías adicionales
 
+- `/socio-create`: formulario operativo de alta precargado desde un titular
+  ficticio, incluyendo CBU y un CBU no habitual distinto. Permite comprobar
+  validación, borrado opcional y payload enviado; Guardar sólo modifica memoria.
+  `node ui-lab/socio-create.browser-test.mjs` revisa escritorio y 390 px.
+
 - `/headers?layout=slim`: comparación de cabeceras Actual, A, B y C.
 - `/production`: ficha real de la aplicación con datos de ejemplo aislados.
 - `/cutoffs?scenario=pending`: pantalla operativa de cortes de AMEJUCA, sin fecha confirmada.

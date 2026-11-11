@@ -38,6 +38,7 @@ export type CrearSocioMutualInput =
       tipoPersona: "FISICA";
       apellido: string;
       celular?: string | null;
+      cbu?: string | null;
       cuit: string;
       domicilio: CrearSocioMutualDomicilio;
       email?: string | null;
@@ -51,6 +52,7 @@ export type CrearSocioMutualInput =
   | {
       tipoPersona: "JURIDICA";
       celular?: string | null;
+      cbu?: string | null;
       cuit: string;
       domicilio: CrearSocioMutualDomicilio;
       email?: string | null;
@@ -109,6 +111,9 @@ export class CrearSocioMutualGateway {
               ...this.buildPersonaFields(input),
               Celular: input.celular ?? undefined,
               CUIT: input.cuit,
+              // FapiTest rechaza Habitual explícito; enviar sólo CBU.
+              // El alta con sólo CBU crea la primera cuenta como habitual.
+              CuentasBancarias: input.cbu ? [{ CBU: input.cbu }] : undefined,
               Domicilio: this.buildDomicilio(input.domicilio),
               Email: input.email ?? undefined,
               HistoriaCategorias: HISTORIA_CATEGORIAS_FIJA,

@@ -77,6 +77,7 @@ export type CreateSocioRequest =
   | {
       apellido: string;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;
@@ -96,6 +97,7 @@ export type CreateSocioRequest =
   | {
       apellido?: never;
       celular?: string;
+      cbu?: string;
       cuit: string;
       domicilioCalle: string;
       domicilioCodigoPostal?: string;

@@ -121,6 +121,10 @@
  *               enum: [FISICA]
  *             cuit:
  *               type: string
+ *             cbu:
+ *               type: string
+ *               pattern: '^\d{22}$'
+ *               description: CBU opcional con dígitos verificadores válidos, enviado a la cuenta habitual del socio en Vimarx al darlo de alta.
  *             nombre:
  *               type: string
  *             apellido:
@@ -161,6 +165,10 @@
  *               enum: [JURIDICA]
  *             cuit:
  *               type: string
+ *             cbu:
+ *               type: string
+ *               pattern: '^\d{22}$'
+ *               description: CBU opcional con dígitos verificadores válidos, enviado a la cuenta habitual del socio en Vimarx al darlo de alta.
  *             razonSocial:
  *               type: string
  *             celular:

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cbuSchema } from "../../solicitudes-core/presentation/cbu.schema";
 
 const trimmedRequiredString = z.string().trim().min(1);
 // ID de ClasesBase.Localidad en Vimarx (se elige del desplegable).
@@ -62,6 +63,7 @@ const personaFisicaSchema = z
   .object({
     apellido: trimmedRequiredString,
     celular: normalizedOptionalString,
+    cbu: normalizedOptionalString.pipe(cbuSchema.optional()),
     cuit: trimmedRequiredString,
     domicilioCalle: trimmedRequiredString,
     domicilioCodigoPostal: normalizedOptionalString,
@@ -82,6 +84,7 @@ const personaFisicaSchema = z
 const personaJuridicaSchema = z
   .object({
     celular: normalizedOptionalString,
+    cbu: normalizedOptionalString.pipe(cbuSchema.optional()),
     cuit: trimmedRequiredString,
     domicilioCalle: trimmedRequiredString,
     domicilioCodigoPostal: normalizedOptionalString,

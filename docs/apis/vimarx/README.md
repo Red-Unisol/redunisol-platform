@@ -8,6 +8,7 @@ siguen documentados junto a su aplicación.
 ## Cómo usar esta referencia
 
 - [Crear socios: campos, formatos y comportamiento real](socios.md).
+- [CBU durante el alta: prueba en FapiTest y límites conocidos](cbu-alta-socios.md).
 - [Implementación del alta inspeccionada en el servidor](implementacion-alta.md).
 - [Modelo reconstruido desde el cliente: herencia, relaciones y miembros dinámicos](modelo-cliente.md).
 - [Hipótesis de escritura: propiedades, formatos, validaciones y cinco altas adicionales](hipotesis-escritura.md).
