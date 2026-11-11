@@ -1,0 +1,13 @@
+# Managed by infra/ansible (role security). Manual changes are overwritten.
+[DEFAULT]
+banaction = nftables-multiport
+banaction_allports = nftables-allports
+ignoreip = {{ foundation_security_fail2ban_ignoreip | join(' ') }}
+
+[sshd]
+enabled = true
+backend = systemd
+port = {{ foundation_security_fail2ban_ssh_ports | join(',') }}
+maxretry = {{ foundation_security_fail2ban_maxretry }}
+findtime = {{ foundation_security_fail2ban_findtime }}
+bantime = {{ foundation_security_fail2ban_bantime }}

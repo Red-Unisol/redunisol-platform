@@ -1,0 +1,57 @@
+---
+- name: Read installed fail2ban package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Verify the reviewed fail2ban package version
+  ansible.builtin.assert:
+    that:
+      - "'fail2ban' in ansible_facts.packages"
+      - ansible_facts.packages['fail2ban'][0].version == foundation_security_fail2ban_package.split('=', 1)[1]
+    fail_msg: "fail2ban is missing or differs from the reviewed version."
+
+- name: Verify fail2ban is running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, fail2ban.service]
+  changed_when: false
+  check_mode: false
+
+- name: Verify fail2ban is enabled for recovery after reboot
+  ansible.builtin.command:
+    argv: [systemctl, is-enabled, fail2ban.service]
+  register: foundation_security_enabled
+  changed_when: false
+  check_mode: false
+  failed_when: foundation_security_enabled.rc != 0 or foundation_security_enabled.stdout | trim != 'enabled'
+
+- name: Test fail2ban configuration without applying it
+  ansible.builtin.command:
+    argv: [/usr/bin/fail2ban-client, --test]
+  changed_when: false
+  check_mode: false
+
+- name: Read the managed security files
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ foundation_security_fail2ban_jail_path }}"
+    - "{{ foundation_security_fail2ban_filter_path }}"
+    - "{{ foundation_security_fail2ban_policy_tool }}"
+  register: foundation_security_files
+
+- name: Verify complete security files rather than text fragments
+  ansible.builtin.assert:
+    that:
+      - >-
+        foundation_security_files.results[0].content | b64decode ==
+        lookup('ansible.builtin.template', role_path ~ '/templates/sshd-jail.local.j2')
+      - >-
+        foundation_security_files.results[1].content | b64decode ==
+        lookup('ansible.builtin.file', role_path ~ '/files/sshd.local', rstrip=false)
+      - >-
+        foundation_security_files.results[2].content | b64decode ==
+        lookup('ansible.builtin.file', role_path ~ '/files/fail2ban-policy.py', rstrip=false)
+    fail_msg: "The managed security files differ from Git; apply the reviewed role before verifying."
+
+- name: Verify the effective SSH policy without applying changes
+  ansible.builtin.import_tasks: verify-policy.yml

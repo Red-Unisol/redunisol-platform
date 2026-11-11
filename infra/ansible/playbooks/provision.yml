@@ -20,6 +20,8 @@
       tags: [baseline]
     - role: access
       tags: [access]
+    - role: security
+      tags: [security]
     - role: storage
       tags: [storage]
     - role: backup_storage

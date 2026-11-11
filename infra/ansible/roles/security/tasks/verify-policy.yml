@@ -1,0 +1,11 @@
+---
+- name: Inspect the effective SSH policy
+  ansible.builtin.import_tasks: probe.yml
+
+- name: Require the reviewed policy in the running SSH jail
+  ansible.builtin.assert:
+    that:
+      - (foundation_security_policy_probe.stdout | from_json).matches | bool
+    fail_msg: >-
+      The active SSH policy differs from the reviewed inventory or filter:
+      {{ (foundation_security_policy_probe.stdout | from_json).differences | join('; ') }}.
