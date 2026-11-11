@@ -5,6 +5,19 @@ Versión: `2026-10-13`
 Este documento conserva decisiones funcionales cerradas para evitar que conceptos
 históricos vuelvan a incorporarse por error.
 
+## `ORG-DEC-23571` — Menú orgánico y datos del recurrente
+
+- **Fecha y aprobación:** 11/11/2026, pedido y precisiones de Santiago en esta conversación.
+- **Decisión:** todo ingreso orgánico nuevo elegible presenta préstamo/otra consulta,
+  también para recurrentes. Otra consulta deriva a Tincho, usuario 5737.
+- **Préstamo:** no reenviar el v3 si ya existen datos completos, identidad coherente
+  y confirmación original dentro de seis meses calendario. Fecha configurable;
+  una edición CRM o reutilización no renueva el plazo.
+- **Continuidad:** conservar atención humana y gestión comercial abierta. La nueva
+  consulta vuelve a evaluarse cuando corresponde; no se reutiliza aprobación antigua.
+- **Estado:** implementado en rama, pendiente de integración y despliegue.
+- **Tabla y casos:** [`ORGANIC_WHATSAPP_23571.md`](ORGANIC_WHATSAPP_23571.md).
+
 ## `COR-DEC-23321` — Límite de entidades para nuevos de Caja Morosos
 
 - **Fecha y aprobación:** 13/10/2026, Santiago, autorización de implementación tras
