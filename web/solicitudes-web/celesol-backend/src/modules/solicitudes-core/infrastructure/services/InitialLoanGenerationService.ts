@@ -13,6 +13,9 @@ import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../techn
 import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
 import { SolicitudRefinanciacionPrismaRepository } from "../repositories/SolicitudRefinanciacionPrismaRepository";
 import type { PendingRefinanciacionCobro } from "./RefinanciacionCobrosService";
+import { RELIQUIDATION_ACTION, assertReliquidationCancellation, assertReliquidationUnpaid, reliquidation, type ReliquidationTransferState } from "../../domain/workflow/LoanReliquidation";
+import { assertReliquidationFinanciallyClear } from "./LoanReliquidationService";
+import type { CoreLoanLifecycle } from "./ControlledLoanReplacementService";
 
 export type PreparedInitialLoan = {
   solicitud: SolicitudCore; codigoMutual: string | null; coreInput: CrearPrestamoInput;
@@ -42,6 +45,8 @@ export class InitialLoanGenerationService {
     makeSignatureLink: (id: string, codigoMutual: string | null) => string;
     creationTimeoutMs?: number;
     diagnostics?: LoanDiagnosticWriter;
+    lifecycle?: (id: string, direct?: boolean) => Promise<CoreLoanLifecycle | null>;
+    transferState?: (id: string, direct?: boolean) => Promise<ReliquidationTransferState>;
   }) {}
 
   private async diagnostic(context: LoanDiagnosticContext, stage: string, data: unknown) {
@@ -70,6 +75,7 @@ export class InitialLoanGenerationService {
 
   async create(prepared: PreparedInitialLoan, input: CreatePrestamoLegacyInput) {
     const id = input.solicitudId;
+    await this.checkPriorReliquidation(await administrativeSource(this.deps.db, id));
     const pending = await this.deps.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
       const s = await administrativeSource(tx, id);
@@ -78,6 +84,8 @@ export class InitialLoanGenerationService {
         throw new AdministrativeCorrectionError("No tenés permiso para generar este préstamo.", 403);
       if (s.legacyOid) return null;
       assertNoLoanReplacementPending(s);
+      if (reliquidation(s.administrativeCoreControl)?.status === "AWAITING_LOAN")
+        await assertReliquidationFinanciallyClear(tx, s);
       if (prepared.refinanciacionVersion !== undefined && prepared.refinanciacionVersion !==
         refinanciacionVersion(await SolicitudRefinanciacionPrismaRepository.load(tx, id)))
         throw new AdministrativeCorrectionError("La refinanciación cambió antes de generar. Actualizá la solicitud y volvé a revisar.");
@@ -179,6 +187,16 @@ export class InitialLoanGenerationService {
     try {
       const before = await administrativeSource(this.deps.db, id);
       const intended = reservation(before.administrativeCoreControl);
+      const reopening = reliquidation(before.administrativeCoreControl);
+      if (reopening?.status === "AWAITING_LOAN") {
+        await this.checkPriorReliquidation(before);
+        const loan = before.titular?.nroDocumento ? await this.deps.loanSnapshot(newLoanId, before.titular.nroDocumento, true) : null;
+        if (!loan || !intended || [reopening.previousLoanId, reopening.resolvedLoanId].includes(newLoanId) ||
+          loan.id !== newLoanId || loan.estado !== 0 || loan.amount !== intended.coreInput.montoDeseado ||
+          loan.cuotas !== intended.coreInput.cuotas || loan.lineaId !== intended.coreInput.lineaPrestamo ||
+          loan.cancelacionesCentavos !== (intended.coreInput.nroLote ?? 0))
+          throw new AdministrativeCorrectionError("El nuevo préstamo no coincide con las condiciones de la reliquidación. Conservá el intento para recuperación; no generes otro.");
+      }
       if (intended?.requestId === requestId && intended.coreInput.fechaPrimerVencimiento) {
         const loan = before.titular?.nroDocumento
           ? await this.deps.loanSnapshot(newLoanId, before.titular.nroDocumento, true)
@@ -211,11 +229,14 @@ export class InitialLoanGenerationService {
           signatureCycleId: null, signatureRequestedAt: null, signatureRequestReason: null,
           signatureExcludedVerificationIds: Prisma.DbNull,
           administrativeCoreControl: { ...control(s.administrativeCoreControl), generationPending: null,
+            ...(reopening ? { reliquidation: { ...reopening, status: "LINKED", newLoanId } } : {}),
             generatedLoanId: newLoanId, generationRequestId: requestId, loanId: newLoanId,
             reconciledFingerprint: coreConditionsFingerprint({ ...s, legacyOid: newLoanId }),
           },
         } });
-        await this.audit(tx, s, actorId, "LOAN_GENERATED", { requestId, newLoanId, recovered: Boolean(reason) }, reason);
+        await this.audit(tx, s, actorId, "LOAN_GENERATED", { requestId, newLoanId, recovered: Boolean(reason),
+          ...(reopening ? { reliquidationId: reopening.requestId, previousLoanId: reopening.previousLoanId } : {}),
+        }, reason);
         await notifySignatureLinkAvailable(tx, id);
       });
     } catch (error) {
@@ -257,5 +278,18 @@ export class InitialLoanGenerationService {
       await this.diagnostic(context, "ERROR", { phase: "RECOVERY", newLoanId: input.newLoanId, error });
       throw error;
     }
+  }
+
+  private async checkPriorReliquidation(s: Awaited<ReturnType<typeof administrativeSource>>) {
+    const r = reliquidation(s.administrativeCoreControl);
+    if (!r || r.status !== "AWAITING_LOAN") return;
+    const event = await this.deps.db.solicitudEstadoHistorial.findUnique({ where: { id: r.requestId } });
+    const evidence = event?.metadata as Prisma.JsonObject | null;
+    if (!this.deps.lifecycle || !event || event.solicitudId !== s.id || event.actionCode !== RELIQUIDATION_ACTION ||
+      evidence?.previousLoanId !== r.previousLoanId ||
+      (evidence?.verifiedCancellation as Prisma.JsonObject | null)?.id !== r.resolvedLoanId)
+      throw new AdministrativeCorrectionError("No se pudo verificar el ciclo de reliquidación. Requiere revisión administrativa.");
+    assertReliquidationCancellation(await this.deps.lifecycle(r.resolvedLoanId, true), r.resolvedLoanId);
+    assertReliquidationUnpaid(this.deps.transferState ? await this.deps.transferState(r.resolvedLoanId, true) : "unknown");
   }
 }

@@ -1,4 +1,6 @@
 import { addControlledLoanReplacementRoutes } from "./presentation/ControlledLoanReplacementRoutes";
+import { addLoanReliquidationRoutes } from "./presentation/LoanReliquidationRoutes";
+import { LoanReliquidationService } from "./infrastructure/services/LoanReliquidationService";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ACCESS_TOKEN_COOKIE } from "../auth/presentation/AuthCookies";
@@ -370,6 +372,8 @@ export function createSolicitudesCoreRouter(
     db: prisma, repository: solicitudesCoreRepository, gateway: crearPrestamoGateway, linkedLoanReader,
     diagnostics: loanDiagnostics,
     loanSnapshot: loanGateways.loanSnapshot,
+    lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
+    transferState: (id, direct) => solicitudesLegacyGateway.getReliquidationTransferState(id, direct),
     makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
@@ -598,6 +602,11 @@ export function createSolicitudesCoreRouter(
       makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     });
   addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
+  addLoanReliquidationRoutes(router, { auth: dependencies.getCurrentUserUseCase,
+    service: new LoanReliquidationService({ db: prisma,
+      transferState: (id, direct) => solicitudesLegacyGateway.getReliquidationTransferState(id, direct),
+      lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct) }),
+  });
   addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });
   addRefinanciacionCobrosRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: refinanciacionCobros });
   router.get("/:id/linked-loan-status", async (req, res, next) => {

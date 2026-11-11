@@ -32,7 +32,8 @@ export function isLegajosUser(user: AuthUser) {
 }
 
 export function isSignatureOpen(row: SignatureSourceRow) {
-  return Boolean(row.legacyOid && !row.archivedAt && !row.estadoActual.isTerminal);
+  return Boolean(row.legacyOid && !row.archivedAt && !row.estadoActual.isTerminal &&
+    !(row.administrativeCoreControl as Record<string, unknown> | null)?.reliquidationHold);
 }
 
 export function canManageSignature(row: SignatureSourceRow) {
@@ -91,7 +92,7 @@ export function signatureSummary(row: SignatureSourceRow, review: SolicitudDocum
   const digital = review?.sourceFingerprint === sourceFingerprint && selectedNow?.evidenceAvailable && selectedNow.completedAt &&
     Number.isFinite(Date.parse(selectedNow.completedAt)) && hasMatchingSignedOperation(selectedNow, { requireCycle: Boolean(row.signatureRequestedAt) }) &&
     selectedNow.resourceFingerprint === selectedAtApproval?.resourceFingerprint;
-  const approved = Boolean(row.legacyOid && decision?.review.sourceFingerprint === sourceFingerprint && decision.humanDecision === "approve" && decision.legajoAdjuntoId && (external || digital));
+  const approved = Boolean(row.legacyOid && !(row.administrativeCoreControl as Record<string, unknown> | null)?.reliquidationHold && decision?.review.sourceFingerprint === sourceFingerprint && decision.humanDecision === "approve" && decision.legajoAdjuntoId && (external || digital));
   const requestedAgain = Boolean(row.signatureRequestedAt && !approved);
   return {
     status: approved ? "approved" : completed.length ? "to_review" : requestedAgain ? "requested_again" : "waiting",
