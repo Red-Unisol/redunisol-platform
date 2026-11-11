@@ -528,6 +528,56 @@ test(
         );
       },
     );
+    await t.test("a verified signed attempt without the final webhook can be approved and transferred atomically", async () => {
+      const row = await fixture();
+      provider = provider.filter(c => c.verificationId === "good-old");
+      provider[0]!.completedAt = null;
+      const review = await service.evaluate(row.id);
+      const before = await service.view(row.id, actor);
+      assert.equal(before.currentReview?.systemDecision, "approve");
+      assert.equal(before.signature.completedAttempts, 1);
+      assert.equal(before.signature.approved, false);
+      const input = decision(review.id);
+      await service.decide(row.id, actor, input);
+      const after = await service.view(row.id, actor);
+      assert.equal(after.state, "Transferir");
+      assert.equal(after.signature.approved, true);
+      assert.equal((await getSignatureApproval(db, row.id)).approved, true);
+      const saved = await db.solicitudDocumentDecision.findUniqueOrThrow({ where: { requestId: input.requestId }, include: { review: true } });
+      assert.equal((saved.review.assessment as { attempts: { completedAt: string | null }[] }).attempts[0]!.completedAt, null);
+      await service.decide(row.id, actor, input);
+      assert.equal(await db.solicitudDocumentDecision.count({ where: { requestId: input.requestId } }), 1);
+    });
+
+    await t.test("missing completion metadata cannot replace signed evidence", async () => {
+      const row = await fixture();
+      provider = provider.filter(c => c.verificationId === "good-old");
+      provider[0]!.completedAt = null;
+      provider[0]!.resource!.steps = [];
+      const review = await service.evaluate(row.id);
+      await assert.rejects(() => service.decide(row.id, actor, decision(review.id, true, "Revisado")), /evidencia y legajo completos/);
+      assert.equal((await service.view(row.id, actor)).signature.approved, false);
+    });
+
+    await t.test("a new signature cycle accepts newly signed originals without a final webhook", async () => {
+      const row = await fixture();
+      await service.requestSignature(row.id, actor, { requestId: randomUUID(), reason: "Repetir firma" });
+      const fresh = structuredClone(provider.find(c => c.verificationId === "good-old")!);
+      fresh.verificationId = "fresh-without-webhook";
+      fresh.completedAt = null;
+      const steps = fresh.resource!.steps as { id: string; data?: { signedDocumentDetails?: { signedAt: string }[] } }[];
+      steps.find(s => s.id === "electronic-signature-document-validation")!.data!.signedDocumentDetails![0]!.signedAt = new Date(Date.now() + 1000).toISOString();
+      provider.push(fresh);
+      const review = await service.evaluate(row.id);
+      const before = await service.view(row.id, actor);
+      assert.deepEqual(before.currentReview?.attempts.map(a => a.verificationId), [fresh.verificationId]);
+      assert.equal(before.signature.completedAttempts, 1);
+      await service.decide(row.id, actor, { ...decision(review.id), verificationId: fresh.verificationId });
+      const after = await service.view(row.id, actor);
+      assert.equal(after.signature.approved, true);
+      assert.equal(after.state, "Transferir");
+    });
+
     await t.test("Legajos may approve while analysis is still pending without moving the application", async () => {
       const row = await fixture();
       const confirmed = await db.workflowState.findUniqueOrThrow({ where: { code: "Confirmada" } });

@@ -81,19 +81,48 @@ test("reliquidation pause suppresses an otherwise valid approval and signature l
   assert.equal(canManageSignature(row), false);
 });
 
-test("the first checkmark requires a completed submission, not an opened or incomplete attempt", () => {
+test("signed originals establish submission without a final webhook; opening an attempt is insufficient", () => {
   const row = sourceRow(), candidate = candidateFixture();
   candidate.completedAt = null;
-  const pending = assess(reviewSource(row), [candidate]);
-  assert.equal(completedSignatureAttempts(pending).length, 0);
-  assert.equal(signatureSummary(row, observation(row, [candidate]), null).status, "waiting");
+  const signedReview = observation(row, [candidate]);
+  const signed = signatureSummary(row, signedReview, null);
+  assert.equal(signed.completedAttempts, 1);
+  assert.equal(signed.status, "to_review");
+  assert.equal(signed.approved, false);
+  assert.equal(signed.lastCompletedAt, "2026-10-13T11:57:00Z");
+  assert.equal(signatureSummary(row, signedReview, approval(signedReview)).approved, true);
+  assert.equal((signedReview.assessment as unknown as Assessment).attempts[0].completedAt, null);
   candidate.completedAt = "not-a-date";
+  assert.equal(completedSignatureAttempts(assess(reviewSource(row), [candidate])).length, 1);
+  candidate.resource!.steps = [];
   assert.equal(completedSignatureAttempts(assess(reviewSource(row), [candidate])).length, 0);
+  assert.equal(signatureSummary(row, observation(row, [candidate]), null).status, "waiting");
   candidate.completedAt = "2026-10-26T12:00:00Z";
   const sent = signatureSummary(row, observation(row, [candidate]), null);
   assert.equal(sent.completedAttempts, 1);
   assert.equal(sent.approved, false);
   assert.equal(sent.status, "to_review");
+});
+
+test("a missing final webhook does not bypass excluded attempts, a new signature cycle or another loan", () => {
+  const row = sourceRow(), candidate = candidateFixture();
+  candidate.completedAt = null;
+  row.signatureRequestedAt = new Date("2026-10-13T11:56:00Z");
+  row.signatureCycleId = "new-cycle";
+  assert.equal(eligibleSignatureCandidates(row, [candidate]).length, 1);
+  const review = observation(row, [candidate]);
+  assert.equal(signatureSummary(row, review, approval(review)).approved, true);
+  row.signatureExcludedVerificationIds = [candidate.verificationId];
+  assert.equal(eligibleSignatureCandidates(row, [candidate]).length, 0);
+  row.signatureExcludedVerificationIds = null;
+  row.signatureRequestedAt = new Date("2026-10-13T11:58:00Z");
+  assert.equal(eligibleSignatureCandidates(row, [candidate]).length, 0);
+  const stale = observation(row, [candidate]);
+  assert.equal(signatureSummary(row, stale, approval(stale)).approved, false);
+  row.signatureRequestedAt = null;
+  row.legacyOid = "202";
+  const wrongLoan = observation(row, [candidate]);
+  assert.equal(signatureSummary(row, wrongLoan, approval(wrongLoan)).approved, false);
 });
 
 test("extra completed failed signatures do not revoke an already approved valid signature", () => {

@@ -652,7 +652,7 @@ export class DocumentReviewService {
     }
     if (
       input.decision === "approve" &&
-      (!attempt?.evidenceAvailable || !attempt.completedAt || !Number.isFinite(Date.parse(attempt.completedAt)) ||
+      (!attempt?.evidenceAvailable ||
         review.artifactError ||
         !review.evidencePath ||
         !review.legajoAdjuntoId)
