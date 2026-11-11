@@ -54,6 +54,13 @@ se concilian con lecturas: nunca se repite el POST de saludo o transferencia.
 Para una solicitud de reutilización incierta se conserva `loan_unknown`; ese
 estado no reanuda ni la evaluación ni el v3 automáticamente.
 
+Cuando la selección necesita el v3, `SendEdnaFlow` vuelve a validar el menú, las
+pruebas de la entrada y selección, y la atención nativa después de esperar en
+cola y justo antes de reclamar el envío. Una toma, respuesta, transferencia,
+cierre o reemplazo de sesión cancela el pendiente; una lectura incierta lo
+difiere sin enviar. Usa el mismo lock por chat. Esto cubre cambios durante la
+preparación y la espera, sin prometer atomicidad entre Bitrix y Edna.
+
 ```text
 php artisan edna:organic-menus status --limit=25
 php artisan edna:organic-menus poll --limit=25

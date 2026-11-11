@@ -6,6 +6,11 @@ use App\Services\AttributionJourney;
 use App\Services\EdnaFlowRouter;
 use App\Services\EdnaIntake;
 use App\Services\EdnaIntakePilot;
+use App\Services\EdnaOrganicAttention;
+use App\Services\EdnaOrganicLoan;
+use App\Services\EdnaOrganicProfile;
+use App\Services\EdnaOrganicTransport;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -80,6 +85,54 @@ function organicFlowPrevious(string $state = 'completed', array $changes = [], b
     ], $changes));
 
     return DB::table('edna_flow_sends')->find($id);
+}
+
+function organicFlowMenuForSend(bool $reserve = true): object
+{
+    config()->set('edna.organic_menu_enabled', true);
+    $menu = organicFlowMenu();
+    $entry = DB::table('edna_incoming_events')->find($menu->entry_event_id);
+    $choice = DB::table('edna_incoming_events')->find($menu->choice_event_id);
+    $payload = json_decode(Crypt::decryptString($choice->payload), true, 32, JSON_THROW_ON_ERROR);
+    $payload['messageContent']['payload'] = EdnaOrganicTransport::payload($menu->request_id, 'loan');
+    DB::table('edna_incoming_events')->where('id', $choice->id)->update(['payload' => Crypt::encryptString(json_encode($payload, JSON_THROW_ON_ERROR))]);
+    $proof = fn ($event) => ['version' => 1, 'verified' => true, 'source' => 'bitrix_openline_session',
+        'evidence' => 'external_message_id', 'entry_event_id' => $event->id, 'entry_message_id' => $event->message_id,
+        'chat_id' => '601', 'session_id' => '501', 'activity_id' => '801', 'message_id' => (string) (700 + $event->id), 'native_lead_id' => '101'];
+    DB::table('edna_organic_menus')->where('id', $menu->id)->update([
+        'chat_id' => 601, 'session_id' => 501, 'proof' => json_encode($proof($entry) + ['choice_proof' => $proof($choice)], JSON_THROW_ON_ERROR),
+        'choice_received_at' => now()->subMinute(), 'state' => $reserve ? 'selected' : 'loan_pending',
+    ]);
+    if ($reserve) {
+        (new EdnaFlowRouter)->startOrganicChoice($menu->id);
+        DB::table('edna_organic_menus')->where('id', $menu->id)->update(['state' => 'flow_scheduled']);
+    }
+
+    return DB::table('edna_organic_menus')->find($menu->id);
+}
+
+function organicFlowReadyAttention(): array
+{
+    return ['status' => 'ready', 'owner_id' => '0', 'session_id' => '501'];
+}
+
+function organicFlowSendHttp(?Closure $onCascade = null, bool $timeout = false, ?Closure $onSchedule = null): void
+{
+    Http::fake([
+        'app.edna.io/api/cascade/get-all' => function () use ($onCascade) {
+            $onCascade?->__invoke();
+
+            return Http::response([['id' => 2557, 'status' => 'ACTIVE', 'stages' => [['subject' => ['id' => 2423, 'locked' => false]]]]]);
+        },
+        'app.edna.io/api/cascade/schedule' => function ($request) use ($timeout, $onSchedule) {
+            $onSchedule?->__invoke();
+            if ($timeout) {
+                throw new RuntimeException('acknowledgement lost');
+            }
+
+            return Http::response(['requestId' => $request['requestId']]);
+        },
+    ]);
 }
 
 test('a confirmed loan choice reserves the existing v3 path from the original authenticated entry', function () {
@@ -343,4 +396,150 @@ test('a failed queue insert rolls back the menu mapping admission and flow ledge
         ->and(DB::table('edna_flow_sends')->count())->toBe(0)
         ->and(DB::table('edna_intake_admissions')->count())->toBe(0)
         ->and(DB::table('edna_intake_pilots')->count())->toBe(0);
+});
+
+test('the actual organic Flow job rechecks native attention twice before its single send', function () {
+    $menu = organicFlowMenuForSend();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->twice()->andReturn(organicFlowReadyAttention());
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    organicFlowSendHttp();
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('accepted');
+    Http::assertSentCount(2);
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/cascade/schedule')
+        && $r['content']['whatsappContent']['contentType'] === 'FLOW'
+        && $r['content']['whatsappContent']['flowId'] === 950118281197789);
+});
+
+test('a human accepting an organic chat during queue delay cancels its pending Flow', function () {
+    $menu = organicFlowMenuForSend();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->once()->andReturn(['status' => 'preserved', 'reason' => 'operator_attention_preserved']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('cancelled')
+        ->and(DB::table('edna_organic_menus')->find($menu->id)->state)->toBe('preserved');
+    Http::assertNothingSent();
+});
+
+test('acceptance during profile resolution is protected again when the reserved fallback actually sends', function () {
+    $menu = organicFlowMenuForSend(false);
+    $attended = false;
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->twice()->andReturnUsing(function () use (&$attended) {
+        return $attended ? ['status' => 'preserved', 'reason' => 'operator_attention_preserved'] : organicFlowReadyAttention();
+    });
+    $attention->shouldReceive('snapshot')->once()->andReturn(['dialog_tuple' => ['bindings' => []]]);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    $profiles = Mockery::mock(EdnaOrganicProfile::class);
+    $profiles->shouldReceive('resolve')->once()->andReturnUsing(function () use (&$attended) {
+        $attended = true;
+
+        return ['status' => 'missing', 'reason' => 'complete_recent_profile_unavailable'];
+    });
+    (new EdnaOrganicLoan($profiles, $attention))->prepare($menu->id);
+    $menu = DB::table('edna_organic_menus')->find($menu->id);
+    expect($menu->state)->toBe('flow_scheduled')->and($menu->flow_send_id)->not->toBeNull();
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('cancelled');
+    Http::assertNothingSent();
+});
+
+test('acceptance during channel validation is caught immediately before the organic claim', function () {
+    $menu = organicFlowMenuForSend();
+    $attended = false;
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->twice()->andReturnUsing(function () use (&$attended) {
+        return $attended ? ['status' => 'preserved', 'reason' => 'operator_attention_preserved'] : organicFlowReadyAttention();
+    });
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    organicFlowSendHttp(function () use (&$attended) {
+        $attended = true;
+    });
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('cancelled');
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/cascade/schedule'));
+});
+
+test('uncertain organic attention leaves the Flow pending and never claims a POST', function () {
+    $menu = organicFlowMenuForSend();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->once()->andReturn(['status' => 'waiting', 'reason' => 'session_attention_unavailable']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+    $send = DB::table('edna_flow_sends')->find($menu->flow_send_id);
+
+    expect($send->state)->toBe('pending')->and($send->send_started_at)->toBeNull()
+        ->and($send->reason)->toBe('organic_attention_pending');
+    Http::assertNothingSent();
+});
+
+test('an organic session changed or closed after reservation never receives its old Flow', function (string $status) {
+    $menu = organicFlowMenuForSend();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->once()->andReturn(['status' => $status, 'reason' => 'native_session_changed']);
+    app()->instance(EdnaOrganicAttention::class, $attention);
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('cancelled');
+    Http::assertNothingSent();
+})->with(['closed', 'replaced']);
+
+test('the organic Flow send shares the bridge chat lock and can proceed after it is released', function () {
+    $menu = organicFlowMenuForSend();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->twice()->andReturn(organicFlowReadyAttention());
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    $lock = Cache::lock('web-form-chat:601', 120, 'another-worker');
+    expect($lock->get())->toBeTrue();
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('pending');
+    Http::assertNothingSent();
+    $lock->release();
+    organicFlowSendHttp();
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('accepted');
+});
+
+test('a missing exact organic callback proof fails closed before any provider call', function () {
+    $menu = organicFlowMenuForSend();
+    $proof = json_decode($menu->proof, true, 32, JSON_THROW_ON_ERROR);
+    unset($proof['choice_proof']);
+    DB::table('edna_organic_menus')->where('id', $menu->id)->update(['proof' => json_encode($proof)]);
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('cancelled');
+    Http::assertNothingSent();
+});
+
+test('an uncertain actual organic Flow send only reconciles on a second job', function () {
+    $menu = organicFlowMenuForSend();
+    $attention = Mockery::mock(EdnaOrganicAttention::class);
+    $attention->shouldReceive('inspectWelcome')->twice()->andReturn(organicFlowReadyAttention());
+    app()->instance(EdnaOrganicAttention::class, $attention);
+    $attempts = 0;
+    organicFlowSendHttp(null, true, function () use (&$attempts) {
+        $attempts++;
+    });
+
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+    (new SendEdnaFlow($menu->flow_send_id))->handle();
+
+    expect(DB::table('edna_flow_sends')->find($menu->flow_send_id)->state)->toBe('unknown');
+    expect($attempts)->toBe(1);
 });
