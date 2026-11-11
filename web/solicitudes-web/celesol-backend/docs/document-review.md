@@ -8,7 +8,10 @@ El worker registra evidencia y avisos; nunca aprueba firmas por sí solo.
 
 El vendedor ve un resumen sin evidencia biométrica: enlace vigente, cantidad de
 envíos completos, fecha del último y aprobación. La primera tilde requiere un
-envío terminado (`completedAt` válido); abrir o iniciar un intento no alcanza.
+envío terminado (`completedAt` válido) o todos sus originales firmados con fecha
+válida y disponibles. Sin evento final, el resumen usa la última fecha de firma
+de esos documentos; el `completedAt` original permanece sin alterar en la evidencia.
+Abrir o iniciar un intento no alcanza.
 La segunda requiere una aprobación humana vigente. La bandeja de Legajos incluye
 préstamos activos aún no transferidos, también los que esperan firma o análisis.
 La bandeja excluye estados terminales, solicitudes archivadas y cualquier
@@ -77,9 +80,13 @@ de firma. Aprobar habilita la instancia de transferencia, sin ejecutar el pago.
 
 Diferir de la propuesta o aprobar un intento individual no conforme exige motivo.
 Se registran por separado la disparidad global y la excepción sobre el intento.
-Una aprobación requiere envío completo, evidencia y legajo completos incluso si
+Una aprobación requiere originales firmados, evidencia y legajo completos incluso si
 es una excepción humana. La referencia de préstamo, DNI y condiciones financieras
 firmadas deben coincidir; esos controles no admiten excepción manual.
+La fecha de recepción del evento final de MetaMap no condiciona la aprobación:
+el estado vigente del proveedor y la evidencia firmada se verifican directamente.
+En un ciclo nuevo, los documentos deben haberse firmado después del pedido aunque
+falte ese evento; los intentos excluidos siguen descartados.
 
 Antes de aprobar se consulta MetaMap nuevamente, y otra vez después de compilar
 el legajo. La firma elegida debe conservar su evidencia y estado; la propuesta

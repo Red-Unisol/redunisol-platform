@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient, type SolicitudDocumentReview, type SolicitudDocumentDecision } from "@prisma/client";
 import type { AuthUser } from "../auth/domain/entities/User.entity";
-import { digest, hasMatchingSignedOperation, type Assessment, type ProviderCandidate, type ReviewSource } from "./domain";
+import { digest, hasMatchingSignedOperation, signedDocuments, type Assessment, type Attempt, type ProviderCandidate, type ReviewSource } from "./domain";
 import { EXTERNAL_LEGAJO_POLICY_VERSION } from "./external-legajo-policy";
 
 export const SIGNATURE_OWNER = "LEGAJOS_DIGITALES";
@@ -69,11 +69,27 @@ export function reviewSource(s: SignatureSourceRow): ReviewSource {
 
 export function eligibleSignatureCandidates(row: SignatureSourceRow, candidates: ProviderCandidate[]) {
   const excluded = new Set(Array.isArray(row.signatureExcludedVerificationIds) ? row.signatureExcludedVerificationIds.filter((v): v is string => typeof v === "string") : []);
-  return candidates.filter(c => !excluded.has(c.verificationId) && (!row.signatureRequestedAt || (c.completedAt !== null && Date.parse(c.completedAt) >= row.signatureRequestedAt.getTime())));
+  return candidates.filter(c => {
+    if (excluded.has(c.verificationId)) return false;
+    if (!row.signatureRequestedAt) return true;
+    const requestedAt = row.signatureRequestedAt.getTime();
+    if (c.completedAt && Date.parse(c.completedAt) >= requestedAt) return true;
+    const documents = signedDocuments(c.resource ?? {});
+    return documents.length > 0 && documents.every(d => d.url && d.signedAt && Date.parse(d.signedAt) >= requestedAt);
+  });
+}
+
+// The final webhook is delivery metadata. Signed originals also establish that
+// an attempt was submitted; retain completedAt unchanged in the audit evidence.
+function signatureSubmissionAt(attempt: Attempt): string | null {
+  if (attempt.completedAt && Number.isFinite(Date.parse(attempt.completedAt))) return attempt.completedAt;
+  if (!attempt.evidenceAvailable || !attempt.documents.length ||
+    !attempt.documents.every(d => d.url && d.signedAt && Number.isFinite(Date.parse(d.signedAt)))) return null;
+  return attempt.documents.map(d => d.signedAt!).sort((a, b) => Date.parse(b) - Date.parse(a))[0]!;
 }
 
 export function completedSignatureAttempts(assessment: Assessment | null) {
-  return (assessment?.attempts ?? []).filter(a => a.completedAt !== null && Number.isFinite(Date.parse(a.completedAt)));
+  return (assessment?.attempts ?? []).filter(a => signatureSubmissionAt(a) !== null);
 }
 
 type DecisionWithReview = SolicitudDocumentDecision & { review: SolicitudDocumentReview };
@@ -89,15 +105,15 @@ export function signatureSummary(row: SignatureSourceRow, review: SolicitudDocum
     decision.verificationId === null && Boolean(decision.reason.trim()) && audit?.confirmed === true &&
     audit.evidenceType === "external" && Array.isArray(audit.externalDocuments) && audit.externalDocuments.length > 0 &&
     Boolean(decision.review.evidencePath) && decision.review.legajoAdjuntoId === decision.legajoAdjuntoId;
-  const digital = review?.sourceFingerprint === sourceFingerprint && selectedNow?.evidenceAvailable && selectedNow.completedAt &&
-    Number.isFinite(Date.parse(selectedNow.completedAt)) && hasMatchingSignedOperation(selectedNow, { requireCycle: Boolean(row.signatureRequestedAt) }) &&
+  const digital = review?.sourceFingerprint === sourceFingerprint && selectedNow?.evidenceAvailable &&
+    hasMatchingSignedOperation(selectedNow, { requireCycle: Boolean(row.signatureRequestedAt) }) &&
     selectedNow.resourceFingerprint === selectedAtApproval?.resourceFingerprint;
   const approved = Boolean(row.legacyOid && !(row.administrativeCoreControl as Record<string, unknown> | null)?.reliquidationHold && decision?.review.sourceFingerprint === sourceFingerprint && decision.humanDecision === "approve" && decision.legajoAdjuntoId && (external || digital));
   const requestedAgain = Boolean(row.signatureRequestedAt && !approved);
   return {
     status: approved ? "approved" : completed.length ? "to_review" : requestedAgain ? "requested_again" : "waiting",
     completedAttempts: completed.length,
-    lastCompletedAt: completed.map(a => a.completedAt!).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null,
+    lastCompletedAt: completed.map(a => signatureSubmissionAt(a)!).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null,
     approved,
     reason: requestedAgain ? row.signatureRequestReason : null,
     link: canManageSignature(row) ? row.linkFirmaDigital : null,
