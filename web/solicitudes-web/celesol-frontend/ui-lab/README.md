@@ -175,3 +175,10 @@ Usa el control real con transporte simulado, incluidas respuestas POST y recarga
 de fondo lentas o fallidas. Los errores permanecen visibles después de cerrar el modal.
 `node ui-lab/reliquidacion.browser-test.mjs` verifica el circuito en escritorio y
 390/320 px y guarda capturas en `.local/reliquidacion-review`.
+
+## Confirmación de envío a firma
+
+`/workflow-action` muestra la confirmación operativa de Enviar a firmar sin
+campo de comentario manual. `?scenario=required` conserva un comentario
+obligatorio para Devolver a Revisar y `?scenario=transfer` conserva el campo
+opcional de Mandar a transferir. La confirmación sólo registra un resultado ficticio.

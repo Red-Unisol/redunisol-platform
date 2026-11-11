@@ -42,7 +42,9 @@ async function start() {
   ] = await Promise.all([
     import("react-dom/client"),
     import("@tanstack/react-query"),
-    pathname.startsWith("/socio-create")
+    pathname.startsWith("/workflow-action")
+      ? import("./workflow-action-entry")
+      : pathname.startsWith("/socio-create")
       ? import("./socio-create-entry")
       : pathname.startsWith("/reliquidacion")
       ? import("./reliquidacion-entry")
