@@ -2,6 +2,7 @@ import { INSTALLMENTS, SAMPLE_REQUEST } from "./header-sample.ts";
 import { SCENARIOS } from "./scenarios.ts";
 import { externalLegajoFixture } from "./external-legajo-fixtures.ts";
 import { habitualCbuFixture } from "./cbu-fixtures.ts";
+import { createReliquidationFixture, type ReliquidationScenario } from "./reliquidacion-fixtures.ts";
 import {
   HEADER_DOCUMENT_REVIEW_FIXTURE,
   HEADER_SAMPLE,
@@ -12,7 +13,7 @@ import {
   type ProductionFixtureOptions,
 } from "./production-fixtures.ts";
 
-type UiLabFixtureOptions = { production?: ProductionFixtureOptions; externalLegajo?: "waiting" | "approved" | "error" };
+type UiLabFixtureOptions = { production?: ProductionFixtureOptions; externalLegajo?: "waiting" | "approved" | "error"; reliquidation?: ReliquidationScenario };
 
 /** Fixture-only transport for the UI lab. No request ever reaches a real API. */
 export const UI_LAB_API_ORIGIN = "http://beex-ui-lab.local";
@@ -64,12 +65,17 @@ export function createUiLabFetch(
 ): typeof fetch {
   let externalApproved = options.externalLegajo === "approved";
   let cbuAttempts = 0;
+  const reliquidation = options.reliquidation ? createReliquidationFixture(options.reliquidation, UI_LAB_SOLICITUD_ID) : null;
   return async (input, init) => {
     const request = input instanceof Request ? input : null;
     const url = new URL(request?.url ?? String(input), UI_LAB_API_ORIGIN);
     const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
     const signal = init?.signal ?? request?.signal;
     signal?.throwIfAborted();
+    if (reliquidation && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password) {
+      const result = await reliquidation(method, url.pathname, init?.body);
+      if (result) return result;
+    }
     if (options.externalLegajo && url.origin === UI_LAB_API_ORIGIN && !url.username && !url.password &&
       method === "POST" && url.pathname === `/solicitudes/${UI_LAB_SOLICITUD_ID}/document-review/external`) {
       if (options.externalLegajo !== "error") externalApproved = true;

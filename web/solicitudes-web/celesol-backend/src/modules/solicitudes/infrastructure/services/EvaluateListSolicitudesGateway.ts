@@ -643,20 +643,6 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return result;
   }
 
-  /** Strict read for reliquidation: missing or unrecognised payment state is unknown. */
-  async getReliquidationTransferState(legacyOid: string, directLoanId = false): Promise<"unpaid" | "paid" | "unknown"> {
-    if (!/^[1-9]\d*$/.test(legacyOid)) throw new LegacySolicitudesUnavailableError();
-    const field = directLoanId ? "Solicitud.Estado.Descripcion" : "Estado.Descripcion";
-    const result = await this.executeEvaluateObj({
-      tipo: directLoanId ? "F.Module.Cuentas.Prestamos.Prestamo" : "PreSolicitud.Module.Solicitud",
-      buildCmd: () => directLoanId ? `[ID]=${legacyOid}` : `[Oid]=${legacyOid}`,
-      fields: [field], mapRow: row => getStringValue(row, { [field]: 0 }, field),
-    });
-    const state = result?.trim().toLowerCase();
-    if (state === "pagada") return "paid";
-    return ["liquidada", "a transferir"].includes(state ?? "") ? "unpaid" : "unknown";
-  }
-
   async getCoreLoanLifecycle(legacyOid: string, directLoanId = false) {
     if (!/^\d+$/.test(legacyOid)) throw new LegacySolicitudesUnavailableError();
     const historical = directLoanId ? null : await this.executeEvaluateObj({

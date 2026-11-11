@@ -1,5 +1,6 @@
 import { installUiLabNetworkGuard } from "./network-guard";
 import { parseCbuScenario } from "./cbu-fixtures";
+import { parseReliquidationScenario } from "./reliquidacion-fixtures";
 import "./theme.css";
 
 // Dynamic imports are intentional: production API modules may capture fetch.
@@ -24,6 +25,7 @@ installUiLabNetworkGuard(
             : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,
         },
       }
+    : window.location.pathname.startsWith("/reliquidacion") ? { reliquidation: parseReliquidationScenario(search.get("scenario")) }
     : window.location.pathname.startsWith("/external-legajo") ? {
         externalLegajo: search.get("scenario") === "approved" ? "approved" : search.get("scenario") === "error" ? "error" : "waiting",
       } : {},

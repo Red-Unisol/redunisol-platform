@@ -5,7 +5,7 @@ import { actingContext } from "../../../auth/impersonation/context";
 import { administrativeSource } from "./AdministrativeCorrectionService";
 import type { CoreLoanLifecycle } from "./ControlledLoanReplacementService";
 import { AdministrativeCorrectionError, assertNoLoanReplacementPending } from "../../domain/workflow/AdministrativeCorrection";
-import { RELIQUIDATION_ACTION, assertReliquidationCancellation, assertReliquidationUnpaid, reliquidation, type ReliquidationTransferState } from "../../domain/workflow/LoanReliquidation";
+import { RELIQUIDATION_ACTION, assertReliquidationCancellation, reliquidation } from "../../domain/workflow/LoanReliquidation";
 
 type Source = Awaited<ReturnType<typeof administrativeSource>>;
 type Input = { requestId: string; expectedUpdatedAt: string; previousLoanId: string; reason: string };
@@ -30,7 +30,6 @@ export class LoanReliquidationService {
   constructor(private readonly deps: {
     db: PrismaClient;
     lifecycle: (id: string, direct?: boolean) => Promise<CoreLoanLifecycle | null>;
-    transferState: (id: string, direct?: boolean) => Promise<ReliquidationTransferState>;
   }) {}
 
   private async actor(db: Prisma.TransactionClient, s: Source, user: AuthUser) {
@@ -72,10 +71,6 @@ export class LoanReliquidationService {
   }
 
   async prepare(id: string, user: AuthUser, input: Input) {
-    const before = await administrativeSource(this.deps.db, id);
-    await this.eligible(this.deps.db, before, user);
-    const control = before.administrativeCoreControl as Prisma.JsonObject | null;
-    assertReliquidationUnpaid(await this.deps.transferState(input.previousLoanId, Boolean(control?.generatedLoanId || control?.replacementId)));
     await this.deps.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
       const s = await administrativeSource(tx, id);
@@ -126,7 +121,6 @@ export class LoanReliquidationService {
     const c = before.administrativeCoreControl as Prisma.JsonObject | null;
     const loan = await this.deps.lifecycle(input.previousLoanId, Boolean(c?.generatedLoanId || c?.replacementId));
     assertReliquidationCancellation(loan);
-    assertReliquidationUnpaid(await this.deps.transferState(input.previousLoanId, Boolean(c?.generatedLoanId || c?.replacementId)));
     await this.deps.db.$transaction(async tx => {
       // Same parent lock used by reservation, bank authorization and state changes.
       await tx.$queryRaw`SELECT id FROM solicitudes WHERE id = ${id}::uuid FOR UPDATE`;
@@ -150,7 +144,7 @@ export class LoanReliquidationService {
         actionCode: RELIQUIDATION_ACTION, actionLabel: "Anulación confirmada; devuelta a Riesgo",
         changedBy: actor.id, realActorUserId: actor.id, changedAt: now,
         comentario: input.reason.trim(), motivo: "RELIQUIDATION", requiresComment: true,
-        metadata: json({ previousLoanId: s.legacyOid, verifiedCancellation: loan, verifiedTransferState: "unpaid",
+        metadata: json({ previousLoanId: s.legacyOid, verifiedCancellation: loan, paymentValidationSource: "BEEX",
           previousSignatureLink: s.linkFirmaDigital, previousSignatureCycle: s.signatureCycleId,
           previousCoreControl: s.administrativeCoreControl,
           previousAnalysisFinishedAt: s.analisisFinalizadoAt, assignedToUserId: s.assignedToUserId }),

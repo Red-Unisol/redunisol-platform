@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/services/http/api-client";
 import { Button } from "@/shared/components/ui/button";
@@ -39,20 +39,23 @@ export function LoanReliquidationControl({
   isEditing: boolean;
 }) {
   const client = useQueryClient();
+  const [operationError, setOperationError] = useState<string | null>(null);
   const endpoint = `/solicitudes/${solicitudId}/reliquidacion`;
+  const queryKey = [
+    ...solicitudesCoreQueryKeys.all,
+    "reliquidacion",
+    solicitudId,
+    updatedAt,
+  ];
   const view = useQuery({
-    queryKey: [
-      ...solicitudesCoreQueryKeys.all,
-      "reliquidacion",
-      solicitudId,
-      updatedAt,
-    ],
+    queryKey,
     queryFn: () => apiClient.get<ReliquidationView>(endpoint),
+    placeholderData: (previous) => previous,
   });
-  if (view.error)
+  if (view.error && !view.data)
     return (
       <p role="alert" className="border-b border-border px-4 py-3 text-sm">
-        No se pudo consultar la reliquidación.{" "}
+        {operationError ?? "No se pudo consultar la reliquidación."}{" "}
         <button className="underline" onClick={() => void view.refetch()}>
           Reintentar
         </button>
@@ -63,14 +66,37 @@ export function LoanReliquidationControl({
     <LoanReliquidationPanel
       data={view.data}
       isEditing={isEditing}
+      operationError={operationError}
+      onClearError={() => setOperationError(null)}
       onSubmit={async (action, input) => {
+        setOperationError(null);
         try {
-          await apiClient.post<ReliquidationView>(
+          const saved = await apiClient.post<ReliquidationView>(
             action === "prepare" ? `${endpoint}/preparar` : endpoint,
             input,
           );
+          // Show the authoritative POST result immediately, including when the
+          // parent detail changes its version or background reads are slow.
+          client.setQueryData(queryKey, saved);
+          client.setQueryData(
+            [
+              ...solicitudesCoreQueryKeys.all,
+              "reliquidacion",
+              solicitudId,
+              saved.updatedAt,
+            ],
+            saved,
+          );
+        } catch (error) {
+          setOperationError(
+            error instanceof Error
+              ? error.message
+              : "No se pudo completar la operación.",
+          );
+          throw error;
         } finally {
-          await client.invalidateQueries({
+          // Unrelated refetches must not delay success or hide a rejected pause.
+          void client.invalidateQueries({
             queryKey: solicitudesCoreQueryKeys.all,
           });
         }
@@ -83,10 +109,14 @@ export function LoanReliquidationPanel({
   data,
   isEditing = false,
   onSubmit,
+  operationError = null,
+  onClearError,
 }: {
   data: ReliquidationView;
   isEditing?: boolean;
   onSubmit: (action: Action, input: Input) => Promise<void>;
+  operationError?: string | null;
+  onClearError?: () => void;
 }) {
   const [form, setForm] = useState<{
     action: Action;
@@ -97,6 +127,11 @@ export function LoanReliquidationPanel({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const message = error ?? operationError;
+  useEffect(() => {
+    if (message) errorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [message]);
   if (!data.visible) return null;
   const title = data.pending
     ? "Reliquidación en Riesgo"
@@ -149,6 +184,7 @@ export function LoanReliquidationPanel({
               });
               setReason(data.prepared ? (data.reason ?? "") : "");
               setError(null);
+              onClearError?.();
             }}
           >
             {data.prepared
@@ -157,6 +193,14 @@ export function LoanReliquidationPanel({
           </Button>
         )}
       </div>
+      {!form && operationError && (
+        <p
+          role="alert"
+          className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-foreground"
+        >
+          {operationError}
+        </p>
+      )}
       <DialogRoot
         open={Boolean(form)}
         onOpenChange={(open) => {
@@ -225,15 +269,19 @@ export function LoanReliquidationPanel({
                 className="w-full rounded-md border border-input-border bg-input-background px-3 py-2"
               />
             </label>
-            {form && form.version !== data.updatedAt && (
+            {form && !busy && form.version !== data.updatedAt && (
               <p role="alert" className="text-sm">
                 La solicitud cambió. Cerrá y volvé a abrir para revisar su
                 versión actual.
               </p>
             )}
-            {error && (
-              <p role="alert" className="text-sm text-danger-foreground">
-                {error}
+            {message && (
+              <p
+                ref={errorRef}
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-foreground"
+              >
+                {message}
               </p>
             )}
             <div className="flex flex-wrap justify-end gap-2">

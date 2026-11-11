@@ -170,6 +170,8 @@ Los escenarios y el contrato están en
 ## Reliquidación conservadora
 
 `/reliquidacion` usa el panel operativo con datos ficticios y mutaciones en memoria.
-Escenarios: `?scenario=prepared`, `pending`, `blocked` y `error`.
+Escenarios: `?scenario=prepared`, `pending`, `blocked`, `error` y `refresh-error`.
+Usa el control real con transporte simulado, incluidas respuestas POST y recargas
+de fondo lentas o fallidas. Los errores permanecen visibles después de cerrar el modal.
 `node ui-lab/reliquidacion.browser-test.mjs` verifica el circuito en escritorio y
 390/320 px y guarda capturas en `.local/reliquidacion-review`.
