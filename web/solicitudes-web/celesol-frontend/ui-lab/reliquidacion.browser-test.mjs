@@ -88,17 +88,49 @@ try {
   await page.getByRole("textbox").fill("Corrección solicitada por el analista");
   await page.getByRole("button", { name: "Pausar solicitud" }).click();
   await page
+    .getByRole("dialog")
     .getByRole("alert")
-    .getByText(/Vimarx no respondió/)
-    .waitFor();
+    .getByText(/No se pudo pausar/)
+    .waitFor({ timeout: 1000 });
   assert.equal(
     await page.getByRole("textbox").inputValue(),
     "Corrección solicitada por el analista",
   );
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cerrar" })
+    .click();
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page
+    .getByRole("alert")
+    .getByText(/No se pudo pausar/)
+    .waitFor({ timeout: 1000 });
+  await page.screenshot({
+    path: path.join(output, "error-mobile.png"),
+    fullPage: true,
+  });
+  assert.notEqual(
+    await page
+      .getByRole("alert")
+      .evaluate((element) => getComputedStyle(element).color),
+    "rgb(255, 255, 255)",
+    "Error text must remain readable on the light surface",
+  );
+  await page.goto(new URL("/reliquidacion?scenario=refresh-error", base).href);
+  await page.getByRole("button", { name: "Preparar reliquidación" }).click();
+  await page.getByRole("textbox").fill("Corrección solicitada por el analista");
+  await page.getByRole("button", { name: "Pausar solicitud" }).click();
+  await page
+    .getByText("Solicitud pausada para reliquidación", { exact: true })
+    .waitFor({ timeout: 1000 });
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page
+    .getByRole("button", { name: "Verificar anulación y volver a Riesgo" })
+    .waitFor();
   assert.deepEqual(errors, []);
   assert.deepEqual(outbound, []);
   console.log(
-    "Reliquidación: preparación, confirmación, bloqueo y error verificados en 1365, 390 y 320 px; sin solicitudes externas.",
+    "Reliquidación: preparación, confirmación, bloqueo y error inmediato con consultas de fondo lentas verificados en 1365, 390 y 320 px; sin solicitudes externas.",
   );
 } finally {
   await browser.close();

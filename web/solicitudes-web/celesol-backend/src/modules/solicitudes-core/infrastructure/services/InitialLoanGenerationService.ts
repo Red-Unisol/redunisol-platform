@@ -13,7 +13,7 @@ import type { LoanDiagnosticContext, LoanDiagnosticWriter } from "../../../techn
 import { refinanciacionVersion } from "../../domain/repositories/SolicitudRefinanciacionRepository";
 import { SolicitudRefinanciacionPrismaRepository } from "../repositories/SolicitudRefinanciacionPrismaRepository";
 import type { PendingRefinanciacionCobro } from "./RefinanciacionCobrosService";
-import { RELIQUIDATION_ACTION, assertReliquidationCancellation, assertReliquidationUnpaid, reliquidation, type ReliquidationTransferState } from "../../domain/workflow/LoanReliquidation";
+import { RELIQUIDATION_ACTION, assertReliquidationCancellation, reliquidation } from "../../domain/workflow/LoanReliquidation";
 import { assertReliquidationFinanciallyClear } from "./LoanReliquidationService";
 import type { CoreLoanLifecycle } from "./ControlledLoanReplacementService";
 
@@ -46,7 +46,6 @@ export class InitialLoanGenerationService {
     creationTimeoutMs?: number;
     diagnostics?: LoanDiagnosticWriter;
     lifecycle?: (id: string, direct?: boolean) => Promise<CoreLoanLifecycle | null>;
-    transferState?: (id: string, direct?: boolean) => Promise<ReliquidationTransferState>;
   }) {}
 
   private async diagnostic(context: LoanDiagnosticContext, stage: string, data: unknown) {
@@ -290,6 +289,5 @@ export class InitialLoanGenerationService {
       (evidence?.verifiedCancellation as Prisma.JsonObject | null)?.id !== r.resolvedLoanId)
       throw new AdministrativeCorrectionError("No se pudo verificar el ciclo de reliquidación. Requiere revisión administrativa.");
     assertReliquidationCancellation(await this.deps.lifecycle(r.resolvedLoanId, true), r.resolvedLoanId);
-    assertReliquidationUnpaid(this.deps.transferState ? await this.deps.transferState(r.resolvedLoanId, true) : "unknown");
   }
 }

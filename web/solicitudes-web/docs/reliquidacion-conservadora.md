@@ -30,17 +30,17 @@ se conserva la pausa y el vínculo anterior para conciliación.
 - Generación/reemplazo pendiente, incierto o sin vincular.
 - Analista ausente/inactivo, área o estado incorrectos, archivo o sesión suplantada.
 - Versión desactualizada o evidencia remota incompleta/incompatible.
-- Vimarx marca Pagada o no permite determinar el estado de transferencia.
 
-El control de transferencia consulta `Estado.Descripcion` de la PreSolicitud
-histórica o `Solicitud.Estado.Descripcion` del préstamo directo, sin confundir
-sus espacios de IDs. Sólo Liquidada y A Transferir se reconocen como estados
-sin pago para este circuito. Null, Anulada o cualquier otro estado son desconocidos
-y bloquean; anulación y saldo cero no se usan como prueba de ausencia de pago.
-Los préstamos directos sin Solicitud asociada requieren conciliación y quedan fuera.
-Las consultas se repiten antes de confirmar y antes de generar/vincular el nuevo
-préstamo. Esta primera entrega no agrega integración bancaria para conciliar
-operaciones manuales realizadas fuera de Beex/Vimarx.
+Los préstamos se generan directamente desde Beex y no necesitan una PreSolicitud
+histórica ni una Solicitud asociada en Vimarx. Beex es la fuente de los controles
+de reserva y pago de este circuito. Se verifican bajo el lock de la solicitud al
+preparar, al reabrir y antes de generar el préstamo nuevo. Una respuesta vacía de
+`Solicitud.Estado.Descripcion` del core no es un bloqueo de reliquidación.
+Vimarx sigue siendo la fuente para verificar la anulación real del préstamo;
+esa consulta se repite antes de generar/vincular el préstamo nuevo.
+La auditoría de la reapertura registra `paymentValidationSource: BEEX`.
+Esta primera entrega no agrega integración bancaria para conciliar operaciones
+manuales realizadas fuera de Beex.
 
 ## Concurrencia y auditoría
 
@@ -70,7 +70,10 @@ host de loopback y una base terminada en `_test`. Usan migraciones y datos ficti
 los gateways del core son simulados. No ejecutar el seed operativo para estas pruebas.
 
 En el frontend, iniciar `npm run ui:dev` y abrir `/reliquidacion`. Los escenarios
-`?scenario=prepared`, `pending`, `blocked` y `error` funcionan en memoria. Ejecutar
+`?scenario=prepared`, `pending`, `blocked`, `error` y `refresh-error` funcionan en memoria.
+El laboratorio usa el control real con transporte simulado: verifica que los errores
+se muestren de inmediato aunque las recargas de fondo sean lentas y que la pausa
+confirmada se vea aun si falla una consulta posterior. Ejecutar
 `node ui-lab/reliquidacion.browser-test.mjs` para verificar preparación, confirmación,
 bloqueos, error, ausencia de solicitudes externas y anchos 1365, 390 y 320 px.
 `UI_LAB_BASE_URL` admite otro puerto de loopback si el habitual está ocupado.

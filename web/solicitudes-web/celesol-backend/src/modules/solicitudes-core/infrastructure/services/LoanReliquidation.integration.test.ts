@@ -37,7 +37,7 @@ async function fixture(code = "VerificarFirmaYDocumentacion") {
   } });
   const cancelled: CoreLoanLifecycle = { id: previousLoanId, account: "123", estado: 9, estadoPrestamo: 9,
     estadoLabel: "Anulado", estadoPrestamoLabel: "Anulado", vigente: false, saldo: 0 };
-  const deps: ConstructorParameters<typeof LoanReliquidationService>[0] = { db, lifecycle: async () => cancelled, transferState: async () => "unpaid" };
+  const deps: ConstructorParameters<typeof LoanReliquidationService>[0] = { db, lifecycle: async () => cancelled };
   const service = new LoanReliquidationService(deps);
   const input = { requestId: randomUUID(), expectedUpdatedAt: s.updatedAt.toISOString(), previousLoanId, reason: "Corrección de condiciones solicitada por Riesgo" };
   const prepare = async () => {
@@ -107,21 +107,28 @@ it("unknown/active cancellation or transport failure keeps the original link and
   } finally { await f.clean(); }
 });
 
-it("paid or unknown Core transfer state blocks preparation and reopening without releasing the pause", { skip: !enabled }, async () => {
+it("a loan generated directly from Beex can pause and reopen without a historical Core request", { skip: !enabled }, async () => {
   const f = await fixture();
   try {
-    for (const state of ["paid", "unknown"] as const) {
-      f.deps.transferState = async () => state;
-      await assert.rejects(f.prepare(), /Pagada|determinar el estado/);
-    }
-    f.deps.transferState = async () => "unpaid";
-    const input = await f.prepare();
-    for (const state of ["paid", "unknown"] as const) {
-      f.deps.transferState = async () => state;
-      await assert.rejects(f.service.reopen(f.s.id, f.actor, input), /Pagada|determinar el estado/);
-    }
-    assert.equal((await administrativeSource(db, f.s.id)).legacyOid, f.s.legacyOid);
+    const s = await db.solicitud.update({ where: { id: f.s.id }, data: {
+      administrativeCoreControl: { generatedLoanId: f.s.legacyOid },
+    } });
+    let calls = 0;
+    f.deps.lifecycle = async (id, direct) => {
+      calls++; assert.equal(id, f.s.legacyOid); assert.equal(direct, true);
+      return f.cancelled;
+    };
+    const input = { ...f.input, expectedUpdatedAt: s.updatedAt.toISOString() };
+    const prepared = await f.service.prepare(s.id, f.actor, input);
+    assert.equal(calls, 0); // Pausing uses Beex financial records, without any Core lookup.
     assert.equal((await f.service.view(f.s.id, f.actor)).prepared, true);
+    await f.service.reopen(s.id, f.actor, { ...input, expectedUpdatedAt: prepared.updatedAt });
+    assert.equal(calls, 1);
+    const reopened = await administrativeSource(db, s.id);
+    assert.equal(reopened.estadoActual.code, "RevisionRiesgo");
+    assert.equal(reopened.legacyOid, null);
+    const history = await db.solicitudEstadoHistorial.findUniqueOrThrow({ where: { id: input.requestId } });
+    assert.equal((history.metadata as Prisma.JsonObject).paymentValidationSource, "BEEX");
   } finally { await f.clean(); }
 });
 
@@ -185,7 +192,7 @@ it("reliquidation uses ordinary generation with a new verified loan, rejects ref
     let calls = 0;
     const newId = `${f.s.legacyOid}1`;
     const deps: ConstructorParameters<typeof InitialLoanGenerationService>[0] = {
-      db, repository, lifecycle: (...args) => f.deps.lifecycle(...args), transferState: (...args) => f.deps.transferState(...args),
+      db, repository, lifecycle: (...args) => f.deps.lifecycle(...args),
       gateway: { crear: async () => { calls++; return { id: newId }; } },
       loanSnapshot: async id => ({ id, estado: 0, amount: 500000, cuotas: 24, lineaId: "88", primerVencimiento: null, cancelacionesCentavos: 0 }),
       makeSignatureLink: id => `https://example.test/new/${id}`,
@@ -223,7 +230,7 @@ it("a reused old loan ID, mismatching new loan or uncertain generation stays res
       } };
       let calls = 0;
       const service = new InitialLoanGenerationService({
-        db, repository, lifecycle: (...args) => f.deps.lifecycle(...args), transferState: (...args) => f.deps.transferState(...args),
+        db, repository, lifecycle: (...args) => f.deps.lifecycle(...args),
         gateway: { crear: async () => { calls++; if (variant === "timeout") throw new Error("timeout"); return { id: variant === "old-id" ? f.s.legacyOid! : `${f.s.legacyOid}1` }; } },
         loanSnapshot: async id => ({ id, estado: 0, amount: variant === "mismatch" ? 600000 : 500000, cuotas: 12, lineaId: "88", primerVencimiento: null, cancelacionesCentavos: 0 }),
         makeSignatureLink: id => `https://example.test/new/${id}`,

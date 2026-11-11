@@ -373,7 +373,6 @@ export function createSolicitudesCoreRouter(
     diagnostics: loanDiagnostics,
     loanSnapshot: loanGateways.loanSnapshot,
     lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct),
-    transferState: (id, direct) => solicitudesLegacyGateway.getReliquidationTransferState(id, direct),
     makeSignatureLink: (id, codigo) => buildLinkFirmaDigital(env.FINALIZAR_FIRMA_DIGITAL_BASE_URL, id, codigo),
     creationTimeoutMs: env.LEGACY_API_TIMEOUT_MS,
   });
@@ -604,7 +603,6 @@ export function createSolicitudesCoreRouter(
   addControlledLoanReplacementRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: replacementService });
   addLoanReliquidationRoutes(router, { auth: dependencies.getCurrentUserUseCase,
     service: new LoanReliquidationService({ db: prisma,
-      transferState: (id, direct) => solicitudesLegacyGateway.getReliquidationTransferState(id, direct),
       lifecycle: (id, direct) => solicitudesLegacyGateway.getCoreLoanLifecycle(id, direct) }),
   });
   addInitialLoanGenerationRoutes(router, { auth: dependencies.getCurrentUserUseCase, service: initialGeneration });

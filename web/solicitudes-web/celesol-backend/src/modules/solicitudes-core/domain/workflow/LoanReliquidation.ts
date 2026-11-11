@@ -1,12 +1,6 @@
 import { AdministrativeCorrectionError } from "./AdministrativeCorrection";
 
 export const RELIQUIDATION_ACTION = "RELIQUIDATION_REOPENED";
-export type ReliquidationTransferState = "unpaid" | "paid" | "unknown";
-export function assertReliquidationUnpaid(state: ReliquidationTransferState) {
-  if (state !== "unpaid") throw new AdministrativeCorrectionError(state === "paid"
-    ? "Reliquidación bloqueada: Vimarx registra la solicitud como Pagada."
-    : "Reliquidación bloqueada: Vimarx no permite determinar el estado de transferencia de la solicitud. Requiere conciliación.");
-}
 export type Reliquidation = {
   requestId: string;
   previousLoanId: string;

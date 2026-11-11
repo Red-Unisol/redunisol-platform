@@ -11,6 +11,23 @@ import {
 } from "./network-guard.ts";
 const route = `/solicitudes/${UI_LAB_SOLICITUD_ID}`;
 
+it("reliquidation transport is opt-in, updates only its fictional request and rejects other destinations", async () => {
+  const path = `${route}/reliquidacion`;
+  const fetcher = createUiLabFetch({ reliquidation: "ready" });
+  assert.equal((await (await fetcher(path)).json()).prepared, false);
+  const body = JSON.stringify({ requestId: "47a40294-15f9-443d-a499-9b3380381ec3", reason: "Corrección solicitada por el analista" });
+  const prepared = await (await fetcher(`${path}/preparar`, { method: "POST", body })).json();
+  assert.equal(prepared.prepared, true);
+  assert.equal((await (await fetcher(path)).json()).requestId, prepared.requestId);
+  assert.equal((await (await fetcher(path, { method: "POST", body })).json()).pending, true);
+  for (const url of [
+    `https://api-solicitudes.redunisol.com.ar${path}/preparar`,
+    path.replace(UI_LAB_SOLICITUD_ID, "another-request") + "/preparar",
+    `${route}/document-review/decisions`,
+  ]) await assert.rejects(fetcher(url, { method: "POST", body }), UiLabNetworkBlockedError);
+  await assert.rejects(createUiLabFetch()(`${path}/preparar`, { method: "POST", body }), UiLabNetworkBlockedError);
+});
+
 it("external-legajo fixture supports only its opted-in local upload and preserves zero real attempts after approval", async () => {
   const fetcher = createUiLabFetch({ externalLegajo: "waiting" });
   assert.equal((await (await fetcher(`${route}/document-review`)).json()).signature.approved, false);
