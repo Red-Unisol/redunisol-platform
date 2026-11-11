@@ -1,5 +1,10 @@
 # CrearSocioMutual: contrato verificado
 
+Para incorporar el CBU en el alta, consultar la
+[prueba posterior en FapiTest del 11/11/2026](cbu-alta-socios.md).
+Los resultados de esa versión y ambiente se conservan separados de la campaña
+de septiembre descrita a continuación.
+
 Verificado el **15/09/2026** contra `https://celesol.dyndns.org:5002`.
 Operación: `POST /api/Simulador/CrearSocioMutual`, `Content-Type: application/json`.
 Campaña inicial T01–T13: trece intentos de alta autorizados, cinco exitosos y ocho rechazados. Cada intento

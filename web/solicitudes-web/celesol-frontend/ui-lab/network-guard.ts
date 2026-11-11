@@ -1,6 +1,7 @@
 import { INSTALLMENTS, SAMPLE_REQUEST } from "./header-sample.ts";
 import { SCENARIOS } from "./scenarios.ts";
 import { externalLegajoFixture } from "./external-legajo-fixtures.ts";
+import { habitualCbuFixture } from "./cbu-fixtures.ts";
 import {
   HEADER_DOCUMENT_REVIEW_FIXTURE,
   HEADER_SAMPLE,
@@ -62,6 +63,7 @@ export function createUiLabFetch(
   options: UiLabFixtureOptions = {},
 ): typeof fetch {
   let externalApproved = options.externalLegajo === "approved";
+  let cbuAttempts = 0;
   return async (input, init) => {
     const request = input instanceof Request ? input : null;
     const url = new URL(request?.url ?? String(input), UI_LAB_API_ORIGIN);
@@ -104,6 +106,8 @@ export function createUiLabFetch(
       body = { enMora: false };
     else if (url.pathname === `${base}/datos-rapidos/creditos`)
       body = { activos: true };
+    else if (url.pathname === `${base}/datos-rapidos/cbu`)
+      body = habitualCbuFixture(options.production?.cbuScenario, ++cbuAttempts);
     else if (url.pathname === `${base}/document-review`)
       body = options.externalLegajo ? externalLegajoFixture(externalApproved) : HEADER_DOCUMENT_REVIEW_FIXTURE;
     else throw new UiLabNetworkBlockedError(method, url.pathname);

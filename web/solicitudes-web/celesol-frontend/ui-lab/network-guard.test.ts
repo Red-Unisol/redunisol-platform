@@ -178,6 +178,10 @@ it("serves the fictional session, applicant and review contracts used by real he
   assert.deepEqual(await get(`${route}/datos-rapidos/creditos`), {
     activos: true,
   });
+  assert.deepEqual(await get(`${route}/datos-rapidos/cbu`), {
+    status: "available",
+    cbu: "0110000699111100000248",
+  });
   const review = await get(`${route}/document-review`);
   assert.equal(review.canDecide, false);
   assert.equal(review.state, "Pagada");
@@ -210,6 +214,7 @@ it("does not grant mutations or new routes when header GET fixtures are availabl
     `${route}/datos-rapidos/convenio`,
     `${route}/datos-rapidos/mora`,
     `${route}/datos-rapidos/creditos`,
+    `${route}/datos-rapidos/cbu`,
     `${route}/document-review`,
     `${route}/document-review/evaluate`,
     `${route}/document-review/decisions`,
@@ -220,6 +225,7 @@ it("does not grant mutations or new routes when header GET fixtures are availabl
     );
   for (const path of [
     "/solicitudes/another-request/datos-rapidos/socio",
+    "/solicitudes/another-request/datos-rapidos/cbu",
     "/solicitudes/another-request/document-review",
     `${route}/datos-rapidos/unknown`,
     `${route}/document-review/evaluate`,

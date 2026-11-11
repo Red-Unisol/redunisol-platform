@@ -16,12 +16,14 @@ import {
 } from "./header-fixtures.ts";
 import { SAMPLE_REQUEST } from "./header-sample.ts";
 import { USERS_FIXTURE, USERS_WORKFLOW_OWNERS } from "./users-fixtures.ts";
+import { solicitudCbuFixture, type CbuScenario } from "./cbu-fixtures.ts";
 
 export type ProductionRole = "riesgo" | "admin" | "vendedor";
 export type ProductionFixtureOptions = {
   role?: ProductionRole;
   externalPayment?: boolean;
   allowEdit?: boolean;
+  cbuScenario?: CbuScenario;
   workflowState?: "RevisionRiesgo" | "EvaluacionExterna";
 };
 
@@ -351,7 +353,7 @@ export function productionFixture(
 ): ProductionFixtureResult {
   const base = `/solicitudes/${HEADER_SAMPLE.id}`;
   const riskBase = `/api/riesgo/calculadora/core/${HEADER_SAMPLE.id}`;
-  const solicitud = options.workflowState ? {
+  const baseSolicitud = options.workflowState ? {
     ...PRODUCTION_SOLICITUD,
     legacyOid: null,
     estadoActual: {
@@ -366,6 +368,10 @@ export function productionFixture(
       canChangeState: options.role !== "vendedor",
     },
   } : PRODUCTION_SOLICITUD;
+  const solicitud = options.cbuScenario ? {
+    ...baseSolicitud,
+    titular: { ...baseSolicitud.titular, ...solicitudCbuFixture(options.cbuScenario) },
+  } : baseSolicitud;
   let body: unknown;
   if (pathname === "/auth/me") body = productionSession(options.role);
   else if (pathname === "/auth/users") body = { users: USERS_FIXTURE };
@@ -377,13 +383,15 @@ export function productionFixture(
   else if (pathname === base)
     body = options.allowEdit
       ? {
-          ...PRODUCTION_SOLICITUD,
+          ...solicitud,
           capabilities: {
             ...PRODUCTION_SOLICITUD.capabilities!,
             canEdit: true,
             fieldAccess: {
               defaultMode: "readonly",
-              editableFields: ["solicitud.observaciones"],
+              editableFields: options.cbuScenario
+                ? ["solicitud.observaciones", "titular.cbu", "titular.cbuNoHabitual", "titular.nroDocumento"]
+                : ["solicitud.observaciones"],
               editableGroups: [],
             },
           },

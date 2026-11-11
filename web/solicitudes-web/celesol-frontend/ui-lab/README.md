@@ -48,6 +48,11 @@ queda en `.local/ui-lab-dist`; el build operativo continúa en `dist`.
 
 ## Galerías adicionales
 
+- `/socio-create`: formulario operativo de alta precargado desde un titular
+  ficticio, incluyendo CBU y un CBU no habitual distinto. Permite comprobar
+  validación, borrado opcional y payload enviado; Guardar sólo modifica memoria.
+  `node ui-lab/socio-create.browser-test.mjs` revisa escritorio y 390 px.
+
 - `/headers?layout=slim`: comparación de cabeceras Actual, A, B y C.
 - `/production`: ficha real de la aplicación con datos de ejemplo aislados.
 - `/cutoffs?scenario=pending`: pantalla operativa de cortes de AMEJUCA, sin fecha confirmada.
@@ -152,3 +157,12 @@ confirmar una transición sigue bloqueado por el transporte del laboratorio.
 `npm run ui:visual:cuotas` prueba la suma con Ctrl+clic en escritorio y 390 px:
 cierre y reapertura por teclado entre cuotas, cambio de columna y Escape.
 Usa dos cuotas ficticias de $100 y $200 en la pestaña Préstamos de `/production`.
+
+## Comparación del CBU habitual
+
+`/production?cbu=nonhabitual` muestra el CBU de Vimarx, el de la solicitud y el
+destino no habitual con datos ficticios. El runner
+`node ui-lab/cbu-comparison.browser-test.mjs` revisa coincidencia, diferencia,
+ausencias, errores y recuperación, edición de identidad, escritorio y móvil.
+Los escenarios y el contrato están en
+[CBU habitual en Beex](../../../../docs/apis/vimarx/cbu-habitual-beex.md).

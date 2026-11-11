@@ -4,6 +4,55 @@ import { describe, it } from "node:test";
 import { createSocioBodySchema } from "./CreateSocioRequest.schema";
 
 describe("createSocioBodySchema", () => {
+  it("accepts an optional CBU with valid check digits for either type of person", () => {
+    const bases = [
+      {
+        tipoPersona: "FISICA",
+        apellido: "Prueba",
+        nombre: "Socio",
+        nroDocumento: "99111124",
+        tipoDocumento: "DNI",
+        sexo: "Femenino",
+        fechaDeNacimiento: "1990-03-15",
+        cuit: "27991111242",
+        domicilioCalle: "Prueba",
+        domicilioLocalidad: "12",
+      },
+      {
+        tipoPersona: "JURIDICA",
+        razonSocial: "Empresa de prueba",
+        cuit: "30123456789",
+        domicilioCalle: "Prueba",
+        domicilioLocalidad: "12",
+      },
+    ];
+    for (const base of bases) {
+      assert.equal(
+        createSocioBodySchema.parse({
+          ...base,
+          cbu: " 0110000699111100000248 ",
+        }).cbu,
+        "0110000699111100000248",
+      );
+      assert.equal(
+        createSocioBodySchema.parse({ ...base, cbu: " " }).cbu,
+        undefined,
+      );
+      assert.equal(createSocioBodySchema.parse(base).cbu, undefined);
+      for (const cbu of [
+        "123",
+        "0110000699111100000249",
+        "x".repeat(22),
+        12345,
+      ]) {
+        assert.equal(
+          createSocioBodySchema.safeParse({ ...base, cbu }).success,
+          false,
+        );
+      }
+    }
+  });
+
   it("accepts and trims a valid persona fisica payload", () => {
     const parsed = createSocioBodySchema.parse({
       apellido: " Perez ",
