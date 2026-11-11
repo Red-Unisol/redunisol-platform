@@ -1,6 +1,7 @@
 import { installUiLabNetworkGuard } from "./network-guard";
 import { parseCbuScenario } from "./cbu-fixtures";
 import { parseReliquidationScenario } from "./reliquidacion-fixtures";
+import { parsePadronesScenario } from "./padrones-fixtures";
 import "./theme.css";
 
 // Dynamic imports are intentional: production API modules may capture fetch.
@@ -13,13 +14,14 @@ const productionRole =
       : "riesgo";
 installUiLabNetworkGuard(
   globalThis,
-  window.location.pathname.startsWith("/production")
+  (window.location.pathname.startsWith("/production") || window.location.pathname.startsWith("/padrones"))
     ? {
         production: {
           role: productionRole,
           externalPayment: search.get("payment") === "external",
           allowEdit: search.get("edit") === "1",
           cbuScenario: parseCbuScenario(search.get("cbu")),
+          padronesScenario: parsePadronesScenario(search.get("scenario")),
           workflowState: search.get("state") === "evaluacion-externa"
             ? "EvaluacionExterna"
             : search.get("state") === "revision-riesgo" ? "RevisionRiesgo" : undefined,
@@ -42,7 +44,9 @@ async function start() {
   ] = await Promise.all([
     import("react-dom/client"),
     import("@tanstack/react-query"),
-    pathname.startsWith("/workflow-action")
+    pathname.startsWith("/padrones")
+      ? import("./padrones-entry")
+      : pathname.startsWith("/workflow-action")
       ? import("./workflow-action-entry")
       : pathname.startsWith("/socio-create")
       ? import("./socio-create-entry")

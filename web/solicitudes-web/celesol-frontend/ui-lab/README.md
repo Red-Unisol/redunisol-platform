@@ -1,5 +1,11 @@
 # Laboratorio de interfaces de Beex
 
+`/padrones` muestra la pestaña CredixSA operativa con padrones ficticios. Los
+escenarios `?scenario=none`, `error`, `unconfigured`, `missing-document`,
+`credixsa-error` y `bajas` permiten revisar estados independientes, cargos
+múltiples, períodos distintos, fuentes sin publicar y cargas que requieren revisión.
+Actualizar padrones sólo vuelve a leer fixtures; no realiza conexiones externas.
+
 `/external-legajo` renderiza el panel real de Legajos con cero intentos de MetaMap.
 Permite simular la carga y aprobación local de PDF/fotos. `?scenario=approved`
 muestra la aprobación externa y `?scenario=error` simula un fallo de almacenamiento
