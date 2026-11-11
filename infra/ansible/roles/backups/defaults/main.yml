@@ -40,3 +40,4 @@ foundation_backups_foundation_config_files:
   - /etc/systemd/system/redunisol-foundation-health.service
   - /etc/systemd/system/redunisol-foundation-health.timer
   - /etc/fail2ban/jail.d/redunisol-security.local
+  - /etc/fail2ban/filter.d/sshd.local

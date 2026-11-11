@@ -36,35 +36,76 @@
         name:
           - "{{ foundation_security_fail2ban_package }}"
           - nftables
+          - python3-systemd
         state: present
         update_cache: true
         cache_valid_time: 3600
         fail_on_autoremove: true
+        policy_rc_d: 101
 
-    - name: Declare the SSH jail
+    - name: Create the foundation policy tool directory
+      ansible.builtin.file:
+        path: /usr/local/libexec/redunisol-foundation
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the read-only fail2ban policy probe
       ansible.builtin.copy:
-        dest: "{{ foundation_security_fail2ban_jail_path }}"
-        content: |
-          # Managed by infra/ansible (role security). Manual changes are overwritten.
-          [DEFAULT]
-          banaction = nftables-multiport
-          banaction_allports = nftables-allports
-          ignoreip = {{ foundation_security_fail2ban_ignoreip | join(' ') }}
+        src: fail2ban-policy.py
+        dest: "{{ foundation_security_fail2ban_policy_tool }}"
+        owner: root
+        group: root
+        mode: "0755"
 
-          [sshd]
-          enabled = true
-          backend = systemd
-          port = {{ foundation_security_fail2ban_ssh_ports | join(',') }}
-          maxretry = {{ foundation_security_fail2ban_maxretry }}
-          findtime = {{ foundation_security_fail2ban_findtime }}
-          bantime = {{ foundation_security_fail2ban_bantime }}
+    - name: Install the upstream SSH filter correction
+      ansible.builtin.copy:
+        src: sshd.local
+        dest: "{{ foundation_security_fail2ban_filter_path }}"
         owner: root
         group: root
         mode: "0644"
-      notify: Reload fail2ban
+
+    - name: Declare the SSH jail
+      ansible.builtin.template:
+        src: sshd-jail.local.j2
+        dest: "{{ foundation_security_fail2ban_jail_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Test fail2ban configuration before starting or reloading
+      ansible.builtin.command:
+        argv: [/usr/bin/fail2ban-client, --test]
+      changed_when: false
 
     - name: Enable fail2ban
       ansible.builtin.systemd_service:
         name: fail2ban.service
         enabled: true
         state: started
+
+    # Probe on every run: copy.changed cannot recover a reload lost to an
+    # interrupted previous run, nor detect changes made to the live daemon.
+    - name: Inspect the effective SSH policy before reconciliation
+      ansible.builtin.include_tasks: probe.yml
+
+    # Debian 1.1.0 cannot reload a named jail which is absent. A configuration
+    # reload recreates it; existing jails are not explicitly restarted.
+    - name: Restore a missing SSH jail from the validated configuration
+      ansible.builtin.command:
+        argv: [/usr/bin/fail2ban-client, reload]
+      when: "'jail.absent' in (foundation_security_policy_probe.stdout | from_json).differences"
+      changed_when: true
+
+    - name: Reconcile the live SSH jail when its policy differs
+      ansible.builtin.command:
+        argv: [/usr/bin/fail2ban-client, reload, --restart, sshd]
+      when:
+        - not (foundation_security_policy_probe.stdout | from_json).matches
+        - "'jail.absent' not in (foundation_security_policy_probe.stdout | from_json).differences"
+      changed_when: true
+
+    - name: Verify the effective SSH policy after reconciliation
+      ansible.builtin.include_tasks: verify-policy.yml

@@ -27,6 +27,10 @@ cambia DNS, webhooks, colas ni schedulers productivos.
 Por defecto no se cambia el firewall, el puerto SSH ni la politica de login root.
 El rol `security` solo agrega fail2ban para SSH: sus bloqueos son las unicas
 reglas nftables que crea, en la tabla que administra fail2ban.
+Antes del primer apply, agregar la IP publica de gestion de la oficina a
+`foundation_security_fail2ban_ignoreip` en el inventario revisado, conservando
+loopback. La [guia del rol](roles/security/README.md) describe su backport del
+filtro SSH, la convergencia de la politica activa y las comprobaciones posteriores.
 El rol `storage` habitual no inicializa, formatea ni monta discos. El rol
 `backup_storage` habilitado reconcilia el montaje del UUID ya preparado; no crea
 su filesystem desde provision. La preparacion del SATA para backup se declara
@@ -55,6 +59,7 @@ playbooks/
 roles/
 tests/
 tools/install-test-restic.py
+tools/install-test-fail2ban.py
 ```
 
 `foundation_hosts` selecciona los hosts de esta base. El inventario de produccion
@@ -128,6 +133,8 @@ Desde la raiz del repositorio:
 ```bash
 python infra/ansible/tools/install-test-restic.py --directory /tmp/redunisol-restic
 export FOUNDATION_TEST_RESTIC_BINARY=/tmp/redunisol-restic/restic
+python infra/ansible/tools/install-test-fail2ban.py --directory /tmp/redunisol-fail2ban
+export FOUNDATION_TEST_FAIL2BAN_ROOT=/tmp/redunisol-fail2ban
 python -m unittest discover -s infra/ansible/tests -v
 ```
 
@@ -135,6 +142,10 @@ El instalador de pruebas descarga Restic `0.18.0` para Linux amd64 desde su
 release oficial y comprueba el SHA-256 fijado en el script. No usa root ni instala
 paquetes del host. Las pruebas usan repositorios temporales y datos sinteticos;
 no configuran backups reales ni recuperan archivos de los servidores operativos.
+El segundo instalador extrae el paquete oficial Debian `fail2ban=1.1.0-8` con
+SHA-256 fijado, sin instalarlo ni iniciar servicios del host. Las pruebas usan
+ese filtro y el override Git para comprobar lineas de log SSH y la atribucion
+correcta de la IP frente a un nombre de usuario inyectado (CVE-2026-109786).
 
 El workflow `Validate Ansible foundation` ejecuta estas validaciones en Linux con
 Python 3.13 y acciones fijadas por commit. Tiene permisos de lectura del repositorio, no abre SSH, no usa
@@ -297,9 +308,10 @@ serial; ver el [estado de storage](../../docs/dedicated-foundation.md#storage-lo
 Su preparacion se acredita con la evidencia de ejecucion; los valores en Git por
 si solos no sustituyen verificar el runtime.
 
-El catalogo real de esta etapa es `foundation_backups_source_paths`, en
+El catalogo deseado de esta etapa es `foundation_backups_source_paths`, en
 [`inventories/production/group_vars/all.yml`](inventories/production/group_vars/all.yml).
-Contiene estas ocho configuraciones de la base:
+Contiene estas diez configuraciones de la base, incluidas la jail y la correccion
+del filtro SSH que se incorporan al aplicar el rol `security`:
 
 ```text
 /etc/docker/daemon.json
@@ -310,6 +322,8 @@ Contiene estas ocho configuraciones de la base:
 /etc/systemd/system/prometheus-node-exporter.service.d/foundation.conf
 /etc/systemd/system/redunisol-foundation-health.service
 /etc/systemd/system/redunisol-foundation-health.timer
+/etc/fail2ban/jail.d/redunisol-security.local
+/etc/fail2ban/filter.d/sshd.local
 ```
 
 El ensayo de restauracion debe usar un snapshot real de ese catalogo, un destino
@@ -318,8 +332,13 @@ de esos archivos dentro de ese alcance, no una reconstruccion integral ni una
 copia externa. El snapshot y su resultado deben quedar identificados en la
 evidencia. La custodia de la clave del repositorio se comprueba por separado.
 
-Se verifico una copia real, una comprobacion completa y la restauracion aislada
-de esos ocho archivos, con comparacion independiente de SHA-256, modo, UID y GID.
+La evidencia historica del 5 de noviembre de 2026 verifica una copia real, una
+comprobacion completa y la restauracion aislada de los ocho archivos originales,
+con comparacion independiente de SHA-256, modo, UID y GID; no acredita todavia
+el catalogo ampliado de diez archivos. Despues de aplicar `security`, comprobar
+una copia y restauracion nuevas que incluyan ambos archivos de fail2ban. Los
+snapshots historicos de ocho archivos siguen siendo restaurables porque el
+catalogo permite subconjuntos de las rutas aprobadas.
 La clave privada custodiada por el operador fuera del dedicado se uso para abrir
 el repositorio. El snapshot y reporte del ensayo estan identificados en la
 [evidencia de recuperacion local](../../docs/dedicated-foundation.md#evidencia-de-aplicacion-y-recuperacion-local).

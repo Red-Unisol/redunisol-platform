@@ -13,3 +13,5 @@ foundation_security_fail2ban_ignoreip:
   - 127.0.0.1/8
   - ::1
 foundation_security_fail2ban_jail_path: /etc/fail2ban/jail.d/redunisol-security.local
+foundation_security_fail2ban_filter_path: /etc/fail2ban/filter.d/sshd.local
+foundation_security_fail2ban_policy_tool: /usr/local/libexec/redunisol-foundation/fail2ban-policy
