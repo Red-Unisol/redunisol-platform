@@ -2,6 +2,19 @@
 
 ## Alcance y escritor único
 
+Con `EDNA_ORGANIC_MENU_ENABLED=true`, los ingresos orgánicos de Ventas pasan
+primero por la bienvenida de dos opciones. La regla funcional y sus casos se
+documentan en [ORG-23571](../kestra/automations/marketing-crm/docs/commercial-rules/ORGANIC_WHATSAPP_23571.md).
+Los formularios web explícitos o vigentes mantienen prioridad; un reingreso
+antiguo sin continuación web vigente también puede ver el menú.
+
+`Quiero un préstamo` reutiliza un perfil completo y confirmado dentro de los
+últimos seis meses calendario; sólo los datos faltantes, vencidos o insuficientes
+requieren el v3. `Otra consulta` deriva el chat a Tincho, usuario `5737`, con
+lectura previa de atención, responsables y sesión. El texto escrito libremente
+no autoriza una selección: se valida el token opaco por envío, teléfono,
+subject, conversación, vencimiento y selección única.
+
 `EDNA_INTAKE_ENTRY_SCOPE=sales_channel` habilita el Flow de intake para los nuevos
 ingresos autenticados del canal WhatsApp de Ventas, desde
 `EDNA_INTAKE_SALES_CHANNEL_START_AT`. Incluye texto y los tipos multimedia
@@ -19,6 +32,64 @@ al nuevo contrato desde su entrada original; no se repite un envío ni se
 promueven escrituras con acuse incierto.
 
 ## Prueba de origen y vínculo durable
+
+### Operación del menú orgánico
+
+La activación usa `EDNA_ORGANIC_MENU_ENABLED` y `EDNA_ORGANIC_MENU_START_AT`,
+además de las compuertas y listas de destinatarios de intake/router existentes.
+`EDNA_ORGANIC_OTHER_OPERATOR_ID=5737` define Tincho y
+`EDNA_ORGANIC_PROFILE_MAX_AGE_MONTHS=6` define la vigencia. Compose entrega estos
+valores a PHP, workers y scheduler. Los valores de ejemplo permanecen apagados.
+
+`edna_organic_menus` conserva el envío, selección, mensaje original, prueba nativa,
+sesión, intención y acuse de transferencia, con fases independientes. El menú usa
+`TEXT` con `QUICK_REPLY`; sus payloads contienen un UUID opaco de envío y la acción.
+La captura del inbox no hace HTTP. El worker prueba la sesión y la atención antes
+de enviar; verifica el historial Edna antes de procesar la respuesta. Un callback
+que llegue antes de esa confirmación queda guardado para conciliación.
+
+El menú y el puente web comparten lock por chat y leases por evento. El sondeo
+recupera lotes acotados de hasta 25 trabajos por minuto. Las escrituras inciertas
+se concilian con lecturas: nunca se repite el POST de saludo o transferencia.
+Para una solicitud de reutilización incierta se conserva `loan_unknown`; ese
+estado no reanuda ni la evaluación ni el v3 automáticamente.
+
+```text
+php artisan edna:organic-menus status --limit=25
+php artisan edna:organic-menus poll --limit=25
+```
+
+`status` es sólo lectura, sin HTTP ni encolados. `poll` recupera trabajo ya
+capturado; no importa conversaciones históricas para enviar saludos.
+
+`edna_customer_profiles` conserva declaraciones completas cifradas con fuente y
+fecha originales. Las nuevas respuestas v3 y formularios web confirmados pueden
+alimentarlo. Para perfiles anteriores se consultan respuestas aún conservadas,
+campos WhatsApp con `WA_TIMESTAMP` comprobable y formularios web con recibo
+confirmado y catálogos CRM completos. Los datos agrupados antiguos, incompletos
+o sin fecha suficiente requieren confirmación; `DATE_MODIFY` no prueba que el
+cliente haya actualizado sus datos. Un perfil reutilizado mantiene su fecha
+original. Los status y journals exponen IDs/fases, sin CUIL ni respuestas.
+
+La reutilización usa el contrato autenticado `organic-profile-reuse-v1` en el
+webhook de intake. No crea una fila que simule un Flow enviado. Kestra vuelve a
+probar mensaje, sesión, persona y gestiones actuales antes de escribir. Si existe
+una gestión abierta única devuelve su vendedor; en otro caso inicia la consulta
+normal por UUID, conservando responsables y reevaluando los criterios vigentes.
+Sólo `reused_not_valid` con `write_attempted=false` habilita pedir el v3 después
+de consultar ese endpoint. Un resultado incierto nunca habilita ese fallback.
+
+Desplegar primero el consumidor Kestra compatible y comprobar sus archivos/flow;
+luego activar Web. Antes de cualquier despliegue general deben estar en Git los
+resguardos de asignación manual que ya estén activos en runtime. Para rollback,
+deshabilitar el menú/reutilización antes de retirar el contrato del consumidor;
+conservar ledgers y resultados inciertos. Bitrix mantiene el límite de concurrencia
+sin comparación atómica de responsable/sesión explicado más abajo.
+
+Los eventos `whatsapp.organic_menu` y `whatsapp.organic_loan` complementan los
+recibos durables. Un saludo, un v3 enviado, un perfil reutilizado o un
+`transfer_state=not_needed/observed` no prueban una transferencia automática.
+El reporte requiere intención/acuse y un evento nativo correlacionado.
 
 `edna_intake_bindings` vincula un caso/envío y su entrada con un único prospecto
 original. El teléfono permite descubrir candidatos, pero no autoriza el vínculo.

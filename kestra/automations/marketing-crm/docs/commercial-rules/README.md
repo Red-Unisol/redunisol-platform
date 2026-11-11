@@ -44,6 +44,7 @@ reclasificar historicos. Estado: implementado en rama, pendiente de merge y depl
 
 | Documento | Audiencia | Para qué sirve |
 |---|---|---|
+| [`ORGANIC_WHATSAPP_23571.md`](ORGANIC_WHATSAPP_23571.md) | Comercial, Operaciones y Tecnología | Menú orgánico, destino Tincho y reutilización de datos confirmados dentro de seis meses. |
 | [`PROCESS_OVERVIEW.md`](PROCESS_OVERVIEW.md) | Todos | Explica visualmente el proceso y sus responsabilidades. |
 | [`LEAD_QUALIFICATION.md`](LEAD_QUALIFICATION.md) | Negocio y Tecnologia | Reglas de leads y base historica Haberes CUAD. |
 | [`BUENOS_AIRES.md`](BUENOS_AIRES.md) | Negocio y Tecnologia | Perfiles de Buenos Aires, Red Mutual - paii y bucket Mutual PAII, separado de Santa Fe. |
@@ -119,6 +120,7 @@ versión.
 
 | Versión | Alcance | Estado | Aprobación funcional | Implementación |
 |---|---|---|---|---|
+| 2026-11-11-organic-menu-profile-reuse | Menú orgánico y recurrencia sin repetir v3 con datos vigentes | Implementado en rama, pendiente de integración y despliegue | Pedido y precisiones de Santiago el 11/11/2026, registrados en ORGANIC_WHATSAPP_23571.md | Rama codex/organic-whatsapp-menu |
 | 2026-11-03-buenos-aires-sin-publico-provincial | Retirar Empleado Publico Provincial de Buenos Aires de GANADO | Implementado en rama, pendiente de merge y deploy | Confirmacion de Santiago el 03/11/2026, registrada en BUENOS_AIRES.md y DECISION_LOG.md | Rama codex/buenos-aires-publico-rechazo |
 | 2026-10-13 | Caja Morosos: máximo 8 entidades para Jubilado Provincial nuevo | Implementado, pendiente de deploy | Tarea Bitrix24 `23321` y autorización de Santiago en la sesión del 13/10/2026 | [Contrato y pruebas](CAJA_MOROSOS_23321.md) |
 | 2026-10-30 | Asignacion directa general de pools con un unico habilitado | Implementado en rama, pendiente de deploy | Confirmacion explicita de Santiago en esta conversacion; DEAL_ROUTING.md | Seguimiento del PR #631 |

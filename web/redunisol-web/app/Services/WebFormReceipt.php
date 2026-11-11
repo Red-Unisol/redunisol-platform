@@ -59,7 +59,7 @@ class WebFormReceipt
         }
         $lead = (string) ($body['lead_id'] ?? '');
         $synced = $successful && ($body['ok'] ?? false) === true && preg_match('/^[1-9][0-9]{0,63}$/D', $lead);
-        DB::transaction(function () use ($id, $body, $lead, $synced) {
+        DB::transaction(function () use ($id, $body, $lead, $synced, $input) {
             $receipt = DB::table('web_form_receipts')->where('id', $id)->lockForUpdate()->first();
             if (! $receipt) {
                 return;
@@ -85,6 +85,16 @@ class WebFormReceipt
                 'lead_id' => $synced ? $lead : null, 'updated_at' => now(),
             ]);
             if ($synced) {
+                try {
+                    $profiles = app(EdnaOrganicProfile::class);
+                    $answer = $profiles->websiteAnswer($input);
+                    if ($answer) {
+                        $profiles->record('web_form', $id, (string) ($input['celular'] ?? ''), $answer, $receipt->received_at,
+                            $lead, isset($body['contact_id']) ? (string) $body['contact_id'] : null);
+                    }
+                } catch (\Throwable) {
+                    // The primary receipt remains synced even if retention is unavailable.
+                }
                 foreach (DB::table('web_form_continuations')->where('submission_id', $id)->where('state', 'ready')->pluck('entry_event_id') as $entryEventId) {
                     app(WebFormChatRouting::class)->schedule((int) $entryEventId, $id);
                 }
