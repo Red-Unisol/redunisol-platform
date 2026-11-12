@@ -8,6 +8,7 @@ import {
   SocioCuitDuplicateError,
   SocioDocumentoDuplicateError,
 } from "../../domain/socios-errors";
+import { SOCIO_CATEGORIA_POR_DEFECTO } from "../../domain/SocioCategoria";
 import type { SocioRepository } from "../../domain/repositories/SocioRepository";
 import type { CrearSocioMutualGateway } from "../../infrastructure/services/CrearSocioMutualGateway";
 
@@ -34,6 +35,7 @@ export class CreateSocioUseCase {
       throw new SocioCuitDuplicateError();
     }
 
+    const categoria = input.categoria ?? SOCIO_CATEGORIA_POR_DEFECTO;
     const domicilio = {
       calle: input.domicilioCalle,
       codigoPostal: input.domicilioCodigoPostal ?? null,
@@ -54,6 +56,7 @@ export class CreateSocioUseCase {
       const legacyResult = await this.crearSocioMutualGateway.crear({
         tipoPersona: "FISICA",
         apellido: input.apellido,
+        categoria,
         celular: input.celular ?? null,
         cuit,
         domicilio,
@@ -88,6 +91,7 @@ export class CreateSocioUseCase {
 
     const legacyResult = await this.crearSocioMutualGateway.crear({
       tipoPersona: "JURIDICA",
+      categoria,
       celular: input.celular ?? null,
       cuit,
       domicilio,

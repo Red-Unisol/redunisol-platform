@@ -2,6 +2,11 @@ import {
   SocioMutualLegacyRechazadoError,
   SocioMutualLegacyUnavailableError,
 } from "../../domain/socios-errors";
+import {
+  SOCIO_CATEGORIA_ID_VIMARX,
+  type SocioCategoria,
+} from "../../domain/SocioCategoria";
+import { hoyEnArgentina } from "../../../solicitudes-core/application/services/PlanCobroRefinanciacion";
 
 type Fetcher = (
   input: string | URL,
@@ -13,6 +18,8 @@ type Fetcher = (
 
 type CrearSocioMutualGatewayConfig = {
   baseUrl: string;
+  // Reloj para la fecha de la categoria (inyectable en tests).
+  now?: () => Date;
   timeoutMs: number;
 };
 
@@ -37,6 +44,7 @@ export type CrearSocioMutualInput =
   | {
       tipoPersona: "FISICA";
       apellido: string;
+      categoria: SocioCategoria;
       celular?: string | null;
       cuit: string;
       domicilio: CrearSocioMutualDomicilio;
@@ -50,6 +58,7 @@ export type CrearSocioMutualInput =
     }
   | {
       tipoPersona: "JURIDICA";
+      categoria: SocioCategoria;
       celular?: string | null;
       cuit: string;
       domicilio: CrearSocioMutualDomicilio;
@@ -64,7 +73,6 @@ export type CrearSocioMutualResult = {
 };
 
 const CREAR_SOCIO_MUTUAL_PATH = "/api/Simulador/CrearSocioMutual";
-const HISTORIA_CATEGORIAS_FIJA = [{ Categoria: 2, Fecha: "2020-01-01" }];
 // El legado espera un codigo numerico de tipo de documento (ej. "96" para
 // DNI), no nuestros valores locales ("DNI", "LC", etc.). Por decision de
 // negocio siempre se manda DNI, sea cual sea el tipo de documento cargado
@@ -87,11 +95,13 @@ function nombreSexoVimarx(sexo: string) {
 export class CrearSocioMutualGateway {
   private readonly baseUrl: string;
   private readonly fetcher: Fetcher;
+  private readonly now: () => Date;
   private readonly timeoutMs: number;
 
   constructor(config: CrearSocioMutualGatewayConfig, fetcher: Fetcher = fetch) {
     this.baseUrl = config.baseUrl;
     this.fetcher = fetcher;
+    this.now = config.now ?? (() => new Date());
     this.timeoutMs = config.timeoutMs;
   }
 
@@ -111,7 +121,7 @@ export class CrearSocioMutualGateway {
               CUIT: input.cuit,
               Domicilio: this.buildDomicilio(input.domicilio),
               Email: input.email ?? undefined,
-              HistoriaCategorias: HISTORIA_CATEGORIAS_FIJA,
+              HistoriaCategorias: this.buildHistoriaCategorias(input.categoria),
               Observaciones: input.observaciones ?? undefined,
               SocAux: this.buildSocAux(input.socAux),
             },
@@ -161,6 +171,18 @@ export class CrearSocioMutualGateway {
       Nombre: "",
       Sexo: "PersonaJuridica",
     };
+  }
+
+  // Antes iba fija CLUB MUTUAL (2) con fecha 2020-01-01, y Vimarx dejaba
+  // tambien el alta del socio en esa fecha. Ahora va la categoria segun la
+  // linea (o la elegida en Socios) con la fecha del dia, como en InsCreditB.
+  private buildHistoriaCategorias(categoria: SocioCategoria) {
+    return [
+      {
+        Categoria: SOCIO_CATEGORIA_ID_VIMARX[categoria],
+        Fecha: hoyEnArgentina(this.now()),
+      },
+    ];
   }
 
   private buildDomicilio(

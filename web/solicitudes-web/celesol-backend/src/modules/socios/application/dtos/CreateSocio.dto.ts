@@ -1,3 +1,5 @@
+import type { SocioCategoria } from "../../domain/SocioCategoria";
+
 // Datos del convenio que Vimarx guarda en SocAux del socio.
 export type CreateSocioSocAuxDto = {
   beneficio?: string;
@@ -9,6 +11,7 @@ export type CreateSocioDto =
   | {
       tipoPersona: "FISICA";
       apellido: string;
+      categoria?: SocioCategoria;
       celular?: string;
       cuit: string;
       domicilioCalle: string;
@@ -26,6 +29,7 @@ export type CreateSocioDto =
     }
   | {
       tipoPersona: "JURIDICA";
+      categoria?: SocioCategoria;
       celular?: string;
       cuit: string;
       domicilioCalle: string;

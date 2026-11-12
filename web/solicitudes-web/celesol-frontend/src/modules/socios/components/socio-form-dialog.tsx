@@ -1,12 +1,14 @@
 import { Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type {
-  CreateSocioRequest,
-  CreateSocioSocAux,
-  Socio,
-  SocioTipoPersona,
-  UpdateSocioRequest,
+import {
+  SOCIO_CATEGORIA_OPTIONS,
+  type CreateSocioRequest,
+  type CreateSocioSocAux,
+  type Socio,
+  type SocioCategoria,
+  type SocioTipoPersona,
+  type UpdateSocioRequest,
 } from "../types";
 import { useCuitAvailabilityQuery } from "../hooks/use-cuit-availability-query";
 import { useDocumentoAvailabilityQuery } from "../hooks/use-documento-availability-query";
@@ -120,7 +122,14 @@ function isValidCivilDate(value: string) {
   );
 }
 
+// Alta desde una solicitud: la categoria la define la linea y no se elige.
+export type SocioCategoriaDesdeLinea = {
+  categoria: SocioCategoria;
+  lineaDescripcion: string | null;
+};
+
 type SocioFormDialogProps = {
+  categoriaDesdeLinea?: SocioCategoriaDesdeLinea;
   initialValues?: Partial<SocioFormState>;
   // Nombre de localidad sin ID (solicitud vieja): arranca la busqueda.
   localidadSugerida?: string;
@@ -133,6 +142,7 @@ type SocioFormDialogProps = {
 
 export type SocioFormState = {
   apellido: string;
+  categoria: SocioCategoria;
   celular: string;
   cuit: string;
   domicilioCalle: string;
@@ -156,9 +166,11 @@ export type SocioFormState = {
 function buildInitialState(
   socio: Socio | null,
   initialValues?: Partial<SocioFormState>,
+  categoriaDesdeLinea?: SocioCategoriaDesdeLinea,
 ): SocioFormState {
   const baseState: SocioFormState = {
     apellido: socio?.tipoPersona === "FISICA" ? socio.apellido : "",
+    categoria: "ADHERENTE_CONVENIO",
     celular: toDisplaySocioPhone(socio?.celular),
     cuit: socio?.cuit ?? "",
     domicilioCalle: socio?.domicilioCalle ?? "",
@@ -185,7 +197,13 @@ function buildInitialState(
     return baseState;
   }
 
-  return { ...baseState, ...initialValues };
+  return {
+    ...baseState,
+    ...initialValues,
+    ...(categoriaDesdeLinea
+      ? { categoria: categoriaDesdeLinea.categoria }
+      : {}),
+  };
 }
 
 // Datos que solo viajan a Vimarx en el alta: SocAux (Mudon, AMEJUCA, Caja 40)
@@ -276,6 +294,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
       ...domicilioOpcional,
       ...datosConvenio,
       apellido,
+      categoria: state.categoria,
       cuit,
       domicilioCalle,
       domicilioLocalidad,
@@ -299,6 +318,7 @@ function buildCreatePayload(state: SocioFormState): CreateSocioRequest | null {
     ...(email ? { email } : {}),
     ...domicilioOpcional,
     ...datosConvenio,
+    categoria: state.categoria,
     cuit,
     domicilioCalle,
     domicilioLocalidad,
@@ -418,6 +438,7 @@ function buildUpdatePayload(
 }
 
 export function SocioFormDialog({
+  categoriaDesdeLinea,
   initialValues,
   isSaving,
   localidadSugerida,
@@ -437,6 +458,7 @@ export function SocioFormDialog({
     >
       {open ? (
         <SocioFormDialogContent
+          categoriaDesdeLinea={categoriaDesdeLinea}
           initialValues={initialValues}
           isSaving={isSaving}
           key={socio?.id ?? "create"}
@@ -450,6 +472,7 @@ export function SocioFormDialog({
 }
 
 function SocioFormDialogContent({
+  categoriaDesdeLinea,
   initialValues,
   isSaving,
   localidadSugerida,
@@ -457,10 +480,15 @@ function SocioFormDialogContent({
   socio,
 }: Pick<
   SocioFormDialogProps,
-  "initialValues" | "isSaving" | "localidadSugerida" | "onSubmit" | "socio"
+  | "categoriaDesdeLinea"
+  | "initialValues"
+  | "isSaving"
+  | "localidadSugerida"
+  | "onSubmit"
+  | "socio"
 >) {
   const [formState, setFormState] = useState<SocioFormState>(() =>
-    buildInitialState(socio, initialValues),
+    buildInitialState(socio, initialValues, categoriaDesdeLinea),
   );
   // Los campos que llegan prellenados (p.ej. desde el titular de una
   // solicitud) arrancan "touched": si el dato prellenado es inválido o
@@ -1052,6 +1080,42 @@ function SocioFormDialogContent({
               </ModalField>
             </div>
           </div>
+
+          {!isEditing ? (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                Categoría en Vimarx
+              </h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <ModalField label="Categoría *">
+                  <StyledSelect
+                    disabled={isSaving || Boolean(categoriaDesdeLinea)}
+                    onChange={(value) => {
+                      const option = SOCIO_CATEGORIA_OPTIONS.find(
+                        (item) => item.value === value,
+                      );
+
+                      if (option) {
+                        setFormState((currentState) => ({
+                          ...currentState,
+                          categoria: option.value,
+                        }));
+                      }
+                    }}
+                    options={SOCIO_CATEGORIA_OPTIONS}
+                    value={formState.categoria}
+                  />
+                  <span className="block min-h-[1rem] text-xs text-foreground-muted">
+                    {categoriaDesdeLinea
+                      ? categoriaDesdeLinea.lineaDescripcion
+                        ? `Según la línea de la solicitud: ${categoriaDesdeLinea.lineaDescripcion.trim()}.`
+                        : "La solicitud no tiene línea: va como adherente convenio."
+                      : null}
+                  </span>
+                </ModalField>
+              </div>
+            </div>
+          ) : null}
 
           {!isEditing ? (
             <div className="space-y-3">

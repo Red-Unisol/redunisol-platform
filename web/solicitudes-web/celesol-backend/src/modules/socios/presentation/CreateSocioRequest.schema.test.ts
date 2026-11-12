@@ -40,6 +40,28 @@ describe("createSocioBodySchema", () => {
     });
   });
 
+  it("accepts the categoria of the socio and rejects unknown ones", () => {
+    const base = {
+      cuit: "30712345671",
+      domicilioCalle: "Belgrano",
+      domicilioLocalidad: "12",
+      razonSocial: "Constructora El Alba S.A.",
+      tipoPersona: "JURIDICA",
+    };
+
+    for (const categoria of ["ADHERENTE_CONVENIO", "AMEJUCA", "MUDON"]) {
+      const parsed = createSocioBodySchema.parse({ ...base, categoria });
+      assert.equal(parsed.categoria, categoria);
+    }
+
+    assert.equal(createSocioBodySchema.parse(base).categoria, undefined);
+    assert.equal(
+      createSocioBodySchema.safeParse({ ...base, categoria: "CLUB_MUTUAL" })
+        .success,
+      false,
+    );
+  });
+
   it("rejects persona fisica without domicilioCalle", () => {
     assert.equal(
       createSocioBodySchema.safeParse({
