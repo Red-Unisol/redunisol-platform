@@ -19,6 +19,18 @@ subject, conversación, vencimiento y selección única.
 
 ### Pauta y atribución de la entrada
 
+El receptor admite respuestas `BUTTON`, conserva su payload y referencias al
+mensaje saliente y deduplica por subject/mensaje igual que las entradas de texto.
+Una respuesta con token del menú se valida como acción; los demás botones siguen
+la clasificación normal de ingreso, sin asumir que un botón demuestra pauta.
+La elegibilidad de Ventas y el receptor de respaldo en Kestra admiten el mismo
+tipo. Los tipos no soportados dejan un aviso técnico con ID, tipo y motivo, sin
+texto, destinatario, payload ni credenciales. Estos avisos no son transferencias.
+
+Los mensajes históricos ausentes del inbox no se reingresan automáticamente:
+una eventual recuperación debe deduplicar y conservar toda atención o derivación
+humana posterior.
+
 `EdnaPaidEntry` separa pauta de la bienvenida general usando el inbox autenticado:
 `referral.sourceType=ad` o su variante snake_case, los 15 códigos Google `G-*`
 documentados en las tareas [23229](https://redunisol.bitrix24.es/company/personal/user/71283/tasks/task/view/23229/)

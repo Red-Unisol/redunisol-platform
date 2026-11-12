@@ -145,9 +145,9 @@ function organicMenuAssignedDeal(string $leadId = '310', string $contactId = '21
         'CONTACT_ID' => $contactId, 'CATEGORY_ID' => '1', 'STAGE_ID' => 'C1:IN_WORK', 'STAGE_SEMANTIC_ID' => 'P'];
 }
 
-test('organic capture is local atomic and does not reserve a loan admission before a choice', function () {
+test('organic capture is local atomic and does not reserve a loan admission before a choice', function (string $type) {
     $h = organicMenuHarness();
-    $event = organicMenuEvent();
+    $event = organicMenuEvent(['messageContent' => ['type' => $type]]);
     $menu = organicMenuCapture($h['service'], $event);
     $h['service']->receiveEntry($event, organicMenuPayload($event));
 
@@ -158,7 +158,7 @@ test('organic capture is local atomic and does not reserve a loan admission befo
     Queue::assertPushed(ProcessEdnaOrganicMenu::class, 1);
     Http::assertNothingSent();
     $h['transport']->shouldNotHaveReceived('schedule');
-});
+})->with(['TEXT', 'BUTTON']);
 
 test('unknown organic tokens and replies are consumed without creating a second menu', function () {
     $h = organicMenuHarness();
@@ -185,12 +185,12 @@ test('a menu send is claimed once and uncertain acknowledgement only reads histo
         ->and(DB::table('edna_intake_admissions')->count())->toBe(0);
 });
 
-test('a callback before outgoing history confirmation is saved and schedules loan preparation only after proof', function () {
+test('a callback before outgoing history confirmation is saved and schedules loan preparation only after proof', function (string $type) {
     $h = organicMenuHarness();
     $menu = organicMenuCapture($h['service']);
     $h['service']->process($menu->id);
     $menu = DB::table('edna_organic_menus')->find($menu->id);
-    $choice = organicMenuChoice($menu);
+    $choice = organicMenuChoice($menu, 'loan', ['messageContent' => ['type' => $type]]);
     expect($h['service']->receiveChoice($choice, organicMenuPayload($choice)))->toBeTrue();
     $h['service']->process($menu->id);
     Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
@@ -202,7 +202,7 @@ test('a callback before outgoing history confirmation is saved and schedules loa
         ->and(DB::table('edna_flow_sends')->count())->toBe(0);
     Queue::assertPushed(PrepareEdnaOrganicLoan::class, 1);
     expect($h['service']->process($menu->id)['state'])->toBe('not_claimed');
-});
+})->with(['LIST_PICKER', 'BUTTON']);
 
 test('duplicate and contrary callbacks cannot change the first choice or schedule another case', function () {
     $h = organicMenuHarness();
@@ -243,16 +243,16 @@ test('the callback native message must belong to the same chat session before lo
     Queue::assertNotPushed(PrepareEdnaOrganicLoan::class);
 });
 
-test('human attention suppresses the welcome without touching CRM or admissions', function () {
+test('human attention suppresses the welcome without touching CRM or admissions', function (string $type) {
     $h = organicMenuHarness();
     $h['attention']->shouldReceive('inspectWelcome')->once()->andReturn(['status' => 'preserved', 'reason' => 'operator_attention_preserved']);
-    $menu = organicMenuCapture($h['service']);
+    $menu = organicMenuCapture($h['service'], organicMenuEvent(['messageContent' => ['type' => $type]]));
 
     expect($h['service']->process($menu->id)['state'])->toBe('preserved')
         ->and(DB::table('edna_intake_admissions')->count())->toBe(0);
     $h['transport']->shouldNotHaveReceived('schedule');
     $h['crm']->shouldNotHaveReceived('call');
-});
+})->with(['TEXT', 'BUTTON']);
 
 test('human acceptance after the welcome preserves the chat before loan preparation', function () {
     $h = organicMenuHarness();

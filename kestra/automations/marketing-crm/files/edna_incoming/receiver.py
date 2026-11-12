@@ -81,7 +81,7 @@ def classify(event, allowed_subject, *, entry_scope="website"):
     text = content.get("text")
     if not isinstance(text, str) or len(text.encode("utf-8")) > 32768:
         return {**receipt, "reason": "invalid_text"}, None
-    if (entry_scope == "sales_channel" and content.get("type") in {"TEXT", "IMAGE", "AUDIO", "DOCUMENT", "VIDEO", "LIST_PICKER"}
+    if (entry_scope == "sales_channel" and content.get("type") in {"TEXT", "BUTTON", "IMAGE", "AUDIO", "DOCUMENT", "VIDEO", "LIST_PICKER"}
             and not is_test_entry(text)):
         # This only recognizes a potential entry. The authenticated Web ledger
         # still decides eligibility, existing conversations, cooldown and origin.

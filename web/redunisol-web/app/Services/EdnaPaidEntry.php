@@ -35,7 +35,7 @@ class EdnaPaidEntry
                 || ($payload['subjectId'] ?? null) !== (string) config('edna.subject_id')
                 || ($payload['subjectId'] ?? null) !== $event->subject_id
                 || ($payload['id'] ?? null) !== $event->message_id
-                || ! in_array($payload['messageContent']['type'] ?? '', ['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER'], true)
+                || ! in_array($payload['messageContent']['type'] ?? '', ['TEXT', 'BUTTON', 'IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER'], true)
                 || ! is_string($payload['receivedAt'] ?? null)
                 || ! preg_match('/(?:Z|[+-][0-9]{2}:[0-9]{2})$/D', $payload['receivedAt'])
                 || ! (new AttributionJourney)->phoneHash((string) ($payload['subscriber']['identifier'] ?? ''))) {

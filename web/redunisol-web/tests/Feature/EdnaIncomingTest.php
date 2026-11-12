@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
@@ -31,6 +32,29 @@ function sendEdna(array $messages)
 {
     return test()->postJson('/api/webhooks/edna/incoming', $messages, ['X-API-KEY' => 'inbound-test-key']);
 }
+
+test('BUTTON callbacks persist their action and reply references once instead of being silently ignored', function (string $scope) {
+    config()->set('edna.intake_entry_scope', $scope);
+    $message = ednaMessage(['replyOutMessageId' => '9001', 'replyOutMessageExternalRequestId' => 'menu-fixture',
+        'messageContent' => ['type' => 'BUTTON', 'text' => 'Quiero un préstamo', 'payload' => 'organic:fixture:loan']]);
+    sendEdna($message)->assertOk()->assertJsonPath('accepted', 1)->assertJsonPath('ignored', 0);
+    sendEdna([$message])->assertOk()->assertJsonPath('duplicates', 1);
+    $payload = json_decode(Crypt::decryptString(DB::table('edna_incoming_events')->sole()->payload), true);
+    expect($payload['messageContent'])->toBe($message['messageContent'])
+        ->and($payload['replyOutMessageId'])->toBe('9001')
+        ->and($payload['replyOutMessageExternalRequestId'])->toBe('menu-fixture')
+        ->and(DB::table('jobs')->count())->toBe(1);
+})->with(['website', 'sales_channel']);
+
+test('unsupported authenticated message types leave technical rejection evidence without the message body', function () {
+    Log::spy();
+    sendEdna(ednaMessage(['messageContent' => ['type' => 'UNKNOWN', 'text' => 'private-body-sentinel']]))
+        ->assertOk()->assertJsonPath('ignored', 1);
+    Log::shouldHaveReceived('notice')->once()->with('Edna incoming event ignored.', [
+        'subject_id' => '2423', 'message_id' => '101', 'message_type' => 'UNKNOWN', 'reason' => 'unsupported_type',
+    ]);
+    expect(DB::table('edna_incoming_events')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+});
 
 test('HEAD verifies availability without credentials, writes or jobs', function () {
     $this->call('HEAD', '/api/webhooks/edna/incoming')->assertOk()->assertContent('');
