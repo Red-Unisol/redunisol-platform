@@ -81,8 +81,8 @@ export function signatureInboxLoanKey(reference: SignatureInboxLoanReference) {
 }
 
 const SIGNATURE_INBOX_LOAN_BATCH_SIZE = 120;
-// Pestaña Préstamos: hasta 100 en total, pero los activos van siempre.
-const PRESTAMOS_DEL_SOCIO_MAX = 100;
+// Pestaña Préstamos: hasta 50 en total, pero los activos van siempre.
+const PRESTAMOS_DEL_SOCIO_MAX = 50;
 const PRESTAMOS_DEL_SOCIO_ACTIVOS_MAX = 1000;
 const PRESTAMOS_DEL_SOCIO_OTROS_IDS_MAX = 5000;
 const CORE_LOAN_LIFECYCLE_FIELDS = [
@@ -840,12 +840,13 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
     return records.slice(0, 50);
   }
 
-  // Los activos (Estado = 0) van todos, aunque sean mas de 100: son los que
-  // se refinancian y los que se miran por mora. El resto completa hasta 100,
+  // Los activos (Estado = 0) van todos, aunque sean mas de 50: son los que
+  // se refinancian y los que se miran por mora. El resto completa hasta 50,
   // los mas nuevos primero. Vimarx no ordena: antes, con un tope de 100 sin
   // filtro, un socio con 245 prestamos recibia 100 de 2007-2023 y ninguno de
   // sus 22 activos (sol 500301, 12/11/2026). Del resto se piden primero solo
-  // los ID (rapido) y despues los datos de los de ID mas alto.
+  // los ID (rapido) y despues los datos de los de ID mas alto. La lista sale
+  // entera del mas nuevo al mas viejo, activos y no activos mezclados.
   async listPrestamosDelSocio(
     socioLegacyId: string,
   ): Promise<PrestamoDelSocioLegacy[]> {
@@ -893,7 +894,7 @@ export class EvaluateListSolicitudesGateway implements SolicitudesLegacyGateway 
       true,
     );
 
-    return [...sortByIdDesc(activos), ...sortByIdDesc(otros)];
+    return sortByIdDesc([...activos, ...otros]);
   }
 
   async getPrestamoDelSocio(socioLegacyId: string, prestamoLegacyId: string) {

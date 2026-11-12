@@ -127,10 +127,10 @@ describe("listPrestamosDelSocio: los activos van siempre", () => {
   const fila = (id: number, estado: number | null) =>
     [id, String(id), estado === 0, "LINEA", null, 1, 1, 1, -1, null, null, estado];
 
-  it("trae todos los activos y completa hasta 100 con los otros de ID mas alto", async () => {
+  it("trae todos los activos y completa hasta 50 con los otros de ID mas alto", async () => {
     const activos = [fila(441350, 0), fila(443716, 0)];
-    const idsOtros = Array.from({ length: 150 }, (_, i) => [359000 + i]);
-    const otros = [fila(359149, 102), fila(359148, 101)];
+    const idsOtros = [...Array.from({ length: 150 }, (_, i) => [359000 + i]), [442000]];
+    const otros = [fila(359149, 102), fila(442000, 101), fila(359148, 101)];
     const { gateway, calls } = setup([activos, idsOtros, otros]);
 
     const prestamos = await gateway.listPrestamosDelSocio("117310");
@@ -140,25 +140,25 @@ describe("listPrestamosDelSocio: los activos van siempre", () => {
     assert.match(calls[0].cmd, /\[Estado\] = 0/);
     assert.match(calls[1].cmd, /\[Estado\] Is Null Or \[Estado\] <> 0/);
     assert.equal(calls[1].campos, "ID");
-    // 100 - 2 activos = 98 lugares, para los ID mas altos del resto.
-    assert.equal(calls[2].max, 98);
-    assert.match(calls[2].cmd, /\[ID\] In \(359149, 359148, /);
-    assert.doesNotMatch(calls[2].cmd, /359051/);
+    // 50 - 2 activos = 48 lugares, para los ID mas altos del resto.
+    assert.equal(calls[2].max, 48);
+    assert.match(calls[2].cmd, /\[ID\] In \(442000, 359149, 359148, /);
+    assert.doesNotMatch(calls[2].cmd, /359101/);
     assert.match(calls[2].cmd, /Integrantes\[Socio\.ID = 117310\]/);
     assert.deepEqual(
       prestamos.map((p) => p.legacyId),
-      ["443716", "441350", "359149", "359148"],
+      ["443716", "442000", "441350", "359149", "359148"],
     );
   });
 
-  it("con 100 activos o mas no pide el resto", async () => {
-    const activos = Array.from({ length: 120 }, (_, i) => fila(400000 + i, 0));
+  it("con 50 activos o mas no pide el resto", async () => {
+    const activos = Array.from({ length: 60 }, (_, i) => fila(400000 + i, 0));
     const { gateway, calls } = setup([activos]);
 
     const prestamos = await gateway.listPrestamosDelSocio("71");
 
     assert.equal(calls.length, 1);
-    assert.equal(prestamos.length, 120);
+    assert.equal(prestamos.length, 60);
   });
 
   it("falla si un ID del resto no es un numero", async () => {
