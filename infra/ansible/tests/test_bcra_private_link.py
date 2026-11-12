@@ -164,11 +164,36 @@ class PrivateLinkGuardTests(unittest.TestCase):
                 self.assertFalse(LINK.proxy_matches(changed, values, SOURCE, original["Image"]))
 
     def test_unowned_proxy_name_is_never_adopted_or_removed(self):
-        with mock.patch.object(LINK, "run", return_value=json.dumps([{"Config": {"Labels": {}}}])) as commands:
+        response = SimpleNamespace(returncode=0, stdout=json.dumps([{"Config": {"Labels": {}}}]), stderr="")
+        with mock.patch.object(LINK.subprocess, "run", return_value=response) as commands:
             with self.assertRaises(LINK.LinkError):
                 LINK.inspect_proxy()
         self.assertEqual(commands.call_count, 1)
         self.assertEqual(commands.call_args[0][0][1:3], ["container", "inspect"])
+
+    def test_first_apply_recognizes_real_docker_missing_container_output(self):
+        for error in ("Error: No such container: ", "Error response from daemon: No such object: "):
+            response = SimpleNamespace(returncode=1, stdout="[]\n", stderr=error + LINK.CONTAINER + "\n")
+            with self.subTest(error=error), mock.patch.object(LINK.subprocess, "run", return_value=response):
+                self.assertIsNone(LINK.inspect_proxy())
+
+    def test_empty_daemon_failure_or_unreadable_output_cannot_authorize_creation(self):
+        cases = [(1, "[]\n", "Cannot connect to the Docker daemon"),
+                 (1, "[]\n", "Error: No such container: another-service"),
+                 (0, "[]\n", ""), (1, "", "Error: No such container: " + LINK.CONTAINER),
+                 (0, "not-json", ""), (0, "null", ""), (0, "{}", ""),
+                 (0, '["unexpected-object"]', "")]
+        for code, output, error in cases:
+            response = SimpleNamespace(returncode=code, stdout=output, stderr=error)
+            with self.subTest(code=code, output=output), mock.patch.object(LINK.subprocess, "run", return_value=response):
+                with self.assertRaises(LINK.LinkError):
+                    LINK.inspect_proxy()
+
+    def test_existing_managed_proxy_requires_one_successfully_inspected_object(self):
+        expected = container(config())
+        response = SimpleNamespace(returncode=0, stdout=json.dumps([expected]), stderr="")
+        with mock.patch.object(LINK.subprocess, "run", return_value=response):
+            self.assertEqual(LINK.inspect_proxy(), expected)
 
     def test_old_importer_running_aborts_before_any_write(self):
         with tempfile.TemporaryDirectory() as folder:

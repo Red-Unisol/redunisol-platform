@@ -17,7 +17,7 @@
         cmd: "{{ playbook_dir }}/../tools/bcra-data-revoke.py check-source"
         executable: /usr/bin/python3
       register: bcra_cleanup_source_check
-      changed_when: false
+      changed_when: (bcra_cleanup_source_check.stdout | from_json).get('changed', false) | bool
       when: not ansible_check_mode
     - name: Retain only public source completion evidence
       ansible.builtin.set_fact:

@@ -3,5 +3,8 @@
 bcra_file_api_image: ghcr.io/red-unisol/bcra-file-api@sha256:78d3b2536caf2c9a281804b9a5fe21aa5e030c8240cad75a88a7d339481af6e4
 bcra_file_api_platform_dir: /srv/redunisol/platform/bcra-file-api
 bcra_file_api_data_dir: /srv/redunisol/state/bcra-file-api
-# Activation is promoted only after the consistent copy and SQLite verification.
-bcra_file_api_running: false
+# Promoted after the 2026-11-12 cold copy, SQLite checks and encrypted backup.
+bcra_file_api_running: true
+bcra_file_api_require_current_ready: true
+bcra_file_api_data_manifest_sha256: a040113b07549a691e2fb6bad4606aed2a272e99a7d986753c491b074d1723ca
+bcra_file_api_cold_backup_receipt_sha256: 6006bcf79d139e628c2961c5fe6ee50dda1ca01f2a53e69d76734b126296504f

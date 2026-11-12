@@ -14,12 +14,12 @@
           - ansible_host == '66.97.34.158'
           - ansible_port | int == 5272
   tasks:
-    - name: Read current completed source and process guards without exporting private credentials
+    - name: Read completed source guards and repair only the expected accidental helper cache
       ansible.builtin.script:
         cmd: "{{ playbook_dir }}/../tools/bcra-data-revoke.py check-source"
         executable: /usr/bin/python3
       register: bcra_verify_source_completion
-      changed_when: false
+      changed_when: (bcra_verify_source_completion.stdout | from_json).get('changed', false) | bool
       when: not ansible_check_mode
 
     - name: Read the existing small source manifest with byte-exact transport only
@@ -43,6 +43,11 @@
           - ansible_host == '168.197.51.104'
           - ansible_port | int == 2241
           - bcra_data_verify_read_mib_per_sec | default(128) | float > 0
+          - bcra_data_verify_sqlite_timeout_seconds | default(3600) | float > 0
+          - >-
+            bcra_data_verify_async_seconds | default(7200) | int >=
+            (bcra_data_verify_sqlite_timeout_seconds | default(3600) | float) + 600
+          - bcra_data_verify_async_seconds | default(7200) | int <= 21600
   tasks:
     - name: Require the already prepared private platform directory
       ansible.builtin.stat:
@@ -96,6 +101,8 @@
           - --sqlite-timeout-seconds
           - "{{ bcra_data_verify_sqlite_timeout_seconds | default(3600) | float }}"
       register: bcra_verify_result
+      async: "{{ bcra_data_verify_async_seconds | default(7200) | int }}"
+      poll: 10
       changed_when: (bcra_verify_result.stdout | from_json).changed | bool
       when: not ansible_check_mode
 
