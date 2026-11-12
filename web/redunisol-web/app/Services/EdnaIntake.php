@@ -59,7 +59,7 @@ class EdnaIntake
     {
         if (config('edna.intake_entry_scope', 'website') !== 'sales_channel'
             || $event->subject_id !== (string) config('edna.subject_id')
-            || ! in_array($payload['messageContent']['type'] ?? '', ['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER'], true)
+            || ! in_array($payload['messageContent']['type'] ?? '', ['TEXT', 'BUTTON', 'IMAGE', 'AUDIO', 'DOCUMENT', 'VIDEO', 'LIST_PICKER'], true)
             || $this->isTestEntry((string) ($payload['messageContent']['text'] ?? ''))) {
             return false;
         }

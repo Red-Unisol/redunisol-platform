@@ -52,6 +52,22 @@ function paidJourneyFixture(array $touch = [], ?array $first = null): object
     return (new AttributionJourney)->create(['version' => 1, 'first' => $first ?? $last, 'last' => $last]);
 }
 
+test('BUTTON entries retain proven paid routing and do not infer paid origin from a button alone', function (bool $paid) {
+    $content = ['type' => 'BUTTON', 'text' => 'Me interesa', 'payload' => 'template-reply'];
+    if ($paid) {
+        $content['referral'] = ['source_type' => 'ad', 'source_id' => 'ad-fixture'];
+    }
+    [$event, $payload] = paidEntryFixture(['messageContent' => $content]);
+    expect((new EdnaIntake)->receiveEntry($event, $payload))->toBeTrue();
+    expect(DB::table('edna_organic_menus')->count())->toBe($paid ? 0 : 1)
+        ->and(DB::table('edna_flow_sends')->count())->toBe($paid ? 1 : 0);
+    if ($paid) {
+        $snapshot = json_decode(Crypt::decryptString(DB::table('edna_flow_sends')->sole()->attribution_snapshot), true);
+        expect($snapshot['entry_routing']['route'])->toBe('paid_direct_v3');
+    }
+    Http::assertNothingSent();
+})->with([true, false]);
+
 test('authenticated ad referrals go straight to the existing v3 without reserving a menu', function (array $referral) {
     [$event, $payload] = paidEntryFixture(['messageContent' => ['referral' => $referral]]);
 
