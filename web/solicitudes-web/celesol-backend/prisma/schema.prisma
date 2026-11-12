@@ -394,6 +394,9 @@ model SolicitudTitular {
   domicilioCalle               String?   @map("domicilio_calle")
   nroPuerta                    String?   @map("nro_puerta")
   localidad                    String?
+  // ID de ClasesBase.Localidad en Vimarx: el dato. "localidad" es su nombre,
+  // copiado por el backend. NULL en solicitudes anteriores al 12/11/2026.
+  localidadId                  String?   @map("localidad_id")
   cbu                          String?
   cbuNoHabitual                String?   @map("cbu_no_habitual")
   personaExpuestaPoliticamente Boolean?  @map("persona_expuesta_politicamente")

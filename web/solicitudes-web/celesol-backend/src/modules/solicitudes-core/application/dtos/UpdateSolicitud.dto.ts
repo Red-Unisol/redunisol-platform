@@ -90,7 +90,8 @@ export type UpdateSolicitudInput = {
     email?: string | null;
     estadoCivil?: string | null;
     fechaNacimiento?: string | null;
-    localidad?: string | null;
+    // ID de la localidad en Vimarx; el nombre lo resuelve el backend.
+    localidadId?: string | null;
     nacionalidad?: string | null;
     nombre?: string;
     nroDocumento?: string;
